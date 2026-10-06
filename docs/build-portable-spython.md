@@ -1,7 +1,7 @@
 # Воспроизводимая сборка portable-версии с редактором SPython
 
 Готовый архив доступен в [релизах GitHub](https://github.com/informatik-shi/pascalabcnet_pro_edition/releases):
-[скачать portable-сборку для Windows x64](https://github.com/informatik-shi/pascalabcnet_pro_edition/releases/download/portable-2026-10-06.4/PascalABCNET-Portable-win-x64.zip).
+[скачать portable-сборку для Windows x64](https://github.com/informatik-shi/pascalabcnet_pro_edition/releases/download/portable-2026-10-06.5/PascalABCNET-Portable-win-x64.zip).
 
 ## Что находится в сборке
 
@@ -43,32 +43,49 @@ for line in f:
 f.close()
 ```
 
-Для бинарного чтения укажите литерал режима `'rb'` или `'br'`. Метод `read`
-возвращает `bytes`; доступны `len(data)`, индексирование (включая отрицательные
-индексы), `data.hex()`, `data.decode('utf-8')` и перебор байтов.
+Для бинарного чтения укажите режим `'rb'` или `'br'` непосредственно либо через
+строковую переменную. При буквальном режиме `read()` имеет тип `bytes`; при
+режиме из переменной тип результата выбирается во время выполнения. В обоих
+случаях доступны `len(data)`, индексирование (включая отрицательные индексы),
+`data.hex()`, `data.decode('utf-8')` и `struct.unpack()`.
 
 ```python
 import struct
 
-f = open('header.bin', 'rb')
+mode = 'rb'
+f = open('header.bin', mode)
 header = f.read(6)
 number, offset = struct.unpack('<Ih', header)
-print(int(number), int(offset))
+print(number + 1, offset * 2)
+print(header[0] + 1)
 f.close()
 ```
 
 Модуль `struct` предоставляет `calcsize`, `unpack`, `unpack_from`,
 `iter_unpack` и `Struct(format)`. Поддержаны префиксы порядка байтов
 `@ = < > !` и коды чтения `x c b B ? h H i I l L q Q n N P e f d s p`.
-`unpack` возвращает массив значений типа `object`, поэтому перед арифметикой
-число нужно преобразовать через `int()`, `bigint()` или `float()`.
+`unpack` возвращает последовательность значений `StructValue`. Числовые поля
+поддерживают арифметику `+`, `-`, `*`, `/`, `//`, `%`, сравнения и большие целые
+значения без промежуточного `int()` или `float()`. Для полей `s`, `p`, `c`
+доступны `hex()` и `decode()`.
 
 Сейчас SPython не разбирает конструкцию `with`, поэтому файл нужно закрывать
-через `close()`. Запись (`w`, `a`, `+`), режим из переменной, срезы `bytes` и
+через `close()`. Запись (`w`, `a`, `+`), срезы `bytes` и
 полное поведение `tell`/`seek` для UTF-16 и дополнительных кодировок пока не
 реализованы. Смещения для UTF-8 и однобайтового текста проверены тестами.
-Эти ограничения связаны со статической типизацией и текущим парсером SPython;
-код для чтения с буквальным режимом работает без установки Python.
+Эти ограничения связаны со статической типизацией и текущим парсером SPython.
+Объект чтения при режиме из переменной и значения `StructValue` представляют
+собой обёртки: например, проверка типа через `type()` ещё не эквивалентна CPython.
+Код работает без установки Python.
+
+Для повторения этого изменения нужны три части. `OpenModeVisitor.cs` оставляет
+буквальные режимы с конкретными типами файла, а режим из выражения направляет
+в `PythonFile` из `SPythonSystem.pas`; этот класс выбирает текстовый или
+бинарный поток при выполнении. `PythonReadData` передаёт прочитанные байты в
+`struct` и поддерживает индексирование. `struct1.pas` возвращает `StructValue`
+с числовыми операторами. После изменения этих файлов выполните полную сборку
+ниже, чтобы обновились оба компилятора и обе версии `SPythonSystem.pcu` и
+`struct1.pcu`, затем запустите 64 проверки для каждого компилятора.
 
 ## Подготовка машины сборки
 
@@ -164,12 +181,12 @@ IDE снова, проверьте сохранение выбранной те�
 этого документа. После успешной проверки зафиксируйте изменения в ветке
 `portable` и отправьте её на GitHub. Для каждого нового архива создавайте
 новый тег и релиз; уже опубликованный архив не заменяйте. Пример для версии
-`portable-2026-10-06.4`:
+`portable-2026-10-06.5`:
 
 ```powershell
 git push origin portable
-git tag portable-2026-10-06.4
-git push origin portable-2026-10-06.4
+git tag portable-2026-10-06.5
+git push origin portable-2026-10-06.5
 $zip = 'Release\PascalABCNET-Portable-win-x64.zip'
 $hash = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
 "$hash  PascalABCNET-Portable-win-x64.zip" | Set-Content -Encoding ascii Release\SHA256SUMS.txt
@@ -223,12 +240,14 @@ $hash = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant
 - `bin\Lib\SPython\SPythonSystem.pas` — текстовые и бинарные файлы, тип `bytes`.
 - `bin\Lib\SPython\struct1.pas` — чтение форматов Python `struct`.
 - `AdditionalLanguages\SPython\SyntaxTreeConverters\SPythonStandardTreeConverter\OpenModeVisitor.cs`
-  — выбор типа `read()` по буквальному режиму `open(..., 'rb')`.
+  — выбор конкретного типа файла для буквального режима и динамического файла
+  для режима из переменной. `FunctionsWithNamedParametersDesugarVisitor.cs`
+  сохраняет именованные аргументы `open()`.
 - `AdditionalLanguages\SPython\SPythonLanguageInfo\SPythonLanguageInformation.cs`
   — соответствие имени Python `struct` модулю Pascal `struct1`.
 - `ReleaseGenerators\RebuildStandartModulesSPython.pas` — пересборка `struct1.pcu`.
-- `scripts\test-spython-file-io.ps1` — создание тестовых файлов и 37 проверок
-  чтения с обычным и .NET 10 компилятором.
+- `scripts\test-spython-file-io.ps1` — создание тестовых файлов и 64 проверки
+  чтения, динамического режима и арифметики с обычным и .NET 10 компилятором.
 
 Папка `Release` не хранится в Git: итоговый ZIP нужно собрать локально после
 клонирования ветки.

@@ -13,7 +13,8 @@ namespace Languages.SPython.Frontend.Converters
             if (_method_call.dereferencing_value is dot_node builtin &&
                 builtin.left is ident module && module.name == "SPythonSystem" &&
                 builtin.right is ident function &&
-                (function.name == "open" || function.name == "!open_binary") &&
+                (function.name == "open" || function.name == "!open_text" ||
+                 function.name == "!open_binary") &&
                 _method_call.parameters is expression_list openArguments &&
                 openArguments.expressions.Any(e => e is name_assign_expr))
             {

@@ -40,13 +40,15 @@ Copy-Item -LiteralPath $source -Destination $program -Force
 [IO.File]::WriteAllText((Join-Path $build 'file-io-test.txt'),
     "one`r`ntwo`rthree`n", [Text.UTF8Encoding]::new($false))
 [IO.File]::WriteAllText((Join-Path $build 'file-io-unicode.txt'),
-    "é`n", [Text.UTF8Encoding]::new($false))
+    ([string][char]0x00E9 + "`n"), [Text.UTF8Encoding]::new($false))
 [IO.File]::WriteAllBytes((Join-Path $build 'file-io-test.bin'),
     [byte[]](42, 0, 0, 0, 254, 255, 10, 97))
 [IO.File]::WriteAllBytes((Join-Path $build 'file-io-float.bin'),
     [byte[]](0, 0, 192, 63, 0, 0, 0, 0, 0, 0, 248, 63, 0, 62))
 [IO.File]::WriteAllBytes((Join-Path $build 'file-io-pascal.bin'),
     [byte[]](5, 72, 101, 108, 108, 111, 0, 0))
+[IO.File]::WriteAllBytes((Join-Path $build 'file-io-u64.bin'),
+    [byte[]](255, 255, 255, 255, 255, 255, 255, 255))
 
 Push-Location $root
 try {
@@ -59,7 +61,7 @@ try {
         @(& $executable)
     }
     if ($LASTEXITCODE -ne 0) { throw "SPython test failed at runtime: $Runtime" }
-    if ($lines.Count -ne 37 -or @($lines | Where-Object { $_ -ne 'True' }).Count -ne 0) {
+    if ($lines.Count -ne 64 -or @($lines | Where-Object { $_ -ne 'True' }).Count -ne 0) {
         throw "Unexpected SPython test output ($Runtime): $($lines -join ', ')"
     }
     Write-Host "SPython file IO and struct test passed: $Runtime ($($lines.Count) assertions)."

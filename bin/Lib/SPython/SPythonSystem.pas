@@ -17,8 +17,8 @@ function input(): string;
 
 function input(s: string): string;
 
-// Python-style read-only streams. Literal binary modes are selected by the
-// SPython compiler so that read() has the right static result type.
+// Python-style read-only streams. Known literal modes keep concrete static
+// types; a mode computed at run time uses PythonFile and PythonReadData.
 type
   bytes = class(IEnumerable<integer>)
   private
@@ -84,7 +84,62 @@ type
     function System.Collections.IEnumerable.GetEnumerator(): System.Collections.IEnumerator := GetEnumerator();
   end;
 
+  PythonReadData = class(IEnumerable<PythonReadData>)
+  private
+    rawValue: object;
+    function GetLength(): integer;
+    function GetItem(index: integer): PythonReadData;
+    function AsInteger(): integer;
+  public
+    constructor Create(value: object);
+    property value: object read rawValue;
+    property Length: integer read GetLength;
+    property ByIndex[index: integer]: PythonReadData read GetItem; default;
+    function as_bytes(): bytes;
+    function decode(encoding: string := 'utf-8'; errors: string := 'strict'): string;
+    function hex(): string;
+    function ToString(): string; override;
+    function GetEnumerator(): IEnumerator<PythonReadData>;
+    function System.Collections.IEnumerable.GetEnumerator(): System.Collections.IEnumerator := GetEnumerator();
+    static function operator implicit(value: integer): PythonReadData := new PythonReadData(value);
+    static function operator implicit(value: string): PythonReadData := new PythonReadData(value);
+    static function operator implicit(value: PythonReadData): bytes := value.as_bytes();
+    static function operator +(a, b: PythonReadData): PythonReadData;
+    static function operator -(a, b: PythonReadData): PythonReadData;
+    static function operator *(a, b: PythonReadData): PythonReadData;
+    static function operator div(a, b: PythonReadData): PythonReadData;
+    static function operator mod(a, b: PythonReadData): PythonReadData;
+    static function operator =(a: PythonReadData; b: integer): boolean;
+    static function operator =(a: PythonReadData; b: string): boolean;
+    static function operator =(a, b: PythonReadData): boolean;
+  end;
+
+  PythonFile = class(System.IDisposable, IEnumerable<PythonReadData>)
+  private
+    binaryFile: PythonBinaryFile;
+    textFile: PythonTextFile;
+    function GetClosed(): boolean;
+    function Lines(): sequence of PythonReadData;
+  public
+    constructor Create(path: string; mode: string; buffering: integer;
+      encoding: string; errors: string; newline: string);
+    function read(size: integer := -1): PythonReadData;
+    function readline(size: integer := -1): PythonReadData;
+    function readlines(hint: integer := -1): System.Collections.Generic.List<PythonReadData>;
+    function seek(offset: integer; whence: integer := 0): integer;
+    function tell(): integer;
+    procedure close();
+    procedure Dispose();
+    function readable(): boolean;
+    function seekable(): boolean;
+    property closed: boolean read GetClosed;
+    function GetEnumerator(): IEnumerator<PythonReadData>;
+    function System.Collections.IEnumerable.GetEnumerator(): System.Collections.IEnumerator := GetEnumerator();
+  end;
+
 function open(path: string; mode: string := 'r'; buffering: integer := -1;
+  encoding: string := nil; errors: string := nil; newline: string := nil): PythonFile;
+function !open_text(path: string; mode: string := 'r'; buffering: integer := -1;
   encoding: string := nil; errors: string := nil; newline: string := nil): PythonTextFile;
 function !open_binary(path: string; mode: string := 'rb'; buffering: integer := -1;
   encoding: string := nil; errors: string := nil; newline: string := nil): PythonBinaryFile;
@@ -567,11 +622,13 @@ end;
 //Standard functions with Lists
 
 function len<T>(lst: list<T>): integer;
+function len<T>(lst: System.Collections.Generic.List<T>): integer;
 function len<T>(st: &set<T>): integer;
 function len<K, V>(dct: dict<K, V>): integer;
 function len<T>(arr: array of T): integer;
 function len(s: string): integer;
 function len(value: bytes): integer;
+function len(value: PythonReadData): integer;
 
 function sorted<T>(lst: list<T>): list<T>;
 
@@ -982,7 +1039,131 @@ procedure PythonTextFile.Dispose() := close();
 function PythonTextFile.readable(): boolean := not closed;
 function PythonTextFile.seekable(): boolean := not closed;
 
+constructor PythonReadData.Create(value: object) := rawValue := value;
+
+function PythonReadData.AsInteger(): integer;
+begin
+  if not (rawValue is integer) then
+    raise new System.InvalidOperationException('value is not an integer');
+  Result := integer(rawValue);
+end;
+
+function PythonReadData.GetLength(): integer;
+begin
+  if rawValue is bytes then Result := (rawValue as bytes).Length
+  else Result := (rawValue as string).Length;
+end;
+
+function PythonReadData.GetItem(index: integer): PythonReadData;
+begin
+  if rawValue is bytes then Result := new PythonReadData((rawValue as bytes)[index])
+  else
+  begin
+    var s := rawValue as string;
+    if index < 0 then index += s.Length;
+    Result := new PythonReadData(s[index + 1].ToString());
+  end;
+end;
+
+function PythonReadData.as_bytes(): bytes;
+begin
+  if not (rawValue is bytes) then
+    raise new System.ArgumentException('a bytes-like object is required');
+  Result := rawValue as bytes;
+end;
+function PythonReadData.decode(encoding: string; errors: string): string := as_bytes().decode(encoding, errors);
+function PythonReadData.hex(): string := as_bytes().hex();
+function PythonReadData.ToString(): string := rawValue.ToString();
+
+function PythonReadData.GetEnumerator(): IEnumerator<PythonReadData>;
+begin
+  var values := new System.Collections.Generic.List<PythonReadData>();
+  if rawValue is bytes then
+    foreach var item in (rawValue as bytes) do values.Add(new PythonReadData(item))
+  else
+    foreach var item in (rawValue as string) do values.Add(new PythonReadData(item.ToString()));
+  Result := values.GetEnumerator();
+end;
+
+static function PythonReadData.operator +(a, b: PythonReadData): PythonReadData;
+begin
+  if (a.rawValue is string) and (b.rawValue is string) then
+    Result := new PythonReadData(string(a.rawValue) + string(b.rawValue))
+  else Result := new PythonReadData(a.AsInteger() + b.AsInteger());
+end;
+
+static function PythonReadData.operator -(a, b: PythonReadData): PythonReadData :=
+  new PythonReadData(a.AsInteger() - b.AsInteger());
+static function PythonReadData.operator *(a, b: PythonReadData): PythonReadData :=
+  new PythonReadData(a.AsInteger() * b.AsInteger());
+static function PythonReadData.operator div(a, b: PythonReadData): PythonReadData :=
+  new PythonReadData(integer(System.Math.Floor(real(a.AsInteger()) / b.AsInteger())));
+static function PythonReadData.operator mod(a, b: PythonReadData): PythonReadData :=
+  new PythonReadData(a.AsInteger() - integer(System.Math.Floor(real(a.AsInteger()) / b.AsInteger())) * b.AsInteger());
+
+static function PythonReadData.operator =(a: PythonReadData; b: integer): boolean :=
+  System.Object.Equals(a.rawValue, b);
+static function PythonReadData.operator =(a: PythonReadData; b: string): boolean :=
+  System.Object.Equals(a.rawValue, b);
+static function PythonReadData.operator =(a, b: PythonReadData): boolean :=
+  System.Object.Equals(a.rawValue, b.rawValue);
+
+constructor PythonFile.Create(path: string; mode: string; buffering: integer;
+  encoding: string; errors: string; newline: string);
+begin
+  if (mode = 'rb') or (mode = 'br') then
+    binaryFile := !open_binary(path, mode, buffering, encoding, errors, newline)
+  else textFile := !open_text(path, mode, buffering, encoding, errors, newline);
+end;
+
+function PythonFile.GetClosed(): boolean :=
+  if binaryFile <> nil then binaryFile.closed else textFile.closed;
+
+function PythonFile.read(size: integer): PythonReadData :=
+  if binaryFile <> nil then new PythonReadData(binaryFile.read(size))
+  else new PythonReadData(textFile.read(size));
+
+function PythonFile.readline(size: integer): PythonReadData :=
+  if binaryFile <> nil then new PythonReadData(binaryFile.readline(size))
+  else new PythonReadData(textFile.readline(size));
+
+function PythonFile.readlines(hint: integer): System.Collections.Generic.List<PythonReadData>;
+begin
+  Result := new System.Collections.Generic.List<PythonReadData>();
+  if binaryFile <> nil then
+    foreach var line in binaryFile.readlines(hint) do Result.Add(new PythonReadData(line))
+  else
+    foreach var line in textFile.readlines(hint) do Result.Add(new PythonReadData(line));
+end;
+
+function PythonFile.Lines(): sequence of PythonReadData;
+begin
+  while true do
+  begin
+    var line := readline();
+    if line.Length = 0 then break;
+    yield line;
+  end;
+end;
+
+function PythonFile.GetEnumerator(): IEnumerator<PythonReadData> := Lines().GetEnumerator();
+function PythonFile.seek(offset: integer; whence: integer): integer :=
+  if binaryFile <> nil then binaryFile.seek(offset, whence) else textFile.seek(offset, whence);
+function PythonFile.tell(): integer :=
+  if binaryFile <> nil then binaryFile.tell() else textFile.tell();
+procedure PythonFile.close();
+begin
+  if binaryFile <> nil then binaryFile.close() else textFile.close();
+end;
+procedure PythonFile.Dispose() := close();
+function PythonFile.readable(): boolean := not closed;
+function PythonFile.seekable(): boolean := not closed;
+
 function open(path: string; mode: string; buffering: integer;
+  encoding: string; errors: string; newline: string): PythonFile :=
+  new PythonFile(path, mode, buffering, encoding, errors, newline);
+
+function !open_text(path: string; mode: string; buffering: integer;
   encoding: string; errors: string; newline: string): PythonTextFile :=
   new PythonTextFile(path, mode, buffering, encoding, errors, newline);
 
@@ -1045,7 +1226,14 @@ begin
     .Replace('System.Numerics.BigInteger', 'bigint');
 end;
 
-function int(obj: object): integer := Convert.ToInt32(obj);
+function int(obj: object): integer;
+begin
+  try
+    Result := Convert.ToInt32(obj);
+  except
+    on System.InvalidCastException do Result := Convert.ToInt32(obj.ToString());
+  end;
+end;
 
 function str(val: object): string := val.ToString(); 
 
@@ -1053,7 +1241,14 @@ function float(val: string): real := real.Parse(val);
 
 function float(x: integer): real := PABCSystem.Floor(x);
 
-function float(x: object): real := Convert.ToDouble(x);
+function float(x: object): real;
+begin
+  try
+    Result := Convert.ToDouble(x);
+  except
+    on System.InvalidCastException do Result := Convert.ToDouble(x.ToString());
+  end;
+end;
 
 function bool(val: integer): boolean := Convert.ToBoolean(val);
 
@@ -1086,11 +1281,13 @@ function pow(x: real; n: integer): real := PABCSystem.Power(x,n);
 function pow(x: BigInteger; n: integer): BigInteger := PABCSystem.Power(x,n);
 
 function len<T>(lst: list<T>): integer := lst.!count;
+function len<T>(lst: System.Collections.Generic.List<T>): integer := lst.Count;
 function len<T>(st: &set<T>): integer := st.!count;
 function len<K, V>(dct: dict<K, V>): integer := dct.!count;
 function len<T>(arr: array of T): integer := arr.Length;
 function len(s: string): integer := s.Length;
 function len(value: bytes): integer := value.Length;
+function len(value: PythonReadData): integer := value.Length;
 
 function sorted<T>(lst: list<T>): list<T>;
 begin
