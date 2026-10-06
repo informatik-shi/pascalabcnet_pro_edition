@@ -10,7 +10,7 @@ namespace VisualPascalABC
     {
         private static readonly Color DarkBackground = Color.FromArgb(37, 37, 38);
         private static readonly Color DarkText = Color.FromArgb(230, 230, 230);
-        private readonly ToolStripRenderer darkRenderer = new ToolStripProfessionalRenderer(new DarkColorTable());
+        private readonly ToolStripRenderer darkRenderer = new DarkToolStripRenderer();
         private readonly Dictionary<ToolStrip, ToolStripRenderMode> originalModes =
             new Dictionary<ToolStrip, ToolStripRenderMode>();
         private readonly Dictionary<ToolStrip, ToolStripRenderer> originalRenderers =
@@ -63,6 +63,49 @@ namespace VisualPascalABC
         private void OnDropDownOpening(object sender, EventArgs e)
         {
             ApplyStrip(((ToolStripDropDownItem)sender).DropDown);
+        }
+
+        private sealed class DarkToolStripRenderer : ToolStripProfessionalRenderer
+        {
+            private static readonly Color Highlight = Color.FromArgb(62, 62, 64);
+            private static readonly Color Border = Color.FromArgb(80, 80, 80);
+
+            public DarkToolStripRenderer() : base(new DarkColorTable()) { }
+
+            protected override void OnRenderToolStripBackground(ToolStripRenderEventArgs e)
+            {
+                using (Brush brush = new SolidBrush(DarkBackground))
+                    e.Graphics.FillRectangle(brush, e.AffectedBounds);
+            }
+
+            protected override void OnRenderImageMargin(ToolStripRenderEventArgs e)
+            {
+                using (Brush brush = new SolidBrush(DarkBackground))
+                    e.Graphics.FillRectangle(brush, e.AffectedBounds);
+            }
+
+            protected override void OnRenderMenuItemBackground(ToolStripItemRenderEventArgs e)
+            {
+                Rectangle bounds = new Rectangle(Point.Empty, e.Item.Size);
+                Color background = e.Item.Selected || e.Item.Pressed ? Highlight : DarkBackground;
+                using (Brush brush = new SolidBrush(background))
+                    e.Graphics.FillRectangle(brush, bounds);
+                if (e.Item.Selected || e.Item.Pressed)
+                {
+                    using (Pen pen = new Pen(Border))
+                        e.Graphics.DrawRectangle(pen, 0, 0, bounds.Width - 1, bounds.Height - 1);
+                }
+            }
+
+            protected override void OnRenderToolStripBorder(ToolStripRenderEventArgs e)
+            {
+                if (e.ToolStrip is ToolStripDropDown)
+                {
+                    using (Pen pen = new Pen(Border))
+                        e.Graphics.DrawRectangle(pen, 0, 0,
+                            e.ToolStrip.Width - 1, e.ToolStrip.Height - 1);
+                }
+            }
         }
 
         private sealed class DarkColorTable : ProfessionalColorTable

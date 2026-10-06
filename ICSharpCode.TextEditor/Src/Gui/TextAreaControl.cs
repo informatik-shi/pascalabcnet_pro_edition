@@ -27,6 +27,7 @@ namespace ICSharpCode.TextEditor
 		ThemedVScrollBar vScrollBar = new ThemedVScrollBar();
 		ThemedHScrollBar hScrollBar = new ThemedHScrollBar();
 		TextArea   textArea;
+		bool       darkTheme;
 		bool       doHandleMousewheel = true;
 		bool       disposed;
 		
@@ -77,8 +78,11 @@ namespace ICSharpCode.TextEditor
 			}
 		}
 
+        public bool DarkTheme { get { return darkTheme; } }
+
         public void ApplyScrollBarTheme(bool dark)
         {
+            darkTheme = dark;
             BackColor = dark ? Color.FromArgb(37, 37, 38) : SystemColors.Control;
             vScrollBar.DarkTheme = dark;
             hScrollBar.DarkTheme = dark;

@@ -151,6 +151,25 @@ try {
         $openItem.ForeColor.ToArgb() -ne $darkTextColor) {
         throw 'Menu text stayed dark in dark mode.'
     }
+    $menuBitmap = New-Object Drawing.Bitmap(80, 40)
+    $menuGraphics = [Drawing.Graphics]::FromImage($menuBitmap)
+    try {
+        $menuGraphics.Clear([Drawing.Color]::White)
+        $marginArgs = [Windows.Forms.ToolStripRenderEventArgs]::new($menuGraphics,
+            $contextMenu, (New-Object Drawing.Rectangle(0, 0, 80, 40)), [Drawing.Color]::Empty)
+        $contextMenu.Renderer.DrawImageMargin($marginArgs)
+        if ($menuBitmap.GetPixel(5, 20).ToArgb() -ne $darkMenuColor) {
+            throw 'The icon strip inside a dark drop-down menu stayed light.'
+        }
+        $menuGraphics.Clear([Drawing.Color]::White)
+        $fileMenu.Select()
+        $menu.Renderer.DrawMenuItemBackground(
+            [Windows.Forms.ToolStripItemRenderEventArgs]::new($menuGraphics, $fileMenu))
+        if ($menuBitmap.GetPixel(5, 5).ToArgb() -ne [Drawing.Color]::FromArgb(62, 62, 64).ToArgb()) {
+            throw 'The selected top-level menu item stayed light.'
+        }
+    }
+    finally { $menuGraphics.Dispose(); $menuBitmap.Dispose() }
     $menuTheme.Apply($false, [Windows.Forms.ToolStrip[]]@($menu, $contextMenu))
     if ($menu.RenderMode -ne $originalMode -or
         $menu.BackColor.ToArgb() -eq $darkMenuColor -or
@@ -192,23 +211,31 @@ $combo = $browser.GetType().GetField('classComboBox', $flags).GetValue($browser)
 $bar = $chromeEditor.ActiveTextAreaControl.HScrollBar
 $bar.Bounds = New-Object Drawing.Rectangle(0, 0, 400, 20)
 $bitmap = New-Object Drawing.Bitmap(400, 20)
+$iconBitmap = New-Object Drawing.Bitmap(18, 100)
+$iconGraphics = [Drawing.Graphics]::FromImage($iconBitmap)
+$iconMargin = $chromeEditor.ActiveTextAreaControl.TextArea.IconBarMargin
+$iconMargin.DrawingPosition = New-Object Drawing.Rectangle(0, 0, 18, 100)
 try {
     $chromeEditor.ApplyTheme($true)
     $bar.DrawToBitmap($bitmap, (New-Object Drawing.Rectangle(0, 0, 400, 20)))
+    $iconMargin.Paint($iconGraphics, (New-Object Drawing.Rectangle(0, 0, 18, 100)))
     if ($browser.BackColor.ToArgb() -ne [Drawing.Color]::FromArgb(37, 37, 38).ToArgb() -or
         $combo.BackColor.ToArgb() -ne [Drawing.Color]::FromArgb(45, 45, 48).ToArgb() -or
-        $bitmap.GetPixel(100, 10).ToArgb() -ne [Drawing.Color]::FromArgb(37, 37, 38).ToArgb()) {
-        throw 'Class browser or horizontal scrollbar stayed light in dark mode.'
+        $bitmap.GetPixel(100, 10).ToArgb() -ne [Drawing.Color]::FromArgb(37, 37, 38).ToArgb() -or
+        $iconBitmap.GetPixel(5, 50).ToArgb() -ne [Drawing.Color]::FromArgb(37, 37, 38).ToArgb()) {
+        throw 'Class browser, scrollbar, or left editor margin stayed light in dark mode.'
     }
     $chromeEditor.ApplyTheme($false)
     $bar.DrawToBitmap($bitmap, (New-Object Drawing.Rectangle(0, 0, 400, 20)))
+    $iconMargin.Paint($iconGraphics, (New-Object Drawing.Rectangle(0, 0, 18, 100)))
     if ($browser.BackColor.ToArgb() -ne [Drawing.SystemColors]::Control.ToArgb() -or
         $combo.BackColor.ToArgb() -ne [Drawing.SystemColors]::Window.ToArgb() -or
-        $bitmap.GetPixel(100, 10).ToArgb() -ne [Drawing.SystemColors]::Control.ToArgb()) {
-        throw 'Class browser or horizontal scrollbar did not return to the light palette.'
+        $bitmap.GetPixel(100, 10).ToArgb() -ne [Drawing.SystemColors]::Control.ToArgb() -or
+        $iconBitmap.GetPixel(5, 50).ToArgb() -ne [Drawing.SystemColors]::Control.ToArgb()) {
+        throw 'Class browser, scrollbar, or left editor margin did not return to the light palette.'
     }
 }
-finally { $bitmap.Dispose(); $chromeEditor.Dispose() }
+finally { $iconGraphics.Dispose(); $iconBitmap.Dispose(); $bitmap.Dispose(); $chromeEditor.Dispose() }
 
 if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT -and
     [Environment]::OSVersion.Version.Build -ge 22000) {

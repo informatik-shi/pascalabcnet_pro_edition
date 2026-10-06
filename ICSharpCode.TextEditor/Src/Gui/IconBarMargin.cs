@@ -61,8 +61,11 @@ namespace ICSharpCode.TextEditor
 				return;
 			}
 			// paint background
-			g.FillRectangle(SystemBrushes.Control, new Rectangle(drawingPosition.X, rect.Top, drawingPosition.Width - 1, rect.Height));
-			g.DrawLine(SystemPens.ControlDark, base.drawingPosition.Right - 1, rect.Top, base.drawingPosition.Right - 1, rect.Bottom);
+			bool dark = textArea.MotherTextAreaControl.DarkTheme;
+			g.FillRectangle(dark ? BrushRegistry.GetBrush(Color.FromArgb(37, 37, 38)) : SystemBrushes.Control,
+			                new Rectangle(drawingPosition.X, rect.Top, drawingPosition.Width - 1, rect.Height));
+			g.DrawLine(dark ? BrushRegistry.GetPen(Color.FromArgb(63, 63, 70)) : SystemPens.ControlDark,
+			           base.drawingPosition.Right - 1, rect.Top, base.drawingPosition.Right - 1, rect.Bottom);
 			
 			// paint icons
 			foreach (Bookmark mark in textArea.Document.BookmarkManager.Marks) {
@@ -169,7 +172,8 @@ namespace ICSharpCode.TextEditor
 					if (isEnabled) {
 						g.FillEllipse(pthGrBrush, rect);
 					} else {
-						g.FillEllipse(SystemBrushes.Control, rect);
+						g.FillEllipse(textArea.MotherTextAreaControl.DarkTheme
+						              ? BrushRegistry.GetBrush(Color.FromArgb(37, 37, 38)) : SystemBrushes.Control, rect);
 						using (Pen pen = new Pen(pthGrBrush)) {
 							g.DrawEllipse(pen, new Rectangle(rect.X + 1, rect.Y + 1, rect.Width - 2, rect.Height - 2));
 						}
