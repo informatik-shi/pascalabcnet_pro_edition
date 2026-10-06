@@ -31,6 +31,62 @@ if ($lightDefault.Color.ToArgb() -ne [Drawing.SystemColors]::WindowText.ToArgb()
     throw "Wrong light editor colors: $($lightDefault.Color), $($lightDefault.BackgroundColor)"
 }
 
+$resourceProvider = New-Object ICSharpCode.TextEditor.Document.ResourceSyntaxModeProvider
+$syntaxProviders = [ICSharpCode.TextEditor.Document.ISyntaxModeFileProvider[]]@($resourceProvider, $provider)
+$darkProvider = New-Object VisualPascalABC.DarkSyntaxModeProvider -ArgumentList (,$syntaxProviders)
+[ICSharpCode.TextEditor.Document.HighlightingManager]::Manager.AddSyntaxModeFileProvider($darkProvider)
+foreach ($mode in $darkProvider.SyntaxModes) {
+    $darkHighlighter = [ICSharpCode.TextEditor.Document.HighlightingManager]::Manager.FindHighlighter($mode.Name)
+    $darkDefault = $darkHighlighter.GetColorFor('Default')
+    if ($darkDefault.BackgroundColor.ToArgb() -ne [Drawing.Color]::FromArgb(30, 30, 30).ToArgb() -or
+        $darkDefault.Color.ToArgb() -ne [Drawing.Color]::FromArgb(212, 212, 212).ToArgb()) {
+        throw "Wrong dark editor colors for $($mode.Name)"
+    }
+}
+
+# Check the IDE's selection of a highlighter, including Pascal and unknown files.
+$form = [Runtime.Serialization.FormatterServices]::GetUninitializedObject([VisualPascalABC.Form1])
+$options = New-Object VisualPascalABC.UserOptions
+$optionsField = [VisualPascalABC.Form1].GetField('UserOptions',
+    [Reflection.BindingFlags]'Instance,NonPublic,Public')
+$optionsField.SetValue($form, $options)
+$darkOptionField = [VisualPascalABC.UserOptions].GetField('DarkTheme',
+    [Reflection.BindingFlags]'Instance,NonPublic,Public')
+$themeMethod = [VisualPascalABC.Form1].GetMethod('GetEditorHighlighter',
+    [Reflection.BindingFlags]'Instance,NonPublic,Public')
+foreach ($sample in @(@('sample.pas', 'PascalABC.NET Dark', 'PascalABC.NET'),
+                     @('sample.pys', 'Spython', 'SpythonLight'),
+                     @('sample.cs', 'C# Dark', 'C#'),
+                     @('sample.txt', 'Default Dark', 'Default'))) {
+    foreach ($dark in @($true, $false)) {
+        $darkOptionField.SetValue($options, $dark)
+        $expected = if ($dark) { $sample[1] } else { $sample[2] }
+        $actual = $themeMethod.Invoke($form, @($sample[0])).Name
+        if ($actual -ne $expected) {
+            throw "Theme choice for $($sample[0]) (dark=$dark): expected $expected, got $actual"
+        }
+    }
+}
+
+$pascalEditor = New-Object ICSharpCode.TextEditor.TextEditorControl
+try {
+    $pascalEditor.Document.TextContent = "begin writeln('test'); end."
+    $pascalEditor.Document.HighlightingStrategy =
+        [ICSharpCode.TextEditor.Document.HighlightingManager]::Manager.FindHighlighter('PascalABC.NET Dark')
+    $begin = $pascalEditor.Document.GetLineSegment(0).Words |
+        Where-Object { $_.Word -eq 'begin' } | Select-Object -First 1
+    if ($null -eq $begin -or $begin.Color.ToArgb() -ne [Drawing.Color]::FromArgb(212, 212, 212).ToArgb()) {
+        throw 'Pascal keywords are unreadable on the dark editor background.'
+    }
+    $pascalEditor.Document.HighlightingStrategy =
+        [ICSharpCode.TextEditor.Document.HighlightingManager]::Manager.FindHighlighterForFile('sample.pas')
+    if ($pascalEditor.Document.HighlightingStrategy.GetColorFor('Default').BackgroundColor.ToArgb() -ne
+        [Drawing.SystemColors]::Window.ToArgb()) {
+        throw 'Pascal editor did not return to the light palette.'
+    }
+}
+finally { $pascalEditor.Dispose() }
+
 # Exercise the real output controls in both directions, including existing text.
 $outputForm = [Runtime.Serialization.FormatterServices]::GetUninitializedObject([VisualPascalABC.OutputWindowForm])
 $outputBox = New-Object Windows.Forms.RichTextBox
@@ -69,6 +125,40 @@ try {
     }
 }
 finally { $compilerBox.Dispose() }
+
+# Check the actual WinForms menu renderer, nested menus and the light-theme round trip.
+$menu = New-Object Windows.Forms.MenuStrip
+$fileMenu = New-Object Windows.Forms.ToolStripMenuItem('File')
+$openItem = New-Object Windows.Forms.ToolStripMenuItem('Open')
+$fileMenu.DropDownItems.Add($openItem) | Out-Null
+$menu.Items.Add($fileMenu) | Out-Null
+$contextMenu = New-Object Windows.Forms.ContextMenuStrip
+$contextMenu.Items.Add((New-Object Windows.Forms.ToolStripMenuItem('Copy'))) | Out-Null
+$menuTheme = New-Object VisualPascalABC.ToolStripThemeManager
+$originalMode = $menu.RenderMode
+try {
+    $menuTheme.Apply($true, [Windows.Forms.ToolStrip[]]@($menu, $contextMenu))
+    $darkMenuColor = [Drawing.Color]::FromArgb(37, 37, 38).ToArgb()
+    $darkTextColor = [Drawing.Color]::FromArgb(230, 230, 230).ToArgb()
+    foreach ($strip in @($menu, $fileMenu.DropDown, $contextMenu)) {
+        if ($strip.BackColor.ToArgb() -ne $darkMenuColor -or
+            $strip.Renderer.ColorTable.MenuStripGradientBegin.ToArgb() -ne $darkMenuColor) {
+            throw "Menu background stayed light: $($strip.GetType().Name)"
+        }
+    }
+    if ($fileMenu.ForeColor.ToArgb() -ne $darkTextColor -or
+        $openItem.ForeColor.ToArgb() -ne $darkTextColor) {
+        throw 'Menu text stayed dark in dark mode.'
+    }
+    $menuTheme.Apply($false, [Windows.Forms.ToolStrip[]]@($menu, $contextMenu))
+    if ($menu.RenderMode -ne $originalMode -or
+        $menu.BackColor.ToArgb() -eq $darkMenuColor -or
+        $fileMenu.DropDown.BackColor.ToArgb() -eq $darkMenuColor -or
+        $fileMenu.ForeColor.ToArgb() -eq $darkTextColor) {
+        throw 'Menu did not return to the light palette.'
+    }
+}
+finally { $contextMenu.Dispose(); $menu.Dispose() }
 
 $cases = @(
     @('if ready:', 4),
@@ -134,4 +224,4 @@ try {
 }
 finally { $editor.Dispose() }
 
-Write-Host "PASS: SPython Enter indentation ($($cases.Count + 1) cases), both editor palettes, and output themes."
+Write-Host "PASS: SPython indentation ($($cases.Count + 1) cases), $($darkProvider.SyntaxModes.Count) dark syntax modes, editor, menu, and output themes."

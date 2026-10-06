@@ -458,13 +458,14 @@ namespace VisualPascalABC
         }
 
         private ToolStripMenuItem darkThemeMenuItem;
+        private readonly ToolStripThemeManager toolStripThemeManager = new ToolStripThemeManager();
 
         private void InitializeThemeMenu()
         {
             darkThemeMenuItem = new ToolStripMenuItem(
                 PascalABCCompiler.StringResourcesLanguage.CurrentLanguageName == "Русский"
-                    ? "Тёмная тема редактора и вывода"
-                    : "Dark editor and output theme");
+                    ? "Тёмная тема интерфейса"
+                    : "Dark interface theme");
             darkThemeMenuItem.CheckOnClick = true;
             darkThemeMenuItem.Checked = UserOptions.DarkTheme;
             darkThemeMenuItem.CheckedChanged += delegate
@@ -482,6 +483,10 @@ namespace VisualPascalABC
             Color background = dark ? Color.FromArgb(30, 30, 30) : Color.White;
             Color foreground = dark ? Color.FromArgb(212, 212, 212) : Color.Black;
 
+            toolStripThemeManager.Apply(dark, menuStrip1, toolStrip1, statusStrip1,
+                contextMenuStrip1, cmEditor, cmBreakpointCondition, cm_Designer);
+            toolStripPanel.BackColor = dark ? Color.FromArgb(37, 37, 38) : SystemColors.Control;
+
             OutputWindow.ApplyTheme(dark);
             foreach (RichTextBox output in OutputTextBoxs.Values)
             {
@@ -492,19 +497,30 @@ namespace VisualPascalABC
                 CompilerConsoleWindow.ApplyTheme(dark);
 
             foreach (CodeFileDocumentControl document in OpenDocuments.Values)
-            {
-                if (String.Equals(Path.GetExtension(document.FileName), ".pys", StringComparison.OrdinalIgnoreCase))
-                    document.SetHighlightingStrategyForFile(document.FileName);
-            }
+                document.SetHighlightingStrategyForFile(document.FileName);
+        }
+
+        internal ICSharpCode.TextEditor.Document.IHighlightingStrategy GetEditorHighlighter(string fileName)
+        {
+            var manager = ICSharpCode.TextEditor.Document.HighlightingManager.Manager;
+            var normal = manager.FindHighlighterForFile(fileName);
+            if (String.Equals(Path.GetExtension(fileName), ".pys", StringComparison.OrdinalIgnoreCase))
+                return UserOptions.DarkTheme ? normal : manager.FindHighlighter("SpythonLight");
+            return UserOptions.DarkTheme
+                ? manager.FindHighlighter(DarkSyntaxModeProvider.DarkName(normal.Name))
+                : normal;
         }
 
         private void SetFiltersAndHighlighting()
         {
+            var providers = new List<ICSharpCode.TextEditor.Document.ISyntaxModeFileProvider>();
+            providers.Add(new ICSharpCode.TextEditor.Document.ResourceSyntaxModeProvider());
             string hdir = Path.Combine(Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().ManifestModule.FullyQualifiedName), "Highlighting");
             if (Directory.Exists(hdir))
             {
                 FileSyntaxProvider = new ICSharpCode.TextEditor.Document.FileSyntaxModeProvider(hdir+Path.DirectorySeparatorChar);
                 ICSharpCode.TextEditor.Document.HighlightingManager.Manager.AddSyntaxModeFileProvider(FileSyntaxProvider);
+                providers.Add(FileSyntaxProvider);
                 string Filter = "", AllFilter = "";
                 foreach (ICSharpCode.TextEditor.Document.SyntaxMode sm in FileSyntaxProvider.SyntaxModes)
                 {
@@ -513,6 +529,8 @@ namespace VisualPascalABC
                 }
                 saveFileDialog1.Filter = openFileDialog1.Filter = Tools.FinishMakeFilter(Filter, AllFilter);
             }
+            ICSharpCode.TextEditor.Document.HighlightingManager.Manager.AddSyntaxModeFileProvider(
+                new DarkSyntaxModeProvider(providers.ToArray()));
         }
 
         private void Form1_FormClosed(object sender, FormClosedEventArgs e)

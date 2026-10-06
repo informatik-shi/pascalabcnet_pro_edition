@@ -118,9 +118,7 @@ namespace VisualPascalABC
         public void SetHighlightingStrategyForFile(string ForFile)
         {
             bool isSPython = String.Equals(Path.GetExtension(ForFile), ".pys", StringComparison.OrdinalIgnoreCase);
-            TextEditor.Document.HighlightingStrategy = isSPython && !MainForm.UserOptions.DarkTheme
-                ? ICSharpCode.TextEditor.Document.HighlightingManager.Manager.FindHighlighter("SpythonLight")
-                : ICSharpCode.TextEditor.Document.HighlightingManager.Manager.FindHighlighterForFile(ForFile);
+            TextEditor.Document.HighlightingStrategy = MainForm.GetEditorHighlighter(ForFile);
             TextEditor.Document.FormattingStrategy =
                 isSPython
                     ? (ICSharpCode.TextEditor.Document.IFormattingStrategy)new SPythonFormattingStrategy()

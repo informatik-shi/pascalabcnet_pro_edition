@@ -241,6 +241,8 @@
     <Compile Include="DockContent\OutputWindowForm.cs">
       <SubType>Form</SubType>
     </Compile>
+    <Compile Include="DockContent\DarkSyntaxModeProvider.cs" />
+    <Compile Include="DockContent\ToolStripThemeManager.cs" />
     <Compile Include="DockContent\OutputWindowForm.Designer.cs">
       <DependentUpon>OutputWindowForm.cs</DependentUpon>
     </Compile>
