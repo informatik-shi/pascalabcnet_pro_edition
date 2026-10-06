@@ -10,6 +10,53 @@ namespace Languages.SPython.Frontend.Converters
 
         public override void visit(method_call _method_call)
         {
+            if (_method_call.dereferencing_value is dot_node builtin &&
+                builtin.left is ident module && module.name == "SPythonSystem" &&
+                builtin.right is ident function &&
+                (function.name == "open" || function.name == "!open_binary") &&
+                _method_call.parameters is expression_list openArguments &&
+                openArguments.expressions.Any(e => e is name_assign_expr))
+            {
+                string[] names = { "file", "mode", "buffering", "encoding", "errors", "newline" };
+                expression[] slots = new expression[6];
+                int positional = 0;
+                int last = -1;
+                bool namedStarted = false;
+                foreach (expression argument in openArguments.expressions)
+                {
+                    int index;
+                    expression value;
+                    if (argument is name_assign_expr named)
+                    {
+                        namedStarted = true;
+                        index = Array.IndexOf(names, named.name.name);
+                        if (index < 0)
+                            throw new SPythonSyntaxVisitorError("UNKNOWN_NAME_{0}", argument.source_context, named.name.name);
+                        value = named.expr;
+                    }
+                    else
+                    {
+                        if (namedStarted)
+                            throw new SPythonSyntaxVisitorError("ARG_AFTER_KWARGS", argument.source_context);
+                        index = positional++;
+                        value = argument;
+                    }
+                    if (index >= slots.Length || slots[index] != null)
+                        throw new SPythonSyntaxVisitorError("ARG_AFTER_KWARGS", argument.source_context);
+                    slots[index] = value;
+                    last = Math.Max(last, index);
+                }
+                if (slots[0] == null)
+                    throw new SPythonSyntaxVisitorError("UNKNOWN_NAME_{0}", _method_call.source_context, "file");
+                expression[] defaults = { null, new string_const("r"), new int32_const(-1),
+                    new nil_const(), new nil_const(), new nil_const() };
+                expression_list normalized = new expression_list();
+                for (int i = 0; i <= last; i++)
+                    normalized.Add(slots[i] ?? defaults[i]);
+                _method_call.parameters = normalized;
+                base.visit(_method_call);
+                return;
+            }
             if (_method_call.parameters is expression_list exprl) {
                 expression_list args = new expression_list();
                 expression_list kwargs_names_array = new expression_list();

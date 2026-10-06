@@ -30,6 +30,7 @@ namespace Languages.SPython.Frontend.Data
         {
             { "time", "time1" },
             { "random", "random1" },
+            { "struct", "struct1" },
         };
 
         public Dictionary<string, string> SpecialModulesAliases => specialModulesAliases;

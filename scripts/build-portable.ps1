@@ -1,13 +1,21 @@
 [CmdletBinding()]
 param(
     [switch]$SkipBuild,
-    [string]$DotnetRoot = ''
+    [string]$DotnetRoot = '',
+    [string]$OutputRoot = ''
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-$release = Join-Path $root 'Release'
+$release = if ($OutputRoot) {
+    [IO.Path]::GetFullPath((Join-Path $root $OutputRoot))
+} else {
+    Join-Path $root 'Release'
+}
+if (-not $release.StartsWith($root + '\', [StringComparison]::OrdinalIgnoreCase)) {
+    throw "Portable output must stay inside the repository: $release"
+}
 $packageName = 'PascalABCNET-Portable-win-x64'
 $stage = [IO.Path]::GetFullPath((Join-Path $release $packageName))
 $zip = [IO.Path]::GetFullPath((Join-Path $release ($packageName + '.zip')))
@@ -34,12 +42,12 @@ function Assert-File([string]$Path) {
 
 if (-not $SkipBuild) {
     & $dotnet build (Join-Path $root 'PascalABCNET.sln') --configuration Release `
-        -p:PABCNET_LEGACY_ONLY=true --disable-build-servers --nologo -v:q
+        -p:PABCNET_LEGACY_ONLY=true -p:NuGetAudit=false --disable-build-servers --nologo -v:q --tl:off
     if ($LASTEXITCODE -ne 0) { throw 'Legacy IDE build failed.' }
 
     & (Join-Path $PSScriptRoot 'build-net10-runtime.ps1') -Configuration Release
     & $dotnet build (Join-Path $root 'VisualPlugins\CompileNet10\CompileNet10.csproj') `
-        --configuration Release --disable-build-servers --nologo -v:q
+        --configuration Release -p:NuGetAudit=false --disable-build-servers --nologo -v:q --tl:off
     if ($LASTEXITCODE -ne 0) { throw '.NET 10 IDE plugin build failed.' }
 
     $pcuBuildDirectory = Join-Path $root 'ReleaseGenerators'
@@ -56,6 +64,8 @@ if (-not $SkipBuild) {
         if ($LASTEXITCODE -ne 0) { throw 'SPython standard units build failed.' }
         & (Join-Path $root 'bin-net10\pabcnetcclear.exe') 'RebuildStandartModulesNet10.pas'
         if ($LASTEXITCODE -ne 0) { throw '.NET 10 standard units build failed.' }
+        & (Join-Path $root 'bin-net10\pabcnetcclear.exe') 'RebuildStandartModulesSPython.pas'
+        if ($LASTEXITCODE -ne 0) { throw '.NET 10 SPython standard units build failed.' }
         foreach ($extension in @('.exe', '.exe.config', '.pdb', '.runtimeconfig.json')) {
             $generated = Join-Path $root ('ReleaseGenerators\RebuildStandartModulesNet10' + $extension)
             if (Test-Path -LiteralPath $generated) { Remove-Item -LiteralPath $generated -Force }

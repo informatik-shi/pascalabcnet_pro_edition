@@ -1,0 +1,81 @@
+import struct
+from struct import unpack
+
+text_file = open('.codex-build/file-io-test.txt', encoding='utf-8')
+print(text_file.readline() == 'one\n')
+print(text_file.tell() == 5)
+print(text_file.read(3) == 'two')
+print(text_file.read() == '\nthree\n')
+text_file.seek(0)
+print(text_file.read() == 'one\ntwo\nthree\n')
+text_file.close()
+print(text_file.closed)
+
+unicode_file = open('.codex-build/file-io-unicode.txt', encoding='utf-8')
+print(unicode_file.read(1) == 'é')
+print(unicode_file.tell() == 2)
+unicode_file.seek(2)
+print(unicode_file.read() == '\n')
+unicode_file.close()
+
+raw_text = open('.codex-build/file-io-test.txt', newline='')
+print(raw_text.read() == 'one\r\ntwo\rthree\n')
+raw_text.close()
+
+cr_text = open('.codex-build/file-io-test.txt', newline='\r')
+print(cr_text.readline() == 'one\r')
+cr_text.close()
+
+text_file = open('.codex-build/file-io-test.txt')
+line_count = 0
+for line in text_file:
+    line_count += 1
+print(line_count == 3)
+text_file.close()
+
+binary_file = open(file='.codex-build/file-io-test.bin', mode='br')
+data = binary_file.read()
+print(len(data) == 8)
+print(data[0] == 42)
+print(data[-1] == 97)
+print(data.hex() == '2a000000feff0a61')
+print(struct.calcsize('<Ih') == 6)
+print(struct.calcsize('@bh') == 4)
+layout = struct.Struct('<Ih')
+print(layout.size == 6)
+binary_file.seek(0)
+first, second = struct.unpack('<Ih', binary_file.read(6))
+print(int(first) == 42)
+print(int(second) == -2)
+binary_file.seek(0)
+print(int(layout.unpack(binary_file.read(6))[0]) == 42)
+binary_file.seek(0)
+print(int(unpack('<B', binary_file.read(1))[0]) == 42)
+binary_file.seek(0)
+print(int(struct.unpack_from('<h', binary_file.read(), 4)[0]) == -2)
+text_bytes = struct.unpack_from('2s', data, 0)[0]
+print(str(text_bytes) == "b'*\\x00'")
+last_character = struct.unpack_from('c', data, 7)[0]
+print(str(last_character) == "b'a'")
+print(int(struct.unpack_from('>H', data, 6)[0]) == 2657)
+records = struct.iter_unpack('<H', data)
+print(len(records) == 4)
+print(int(records[0][0]) == 42)
+print(int(records[3][0]) == 24842)
+print(struct.calcsize('>2h3s') == 7)
+binary_file.seek(-1, 2)
+print(binary_file.read().decode('ascii') == 'a')
+binary_file.close()
+print(binary_file.closed)
+
+float_file = open('.codex-build/file-io-float.bin', 'rb')
+float_values = struct.unpack('<f d e', float_file.read())
+print(float(float_values[0]) == 1.5)
+print(float(float_values[1]) == 1.5)
+print(float(float_values[2]) == 1.5)
+float_file.close()
+
+pascal_file = open('.codex-build/file-io-pascal.bin', 'rb')
+pascal_text = struct.unpack('8p', pascal_file.read())[0]
+print(str(pascal_text) == "b'Hello'")
+pascal_file.close()

@@ -1,7 +1,7 @@
 # Воспроизводимая сборка portable-версии с редактором SPython
 
 Готовый архив доступен в [релизах GitHub](https://github.com/informatik-shi/pascalabcnet_pro_edition/releases):
-[скачать portable-сборку для Windows x64](https://github.com/informatik-shi/pascalabcnet_pro_edition/releases/download/portable-2026-10-06.3/PascalABCNET-Portable-win-x64.zip).
+[скачать portable-сборку для Windows x64](https://github.com/informatik-shi/pascalabcnet_pro_edition/releases/download/portable-2026-10-06.4/PascalABCNET-Portable-win-x64.zip).
 
 ## Что находится в сборке
 
@@ -29,6 +29,47 @@
 `Work\PascalABCNET.ini` внутри распакованной portable-папки. Запускайте
 portable-версию через `PascalABCNET.cmd`: он указывает IDE путь к этой папке.
 
+## Чтение файлов в SPython
+
+Для текстовых файлов доступны `open(path)`, режимы `'r'`, `'rt'`, `'tr'`,
+аргументы `encoding`, `errors`, `newline`, методы `read`, `readline`,
+`readlines`, `seek`, `tell`, `close` и перебор строк в `for`. При `newline=None`
+окончания строк CRLF и CR преобразуются в LF. Пример:
+
+```python
+f = open('notes.txt', encoding='utf-8')
+for line in f:
+    print(line)
+f.close()
+```
+
+Для бинарного чтения укажите литерал режима `'rb'` или `'br'`. Метод `read`
+возвращает `bytes`; доступны `len(data)`, индексирование (включая отрицательные
+индексы), `data.hex()`, `data.decode('utf-8')` и перебор байтов.
+
+```python
+import struct
+
+f = open('header.bin', 'rb')
+header = f.read(6)
+number, offset = struct.unpack('<Ih', header)
+print(int(number), int(offset))
+f.close()
+```
+
+Модуль `struct` предоставляет `calcsize`, `unpack`, `unpack_from`,
+`iter_unpack` и `Struct(format)`. Поддержаны префиксы порядка байтов
+`@ = < > !` и коды чтения `x c b B ? h H i I l L q Q n N P e f d s p`.
+`unpack` возвращает массив значений типа `object`, поэтому перед арифметикой
+число нужно преобразовать через `int()`, `bigint()` или `float()`.
+
+Сейчас SPython не разбирает конструкцию `with`, поэтому файл нужно закрывать
+через `close()`. Запись (`w`, `a`, `+`), режим из переменной, срезы `bytes` и
+полное поведение `tell`/`seek` для UTF-16 и дополнительных кодировок пока не
+реализованы. Смещения для UTF-8 и однобайтового текста проверены тестами.
+Эти ограничения связаны со статической типизацией и текущим парсером SPython;
+код для чтения с буквальным режимом работает без установки Python.
+
 ## Подготовка машины сборки
 
 1. Установите на Windows x64 .NET 10 SDK и .NET 10 Windows Desktop Runtime.
@@ -49,6 +90,8 @@ portable-версию через `PascalABCNET.cmd`: он указывает IDE
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\build-portable.ps1
 powershell.exe -STA -NoProfile -ExecutionPolicy Bypass -File scripts\test-spython-editor.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\test-spython-file-io.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\test-spython-file-io.ps1 -Runtime net10
 ```
 
 Если SDK установлен в нестандартный каталог, передайте `-DotnetRoot`,
@@ -56,6 +99,8 @@ powershell.exe -STA -NoProfile -ExecutionPolicy Bypass -File scripts\test-spytho
 компилятора, пересоздаёт стандартные `.pcu`, копирует нужные ресурсы и
 Runtime, затем создаёт ZIP. Файл `bin\Lib\PABCRtl.dll` входит в ветку как
 готовая зависимость; сценарий не собирает эту DLL заново.
+Если старая portable-версия запущена из `Release`, укажите
+`-OutputRoot '.codex-build\release-next'`, чтобы не удалять используемую папку.
 
 Тестовый сценарий запускайте после сборки. Он проверяет 24 сценария Enter
 через настоящий компонент редактора, обе палитры `.pys`, 20 тёмных режимов
@@ -72,6 +117,8 @@ Runtime, затем создаёт ZIP. Файл `bin\Lib\PABCRtl.dll` вход�
 Expand-Archive -LiteralPath Release\PascalABCNET-Portable-win-x64.zip -DestinationPath .\portable-smoke
 & '.\portable-smoke\PascalABCNET-Portable-win-x64\PascalABCNET.cmd'
 powershell.exe -STA -NoProfile -ExecutionPolicy Bypass -File scripts\test-spython-editor.ps1 -BinDirectory '.\portable-smoke\PascalABCNET-Portable-win-x64\bin'
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\test-spython-file-io.ps1 -Runtime classic -PackageRoot '.\portable-smoke\PascalABCNET-Portable-win-x64'
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\test-spython-file-io.ps1 -Runtime net10 -PackageRoot '.\portable-smoke\PascalABCNET-Portable-win-x64'
 ```
 
 В интерактивном терминале проверьте оба компилятора из распакованной папки:
@@ -117,12 +164,12 @@ IDE снова, проверьте сохранение выбранной те�
 этого документа. После успешной проверки зафиксируйте изменения в ветке
 `portable` и отправьте её на GitHub. Для каждого нового архива создавайте
 новый тег и релиз; уже опубликованный архив не заменяйте. Пример для версии
-`portable-2026-10-06.3`:
+`portable-2026-10-06.4`:
 
 ```powershell
 git push origin portable
-git tag portable-2026-10-06.3
-git push origin portable-2026-10-06.3
+git tag portable-2026-10-06.4
+git push origin portable-2026-10-06.4
 $zip = 'Release\PascalABCNET-Portable-win-x64.zip'
 $hash = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
 "$hash  PascalABCNET-Portable-win-x64.zip" | Set-Content -Encoding ascii Release\SHA256SUMS.txt
@@ -173,6 +220,15 @@ $hash = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant
   выбора темы.
 - `scripts\build-portable.ps1` и `scripts\test-spython-editor.ps1` — упаковка
   и воспроизводимая проверка.
+- `bin\Lib\SPython\SPythonSystem.pas` — текстовые и бинарные файлы, тип `bytes`.
+- `bin\Lib\SPython\struct1.pas` — чтение форматов Python `struct`.
+- `AdditionalLanguages\SPython\SyntaxTreeConverters\SPythonStandardTreeConverter\OpenModeVisitor.cs`
+  — выбор типа `read()` по буквальному режиму `open(..., 'rb')`.
+- `AdditionalLanguages\SPython\SPythonLanguageInfo\SPythonLanguageInformation.cs`
+  — соответствие имени Python `struct` модулю Pascal `struct1`.
+- `ReleaseGenerators\RebuildStandartModulesSPython.pas` — пересборка `struct1.pcu`.
+- `scripts\test-spython-file-io.ps1` — создание тестовых файлов и 37 проверок
+  чтения с обычным и .NET 10 компилятором.
 
 Папка `Release` не хранится в Git: итоговый ZIP нужно собрать локально после
 клонирования ветки.

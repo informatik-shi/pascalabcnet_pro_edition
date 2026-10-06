@@ -85,6 +85,10 @@ namespace Languages.SPython.Frontend.Converters
 
             ncv.ProcessNode(root);
 
+            // A literal 'rb' mode gives the file a binary read() result type.
+            if (!forIntellisense)
+                new OpenModeVisitor().ProcessNode(root);
+
             // замена типов из SPython на типы из PascalABC.NET
             if (!forIntellisense)
                 new TypeCorrectVisitor().ProcessNode(root);

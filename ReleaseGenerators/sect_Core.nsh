@@ -326,6 +326,7 @@
     File ..\bin\Lib\SPython\random1.pcu
     File ..\bin\Lib\SPython\itertools.pcu
     File ..\bin\Lib\SPython\math.pcu
+    File ..\bin\Lib\SPython\struct1.pcu
 
     ${AddFile} "SPythonHidden.pcu"
     ${AddFile} "SPythonSystem.pcu"
@@ -334,6 +335,7 @@
     ${AddFile} "random1.pcu"
     ${AddFile} "itertools.pcu"
     ${AddFile} "math.pcu"
+    ${AddFile} "struct1.pcu"
 
     SetOutPath "$INSTDIR\Doc"
     File ..\doc\NumLibABC.pdf
@@ -552,6 +554,7 @@
     File ..\bin\Lib\SPython\SPythonHidden.pas
     File ..\bin\Lib\SPython\SPythonSystem.pas
     File ..\bin\Lib\SPython\time1.pas
+    File ..\bin\Lib\SPython\struct1.pas
 
     File ..\bin\Lib\SPython\SPythonSystemPys.pys
     File ..\bin\Lib\SPython\random1.pys
@@ -561,6 +564,7 @@
     ${AddFile} "SPythonHidden.pas"
     ${AddFile} "SPythonSystem.pas"
     ${AddFile} "time1.pas"
+    ${AddFile} "struct1.pas"
 
     ${AddFile} "SPythonSystemPys.pys"
     ${AddFile} "random1.pys"

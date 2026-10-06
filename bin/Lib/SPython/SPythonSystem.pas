@@ -17,6 +17,78 @@ function input(): string;
 
 function input(s: string): string;
 
+// Python-style read-only streams. Literal binary modes are selected by the
+// SPython compiler so that read() has the right static result type.
+type
+  bytes = class(IEnumerable<integer>)
+  private
+    data: array of byte;
+    function GetItem(index: integer): integer;
+  public
+    constructor Create(value: array of byte);
+    property ByIndex[index: integer]: integer read GetItem; default;
+    property Length: integer read data.Length;
+    function to_array(): array of byte;
+    function decode(encoding: string := 'utf-8'; errors: string := 'strict'): string;
+    function hex(): string;
+    function ToString(): string; override;
+    function GetEnumerator(): IEnumerator<integer>;
+    function System.Collections.IEnumerable.GetEnumerator(): System.Collections.IEnumerator := GetEnumerator();
+  end;
+
+  PythonBinaryFile = class(System.IDisposable, IEnumerable<bytes>)
+  private
+    stream: System.IO.FileStream;
+    function GetClosed(): boolean;
+    function Lines(): sequence of bytes;
+  public
+    constructor Create(path: string; mode: string; buffering: integer);
+    function read(size: integer := -1): bytes;
+    function readline(size: integer := -1): bytes;
+    function readlines(hint: integer := -1): array of bytes;
+    function seek(offset: integer; whence: integer := 0): integer;
+    function tell(): integer;
+    procedure close();
+    procedure Dispose();
+    function readable(): boolean;
+    function seekable(): boolean;
+    property closed: boolean read GetClosed;
+    function GetEnumerator(): IEnumerator<bytes>;
+    function System.Collections.IEnumerable.GetEnumerator(): System.Collections.IEnumerator := GetEnumerator();
+  end;
+
+  PythonTextFile = class(System.IDisposable, IEnumerable<string>)
+  private
+    stream: System.IO.FileStream;
+    reader: System.IO.StreamReader;
+    textEncoding: System.Text.Encoding;
+    bytePosition: integer;
+    newlineMode: string;
+    function ReadCharacter(): integer;
+    function GetClosed(): boolean;
+    function Lines(): sequence of string;
+  public
+    constructor Create(path: string; mode: string; buffering: integer;
+      encoding: string; errors: string; newline: string);
+    function read(size: integer := -1): string;
+    function readline(size: integer := -1): string;
+    function readlines(hint: integer := -1): array of string;
+    function seek(offset: integer; whence: integer := 0): integer;
+    function tell(): integer;
+    procedure close();
+    procedure Dispose();
+    function readable(): boolean;
+    function seekable(): boolean;
+    property closed: boolean read GetClosed;
+    function GetEnumerator(): IEnumerator<string>;
+    function System.Collections.IEnumerable.GetEnumerator(): System.Collections.IEnumerator := GetEnumerator();
+  end;
+
+function open(path: string; mode: string := 'r'; buffering: integer := -1;
+  encoding: string := nil; errors: string := nil; newline: string := nil): PythonTextFile;
+function !open_binary(path: string; mode: string := 'rb'; buffering: integer := -1;
+  encoding: string := nil; errors: string := nil; newline: string := nil): PythonBinaryFile;
+
 ///--
 type kwargs_gen<T> = class
       public !kwargs: Dictionary<string, T>
@@ -57,6 +129,8 @@ function int(val: string): integer;
 
 function int(val: real): integer;
 
+function int(obj: object): integer;
+
 function int(b: boolean): integer;
 
 function str(val: object): string;
@@ -64,6 +138,8 @@ function str(val: object): string;
 function float(val: string): real;
 
 function float(x: integer): real;
+
+function float(x: object): real;
 
 function bool(val: integer): boolean;
 
@@ -495,6 +571,7 @@ function len<T>(st: &set<T>): integer;
 function len<K, V>(dct: dict<K, V>): integer;
 function len<T>(arr: array of T): integer;
 function len(s: string): integer;
+function len(value: bytes): integer;
 
 function sorted<T>(lst: list<T>): list<T>;
 
@@ -513,6 +590,7 @@ function !pow(x: integer; y: real): real;
 function !pow(x: real; y: real): real;
 
 function bigint(x: integer): biginteger;
+function bigint(x: object): biginteger;
 
 function !pow_recursion(x, n: integer): integer;
 
@@ -590,6 +668,332 @@ function !empty_dict(): empty_dict;
 
 implementation
 
+function GetPythonEncoding(name, errors: string): System.Text.Encoding;
+begin
+  if (name = nil) or (name = '') then
+    Result := System.Text.Encoding.Default
+  else if (name.ToLower() = 'utf-8') or (name.ToLower() = 'utf8') then
+    Result := System.Text.Encoding.UTF8
+  else if (name.ToLower() = 'latin-1') or (name.ToLower() = 'latin1') then
+    Result := System.Text.Encoding.GetEncoding('iso-8859-1')
+  else
+    Result := System.Text.Encoding.GetEncoding(name);
+  Result := System.Text.Encoding(Result.Clone());
+  if (errors = nil) or (errors = 'strict') then
+    Result.DecoderFallback := System.Text.DecoderFallback.ExceptionFallback
+  else if errors = 'replace' then
+    Result.DecoderFallback := System.Text.DecoderFallback.ReplacementFallback
+  else if errors = 'ignore' then
+    Result.DecoderFallback := new System.Text.DecoderReplacementFallback('')
+  else
+    raise new System.ArgumentException('unknown error handler: ' + errors);
+end;
+
+constructor bytes.Create(value: array of byte);
+begin
+  if value = nil then data := new byte[0] else data := value;
+end;
+
+function bytes.GetItem(index: integer): integer;
+begin
+  if index < 0 then index += data.Length;
+  Result := data[index];
+end;
+
+function bytes.to_array(): array of byte := data;
+
+function bytes.GetEnumerator(): IEnumerator<integer>;
+begin
+  var values := new System.Collections.Generic.List<integer>();
+  foreach var value in data do values.Add(value);
+  Result := values.GetEnumerator();
+end;
+
+function bytes.decode(encoding: string; errors: string): string :=
+  GetPythonEncoding(encoding, errors).GetString(data);
+
+function bytes.hex(): string := System.BitConverter.ToString(data).Replace('-', '').ToLowerInvariant();
+
+function bytes.ToString(): string;
+begin
+  var b := new System.Text.StringBuilder('b''');
+  foreach var x in data do
+    if x = 39 then b.Append('\''')
+    else if x = 92 then b.Append('\\')
+    else if x = 10 then b.Append('\n')
+    else if x = 13 then b.Append('\r')
+    else if x = 9 then b.Append('\t')
+    else if (x >= 32) and (x < 127) then b.Append(char(x))
+    else b.Append('\x' + x.ToString('x2'));
+  b.Append('''');
+  Result := b.ToString();
+end;
+
+function CheckReadMode(mode: string; binary: boolean): string;
+begin
+  if (mode = nil) or (mode = '') then mode := 'r';
+  if (mode <> 'r') and (mode <> 'rt') and (mode <> 'tr') and
+     (mode <> 'rb') and (mode <> 'br') then
+    raise new System.ArgumentException('unsupported file mode: ' + mode);
+  if binary and (mode <> 'rb') and (mode <> 'br') then
+    raise new System.ArgumentException('binary file mode must be rb');
+  if not binary and ((mode = 'rb') or (mode = 'br')) then
+    raise new System.ArgumentException('binary file mode requires a binary open call');
+  Result := mode;
+end;
+
+constructor PythonBinaryFile.Create(path: string; mode: string; buffering: integer);
+begin
+  CheckReadMode(mode, true);
+  if buffering < -1 then raise new System.ArgumentException('invalid buffering size');
+  stream := new System.IO.FileStream(path, System.IO.FileMode.Open,
+    System.IO.FileAccess.Read, System.IO.FileShare.ReadWrite);
+end;
+
+function PythonBinaryFile.GetClosed(): boolean := stream = nil;
+
+function PythonBinaryFile.read(size: integer): bytes;
+begin
+  if closed then raise new System.ObjectDisposedException('file');
+  if size < 0 then size := integer(stream.Length - stream.Position);
+  var data := new byte[size];
+  var count := 0;
+  while count < size do
+  begin
+    var n := stream.Read(data, count, size - count);
+    if n = 0 then break;
+    count += n;
+  end;
+  if count <> size then System.Array.Resize(data, count);
+  Result := new bytes(data);
+end;
+
+function PythonBinaryFile.readline(size: integer): bytes;
+begin
+  if closed then raise new System.ObjectDisposedException('file');
+  var data := new System.Collections.Generic.List<byte>();
+  while (size < 0) or (data.Count < size) do
+  begin
+    var n := stream.ReadByte();
+    if n < 0 then break;
+    data.Add(byte(n));
+    if n = 10 then break;
+  end;
+  Result := new bytes(data.ToArray());
+end;
+
+function PythonBinaryFile.readlines(hint: integer): array of bytes;
+begin
+  var lines := new System.Collections.Generic.List<bytes>();
+  var total := 0;
+  while true do
+  begin
+    var line := readline();
+    if line.Length = 0 then break;
+    lines.Add(line);
+    total += line.Length;
+    if (hint > 0) and (total >= hint) then break;
+  end;
+  Result := lines.ToArray();
+end;
+
+function PythonBinaryFile.Lines(): sequence of bytes;
+begin
+  while true do
+  begin
+    var line := readline();
+    if line.Length = 0 then break;
+    yield line;
+  end;
+end;
+
+function PythonBinaryFile.GetEnumerator(): IEnumerator<bytes> := Lines().GetEnumerator();
+
+function PythonBinaryFile.seek(offset: integer; whence: integer): integer;
+begin
+  if closed then raise new System.ObjectDisposedException('file');
+  if (whence < 0) or (whence > 2) then raise new System.ArgumentException('invalid whence');
+  Result := integer(stream.Seek(offset, System.IO.SeekOrigin(whence)));
+end;
+
+function PythonBinaryFile.tell(): integer;
+begin
+  if closed then raise new System.ObjectDisposedException('file');
+  Result := integer(stream.Position);
+end;
+
+procedure PythonBinaryFile.close();
+begin
+  if stream <> nil then
+  begin
+    stream.Dispose();
+    stream := nil;
+  end;
+end;
+
+procedure PythonBinaryFile.Dispose() := close();
+function PythonBinaryFile.readable(): boolean := not closed;
+function PythonBinaryFile.seekable(): boolean := not closed;
+
+constructor PythonTextFile.Create(path: string; mode: string; buffering: integer;
+  encoding: string; errors: string; newline: string);
+begin
+  CheckReadMode(mode, false);
+  if buffering = 0 then raise new System.ArgumentException('cannot have unbuffered text I/O');
+  if buffering < -1 then raise new System.ArgumentException('invalid buffering size');
+  if (newline <> nil) and (newline <> '') and (newline <> #10) and
+     (newline <> #13) and (newline <> #13#10) then
+    raise new System.ArgumentException('illegal newline value');
+  newlineMode := newline;
+  textEncoding := GetPythonEncoding(encoding, errors);
+  stream := new System.IO.FileStream(path, System.IO.FileMode.Open,
+    System.IO.FileAccess.Read, System.IO.FileShare.ReadWrite);
+  reader := new System.IO.StreamReader(stream, textEncoding, false);
+  bytePosition := 0;
+end;
+
+function PythonTextFile.GetClosed(): boolean := reader = nil;
+
+function PythonTextFile.ReadCharacter(): integer;
+begin
+  Result := reader.Read();
+  if Result >= 0 then bytePosition += textEncoding.GetByteCount(char(Result).ToString());
+  if (Result = 13) and (newlineMode = nil) then
+  begin
+    if reader.Peek() = 10 then
+    begin
+      reader.Read();
+      bytePosition += textEncoding.GetByteCount(#10);
+    end;
+    Result := 10;
+  end;
+end;
+
+function PythonTextFile.read(size: integer): string;
+begin
+  if closed then raise new System.ObjectDisposedException('file');
+  var b := new System.Text.StringBuilder();
+  while (size < 0) or (b.Length < size) do
+  begin
+    var c := ReadCharacter();
+    if c < 0 then break;
+    b.Append(char(c));
+  end;
+  Result := b.ToString();
+end;
+
+function PythonTextFile.readline(size: integer): string;
+begin
+  if closed then raise new System.ObjectDisposedException('file');
+  var b := new System.Text.StringBuilder();
+  while (size < 0) or (b.Length < size) do
+  begin
+    var c := ReadCharacter();
+    if c < 0 then break;
+    if newlineMode = nil then
+    begin
+      b.Append(char(c));
+      if c = 10 then break;
+      continue;
+    end;
+    b.Append(char(c));
+    if newlineMode = '' then
+    begin
+      if c = 13 then
+      begin
+        if (reader.Peek() = 10) and ((size < 0) or (b.Length < size)) then
+        begin
+          b.Append(char(reader.Read()));
+          bytePosition += textEncoding.GetByteCount(#10);
+        end;
+        break;
+      end;
+      if c = 10 then break;
+    end
+    else if newlineMode = #13#10 then
+    begin
+      if (c = 13) and (reader.Peek() = 10) and
+         ((size < 0) or (b.Length < size)) then
+      begin
+        b.Append(char(reader.Read()));
+        bytePosition += textEncoding.GetByteCount(#10);
+        break;
+      end;
+    end
+    else if (newlineMode = #10) and (c = 10) or
+            (newlineMode = #13) and (c = 13) then break;
+  end;
+  Result := b.ToString();
+end;
+
+function PythonTextFile.readlines(hint: integer): array of string;
+begin
+  var lines := new System.Collections.Generic.List<string>();
+  var total := 0;
+  while true do
+  begin
+    var line := readline();
+    if line = '' then break;
+    lines.Add(line);
+    total += line.Length;
+    if (hint > 0) and (total >= hint) then break;
+  end;
+  Result := lines.ToArray();
+end;
+
+function PythonTextFile.Lines(): sequence of string;
+begin
+  while true do
+  begin
+    var line := readline();
+    if line = '' then break;
+    yield line;
+  end;
+end;
+
+function PythonTextFile.GetEnumerator(): IEnumerator<string> := Lines().GetEnumerator();
+
+function PythonTextFile.seek(offset: integer; whence: integer): integer;
+begin
+  if closed then raise new System.ObjectDisposedException('file');
+  if (whence < 0) or (whence > 2) then raise new System.ArgumentException('invalid whence');
+  reader.DiscardBufferedData();
+  Result := integer(stream.Seek(offset, System.IO.SeekOrigin(whence)));
+  bytePosition := Result;
+end;
+
+function PythonTextFile.tell(): integer;
+begin
+  if closed then raise new System.ObjectDisposedException('file');
+  Result := bytePosition;
+end;
+
+procedure PythonTextFile.close();
+begin
+  if reader <> nil then
+  begin
+    reader.Dispose();
+    reader := nil;
+    stream := nil;
+  end;
+end;
+
+procedure PythonTextFile.Dispose() := close();
+function PythonTextFile.readable(): boolean := not closed;
+function PythonTextFile.seekable(): boolean := not closed;
+
+function open(path: string; mode: string; buffering: integer;
+  encoding: string; errors: string; newline: string): PythonTextFile :=
+  new PythonTextFile(path, mode, buffering, encoding, errors, newline);
+
+function !open_binary(path: string; mode: string; buffering: integer;
+  encoding: string; errors: string; newline: string): PythonBinaryFile;
+begin
+  if (encoding <> nil) or (errors <> nil) or (newline <> nil) then
+    raise new System.ArgumentException('binary mode does not take encoding, errors or newline');
+  Result := new PythonBinaryFile(path, mode, buffering);
+end;
+
 function input(): string;
 begin
   PABCSystem.Print();
@@ -649,6 +1053,8 @@ function float(val: string): real := real.Parse(val);
 
 function float(x: integer): real := PABCSystem.Floor(x);
 
+function float(x: object): real := Convert.ToDouble(x);
+
 function bool(val: integer): boolean := Convert.ToBoolean(val);
 
 function range(s: integer; e: integer; step: integer): sequence of integer;
@@ -684,6 +1090,7 @@ function len<T>(st: &set<T>): integer := st.!count;
 function len<K, V>(dct: dict<K, V>): integer := dct.!count;
 function len<T>(arr: array of T): integer := arr.Length;
 function len(s: string): integer := s.Length;
+function len(value: bytes): integer := value.Length;
 
 function sorted<T>(lst: list<T>): list<T>;
 begin
@@ -750,6 +1157,8 @@ function bigint(x: integer): biginteger;
 begin
   Result := x;
 end;
+
+function bigint(x: object): biginteger := biginteger.Parse(x.ToString());
 
 function &set<T>.isdisjoint(other : sequence of T) : boolean;
 begin

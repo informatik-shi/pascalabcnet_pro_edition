@@ -13,7 +13,7 @@ New-Item -ItemType Directory -Path $stage -Force | Out-Null
 & dotnet build (Join-Path $repositoryRoot 'Net10Runtime.slnx') `
     --configuration $Configuration -p:TargetFramework=net10.0 `
     "-p:OutputPath=$stage" -p:AppendTargetFrameworkToOutputPath=false `
-    -p:SatelliteResourceLanguages=ru --disable-build-servers -m:1 --nologo
+    -p:SatelliteResourceLanguages=ru -p:NuGetAudit=false --disable-build-servers -m:1 --nologo --tl:off
 if ($LASTEXITCODE -ne 0) { throw 'Unified .NET 10 runtime build failed.' }
 
 # The console projects also copy local bin assets. Replace these generated copies
