@@ -79,6 +79,7 @@
     <Compile Include="Docking\VS2005DockPaneCaption.cs" />
     <Compile Include="Docking\DockPaneCollection.cs" />
     <Compile Include="Docking\DockPanel.cs" />
+    <Compile Include="Docking\DockPanelTheme.cs" />
     <Compile Include="Docking\DockPanelExtender.cs" />
     <Compile Include="Docking\DockPanel.Persistor.cs">
       <SubType>Component</SubType>

@@ -149,17 +149,17 @@ namespace WeifenLuo.WinFormsUI.Docking
 
 		private static Brush BrushTabBackground
 		{
-			get	{	return SystemBrushes.Control;	}
+			get	{	return DockPanelTheme.DarkMode ? DockPanelTheme.SurfaceBrush : SystemBrushes.Control;	}
 		}
 
 		private static Pen PenTabBorder
 		{
-			get	{	return SystemPens.GrayText;	}
+			get	{	return DockPanelTheme.DarkMode ? DockPanelTheme.BorderPen : SystemPens.GrayText;	}
 		}
 
 		private static Brush BrushTabText
 		{
-			get	{	return SystemBrushes.FromSystemColor(SystemColors.ControlDarkDark);	}
+			get	{	return DockPanelTheme.DarkMode ? DockPanelTheme.TextBrush : SystemBrushes.FromSystemColor(SystemColors.ControlDarkDark);	}
 		}
 		#endregion
 
@@ -204,7 +204,7 @@ namespace WeifenLuo.WinFormsUI.Docking
                 ControlStyles.UserPaint |
                 ControlStyles.AllPaintingInWmPaint |
                 ControlStyles.OptimizedDoubleBuffer, true);
-            BackColor = SystemColors.ControlLight;
+            BackColor = DockPanelTheme.DarkMode ? DockPanelTheme.Surface : SystemColors.ControlLight;
 		}
 
 		protected override void OnPaint(PaintEventArgs e)

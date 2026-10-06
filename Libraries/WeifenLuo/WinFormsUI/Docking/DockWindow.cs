@@ -19,6 +19,7 @@ namespace WeifenLuo.WinFormsUI.Docking
 			m_nestedPanes = new NestedPaneCollection(this);
 			m_dockPanel = dockPanel;
 			m_dockState = dockState;
+			BackColor = DockPanelTheme.DarkMode ? DockPanelTheme.EditorBackground : SystemColors.Control;
 			Visible = false;
 
 			SuspendLayout();
@@ -27,6 +28,7 @@ namespace WeifenLuo.WinFormsUI.Docking
 				DockState == DockState.DockTop || DockState == DockState.DockBottom)
 			{
 				m_splitter = new SplitterControl();
+				m_splitter.BackColor = DockPanelTheme.DarkMode ? DockPanelTheme.Surface : SystemColors.Control;
 				Controls.Add(m_splitter);
 			}
 
@@ -125,10 +127,19 @@ namespace WeifenLuo.WinFormsUI.Docking
 		{
 			// if DockWindow is document, draw the border
             if (DockState == DockState.Document)
-                e.Graphics.DrawRectangle(SystemPens.ControlDark, ClientRectangle.X, ClientRectangle.Y, ClientRectangle.Width - 1, ClientRectangle.Height - 1);
+                e.Graphics.DrawRectangle(DockPanelTheme.DarkMode ? DockPanelTheme.BorderPen : SystemPens.ControlDark,
+                    ClientRectangle.X, ClientRectangle.Y, ClientRectangle.Width - 1, ClientRectangle.Height - 1);
 
 			base.OnPaint(e);
 		}
+
+        internal void RefreshTheme()
+        {
+            BackColor = DockPanelTheme.DarkMode ? DockPanelTheme.EditorBackground : SystemColors.Control;
+            if (m_splitter != null)
+                m_splitter.BackColor = DockPanelTheme.DarkMode ? DockPanelTheme.Surface : SystemColors.Control;
+            Invalidate(true);
+        }
 
 		protected override void OnLayout(LayoutEventArgs levent)
 		{

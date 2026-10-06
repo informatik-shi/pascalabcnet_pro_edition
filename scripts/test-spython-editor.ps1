@@ -10,6 +10,7 @@ if ([Threading.Thread]::CurrentThread.ApartmentState -ne 'STA') {
 }
 
 Add-Type -Path (Join-Path $bin 'ICSharpCode.TextEditor.dll')
+Add-Type -Path (Join-Path $bin 'WeifenLuo.WinFormsUI.Docking.dll')
 [Reflection.Assembly]::LoadFrom((Join-Path $bin 'PascalABCNET.exe')) | Out-Null
 
 $provider = New-Object ICSharpCode.TextEditor.Document.FileSyntaxModeProvider((Join-Path $bin 'Highlighting') + '\')
@@ -160,6 +161,67 @@ try {
 }
 finally { $contextMenu.Dispose(); $menu.Dispose() }
 
+# The docking library paints document tabs and tool window captions independently
+# from the main menu. Check its palette and the editor's embedded controls.
+$dock = New-Object WeifenLuo.WinFormsUI.Docking.DockPanel
+$stripType = $dock.GetType().Assembly.GetType('WeifenLuo.WinFormsUI.Docking.VS2005DockPaneStrip')
+$captionType = $dock.GetType().Assembly.GetType('WeifenLuo.WinFormsUI.Docking.VS2005DockPaneCaption')
+$staticFlags = [Reflection.BindingFlags]'NonPublic,Static'
+try {
+    $dock.ApplyTheme($true)
+    $tabBrush = $stripType.GetProperty('BrushDocumentActiveBackground', $staticFlags).GetValue($null, $null)
+    $captionColor = $captionType.GetProperty('InactiveBackColor', $staticFlags).GetValue($null, $null)
+    if ($dock.BackColor.ToArgb() -ne [Drawing.Color]::FromArgb(30, 30, 30).ToArgb() -or
+        $tabBrush.Color.ToArgb() -ne [Drawing.Color]::FromArgb(45, 45, 48).ToArgb() -or
+        $captionColor.ToArgb() -ne [Drawing.Color]::FromArgb(37, 37, 38).ToArgb()) {
+        throw 'Document tabs or tool window captions stayed light in dark mode.'
+    }
+    $dock.ApplyTheme($false)
+    $tabBrush = $stripType.GetProperty('BrushDocumentActiveBackground', $staticFlags).GetValue($null, $null)
+    if ($dock.BackColor.ToArgb() -ne [Drawing.SystemColors]::Control.ToArgb() -or
+        $tabBrush.Color.ToArgb() -ne [Drawing.SystemColors]::ControlLightLight.ToArgb()) {
+        throw 'Document tabs did not return to the light palette.'
+    }
+}
+finally { $dock.Dispose() }
+
+$chromeEditor = New-Object VisualPascalABC.CodeFileDocumentTextEditorControl
+$browserField = $chromeEditor.GetType().GetField('quickClassBrowserPanel', $flags)
+$browser = $browserField.GetValue($chromeEditor)
+$combo = $browser.GetType().GetField('classComboBox', $flags).GetValue($browser)
+$bar = $chromeEditor.ActiveTextAreaControl.HScrollBar
+$bar.Bounds = New-Object Drawing.Rectangle(0, 0, 400, 20)
+$bitmap = New-Object Drawing.Bitmap(400, 20)
+try {
+    $chromeEditor.ApplyTheme($true)
+    $bar.DrawToBitmap($bitmap, (New-Object Drawing.Rectangle(0, 0, 400, 20)))
+    if ($browser.BackColor.ToArgb() -ne [Drawing.Color]::FromArgb(37, 37, 38).ToArgb() -or
+        $combo.BackColor.ToArgb() -ne [Drawing.Color]::FromArgb(45, 45, 48).ToArgb() -or
+        $bitmap.GetPixel(100, 10).ToArgb() -ne [Drawing.Color]::FromArgb(37, 37, 38).ToArgb()) {
+        throw 'Class browser or horizontal scrollbar stayed light in dark mode.'
+    }
+    $chromeEditor.ApplyTheme($false)
+    $bar.DrawToBitmap($bitmap, (New-Object Drawing.Rectangle(0, 0, 400, 20)))
+    if ($browser.BackColor.ToArgb() -ne [Drawing.SystemColors]::Control.ToArgb() -or
+        $combo.BackColor.ToArgb() -ne [Drawing.SystemColors]::Window.ToArgb() -or
+        $bitmap.GetPixel(100, 10).ToArgb() -ne [Drawing.SystemColors]::Control.ToArgb()) {
+        throw 'Class browser or horizontal scrollbar did not return to the light palette.'
+    }
+}
+finally { $bitmap.Dispose(); $chromeEditor.Dispose() }
+
+if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT -and
+    [Environment]::OSVersion.Version.Build -ge 22000) {
+    $captionForm = New-Object Windows.Forms.Form
+    try {
+        if (-not [VisualPascalABC.WindowsCaptionTheme]::Apply($captionForm, $true) -or
+            -not [VisualPascalABC.WindowsCaptionTheme]::Apply($captionForm, $false)) {
+            throw 'Windows 11 title bar theme could not be applied.'
+        }
+    }
+    finally { $captionForm.Dispose() }
+}
+
 $cases = @(
     @('if ready:', 4),
     @('    for i in range(3):', 8),
@@ -224,4 +286,4 @@ try {
 }
 finally { $editor.Dispose() }
 
-Write-Host "PASS: SPython indentation ($($cases.Count + 1) cases), $($darkProvider.SyntaxModes.Count) dark syntax modes, editor, menu, and output themes."
+Write-Host "PASS: SPython indentation ($($cases.Count + 1) cases), $($darkProvider.SyntaxModes.Count) dark syntax modes, editor, dock, menu, and output themes."

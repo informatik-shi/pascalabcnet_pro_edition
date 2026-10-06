@@ -486,6 +486,8 @@ namespace VisualPascalABC
             toolStripThemeManager.Apply(dark, menuStrip1, toolStrip1, statusStrip1,
                 contextMenuStrip1, cmEditor, cmBreakpointCondition, cm_Designer);
             toolStripPanel.BackColor = dark ? Color.FromArgb(37, 37, 38) : SystemColors.Control;
+            MainDockPanel.ApplyTheme(dark);
+            WindowsCaptionTheme.Apply(this, dark);
 
             OutputWindow.ApplyTheme(dark);
             foreach (RichTextBox output in OutputTextBoxs.Values)
@@ -497,7 +499,10 @@ namespace VisualPascalABC
                 CompilerConsoleWindow.ApplyTheme(dark);
 
             foreach (CodeFileDocumentControl document in OpenDocuments.Values)
+            {
+                document.ApplyTheme(dark);
                 document.SetHighlightingStrategyForFile(document.FileName);
+            }
         }
 
         internal ICSharpCode.TextEditor.Document.IHighlightingStrategy GetEditorHighlighter(string fileName)

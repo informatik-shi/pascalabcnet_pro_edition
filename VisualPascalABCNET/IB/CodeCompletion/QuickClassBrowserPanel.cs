@@ -188,6 +188,18 @@ namespace VisualPascalABC
 		{
 			base.Visible = false;
 		}
+
+        public void ApplyTheme(bool dark)
+        {
+            BackColor = dark ? Color.FromArgb(37, 37, 38) : SystemColors.Control;
+            Color comboBackground = dark ? Color.FromArgb(45, 45, 48) : SystemColors.Window;
+            Color comboText = dark ? Color.FromArgb(230, 230, 230) : SystemColors.WindowText;
+            classComboBox.BackColor = membersComboBox.BackColor = comboBackground;
+            classComboBox.ForeColor = membersComboBox.ForeColor = comboText;
+            classComboBox.Invalidate();
+            membersComboBox.Invalidate();
+            Invalidate();
+        }
 		
 		private void PaintInternal(object sender, PaintEventArgs e)
 		{
@@ -203,7 +215,8 @@ namespace VisualPascalABC
 				this.membersComboBox.Dispose();
 				this.classComboBox.Dispose();
 				this.currentCompilationUnit = null;
-				th.Abort();
+				if (th != null)
+					th.Abort();
 			}
 			base.Dispose(disposing);
 		}
@@ -834,7 +847,13 @@ namespace VisualPascalABC
 			ComboBox comboBox = (ComboBox)sender;
             lock (comboBox)
             {
-                e.DrawBackground();
+                bool selected = (e.State & DrawItemState.Selected) == DrawItemState.Selected;
+                Color background = selected ?
+                    (comboBox.BackColor.ToArgb() == Color.FromArgb(45, 45, 48).ToArgb()
+                        ? Color.FromArgb(62, 62, 64) : SystemColors.Highlight)
+                    : comboBox.BackColor;
+                using (Brush backgroundBrush = new SolidBrush(background))
+                    e.Graphics.FillRectangle(backgroundBrush, e.Bounds);
                 if (e.Index >= 0)
                 {
 
@@ -849,24 +868,19 @@ namespace VisualPascalABC
                                                           e.Bounds.Width - dx - e.Bounds.Height/*CodeCompletionProvider.ImagesProvider.ImageList.ImageSize.Width*/,
                                                           e.Bounds.Height);
 
-                    Brush drawItemBrush = SystemBrushes.WindowText;
-                    if ((e.State & DrawItemState.Selected) == DrawItemState.Selected)
-                    {
-                        drawItemBrush = SystemBrushes.HighlightText;
-                    }
+                    Color textColor = selected ? Color.White : comboBox.ForeColor;
                     if (!item.IsInCurrentPart)
                     {
-                        drawItemBrush = SystemBrushes.ControlDark;
+                        textColor = comboBox.BackColor.ToArgb() == Color.FromArgb(45, 45, 48).ToArgb()
+                            ? Color.FromArgb(165, 165, 165) : SystemColors.ControlDark;
                     }
                     else if (e.State == DrawItemState.ComboBoxEdit && !item.IsInside(textAreaControl.ActiveTextAreaControl.Caret.Line, textAreaControl.ActiveTextAreaControl.Caret.Column))
                     {
-                        drawItemBrush = SystemBrushes.ControlDark;
+                        textColor = comboBox.BackColor.ToArgb() == Color.FromArgb(45, 45, 48).ToArgb()
+                            ? Color.FromArgb(165, 165, 165) : SystemColors.ControlDark;
                     }
-                    e.Graphics.DrawString(item.ToString(),
-                                          font,
-                                          drawItemBrush,
-                                          drawingRect,
-                                          drawStringFormat);
+                    using (Brush drawItemBrush = new SolidBrush(textColor))
+                        e.Graphics.DrawString(item.ToString(), font, drawItemBrush, drawingRect, drawStringFormat);
 
                 }
                 //e.DrawFocusRectangle();

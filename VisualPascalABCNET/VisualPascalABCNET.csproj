@@ -243,6 +243,7 @@
     </Compile>
     <Compile Include="DockContent\DarkSyntaxModeProvider.cs" />
     <Compile Include="DockContent\ToolStripThemeManager.cs" />
+    <Compile Include="DockContent\WindowsCaptionTheme.cs" />
     <Compile Include="DockContent\OutputWindowForm.Designer.cs">
       <DependentUpon>OutputWindowForm.cs</DependentUpon>
     </Compile>
@@ -707,9 +708,6 @@
       <SpecificVersion>False</SpecificVersion>
       <HintPath>FormsDesignerBinding\Libs\ICSharpCode.SharpDevelop.Widgets.dll</HintPath>
     </Reference>
-    <Reference Include="ICSharpCode.TextEditor">
-      <HintPath>..\Libraries\ICSharpCode.TextEditor.dll</HintPath>
-    </Reference>
     <Reference Include="Microsoft.Build.Engine" />
     <Reference Include="Microsoft.Build.Framework" />
     <Reference Include="PresentationCore" />
@@ -726,6 +724,7 @@
     <Reference Include="WindowsFormsIntegration" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\ICSharpCode.TextEditor\ICSharpCode.TextEditor.Portable.csproj" />
     <ProjectReference Include="..\Libraries\WeifenLuo\WinFormsUI\WinFormsUI.csproj" />
   </ItemGroup>
 </Project>

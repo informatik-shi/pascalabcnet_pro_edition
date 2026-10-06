@@ -100,6 +100,8 @@ namespace WeifenLuo.WinFormsUI.Docking
 			m_dockPanel.AddPane(this);
 
 			m_splitter = new SplitterControl(this);
+			BackColor = DockPanelTheme.DarkMode ? DockPanelTheme.EditorBackground : SystemColors.Control;
+			m_splitter.BackColor = DockPanelTheme.DarkMode ? DockPanelTheme.Surface : SystemColors.Control;
 
 			m_nestedDockingStatus = new NestedDockingStatus(this);
 
@@ -573,6 +575,14 @@ namespace WeifenLuo.WinFormsUI.Docking
 		{
             RefreshChanges(true);
 		}
+
+        internal void RefreshTheme()
+        {
+            BackColor = DockPanelTheme.DarkMode ? DockPanelTheme.EditorBackground : SystemColors.Control;
+            m_splitter.BackColor = DockPanelTheme.DarkMode ? DockPanelTheme.Surface : SystemColors.Control;
+            RefreshChanges();
+            Invalidate(true);
+        }
 
         private void RefreshChanges(bool performLayout)
         {

@@ -79,6 +79,16 @@ namespace VisualPascalABC
             //TextEditor.Encoding = System.Text.Encoding.Default;
             TextEditor.Encoding = System.Text.Encoding.GetEncoding(1251);
             this.Dock = DockStyle.Fill;
+            ApplyTheme(MainForm.UserOptions.DarkTheme);
+        }
+
+        internal void ApplyTheme(bool dark)
+        {
+            Color background = dark ? Color.FromArgb(30, 30, 30) : SystemColors.Control;
+            BackColor = background;
+            basePanel.BackColor = background;
+            editorPanel.BackColor = background;
+            TextEditor.ApplyTheme(dark);
         }
 
         public string EXEFileName

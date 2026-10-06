@@ -619,8 +619,20 @@ namespace WeifenLuo.WinFormsUI.Docking
 			base.OnPaint(e);
 
 			Graphics g = e.Graphics;
-			g.FillRectangle(SystemBrushes.AppWorkspace, ClientRectangle);
+			g.FillRectangle(DockPanelTheme.DarkMode ? DockPanelTheme.EditorBackgroundBrush : SystemBrushes.AppWorkspace, ClientRectangle);
 		}
+
+        public void ApplyTheme(bool dark)
+        {
+            DockPanelTheme.DarkMode = dark;
+            BackColor = dark ? DockPanelTheme.EditorBackground : SystemColors.Control;
+            foreach (DockWindow window in DockWindows)
+                window.RefreshTheme();
+            foreach (DockPane pane in Panes)
+                pane.RefreshTheme();
+            AutoHideStripControl.BackColor = dark ? DockPanelTheme.Surface : SystemColors.ControlLight;
+            Invalidate(true);
+        }
 
 		internal void AddContent(IDockContent content)
 		{

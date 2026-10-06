@@ -419,52 +419,52 @@ namespace WeifenLuo.WinFormsUI.Docking
 
 		private static Pen PenToolWindowTabBorder
 		{
-			get	{	return SystemPens.GrayText;	}
+			get	{	return DockPanelTheme.DarkMode ? DockPanelTheme.BorderPen : SystemPens.GrayText;	}
 		}
 
         private static Pen PenDocumentTabActiveBorder
         {
-            get { return SystemPens.GrayText; }
+            get { return DockPanelTheme.DarkMode ? DockPanelTheme.BorderPen : SystemPens.GrayText; }
         }
 
         private static Pen PenDocumentTabInactiveBorder
         {
-            get { return SystemPens.GrayText; }
+            get { return DockPanelTheme.DarkMode ? DockPanelTheme.BorderPen : SystemPens.GrayText; }
         }
 
         private static Brush BrushToolWindowActiveBackground
         {
-            get { return SystemBrushes.Control; }
+            get { return DockPanelTheme.DarkMode ? DockPanelTheme.DocumentTabBrush : SystemBrushes.Control; }
         }
 
         private static Brush BrushDocumentActiveBackground
         {
-            get { return SystemBrushes.ControlLightLight; }
+            get { return DockPanelTheme.DarkMode ? DockPanelTheme.DocumentTabBrush : SystemBrushes.ControlLightLight; }
         }
 
         private static Brush BrushDocumentInactiveBackground
         {
-            get { return SystemBrushes.ControlLight; }
+            get { return DockPanelTheme.DarkMode ? DockPanelTheme.SurfaceBrush : SystemBrushes.ControlLight; }
         }
 
         private static Color ColorToolWindowActiveText
         {
-            get { return SystemColors.ControlText; }
+            get { return DockPanelTheme.DarkMode ? DockPanelTheme.Text : SystemColors.ControlText; }
         }
 
         private static Color ColorDocumentActiveText
         {
-            get { return SystemColors.ControlText; }
+            get { return DockPanelTheme.DarkMode ? DockPanelTheme.Text : SystemColors.ControlText; }
         }
 
         private static Color ColorToolWindowInactiveText
         {
-            get { return SystemColors.ControlDarkDark; }
+            get { return DockPanelTheme.DarkMode ? DockPanelTheme.MutedText : SystemColors.ControlDarkDark; }
         }
 
         private static Color ColorDocumentInactiveText
         {
-            get { return SystemColors.ControlText; }
+            get { return DockPanelTheme.DarkMode ? DockPanelTheme.MutedText : SystemColors.ControlText; }
         }
 
 		#endregion
@@ -595,13 +595,15 @@ namespace WeifenLuo.WinFormsUI.Docking
 		{
             if (Appearance == DockPane.AppearanceStyle.Document)
             {
-                if (BackColor != SystemColors.Control)
-                    BackColor = SystemColors.Control;
+                Color background = DockPanelTheme.DarkMode ? DockPanelTheme.Surface : SystemColors.Control;
+                if (BackColor != background)
+                    BackColor = background;
             }
             else
             {
-                if (BackColor != SystemColors.ControlLight)
-                    BackColor = SystemColors.ControlLight;
+                Color background = DockPanelTheme.DarkMode ? DockPanelTheme.Surface : SystemColors.ControlLight;
+                if (BackColor != background)
+                    BackColor = background;
             }
 			base.OnPaint (e);
 			CalculateTabs();
@@ -1197,14 +1199,41 @@ namespace WeifenLuo.WinFormsUI.Docking
             int y = ButtonWindowList.Location.Y + ButtonWindowList.Height;
 
             SelectMenu.Items.Clear();
+            if (DockPanelTheme.DarkMode)
+            {
+                SelectMenu.Renderer = new ToolStripProfessionalRenderer(new DarkWindowListColorTable());
+                SelectMenu.BackColor = DockPanelTheme.Surface;
+                SelectMenu.ForeColor = DockPanelTheme.Text;
+            }
+            else
+            {
+                SelectMenu.RenderMode = ToolStripRenderMode.ManagerRenderMode;
+                SelectMenu.BackColor = Color.Empty;
+                SelectMenu.ForeColor = Color.Empty;
+            }
             foreach (TabVS2005 tab in Tabs)
             {
                 IDockContent content = tab.Content;
                 ToolStripItem item = SelectMenu.Items.Add(content.DockHandler.TabText, content.DockHandler.Icon.ToBitmap());
                 item.Tag = tab.Content;
                 item.Click += new EventHandler(ContextMenuItem_Click);
+                item.BackColor = DockPanelTheme.DarkMode ? DockPanelTheme.Surface : Color.Empty;
+                item.ForeColor = DockPanelTheme.DarkMode ? DockPanelTheme.Text : Color.Empty;
             }
             SelectMenu.Show(ButtonWindowList, x, y);
+        }
+
+        private sealed class DarkWindowListColorTable : ProfessionalColorTable
+        {
+            public DarkWindowListColorTable() { UseSystemColors = false; }
+            public override Color ToolStripDropDownBackground { get { return DockPanelTheme.Surface; } }
+            public override Color ImageMarginGradientBegin { get { return DockPanelTheme.Surface; } }
+            public override Color ImageMarginGradientMiddle { get { return DockPanelTheme.Surface; } }
+            public override Color ImageMarginGradientEnd { get { return DockPanelTheme.Surface; } }
+            public override Color MenuItemSelected { get { return DockPanelTheme.Border; } }
+            public override Color MenuItemSelectedGradientBegin { get { return DockPanelTheme.Border; } }
+            public override Color MenuItemSelectedGradientEnd { get { return DockPanelTheme.Border; } }
+            public override Color MenuItemBorder { get { return DockPanelTheme.Border; } }
         }
 
         private void ContextMenuItem_Click(object sender, EventArgs e)

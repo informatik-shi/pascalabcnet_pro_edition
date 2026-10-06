@@ -18,6 +18,7 @@ namespace VisualPascalABC
             get { return textAreaPanel; }
         }
         private Panel intellisensePanel;
+        private bool darkTheme;
         public CodeFileDocumentTextEditorControl()
         {
             editactions[Keys.Space | Keys.Control] = new CodeCompletionAllNamesAction();
@@ -49,6 +50,17 @@ namespace VisualPascalABC
             this.ActiveTextAreaControl.TextArea.DragEnter += textEditorDragEnter;
             this.ActiveTextAreaControl.TextArea.DragDrop += textEditorDragDrop;
             this.ActiveTextAreaControl.Document.LineDeleted += Document_LineDeleted;
+        }
+
+        public void ApplyTheme(bool dark)
+        {
+            darkTheme = dark;
+            BackColor = dark ? Color.FromArgb(30, 30, 30) : SystemColors.Control;
+            intellisensePanel.BackColor = dark ? Color.FromArgb(37, 37, 38) : SystemColors.Control;
+            if (quickClassBrowserPanel != null)
+                quickClassBrowserPanel.ApplyTheme(dark);
+            ActiveTextAreaControl.ApplyScrollBarTheme(dark);
+            intellisensePanel.Invalidate();
         }
 
         private void Document_LineDeleted(object sender, LineEventArgs e)
@@ -160,7 +172,8 @@ namespace VisualPascalABC
         void separatorPanel_Paint(object sender, PaintEventArgs e)
         {
         	//e.Graphics.DrawLine(new Pen(SystemColors.ControlDark, 0.1F), 0, intellisensePanel.Height - 3, intellisensePanel.Width, intellisensePanel.Height - 3);
-        	e.Graphics.DrawLine(new Pen(SystemColors.ControlDark, 0.1F), 0, intellisensePanel.Height - 1, intellisensePanel.Width, intellisensePanel.Height - 1);
+            using (Pen pen = new Pen(darkTheme ? Color.FromArgb(63, 63, 70) : SystemColors.ControlDark))
+                e.Graphics.DrawLine(pen, 0, intellisensePanel.Height - 1, intellisensePanel.Width, intellisensePanel.Height - 1);
         }
         void docPositionChanged(object sender, EventArgs e)
         {

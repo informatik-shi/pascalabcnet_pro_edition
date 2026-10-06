@@ -323,18 +323,20 @@ namespace WeifenLuo.WinFormsUI.Docking
 
 		private static Color ActiveBackColorGradientBegin
 		{
-            get { return SystemColors.GradientActiveCaption; }
+            get { return DockPanelTheme.DarkMode ? DockPanelTheme.DocumentTab : SystemColors.GradientActiveCaption; }
         }
 
         private static Color ActiveBackColorGradientEnd
         {
-            get { return SystemColors.ActiveCaption; }
+            get { return DockPanelTheme.DarkMode ? DockPanelTheme.DocumentTab : SystemColors.ActiveCaption; }
         }
 
 		private static Color InactiveBackColor
 		{
             get
             {
+                if (DockPanelTheme.DarkMode)
+                    return DockPanelTheme.Surface;
                 string colorScheme = VisualStyleInformation.ColorScheme;
 
                 if (colorScheme == "HomeStead" || colorScheme == "Metallic")
@@ -346,12 +348,12 @@ namespace WeifenLuo.WinFormsUI.Docking
 
 		private static Color ActiveTextColor
 		{
-			get	{	return SystemColors.ActiveCaptionText;	}
+			get	{	return DockPanelTheme.DarkMode ? DockPanelTheme.Text : SystemColors.ActiveCaptionText;	}
 		}
 
 		private static Color InactiveTextColor
 		{
-			get	{	return SystemColors.ControlText;	}
+			get	{	return DockPanelTheme.DarkMode ? DockPanelTheme.Text : SystemColors.ControlText;	}
 		}
 
         private Color TextColor
