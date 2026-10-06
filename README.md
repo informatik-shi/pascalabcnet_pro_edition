@@ -11,7 +11,7 @@ two compiler targets:
 
 Ready-to-use builds are available on the
 [GitHub Releases page](https://github.com/informatik-shi/pascalabcnet_pro_edition/releases).
-The [Windows x64 portable ZIP](https://github.com/informatik-shi/pascalabcnet_pro_edition/releases/download/portable-2026-10-06.2/PascalABCNET-Portable-win-x64.zip)
+The [Windows x64 portable ZIP](https://github.com/informatik-shi/pascalabcnet_pro_edition/releases/download/portable-2026-10-06.3/PascalABCNET-Portable-win-x64.zip)
 includes the IDE and both compilers. Extract it to a writable folder and run
 `PascalABCNET.cmd`. The IDE and classic compiler require Windows with .NET
 Framework 4.7.2 or newer; the .NET 10 runtime is included in the ZIP. See the
