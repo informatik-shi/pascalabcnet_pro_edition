@@ -7,6 +7,14 @@ two compiler targets:
 - the complete system for .NET Framework 4.0/4.7.2;
 - the console compiler for .NET 10.
 
+## Downloads
+
+The [GitHub Releases page](https://github.com/informatik-shi/pascalabcnet_pro_edition/releases)
+contains ready-to-use builds. Download the
+[Windows x64 portable ZIP](https://github.com/informatik-shi/pascalabcnet_pro_edition/releases/download/portable-2026-10-06/PascalABCNET-Portable-win-x64.zip)
+for the IDE and both compilers. Extract it to a writable folder and run
+`PascalABCNET.cmd`. Installation is not required.
+
 ## Building on Windows
 
 PascalABC.NET is developed with Visual Studio 2026. Install the .NET desktop

@@ -1,5 +1,8 @@
 # Воспроизводимая сборка portable-версии с редактором SPython
 
+Готовый архив доступен в [релизах GitHub](https://github.com/informatik-shi/pascalabcnet_pro_edition/releases):
+[скачать portable-сборку для Windows x64](https://github.com/informatik-shi/pascalabcnet_pro_edition/releases/download/portable-2026-10-06/PascalABCNET-Portable-win-x64.zip).
+
 ## Что находится в сборке
 
 Архив `Release\PascalABCNET-Portable-win-x64.zip` содержит Windows IDE,
