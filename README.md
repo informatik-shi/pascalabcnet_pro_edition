@@ -58,6 +58,9 @@ The prebuilt `bin\Lib\PABCRtl.dll` is included in this branch because the
 Pascal RTL is a required app-local runtime dependency. `-SkipBuild` repackages
 existing outputs after a full build.
 
+The complete Windows build and SPython editor verification steps are in
+[`docs/build-portable-spython.md`](docs/build-portable-spython.md).
+
 ### .NET 10 console compiler
 
 Build the console compiler and rebuild its standard units:

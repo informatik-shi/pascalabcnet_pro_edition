@@ -51,6 +51,7 @@
     <Compile Include="DockContent\CodeFileDocument.cs">
       <SubType>Form</SubType>
     </Compile>
+    <Compile Include="DockContent\SPythonFormattingStrategy.cs" />
     <Compile Include="DockContent\CodeFileDocument.Designer.cs">
       <DependentUpon>CodeFileDocument.cs</DependentUpon>
     </Compile>

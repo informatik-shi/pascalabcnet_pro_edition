@@ -118,6 +118,11 @@ namespace VisualPascalABC
         public void SetHighlightingStrategyForFile(string ForFile)
         {
             TextEditor.Document.HighlightingStrategy = ICSharpCode.TextEditor.Document.HighlightingManager.Manager.FindHighlighterForFile(ForFile);
+            TextEditor.Document.FormattingStrategy =
+                String.Equals(Path.GetExtension(ForFile), ".pys", StringComparison.OrdinalIgnoreCase)
+                    ? (ICSharpCode.TextEditor.Document.IFormattingStrategy)new SPythonFormattingStrategy()
+                    : new ICSharpCode.TextEditor.Document.DefaultFormattingStrategy();
+            TextEditor.ActiveTextAreaControl.TextArea.Refresh();
         }
 
 

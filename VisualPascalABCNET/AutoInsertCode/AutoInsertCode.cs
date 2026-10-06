@@ -61,6 +61,9 @@ namespace VisualPascalABC
         }
         private bool TextArea_KeyEventHandler(char ch)
         {
+            if (CurrentCodeFileDocument != null &&
+                string.Equals(System.IO.Path.GetExtension(CurrentCodeFileDocument.FileName), ".pys", StringComparison.OrdinalIgnoreCase))
+                return false;
             if (!tsAutoInsertCode.Checked)
                 return false;
             try
