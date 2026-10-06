@@ -117,9 +117,12 @@ namespace VisualPascalABC
         //меняем стратегию подсведки в соответсвии с расширением файла
         public void SetHighlightingStrategyForFile(string ForFile)
         {
-            TextEditor.Document.HighlightingStrategy = ICSharpCode.TextEditor.Document.HighlightingManager.Manager.FindHighlighterForFile(ForFile);
+            bool isSPython = String.Equals(Path.GetExtension(ForFile), ".pys", StringComparison.OrdinalIgnoreCase);
+            TextEditor.Document.HighlightingStrategy = isSPython && !MainForm.UserOptions.DarkTheme
+                ? ICSharpCode.TextEditor.Document.HighlightingManager.Manager.FindHighlighter("SpythonLight")
+                : ICSharpCode.TextEditor.Document.HighlightingManager.Manager.FindHighlighterForFile(ForFile);
             TextEditor.Document.FormattingStrategy =
-                String.Equals(Path.GetExtension(ForFile), ".pys", StringComparison.OrdinalIgnoreCase)
+                isSPython
                     ? (ICSharpCode.TextEditor.Document.IFormattingStrategy)new SPythonFormattingStrategy()
                     : new ICSharpCode.TextEditor.Document.DefaultFormattingStrategy();
             TextEditor.ActiveTextAreaControl.TextArea.Refresh();

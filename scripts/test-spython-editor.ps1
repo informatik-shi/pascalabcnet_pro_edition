@@ -23,6 +23,52 @@ $default = $highlighter.GetColorFor('Default')
 if ($default.Color.Name -ne 'ffd4d4d4' -or $default.BackgroundColor.Name -ne 'ff1e1e1e') {
     throw "Wrong editor colors: $($default.Color), $($default.BackgroundColor)"
 }
+$lightHighlighter = [ICSharpCode.TextEditor.Document.HighlightingManager]::Manager.FindHighlighter('SpythonLight')
+if ($lightHighlighter.Name -ne 'SpythonLight') { throw "Wrong light highlighter: $($lightHighlighter.Name)" }
+$lightDefault = $lightHighlighter.GetColorFor('Default')
+if ($lightDefault.Color.ToArgb() -ne [Drawing.SystemColors]::WindowText.ToArgb() -or
+    $lightDefault.BackgroundColor.ToArgb() -ne [Drawing.SystemColors]::Window.ToArgb()) {
+    throw "Wrong light editor colors: $($lightDefault.Color), $($lightDefault.BackgroundColor)"
+}
+
+# Exercise the real output controls in both directions, including existing text.
+$outputForm = [Runtime.Serialization.FormatterServices]::GetUninitializedObject([VisualPascalABC.OutputWindowForm])
+$outputBox = New-Object Windows.Forms.RichTextBox
+$inputBox = New-Object Windows.Forms.TextBox
+$flags = [Reflection.BindingFlags]'Instance,NonPublic,Public'
+[VisualPascalABC.OutputWindowForm].GetField('outputTextBox', $flags).SetValue($outputForm, $outputBox)
+[VisualPascalABC.OutputWindowForm].GetField('InputTextBox', $flags).SetValue($outputForm, $inputBox)
+$outputBox.Text = 'existing output'
+try {
+    foreach ($dark in @($true, $false)) {
+        $outputForm.ApplyTheme($dark)
+        $expectedBackground = if ($dark) { [Drawing.Color]::FromArgb(30, 30, 30) } else { [Drawing.Color]::White }
+        $expectedForeground = if ($dark) { [Drawing.Color]::FromArgb(212, 212, 212) } else { [Drawing.Color]::Black }
+        $outputBox.Select(0, 1)
+        if ($outputBox.BackColor.ToArgb() -ne $expectedBackground.ToArgb() -or
+            $outputBox.SelectionColor.ToArgb() -ne $expectedForeground.ToArgb() -or
+            $inputBox.BackColor.ToArgb() -ne $expectedBackground.ToArgb() -or
+            $inputBox.ForeColor.ToArgb() -ne $expectedForeground.ToArgb()) {
+            throw "Output colors are wrong for dark=$dark"
+        }
+    }
+}
+finally { $outputBox.Dispose(); $inputBox.Dispose() }
+
+$compilerForm = [Runtime.Serialization.FormatterServices]::GetUninitializedObject([VisualPascalABC.CompilerConsoleWindowForm])
+$compilerBox = New-Object Windows.Forms.TextBox
+[VisualPascalABC.CompilerConsoleWindowForm].GetField('CompilerConsole', $flags).SetValue($compilerForm, $compilerBox)
+try {
+    $compilerForm.ApplyTheme($true)
+    if ($compilerBox.BackColor.ToArgb() -ne [Drawing.Color]::FromArgb(30, 30, 30).ToArgb()) {
+        throw 'Compiler console stayed light in dark mode.'
+    }
+    $compilerForm.ApplyTheme($false)
+    if ($compilerBox.BackColor.ToArgb() -ne [Drawing.Color]::White.ToArgb()) {
+        throw 'Compiler console stayed dark in light mode.'
+    }
+}
+finally { $compilerBox.Dispose() }
 
 $cases = @(
     @('if ready:', 4),
@@ -88,4 +134,4 @@ try {
 }
 finally { $editor.Dispose() }
 
-Write-Host "PASS: SPython Enter indentation ($($cases.Count + 1) cases) and dark highlighting."
+Write-Host "PASS: SPython Enter indentation ($($cases.Count + 1) cases), both editor palettes, and output themes."

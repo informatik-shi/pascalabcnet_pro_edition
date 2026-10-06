@@ -22,6 +22,16 @@ namespace VisualPascalABC
             outputTextBox.LinkClicked += outputTextBox_LinkClicked;
         }
 
+        public void ApplyTheme(bool dark)
+        {
+            Color background = dark ? Color.FromArgb(30, 30, 30) : Color.White;
+            Color foreground = dark ? Color.FromArgb(212, 212, 212) : Color.Black;
+            outputTextBox.BackColor = background;
+            outputTextBox.ForeColor = foreground;
+            InputTextBox.BackColor = background;
+            InputTextBox.ForeColor = foreground;
+        }
+
         public void outputTextBox_LinkClicked(object sender, LinkClickedEventArgs e)
         {
             try

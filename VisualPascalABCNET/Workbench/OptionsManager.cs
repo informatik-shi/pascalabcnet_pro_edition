@@ -66,6 +66,7 @@ namespace VisualPascalABC
         private string OptionsItemUseDllForSystemModules = "UseDllForSystemModules";
         private string OptionsItemPABCDllChecked = "PABCDllChecked";
         private string OptionsItemNameAutoInsertCode = "AutoInsertCodeIsEnabledOnStartup";
+        private string OptionsItemNameDarkTheme = "DarkTheme";
 
         bool _mainFormWindowStateMaximized = false;
 
@@ -152,6 +153,8 @@ namespace VisualPascalABC
                     _mainFormWindowStateMaximized = Convert.ToBoolean(value);
                 if ((value = (string)Options[OptionsItemNameShowLinesNum]) != null)
                     UserOptions.ShowLineNums = Convert.ToBoolean(value);
+                if ((value = (string)Options[OptionsItemNameDarkTheme]) != null)
+                    UserOptions.DarkTheme = Convert.ToBoolean(value);
 
                 if ((value = (string)Options[OptionsItemNameEnableFolding]) != null)
                     UserOptions.EnableFolding = Convert.ToBoolean(value);
@@ -275,6 +278,7 @@ namespace VisualPascalABC
             Options.Add(OptionsItemNameMainFormWidth, FormWidth);
             Options.Add(OptionsItemNameMainFormMaximized, this.WindowState == FormWindowState.Maximized);
             Options.Add(OptionsItemNameShowOutputWindow, BottomTabsVisible);
+            Options.Add(OptionsItemNameDarkTheme, UserOptions.DarkTheme);
             Options.Add(OptionsItemNameErrorsStrategy, (byte)ErrorsManager.Strategy);
             //Options.Add(OptionsItemNameErrorsCursorPosStrategy, (byte)ErrorCursorPosStrategy);
             Options.Add(OptionsItemNameGenerateDebugInfo, WorkbenchServiceFactory.BuildService.CompilerOptions.Debug);

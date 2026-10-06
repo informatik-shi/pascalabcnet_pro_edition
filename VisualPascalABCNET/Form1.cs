@@ -304,6 +304,8 @@ namespace VisualPascalABC
             RestoreDesktop();
 
             LoadOptions();
+            InitializeThemeMenu();
+            ApplyEditorTheme();
 
             HelpExamplesDirectory = PascalABCCompiler.Tools.ReplaceAllKeys(Constants.HelpExamplesDirectory, WorkbenchStorage.StandartDirectories);
             HelpTutorialExamplesDirectory = PascalABCCompiler.Tools.ReplaceAllKeys(Constants.HelpTutorialExamplesDirectory, WorkbenchStorage.StandartDirectories);
@@ -453,6 +455,47 @@ namespace VisualPascalABC
             PascalABCCompiler.StringResources.SetTextForAllObjects(FindForm, "VP_FINDFORM_");
             PascalABCCompiler.StringResources.SetTextForAllObjects(ReplaceForm, "VP_REPLACEFORM_");
             PascalABCCompiler.StringResources.SetTextForAllObjects(GotoLineForm, "VP_GOTOLINEFORM_");
+        }
+
+        private ToolStripMenuItem darkThemeMenuItem;
+
+        private void InitializeThemeMenu()
+        {
+            darkThemeMenuItem = new ToolStripMenuItem(
+                PascalABCCompiler.StringResourcesLanguage.CurrentLanguageName == "Русский"
+                    ? "Тёмная тема редактора и вывода"
+                    : "Dark editor and output theme");
+            darkThemeMenuItem.CheckOnClick = true;
+            darkThemeMenuItem.Checked = UserOptions.DarkTheme;
+            darkThemeMenuItem.CheckedChanged += delegate
+            {
+                UserOptions.DarkTheme = darkThemeMenuItem.Checked;
+                ApplyEditorTheme();
+            };
+            mrView.DropDownItems.Add(new ToolStripSeparator());
+            mrView.DropDownItems.Add(darkThemeMenuItem);
+        }
+
+        private void ApplyEditorTheme()
+        {
+            bool dark = UserOptions.DarkTheme;
+            Color background = dark ? Color.FromArgb(30, 30, 30) : Color.White;
+            Color foreground = dark ? Color.FromArgb(212, 212, 212) : Color.Black;
+
+            OutputWindow.ApplyTheme(dark);
+            foreach (RichTextBox output in OutputTextBoxs.Values)
+            {
+                output.BackColor = background;
+                output.ForeColor = foreground;
+            }
+            if (CompilerConsoleWindow != null)
+                CompilerConsoleWindow.ApplyTheme(dark);
+
+            foreach (CodeFileDocumentControl document in OpenDocuments.Values)
+            {
+                if (String.Equals(Path.GetExtension(document.FileName), ".pys", StringComparison.OrdinalIgnoreCase))
+                    document.SetHighlightingStrategyForFile(document.FileName);
+            }
         }
 
         private void SetFiltersAndHighlighting()

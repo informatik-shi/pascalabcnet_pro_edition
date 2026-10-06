@@ -20,6 +20,7 @@ namespace VisualPascalABC
         public bool PauseInRunModeIfConsole = true;
         public string DefaultSourceFileNameFormat = "Program{0}.pas";
         public int TabIndent = 2;
+        public bool DarkTheme = true;
         public int EditorFontSize = 12;
         public bool AllowCodeCompletion = true;
         public bool CodeCompletionHint = true;

@@ -68,6 +68,8 @@ namespace VisualPascalABC
             {
                 CompilerConsoleWindow = new CompilerConsoleWindowForm(this);
                 Form1StringResources.SetTextForAllControls(CompilerConsoleWindow);
+                if (UserOptions != null)
+                    CompilerConsoleWindow.ApplyTheme(UserOptions.DarkTheme);
             }
             AddWindowToDockPanel(CompilerConsoleWindow, MainDockPanel, OutputWindow.Dock, DockState.DockBottom, OutputWindow.IsFloat, BottomPane, int.MaxValue);
         }
@@ -526,14 +528,15 @@ namespace VisualPascalABC
 
         private System.Drawing.Color ConvertCodeToColor(char c)
         {
+            bool dark = UserOptions != null && UserOptions.DarkTheme;
             switch ((UInt32)c)
             {
-                case 65535: return System.Drawing.Color.Green;
-                case 65534: return System.Drawing.Color.Red;
-                case 65533: return System.Drawing.Color.OrangeRed;
-                case 65532: return System.Drawing.Color.Magenta;
-                case 65531: return System.Drawing.Color.Gray;
-                default: return System.Drawing.Color.Black;
+                case 65535: return dark ? System.Drawing.Color.LightGreen : System.Drawing.Color.Green;
+                case 65534: return dark ? System.Drawing.Color.LightCoral : System.Drawing.Color.Red;
+                case 65533: return dark ? System.Drawing.Color.Orange : System.Drawing.Color.OrangeRed;
+                case 65532: return dark ? System.Drawing.Color.Plum : System.Drawing.Color.Magenta;
+                case 65531: return dark ? System.Drawing.Color.LightGray : System.Drawing.Color.Gray;
+                default: return dark ? System.Drawing.Color.FromArgb(212, 212, 212) : System.Drawing.Color.Black;
             }
         }
 

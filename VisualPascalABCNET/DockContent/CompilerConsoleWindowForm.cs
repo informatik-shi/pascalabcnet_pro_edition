@@ -18,6 +18,11 @@ namespace VisualPascalABC
         {
             InitializeComponent();
         }
+        public void ApplyTheme(bool dark)
+        {
+            CompilerConsole.BackColor = dark ? Color.FromArgb(30, 30, 30) : Color.White;
+            CompilerConsole.ForeColor = dark ? Color.FromArgb(212, 212, 212) : Color.Black;
+        }
         public void CompilerConsoleScrolToEnd()
         {
             CompilerConsole.SelectionStart = CompilerConsole.Text.Length;
