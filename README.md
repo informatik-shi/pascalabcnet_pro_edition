@@ -38,6 +38,26 @@ _GenerateAllSetups.bat
 
 The generated installers are written to the `Release` directory.
 
+### Portable Windows package (IDE and both compilers)
+
+On the build machine, install the .NET 10 SDK and the Windows Desktop runtime.
+Build the self-contained ZIP with:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\build-portable.ps1
+```
+
+The output is `Release\PascalABCNET-Portable-win-x64.zip`. Extract it to a
+writable folder and run `PascalABCNET.cmd`; the command-line launchers are
+`pabcnetc.cmd` and `pabcnetc-net10.cmd`. The package contains the .NET 10
+runtime and an app-local `PABCRtl.dll`, so it does not need a system-wide
+PascalABC.NET installation or GAC registration. Windows still needs its
+.NET Framework 4.7.2 or newer component for the IDE and classic compiler.
+
+The prebuilt `bin\Lib\PABCRtl.dll` is included in this branch because the
+Pascal RTL is a required app-local runtime dependency. `-SkipBuild` repackages
+existing outputs after a full build.
+
 ### .NET 10 console compiler
 
 Build the console compiler and rebuild its standard units:

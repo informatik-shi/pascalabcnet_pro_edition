@@ -4007,6 +4007,15 @@ namespace PascalABCCompiler
         {
             name = name.Replace("%GAC%\\", "");
             string ttn = System.IO.Path.GetFileNameWithoutExtension(name);
+            // Portable distributions keep non-framework assemblies beside the
+            // compiler instead of registering them in the machine-wide GAC.
+            if (Path.GetFileName(name) == name)
+            {
+                string compilerDirectory = Path.GetDirectoryName(typeof(Compiler).Assembly.Location);
+                string localAssembly = Path.Combine(compilerDirectory, "Lib", name);
+                if (File.Exists(localAssembly))
+                    return localAssembly;
+            }
             string tn = get_windows_desktop_assembly_path(name);
             if (tn != null)
                 return tn;

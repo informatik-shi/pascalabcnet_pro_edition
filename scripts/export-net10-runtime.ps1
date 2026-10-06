@@ -3,6 +3,7 @@ param([Parameter(Mandatory = $true)][string]$Destination, [switch]$IncludeCompil
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'runtime-hash.ps1')
 $repositoryRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $source = Join-Path $repositoryRoot 'bin-net10'
 $Destination = [IO.Path]::GetFullPath($Destination)
@@ -17,7 +18,7 @@ foreach ($file in $manifest.files) {
     $outputFile = [IO.Path]::GetFullPath((Join-Path $Destination $file.path))
     if (-not $inputFile.StartsWith($source + '\', [StringComparison]::OrdinalIgnoreCase) -or
         -not $outputFile.StartsWith($Destination + '\', [StringComparison]::OrdinalIgnoreCase)) { throw 'Unsafe manifest path.' }
-    if ((Get-FileHash -LiteralPath $inputFile -Algorithm SHA256).Hash -ne $file.sha256) {
+    if ((Get-RuntimeSha256 -Path $inputFile) -ne $file.sha256) {
         throw "Runtime changed since unified build: $inputFile. Rebuild it first."
     }
     New-Item -ItemType Directory -Path (Split-Path -Parent $outputFile) -Force | Out-Null

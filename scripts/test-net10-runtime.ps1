@@ -2,6 +2,7 @@
 param([switch]$SkipBuild)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'runtime-hash.ps1')
 $repositoryRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 if (-not $SkipBuild) { & (Join-Path $PSScriptRoot 'build-net10-runtime.ps1') }
 $source = Join-Path $repositoryRoot 'bin-net10'
@@ -9,7 +10,7 @@ $destination = Join-Path $repositoryRoot ('.codex-build\runtime-export-tests\' +
 & (Join-Path $PSScriptRoot 'export-net10-runtime.ps1') -Destination $destination
 $manifest = Get-Content -LiteralPath (Join-Path $source 'net10-runtime.manifest.json') -Raw | ConvertFrom-Json
 foreach ($file in $manifest.files) {
-    if ((Get-FileHash -LiteralPath (Join-Path $destination $file.path) -Algorithm SHA256).Hash -ne $file.sha256) {
+    if ((Get-RuntimeSha256 -Path (Join-Path $destination $file.path)) -ne $file.sha256) {
         throw "Exported file differs: $($file.path)"
     }
 }

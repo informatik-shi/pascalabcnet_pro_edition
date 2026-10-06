@@ -3,6 +3,7 @@ param([ValidateSet('Debug', 'Release')][string]$Configuration = 'Release')
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'runtime-hash.ps1')
 $repositoryRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $destination = Join-Path $repositoryRoot 'bin-net10'
 # Build in a fresh directory: never distribute leftovers from a developer's bin.
@@ -11,7 +12,7 @@ $stage = Join-Path $stageParent ([Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $stage -Force | Out-Null
 & dotnet build (Join-Path $repositoryRoot 'Net10Runtime.slnx') `
     --configuration $Configuration -p:TargetFramework=net10.0 `
-    "-p:OutputPath=$stage\" -p:AppendTargetFrameworkToOutputPath=false `
+    "-p:OutputPath=$stage" -p:AppendTargetFrameworkToOutputPath=false `
     -p:SatelliteResourceLanguages=ru --disable-build-servers -m:1 --nologo
 if ($LASTEXITCODE -ne 0) { throw 'Unified .NET 10 runtime build failed.' }
 
@@ -46,7 +47,7 @@ foreach ($forbidden in @('NetMQ.dll', 'AsyncIO.dll', 'NaCl.dll')) {
     }
 }
 $files = @(Get-ChildItem -LiteralPath $stage -Recurse -File | ForEach-Object {
-    [ordered]@{ path = $_.FullName.Substring($stage.Length + 1); sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash }
+    [ordered]@{ path = $_.FullName.Substring($stage.Length + 1); sha256 = (Get-RuntimeSha256 -Path $_.FullName) }
 })
 New-Item -ItemType Directory -Path $destination -Force | Out-Null
 foreach ($file in $files) {

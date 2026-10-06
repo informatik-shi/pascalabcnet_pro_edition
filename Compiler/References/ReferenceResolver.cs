@@ -90,6 +90,14 @@ namespace PascalABCCompiler.References
         private static ResolvedReference Resolved(ReferenceSpec specification, string fileName,
             bool copyLocal)
         {
+            // App-local standard libraries must be staged beside the output.
+            if (!copyLocal && fileName != null)
+            {
+                string compilerDirectory = Path.GetDirectoryName(typeof(Compiler).Assembly.Location);
+                string portableLib = Path.GetFullPath(Path.Combine(compilerDirectory, "Lib"));
+                copyLocal = string.Equals(Path.GetDirectoryName(Path.GetFullPath(fileName)), portableLib,
+                    StringComparison.OrdinalIgnoreCase);
+            }
             return new ResolvedReference(specification, fileName, copyLocal);
         }
     }

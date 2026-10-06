@@ -11,6 +11,14 @@
 
 
 # dirs for build temp files
+.codex-build/
+/Release/PascalABCNET-Console-net10/
+/Release/PascalABCNET-Portable-win-x64/
+/Release/PascalABCNET-Portable-win-x64.zip
+/ReleaseGenerators/RebuildStandartModulesNet10.exe
+/ReleaseGenerators/RebuildStandartModulesNet10.exe.config
+/ReleaseGenerators/RebuildStandartModulesNet10.pdb
+/ReleaseGenerators/RebuildStandartModulesNet10.runtimeconfig.json
 **/obj/*
 **/bin/*
 **/bin-net10/*
@@ -31,6 +39,7 @@
 /bin/CompilerController.ini
 /bin/CompileNet10Plugin.ini
 /bin/CompilerHost/
+/bin/license.txt
 
 
 

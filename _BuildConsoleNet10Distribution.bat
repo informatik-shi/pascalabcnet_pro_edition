@@ -13,7 +13,7 @@ set "ASSETS_DIR=%ROOT%ConsoleDistribution"
 set "SAMPLES_DIR=%ROOT%InstallerSamples"
 
 call "%ROOT%_RebuildStandartModules_net10.bat" Release
-if errorlevel 1 exit /b %ERRORLEVEL%
+if not "%ERRORLEVEL%"=="0" exit /b %ERRORLEVEL%
 
 if exist "%STAGE_DIR%" rmdir /S /Q "%STAGE_DIR%"
 mkdir "%STAGE_DIR%"

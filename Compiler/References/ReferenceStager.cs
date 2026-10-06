@@ -64,6 +64,26 @@ namespace PascalABCCompiler.References
                         File.Copy(reference.FileName, outputFileName, false);
                 }
 
+                // The Pascal RTL and WPF libraries can refer to other DLLs in
+                // the same Lib folder. Keep that app-local set with the program.
+                string compilerDirectory = Path.GetDirectoryName(typeof(Compiler).Assembly.Location);
+                string portableLib = Path.GetFullPath(Path.Combine(compilerDirectory, "Lib"));
+                if (string.Equals(Path.GetDirectoryName(Path.GetFullPath(reference.FileName)), portableLib,
+                    StringComparison.OrdinalIgnoreCase))
+                {
+                    foreach (string dependency in Directory.GetFiles(portableLib, "*.dll"))
+                    {
+                        string target = Path.Combine(context.OutputDirectory, Path.GetFileName(dependency));
+                        if (string.Equals(Path.GetFullPath(dependency), Path.GetFullPath(target),
+                            StringComparison.OrdinalIgnoreCase))
+                            continue;
+                        if (context.OverwriteOutputFile)
+                            File.Copy(dependency, target, true);
+                        else if (!File.Exists(target))
+                            File.Copy(dependency, target, false);
+                    }
+                }
+
                 return new PreparedReference(reference, outputFileName);
             }
             catch (ArgumentException)
