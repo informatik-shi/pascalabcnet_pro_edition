@@ -89,6 +89,9 @@ namespace Languages.SPython.Frontend.Converters
             if (!forIntellisense)
                 new OpenModeVisitor().ProcessNode(root);
 
+            if (!forIntellisense)
+                new HoistFunctionLocalsVisitor().ProcessNode(root);
+
             // замена типов из SPython на типы из PascalABC.NET
             if (!forIntellisense)
                 new TypeCorrectVisitor().ProcessNode(root);

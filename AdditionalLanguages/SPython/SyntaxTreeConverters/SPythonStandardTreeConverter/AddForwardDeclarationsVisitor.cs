@@ -26,6 +26,12 @@ namespace Languages.SPython.Frontend.Converters
             var pd = new procedure_definition(_procedure_header.TypedClone(), null, context);
             pd.proc_header.proc_attributes.Add(new procedure_attribute(proc_attribute.attr_forward, context));
             decls.Add(pd, context);
+
+            // PascalABC.NET permits optional argument values only on the first
+            // declaration. Keep them on the generated forward declaration.
+            if (_procedure_header.parameters != null)
+                foreach (var parameter in _procedure_header.parameters.params_list)
+                    parameter.inital_value = null;
         }
 
         public override void visit(function_header _function_header)

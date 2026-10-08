@@ -33,6 +33,10 @@ namespace SPythonParser
             CreateNewKeyword("pass", Tokens.PASS);
             CreateNewKeyword("class", Tokens.CLASS, isTypeKeyword: true);
             CreateNewKeyword("lambda", Tokens.LAMBDA);
+            CreateNewKeyword("try", Tokens.TRY);
+            CreateNewKeyword("except", Tokens.EXCEPT);
+            CreateNewKeyword("finally", Tokens.FINALLY);
+            CreateNewKeyword("with", Tokens.WITH);
             CreateNewKeyword("exit", Tokens.EXIT);
             CreateNewKeyword("new", Tokens.NEW, KeywordKind.New);
             CreateNewKeyword("is", Tokens.IS);

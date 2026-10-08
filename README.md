@@ -11,12 +11,14 @@ two compiler targets:
 
 The [GitHub Releases page](https://github.com/informatik-shi/pascalabcnet_pro_edition/releases)
 contains ready-to-use builds. Download the
-[Windows x64 portable ZIP](https://github.com/informatik-shi/pascalabcnet_pro_edition/releases/download/portable-2026-10-06.5/PascalABCNET-Portable-win-x64.zip)
+[Windows x64 portable ZIP](https://github.com/informatik-shi/pascalabcnet_pro_edition/releases/download/portable-2026-10-08.1/PascalABCNET-Portable-win-x64.zip)
 for the IDE and both compilers. Extract it to a writable folder and run
 `PascalABCNET.cmd`. Installation is not required.
 SPython supports read-only `open()` for text and binary files and the `struct`
 module for unpacking binary data. File modes can come from variables, and
-unpacked numbers support arithmetic without casts; see the
+unpacked numbers support arithmetic without casts. `with open(...) as source`,
+`try/except`, default function arguments, and basic `lambda` expressions are
+also supported; see the
 [build and usage notes](docs/build-portable-spython.md).
 
 ## Building on Windows

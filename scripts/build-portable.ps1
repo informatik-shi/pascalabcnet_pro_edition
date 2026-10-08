@@ -71,6 +71,8 @@ if (-not $SkipBuild) {
             $generated = Join-Path $root ('ReleaseGenerators\RebuildStandartModulesNet10' + $extension)
             if (Test-Path -LiteralPath $generated) { Remove-Item -LiteralPath $generated -Force }
         }
+        $generated = Join-Path $root 'ReleaseGenerators\RebuildStandartModulesSPython.runtimeconfig.json'
+        if (Test-Path -LiteralPath $generated) { Remove-Item -LiteralPath $generated -Force }
     }
     finally {
         Pop-Location

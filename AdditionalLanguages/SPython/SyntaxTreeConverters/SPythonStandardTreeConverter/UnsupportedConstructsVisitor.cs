@@ -48,12 +48,6 @@ namespace Languages.Pascal.Frontend.Converters
                 throw new SPythonSyntaxVisitorError("RETURN_NOT_IN_FUNCTION",
                    _return_statement.source_context);
             }
-            // 'return' внутри функции, которая должна возвращать значение
-            if (isInFunction && _return_statement.expr == null)
-            {
-                throw new SPythonSyntaxVisitorError("RETURN_NOT_RETURN_VALUE",
-                   _return_statement.source_context);
-            }
             // 'return expr' внутри функции, которая не возвращает значение
             if (isInProcedure && _return_statement.expr != null)
             {

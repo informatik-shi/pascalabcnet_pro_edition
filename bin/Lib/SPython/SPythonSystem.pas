@@ -20,6 +20,31 @@ function input(s: string): string;
 // Python-style read-only streams. Known literal modes keep concrete static
 // types; a mode computed at run time uses PythonFile and PythonReadData.
 type
+  PyObject = object;
+  PyException = System.Exception;
+
+  PyValue = class(IEnumerable<PyValue>)
+  private
+    rawValue: object;
+    function GetLength(): integer;
+    function GetItem(index: integer): PyValue;
+    function Items(): sequence of PyValue;
+  public
+    constructor Create(value: object);
+    property value: object read rawValue;
+    property Length: integer read GetLength;
+    property ByIndex[index: integer]: PyValue read GetItem; default;
+    function ToString(): string; override;
+    function GetEnumerator(): IEnumerator<PyValue>;
+    function System.Collections.IEnumerable.GetEnumerator(): System.Collections.IEnumerator := GetEnumerator();
+    static function operator implicit(value: integer): PyValue := new PyValue(value);
+    static function operator implicit(value: real): PyValue := new PyValue(value);
+    static function operator implicit(value: string): PyValue := new PyValue(value);
+    static function operator +(a, b: PyValue): PyValue;
+    static function operator -(a, b: PyValue): PyValue;
+    static function operator *(a, b: PyValue): PyValue;
+  end;
+
   bytes = class(IEnumerable<integer>)
   private
     data: array of byte;
@@ -139,10 +164,20 @@ type
 
 function open(path: string; mode: string := 'r'; buffering: integer := -1;
   encoding: string := nil; errors: string := nil; newline: string := nil): PythonFile;
+function open(path: PyObject; mode: string := 'r'; buffering: integer := -1;
+  encoding: string := nil; errors: string := nil; newline: string := nil): PythonFile;
 function !open_text(path: string; mode: string := 'r'; buffering: integer := -1;
+  encoding: string := nil; errors: string := nil; newline: string := nil): PythonTextFile;
+function !open_text(path: PyObject; mode: string := 'r'; buffering: integer := -1;
   encoding: string := nil; errors: string := nil; newline: string := nil): PythonTextFile;
 function !open_binary(path: string; mode: string := 'rb'; buffering: integer := -1;
   encoding: string := nil; errors: string := nil; newline: string := nil): PythonBinaryFile;
+function !open_binary(path: PyObject; mode: string := 'rb'; buffering: integer := -1;
+  encoding: string := nil; errors: string := nil; newline: string := nil): PythonBinaryFile;
+
+function !lambda0(f: () -> PyValue): () -> PyValue;
+function !lambda1(f: PyValue -> PyValue): PyValue -> PyValue;
+function !lambda2(f: (PyValue, PyValue) -> PyValue): (PyValue, PyValue) -> PyValue;
 
 ///--
 type kwargs_gen<T> = class
@@ -629,6 +664,7 @@ function len<T>(arr: array of T): integer;
 function len(s: string): integer;
 function len(value: bytes): integer;
 function len(value: PythonReadData): integer;
+function len(value: PyValue): integer;
 
 function sorted<T>(lst: list<T>): list<T>;
 
@@ -724,6 +760,63 @@ function !empty_dict(): empty_dict;
 
 
 implementation
+
+constructor PyValue.Create(value: object) := rawValue := value;
+
+function PyValue.GetLength(): integer;
+begin
+  if rawValue is string then exit(string(rawValue).Length);
+  if rawValue is bytes then exit(bytes(rawValue).Length);
+  if rawValue is System.Collections.ICollection then
+    exit((rawValue as System.Collections.ICollection).Count);
+  if not (rawValue is System.Collections.IEnumerable) then
+    raise new System.ArgumentException('object has no len()');
+  Result := 0;
+  var iterator := (rawValue as System.Collections.IEnumerable).GetEnumerator();
+  while iterator.MoveNext() do
+    Result += 1;
+end;
+
+function PyValue.GetItem(index: integer): PyValue;
+begin
+  if index < 0 then index += Length;
+  if index < 0 then raise new System.IndexOutOfRangeException();
+  var iterator := (rawValue as System.Collections.IEnumerable).GetEnumerator();
+  while iterator.MoveNext() do
+  begin
+    if index = 0 then exit(new PyValue(iterator.Current));
+    index -= 1;
+  end;
+  raise new System.IndexOutOfRangeException();
+end;
+
+function PyValue.Items(): sequence of PyValue;
+begin
+  if not (rawValue is System.Collections.IEnumerable) then
+    raise new System.ArgumentException('object is not iterable');
+  var iterator := (rawValue as System.Collections.IEnumerable).GetEnumerator();
+  while iterator.MoveNext() do
+    yield new PyValue(iterator.Current);
+end;
+
+function PyValue.GetEnumerator(): IEnumerator<PyValue> := Items().GetEnumerator();
+function PyValue.ToString(): string := if rawValue = nil then 'None' else rawValue.ToString();
+static function PyValue.operator +(a, b: PyValue): PyValue;
+begin
+  if (a.rawValue is string) and (b.rawValue is string) then
+    exit(new PyValue(a.ToString() + b.ToString()));
+  if (a.rawValue is real) or (b.rawValue is real) then
+    exit(new PyValue(System.Convert.ToDouble(a.rawValue) + System.Convert.ToDouble(b.rawValue)));
+  Result := new PyValue(System.Convert.ToInt64(a.rawValue) + System.Convert.ToInt64(b.rawValue));
+end;
+static function PyValue.operator -(a, b: PyValue): PyValue :=
+  if (a.rawValue is real) or (b.rawValue is real) then
+    new PyValue(System.Convert.ToDouble(a.rawValue) - System.Convert.ToDouble(b.rawValue))
+  else new PyValue(System.Convert.ToInt64(a.rawValue) - System.Convert.ToInt64(b.rawValue));
+static function PyValue.operator *(a, b: PyValue): PyValue :=
+  if (a.rawValue is real) or (b.rawValue is real) then
+    new PyValue(System.Convert.ToDouble(a.rawValue) * System.Convert.ToDouble(b.rawValue))
+  else new PyValue(System.Convert.ToInt64(a.rawValue) * System.Convert.ToInt64(b.rawValue));
 
 function GetPythonEncoding(name, errors: string): System.Text.Encoding;
 begin
@@ -1163,9 +1256,17 @@ function open(path: string; mode: string; buffering: integer;
   encoding: string; errors: string; newline: string): PythonFile :=
   new PythonFile(path, mode, buffering, encoding, errors, newline);
 
+function open(path: PyObject; mode: string; buffering: integer;
+  encoding: string; errors: string; newline: string): PythonFile :=
+  open(path.ToString(), mode, buffering, encoding, errors, newline);
+
 function !open_text(path: string; mode: string; buffering: integer;
   encoding: string; errors: string; newline: string): PythonTextFile :=
   new PythonTextFile(path, mode, buffering, encoding, errors, newline);
+
+function !open_text(path: PyObject; mode: string; buffering: integer;
+  encoding: string; errors: string; newline: string): PythonTextFile :=
+  !open_text(path.ToString(), mode, buffering, encoding, errors, newline);
 
 function !open_binary(path: string; mode: string; buffering: integer;
   encoding: string; errors: string; newline: string): PythonBinaryFile;
@@ -1174,6 +1275,14 @@ begin
     raise new System.ArgumentException('binary mode does not take encoding, errors or newline');
   Result := new PythonBinaryFile(path, mode, buffering);
 end;
+
+function !open_binary(path: PyObject; mode: string; buffering: integer;
+  encoding: string; errors: string; newline: string): PythonBinaryFile :=
+  !open_binary(path.ToString(), mode, buffering, encoding, errors, newline);
+
+function !lambda0(f: () -> PyValue): () -> PyValue := f;
+function !lambda1(f: PyValue -> PyValue): PyValue -> PyValue := f;
+function !lambda2(f: (PyValue, PyValue) -> PyValue): (PyValue, PyValue) -> PyValue := f;
 
 function input(): string;
 begin
@@ -1288,6 +1397,7 @@ function len<T>(arr: array of T): integer := arr.Length;
 function len(s: string): integer := s.Length;
 function len(value: bytes): integer := value.Length;
 function len(value: PythonReadData): integer := value.Length;
+function len(value: PyValue): integer := value.Length;
 
 function sorted<T>(lst: list<T>): list<T>;
 begin

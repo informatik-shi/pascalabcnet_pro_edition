@@ -94,17 +94,22 @@ namespace SPythonParser
 
         // считывает первый токен в строке (с первого символа латиницы или _)
         // возвращает тип этого токена
-        private bool IsFirstTokenElseOrElif(string line)
+        private bool IsContinuationClause(string line)
         {
             int beginIndex = 0;
             for (beginIndex = 0; beginIndex < line.Length; ++beginIndex)
                 if (!Char.IsWhiteSpace(line[beginIndex]))
                     break;
-            if (line.Length < beginIndex + 4) return false;
-
-            // получаем строковое представление токена
-            string firstToken = line.Substring(beginIndex, 4);
-            return firstToken == "else" || firstToken == "elif";
+            foreach (string keyword in new[] { "else", "elif", "except", "finally" })
+            {
+                if (line.Length < beginIndex + keyword.Length ||
+                    !line.Substring(beginIndex).StartsWith(keyword, StringComparison.Ordinal))
+                    continue;
+                int next = beginIndex + keyword.Length;
+                if (next == line.Length || (!Char.IsLetterOrDigit(line[next]) && line[next] != '_'))
+                    return true;
+            }
+            return false;
         }
 
         private void ArrangeIndents(ref string[] programLines)
@@ -183,7 +188,7 @@ namespace SPythonParser
                     {
                         // если сейчас ветка elif/else, то это не конец команды
                         // поэтому ставить ; в конце не надо (она будет после блока elif/else)
-                        bool isEndOfStatement = !IsFirstTokenElseOrElif(line);
+                        bool isEndOfStatement = !IsContinuationClause(line);
 
                         unindentCounter--;
                         AddSemicolonIfNeeded(ref programLines[lineCounter - 1]);

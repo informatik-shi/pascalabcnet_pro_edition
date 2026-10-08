@@ -6,6 +6,7 @@
 	public SPythonParserTools parserTools;
     public List<compiler_directive> CompilerDirectives;
 	public bool is_unit_to_be_parsed = false;
+	private readonly GeneratedNamesManager lambdaNames = new GeneratedNamesManager();
 
 	public SPythonGPPGParser(AbstractScanner<ValueType, LexLocation> scanner, SPythonParserTools parserTools,
 	bool isUnitToBeParsed) : base(scanner) 
@@ -16,7 +17,9 @@
 %}
 
 %using PascalABCCompiler.SyntaxTree;
+%using PascalABCCompiler;
 %using PascalABCCompiler.ParserTools;
+%using PascalABCCompiler.CoreUtils;
 %using PascalABCCompiler.Errors;
 %using System.Linq;
 %using System.Collections.Generic;
@@ -39,7 +42,7 @@
     public type_definition td;
 }
 
-%token <ti> FOR IN WHILE IF ELSE ELIF DEF RETURN BREAK CONTINUE IMPORT FROM GLOBAL AS PASS CLASS LAMBDA EXIT NEW IS
+%token <ti> FOR IN WHILE IF ELSE ELIF DEF RETURN BREAK CONTINUE IMPORT FROM GLOBAL AS PASS CLASS LAMBDA EXIT NEW IS TRY EXCEPT FINALLY WITH
 %token <ti> INDENT UNINDENT END_OF_FILE END_OF_LINE DECLTYPE
 %token <ex> INTNUM REALNUM TRUE FALSE BIGINT FSTRINGNUM
 %token <ti> LPAR RPAR LBRACE RBRACE LBRACKET RBRACKET DOT COMMA COLON SEMICOLON ARROW
@@ -70,6 +73,7 @@
 %type <ex> extended_expr expr dotted_ident proc_func_call const_value variable optional_condition act_param new_expr is_expr variable_as_type
 %type <stn> act_param_list optional_act_param_list proc_func_decl return_stmt break_stmt continue_stmt global_stmt pass_stmt
 %type <stn> var_stmt assign_stmt if_stmt stmt proc_func_call_stmt while_stmt for_stmt optional_else optional_elif exit_stmt
+%type <stn> try_stmt with_stmt except_handler except_handler_list optional_lambda_params
 %type <stn> expr_list
 %type <stn> stmt_list block
 %type <stn> program param_name form_param_sect form_param_list optional_form_param_list
@@ -220,6 +224,14 @@ stmt
 	| for_stmt
 		{ 
 			$$ = $1; 
+		}
+	| try_stmt
+		{
+			$$ = $1;
+		}
+	| with_stmt
+		{
+			$$ = $1;
 		}
 	| return_stmt
 		{ 
@@ -540,6 +552,25 @@ expr
 		{
 			$$ = SubtreeCreator.CreateMethodCall("!pow", @$, $1, $3);
 		}
+	| LAMBDA optional_lambda_params COLON expr
+		{
+			formal_parameters parameters = null;
+			var names = $2 as ident_list;
+			if (names != null)
+				foreach (var name in names.idents)
+				{
+					var inferred = new lambda_inferred_type(new lambda_any_type_node_syntax(), name.source_context);
+					var parameter = new typed_parameters(new ident_list(name, name.source_context), inferred,
+						parametr_kind.none, null, name.source_context);
+					if (parameters == null) parameters = new formal_parameters(parameter, name.source_context);
+					else parameters.Add(parameter, name.source_context);
+				}
+			var body = new statement_list(new assign(StringConstants.result_var_name, $4, @$), @$);
+			body.expr_lambda_body = true;
+			var lambda = new function_lambda_definition(lambdaNames.GenerateName(StringConstants.lambdaPrefix), parameters,
+				new lambda_inferred_type(new lambda_any_type_node_syntax(), @$), body, @$);
+			$$ = SubtreeCreator.CreateMethodCall("!lambda" + (names == null ? 0 : names.idents.Count), @$, lambda);
+		}
 	| expr IN			expr
 		{
 			$$ = new bin_expr($1, $3, Operators.In, @$); 
@@ -588,6 +619,17 @@ expr
 	| LPAR expr RPAR
 		{ 
 			$$ = new bracket_expr($2, @$); 
+		}
+	;
+
+optional_lambda_params
+	: ident_list
+		{
+			$$ = $1;
+		}
+	|
+		{
+			$$ = null;
 		}
 	;
 
@@ -706,6 +748,66 @@ while_stmt
 	: WHILE expr COLON block
 		{
 			$$ = new while_node($2, $4 as statement, WhileCycleType.While, @$);
+		}
+	;
+
+try_stmt
+	: TRY COLON block except_handler_list
+		{
+			var handlers = new exception_block(null, $4 as exception_handler_list, null, @$);
+			$$ = new try_stmt($3 as statement_list, new try_handler_except(handlers, @$), @$);
+		}
+	| TRY COLON block FINALLY COLON block
+		{
+			$$ = new try_stmt($3 as statement_list, new try_handler_finally($6 as statement_list, @$), @$);
+		}
+	| TRY COLON block except_handler_list FINALLY COLON block
+		{
+			var handlers = new exception_block(null, $4 as exception_handler_list, null, @$);
+			var handled = new try_stmt($3 as statement_list, new try_handler_except(handlers, @$), @$);
+			$$ = new try_stmt(new statement_list(handled, @$), new try_handler_finally($7 as statement_list, @$), @$);
+		}
+	| TRY COLON block EXCEPT COLON block
+		{
+			var handler = new exception_block($6 as statement_list, null, null, @$);
+			$$ = new try_stmt($3 as statement_list, new try_handler_except(handler, @$), @$);
+		}
+	;
+
+except_handler_list
+	: except_handler
+		{
+			$$ = new exception_handler_list($1 as exception_handler, @$);
+		}
+	| except_handler_list except_handler
+		{
+			$$ = ($1 as exception_handler_list).Add($2 as exception_handler, @$);
+		}
+	;
+
+except_handler
+	: EXCEPT simple_type_identifier AS ident COLON block
+		{
+			$$ = new exception_handler($4, $2 as named_type_reference, $6 as statement, @$);
+		}
+	| EXCEPT simple_type_identifier COLON block
+		{
+			$$ = new exception_handler(null, $2 as named_type_reference, $4 as statement, @$);
+		}
+	;
+
+with_stmt
+	: WITH expr AS ident COLON block
+		{
+			var sourceName = ($4 as ident).name;
+			var assignSource = new assign(new ident(sourceName, @4), $2, Operators.Assignment, @$);
+			var closeMethod = new dot_node(new ident(sourceName, @4), new ident("Dispose", @4), @$);
+			var closeCall = new procedure_call(new method_call(closeMethod, null, @$), false, @$);
+			var body = new try_stmt($6 as statement_list,
+				new try_handler_finally(new statement_list(closeCall, @$), @$), @$);
+			var statements = new statement_list(assignSource, @$);
+			statements.Add(body, @$);
+			$$ = statements;
 		}
 	;
 
@@ -919,7 +1021,9 @@ proc_func_decl
 proc_func_header
 	: DEF func_name_ident LPAR optional_form_param_list RPAR COLON
 		{
-			$$ = new procedure_header($4 as formal_parameters, new procedure_attributes_list(new List<procedure_attribute>()), new method_name(null,null, $2, null, @2), null, @$);
+			$$ = new function_header($4 as formal_parameters, new procedure_attributes_list(new List<procedure_attribute>()),
+				new method_name(null,null, $2, null, @2), null,
+				new named_type_reference(new ident("PyValue", @$), @$), @$);
 		}
 	| DEF func_name_ident LPAR optional_form_param_list RPAR ARROW type_ref COLON
 		{
@@ -993,6 +1097,23 @@ form_param_sect
 	: param_name COLON type_ref
 		{
 			$$ = new typed_parameters($1 as ident_list, $3, parametr_kind.none, null, @$);
+		}
+	| param_name COLON type_ref ASSIGN expr
+		{
+			$$ = new typed_parameters($1 as ident_list, $3, parametr_kind.none, $5, @$);
+		}
+	| param_name ASSIGN expr
+		{
+			var inferredType = $3 is int32_const || $3 is int64_const
+				? "int" : $3 is double_const ? "float" : $3 is string_const
+				? "str" : "PyObject";
+			$$ = new typed_parameters($1 as ident_list,
+				new named_type_reference(new ident(inferredType, @$), @$), parametr_kind.none, $3, @$);
+		}
+	| param_name
+		{
+			$$ = new typed_parameters($1 as ident_list,
+				new named_type_reference(new ident("PyObject", @$), @$), parametr_kind.none, null, @$);
 		}
 	// *args
 	| STAR param_name COLON type_ref

@@ -44,14 +44,14 @@ public
   property size: integer read storedSize;
   function unpack(buffer: bytes): System.Collections.Generic.List<StructValue>;
   function unpack_from(buffer: bytes; offset: integer := 0): System.Collections.Generic.List<StructValue>;
-  function iter_unpack(buffer: bytes): System.Collections.Generic.List<System.Collections.Generic.List<StructValue>>;
+  function iter_unpack(buffer: bytes): list<list<StructValue>>;
 end;
 
 function Struct(format: string): StructObject;
 function calcsize(format: string): integer;
 function unpack(format: string; buffer: bytes): System.Collections.Generic.List<StructValue>;
 function unpack_from(format: string; buffer: bytes; offset: integer := 0): System.Collections.Generic.List<StructValue>;
-function iter_unpack(format: string; buffer: bytes): System.Collections.Generic.List<System.Collections.Generic.List<StructValue>>;
+function iter_unpack(format: string; buffer: bytes): list<list<StructValue>>;
 
 implementation
 
@@ -162,7 +162,7 @@ end;
 function StructObject.unpack(buffer: bytes): System.Collections.Generic.List<StructValue> := struct1.unpack(storedFormat, buffer);
 function StructObject.unpack_from(buffer: bytes; offset: integer): System.Collections.Generic.List<StructValue> :=
   struct1.unpack_from(storedFormat, buffer, offset);
-function StructObject.iter_unpack(buffer: bytes): System.Collections.Generic.List<System.Collections.Generic.List<StructValue>> :=
+function StructObject.iter_unpack(buffer: bytes): list<list<StructValue>> :=
   struct1.iter_unpack(storedFormat, buffer);
 
 function Struct(format: string): StructObject := new StructObject(format);
@@ -354,15 +354,15 @@ begin
   Result := Decode(format, data, offset);
 end;
 
-function iter_unpack(format: string; buffer: bytes): System.Collections.Generic.List<System.Collections.Generic.List<StructValue>>;
+function iter_unpack(format: string; buffer: bytes): list<list<StructValue>>;
 begin
   var size := calcsize(format);
   if size = 0 then raise new System.ArgumentException('cannot iteratively unpack with a struct of length 0');
   if buffer.Length mod size <> 0 then
     raise new System.ArgumentException('iterative unpacking requires a buffer of a multiple of ' + size + ' bytes');
-  Result := new System.Collections.Generic.List<System.Collections.Generic.List<StructValue>>();
+  Result := new list<list<StructValue>>();
   for var i := 0 to buffer.Length div size - 1 do
-    Result.Add(Decode(format, buffer.to_array(), i * size));
+    Result.append(new list<StructValue>(Decode(format, buffer.to_array(), i * size)));
 end;
 
 end.

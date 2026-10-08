@@ -89,7 +89,14 @@ namespace Languages.SPython.Frontend.Converters
             ident id = _named_type_reference.names[0];
             string name = id.name;
 
-            if (name == "int" || name == "str" || name == "bool" || name == "float")
+            if (name == "Exception")
+            {
+                id.name = "PyException";
+                return;
+            }
+
+            if (name == "int" || name == "str" || name == "bool" || name == "float" ||
+                name == "PyObject" || name == "PyValue" || name == "PyException")
             {
                 return;
             }

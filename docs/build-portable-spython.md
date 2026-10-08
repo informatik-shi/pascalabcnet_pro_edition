@@ -1,7 +1,7 @@
 # Воспроизводимая сборка portable-версии с редактором SPython
 
 Готовый архив доступен в [релизах GitHub](https://github.com/informatik-shi/pascalabcnet_pro_edition/releases):
-[скачать portable-сборку для Windows x64](https://github.com/informatik-shi/pascalabcnet_pro_edition/releases/download/portable-2026-10-06.5/PascalABCNET-Portable-win-x64.zip).
+[скачать portable-сборку для Windows x64](https://github.com/informatik-shi/pascalabcnet_pro_edition/releases/download/portable-2026-10-08.1/PascalABCNET-Portable-win-x64.zip).
 
 ## Что находится в сборке
 
@@ -69,10 +69,35 @@ f.close()
 значения без промежуточного `int()` или `float()`. Для полей `s`, `p`, `c`
 доступны `hex()` и `decode()`.
 
-Сейчас SPython не разбирает конструкцию `with`, поэтому файл нужно закрывать
-через `close()`. Запись (`w`, `a`, `+`), срезы `bytes` и
+Для `with open(path, 'rb') as source:` файл закрывается при обычном выходе
+из блока, `return` и исключении. Работают `try/except Exception as err`
+и параметры функций со значением по умолчанию. Функции без аннотации
+возвращаемого типа получают динамическую оболочку `PyValue`: её можно
+перебирать в `for`, передавать в `len()` и выводить через `print()`.
+`struct.iter_unpack()` возвращает вложенные списки SPython, поэтому работает
+генератор `[value[0] for value in struct.iter_unpack(...)]`. Сейчас это
+материализованный список, тогда как CPython возвращает ленивый итератор
+кортежей.
+
+Исполняются `lambda` с нулём, одним или двумя параметрами. Сейчас оболочка
+`PyValue` в теле `lambda` поддерживает сложение и конкатенацию строк, вычитание,
+умножение, индексирование и `len()`; например, `lambda x: x + 1` и
+`lambda text: text + '!'`. Замыкания на переменные внешней функции также
+работают. Остальные операции и три и более параметров пока требуют дальнейшей
+реализации.
+
+Пример из проверки находится в
+`TestSuiteAdditionalLanguages\SPythonTests\CompilationSamples\read_sbl_lambda.pys`.
+В исходном примере пользователя проверка
+`len(data) % sampling_quant == 0` возвращала пустой результат для корректного
+файла. В проверяемом варианте используется `!= 0`.
+
+Запись (`w`, `a`, `+`), срезы `bytes` и
 полное поведение `tell`/`seek` для UTF-16 и дополнительных кодировок пока не
 реализованы. Смещения для UTF-8 и однобайтового текста проверены тестами.
+`with` пока поддерживает один контекстный менеджер с `as`; `try` поддерживает
+`except` и `finally`, но не `else`. Типы и операции внутри `PyValue` пока
+не охватывают всю динамику CPython.
 Эти ограничения связаны со статической типизацией и текущим парсером SPython.
 Объект чтения при режиме из переменной и значения `StructValue` представляют
 собой обёртки: например, проверка типа через `type()` ещё не эквивалентна CPython.
@@ -86,6 +111,44 @@ f.close()
 с числовыми операторами. После изменения этих файлов выполните полную сборку
 ниже, чтобы обновились оба компилятора и обе версии `SPythonSystem.pcu` и
 `struct1.pcu`, затем запустите 64 проверки для каждого компилятора.
+`scripts\test-spython-read-sbl-lambda.ps1` создаёт бинарные файлы с полями
+`h`, `i`, `q` и некратной длиной, компилирует пользовательский алгоритм,
+проверяет 14 строк вывода, обработку исключения внутри `with` и работу
+`lambda` на обоих компиляторах.
+
+Для изменений грамматики обновите сгенерированные файлы парсера до сборки:
+
+```powershell
+Push-Location AdditionalLanguages\SPython\SPythonParserKrylovMovchan
+..\..\..\Utils\GPLex_GPPG\Gppg.exe /no-lines /gplex SPythonParser.y
+..\..\..\Utils\GPLex_GPPG\Gplex.exe /unicode SPythonLexer.lex
+Pop-Location
+```
+
+Изменения новой проверки затрагивают правила `try`, `except`, `finally`,
+`with`, параметры функций и `lambda` в `SPythonParser.y` и `.lex`, обработку
+имён и локальных переменных в `SPythonStandardTreeConverter`, тип `PyValue`
+и файловые функции в `SPythonSystem.pas`, а также результат `iter_unpack`
+в `struct1.pas`. `HoistFunctionLocalsVisitor.cs` переносит объявление
+переменной на уровень функции, когда значение присвоено внутри блока,
+используется после блока и тип известен или выводится для бинарного `read()`.
+Исходное присваивание остаётся на месте, чтобы сохранить порядок выполнения.
+
+## Путь к совместимости с Python
+
+Текущая цель проекта — постепенно расширять SPython до совместимости с CPython,
+сохраняя компиляцию в .NET. Для каждого следующего шага добавляйте один и тот
+же исполняемый пример в тесты SPython и CPython и сравнивайте значения,
+исключения, область видимости и закрытие ресурсов. В первую очередь нужны
+общие правила динамических операций для `PyValue`, полноценные области
+видимости функций и замыканий, остальные формы `lambda`, `with` и `try`, а
+затем покрытие стандартной библиотеки. Эталонные правила для этих конструкций
+описаны в [спецификации Python](https://docs.python.org/3/reference/compound_stmts.html)
+и [разделе о `lambda`](https://docs.python.org/3/reference/expressions.html#lambda).
+
+Компиляция в .NET сама по себе не гарантирует ускорение программ с динамическими
+операциями. После достижения одинакового поведения измеряйте время и память
+на одинаковых входных данных и фиксируйте версии обоих компиляторов.
 
 ## Подготовка машины сборки
 
@@ -109,7 +172,17 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\build-portable.p
 powershell.exe -STA -NoProfile -ExecutionPolicy Bypass -File scripts\test-spython-editor.ps1
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\test-spython-file-io.ps1
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\test-spython-file-io.ps1 -Runtime net10
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\test-spython-read-sbl-lambda.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\test-spython-read-sbl-lambda.ps1 -Runtime net10
 ```
+
+Если установлен CPython, после сценариев сравните его вывод на тех же файлах:
+
+```powershell
+python TestSuiteAdditionalLanguages\SPythonTests\CompilationSamples\read_sbl_lambda.pys
+```
+
+Ожидаются те же 14 строк, что у обоих компиляторов SPython.
 
 Если SDK установлен в нестандартный каталог, передайте `-DotnetRoot`,
 например `-DotnetRoot C:\Users\PC\.dotnet`. Сценарий собирает IDE и оба
@@ -136,6 +209,8 @@ Expand-Archive -LiteralPath Release\PascalABCNET-Portable-win-x64.zip -Destinati
 powershell.exe -STA -NoProfile -ExecutionPolicy Bypass -File scripts\test-spython-editor.ps1 -BinDirectory '.\portable-smoke\PascalABCNET-Portable-win-x64\bin'
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\test-spython-file-io.ps1 -Runtime classic -PackageRoot '.\portable-smoke\PascalABCNET-Portable-win-x64'
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\test-spython-file-io.ps1 -Runtime net10 -PackageRoot '.\portable-smoke\PascalABCNET-Portable-win-x64'
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\test-spython-read-sbl-lambda.ps1 -Runtime classic -PackageRoot '.\portable-smoke\PascalABCNET-Portable-win-x64'
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\test-spython-read-sbl-lambda.ps1 -Runtime net10 -PackageRoot '.\portable-smoke\PascalABCNET-Portable-win-x64'
 ```
 
 В интерактивном терминале проверьте оба компилятора из распакованной папки:
@@ -181,12 +256,12 @@ IDE снова, проверьте сохранение выбранной те�
 этого документа. После успешной проверки зафиксируйте изменения в ветке
 `portable` и отправьте её на GitHub. Для каждого нового архива создавайте
 новый тег и релиз; уже опубликованный архив не заменяйте. Пример для версии
-`portable-2026-10-06.5`:
+`portable-2026-10-08.1`:
 
 ```powershell
 git push origin portable
-git tag portable-2026-10-06.5
-git push origin portable-2026-10-06.5
+git tag portable-2026-10-08.1
+git push origin portable-2026-10-08.1
 $zip = 'Release\PascalABCNET-Portable-win-x64.zip'
 $hash = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
 "$hash  PascalABCNET-Portable-win-x64.zip" | Set-Content -Encoding ascii Release\SHA256SUMS.txt

@@ -11,6 +11,7 @@ namespace Languages.SPython.Frontend.Converters
     public class SymbolTableFillingVisitor : BaseChangeVisitor
     {
         protected SymbolTable symbolTable;
+        private int functionDepth;
 
         private readonly ILanguageInformation languageInformation = Facade.LanguageProvider.Instance.SelectLanguageByName("SPython").LanguageInformation;
 
@@ -31,13 +32,14 @@ namespace Languages.SPython.Frontend.Converters
 
         public override void Enter(syntax_tree_node stn)
         {
-            if (stn is statement_list)
+            if (stn is statement_list && functionDepth == 0)
             {
                 symbolTable.OpenLocalScope();
             }
             if (stn is procedure_definition || stn is function_lambda_definition)
             {
                 symbolTable.OpenLocalScope();
+                functionDepth++;
                 symbolTable.IsInFunctionBody = true;
             }
             
@@ -48,10 +50,11 @@ namespace Languages.SPython.Frontend.Converters
         {
             if (stn is procedure_definition || stn is function_lambda_definition)
             {
-                symbolTable.IsInFunctionBody = false;
                 symbolTable.CloseLocalScope();
+                functionDepth--;
+                symbolTable.IsInFunctionBody = functionDepth > 0;
             }
-            if (stn is statement_list)
+            if (stn is statement_list && functionDepth == 0)
             {
                 symbolTable.CloseLocalScope();
             }
@@ -140,6 +143,13 @@ namespace Languages.SPython.Frontend.Converters
                 symbolTable.Add(id.name, NameKind.LocalVariable);
 
             base.visit(_typed_parameters);
+        }
+
+        public override void visit(exception_handler handler)
+        {
+            if (handler.variable != null)
+                symbolTable.Add(handler.variable.name, NameKind.LocalVariable);
+            base.visit(handler);
         }
 
         public override void visit(var_statement _var_statement)

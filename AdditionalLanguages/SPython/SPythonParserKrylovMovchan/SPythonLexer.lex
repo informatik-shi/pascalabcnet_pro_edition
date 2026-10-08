@@ -102,10 +102,13 @@ BIGINTNUM {INTNUM}bi
     case (int)Tokens.WHILE:
     case (int)Tokens.FOR:
     case (int)Tokens.DEF:
+    case (int)Tokens.TRY:
+    case (int)Tokens.EXCEPT:
+    case (int)Tokens.FINALLY:
+    case (int)Tokens.WITH:
       last_line_needed_colon = CurrentLexLocation.StartLine;
       break;
     case (int)Tokens.CLASS:
-    case (int)Tokens.LAMBDA:
       parserTools.AddErrorFromResource("UNSUPPORTED_CONSTRUCTION_{0}", currentLexLocation, yytext);
       break;
   }
