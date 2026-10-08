@@ -11,9 +11,10 @@ two compiler targets:
 
 The [GitHub Releases page](https://github.com/informatik-shi/pascalabcnet_pro_edition/releases)
 contains ready-to-use builds. Download the
-[Windows x64 portable ZIP](https://github.com/informatik-shi/pascalabcnet_pro_edition/releases/download/portable-2026-10-08.1/PascalABCNET-Portable-win-x64.zip)
-for the IDE and both compilers. Extract it to a writable folder and run
-`PascalABCNET.cmd`. Installation is not required.
+[Windows x64 portable ZIP](https://github.com/informatik-shi/pascalabcnet_pro_edition/releases/download/portable-2026-10-08.2/PascalABCNET-Portable-win-x64.zip)
+for the IDE, both compilers, and browser notebooks. Extract it to a writable
+folder and run `PascalABCNET.cmd` for the IDE or `PascalABCNotebook.cmd` for
+notebooks. Installation is not required.
 SPython supports read-only `open()` for text and binary files and the `struct`
 module for unpacking binary data. File modes can come from variables, and
 unpacked numbers support arithmetic without casts. `with open(...) as source`,
@@ -74,6 +75,11 @@ existing outputs after a full build.
 
 The complete Windows build and SPython editor verification steps are in
 [`docs/build-portable-spython.md`](docs/build-portable-spython.md).
+
+The portable package also includes a separate browser notebook. Run
+`PascalABCNotebook.cmd` to create PascalABC.NET or SPython notebooks and show
+graphics inline below code cells. See the [notebook guide](docs/notebook.md)
+for usage, supported graphics modules, and reproducible build steps.
 
 ### .NET 10 console compiler
 
@@ -216,3 +222,12 @@ mono pabcnetc.exe
 используется сценариями сборки .NET Framework. Для независимой проверки консольных
 компиляторов используйте `_RunCrossTargetTests_net472.bat` и
 `_RunCrossTargetTests_net10_clean.bat`.
+
+## Тетрадки
+
+В portable-сборку входит отдельное приложение `PascalABCNotebook.cmd`.
+Оно запускает локальный сервер, открывает браузер, позволяет выбрать
+PascalABC.NET или SPython и показывает графику прямо под ячейками.
+Запуск, список графических модулей, воспроизводимая сборка и проверка
+описаны в [руководстве по тетрадкам](docs/notebook.md).
+Готовый архив доступен на [странице релиза](https://github.com/informatik-shi/pascalabcnet_pro_edition/releases/tag/portable-2026-10-08.2).

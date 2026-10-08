@@ -49,7 +49,7 @@ namespace VisualPascalABC
                 visualStates.FileOpened = true;//?????
                 if (!IsNewFile)
                     openFileDialog1.InitialDirectory = Path.GetDirectoryName(FileName);
-                if (!IsBlankNewProgram(CurrentCodeFileDocument))
+                if (!IsBlankNewProgram(CurrentCodeFileDocument) || (IsNewFile && PreferedFileName != null))
                 {
                     if (IsNewFile)
                         if (PreferedFileName == null)
@@ -554,13 +554,22 @@ namespace VisualPascalABC
             // mI.ToolTipText = mI.Text;
         }
 
-        private string InstNameNewProgramm(DockPanel tabControl)
+        private string PreferredNewProgramFileName()
+        {
+            return String.Equals(Path.GetExtension(CurrentSourceFileName), ".pys", StringComparison.OrdinalIgnoreCase)
+                ? InstNameNewProgramm(MainDockPanel, ".pys")
+                : null;
+        }
+
+        private string InstNameNewProgramm(DockPanel tabControl, string extension = null)
         {
             int NumbNewProg = 1;
             string FileNameFormat = Path.Combine(WorkbenchStorage.WorkingDirectory, UserOptions.DefaultSourceFileNameFormat), FileName;
             while (true)
             {
                 FileName = string.Format(FileNameFormat, NumbNewProg);
+                if (extension != null)
+                    FileName = Path.ChangeExtension(FileName, extension);
                 if (FindTab(FileName) == null && !File.Exists(FileName))
                     return FileName;
                 NumbNewProg++;

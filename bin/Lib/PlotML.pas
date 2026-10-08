@@ -1591,6 +1591,13 @@ begin
     win.Title := 'PlotML';
     win.Width := 800;
     win.Height := 600;
+    if System.Environment.GetEnvironmentVariable('PABC_NOTEBOOK_INLINE') = '1' then
+    begin
+      win.ShowInTaskbar := False;
+      win.WindowStartupLocation := WindowStartupLocation.Manual;
+      win.Left := -10000;
+      win.Top := -10000;
+    end;
     var placeholder := new GridWPF;
     placeholder.Background := Brushes.White;
     win.Content := placeholder;

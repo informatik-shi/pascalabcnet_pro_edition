@@ -4200,6 +4200,13 @@ var mre := new ManualResetEvent(false);
 procedure InitForm0;
 begin
   InitForm;
+  if System.Environment.GetEnvironmentVariable('PABC_NOTEBOOK_INLINE') = '1' then
+  begin
+    MainForm.ShowInTaskbar := False;
+    MainForm.StartPosition := System.Windows.Forms.FormStartPosition.Manual;
+    MainForm.Location := new System.Drawing.Point(-10000, -10000);
+    MainForm.Opacity := 0;
+  end;
   StartIsComplete := True;
   
   MainForm.Load += (s,e) -> mre.Set();
@@ -4238,6 +4245,8 @@ procedure __InitModule;
 begin
   MainThread := Thread.CurrentThread;
   InitGraphABC;
+  if System.Environment.GetEnvironmentVariable('PABC_NOTEBOOK_INLINE') = '1' then
+    SetConsoleIO;
 end;
 
 var

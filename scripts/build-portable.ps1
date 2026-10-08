@@ -20,6 +20,7 @@ if (-not $release.StartsWith($root + '\', [StringComparison]::OrdinalIgnoreCase)
 $packageName = 'PascalABCNET-Portable-win-x64'
 $stage = [IO.Path]::GetFullPath((Join-Path $release $packageName))
 $zip = [IO.Path]::GetFullPath((Join-Path $release ($packageName + '.zip')))
+$notebookPublish = Join-Path $root '.codex-build\notebook-publish'
 
 if ([string]::IsNullOrWhiteSpace($DotnetRoot)) {
     foreach ($candidate in @($env:DOTNET_ROOT, (Join-Path $env:USERPROFILE '.dotnet'),
@@ -50,6 +51,11 @@ if (-not $SkipBuild) {
     & $dotnet build (Join-Path $root 'VisualPlugins\CompileNet10\CompileNet10.csproj') `
         --configuration Release -p:NuGetAudit=false --disable-build-servers --nologo -v:q --tl:off
     if ($LASTEXITCODE -ne 0) { throw '.NET 10 IDE plugin build failed.' }
+
+    & $dotnet publish (Join-Path $root 'PascalABCNotebook\PascalABCNotebook.csproj') `
+        --configuration Release --output $notebookPublish `
+        -p:NuGetAudit=false --disable-build-servers --nologo -v:q --tl:off
+    if ($LASTEXITCODE -ne 0) { throw 'Notebook build failed.' }
 
     $pcuBuildDirectory = Join-Path $root 'ReleaseGenerators'
     $libDllNames = @(Get-ChildItem -LiteralPath (Join-Path $root 'bin\Lib') -File -Filter '*.dll' |
@@ -157,6 +163,9 @@ Copy-Item -LiteralPath (Join-Path $DotnetRoot "shared\Microsoft.WindowsDesktop.A
     -Destination (Join-Path $runtimeStage 'shared\Microsoft.WindowsDesktop.App') -Recurse -Force
 
 Copy-Item -Path (Join-Path $root 'PortableDistribution\*') -Destination $stage -Recurse -Force
+Assert-File (Join-Path $notebookPublish 'PascalABCNotebook.dll')
+Copy-Item -LiteralPath $notebookPublish -Destination (Join-Path $stage 'notebook') -Recurse -Force
+Assert-File (Join-Path $stage 'notebook\wwwroot\index.html')
 foreach ($document in @('License.txt', 'License_en.txt', 'copyright.txt')) {
     Copy-Item -LiteralPath (Join-Path $root "ReleaseGenerators\$document") -Destination $stage -Force
 }

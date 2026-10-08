@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PascalABC.NET Notebook</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <button id="homeButton" class="brand" type="button">◈ PascalABC.NET Notebook</button>
+    <span id="connectionStatus" class="connection">Локальный сервер</span>
+  </header>
+  <main>
+    <section id="homeView" class="home">
+      <div class="intro">
+        <p class="eyebrow">Интерактивные тетрадки</p>
+        <h1>Код, вывод и графика<br>в одной странице</h1>
+        <p>Выберите язык. Ячейки выполняются по порядку, а результат и рисунки появляются сразу под кодом.</p>
+      </div>
+      <div class="languageCards">
+        <button id="createPascal" class="languageCard" type="button">
+          <span class="languageIcon pascal">P</span>
+          <strong>PascalABC.NET</strong>
+          <span>Паскаль, GraphABC, GraphWPF, Graph3D и другие графические модули.</span>
+          <em>Создать тетрадку →</em>
+        </button>
+        <button id="createSPython" class="languageCard" type="button">
+          <span class="languageIcon spython">Py</span>
+          <strong>SPython</strong>
+          <span>Python-подобный синтаксис с компиляцией средствами PascalABC.NET.</span>
+          <em>Создать тетрадку →</em>
+        </button>
+      </div>
+      <div class="recentHeading"><h2>Сохранённые тетрадки</h2><span>Локально на этом компьютере</span></div>
+      <div id="notebookList" class="notebookList"></div>
+    </section>
+
+    <section id="notebookView" class="notebook" hidden>
+      <div class="notebookHeader">
+        <div>
+          <span id="languageBadge" class="badge"></span>
+          <input id="notebookTitle" aria-label="Название тетрадки" maxlength="120">
+          <p id="saveStatus" class="saveStatus">Сохранено</p>
+        </div>
+        <div class="headerActions">
+          <select id="exampleSelect" aria-label="Добавить графический пример">
+            <option value="">Графический пример…</option>
+            <option value="graphabc">GraphABC</option>
+            <option value="graphwpf">GraphWPF</option>
+            <option value="graph3d">Graph3D</option>
+            <option value="turtleabc">TurtleABC</option>
+            <option value="plotml">PlotML</option>
+            <option value="wpf">WPF</option>
+          </select>
+          <button id="addCellTop" type="button">＋ Ячейка</button>
+          <button id="runAll" class="primary" type="button">▶ Выполнить всё</button>
+        </div>
+      </div>
+      <div class="notebookTip">Ctrl+Enter — выполнить ячейку · Shift+Enter — выполнить и перейти к следующей</div>
+      <div id="cells" class="cells"></div>
+      <button id="addCellBottom" class="addBottom" type="button">＋ Добавить ячейку</button>
+    </section>
+  </main>
+</body>
+</html>

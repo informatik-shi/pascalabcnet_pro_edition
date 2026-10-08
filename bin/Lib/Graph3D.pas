@@ -5266,6 +5266,15 @@ begin
   
   MainWindow := new Graph3DWindow;
 
+  if System.Environment.GetEnvironmentVariable('PABC_NOTEBOOK_INLINE') = '1' then
+  begin
+    MainWindow.ShowInTaskbar := False;
+    MainWindow.WindowStartupLocation := WindowStartupLocation.Manual;
+    MainWindow.Left := -10000;
+    MainWindow.Top := -10000;
+    MainWindow.Opacity := 0;
+  end;
+
   mre.Set();
   
   app.Run(MainWindow);
@@ -5316,4 +5325,4 @@ initialization
   __InitModule;
 
 finalization  
-end. 
+end.

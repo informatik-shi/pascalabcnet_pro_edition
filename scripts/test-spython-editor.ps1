@@ -313,4 +313,42 @@ try {
 }
 finally { $editor.Dispose() }
 
-Write-Host "PASS: SPython indentation ($($cases.Count + 1) cases), $($darkProvider.SyntaxModes.Count) dark syntax modes, editor, dock, menu, and output themes."
+# New follows the active SPython document, even when its generated name is taken.
+$staticFlags = [Reflection.BindingFlags]'Static,NonPublic,Public'
+$workingDirectoryField = [VisualPascalABC.WorkbenchStorage].GetField('WorkingDirectory', $staticFlags)
+$oldWorkingDirectory = $workingDirectoryField.GetValue($null)
+$testDirectory = Join-Path $root ('.codex-build\new-file-' + [Guid]::NewGuid().ToString('N'))
+[IO.Directory]::CreateDirectory($testDirectory) | Out-Null
+$diskFile = Join-Path $testDirectory 'Program2.pys'
+try {
+    $workingDirectoryField.SetValue($null, $testDirectory)
+    $document = [Runtime.Serialization.FormatterServices]::GetUninitializedObject(
+        [VisualPascalABC.CodeFileDocumentControl])
+    $fileNameField = [VisualPascalABC.CodeFileDocumentControl].GetField('_file_name', $flags)
+    $fileNameField.SetValue($document, (Join-Path $testDirectory 'source.PYS'))
+    [VisualPascalABC.Form1].GetField('_currentCodeFileDocument', $flags).SetValue($form, $document)
+    $documentsField = [VisualPascalABC.Form1].GetField('OpenDocuments', $flags)
+    $openDocuments = [Activator]::CreateInstance($documentsField.FieldType)
+    $openDocuments.Add([VisualPascalABC.Tools]::FileNameToLower((Join-Path $testDirectory 'Program1.pys')),
+        $document)
+    $documentsField.SetValue($form, $openDocuments)
+    [IO.File]::WriteAllText($diskFile, '')
+
+    $preferredMethod = [VisualPascalABC.Form1].GetMethod('PreferredNewProgramFileName', $flags)
+    $preferred = $preferredMethod.Invoke($form, @())
+    if ($preferred -ne (Join-Path $testDirectory 'Program3.pys')) {
+        throw "New from SPython selected '$preferred' instead of Program3.pys."
+    }
+
+    $fileNameField.SetValue($document, (Join-Path $testDirectory 'source.pas'))
+    if ($null -ne $preferredMethod.Invoke($form, @())) {
+        throw 'New from Pascal did not use the configured Pascal filename format.'
+    }
+}
+finally {
+    $workingDirectoryField.SetValue($null, $oldWorkingDirectory)
+    if (Test-Path -LiteralPath $diskFile) { Remove-Item -LiteralPath $diskFile -Force }
+    Remove-Item -LiteralPath $testDirectory -Force
+}
+
+Write-Host "PASS: SPython indentation ($($cases.Count + 1) cases), $($darkProvider.SyntaxModes.Count) dark syntax modes, new file language, editor, dock, menu, and output themes."

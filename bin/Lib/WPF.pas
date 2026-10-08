@@ -9,6 +9,7 @@ uses System.Windows.Controls;
 uses System.Windows.Controls.Primitives;
 uses System.Windows.Data;
 uses System.Windows.Media;
+uses System.Windows.Media.Imaging;
 uses System.Windows.Shapes;
 uses System.Windows.Markup;
 
@@ -116,6 +117,24 @@ function Pnt(x,y: real) := new Point(x,y);
 function Rect(x,y,w,h: real) := new System.Windows.Rect(x,y,w,h);
 
 function MainPanel: Panel := MainWindow.Content as Panel;
+
+/// Сохраняет содержимое главного окна в PNG. Используется тетрадкой для inline-вывода.
+procedure SaveWindow(fname: string);
+begin
+  var content := MainWindow.Content as FrameworkElement;
+  var width := integer(MainWindow.Width);
+  var height := integer(MainWindow.Height);
+  content.Measure(new Size(width, height));
+  content.Arrange(new System.Windows.Rect(0, 0, width, height));
+  content.UpdateLayout;
+  var bitmap := new RenderTargetBitmap(width, height, 96, 96, PixelFormats.Pbgra32);
+  bitmap.Render(content);
+  var encoder := new PngBitmapEncoder;
+  encoder.Frames.Add(BitmapFrame.Create(bitmap));
+  var output := System.IO.File.Create(fname);
+  encoder.Save(output);
+  output.Close;
+end;
 
 function CreateDrawing := Drawing.Create;
 
@@ -617,5 +636,6 @@ initialization
   MainWindow.Content := new Grid; // как в стандартном WPF-приложении
   CurrentParent := MainWindow;
 finalization
-  Application.Run(MainWindow);
+  if System.Environment.GetEnvironmentVariable('PABC_NOTEBOOK_INLINE') <> '1' then
+    Application.Run(MainWindow);
 end.

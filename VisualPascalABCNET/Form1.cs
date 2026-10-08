@@ -888,7 +888,7 @@ namespace VisualPascalABC
                 Environment.CurrentDirectory = CurrentFileNameDirectory;
             }
             
-            WorkbenchServiceFactory.FileService.OpenFile(null, null);
+            WorkbenchServiceFactory.FileService.OpenFile(null, PreferredNewProgramFileName());
         }
 
         private void miSaveAs_Click(object sender, EventArgs e)
