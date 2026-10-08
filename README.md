@@ -11,7 +11,7 @@ two compiler targets:
 
 Ready-to-use builds are available on the
 [GitHub Releases page](https://github.com/informatik-shi/pascalabcnet_pro_edition/releases).
-The [Windows x64 portable ZIP](https://github.com/informatik-shi/pascalabcnet_pro_edition/releases/download/portable-2026-10-06.5/PascalABCNET-Portable-win-x64.zip)
+The [Windows x64 portable ZIP](https://github.com/informatik-shi/pascalabcnet_pro_edition/releases/download/portable-2026-10-08.1/PascalABCNET-Portable-win-x64.zip)
 includes the IDE and both compilers. Extract it to a writable folder and run
 `PascalABCNET.cmd`. The IDE and classic compiler require Windows with .NET
 Framework 4.7.2 or newer; the .NET 10 runtime is included in the ZIP. See the
@@ -19,6 +19,8 @@ Framework 4.7.2 or newer; the .NET 10 runtime is included in the ZIP. See the
 for verification and rebuilding.
 SPython supports file modes supplied through variables and arithmetic on
 numeric values returned by `struct.unpack()`.
+The current portable release also compiles `with open(...)`, `try/except`,
+default function arguments, and basic `lambda` expressions in SPython.
 
 ## Building on Windows
 
