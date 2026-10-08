@@ -6,12 +6,14 @@ namespace Languages.SPython.Frontend.Converters
     internal class NameCorrectVisitor : SymbolTableFillingVisitor
     {
         public HashSet<string> variablesUsedAsGlobal = new HashSet<string>();
+        private readonly HashSet<var_statement> explicitAnnotations;
 
         private readonly bool forIntellisense;
 
-        public NameCorrectVisitor(string unitName, bool forIntellisense, Dictionary<string, Dictionary<string, bool>> namesFromUsedUnits, HashSet<string> definedFunctionsNames) : base(unitName, forIntellisense, namesFromUsedUnits) 
+        public NameCorrectVisitor(string unitName, bool forIntellisense, Dictionary<string, Dictionary<string, bool>> namesFromUsedUnits, HashSet<string> definedFunctionsNames, HashSet<var_statement> explicitAnnotations) : base(unitName, forIntellisense, namesFromUsedUnits)
         {
             this.forIntellisense = forIntellisense;
+            this.explicitAnnotations = explicitAnnotations;
             foreach (string definedFunctionName in definedFunctionsNames)
             {
                 symbolTable.Add(definedFunctionName, NameKind.ForwardDeclaredFunction);
@@ -30,10 +32,35 @@ namespace Languages.SPython.Frontend.Converters
 
         public override void visit(var_statement _var_statement)
         {
+            ident id = _var_statement.var_def.vars.idents[0];
+            NameKind existing = symbolTable[id.name];
+            if (explicitAnnotations.Contains(_var_statement) &&
+                symbolTable.IsVisibleToAssign(id.name) &&
+                (existing == NameKind.GlobalVariable || existing == NameKind.LocalVariable))
+            {
+                // An annotation of an existing name checks its static type;
+                // it does not create another Pascal variable.
+                var annotation = _var_statement.var_def.vars_type;
+                ProcessNode(annotation);
+                var check = new semantic_check_sugared_statement_node("SPythonReannotation",
+                    new List<syntax_tree_node> { new ident(id.name, id.source_context), annotation },
+                    _var_statement.source_context);
+                if (_var_statement.var_def.inital_value == null)
+                {
+                    ReplaceStatement(_var_statement, check);
+                }
+                else
+                {
+                    var assignment = new assign(new ident(id.name, id.source_context),
+                        _var_statement.var_def.inital_value, Operators.Assignment,
+                        _var_statement.source_context);
+                    ReplaceStatement(_var_statement, new statement[] { check, assignment });
+                }
+                return;
+            }
             if (symbolTable.IsOutermostScope())
             {
                 // не работает для нескольких переменных (var a1, a2, ...: type;)
-                ident id = _var_statement.var_def.vars.idents[0];
                 symbolTable.Add(id.name, NameKind.GlobalVariable);
                 ProcessNode(_var_statement.var_def);
             }

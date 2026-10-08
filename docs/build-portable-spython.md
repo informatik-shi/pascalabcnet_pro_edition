@@ -123,6 +123,51 @@ f.close()
 проверяет 14 строк вывода, обработку исключения внутри `with` и работу
 `lambda` на обоих компиляторах.
 
+### Аннотации типов и неизменный тип переменной
+
+SPython использует привычный синтаксис Python для аннотаций переменных,
+аргументов и результата функции. Проверены `int`, `float`, `str`, `bool`,
+`list[T]`, `dict[K, V]`, `set[T]`, `tuple[T1, T2]` и вложенные типы. Например:
+
+```python
+values: dict[str, int] = {'a': 1}
+def label(x: str) -> str:
+    return x
+print(label('z'))
+```
+
+В отличие от CPython, SPython сохраняет статический тип имени внутри области
+видимости. `a = lambda x: x + 1; a: int = 10` не компилируется из-за
+несовместимых типов; обычное `a = 10` тоже отклоняется. Повторное
+присваивание и повторная аннотация того же типа разрешены. Это проверяет
+`NameCorrectVisitor.cs` при повторной аннотации и семантический анализатор
+`spython_syntax_tree_visitor.cs` на этапе компиляции. Локальная переменная
+функции может затенять внешнюю переменную с другим типом. Отдельные выражения
+в программе, например `a + 4`, допустимы: результат вычисляется и
+отбрасывается.
+
+Односимвольные литералы SPython теперь всегда преобразует в `str`; без этого
+`{'a': 1}` выводилось как словарь с ключом `char`, а аннотация
+`dict[str, int]` давала ложную ошибку. Это реализовано в
+`AssignmentCharAsStringVisitor.cs`. Отдельные выражения преобразуются через
+`!discard<T>` из `SPythonSystem.pas`, поскольку прямой вывод такого узла
+создавал некорректный исполняемый файл.
+
+Это ещё не вся система аннотаций CPython. В частности, `int | None`,
+`typing.Optional`, `typing.Callable` и `typing.Any` пока не поддерживаются.
+Кроме того, обычный Python
+хранит аннотации как подсказки и не запрещает смену типа при выполнении;
+запрет в SPython — намеренное правило проекта. Справочник по синтаксису:
+[Python typing](https://docs.python.org/3/library/typing.html).
+
+После изменения грамматики, преобразователя и стандартного модуля повторите
+генерацию парсера и полную сборку, как показано ниже, затем выполните:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\test-spython-type-annotations.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\test-spython-type-annotations.ps1 -Runtime net10
+```
+
 Для изменений грамматики обновите сгенерированные файлы парсера до сборки:
 
 ```powershell
@@ -181,6 +226,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\test-spython-fil
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\test-spython-file-io.ps1 -Runtime net10
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\test-spython-read-sbl-lambda.ps1
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\test-spython-read-sbl-lambda.ps1 -Runtime net10
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\test-spython-type-annotations.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\test-spython-type-annotations.ps1 -Runtime net10
 ```
 
 Если установлен CPython, после сценариев сравните его вывод на тех же файлах:
@@ -219,6 +266,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\test-spython-fil
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\test-spython-file-io.ps1 -Runtime net10 -PackageRoot '.\portable-smoke\PascalABCNET-Portable-win-x64'
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\test-spython-read-sbl-lambda.ps1 -Runtime classic -PackageRoot '.\portable-smoke\PascalABCNET-Portable-win-x64'
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\test-spython-read-sbl-lambda.ps1 -Runtime net10 -PackageRoot '.\portable-smoke\PascalABCNET-Portable-win-x64'
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\test-spython-type-annotations.ps1 -Runtime classic -PackageRoot '.\portable-smoke\PascalABCNET-Portable-win-x64'
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\test-spython-type-annotations.ps1 -Runtime net10 -PackageRoot '.\portable-smoke\PascalABCNET-Portable-win-x64'
 ```
 
 В интерактивном терминале проверьте оба компилятора из распакованной папки:

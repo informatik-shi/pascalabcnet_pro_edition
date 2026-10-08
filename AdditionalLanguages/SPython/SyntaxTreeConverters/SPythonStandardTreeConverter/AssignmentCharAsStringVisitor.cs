@@ -10,12 +10,20 @@ namespace Languages.SPython.Frontend.Converters
     {
         public AssignmentCharAsStringVisitor() { }
 
-        public override void visit(assign _assign)
+        public override void visit(string_const literal)
         {
-            if (_assign.from is string_const sc
-                && sc.Value.Length == 1)
+            // PascalABC.NET treats one-character literals as char. In Python they
+            // are strings in every expression, including collection literals and
+            // annotated initializers, not only on the right of an assignment.
+            if (literal.Value.Length == 1)
             {
-                _assign.from = new method_call(new ident("str"), new expression_list(sc, sc.source_context), sc.source_context);
+                var parent = UpperNode();
+                if (parent is expression_list arguments &&
+                    arguments.Parent is method_call call &&
+                    call.dereferencing_value is ident name && name.name == "str")
+                    return;
+                Replace(literal, new method_call(new ident("str", literal.source_context),
+                    new expression_list(literal, literal.source_context), literal.source_context));
             }
         }
     }

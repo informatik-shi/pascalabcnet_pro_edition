@@ -183,6 +183,25 @@ namespace SPythonSyntaxTreeVisitor
 
         }
 
+        public override void visit(semantic_check_sugared_statement_node check)
+        {
+            if (check.typ is string marker && marker == "SPythonReannotation")
+            {
+                var variable = convert_strong((expression)check.lst[0]);
+                var annotatedType = convert_strong((type_definition)check.lst[1]);
+                var declaredType = variable.type;
+                bool sameType = declaredType == annotatedType ||
+                    declaredType is compiled_type_node declaredCompiled &&
+                    annotatedType is compiled_type_node annotatedCompiled &&
+                    declaredCompiled.compiled_type == annotatedCompiled.compiled_type;
+                if (!sameType)
+                    AddError(new CanNotConvertTypes(variable, annotatedType, declaredType,
+                        get_location(check.lst[1])));
+                return;
+            }
+            base.visit(check);
+        }
+
         public override void visit(assign _assign)
         {
 

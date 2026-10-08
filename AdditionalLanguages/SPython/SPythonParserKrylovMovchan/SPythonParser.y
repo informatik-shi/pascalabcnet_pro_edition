@@ -205,6 +205,12 @@ stmt
 		{ 
 			$$ = $1; 
 		}
+	| expr
+		{
+			// A non-call expression is legal as a statement in Python. The
+			// backend cannot emit it directly as expression_as_statement.
+			$$ = new procedure_call(SubtreeCreator.CreateMethodCall("!discard", @$, $1), false, @$);
+		}
 	| var_stmt
 		{ 
 			$$ = $1; 

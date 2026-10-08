@@ -5,6 +5,7 @@ using PascalABCCompiler.SyntaxTreeConverters;
 using SyntaxVisitors;
 using SyntaxVisitors.SugarVisitors;
 using System;
+using System.Collections.Generic;
 using PascalABCCompiler.CoreUtils;
 
 namespace Languages.SPython.Frontend.Converters
@@ -60,6 +61,8 @@ namespace Languages.SPython.Frontend.Converters
         protected override syntax_tree_node ApplyConversionsAfterUsedModulesCompilation(syntax_tree_node root, bool forIntellisense, in CompilationArtifactsUsedBySyntaxConverters compilationArtifacts)
         {
             var generatedNamesManager = new GeneratedNamesManager();
+            var annotations = new ExplicitAnnotationCollector();
+            annotations.ProcessNode(root);
 
             // украл из паскаля, нужны для работы 'for i1, i2 in expr' (работает с кортежными присваиваниями)
             var binder = new BindCollectLightSymInfo(root as compilation_unit);
@@ -81,7 +84,7 @@ namespace Languages.SPython.Frontend.Converters
             // проверка корректности имён, разрешение неоднозначности
             // сохранение множества переменных, использующихся как глобальные в ncv.variablesUsedAsGlobal
             var ncv = new NameCorrectVisitor(System.IO.Path.GetFileNameWithoutExtension(((compilation_unit)root).file_name), forIntellisense,
-                compilationArtifacts.NamesFromUsedUnits, ffv.definedFunctionsNames);
+                compilationArtifacts.NamesFromUsedUnits, ffv.definedFunctionsNames, annotations.Items);
 
             ncv.ProcessNode(root);
 
@@ -155,6 +158,18 @@ namespace Languages.SPython.Frontend.Converters
                 }
 
                 return true;
+            }
+        }
+
+        private class ExplicitAnnotationCollector : WalkingVisitorNew
+        {
+            public readonly HashSet<var_statement> Items = new HashSet<var_statement>();
+
+            public override void visit(var_statement statement)
+            {
+                if (statement.var_def.vars_type != null)
+                    Items.Add(statement);
+                base.visit(statement);
             }
         }
     }

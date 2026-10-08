@@ -178,6 +178,7 @@ function !open_binary(path: PyObject; mode: string := 'rb'; buffering: integer :
 function !lambda0(f: () -> PyValue): () -> PyValue;
 function !lambda1(f: PyValue -> PyValue): PyValue -> PyValue;
 function !lambda2(f: (PyValue, PyValue) -> PyValue): (PyValue, PyValue) -> PyValue;
+procedure !discard<T>(value: T);
 
 ///--
 type kwargs_gen<T> = class
@@ -1283,6 +1284,7 @@ function !open_binary(path: PyObject; mode: string; buffering: integer;
 function !lambda0(f: () -> PyValue): () -> PyValue := f;
 function !lambda1(f: PyValue -> PyValue): PyValue -> PyValue := f;
 function !lambda2(f: (PyValue, PyValue) -> PyValue): (PyValue, PyValue) -> PyValue := f;
+procedure !discard<T>(value: T); begin end;
 
 function input(): string;
 begin
