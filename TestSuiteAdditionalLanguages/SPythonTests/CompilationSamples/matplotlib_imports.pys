@@ -1,0 +1,7 @@
+from matplotlib import pyplot as plt
+from matplotlib.pyplot import savefig
+
+plt.bar(['A', 'B', 'C'], [2, 4, 3], color='blue')
+plt.ylabel('value')
+savefig('matplotlib_imports.png')
+print('matplotlib imports ok')

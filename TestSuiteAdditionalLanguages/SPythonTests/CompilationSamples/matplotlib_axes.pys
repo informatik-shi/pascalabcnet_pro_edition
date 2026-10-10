@@ -1,0 +1,9 @@
+import matplotlib.pyplot as plt
+
+fig, ax = plt.subplots(figsize=(5, 3))
+ax.scatter([1, 2, 3], [2, 4, 6], c=['red', 'blue', 'green'])
+ax.set_title('Axes API')
+ax.set_xlabel('x')
+ax.set_ylabel('y')
+fig.savefig('matplotlib_axes.png')
+print('matplotlib axes ok')

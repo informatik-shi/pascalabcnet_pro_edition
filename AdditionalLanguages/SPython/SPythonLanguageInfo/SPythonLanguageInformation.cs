@@ -34,6 +34,7 @@ namespace Languages.SPython.Frontend.Data
             { "itertools", "itertools1" },
             { "ipaddress", "ipaddress1" },
             { "re", "re1" },
+            { "matplotlib.pyplot", "pyplot1" },
         };
 
         public Dictionary<string, string> SpecialModulesAliases => specialModulesAliases;

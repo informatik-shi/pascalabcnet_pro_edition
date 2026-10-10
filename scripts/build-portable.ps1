@@ -2,7 +2,8 @@
 param(
     [switch]$SkipBuild,
     [string]$DotnetRoot = '',
-    [string]$OutputRoot = ''
+    [string]$OutputRoot = '',
+    [string]$PythonExe = ''
 )
 
 Set-StrictMode -Version Latest
@@ -102,6 +103,8 @@ if (@(Get-ChildItem -LiteralPath (Join-Path $modern 'Lib') -Recurse -File -Filte
     throw 'Missing .NET 10 standard units; run a full portable build.'
 }
 
+$pythonRuntime = & (Join-Path $PSScriptRoot 'prepare-python-matplotlib.ps1') -PythonExe $PythonExe
+
 $fxrVersion = @(Get-ChildItem -LiteralPath (Join-Path $DotnetRoot 'host\fxr') -Directory |
     Where-Object Name -Like '10.*' | Sort-Object { [version]$_.Name } -Descending |
     Select-Object -First 1 -ExpandProperty Name)
@@ -161,6 +164,17 @@ Copy-Item -LiteralPath (Join-Path $DotnetRoot "shared\Microsoft.NETCore.App\$cor
     -Destination (Join-Path $runtimeStage 'shared\Microsoft.NETCore.App') -Recurse -Force
 Copy-Item -LiteralPath (Join-Path $DotnetRoot "shared\Microsoft.WindowsDesktop.App\$desktopVersion") `
     -Destination (Join-Path $runtimeStage 'shared\Microsoft.WindowsDesktop.App') -Recurse -Force
+
+$pythonStage = Join-Path $stage 'python'
+Copy-Item -LiteralPath $pythonRuntime.Runtime -Destination $pythonStage -Recurse -Force
+$pythonSite = Join-Path $pythonStage 'Lib\site-packages'
+New-Item -ItemType Directory -Path $pythonSite -Force | Out-Null
+Copy-Item -Path (Join-Path $pythonRuntime.Packages '*') -Destination $pythonSite -Recurse -Force
+Set-Content -LiteralPath (Join-Path $pythonStage 'python313._pth') `
+    -Value @('python313.zip', '.', 'Lib\site-packages') -Encoding ascii
+& (Join-Path $pythonStage 'python.exe') -c `
+    'import matplotlib, numpy; print("Bundled Python:", matplotlib.__version__, numpy.__version__)'
+if ($LASTEXITCODE -ne 0) { throw 'Bundled Matplotlib does not start.' }
 
 Copy-Item -Path (Join-Path $root 'PortableDistribution\*') -Destination $stage -Recurse -Force
 Assert-File (Join-Path $notebookPublish 'PascalABCNotebook.dll')

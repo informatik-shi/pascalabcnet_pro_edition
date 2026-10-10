@@ -180,6 +180,19 @@ namespace Languages.SPython.Frontend.Converters
             if (forIntellisense)
                 return;
 
+            if (_from_import_statement.module_name.name == "matplotlib" &&
+                !_from_import_statement.is_star)
+            {
+                foreach (as_statement imported in _from_import_statement.imported_names.as_statements)
+                {
+                    if (imported.real_name.name != "pyplot")
+                        throw new SPythonSyntaxVisitorError("MODULE_{0}_HAS_NO_NAME_{1}",
+                            imported.source_context, "matplotlib", imported.real_name.name);
+                    symbolTable.AddModuleAlias("pyplot1", imported.alias.name);
+                }
+                return;
+            }
+
             string module_real_name = _from_import_statement.module_name.name;
             string module_name = module_real_name;
             if (languageInformation.SpecialModulesAliases.ContainsKey(module_name))

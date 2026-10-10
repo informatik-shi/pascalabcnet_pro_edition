@@ -34,6 +34,14 @@ namespace Languages.SPython.Frontend.Converters
 
         public override void visit(from_import_statement _from_import_statement)
         {
+            if (_from_import_statement.module_name.name == "matplotlib" &&
+                !_from_import_statement.is_star)
+            {
+                foreach (as_statement imported in _from_import_statement.imported_names.as_statements)
+                    if (imported.real_name.name == "pyplot")
+                        AddName(new ident("matplotlib.pyplot", imported.real_name.source_context));
+                return;
+            }
             AddName(_from_import_statement.module_name);
         }
 

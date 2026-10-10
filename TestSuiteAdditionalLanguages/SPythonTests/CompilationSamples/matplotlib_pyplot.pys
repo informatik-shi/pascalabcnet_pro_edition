@@ -1,0 +1,12 @@
+import matplotlib.pyplot as plt
+
+x = [0, 1, 2, 3]
+y = [0, 1, 4, 9]
+plt.plot(x, y, color='red', label='quadratic')
+plt.title('График SPython')
+plt.xlabel('x')
+plt.ylabel('y')
+plt.grid(True)
+plt.legend()
+plt.savefig('matplotlib_pyplot.png')
+print('matplotlib pyplot ok')

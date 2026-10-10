@@ -3,7 +3,7 @@ using System.Text.RegularExpressions;
 
 namespace PascalABCNotebook;
 
-internal enum GraphicsBackend { None, GraphABC, GraphWPF, Graph3D, PlotML, WPF }
+internal enum GraphicsBackend { None, GraphABC, GraphWPF, Graph3D, PlotML, WPF, Matplotlib }
 
 internal sealed record GeneratedSource(string Text, string Extension, string? StartMarker,
     string? EndMarker, GraphicsBackend Graphics);
@@ -129,6 +129,9 @@ internal static class NotebookSourceBuilder
             : Regex.Matches(code, @"(?im)^\s*(?:from|import)\s+([A-Za-z_][A-Za-z_0-9]*)")
                 .Cast<Match>().Select(m => m.Groups[1].Value);
         var names = modules.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (language == "spython" &&
+            Regex.IsMatch(code, @"(?im)^\s*(?:import\s+matplotlib\.pyplot\b|from\s+matplotlib\.pyplot\s+import\b|from\s+matplotlib\s+import\s+pyplot\b)"))
+            return GraphicsBackend.Matplotlib;
         if (names.Contains("PlotML")) return GraphicsBackend.PlotML;
         if (names.Contains("Graph3D")) return GraphicsBackend.Graph3D;
         if (names.Overlaps(["GraphWPF", "PlotWPF", "WPFObjects", "TurtleWPF", "Turtle"]))
@@ -158,6 +161,18 @@ internal static class NotebookSourceBuilder
     private static string SPythonCapture(GraphicsBackend graphics, string imagePath, string code)
     {
         if (graphics == GraphicsBackend.None) return "";
+        if (graphics == GraphicsBackend.Matplotlib)
+        {
+            var pyplotImport = Regex.Match(code,
+                @"(?im)^\s*import\s+matplotlib\.pyplot\s+as\s+([A-Za-z_][A-Za-z_0-9]*)");
+            if (pyplotImport.Success)
+                return $"{pyplotImport.Groups[1].Value}.savefig('{imagePath}')";
+            pyplotImport = Regex.Match(code,
+                @"(?im)^\s*from\s+matplotlib\s+import\s+pyplot(?:\s+as\s+([A-Za-z_][A-Za-z_0-9]*))?");
+            if (pyplotImport.Success)
+                return $"{(pyplotImport.Groups[1].Success ? pyplotImport.Groups[1].Value : "pyplot")}.savefig('{imagePath}')";
+            return $"from matplotlib.pyplot import savefig\nsavefig('{imagePath}')";
+        }
         var module = graphics.ToString();
         var importedNamespace = Regex.IsMatch(code,
             @"(?im)^\s*import\s+" + Regex.Escape(module) + @"\b");

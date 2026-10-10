@@ -9,8 +9,8 @@
 	private readonly GeneratedNamesManager lambdaNames = new GeneratedNamesManager();
 
 	public SPythonGPPGParser(AbstractScanner<ValueType, LexLocation> scanner, SPythonParserTools parserTools,
-	bool isUnitToBeParsed) : base(scanner) 
-	{ 
+	bool isUnitToBeParsed) : base(scanner)
+	{
 		this.parserTools = parserTools;
 		this.is_unit_to_be_parsed = isUnitToBeParsed;
 	}
@@ -69,7 +69,7 @@
 %right STARSTAR
 
 
-%type <id> ident func_name_ident type_decl_identifier
+%type <id> ident module_ident func_name_ident type_decl_identifier
 %type <ex> extended_expr expr dotted_ident proc_func_call const_value variable optional_condition act_param new_expr is_expr variable_as_type
 %type <stn> act_param_list optional_act_param_list proc_func_decl return_stmt break_stmt continue_stmt global_stmt pass_stmt
 %type <stn> var_stmt assign_stmt if_stmt stmt proc_func_call_stmt while_stmt for_stmt optional_else optional_elif exit_stmt
@@ -77,8 +77,8 @@
 %type <stn> expr_list
 %type <stn> stmt_list block
 %type <stn> program param_name form_param_sect form_param_list optional_form_param_list
-%type <stn> ident_as_ident ident_as_ident_list ident_list
-%type <td> proc_func_header type_ref simple_type_identifier template_type 
+%type <stn> ident_as_ident ident_as_ident_list module_as_ident module_as_ident_list ident_list
+%type <td> proc_func_header type_ref simple_type_identifier template_type
 %type <stn> import_clause template_type_params template_param_list parts stmt_or_expression expr_mapping_list
 %type <ob> optional_semicolon end_of_line variable_list
 %type <op> assign_type
@@ -129,8 +129,8 @@ program
 			}
 		}
 	| parts END_OF_FILE
-		{ 
-			root = $1; 
+		{
+			root = $1;
 		}
 	;
 
@@ -147,7 +147,7 @@ parts
 
 extended_expr
 	: expr
-		{ 
+		{
 			$$ = $1;
 		}
 	// вызов конструктора без скобочек
@@ -156,32 +156,32 @@ extended_expr
 			$$ = new new_expr($2, null, false, null, @$);
 		}
 	;
-	
+
 
 type_decl_identifier
     : ident
-		{ 
-			$$ = $1; 
+		{
+			$$ = $1;
 		}
-    | ident  template_type_params           
-        { 
-			$$ = new template_type_name($1.name, $2 as ident_list, @$); 
+    | ident  template_type_params
+        {
+			$$ = new template_type_name($1.name, $2 as ident_list, @$);
         }
 	;
 
 variable_as_type
 	: dotted_ident
-		{ 
+		{
 			$$ = $1;
 		}
-	| dotted_ident template_type_params 
-		{ 
-			$$ = new ident_with_templateparams($1 as addressed_value, $2 as template_param_list, @$);   
+	| dotted_ident template_type_params
+		{
+			$$ = new ident_with_templateparams($1 as addressed_value, $2 as template_param_list, @$);
 		}
 	;
 
 stmt_or_expression
-    : expr 
+    : expr
         { $$ = new expression_as_statement($1,@$);}
     | assign_stmt
         { $$ = $1; }
@@ -202,8 +202,8 @@ stmt_list
 
 stmt
 	: assign_stmt
-		{ 
-			$$ = $1; 
+		{
+			$$ = $1;
 		}
 	| expr
 		{
@@ -212,24 +212,24 @@ stmt
 			$$ = new procedure_call(SubtreeCreator.CreateMethodCall("!discard", @$, $1), false, @$);
 		}
 	| var_stmt
-		{ 
-			$$ = $1; 
+		{
+			$$ = $1;
 		}
 	| if_stmt
-		{ 
-			$$ = $1; 
+		{
+			$$ = $1;
 		}
 	| proc_func_call_stmt
-		{ 
-			$$ = $1; 
+		{
+			$$ = $1;
 		}
 	| while_stmt
-		{ 
-			$$ = $1; 
+		{
+			$$ = $1;
 		}
 	| for_stmt
-		{ 
-			$$ = $1; 
+		{
+			$$ = $1;
 		}
 	| try_stmt
 		{
@@ -240,24 +240,24 @@ stmt
 			$$ = $1;
 		}
 	| return_stmt
-		{ 
-			$$ = $1; 
+		{
+			$$ = $1;
 		}
 	| break_stmt
-		{ 
-			$$ = $1; 
+		{
+			$$ = $1;
 		}
 	| continue_stmt
-		{ 
-			$$ = $1; 
+		{
+			$$ = $1;
 		}
 	| global_stmt
-		{ 
-			$$ = $1; 
+		{
+			$$ = $1;
 		}
 	| pass_stmt
-		{ 
-			$$ = $1; 
+		{
+			$$ = $1;
 		}
 	| exit_stmt
 		{
@@ -269,20 +269,20 @@ stmt
 		}
 	| import_clause
 		{
-			$$ = $1; 
+			$$ = $1;
 		}
 	;
 
 import_clause
-	: IMPORT ident_as_ident_list
+	: IMPORT module_as_ident_list
 		{
 			$$ = new import_statement($2 as as_statement_list, @$);
 		}
-	| FROM ident IMPORT ident_as_ident_list 
+	| FROM module_ident IMPORT ident_as_ident_list
 		{
 			$$ = new from_import_statement($2 as ident, false, $4 as as_statement_list, @$);
 		}
-	| FROM ident IMPORT STAR 
+	| FROM module_ident IMPORT STAR
 		{
 			$$ = new from_import_statement($2 as ident, true, null, @$);
 		}
@@ -316,26 +316,48 @@ ident
 		}
 	;
 
+// Import names are flattened only in import clauses. Expression dots still
+// produce dot_node so attribute access retains its normal semantics.
+module_ident
+	: ident { $$ = $1; }
+	| module_ident DOT ident
+		{ $$ = new ident(($1 as ident).name + "." + ($3 as ident).name, @$); }
+	;
+
+module_as_ident
+	: module_ident AS ident
+		{ $$ = new as_statement($1, $3, @$); }
+	| module_ident
+		{ $$ = new as_statement($1, $1, @$); }
+	;
+
+module_as_ident_list
+	: module_as_ident
+		{ $$ = new as_statement_list($1 as as_statement, @$); }
+	| module_as_ident_list COMMA module_as_ident
+		{ $$ = ($1 as as_statement_list).Add($3 as as_statement, @$); }
+	;
+
 // этот нетерминал аналог dotted_identifier из ABCPascal.y
 dotted_ident
 	: ident
-		{ 
+		{
 			$$ = $1;
 		}
 	| dotted_ident DOT ident
-		{ 
+		{
 			$$ = new dot_node($1 as addressed_value, $3 as addressed_value, @$);
 		}
 	;
 
 ident_as_ident
 	: ident AS ident
-		{ 
-			$$ = new as_statement($1, $3, @$); 
+		{
+			$$ = new as_statement($1, $3, @$);
 		}
 	| ident
-		{ 
-			$$ = new as_statement($1, $1, @$); 
+		{
+			$$ = new as_statement($1, $1, @$);
 		}
 	;
 
@@ -351,7 +373,7 @@ ident_as_ident_list
     ;
 
 expr_mapping
-	: expr COLON expr 
+	: expr COLON expr
 		{
 			expression_list el = new expression_list(new List<expression> { $1, $3 }, @$);
 			$$ = new tuple_node(el, @$);
@@ -382,7 +404,7 @@ var_stmt
 		}
 	;
 
-assign_right_part 
+assign_right_part
 	: expr
 		{
 			$$ = $1;
@@ -428,19 +450,19 @@ assign_stmt
 
 assign_type
 	: PLUSEQUAL
-		{ 
+		{
 			$$ = $1;
 		}
     | MINUSEQUAL
-		{ 
+		{
 			$$ = $1;
 		}
     | STAREQUAL
-		{ 
+		{
 			$$ = $1;
 		}
     | DIVEQUAL
-		{ 
+		{
 			$$ = $1;
 		}
 	| BINXOREQUAL
@@ -475,84 +497,84 @@ expr
 			$$ = new question_colon_expression($3, $1, $5, @$);
 		}
 	| expr PLUS 		expr
-		{ 
-			$$ = new bin_expr($1, $3, $2.type, @$); 
+		{
+			$$ = new bin_expr($1, $3, $2.type, @$);
 		}
 	| expr STAR 	expr
-		{ 
-			$$ = new bin_expr($1, $3, $2.type, @$); 
+		{
+			$$ = new bin_expr($1, $3, $2.type, @$);
 		}
 	| expr DIVIDE 		expr
-		{ 
-			$$ = new bin_expr($1, $3, $2.type, @$); 
+		{
+			$$ = new bin_expr($1, $3, $2.type, @$);
 		}
 	| expr MINUS 		expr
-		{ 
-			$$ = new bin_expr($1, $3, $2.type, @$); 
+		{
+			$$ = new bin_expr($1, $3, $2.type, @$);
 		}
   	| expr LESS 		expr
-		{ 
-			$$ = new bin_expr($1, $3, $2.type, @$); 
+		{
+			$$ = new bin_expr($1, $3, $2.type, @$);
 		}
 	| expr GREATER 		expr
-		{ 
-			$$ = new bin_expr($1, $3, $2.type, @$); 
+		{
+			$$ = new bin_expr($1, $3, $2.type, @$);
 		}
 	| expr LESSEQUAL 	expr
-		{ 
-			$$ = new bin_expr($1, $3, $2.type, @$); 
+		{
+			$$ = new bin_expr($1, $3, $2.type, @$);
 		}
 	| expr GREATEREQUAL expr
-		{ 
-			$$ = new bin_expr($1, $3, $2.type, @$); 
+		{
+			$$ = new bin_expr($1, $3, $2.type, @$);
 		}
 	| expr EQUAL 		expr
-		{ 
-			$$ = new bin_expr($1, $3, $2.type, @$); 
+		{
+			$$ = new bin_expr($1, $3, $2.type, @$);
 		}
 	| expr NOTEQUAL 	expr
-		{ 
-			$$ = new bin_expr($1, $3, $2.type, @$); 
+		{
+			$$ = new bin_expr($1, $3, $2.type, @$);
 		}
 	| expr AND 			expr
-		{ 
+		{
 			$$ = new bin_expr(SubtreeCreator.CreateMethodCall("bool", $1.source_context, $1),
 			                  SubtreeCreator.CreateMethodCall("bool", $3.source_context, $3),
-							  $2.type, @$); 
+							  $2.type, @$);
 		}
 	| expr OR 			expr
-		{ 
+		{
 			$$ = new bin_expr(SubtreeCreator.CreateMethodCall("bool", $1.source_context, $1),
 			                  SubtreeCreator.CreateMethodCall("bool", $3.source_context, $3),
-							  $2.type, @$); 
+							  $2.type, @$);
 		}
 	| expr SLASHSLASH	expr
-		{ 
-			$$ = new bin_expr($1, $3, $2.type, @$); 
+		{
+			$$ = new bin_expr($1, $3, $2.type, @$);
 		}
 	| expr PERCENTAGE	expr
-		{ 
-			$$ = new bin_expr($1, $3, $2.type, @$); 
+		{
+			$$ = new bin_expr($1, $3, $2.type, @$);
 		}
 	| expr SHL	expr
-		{ 
-			$$ = new bin_expr($1, $3, $2.type, @$); 
+		{
+			$$ = new bin_expr($1, $3, $2.type, @$);
 		}
 	| expr SHR	expr
-		{ 
-			$$ = new bin_expr($1, $3, $2.type, @$); 
+		{
+			$$ = new bin_expr($1, $3, $2.type, @$);
 		}
 	| expr BINAND	expr
-		{ 
-			$$ = new bin_expr($1, $3, $2.type, @$); 
+		{
+			$$ = new bin_expr($1, $3, $2.type, @$);
 		}
 	| expr BINOR	expr
-		{ 
-			$$ = new bin_expr($1, $3, $2.type, @$); 
+		{
+			$$ = new bin_expr($1, $3, $2.type, @$);
 		}
 	| expr BINXOR	expr
-		{ 
-			$$ = new bin_expr($1, $3, $2.type, @$); 
+		{
+			$$ = new bin_expr($1, $3, $2.type, @$);
 		}
 	| expr STARSTAR		expr
 		{
@@ -579,11 +601,11 @@ expr
 		}
 	| expr IN			expr
 		{
-			$$ = new bin_expr($1, $3, Operators.In, @$); 
+			$$ = new bin_expr($1, $3, Operators.In, @$);
 		}
 	| expr NOT IN			expr
 		{
-			// $$ = new bin_expr($1, $4, Operators.NotIn, @$); 
+			// $$ = new bin_expr($1, $4, Operators.NotIn, @$);
 			$$ = new un_expr(new bin_expr($1, $4, Operators.In, @$),Operators.LogicalNOT,@$);
 		}
 	| PLUS expr %prec UPLUS
@@ -591,24 +613,24 @@ expr
 			$$ = new un_expr($2, $1.type, @$);
 		}
 	| MINUS	expr %prec UMINUS
-		{ 
-			$$ = new un_expr($2, $1.type, @$); 
+		{
+			$$ = new un_expr($2, $1.type, @$);
 		}
 	| NOT	expr
-		{ 
+		{
 			$$ = new un_expr(SubtreeCreator.CreateMethodCall("bool", $2.source_context, $2), $1.type, @$);
 		}
 	| BINNOT expr
-		{ 
-			$$ = new un_expr($2, $1.type, @$); 
+		{
+			$$ = new un_expr($2, $1.type, @$);
 		}
 	| variable
-		{ 
-			$$ = $1; 
+		{
+			$$ = $1;
 		}
 	| const_value
-		{ 
-			$$ = $1; 
+		{
+			$$ = $1;
 		}
 	| new_expr
 		{
@@ -623,8 +645,8 @@ expr
 			$$ = $1;
 		}
 	| LPAR expr RPAR
-		{ 
-			$$ = new bracket_expr($2, @$); 
+		{
+			$$ = new bracket_expr($2, @$);
 		}
 	;
 
@@ -643,14 +665,14 @@ tuple_expr
 	: LPAR expr COMMA expr_list RPAR
 		{
 			// inherited from PABC
-			if (($4 as expression_list).Count > 6) 
+			if (($4 as expression_list).Count > 6)
 				parserTools.AddErrorFromResource("TUPLE_ELEMENTS_COUNT_MUST_BE_LESSEQUAL_7", @$);
             ($4 as expression_list).Insert(0, $2);
 			$$ = new tuple_node($4 as expression_list, @$);
 		}
 	;
 
- // Способ задать кортеж без скобочек. 
+ // Способ задать кортеж без скобочек.
  // Работает только для присваивания, типа
  // a = 1, 2 или a, b = 1, 2
  // Название просто прикольное
@@ -658,7 +680,7 @@ turbo_tuple_expr
 	: expr COMMA expr_list
 	{
 			// inherited from PABC
-			if (($3 as expression_list).Count > 6) 
+			if (($3 as expression_list).Count > 6)
 				parserTools.AddErrorFromResource("TUPLE_ELEMENTS_COUNT_MUST_BE_LESSEQUAL_7", @$);
             ($3 as expression_list).Insert(0, $1);
 			$$ = new tuple_node($3 as expression_list, @$);
@@ -681,31 +703,31 @@ new_expr
 
 const_value
 	: INTNUM
-		{ 
-			$$ = $1; 
+		{
+			$$ = $1;
 		}
 	| REALNUM
-		{ 
-			$$ = $1; 
+		{
+			$$ = $1;
 		}
 	| TRUE
-		{ 
-			$$ = new ident("true", @$); 
+		{
+			$$ = new ident("true", @$);
 		}
 	| FALSE
-		{ 
-			$$ = new ident("false", @$); 
+		{
+			$$ = new ident("false", @$);
 		}
 	| STRINGNUM
-		{ 
-			$$ = $1 as literal; 
+		{
+			$$ = $1 as literal;
 		}
 	| FSTRINGNUM
 		{
 			$$ = $1;
 		}
 	| BIGINT
-		{ 
+		{
 			$$ = $1;
 		}
 	;
@@ -734,19 +756,19 @@ optional_elif
 			$$ = new if_node($2, $4 as statement, $5 as statement, @$);
 		}
 	| optional_else
-		{ 
-			$$ = $1; 
+		{
+			$$ = $1;
 		}
 	;
 
 optional_else
 	: ELSE COLON block
-		{ 
-			$$ = $3; 
+		{
+			$$ = $3;
 		}
 	|
-		{ 
-			$$ = null; 
+		{
+			$$ = null;
 		}
 	;
 
@@ -887,20 +909,20 @@ proc_func_call_stmt
 
 variable
 	: ident
-		{ 
-			$$ = $1; 
+		{
+			$$ = $1;
 		}
 	| proc_func_call
-		{ 
-			$$ = $1; 
+		{
+			$$ = $1;
 		}
 	| variable DOT ident
-		{ 
-			$$ = new dot_node($1 as addressed_value, $3 as addressed_value, @$); 
+		{
+			$$ = new dot_node($1 as addressed_value, $3 as addressed_value, @$);
 		}
 	| const_value DOT ident
-		{ 
-			$$ = new dot_node($1 as addressed_value, $3 as addressed_value, @$); 
+		{
+			$$ = new dot_node($1 as addressed_value, $3 as addressed_value, @$);
 		}
 	| list_constant
 		{
@@ -998,12 +1020,12 @@ list_constant
 
 optional_condition
 	:
-		{ 
-			$$ = null; 
+		{
+			$$ = null;
 		}
 	| IF expr
-		{ 
-			$$ = $2; 
+		{
+			$$ = $2;
 		}
 	;
 
@@ -1050,7 +1072,7 @@ simple_type_identifier
 			$$ = new named_type_reference($1, @$);
 		}
 	| simple_type_identifier DOT ident
-        { 
+        {
 			$$ = ($1 as named_type_reference).Add($3, @$);
 		}
 	;
@@ -1061,20 +1083,20 @@ type_ref
 			$$ = $1 as named_type_reference;
 		}
 	| template_type
-		{ 
+		{
 			$$ = $1;
 		}
 	;
 
 template_type
-    : simple_type_identifier template_type_params    
-        { 
-			$$ = new template_type_reference($1 as named_type_reference, $2 as template_param_list, @$); 
+    : simple_type_identifier template_type_params
+        {
+			$$ = new template_type_reference($1 as named_type_reference, $2 as template_param_list, @$);
 		}
     ;
 
 template_type_params
-    : LBRACKET template_param_list RBRACKET            
+    : LBRACKET template_param_list RBRACKET
         {
 			$$ = $2;
 			$$.source_context = @$;
@@ -1082,12 +1104,12 @@ template_type_params
     ;
 
 template_param_list
-    : type_ref                              
-        { 
+    : type_ref
+        {
 			$$ = new template_param_list($1, @$);
 		}
-    | template_param_list COMMA type_ref  
-        { 
+    | template_param_list COMMA type_ref
+        {
 			$$ = ($1 as template_param_list).Add($3, @$);
 		}
     ;
@@ -1124,8 +1146,8 @@ form_param_sect
 	// *args
 	| STAR param_name COLON type_ref
 		{
-			var at = new array_type(null, $4, @$); 
-			$$ = new typed_parameters($2 as ident_list, at, parametr_kind.params_parametr, null, @$); 
+			var at = new array_type(null, $4, @$);
+			$$ = new typed_parameters($2 as ident_list, at, parametr_kind.params_parametr, null, @$);
 		}
 	// **kwargs
 	| STARSTAR param_name COLON type_ref
@@ -1158,12 +1180,12 @@ optional_form_param_list
 
 act_param
 	: expr
-		{ 
-			$$ = $1; 
+		{
+			$$ = $1;
 		}
 	| ident ASSIGN expr
-		{ 
-			$$ = new name_assign_expr($1, $3, @$); 
+		{
+			$$ = new name_assign_expr($1, $3, @$);
 		}
 	;
 
@@ -1206,12 +1228,12 @@ end_of_line
 
 optional_semicolon
 	: SEMICOLON
-		{ 
-			$$ = $1; 
+		{
+			$$ = $1;
 		}
 	|
-		{ 
-			$$ = null; 
+		{
+			$$ = null;
 		}
 	;
 

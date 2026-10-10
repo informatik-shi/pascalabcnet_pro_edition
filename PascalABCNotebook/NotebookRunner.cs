@@ -55,7 +55,7 @@ internal sealed class NotebookRunner(string root, NotebookStore store)
 
         var execution = await ExecuteAsync(executable, runDirectory, [],
             TimeSpan.FromSeconds(60), cancellationToken,
-            generated.Graphics != GraphicsBackend.None);
+            generated.Graphics != GraphicsBackend.None, root);
         var output = Merge(execution.Stdout, execution.Stderr);
         if (execution.TimedOut)
             output += "\nПрограмма остановлена: превышено время выполнения (60 секунд).";
@@ -91,7 +91,8 @@ internal sealed class NotebookRunner(string root, NotebookStore store)
 
     private static async Task<ProcessResult> ExecuteAsync(string fileName,
         string workingDirectory, IReadOnlyList<string> arguments, TimeSpan timeout,
-        CancellationToken cancellationToken, bool inlineGraphics = false)
+        CancellationToken cancellationToken, bool inlineGraphics = false,
+        string? packageRoot = null)
     {
         using var process = new Process();
         process.StartInfo = new ProcessStartInfo(fileName)
@@ -105,6 +106,16 @@ internal sealed class NotebookRunner(string root, NotebookStore store)
             StandardErrorEncoding = Encoding.UTF8
         };
         if (inlineGraphics) process.StartInfo.Environment["PABC_NOTEBOOK_INLINE"] = "1";
+        if (packageRoot is not null)
+        {
+            process.StartInfo.Environment["PABCNET_ROOT"] = packageRoot;
+            var bundledPython = Path.Combine(packageRoot, "python", "python.exe");
+            if (File.Exists(bundledPython))
+                process.StartInfo.Environment["PABC_PYTHON_EXE"] = bundledPython;
+            var matplotlibCache = Path.Combine(packageRoot, "Work", "Matplotlib");
+            Directory.CreateDirectory(matplotlibCache);
+            process.StartInfo.Environment["MPLCONFIGDIR"] = matplotlibCache;
+        }
         foreach (var argument in arguments) process.StartInfo.ArgumentList.Add(argument);
         process.Start();
         var stdoutTask = ReadLimitedAsync(process.StandardOutput);

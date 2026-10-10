@@ -2,6 +2,8 @@
 
 Готовый архив доступен в [релизах GitHub](https://github.com/informatik-shi/pascalabcnet_pro_edition/releases):
 [скачать portable-сборку для Windows x64](https://github.com/informatik-shi/pascalabcnet_pro_edition/releases/download/portable-2026-10-08.2/PascalABCNET-Portable-win-x64.zip).
+Ссылка ведёт на предыдущий опубликованный релиз; поддержка Matplotlib пока
+есть в ветке `portable` и в архиве, собранном по инструкции ниже.
 О запуске тетрадок и inline-графике читайте в
 [отдельном руководстве](notebook.md).
 
@@ -581,3 +583,89 @@ scripts\test-spython-re.ps1 -Runtime net10 -PackageRoot 'Release\PascalABCNET-Po
 Эти ограничения перечислены для проверки переносимых программ; для
 обычного поиска, извлечения групп и замен используйте тот же код, что в
 Python.
+
+## Matplotlib в SPython
+
+Графики строит настоящий Matplotlib 3.11.2 в отдельном процессе Python 3.13.16.
+Portable-архив содержит этот Python, Matplotlib 3.11.2, NumPy 2.5.4 и
+необходимые зависимости; на компьютере пользователя ничего устанавливать не
+нужно. Программа SPython по-прежнему компилируется в .NET; время построения
+графика определяется Python/Matplotlib. NumPy и pandas как модули языка
+SPython пока не подключены.
+
+```python
+import matplotlib.pyplot as plt
+
+x = [0, 1, 2, 3]
+y = [0, 1, 4, 9]
+plt.plot(x, y, color='red', label='квадрат')
+plt.xlabel('x')
+plt.ylabel('y')
+plt.legend()
+plt.savefig('graph.png')
+```
+
+Работают также `from matplotlib import pyplot as plt`,
+`from matplotlib.pyplot import savefig`, распаковка `fig, ax = plt.subplots()`
+и вызовы `ax.plot`, `ax.scatter`, `fig.savefig`. Доступны обычные функции
+`plot`, `scatter`, `bar`, `hist`, `imshow`, `figure`, `subplots`, `subplot`,
+`gca`, `gcf`, `title`, `xlabel`, `ylabel`, `legend`, `grid`, `xlim`, `ylim`,
+`tight_layout`, `savefig`, `show`, `close`, `clf`, `cla` и основные методы
+`Axes`/`Figure`, перечисленные в `bin\Lib\SPython\pyplot1.pas`.
+Параметры линий `color`, `label`, `linewidth`, `linestyle`, `marker`, `alpha`
+можно передавать по имени. Массивы и списки SPython преобразуются в Python
+последовательности; объекты Matplotlib сохраняют идентичность внутри одного
+процесса Python.
+
+В тетрадке Matplotlib показывается под ячейкой как PNG. `plt.show()` в
+обычной программе открывает изображение в системном просмотрщике Windows;
+это статический снимок без интерактивных инструментов Matplotlib. Для
+экспорта используйте `savefig`, как в Python. Для нескольких фигур в одной
+ячейке тетрадка сейчас показывает последнюю активную фигуру.
+
+Парсер `SPythonParser.y` разрешает точки в имени импортируемого модуля.
+После изменения грамматики пересоздайте `SPythonParserYacc.cs` теми же
+параметрами, что использует проект:
+
+```powershell
+Push-Location AdditionalLanguages\SPython\SPythonParserKrylovMovchan
+& ..\..\..\Utils\GPLex_GPPG\Gppg.exe /no-lines /gplex SPythonParser.y
+Pop-Location
+```
+
+Мост находится в `bin\Lib\SPython\matplotlib_bridge.py`, а оболочка SPython —
+в `bin\Lib\SPython\pyplot1.pas`. Запросы передают числа, строки,
+последовательности, словари и ссылки на Python-объекты; ссылки остаются
+действительными между вызовами. `PythonCall`, `PythonMethod`,
+`PythonAttribute`, `PythonIndex` в Pascal-модуле используют тот же процесс и
+служат точкой расширения для будущих NumPy и pandas. Большие массивы NumPy
+сейчас не создаются из SPython без копирования: отдельные оболочки для них
+ещё предстоит сделать.
+
+Полной совместимости с Python API пока нет. SPython имеет статическую
+типизацию и фиксированные сигнатуры функций. `import matplotlib` с дальнейшим
+`matplotlib.pyplot`, `plt.style.use`, `rcParams`, произвольные имена функций,
+произвольные `**kwargs`, интерактивные backend-окна и динамические атрибуты
+Artist пока не поддерживаются. При неподдерживаемом аргументе или методе
+нужна дополнительная оболочка в `pyplot1.pas`; сам графический движок
+Matplotlib при этом менять не требуется. Поведение конкретных поддержанных
+вызовов определяется закреплённой версией Matplotlib, а не самостоятельной
+реализацией графики.
+
+Для повторения сборки на Windows x64 требуются .NET 10 SDK, установленный
+Python 3.13 с `pip` **только на машине сборки** и доступ к python.org/PyPI
+при первом запуске. Из корня ветки `portable`:
+
+```powershell
+scripts\build-portable.ps1 -DotnetRoot "$env:USERPROFILE\.dotnet" -PythonExe 'C:\Path\To\python.exe'
+scripts\test-spython-matplotlib.ps1 -Runtime classic -PackageRoot 'Release\PascalABCNET-Portable-win-x64'
+scripts\test-spython-matplotlib.ps1 -Runtime net10 -PackageRoot 'Release\PascalABCNET-Portable-win-x64'
+```
+
+`scripts\prepare-python-matplotlib.ps1` загружает официальный встраиваемый
+Python 3.13.16, проверяет SHA-256 и устанавливает версии из
+`scripts\matplotlib-requirements.txt` в `.codex-build\python-matplotlib`.
+Следующие сборки используют кэш. `build-portable.ps1` кладёт его в папку
+`python` архива и проверяет запуск Matplotlib до упаковки. Три примера
+`matplotlib_*.pys` проверяются против CPython: совпадают SHA-256 сохранённых
+PNG, а также проходят обычный и .NET 10 компиляторы.

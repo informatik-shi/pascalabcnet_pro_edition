@@ -10,6 +10,103 @@ namespace Languages.SPython.Frontend.Converters
 
         public override void visit(method_call _method_call)
         {
+            if (_method_call.dereferencing_value is dot_node plotCall &&
+                plotCall.right is ident plotFunction &&
+                _method_call.parameters is expression_list plotArguments &&
+                plotArguments.expressions.Any(e => e is name_assign_expr))
+            {
+                // Matplotlib's facade has ordinary Pascal overloads. Rewrite
+                // Python keyword arguments to positional slots before the
+                // generic **kwargs lowering creates a nonexistent !plot class.
+                string[] names = null;
+                expression[] defaults = null;
+                var nil = new nil_const();
+                var nan = new double_const(double.NaN);
+                switch (plotFunction.name)
+                {
+                    case "plot":
+                        names = new[] { "x", "y", "fmt", "color", "label", "linewidth", "linestyle", "marker", "alpha" };
+                        defaults = new expression[] { null, null, nil, nil, nil, nan, nil, nil, nan };
+                        break;
+                    case "scatter":
+                        names = new[] { "x", "y", "s", "c", "marker", "cmap", "label", "alpha" };
+                        defaults = new expression[] { null, null, nil, nil, nil, nil, nil, nan };
+                        break;
+                    case "bar":
+                        names = new[] { "x", "height", "width", "color", "label" };
+                        defaults = new expression[] { null, null, nan, nil, nil };
+                        break;
+                    case "hist":
+                        names = new[] { "x", "bins", "color", "label", "density" };
+                        defaults = new expression[] { null, new int32_const(-1), nil, nil, new bool_const(false) };
+                        break;
+                    case "imshow":
+                        names = new[] { "x", "cmap", "interpolation" };
+                        defaults = new expression[] { null, nil, nil };
+                        break;
+                    case "figure":
+                        names = new[] { "num", "figsize", "dpi" };
+                        defaults = new expression[] { new int32_const(-1), nil, nan };
+                        break;
+                    case "subplots":
+                        names = new[] { "nrows", "ncols", "figsize", "sharex", "sharey" };
+                        defaults = new expression[] { new int32_const(1), new int32_const(1), nil,
+                            new bool_const(false), new bool_const(false) };
+                        break;
+                    case "savefig":
+                        names = new[] { "fname", "dpi", "bbox_inches", "transparent" };
+                        defaults = new expression[] { null, nan, nil, new bool_const(false) };
+                        break;
+                }
+                if (names != null &&
+                    (plotCall.left is ident plotModule && plotModule.name == "pyplot1" ||
+                     plotCall.left is ident || plotCall.left is dot_node))
+                {
+                    expression[] slots = new expression[names.Length];
+                    int positional = 0, last = -1;
+                    bool namedStarted = false;
+                    foreach (expression argument in plotArguments.expressions)
+                    {
+                        int index;
+                        expression value;
+                        if (argument is name_assign_expr named)
+                        {
+                            namedStarted = true;
+                            index = Array.IndexOf(names, named.name.name);
+                            if (index < 0)
+                                throw new SPythonSyntaxVisitorError("UNKNOWN_NAME_{0}",
+                                    argument.source_context, named.name.name);
+                            value = named.expr;
+                        }
+                        else
+                        {
+                            if (namedStarted)
+                                throw new SPythonSyntaxVisitorError("ARG_AFTER_KWARGS", argument.source_context);
+                            index = positional++;
+                            value = argument;
+                        }
+                        if (index >= slots.Length || slots[index] != null)
+                            throw new SPythonSyntaxVisitorError("ARG_AFTER_KWARGS", argument.source_context);
+                        slots[index] = value;
+                        last = Math.Max(last, index);
+                    }
+                    for (int i = 0; i < names.Length; i++)
+                        if (defaults[i] == null && slots[i] == null)
+                            throw new SPythonSyntaxVisitorError("UNKNOWN_NAME_{0}",
+                                _method_call.source_context, names[i]);
+                    var normalized = new expression_list();
+                    for (int i = 0; i <= last; i++)
+                    {
+                        var argument = slots[i] ?? defaults[i].TypedClone() as expression;
+                        if (argument.source_context == null)
+                            argument.source_context = _method_call.source_context;
+                        normalized.Add(argument);
+                    }
+                    _method_call.parameters = normalized;
+                    base.visit(_method_call);
+                    return;
+                }
+            }
             if (_method_call.dereferencing_value is dot_node reCall &&
                 reCall.right is ident reFunction &&
                 _method_call.parameters is expression_list reArguments &&

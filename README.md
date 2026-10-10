@@ -21,6 +21,9 @@ unpacked numbers support arithmetic without casts. `with open(...) as source`,
 `try/except`, default function arguments, and basic `lambda` expressions are
 also supported; see the
 [build and usage notes](docs/build-portable-spython.md).
+The current `portable` branch also builds Matplotlib support with bundled
+Python and NumPy. The ZIP linked above predates that change; build the current
+archive with `scripts\build-portable.ps1` using the steps in the usage notes.
 
 ## Building on Windows
 
