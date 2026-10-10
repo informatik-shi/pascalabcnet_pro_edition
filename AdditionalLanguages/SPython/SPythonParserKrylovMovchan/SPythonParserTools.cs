@@ -188,6 +188,64 @@ namespace SPythonParser
             lt.source_context = sc;
             return lt;
         }
+
+        public literal create_raw_string_const(string text, SourceContext sc)
+        {
+            return new string_const(text.Substring(2, text.Length - 3), sc);
+        }
+
+        public expression create_bytes_literal(string text, SourceContext sc)
+        {
+            int prefixLength = text.Length > 1 && (text[1] == 'r' || text[1] == 'R' ||
+                text[1] == 'b' || text[1] == 'B') ? 2 : 1;
+            bool raw = text.Substring(0, prefixLength).IndexOfAny(new[] { 'r', 'R' }) >= 0;
+            string body = text.Substring(prefixLength + 1, text.Length - prefixLength - 2);
+            var result = new System.Text.StringBuilder();
+            for (int i = 0; i < body.Length; i++)
+            {
+                char c = body[i];
+                if (c != '\\' || raw || i == body.Length - 1)
+                {
+                    result.Append(c);
+                    continue;
+                }
+                char next = body[++i];
+                switch (next)
+                {
+                    case 'a': result.Append('\a'); break;
+                    case 'b': result.Append('\b'); break;
+                    case 'f': result.Append('\f'); break;
+                    case 'n': result.Append('\n'); break;
+                    case 'r': result.Append('\r'); break;
+                    case 't': result.Append('\t'); break;
+                    case 'v': result.Append('\v'); break;
+                    case '\\': result.Append('\\'); break;
+                    case '\'': result.Append('\''); break;
+                    case '"': result.Append('"'); break;
+                    case 'x' when i + 2 < body.Length &&
+                        Uri.IsHexDigit(body[i + 1]) && Uri.IsHexDigit(body[i + 2]):
+                        result.Append((char)Convert.ToInt32(body.Substring(i + 1, 2), 16));
+                        i += 2;
+                        break;
+                    default:
+                        if (next >= '0' && next <= '7')
+                        {
+                            int start = i;
+                            while (i + 1 < body.Length && i - start < 2 &&
+                                body[i + 1] >= '0' && body[i + 1] <= '7') i++;
+                            result.Append((char)(Convert.ToInt32(body.Substring(start, i - start + 1), 8) & 255));
+                        }
+                        else
+                        {
+                            result.Append('\\');
+                            result.Append(next);
+                        }
+                        break;
+                }
+            }
+            return new method_call(new ident("!bytes_literal", sc),
+                new expression_list(new string_const(result.ToString(), sc), sc), sc);
+        }
         
         private int num1 = 0;
 

@@ -1,0 +1,24 @@
+import re
+
+data = b'A\xff 12 B34'
+p = re.compile(rb'(?P<digits>\d+)')
+print(re.search(b'a', b'ba'))
+print(re.compile(b'abc'))
+print(p.pattern, p.flags, p.groups, p.groupindex['digits'])
+m = p.search(data)
+print(m.group(), m.group('digits'), m.span(), m.string)
+print(m.group(1, 1), m[1])
+print(m.groups(), m.lastindex, m.lastgroup)
+for found in re.findall(rb'\d+', data):
+    print('all', found)
+for found in re.finditer(rb'\d+', data):
+    print('iter', found.group(), found.span())
+for found in re.split(rb'(\s+)', data, 1):
+    print('split', found)
+print(re.sub(rb'\d+', b'X', data))
+print(re.subn(rb'\d+', b'X', data, 1))
+print(re.sub(rb'(\d+)', rb'[\1]', data))
+print(re.sub(rb'\d+', lambda m: b'X', data))
+print(re.sub(rb'\d+', lambda m: m.group(), data))
+print(re.fullmatch(rb'\w+', b'abc').group())
+print(re.escape(b'a.b*c?'))

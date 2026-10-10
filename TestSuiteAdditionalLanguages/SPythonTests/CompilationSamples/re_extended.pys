@@ -1,0 +1,35 @@
+import re
+from re import search as direct_search
+
+print(direct_search('a', 'ba').group())
+print(re.fullmatch(r'a|ab', 'ab').group())
+print(re.search(pattern=r'a+', string='baaa').group())
+print(re.sub(pattern='a', repl='x', string='aaa', count=2))
+print(re.split(pattern=',', string='a,b,c', maxsplit=1)[1])
+p = re.compile(pattern=r'(?P<first>a)(b)')
+print(p.groupindex['first'], p.groups)
+m = p.search(string='xxabyy', pos=1, endpos=4)
+print(m.group(1), m.group(2), m.span(), m.pos, m.endpos)
+print(m.groupdict()['first'], m.regs[1])
+print(p.search('zzab', 1).group())
+print(re.search(p, 'xxab').group())
+print(re.findall(p, 'abab')[0])
+print(p.sub(repl='X', string='abab', count=1))
+print(re.search(r'(?P<x>a)(?P=x)', 'aa').group())
+print(re.search(r'(?<=a)b', 'ab').group())
+print(re.search(r'(?s).', '\n').span())
+print(re.search(r'^\w+', 'é', re.A))
+print(re.search(r'^\w+', 'é').group())
+print(re.search(r'.', '\n', re.A | re.S).span())
+print(re.sub(r'x*', '-', 'abxd'))
+for part in re.split(r'\b', 'ab'):
+    print('boundary', part)
+print(re.compile(r'(?m)^b').search('a\nb').group())
+print(re.compile(r'(?i)abc').flags)
+print(re.compile(r'(?a)\w+').flags)
+print(re.search(r'(?a)\w+', 'é'))
+iterator = re.finditer(r'\d+', 'a1b2')
+for found in iterator:
+    print('once', found.group())
+for found in iterator:
+    print('again', found.group())

@@ -24,10 +24,13 @@ type
   PyException = System.Exception;
   ValueError = class(System.ArgumentException);
   TypeError = class(System.ArgumentException);
+  IndexError = class(System.Exception);
 
   IPythonIntConvertible = interface
     function ToPythonInteger(): System.Numerics.BigInteger;
   end;
+
+  bytes = class;
 
   PyValue = class(IEnumerable<PyValue>)
   private
@@ -43,9 +46,12 @@ type
     function ToString(): string; override;
     function GetEnumerator(): IEnumerator<PyValue>;
     function System.Collections.IEnumerable.GetEnumerator(): System.Collections.IEnumerator := GetEnumerator();
+    function group(index: integer := 0): PyValue;
+    function group(name: string): PyValue;
     static function operator implicit(value: integer): PyValue := new PyValue(value);
     static function operator implicit(value: real): PyValue := new PyValue(value);
     static function operator implicit(value: string): PyValue := new PyValue(value);
+    static function operator implicit(value: bytes): PyValue := new PyValue(value);
     static function operator +(a, b: PyValue): PyValue;
     static function operator -(a, b: PyValue): PyValue;
     static function operator *(a, b: PyValue): PyValue;
@@ -180,6 +186,8 @@ function !open_binary(path: string; mode: string := 'rb'; buffering: integer := 
   encoding: string := nil; errors: string := nil; newline: string := nil): PythonBinaryFile;
 function !open_binary(path: PyObject; mode: string := 'rb'; buffering: integer := -1;
   encoding: string := nil; errors: string := nil; newline: string := nil): PythonBinaryFile;
+
+function !bytes_literal(value: string): bytes;
 
 function !lambda0(f: () -> PyValue): () -> PyValue;
 function !lambda1(f: PyValue -> PyValue): PyValue -> PyValue;
@@ -770,7 +778,26 @@ function !empty_dict(): empty_dict;
 
 implementation
 
+function !bytes_literal(value: string): bytes :=
+  new bytes(System.Text.Encoding.GetEncoding(28591).GetBytes(value));
+
 constructor PyValue.Create(value: object) := rawValue := value;
+
+function PyValue.group(index: integer): PyValue;
+begin
+  if rawValue = nil then raise new TypeError('None has no group method');
+  var methodInfo := rawValue.GetType().GetMethod('group', new System.Type[](typeof(integer)));
+  if methodInfo = nil then raise new TypeError('object has no group method');
+  Result := new PyValue(methodInfo.Invoke(rawValue, new object[](index)));
+end;
+
+function PyValue.group(name: string): PyValue;
+begin
+  if rawValue = nil then raise new TypeError('None has no group method');
+  var methodInfo := rawValue.GetType().GetMethod('group', new System.Type[](typeof(string)));
+  if methodInfo = nil then raise new TypeError('object has no group method');
+  Result := new PyValue(methodInfo.Invoke(rawValue, new object[](name)));
+end;
 
 function PyValue.GetLength(): integer;
 begin

@@ -10,6 +10,95 @@ namespace Languages.SPython.Frontend.Converters
 
         public override void visit(method_call _method_call)
         {
+            if (_method_call.dereferencing_value is dot_node reCall &&
+                reCall.right is ident reFunction &&
+                _method_call.parameters is expression_list reArguments &&
+                reArguments.expressions.Any(e => e is name_assign_expr))
+            {
+                bool moduleCall = reCall.left is ident reModule && reModule.name == "re1";
+                string[] names = null;
+                expression[] defaults = null;
+                switch (reFunction.name)
+                {
+                    case "compile" when moduleCall:
+                        names = new[] { "pattern", "flags" };
+                        defaults = new expression[] { null, new int32_const(0) };
+                        break;
+                    case "search":
+                    case "match":
+                    case "fullmatch":
+                    case "findall":
+                    case "finditer":
+                        names = moduleCall
+                            ? new[] { "pattern", "string", "flags" }
+                            : new[] { "string", "pos", "endpos" };
+                        defaults = moduleCall
+                            ? new expression[] { null, null, new int32_const(0) }
+                            : new expression[] { null, new int32_const(0), new int32_const(-1) };
+                        break;
+                    case "split":
+                        names = moduleCall
+                            ? new[] { "pattern", "string", "maxsplit", "flags" }
+                            : new[] { "string", "maxsplit" };
+                        defaults = moduleCall
+                            ? new expression[] { null, null, new int32_const(0), new int32_const(0) }
+                            : new expression[] { null, new int32_const(0) };
+                        break;
+                    case "sub":
+                    case "subn":
+                        names = moduleCall
+                            ? new[] { "pattern", "repl", "string", "count", "flags" }
+                            : new[] { "repl", "string", "count" };
+                        defaults = moduleCall
+                            ? new expression[] { null, null, null, new int32_const(0), new int32_const(0) }
+                            : new expression[] { null, null, new int32_const(0) };
+                        break;
+                }
+                if (names != null)
+                {
+                    expression[] slots = new expression[names.Length];
+                    int positional = 0;
+                    int last = -1;
+                    bool namedStarted = false;
+                    foreach (expression argument in reArguments.expressions)
+                    {
+                        int index;
+                        expression value;
+                        if (argument is name_assign_expr named)
+                        {
+                            namedStarted = true;
+                            index = Array.IndexOf(names, named.name.name);
+                            if (index < 0)
+                                throw new SPythonSyntaxVisitorError("UNKNOWN_NAME_{0}",
+                                    argument.source_context, named.name.name);
+                            value = named.expr;
+                        }
+                        else
+                        {
+                            if (namedStarted)
+                                throw new SPythonSyntaxVisitorError("ARG_AFTER_KWARGS",
+                                    argument.source_context);
+                            index = positional++;
+                            value = argument;
+                        }
+                        if (index >= slots.Length || slots[index] != null)
+                            throw new SPythonSyntaxVisitorError("ARG_AFTER_KWARGS",
+                                argument.source_context);
+                        slots[index] = value;
+                        last = Math.Max(last, index);
+                    }
+                    for (int i = 0; i < slots.Length && defaults[i] == null; i++)
+                        if (slots[i] == null)
+                            throw new SPythonSyntaxVisitorError("UNKNOWN_NAME_{0}",
+                                _method_call.source_context, names[i]);
+                    expression_list normalized = new expression_list();
+                    for (int i = 0; i <= last; i++)
+                        normalized.Add(slots[i] ?? defaults[i]);
+                    _method_call.parameters = normalized;
+                    base.visit(_method_call);
+                    return;
+                }
+            }
             if (_method_call.dereferencing_value is dot_node sortedCall &&
                 sortedCall.left is ident sortedModule && sortedModule.name == "SPythonSystem" &&
                 sortedCall.right is ident sortedFunction && sortedFunction.name == "sorted" &&

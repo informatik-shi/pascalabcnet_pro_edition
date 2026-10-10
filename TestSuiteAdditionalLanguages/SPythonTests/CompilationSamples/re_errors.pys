@@ -1,0 +1,16 @@
+import re
+
+try:
+    re.compile('(')
+except re.error:
+    print('bad-pattern')
+
+try:
+    re.compile('a', re.A | re.U)
+except ValueError:
+    print('bad-flags')
+
+try:
+    re.compile(b'a', re.U)
+except ValueError:
+    print('bad-bytes-flags')

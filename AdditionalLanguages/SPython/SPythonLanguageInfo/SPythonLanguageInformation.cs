@@ -33,6 +33,7 @@ namespace Languages.SPython.Frontend.Data
             { "struct", "struct1" },
             { "itertools", "itertools1" },
             { "ipaddress", "ipaddress1" },
+            { "re", "re1" },
         };
 
         public Dictionary<string, string> SpecialModulesAliases => specialModulesAliases;

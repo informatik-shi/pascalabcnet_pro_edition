@@ -1,0 +1,35 @@
+import re
+
+print(re.search(r'\d+', 'ab12cd').group())
+print(re.search('a', 'ba'))
+print(re.compile('abc', re.I | re.M))
+print(re.match(r'\d+', 'ab12'))
+print(re.fullmatch(r'\d+', '123').group())
+print(re.compile(r'(?P<word>\w+)-(\d+)').search('x abc-42 y').group('word'))
+p = re.compile(r'(?P<word>\w+)-(\d+)', re.I)
+m = p.search('x AbC-42 y')
+print(m.group(), m.group(1), m.group(2), m.group('word'))
+print(m.group(1, 2), m[1])
+print(m.start(), m.end(), m.span())
+print(m.start('word'), m.end('word'), m.span('word'))
+print(m.groups(), m.lastindex, m.lastgroup)
+print(m.pos, m.endpos, m.string, m.re.pattern)
+print(p.pattern, p.flags, p.groups, p.groupindex['word'])
+print(m.expand(r'\2/\g<word>'))
+for found in re.finditer(r'\d+', 'a12b3'):
+    print(found.group(), found.span())
+for found in re.findall(r'\d+', 'a12b3'):
+    print('all', found)
+for found in re.findall(r'(\w+)-(\d+)', 'a-1 b-22'):
+    print('tuple', found)
+for found in re.split(r'(,)', 'a,b,c', 1):
+    print('split', found)
+print(re.sub(r'\d+', 'X', 'a12b3'))
+print(re.subn(r'\d+', 'X', 'a12b3', 1))
+print(re.sub(r'(\d+)', r'[\1]', 'a12b3'))
+print(re.sub(r'\d+', lambda m: '<' + m.group() + '>', 'a12b3'))
+print(re.search(r'(?i)abc', 'xxABC').group())
+print(re.search(r'\Z', 'abc').span())
+print(re.escape('a.b*c?'))
+print(re.compile(r'\d+', re.A).flags)
+print(re.compile(r'\d+', re.I | re.M).flags)
