@@ -587,11 +587,10 @@ Python.
 ## Matplotlib в SPython
 
 Графики строит настоящий Matplotlib 3.11.2 в отдельном процессе Python 3.13.16.
-Portable-архив содержит этот Python, Matplotlib 3.11.2, NumPy 2.5.4 и
-необходимые зависимости; на компьютере пользователя ничего устанавливать не
-нужно. Программа SPython по-прежнему компилируется в .NET; время построения
-графика определяется Python/Matplotlib. NumPy и pandas как модули языка
-SPython пока не подключены.
+Portable-архив содержит этот Python, Matplotlib 3.11.2, NumPy 2.5.4,
+pandas 3.0.6 и необходимые зависимости; на компьютере пользователя ничего
+устанавливать не нужно. Программа SPython по-прежнему компилируется в .NET;
+вызовы этих библиотек исполняются в отдельном процессе Python.
 
 ```python
 import matplotlib.pyplot as plt
@@ -633,14 +632,14 @@ Push-Location AdditionalLanguages\SPython\SPythonParserKrylovMovchan
 Pop-Location
 ```
 
-Мост находится в `bin\Lib\SPython\matplotlib_bridge.py`, а оболочка SPython —
+Мост находится в `bin\Lib\SPython\matplotlib_bridge.py`, а общая оболочка SPython —
 в `bin\Lib\SPython\pyplot1.pas`. Запросы передают числа, строки,
 последовательности, словари и ссылки на Python-объекты; ссылки остаются
 действительными между вызовами. `PythonCall`, `PythonMethod`,
-`PythonAttribute`, `PythonIndex` в Pascal-модуле используют тот же процесс и
-служат точкой расширения для будущих NumPy и pandas. Большие массивы NumPy
-сейчас не создаются из SPython без копирования: отдельные оболочки для них
-ещё предстоит сделать.
+`PythonAttribute`, `PythonIndex`, `PythonBinary` в Pascal-модуле используют
+тот же процесс. Оболочки NumPy и pandas находятся в `numpy1.pas` и
+`pandas1.pas`. После создания массива в Python его передают Matplotlib и
+pandas по ссылке, без промежуточного преобразования в массив .NET.
 
 Полной совместимости с Python API пока нет. SPython имеет статическую
 типизацию и фиксированные сигнатуры функций. `import matplotlib` с дальнейшим
@@ -652,6 +651,51 @@ Matplotlib при этом менять не требуется. Поведен�
 вызовов определяется закреплённой версией Matplotlib, а не самостоятельной
 реализацией графики.
 
+## NumPy и pandas в SPython
+
+Оба модуля используют настоящие NumPy и pandas из portable-архива. Работают
+импорт `import numpy as np`, `import pandas as pd`, построение массивов,
+векторные операции, создание таблиц, CSV и передача массивов в Matplotlib:
+
+```python
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+x = np.arange(0, 5)
+y = x * 2
+df = pd.DataFrame({'x': x, 'y': y})
+print(df['y'].mean())
+df.to_csv('table.csv', index=False)
+plt.plot(x, y)
+plt.savefig('chart.png')
+```
+
+Оболочка NumPy предоставляет `array`, `asarray`, `arange`, `linspace`,
+`zeros`, `ones`, `full`, `eye`, `reshape`, `concatenate`, `stack`, `sin`,
+`cos`, `sqrt`, `exp`, `log`, `abs`, `sum`, `mean`, `min`, `max`, `std`, константы
+`pi` и `e`. Оболочка pandas предоставляет `DataFrame`, `Series`, `read_csv`,
+`concat`, `merge`, `to_datetime`. Для объектов доступны индексация,
+арифметика с числами и другими объектами Python, `shape`, `dtype`, `size`, `ndim`, `T`,
+`columns`, `values`, `loc`, `iloc`, `tolist`, `item`, `reshape`, `astype`,
+`head`, `tail`, `describe`, `to_numpy`, `to_csv`, `sum`, `mean`, `std`,
+`groupby`, `sort_values`. Результат индексации остаётся ссылкой на объект
+Python, поэтому `df['y'].mean()` работает. Обход `for column in df` возвращает
+названия столбцов. Ключи словарей SPython и кортежи сохраняют свой тип при
+передаче в Python. Скаляры NumPy сохраняют тип и строковое представление
+Python.
+
+Границы текущей реализации: это фиксированный список имён и параметров;
+произвольные функции, динамические атрибуты, произвольные именованные
+аргументы, полный набор операторов и расширения pandas пока недоступны.
+Операции NumPy/pandas выполняются в Python, поэтому компиляция управляющего
+кода SPython в .NET сама по себе не ускоряет их; скорость численных операций
+определяется реализацией NumPy. Передача исходных списков/словарей из .NET в
+Python требует копирования и сериализации. Последующие операции над
+объектами Python и передача их Matplotlib используют ссылки, но каждый
+вызов пересекает границу процесса. Для больших данных предпочтительны
+векторные операции, а не циклы с поэлементной индексацией.
+
 Для повторения сборки на Windows x64 требуются .NET 10 SDK, установленный
 Python 3.13 с `pip` **только на машине сборки** и доступ к python.org/PyPI
 при первом запуске. Из корня ветки `portable`:
@@ -660,12 +704,15 @@ Python 3.13 с `pip` **только на машине сборки** и дост
 scripts\build-portable.ps1 -DotnetRoot "$env:USERPROFILE\.dotnet" -PythonExe 'C:\Path\To\python.exe'
 scripts\test-spython-matplotlib.ps1 -Runtime classic -PackageRoot 'Release\PascalABCNET-Portable-win-x64'
 scripts\test-spython-matplotlib.ps1 -Runtime net10 -PackageRoot 'Release\PascalABCNET-Portable-win-x64'
+scripts\test-spython-numpy-pandas.ps1 -Runtime classic -PackageRoot 'Release\PascalABCNET-Portable-win-x64'
+scripts\test-spython-numpy-pandas.ps1 -Runtime net10 -PackageRoot 'Release\PascalABCNET-Portable-win-x64'
 ```
 
 `scripts\prepare-python-matplotlib.ps1` загружает официальный встраиваемый
 Python 3.13.16, проверяет SHA-256 и устанавливает версии из
 `scripts\matplotlib-requirements.txt` в `.codex-build\python-matplotlib`.
 Следующие сборки используют кэш. `build-portable.ps1` кладёт его в папку
-`python` архива и проверяет запуск Matplotlib до упаковки. Три примера
+`python` архива и проверяет импорт всех трёх библиотек до упаковки. Три примера
 `matplotlib_*.pys` проверяются против CPython: совпадают SHA-256 сохранённых
-PNG, а также проходят обычный и .NET 10 компиляторы.
+PNG. Пример `numpy_pandas_plot.pys` сравнивает текстовый вывод, CSV и PNG
+с CPython. Проверки проходят обычный и .NET 10 компиляторы.

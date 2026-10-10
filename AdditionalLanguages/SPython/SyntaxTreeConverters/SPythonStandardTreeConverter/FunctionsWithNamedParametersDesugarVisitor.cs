@@ -57,6 +57,101 @@ namespace Languages.SPython.Frontend.Converters
                         names = new[] { "fname", "dpi", "bbox_inches", "transparent" };
                         defaults = new expression[] { null, nan, nil, new bool_const(false) };
                         break;
+                    case "array":
+                    case "asarray":
+                        names = new[] { "data", "dtype" };
+                        defaults = new expression[] { null, nil };
+                        break;
+                    case "arange":
+                        names = new[] { "start", "stop", "step", "dtype" };
+                        defaults = new expression[] { null, nil, nil, nil };
+                        break;
+                    case "linspace":
+                        names = new[] { "start", "stop", "num", "endpoint", "dtype" };
+                        defaults = new expression[] { null, null, new int32_const(50),
+                            new bool_const(true), nil };
+                        break;
+                    case "zeros":
+                    case "ones":
+                        names = new[] { "shape", "dtype" };
+                        defaults = new expression[] { null, nil };
+                        break;
+                    case "full":
+                        names = new[] { "shape", "fill_value", "dtype" };
+                        defaults = new expression[] { null, null, nil };
+                        break;
+                    case "eye":
+                        names = new[] { "n", "m", "dtype" };
+                        defaults = new expression[] { null, new int32_const(-1), nil };
+                        break;
+                    case "reshape":
+                        names = new[] { "a", "newshape" };
+                        defaults = new expression[] { null, null };
+                        break;
+                    case "concatenate":
+                    case "stack":
+                        names = new[] { "arrays", "axis" };
+                        defaults = new expression[] { null, new int32_const(0) };
+                        break;
+                    case "sum":
+                    case "mean":
+                    case "min":
+                    case "max":
+                    case "std":
+                        if (plotCall.left is ident aggregateModule && aggregateModule.name == "numpy1")
+                        {
+                            names = new[] { "a", "axis" };
+                            defaults = new expression[] { null, nil };
+                        }
+                        else
+                        {
+                            names = new[] { "axis" };
+                            defaults = new expression[] { nil };
+                        }
+                        break;
+                    case "DataFrame":
+                        names = new[] { "data", "index", "columns", "dtype" };
+                        defaults = new expression[] { null, nil, nil, nil };
+                        break;
+                    case "Series":
+                        names = new[] { "data", "index", "dtype", "name" };
+                        defaults = new expression[] { null, nil, nil, nil };
+                        break;
+                    case "read_csv":
+                        names = new[] { "path", "sep", "header", "encoding" };
+                        defaults = new expression[] { null, new string_const(","),
+                            new string_const("infer"), nil };
+                        break;
+                    case "concat":
+                        names = new[] { "items", "axis", "ignore_index" };
+                        defaults = new expression[] { null, new int32_const(0),
+                            new bool_const(false) };
+                        break;
+                    case "merge":
+                        names = new[] { "left", "right", "on", "how" };
+                        defaults = new expression[] { null, null, nil, new string_const("inner") };
+                        break;
+                    case "to_datetime":
+                        names = new[] { "value", "format" };
+                        defaults = new expression[] { null, nil };
+                        break;
+                    case "to_csv":
+                        names = new[] { "path", "index" };
+                        defaults = new expression[] { null, new bool_const(true) };
+                        break;
+                    case "head":
+                    case "tail":
+                        names = new[] { "n" };
+                        defaults = new expression[] { new int32_const(5) };
+                        break;
+                    case "groupby":
+                        names = new[] { "by" };
+                        defaults = new expression[] { null };
+                        break;
+                    case "sort_values":
+                        names = new[] { "by" };
+                        defaults = new expression[] { null };
+                        break;
                 }
                 if (names != null &&
                     (plotCall.left is ident plotModule && plotModule.name == "pyplot1" ||

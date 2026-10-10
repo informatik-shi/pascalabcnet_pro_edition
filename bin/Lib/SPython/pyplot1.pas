@@ -9,23 +9,72 @@ uses System, System.Collections, System.Collections.Generic, System.Diagnostics,
   System.Globalization, System.IO, System.Text, SPythonSystem;
 
 type
+  // A reference to any object in the shared CPython process. The historic
+  // name is kept for existing Matplotlib programs.
   PlotObject = class(IEnumerable<PlotObject>)
   private
     id: integer;
     function GetLength(): integer;
-    function GetItem(index: integer): PlotObject;
+    function GetItem(index: object): PlotObject;
     function Items(): sequence of PlotObject;
+    function GetShape(): PlotObject;
+    function GetColumns(): PlotObject;
+    function GetLoc(): PlotObject;
+    function GetILoc(): PlotObject;
+    function GetSize(): integer;
+    function GetNDim(): integer;
+    function GetTranspose(): PlotObject;
+    function GetDType(): PlotObject;
+    function GetValues(): PlotObject;
   public
     constructor Create(value: integer);
     property Handle: integer read id;
     property Length: integer read GetLength;
-    property ByIndex[index: integer]: PlotObject read GetItem; default;
+    property ByIndex[index: object]: PlotObject read GetItem; default;
+    property shape: PlotObject read GetShape;
+    property columns: PlotObject read GetColumns;
+    property loc: PlotObject read GetLoc;
+    property iloc: PlotObject read GetILoc;
+    property size: integer read GetSize;
+    property ndim: integer read GetNDim;
+    property T: PlotObject read GetTranspose;
+    property dtype: PlotObject read GetDType;
+    property values: PlotObject read GetValues;
     function GetEnumerator(): IEnumerator<PlotObject>;
     function System.Collections.IEnumerable.GetEnumerator(): System.Collections.IEnumerator := GetEnumerator();
+    function tolist(): PlotObject;
+    function item(index: integer := 0): object;
+    function reshape(params dimensions: array of integer): PlotObject;
+    function astype(dtype: string): PlotObject;
+    function head(n: integer := 5): PlotObject;
+    function tail(n: integer := 5): PlotObject;
+    function describe(): PlotObject;
+    function to_numpy(): PlotObject;
+    procedure to_csv(path: string; index: boolean := true);
+    function sum(axis: object := nil): object;
+    function mean(axis: object := nil): object;
+    function min(axis: object := nil): object;
+    function max(axis: object := nil): object;
+    function std(axis: object := nil): object;
+    function groupby(key: object): PlotObject;
+    function sort_values(by: object): PlotObject;
+    static function operator +(left: PlotObject; right: object): PlotObject;
+    static function operator -(left: PlotObject; right: object): PlotObject;
+    static function operator *(left: PlotObject; right: object): PlotObject;
+    static function operator /(left: PlotObject; right: object): PlotObject;
+    static function operator +(left: integer; right: PlotObject): PlotObject;
+    static function operator -(left: integer; right: PlotObject): PlotObject;
+    static function operator *(left: integer; right: PlotObject): PlotObject;
+    static function operator /(left: integer; right: PlotObject): PlotObject;
+    static function operator +(left: real; right: PlotObject): PlotObject;
+    static function operator -(left: real; right: PlotObject): PlotObject;
+    static function operator *(left: real; right: PlotObject): PlotObject;
+    static function operator /(left: real; right: PlotObject): PlotObject;
     function plot(x, y: object; fmt: string := nil; color: string := nil;
       &label: string := nil; linewidth: real := real.NaN; linestyle: string := nil;
       marker: string := nil; alpha: real := real.NaN): PlotObject;
     function plot(y: object): PlotObject;
+    function plot(): PlotObject;
     function scatter(x, y: object; s: object := nil; c: object := nil;
       marker: string := nil; cmap: string := nil; &label: string := nil;
       alpha: real := real.NaN): PlotObject;
@@ -57,7 +106,8 @@ function PythonCall(moduleName, name: string; args: array of object;
 function PythonMethod(target: PlotObject; name: string; args: array of object;
   kwargs: Dictionary<string, object>): object;
 function PythonAttribute(target: PlotObject; name: string): object;
-function PythonIndex(target: PlotObject; index: integer): object;
+function PythonIndex(target: PlotObject; index: object): object;
+function PythonBinary(target: PlotObject; name: string; value: object): object;
 
 function plot(x, y: object; fmt: string := nil; color: string := nil;
   &label: string := nil; linewidth: real := real.NaN; linestyle: string := nil;
@@ -148,9 +198,9 @@ begin
       var pairType := item.GetType();
       var key := pairType.GetProperty('Key').GetValue(item, nil);
       var entryValue := pairType.GetProperty('Value').GetValue(item, nil);
-      parts.Add(Quote(System.Convert.ToString(key)) + ':' + Encode(entryValue));
+      parts.Add('[' + Encode(key) + ',' + Encode(entryValue) + ']');
     end;
-    exit('{' + string.Join(',', parts) + '}');
+    exit('{"map":[' + string.Join(',', parts) + ']}');
   end;
   if value.GetType().IsGenericType and
      (value.GetType().FullName.StartsWith('System.Tuple`') or
@@ -165,7 +215,7 @@ begin
         else value.GetType().GetField(fieldName).GetValue(value);
       parts.Add(Encode(element));
     end;
-    exit('[' + string.Join(',', parts) + ']');
+    exit('{"tuple":[' + string.Join(',', parts) + ']}');
   end;
   if value is IEnumerable then
   begin
@@ -173,7 +223,7 @@ begin
     foreach var item in IEnumerable(value) do parts.Add(Encode(item));
     exit('[' + string.Join(',', parts) + ']');
   end;
-  raise new System.ArgumentException('Matplotlib argument type is not supported: ' + value.GetType().FullName);
+  raise new System.ArgumentException('Python bridge argument type is not supported: ' + value.GetType().FullName);
 end;
 
 function Options(params pairs: array of object): Dictionary<string, object>;
@@ -224,7 +274,7 @@ begin
 end;
 
 function Send(op, target, name: string; args: array of object;
-  kwargs: Dictionary<string, object>; index: integer := 0): object;
+  kwargs: Dictionary<string, object>; index: object := nil): object;
 begin
   System.Threading.Monitor.Enter(gate);
   try
@@ -232,7 +282,8 @@ begin
     var payload := new StringBuilder;
     payload.Append('{"op":').Append(Quote(op)).Append(',"target":').Append(target);
     if name <> nil then payload.Append(',"name":').Append(Quote(name));
-    if op = 'item' then payload.Append(',"index":').Append(index);
+    if op = 'item' then payload.Append(',"index":').Append(Encode(index));
+    if op = 'binary' then payload.Append(',"value":').Append(Encode(index));
     if op = 'call' then
     begin
       payload.Append(',"args":[');
@@ -277,8 +328,11 @@ function PythonMethod(target: PlotObject; name: string; args: array of object;
 function PythonAttribute(target: PlotObject; name: string): object :=
   Send('attr', target.Handle.ToString(), name, new object[0], nil);
 
-function PythonIndex(target: PlotObject; index: integer): object :=
+function PythonIndex(target: PlotObject; index: object): object :=
   Send('item', target.Handle.ToString(), nil, new object[0], nil, index);
+
+function PythonBinary(target: PlotObject; name: string; value: object): object :=
+  Send('binary', target.Handle.ToString(), name, new object[0], nil, value);
 
 function PlotCall(name: string; args: array of object;
   kwargs: Dictionary<string, object>): PlotObject :=
@@ -294,16 +348,73 @@ begin id := value; end;
 function PlotObject.GetLength(): integer :=
   System.Convert.ToInt32(Send('len', id.ToString(), nil, new object[0], nil));
 
-function PlotObject.GetItem(index: integer): PlotObject :=
+function PlotObject.GetItem(index: object): PlotObject :=
   Send('item', id.ToString(), nil, new object[0], nil, index) as PlotObject;
 
 function PlotObject.Items(): sequence of PlotObject;
 begin
-  for var i := 0 to Length - 1 do yield ByIndex[i];
+  var iterable := Send('iter', id.ToString(), nil, new object[0], nil) as PlotObject;
+  for var i := 0 to iterable.Length - 1 do yield iterable[i];
 end;
 
 function PlotObject.GetEnumerator(): IEnumerator<PlotObject> := Items().GetEnumerator();
-function PlotObject.ToString(): string := '<matplotlib object ' + id.ToString() + '>';
+function PlotObject.ToString(): string :=
+  Send('str', id.ToString(), nil, new object[0], nil) as string;
+function PlotObject.GetShape(): PlotObject := PythonAttribute(self, 'shape') as PlotObject;
+function PlotObject.GetColumns(): PlotObject := PythonAttribute(self, 'columns') as PlotObject;
+function PlotObject.GetLoc(): PlotObject := PythonAttribute(self, 'loc') as PlotObject;
+function PlotObject.GetILoc(): PlotObject := PythonAttribute(self, 'iloc') as PlotObject;
+function PlotObject.GetSize(): integer := System.Convert.ToInt32(PythonAttribute(self, 'size'));
+function PlotObject.GetNDim(): integer := System.Convert.ToInt32(PythonAttribute(self, 'ndim'));
+function PlotObject.GetTranspose(): PlotObject := PythonAttribute(self, 'T') as PlotObject;
+function PlotObject.GetDType(): PlotObject := PythonAttribute(self, 'dtype') as PlotObject;
+function PlotObject.GetValues(): PlotObject := PythonAttribute(self, 'values') as PlotObject;
+function PlotObject.tolist(): PlotObject := ObjectCall(id, 'tolist', new object[0], Options());
+function PlotObject.item(index: integer): object :=
+  PythonMethod(self, 'item', new object[](index), Options());
+function PlotObject.reshape(params dimensions: array of integer): PlotObject :=
+  ObjectCall(id, 'reshape', new object[](dimensions), Options());
+function PlotObject.astype(dtype: string): PlotObject :=
+  ObjectCall(id, 'astype', new object[](dtype), Options());
+function PlotObject.head(n: integer): PlotObject := ObjectCall(id, 'head', new object[](n), Options());
+function PlotObject.tail(n: integer): PlotObject := ObjectCall(id, 'tail', new object[](n), Options());
+function PlotObject.describe(): PlotObject := ObjectCall(id, 'describe', new object[0], Options());
+function PlotObject.to_numpy(): PlotObject := ObjectCall(id, 'to_numpy', new object[0], Options());
+procedure PlotObject.to_csv(path: string; index: boolean);
+begin ObjectCall(id, 'to_csv', new object[](path), Options('index', index)); end;
+function PlotObject.sum(axis: object): object := PythonMethod(self, 'sum', new object[0], Options('axis', axis));
+function PlotObject.mean(axis: object): object := PythonMethod(self, 'mean', new object[0], Options('axis', axis));
+function PlotObject.min(axis: object): object := PythonMethod(self, 'min', new object[0], Options('axis', axis));
+function PlotObject.max(axis: object): object := PythonMethod(self, 'max', new object[0], Options('axis', axis));
+function PlotObject.std(axis: object): object := PythonMethod(self, 'std', new object[0], Options('axis', axis));
+function PlotObject.groupby(key: object): PlotObject :=
+  ObjectCall(id, 'groupby', new object[](key), Options());
+function PlotObject.sort_values(by: object): PlotObject :=
+  ObjectCall(id, 'sort_values', new object[](by), Options());
+static function PlotObject.operator +(left: PlotObject; right: object): PlotObject :=
+  PythonBinary(left, 'add', right) as PlotObject;
+static function PlotObject.operator -(left: PlotObject; right: object): PlotObject :=
+  PythonBinary(left, 'sub', right) as PlotObject;
+static function PlotObject.operator *(left: PlotObject; right: object): PlotObject :=
+  PythonBinary(left, 'mul', right) as PlotObject;
+static function PlotObject.operator /(left: PlotObject; right: object): PlotObject :=
+  PythonBinary(left, 'truediv', right) as PlotObject;
+static function PlotObject.operator +(left: integer; right: PlotObject): PlotObject :=
+  PythonBinary(right, 'radd', left) as PlotObject;
+static function PlotObject.operator -(left: integer; right: PlotObject): PlotObject :=
+  PythonBinary(right, 'rsub', left) as PlotObject;
+static function PlotObject.operator *(left: integer; right: PlotObject): PlotObject :=
+  PythonBinary(right, 'rmul', left) as PlotObject;
+static function PlotObject.operator /(left: integer; right: PlotObject): PlotObject :=
+  PythonBinary(right, 'rtruediv', left) as PlotObject;
+static function PlotObject.operator +(left: real; right: PlotObject): PlotObject :=
+  PythonBinary(right, 'radd', left) as PlotObject;
+static function PlotObject.operator -(left: real; right: PlotObject): PlotObject :=
+  PythonBinary(right, 'rsub', left) as PlotObject;
+static function PlotObject.operator *(left: real; right: PlotObject): PlotObject :=
+  PythonBinary(right, 'rmul', left) as PlotObject;
+static function PlotObject.operator /(left: real; right: PlotObject): PlotObject :=
+  PythonBinary(right, 'rtruediv', left) as PlotObject;
 
 function PlotObject.plot(x, y: object; fmt: string; color: string; &label: string;
   linewidth: real; linestyle: string; marker: string; alpha: real): PlotObject :=
@@ -312,6 +423,7 @@ function PlotObject.plot(x, y: object; fmt: string; color: string; &label: strin
       'linestyle', linestyle, 'marker', marker, 'alpha', alpha));
 
 function PlotObject.plot(y: object): PlotObject := ObjectCall(id, 'plot', new object[](y), Options());
+function PlotObject.plot(): PlotObject := ObjectCall(id, 'plot', new object[0], Options());
 
 function PlotObject.scatter(x, y: object; s, c: object; marker, cmap, &label: string;
   alpha: real): PlotObject := ObjectCall(id, 'scatter', new object[](x, y),
@@ -365,7 +477,7 @@ begin
   var items := PlotCall('subplots', new object[](nrows, ncols),
     Options('figsize', figsize, 'sharex', sharex, 'sharey', sharey));
   var values := new List<PlotObject>;
-  for var i := 0 to items.Length - 1 do values.Add(items[i]);
+  for var i := 0 to items.Length - 1 do values.Add(items[i] as PlotObject);
   Result := values;
 end;
 function subplot(nrows, ncols, index: integer): PlotObject :=

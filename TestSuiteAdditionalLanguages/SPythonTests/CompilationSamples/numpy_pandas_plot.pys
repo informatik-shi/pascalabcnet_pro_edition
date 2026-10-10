@@ -1,0 +1,41 @@
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from numpy import array as make_array
+from pandas import Series as make_series
+
+x = np.arange(0, 5)
+y = x * 2
+print(x.tolist())
+print(make_array([1, 2, 3]))
+print(np.sum(y))
+print(x[2])
+print(y.reshape(5, 1).shape)
+print(np.sin(np.array([0, np.pi])).tolist())
+twice = 2 * x
+print(twice.tolist())
+matrix = np.array([[1, 2], [3, 4]], dtype='float64')
+print(np.mean(matrix, axis=0))
+
+df = pd.DataFrame({'x': x, 'y': y})
+print(df.head())
+print(df['y'].mean())
+z = df['y'] + 1
+print(z.tolist())
+print(df.iloc[1]['y'])
+series = pd.Series([1, 2, 3], name='values')
+print(series.sum())
+print(make_series([4, 5]))
+joined = pd.concat([df, df], ignore_index=True)
+print(joined.shape)
+for column in df:
+    print(column)
+numeric = pd.DataFrame({1: [1, 2], 2: [3, 4]})
+print(numeric.columns)
+df.to_csv('numpy_pandas_plot.csv', index=False)
+loaded = pd.read_csv('numpy_pandas_plot.csv', sep=',')
+print(loaded['y'])
+
+plt.plot(x, y)
+plt.savefig('numpy_pandas_plot.png')
+print('numpy pandas ok')

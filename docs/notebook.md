@@ -118,7 +118,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\test-notebook.ps
    холста в `image.png`. Сервер передаёт браузеру адрес готового PNG, и
    браузер показывает его под ячейкой.
    Для ячейки SPython с `import matplotlib.pyplot as plt` используется
-   встроенный Python/Matplotlib и сохраняется активная фигура. Примеры и
+   встроенный Python/Matplotlib и сохраняется активная фигура. Массивы NumPy
+   и таблицы pandas можно передавать в Matplotlib в той же ячейке. Примеры и
    ограничения описаны в [руководстве по сборке](build-portable-spython.md#matplotlib-в-spython).
 4. Временные исходники, исполняемые файлы и PNG хранятся в
    `Work\Notebooks\<ID>\runs\<ID>`. Текст тетрадки хранится отдельно как JSON

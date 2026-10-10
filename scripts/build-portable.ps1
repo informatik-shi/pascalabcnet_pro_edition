@@ -173,8 +173,8 @@ Copy-Item -Path (Join-Path $pythonRuntime.Packages '*') -Destination $pythonSite
 Set-Content -LiteralPath (Join-Path $pythonStage 'python313._pth') `
     -Value @('python313.zip', '.', 'Lib\site-packages') -Encoding ascii
 & (Join-Path $pythonStage 'python.exe') -c `
-    'import matplotlib, numpy; print("Bundled Python:", matplotlib.__version__, numpy.__version__)'
-if ($LASTEXITCODE -ne 0) { throw 'Bundled Matplotlib does not start.' }
+    'import matplotlib, numpy, pandas; print("Bundled Python:", matplotlib.__version__, numpy.__version__, pandas.__version__)'
+if ($LASTEXITCODE -ne 0) { throw 'Bundled scientific Python packages do not start.' }
 
 Copy-Item -Path (Join-Path $root 'PortableDistribution\*') -Destination $stage -Recurse -Force
 Assert-File (Join-Path $notebookPublish 'PascalABCNotebook.dll')

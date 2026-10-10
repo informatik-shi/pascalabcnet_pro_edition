@@ -34,12 +34,12 @@ if (-not (Test-Path -LiteralPath $marker) -or
         throw 'Python 3.13 is required to install Matplotlib wheels; pass -PythonExe.'
     }
     New-Item -ItemType Directory -Path $packages -Force | Out-Null
-    & $PythonExe -m pip install --disable-pip-version-check `
+    & $PythonExe -m pip install --disable-pip-version-check --upgrade `
         --only-binary=:all: --target $packages -r $requirements
     if ($LASTEXITCODE -ne 0) { throw 'Matplotlib wheel installation failed.' }
     Set-Content -LiteralPath $marker -Value $requirementsHash -Encoding ascii
 }
-foreach ($name in @('matplotlib\__init__.py', 'numpy\__init__.py')) {
+foreach ($name in @('matplotlib\__init__.py', 'numpy\__init__.py', 'pandas\__init__.py')) {
     if (-not (Test-Path -LiteralPath (Join-Path $packages $name))) {
         throw "Missing Python package: $name"
     }

@@ -78,6 +78,7 @@ Invoke-NotebookCase pascal "uses WPF;`nMainWindow.Width := 400;`nMainWindow.Heig
 Invoke-NotebookCase spython "from GraphWPF import *`nFillCircle(160, 110, 60, Colors.CornflowerBlue)`nprint('spython graphwpf ok')" 'spython graphwpf ok' $true
 Invoke-NotebookCase spython "from GraphABC import *`nSetWindowSize(320, 220)`nBrush.Color = clRed`nFillCircle(160, 110, 60)`nprint('spython graphabc ok')" 'spython graphabc ok' $true
 Invoke-NotebookCase spython "import matplotlib.pyplot as plt`nplt.plot([0, 1, 2], [0, 1, 4], color='red')`nplt.show()`nprint('spython matplotlib ok')" 'spython matplotlib ok' $true
+Invoke-NotebookCase spython "import numpy as np`nimport pandas as pd`nimport matplotlib.pyplot as plt`nx = np.arange(3)`ndf = pd.DataFrame({'x': x, 'y': x * 2})`nplt.plot(df['x'], df['y'])`nplt.show()`nprint('spython numpy pandas ok')" 'spython numpy pandas ok' $true
 Invoke-NotebookSequenceCase pascal "var answer := 40;`nwriteln('hidden pascal');" "writeln(answer + 2);" '42' 'hidden pascal'
 Invoke-NotebookSequenceCase spython "answer = 40`nprint('hidden spython')" 'print(answer + 2)' '42' 'hidden spython'
 

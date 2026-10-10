@@ -35,6 +35,8 @@ namespace Languages.SPython.Frontend.Data
             { "ipaddress", "ipaddress1" },
             { "re", "re1" },
             { "matplotlib.pyplot", "pyplot1" },
+            { "numpy", "numpy1" },
+            { "pandas", "pandas1" },
         };
 
         public Dictionary<string, string> SpecialModulesAliases => specialModulesAliases;
