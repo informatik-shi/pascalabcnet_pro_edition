@@ -10,6 +10,72 @@ namespace Languages.SPython.Frontend.Converters
 
         public override void visit(method_call _method_call)
         {
+            if (_method_call.dereferencing_value is dot_node itertoolsCall &&
+                itertoolsCall.left is ident itertoolsModule && itertoolsModule.name == "itertools1" &&
+                itertoolsCall.right is ident itertoolsFunction && itertoolsFunction.name == "product" &&
+                _method_call.parameters is expression_list productArguments &&
+                productArguments.expressions.Any(e => e is name_assign_expr))
+            {
+                expression_list normalized = new expression_list();
+                expression repeat = null;
+                bool namedStarted = false;
+                foreach (expression argument in productArguments.expressions)
+                {
+                    if (argument is name_assign_expr named)
+                    {
+                        namedStarted = true;
+                        if (named.name.name != "repeat" || repeat != null)
+                            throw new SPythonSyntaxVisitorError("UNKNOWN_NAME_{0}", argument.source_context, named.name.name);
+                        repeat = named.expr;
+                    }
+                    else
+                    {
+                        if (namedStarted)
+                            throw new SPythonSyntaxVisitorError("ARG_AFTER_KWARGS", argument.source_context);
+                        normalized.Add(argument);
+                    }
+                }
+                if (repeat != null)
+                {
+                    normalized.expressions.Insert(0, repeat);
+                    itertoolsFunction.name = "product_repeat";
+                }
+                _method_call.parameters = normalized;
+                base.visit(_method_call);
+                return;
+            }
+            if (_method_call.dereferencing_value is dot_node repeatCall &&
+                repeatCall.left is ident repeatModule && repeatModule.name == "itertools1" &&
+                repeatCall.right is ident repeatFunction && repeatFunction.name == "repeat" &&
+                _method_call.parameters is expression_list repeatArguments &&
+                repeatArguments.expressions.Any(e => e is name_assign_expr))
+            {
+                expression_list normalized = new expression_list();
+                expression times = null;
+                bool namedStarted = false;
+                foreach (expression argument in repeatArguments.expressions)
+                {
+                    if (argument is name_assign_expr named)
+                    {
+                        namedStarted = true;
+                        if (named.name.name != "times" || times != null)
+                            throw new SPythonSyntaxVisitorError("UNKNOWN_NAME_{0}", argument.source_context, named.name.name);
+                        times = named.expr;
+                    }
+                    else
+                    {
+                        if (namedStarted || normalized.expressions.Count >= 1)
+                            throw new SPythonSyntaxVisitorError("ARG_AFTER_KWARGS", argument.source_context);
+                        normalized.Add(argument);
+                    }
+                }
+                if (normalized.expressions.Count != 1 || times == null)
+                    throw new SPythonSyntaxVisitorError("ARG_AFTER_KWARGS", _method_call.source_context);
+                normalized.Add(times);
+                _method_call.parameters = normalized;
+                base.visit(_method_call);
+                return;
+            }
             if (_method_call.dereferencing_value is dot_node builtin &&
                 builtin.left is ident module && module.name == "SPythonSystem" &&
                 builtin.right is ident function &&

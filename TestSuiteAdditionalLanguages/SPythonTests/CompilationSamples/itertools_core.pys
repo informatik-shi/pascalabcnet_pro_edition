@@ -1,0 +1,92 @@
+import itertools
+import itertools as it
+from itertools import combinations as choose
+from itertools import product as cartesian
+
+for row in itertools.product('AB', repeat=2):
+    print(row)
+    print(len(row), row[-1])
+
+for row in itertools.product([1, 2], [3, 4]):
+    print(row)
+
+for row in itertools.product([1, 2], 'AB'):
+    print(row)
+for row in itertools.product([1], 'A', repeat=2):
+    print(row)
+for number, letter in itertools.product([1], 'A'):
+    print(number + 1, letter)
+for row in itertools.product([1.0, 1.5]):
+    print(row)
+for row in itertools.product(["a'b"]):
+    print(row)
+
+for row in itertools.permutations('AAB', 2):
+    print(row)
+
+for row in itertools.combinations('AAB', 2):
+    print(row)
+for row in choose('AB', 1):
+    print(row)
+for row in it.permutations('AB', 1):
+    print(row)
+for row in cartesian('A', repeat=2):
+    print(row)
+
+for row in itertools.permutations([1, 2, 3]):
+    print(row)
+
+for row in itertools.combinations([1, 2, 3], 0):
+    print(row)
+
+for row in itertools.product():
+    print(row)
+
+for row in itertools.product(repeat=2):
+    print(row)
+
+for row in itertools.product('AB', repeat=0):
+    print(row)
+
+for row in itertools.product('A', 'B', 'C', 'D'):
+    print(row)
+for row in itertools.product('A', 'B', 'C', 'D', repeat=2):
+    print(row)
+
+for row in itertools.product('AB', '', repeat=2):
+    print('unexpected', row)
+
+for row in itertools.permutations('', 0):
+    print(row)
+for row in itertools.permutations('AB', 3):
+    print('unexpected', row)
+for row in itertools.combinations('AB', 3):
+    print('unexpected', row)
+
+for a, b in itertools.product([1, 2], [3, 4]):
+    print(a + b)
+
+letters = itertools.product('AB')
+for row in letters:
+    print('first', row)
+    break
+for row in letters:
+    print('rest', row)
+
+rows = itertools.combinations([1, 2, 3], 2)
+for row in rows:
+    print(row)
+for row in rows:
+    print('unexpected', row)
+
+for value in itertools.chain('AB', 'CD'):
+    print(value)
+for value in itertools.chain([1, 2], [3]):
+    print(value)
+for value in itertools.repeat('R', times=2):
+    print(value)
+for value in itertools.repeat('R', -1):
+    print('unexpected', value)
+for value in itertools.repeat('I'):
+    print(value)
+    break

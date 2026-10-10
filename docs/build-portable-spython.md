@@ -384,6 +384,59 @@ $hash = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant
 - `ReleaseGenerators\RebuildStandartModulesSPython.pas` — пересборка `struct1.pcu`.
 - `scripts\test-spython-file-io.ps1` — создание тестовых файлов и 64 проверки
   чтения, динамического режима и арифметики с обычным и .NET 10 компилятором.
+- `bin\Lib\SPython\itertools1.pas` — итераторы `product`, `permutations`,
+  `combinations`, а также `chain` и `repeat`.
+- `AdditionalLanguages\SPython\SyntaxTreeConverters\SPythonStandardTreeConverter\FunctionsWithNamedParametersDesugarVisitor.cs`
+  — перевод `product(..., repeat=n)` и `repeat(..., times=n)` в вызовы
+  библиотеки без потери именованных параметров.
+- `scripts\test-spython-itertools.ps1` и
+  `TestSuiteAdditionalLanguages\SPythonTests\CompilationSamples\itertools_core.pys`
+  — сравнение результатов с обычным Python 3.
+
+## Проверка itertools
+
+В SPython доступны основные комбинаторные функции:
+
+```python
+import itertools
+
+for number, letter in itertools.product([1, 2], 'AB'):
+    print(number, letter)
+
+for pair in itertools.permutations('ABC', 2):
+    print(pair)
+
+for pair in itertools.combinations('ABC', 2):
+    print(pair)
+```
+
+`product(..., repeat=2)` принимает именованный аргумент `repeat`.
+`permutations(iterable)` по умолчанию использует полную длину входа.
+Результаты можно перебирать только один раз, как итераторы Python. Элементы
+результирующих кортежей можно индексировать и распаковывать, а длину кортежа
+получать через `len()`.
+
+После полной сборки проверьте обе версии компилятора на одном примере.
+Python 3 нужен только для сравнения в тесте; portable-комплект не запускает
+Python при работе программ.
+
+```powershell
+scripts\test-spython-itertools.ps1 -Runtime classic -PythonExe 'C:\Path\To\python.exe'
+scripts\test-spython-itertools.ps1 -Runtime net10 -PythonExe 'C:\Path\To\python.exe'
+```
+
+Тест вызывает `product`, `permutations`, `combinations` на строках и списках,
+проверяет `repeat=`, пустые результаты, одинаковые значения на разных
+позициях, распаковку кортежей, порядок результатов и продолжение итератора
+после `break`. Он также проверяет ранее существовавшие `chain` и `repeat`.
+Каждая строка вывода SPython сравнивается со строкой, которую выдаёт Python 3.
+
+Реализация `product`, `permutations` и `combinations` хранит входные
+последовательности в памяти, как Python `itertools`, и выдаёт комбинации по
+одной. `product` принимает однородные и смешанные типы входных элементов;
+для смешанных типов доступ к элементам кортежа возвращает `PyValue`.
+Остальные функции стандартного `itertools` ещё не поддержаны. Это не полная
+совместимость с Python, но тестируемая основа для её расширения.
 
 Папка `Release` не хранится в Git: итоговый ZIP нужно собрать локально после
 клонирования ветки.
