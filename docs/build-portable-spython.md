@@ -440,3 +440,58 @@ scripts\test-spython-itertools.ps1 -Runtime net10 -PythonExe 'C:\Path\To\python.
 
 Папка `Release` не хранится в Git: итоговый ZIP нужно собрать локально после
 клонирования ветки.
+
+## Модуль `ipaddress`
+
+Реализация находится в `bin\Lib\SPython\ipaddress1.pas`. Для программы SPython
+она доступна под обычным именем `ipaddress`: соответствие задаётся в
+`AdditionalLanguages\SPython\SPythonLanguageInfo\SPythonLanguageInformation.cs`.
+`ReleaseGenerators\RebuildStandartModulesSPython.pas` включает модуль в
+пересборку стандартных PCU. Добавленные в `SPythonSystem.pas` типы исключений
+`ValueError` и `TypeError` позволяют перехватывать соответствующие ошибки.
+Исправление в `Compiler\PCU\PCUReader.cs` позволяет загрузчику PCU восстанавливать
+методы, которые он обнаруживает при восстановлении других методов; без этого
+операторы сравнения новых типов вызывали внутренний сбой компилятора.
+
+Поддержаны фабрики `ip_address`, `ip_network`, `ip_interface`, функции и
+конструкторы `IPv4Address`, `IPv6Address`, `IPv4Network`, `IPv6Network`,
+`IPv4Interface`, `IPv6Interface`, операции `summarize_address_range`,
+`collapse_addresses`, `get_mixed_type_key`, `v4_int_to_packed`,
+`v6_int_to_packed`. Адреса дают
+`packed`, `compressed`, `exploded`, `reverse_pointer`, признаки частных,
+глобальных, зарезервированных, multicast, loopback, link-local и unspecified
+адресов. Для IPv6 доступны `scope_id`, `ipv4_mapped`, `sixtofour`, `teredo`;
+для IPv4 — `ipv6_mapped`. Сети дают маски, границы, число адресов, перебор,
+`hosts`, `subnets`, `supernet`, `subnet_of`, `supernet_of`, `overlaps`,
+`address_exclude` и `compare_networks`. Поддержаны префиксы и маски IPv4,
+`strict=False`, адрес с префиксом в виде пары, а также сетевые зоны IPv6.
+Проверенные таблицы `is_private` соответствуют Python 3.13, включая его
+исключения для IPv4 `192.0.0.9`, `192.0.0.10` и отдельных IPv6 адресов.
+
+Для воспроизводимой сборки на Windows нужны .NET 10 SDK и установленный
+Python 3.13 для сравнения результатов. Из корня ветки `portable` выполните:
+
+```powershell
+scripts\build-portable.ps1 -DotnetRoot "$env:USERPROFILE\.dotnet"
+scripts\test-spython-ipaddress.ps1 -Runtime classic -PythonExe 'C:\Path\To\python.exe'
+scripts\test-spython-ipaddress.ps1 -Runtime net10 -PythonExe 'C:\Path\To\python.exe'
+```
+
+Тест сверяет вывод SPython с Python построчно. Образцы находятся в
+`TestSuiteAdditionalLanguages\SPythonTests\CompilationSamples\ipaddress_*.pys`:
+проверяются адреса, сети, интерфейсы, классификация, преобразования в целое
+и байты, подсети, суммирование, ошибки входных данных и сортировка. Чтобы
+проверить готовый комплект, добавьте к тестовой команде
+`-PackageRoot 'Release\PascalABCNET-Portable-win-x64'`.
+
+Полная совместимость со стандартным `ipaddress` пока не достигнута. SPython
+предоставляет именованные функции вместо классов Python, поэтому `type()`,
+`isinstance()` и `repr()` отличаются. Смешанный литерал списка адресов и
+сетей не компилируется из-за статической типизации SPython, хотя
+`collapse_addresses` принимает перечисляемые объекты обоих видов.
+`get_mixed_type_key` возвращает сравнимый ключ, но передача его как `key=` в
+`sorted()` пока не компилируется. Форматирование адресов через Python
+`format()`, целые литералы больше диапазона встроенного парсера SPython и
+точные тексты
+всех сообщений об ошибках ещё не перенесены. Эти ограничения требуют
+изменений в языке SPython, а не только добавления модуля.

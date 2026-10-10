@@ -22,6 +22,12 @@ function input(s: string): string;
 type
   PyObject = object;
   PyException = System.Exception;
+  ValueError = class(System.ArgumentException);
+  TypeError = class(System.ArgumentException);
+
+  IPythonIntConvertible = interface
+    function ToPythonInteger(): System.Numerics.BigInteger;
+  end;
 
   PyValue = class(IEnumerable<PyValue>)
   private
@@ -221,6 +227,7 @@ function int(val: string): integer;
 function int(val: real): integer;
 
 function int(obj: object): integer;
+function int(obj: IPythonIntConvertible): System.Numerics.BigInteger;
 
 function int(b: boolean): integer;
 
@@ -1346,6 +1353,8 @@ begin
     on System.InvalidCastException do Result := Convert.ToInt32(obj.ToString());
   end;
 end;
+
+function int(obj: IPythonIntConvertible): System.Numerics.BigInteger := obj.ToPythonInteger();
 
 function str(val: object): string := val.ToString(); 
 

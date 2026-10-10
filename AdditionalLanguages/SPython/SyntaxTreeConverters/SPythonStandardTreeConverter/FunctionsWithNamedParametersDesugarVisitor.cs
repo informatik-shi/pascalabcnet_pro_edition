@@ -10,6 +10,112 @@ namespace Languages.SPython.Frontend.Converters
 
         public override void visit(method_call _method_call)
         {
+            if (_method_call.dereferencing_value is dot_node sortedCall &&
+                sortedCall.left is ident sortedModule && sortedModule.name == "SPythonSystem" &&
+                sortedCall.right is ident sortedFunction && sortedFunction.name == "sorted" &&
+                _method_call.parameters is expression_list sortedArguments &&
+                sortedArguments.expressions.Any(e => e is name_assign_expr))
+            {
+                expression iterable = null;
+                expression key = null;
+                expression reverse = null;
+                bool namedStarted = false;
+                foreach (expression argument in sortedArguments.expressions)
+                {
+                    if (argument is name_assign_expr named)
+                    {
+                        namedStarted = true;
+                        if (named.name.name == "iterable" && iterable == null) iterable = named.expr;
+                        else if (named.name.name == "key" && key == null) key = named.expr;
+                        else if (named.name.name == "reverse" && reverse == null) reverse = named.expr;
+                        else throw new SPythonSyntaxVisitorError("UNKNOWN_NAME_{0}", argument.source_context, named.name.name);
+                    }
+                    else
+                    {
+                        if (namedStarted || iterable != null)
+                            throw new SPythonSyntaxVisitorError("ARG_AFTER_KWARGS", argument.source_context);
+                        iterable = argument;
+                    }
+                }
+                if (iterable == null)
+                    throw new SPythonSyntaxVisitorError("UNKNOWN_NAME_{0}", _method_call.source_context, "iterable");
+                expression_list normalized = new expression_list();
+                normalized.Add(iterable);
+                if (key != null) normalized.Add(key);
+                if (reverse != null) normalized.Add(reverse);
+                _method_call.parameters = normalized;
+                base.visit(_method_call);
+                return;
+            }
+            if (_method_call.dereferencing_value is dot_node subnetCall &&
+                subnetCall.right is ident subnetFunction &&
+                (subnetFunction.name == "subnets" || subnetFunction.name == "supernet") &&
+                _method_call.parameters is expression_list subnetArguments &&
+                subnetArguments.expressions.Any(e => e is name_assign_expr))
+            {
+                expression diff = null;
+                expression newPrefix = null;
+                bool namedStarted = false;
+                foreach (expression argument in subnetArguments.expressions)
+                {
+                    if (argument is name_assign_expr named)
+                    {
+                        namedStarted = true;
+                        if (named.name.name == "prefixlen_diff" && diff == null) diff = named.expr;
+                        else if (named.name.name == "new_prefix" && newPrefix == null) newPrefix = named.expr;
+                        else throw new SPythonSyntaxVisitorError("UNKNOWN_NAME_{0}", argument.source_context, named.name.name);
+                    }
+                    else
+                    {
+                        if (namedStarted) throw new SPythonSyntaxVisitorError("ARG_AFTER_KWARGS", argument.source_context);
+                        if (diff == null) diff = argument;
+                        else if (newPrefix == null) newPrefix = argument;
+                        else throw new SPythonSyntaxVisitorError("ARG_AFTER_KWARGS", argument.source_context);
+                    }
+                }
+                expression_list normalized = new expression_list();
+                if (diff != null || newPrefix != null) normalized.Add(diff ?? new int32_const(1));
+                if (newPrefix != null) normalized.Add(newPrefix);
+                _method_call.parameters = normalized;
+                base.visit(_method_call);
+                return;
+            }
+            if (_method_call.dereferencing_value is dot_node ipaddressCall &&
+                ipaddressCall.left is ident ipaddressModule && ipaddressModule.name == "ipaddress1" &&
+                ipaddressCall.right is ident ipaddressFunction &&
+                (ipaddressFunction.name == "ip_network" || ipaddressFunction.name == "IPv4Network" ||
+                 ipaddressFunction.name == "IPv6Network") &&
+                _method_call.parameters is expression_list networkArguments &&
+                networkArguments.expressions.Any(e => e is name_assign_expr))
+            {
+                expression address = null;
+                expression strict = null;
+                bool namedStarted = false;
+                foreach (expression argument in networkArguments.expressions)
+                {
+                    if (argument is name_assign_expr named)
+                    {
+                        namedStarted = true;
+                        if (named.name.name == "address" && address == null) address = named.expr;
+                        else if (named.name.name == "strict" && strict == null) strict = named.expr;
+                        else throw new SPythonSyntaxVisitorError("UNKNOWN_NAME_{0}", argument.source_context, named.name.name);
+                    }
+                    else
+                    {
+                        if (namedStarted) throw new SPythonSyntaxVisitorError("ARG_AFTER_KWARGS", argument.source_context);
+                        if (address == null) address = argument;
+                        else if (strict == null) strict = argument;
+                        else throw new SPythonSyntaxVisitorError("ARG_AFTER_KWARGS", argument.source_context);
+                    }
+                }
+                if (address == null) throw new SPythonSyntaxVisitorError("UNKNOWN_NAME_{0}", _method_call.source_context, "address");
+                expression_list normalized = new expression_list();
+                normalized.Add(address);
+                if (strict != null) normalized.Add(strict);
+                _method_call.parameters = normalized;
+                base.visit(_method_call);
+                return;
+            }
             if (_method_call.dereferencing_value is dot_node itertoolsCall &&
                 itertoolsCall.left is ident itertoolsModule && itertoolsModule.name == "itertools1" &&
                 itertoolsCall.right is ident itertoolsFunction && itertoolsFunction.name == "product" &&

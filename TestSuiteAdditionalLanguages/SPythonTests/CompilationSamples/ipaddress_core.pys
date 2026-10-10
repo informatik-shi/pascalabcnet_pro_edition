@@ -1,0 +1,77 @@
+import ipaddress
+
+a = ipaddress.ip_address('192.0.2.1')
+print(a)
+print(a.version)
+print(a.packed.hex())
+print(a.reverse_pointer)
+b = ipaddress.IPv6Address('2001:db8::1')
+print(b)
+print(b.exploded)
+print(a.is_private, a.is_global, a.is_reserved)
+print(b.is_private, b.is_global, b.is_reserved)
+print(ipaddress.ip_address('100.64.0.1').is_private, ipaddress.ip_address('100.64.0.1').is_global)
+print(ipaddress.ip_address('192.0.0.9').is_private)
+print(ipaddress.ip_address('::ffff:8.8.8.8').ipv4_mapped)
+n = ipaddress.ip_network('192.0.2.0/30')
+print(n)
+print(n.network_address, n.broadcast_address, n.netmask, n.hostmask)
+print(n.num_addresses, n[0], n[-1])
+for host in n.hosts():
+    print(host)
+for subnet in n.subnets():
+    print(subnet)
+print(n.supernet())
+print(ipaddress.ip_network('192.0.2.2/31').subnet_of(n))
+v6 = ipaddress.ip_network('2001:db8::/126')
+print(v6, v6.num_addresses, v6.exploded)
+for host in v6.hosts():
+    print(host)
+i = ipaddress.ip_interface('192.0.2.7/24')
+print(i, i.ip, i.network, i.netmask, i.hostmask)
+print(ipaddress.ip_address('192.0.2.1') == ipaddress.ip_address('192.0.2.1'))
+print(ipaddress.ip_address('192.0.2.1') in n)
+print(ipaddress.ip_network('192.0.2.0/31') in n)
+print(int(a), a + 1, a - 1)
+print(ipaddress.ip_network('192.0.2.7/0.0.0.255', strict=False))
+for part in ipaddress.summarize_address_range(ipaddress.ip_address('192.0.2.1'), ipaddress.ip_address('192.0.2.6')):
+    print(part)
+for part in ipaddress.collapse_addresses([ipaddress.ip_network('192.0.2.0/25'), ipaddress.ip_network('192.0.2.128/25')]):
+    print(part)
+for part in n.address_exclude(ipaddress.ip_network('192.0.2.1/32')):
+    print(part)
+print(ipaddress.ip_address(4294967296))
+print(ipaddress.v4_int_to_packed(2130706433).hex())
+print(ipaddress.v4_int_to_packed(4294967295).hex())
+print(ipaddress.v6_int_to_packed(int(b)).hex())
+print(int(b))
+print(ipaddress.IPv6Address(int(b)))
+mapped = ipaddress.ip_address('::ffff:192.0.2.1')
+print(mapped.exploded, mapped.reverse_pointer, mapped.compressed)
+print(ipaddress.ip_address('8.8.8.8') in ipaddress.ip_network('0.0.0.0/0'))
+for part in n.subnets(new_prefix=32):
+    print(part)
+print(n.supernet(new_prefix=23))
+scoped = ipaddress.ip_interface('fe80::1%eth0/64')
+print(scoped, scoped.network, scoped.ip, scoped.with_prefixlen)
+print(ipaddress.ip_interface('2001:db8::1/64').exploded)
+print(ipaddress.ip_network('fe80::%eth0/64').network_address)
+print(ipaddress.ip_network(('192.0.2.0', 24)))
+print(ipaddress.ip_interface(('192.0.2.7', 24)))
+teredo = ipaddress.ip_address('2001:0:4136:e378:8000:63bf:3fff:fdd2').teredo
+print(teredo, teredo[0], teredo[1], len(teredo))
+print(ipaddress.ip_address('2002:c000:0201::1').sixtofour)
+print(ipaddress.ip_interface('::/0').is_unspecified, ipaddress.ip_interface('::1/0').is_loopback)
+for address in sorted([ipaddress.ip_address('192.0.2.2'), ipaddress.ip_address('192.0.2.1')]):
+    print(address)
+for network in sorted([ipaddress.ip_network('192.0.2.128/25'), ipaddress.ip_network('192.0.2.0/25')]):
+    print(network)
+for host in ipaddress.ip_network('2001:db8::/127').hosts():
+    print(host)
+for host in ipaddress.ip_network('192.0.2.0/31').hosts():
+    print(host)
+print(ipaddress.get_mixed_type_key(ipaddress.ip_address('192.0.2.1')))
+print(ipaddress.get_mixed_type_key(ipaddress.ip_network('192.0.2.0/24')))
+for item in sorted([ipaddress.ip_address('192.0.2.2'), ipaddress.ip_address('192.0.2.1')],
+                   reverse=True):
+    print(item)

@@ -725,9 +725,23 @@ namespace PascalABCCompiler.PCU
         public void RestoreWaitedMethodCodes()
         {
             waited_method_restoring = true;
-            foreach (common_method_node cmn in waited_method_codes.Keys)
-                cmn.function_code = GetCode(waited_method_codes[cmn]);
-            waited_method_restoring = false;
+            try
+            {
+                // Restoring one body can discover more methods in the same PCU.
+                var restored = new HashSet<common_method_node>();
+                while (restored.Count < waited_method_codes.Count)
+                {
+                    foreach (common_method_node cmn in new List<common_method_node>(waited_method_codes.Keys))
+                    {
+                        if (restored.Add(cmn))
+                            cmn.function_code = GetCode(waited_method_codes[cmn]);
+                    }
+                }
+            }
+            finally
+            {
+                waited_method_restoring = false;
+            }
         }
 
         //получение кода метода
