@@ -39,7 +39,7 @@ namespace VisualPascalABC
             return s.Substring(0, i);
         }
 
-        private const string MainFormTitle = "PascalABC.NET";
+        private const string MainFormTitle = "abc.pro";
         private static bool DesignerUseable = true;
 		private static bool ProjectsUseable = true;
 #if (DEBUG)

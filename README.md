@@ -80,6 +80,14 @@ existing outputs after a full build.
 The complete Windows build and SPython editor verification steps are in
 [`docs/build-portable-spython.md`](docs/build-portable-spython.md).
 
+### abc.pro installer without administrator rights
+
+Build the current portable package first, then run
+`scripts\build-abc-pro-installer.ps1`. The resulting `Release-abc-pro\abc.pro-Setup-<version>-win-x64.exe`
+installs the IDE, compilers, SPython, and notebooks for the current Windows user
+in `%LOCALAPPDATA%\Programs\abc.pro`. See the
+[reproducible installer instructions](docs/build-abc-pro-installer.md).
+
 The portable package also includes a separate browser notebook. Run
 `PascalABCNotebook.cmd` to create PascalABC.NET or SPython notebooks and show
 graphics inline below code cells. See the [notebook guide](docs/notebook.md)
@@ -235,3 +243,11 @@ PascalABC.NET или SPython и показывает графику прямо �
 Запуск, список графических модулей, воспроизводимая сборка и проверка
 описаны в [руководстве по тетрадкам](docs/notebook.md).
 Готовый архив доступен на [странице релиза](https://github.com/informatik-shi/pascalabcnet_pro_edition/releases/tag/portable-2026-10-08.2).
+
+## Установка abc.pro без прав администратора
+
+Для сборки установщика `abc.pro` сначала создайте актуальный portable-пакет,
+затем запустите `scripts\build-abc-pro-installer.ps1`. Готовый файл появится в
+`Release-abc-pro`. Он устанавливает IDE, компиляторы, SPython и тетрадки в
+профиль текущего пользователя. Порядок сборки, установки и проверки описан в
+[инструкции по установщику](docs/build-abc-pro-installer.md).

@@ -3,6 +3,6 @@
 using System.Reflection;
 using System.Runtime.CompilerServices;
 
-[assembly: AssemblyTitle("PascalABC.NET")]
-[assembly: AssemblyDescription("PascalABC.NET Compiler GUI")]
+[assembly: AssemblyTitle("abc.pro")]
+[assembly: AssemblyDescription("abc.pro IDE for PascalABC.NET and SPython")]
 [assembly: AssemblyConfiguration("")]

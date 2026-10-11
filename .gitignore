@@ -149,6 +149,9 @@
 
 # this is added to index at "/bin/lib"
 /ReleaseGenerators/nunit.framework.dll
+/Release-abc-pro/
+/ABCProLauncher/bin/
+/ABCProLauncher/obj/
 
 
 

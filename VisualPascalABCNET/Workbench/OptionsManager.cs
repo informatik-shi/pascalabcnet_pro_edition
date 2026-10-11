@@ -98,7 +98,7 @@ namespace VisualPascalABC
                     string language = "Русский";
                     try
                     {
-                        var cp = Registry.CurrentUser.OpenSubKey("Software\\PascalABC.NET").GetValue("Installer Language").ToString();
+                        var cp = Registry.CurrentUser.OpenSubKey("Software\\abc.pro").GetValue("Installer Language").ToString();
                         if (cp == "1033")
                             language = "English";
                     }
