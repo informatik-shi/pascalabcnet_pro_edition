@@ -8,7 +8,7 @@ $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $cache = Join-Path $root '.codex-build\python-matplotlib'
 $archive = Join-Path $cache 'python-3.13.16-embed-amd64.zip'
 $runtime = Join-Path $cache 'runtime'
-$packages = Join-Path $cache 'site-packages'
+$packages = Join-Path $cache 'site-packages-native-spython'
 $requirements = Join-Path $PSScriptRoot 'matplotlib-requirements.txt'
 $marker = Join-Path $packages '.pabc-requirements.sha256'
 $expectedArchiveHash = '97dae5274cc54867065e8d5a3226e48c35017ed332a0fdb0e27d5b5821961297'
@@ -39,7 +39,7 @@ if (-not (Test-Path -LiteralPath $marker) -or
     if ($LASTEXITCODE -ne 0) { throw 'Matplotlib wheel installation failed.' }
     Set-Content -LiteralPath $marker -Value $requirementsHash -Encoding ascii
 }
-foreach ($name in @('matplotlib\__init__.py', 'numpy\__init__.py', 'pandas\__init__.py')) {
+foreach ($name in @('matplotlib\__init__.py', 'numpy\__init__.py')) {
     if (-not (Test-Path -LiteralPath (Join-Path $packages $name))) {
         throw "Missing Python package: $name"
     }

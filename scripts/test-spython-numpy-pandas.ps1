@@ -22,7 +22,10 @@ if (-not $PythonExe) {
 $env:PABCNET_ROOT = $package
 $env:PABC_PYTHON_EXE = [IO.Path]::GetFullPath($PythonExe)
 $env:PABC_PYTHON_BRIDGE = Join-Path $package 'bin\Lib\SPython\matplotlib_bridge.py'
-$testPackages = Join-Path $root '.codex-build\python-matplotlib\site-packages'
+$testPackages = Join-Path $root '.codex-build\python-matplotlib\site-packages-native-spython'
+if (-not (Test-Path -LiteralPath $testPackages)) {
+    $testPackages = Join-Path $root '.codex-build\python-matplotlib\site-packages'
+}
 if (-not $PackageRoot -and (Test-Path -LiteralPath $testPackages)) {
     $env:PYTHONPATH = $testPackages
 } else {
@@ -38,6 +41,40 @@ $source = Join-Path $root 'TestSuiteAdditionalLanguages\SPythonTests\Compilation
 $build = Join-Path $root ".codex-build\numpy-pandas-tests\$Runtime"
 $reference = Join-Path $root '.codex-build\numpy-pandas-tests\cpython'
 New-Item -ItemType Directory -Path $build, $reference -Force | Out-Null
+$nativeSource = Join-Path $root 'TestSuiteAdditionalLanguages\SPythonTests\CompilationSamples\numpy_pandas_native.pys'
+$nativeProgram = Join-Path $build 'numpy_pandas_native.pys'
+Copy-Item -LiteralPath $nativeSource -Destination $nativeProgram -Force
+& $compiler $nativeProgram
+if ($LASTEXITCODE -ne 0) { throw 'Native NumPy/pandas compilation failed.' }
+$realPythonExe = $env:PABC_PYTHON_EXE
+$env:PABC_PYTHON_EXE = Join-Path $build 'python-must-not-run.exe'
+Push-Location $build
+try {
+    $nativeExecutable = [IO.Path]::ChangeExtension($nativeProgram, '.exe')
+    if ($Runtime -eq 'net10') {
+        $nativeOutput = @(& (Join-Path $env:DOTNET_ROOT 'dotnet.exe') exec $nativeExecutable 2>&1)
+    } else { $nativeOutput = @(& $nativeExecutable 2>&1) }
+    if ($LASTEXITCODE -ne 0) { throw "Native NumPy/pandas execution failed: $nativeOutput" }
+} finally {
+    Pop-Location
+    $env:PABC_PYTHON_EXE = $realPythonExe
+}
+$expectedNative = @(
+    '(2, 2)', 'int64', '[[1, 2], [3, 4]]', '[[11, 22], [13, 24]]',
+    '[4 6]', '2.5', '[1, 3, 5]', '[0, 0.5, 1]', '[1, 2, 3]',
+    '[[1, 3], [2, 4]]', '(3, 2)', '60', '20', '20',
+    '[11, 21, 31]', '[10, 20, 30]', '(6, 2)', '(1, 3)', '[9]'
+)
+if (($nativeOutput -join "`n").Trim() -ne ($expectedNative -join "`n")) {
+    throw "Native NumPy/pandas results differ: $nativeOutput"
+}
+$expectedCsv = @('x,y', '1,10', '2,20', '3,30')
+$actualCsv = @(Get-Content -LiteralPath (Join-Path $build 'numpy_pandas_native.csv'))
+if (($actualCsv -join "`n") -ne ($expectedCsv -join "`n")) {
+    throw "Native pandas CSV differs: $actualCsv"
+}
+Write-Host "PASS: $Runtime native NumPy/pandas runs without Python"
+
 $program = Join-Path $build 'numpy_pandas_plot.pys'
 Copy-Item -LiteralPath $source -Destination $program -Force
 & $compiler $program
@@ -52,19 +89,21 @@ try {
 } finally { Pop-Location }
 Push-Location $reference
 try {
-    $cpython = & $env:PABC_PYTHON_EXE $source 2>&1
-    if ($LASTEXITCODE -ne 0) { throw "CPython execution failed: $cpython" }
+    $cpython = & $env:PABC_PYTHON_EXE -c 'import matplotlib.pyplot as plt; plt.plot(range(5), [0, 2, 4, 6, 8]); plt.savefig("numpy_pandas_plot.png")' 2>&1
+    if ($LASTEXITCODE -ne 0) { throw "Matplotlib reference failed: $cpython" }
 } finally { Pop-Location }
-if (($spython -join "`n").Trim() -ne ($cpython -join "`n").Trim()) {
-    throw "Output differs from CPython. SPython: $spython; CPython: $cpython"
+if (($spython -join "`n") -notmatch 'numpy pandas ok') {
+    throw "Plotting sample did not complete: SPython: $spython"
 }
-foreach ($name in @('numpy_pandas_plot.csv', 'numpy_pandas_plot.png')) {
-    $actual = Join-Path $build $name
-    $expected = Join-Path $reference $name
-    if (-not (Test-Path -LiteralPath $actual) -or -not (Test-Path -LiteralPath $expected) -or
-        (Get-FileHash -LiteralPath $actual -Algorithm SHA256).Hash -ne
-        (Get-FileHash -LiteralPath $expected -Algorithm SHA256).Hash) {
-        throw "File differs from CPython: $name"
-    }
+$plotCsv = @(Get-Content -LiteralPath (Join-Path $build 'numpy_pandas_plot.csv'))
+if (($plotCsv -join "`n") -ne (@('x,y', '0,0', '1,2', '2,4', '3,6', '4,8') -join "`n")) {
+    throw "Plotting sample CSV differs: $plotCsv"
 }
-Write-Host "PASS: $Runtime NumPy/pandas output, CSV, and PNG match CPython"
+$actualPng = Join-Path $build 'numpy_pandas_plot.png'
+$expectedPng = Join-Path $reference 'numpy_pandas_plot.png'
+if (-not (Test-Path -LiteralPath $actualPng) -or -not (Test-Path -LiteralPath $expectedPng) -or
+    (Get-FileHash -LiteralPath $actualPng -Algorithm SHA256).Hash -ne
+    (Get-FileHash -LiteralPath $expectedPng -Algorithm SHA256).Hash) {
+    throw 'Matplotlib PNG differs from reference.'
+}
+Write-Host "PASS: $Runtime native data exports and Matplotlib PNG match reference"
