@@ -1,8 +1,10 @@
-"""Run a submitted Pascal program in a disposable, resource-limited container."""
+"""Run submitted Pascal programs with a local .NET runtime or Docker."""
 
 from __future__ import annotations
 
 import os
+import shutil
+import signal
 import subprocess
 import tempfile
 import time
@@ -29,6 +31,107 @@ def _work_size(work: Path, limit: int) -> int:
         if size > limit:
             break
     return size
+
+
+class LocalJudge:
+    """Run on the host. Time/output limits do not make this a security sandbox."""
+
+    def __init__(self, compiler_dir: Path, dotnet: str | None = None) -> None:
+        self.compiler_dir = Path(compiler_dir).resolve()
+        self.compiler = self.compiler_dir / "pabcnetcclear.dll"
+        candidate = dotnet or shutil.which("dotnet")
+        if not candidate and os.name == "nt":
+            candidate = str(Path.home() / ".dotnet" / "dotnet.exe")
+        self.dotnet = candidate or "dotnet"
+
+    def validate(self) -> None:
+        if not self.compiler.is_file():
+            raise JudgeUnavailable(f"Компилятор не найден: {self.compiler}")
+        if not (shutil.which(self.dotnet) or Path(self.dotnet).is_file()):
+            raise JudgeUnavailable(f".NET runtime не найден: {self.dotnet}")
+
+    @staticmethod
+    def _stop_tree(process: subprocess.Popen) -> None:
+        if os.name == "nt":
+            subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                           timeout=5, check=False)
+        else:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        if process.poll() is None:
+            process.kill()
+        process.wait(timeout=5)
+
+    def _run(self, work: Path, args: list[str], *, input_data: bytes = b"",
+             timeout: float = 20, output_limit: int = 65536) -> tuple[int, str]:
+        with tempfile.TemporaryFile() as stream_in, tempfile.TemporaryFile() as stream_out:
+            stream_in.write(input_data)
+            stream_in.seek(0)
+            try:
+                process = subprocess.Popen(
+                    args, cwd=work, stdin=stream_in, stdout=stream_out,
+                    stderr=subprocess.STDOUT, start_new_session=os.name != "nt",
+                    creationflags=((subprocess.CREATE_NEW_PROCESS_GROUP |
+                                    subprocess.CREATE_NO_WINDOW) if os.name == "nt" else 0),
+                )
+            except OSError as exc:
+                raise JudgeUnavailable(f"Не удалось запустить проверку: {exc}") from exc
+            deadline = time.monotonic() + timeout
+            interrupted = False
+            try:
+                while process.poll() is None:
+                    if (time.monotonic() > deadline or
+                            os.fstat(stream_out.fileno()).st_size > output_limit or
+                            _work_size(work, 64 * 1024 * 1024) > 64 * 1024 * 1024):
+                        interrupted = True
+                        self._stop_tree(process)
+                        break
+                    time.sleep(0.05)
+                process.wait(timeout=5)
+            finally:
+                if process.poll() is None:
+                    self._stop_tree(process)
+            if interrupted:
+                return 124, "Превышен лимит времени, вывода или диска"
+            if _work_size(work, 64 * 1024 * 1024) > 64 * 1024 * 1024:
+                return 124, "Превышен лимит диска"
+            stream_out.seek(0)
+            output = stream_out.read(output_limit + 1).decode("utf-8", "replace")
+            if len(output) > output_limit:
+                return 124, "Превышен лимит объёма вывода"
+            return process.returncode, output
+
+    def judge(self, source: str, tests: list[dict]) -> tuple[str, str]:
+        if not tests:
+            return "error", "Для задания не добавлены серверные тесты"
+        self.validate()
+        with tempfile.TemporaryDirectory(prefix="abc-pro-judge-") as directory:
+            work = Path(directory)
+            source_file = work / "solution.pas"
+            executable = work / "solution.exe"
+            source_file.write_text(source, encoding="utf-8")
+            try:
+                code, output = self._run(
+                    work, [self.dotnet, str(self.compiler), f"/Output:{executable}",
+                           str(source_file)], timeout=30,
+                )
+                if code != 0:
+                    return "wrong", "Ошибка компиляции или превышен лимит: " + output[:1000]
+                if not executable.is_file():
+                    return "error", "Компилятор не создал исполняемый файл"
+                for number, test in enumerate(tests, 1):
+                    code, output = self._run(
+                        work, [self.dotnet, "exec", str(executable)],
+                        input_data=test["input_text"].encode("utf-8"), timeout=5,
+                    )
+                    if code != 0 or _normalized(output) != _normalized(test["expected_text"]):
+                        return "wrong", f"Не пройден серверный тест {number}"
+            except (OSError, subprocess.SubprocessError) as exc:
+                raise JudgeUnavailable(f"Не удалось выполнить локальную проверку: {exc}") from exc
+        return "solved", "Все серверные тесты пройдены"
 
 
 class DockerJudge:

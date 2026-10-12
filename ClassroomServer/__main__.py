@@ -15,6 +15,7 @@ from pathlib import Path
 from werkzeug.security import generate_password_hash
 
 from .app import MAX_SOURCE, create_app, database, extract_task_file, initialize
+from .judge import DockerJudge, JudgeUnavailable, LocalJudge
 
 
 def main() -> int:
@@ -41,6 +42,11 @@ def main() -> int:
     command = commands.add_parser("serve", help="Serve on a teacher computer")
     command.add_argument("--host", default="0.0.0.0")
     command.add_argument("--port", type=int, default=8080)
+    command.add_argument("--judge", choices=("local", "docker"), default="local")
+    command.add_argument("--compiler", type=Path, default=Path(os.environ.get(
+        "ABC_CLASSROOM_COMPILER", Path(__file__).resolve().parent.parent /
+        "Release" / "PascalABCNET-Portable-win-x64" / "bin-net10")))
+    command.add_argument("--dotnet", default=os.environ.get("ABC_CLASSROOM_DOTNET"))
     args = parser.parse_args()
     data = args.data.resolve()
     db_path = data / "classroom.sqlite3"
@@ -51,20 +57,28 @@ def main() -> int:
             from waitress import serve
         except ImportError as exc:
             raise SystemExit("Install ClassroomServer/requirements.txt first") from exc
-        image = os.environ.get("ABC_JUDGE_IMAGE", "abc-pro-judge:latest")
-        try:
-            check = subprocess.run(["docker", "image", "inspect", image],
-                                   stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
-                                   text=True, timeout=15, check=False)
-        except (OSError, subprocess.TimeoutExpired) as exc:
-            raise SystemExit(f"Docker-проверка недоступна: {exc}") from exc
-        if check.returncode:
-            raise SystemExit("Не найден образ проверяющего контейнера " + image +
-                             ". Запустите Docker и scripts/build-classroom-judge.ps1. " +
-                             check.stderr.strip()[:400])
-        app = create_app({"DATA_DIR": data, "DATABASE": db_path})
+        if args.judge == "local":
+            judge = LocalJudge(args.compiler, args.dotnet)
+            try:
+                judge.validate()
+            except JudgeUnavailable as exc:
+                raise SystemExit(str(exc)) from exc
+        else:
+            image = os.environ.get("ABC_JUDGE_IMAGE", "abc-pro-judge:latest")
+            try:
+                check = subprocess.run(["docker", "image", "inspect", image],
+                                       stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                                       text=True, timeout=15, check=False)
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                raise SystemExit(f"Docker-проверка недоступна: {exc}") from exc
+            if check.returncode:
+                raise SystemExit("Не найден образ проверяющего контейнера " + image +
+                                 ". Запустите Docker и scripts/build-classroom-judge.ps1. " +
+                                 check.stderr.strip()[:400])
+            judge = DockerJudge(image)
+        app = create_app({"DATA_DIR": data, "DATABASE": db_path, "JUDGE": judge})
         print(f"abc.pro classroom listens on {args.host}:{args.port}; "
-              f"open http://<IP преподавателя>:{args.port}/admin", flush=True)
+              f"judge={args.judge}; open http://127.0.0.1:{args.port}/admin", flush=True)
         serve(app, host=args.host, port=args.port, threads=8)
         return 0
 

@@ -11,16 +11,17 @@ import secrets
 import sqlite3
 import threading
 import time
+import uuid
 import zipfile
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
-from flask import Flask, Response, abort, jsonify, redirect, render_template_string, request, send_file, session, stream_with_context, url_for
-from werkzeug.security import check_password_hash
+from flask import Flask, Response, abort, flash, jsonify, redirect, render_template, render_template_string, request, send_file, session, stream_with_context, url_for
+from werkzeug.security import check_password_hash, generate_password_hash
 
-from .judge import DockerJudge, JudgeUnavailable
+from .judge import JudgeUnavailable, LocalJudge
 
 
 TASK_HEADER = re.compile(r"\A\{abc\.pro-task:\s*([0-9a-fA-F-]{36})\s*\n", re.I)
@@ -33,6 +34,10 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS groups (
     id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE
 );
+CREATE TABLE IF NOT EXISTS task_sets (
+    id INTEGER PRIMARY KEY, group_id INTEGER NOT NULL REFERENCES groups(id),
+    name TEXT NOT NULL, UNIQUE(group_id,name)
+);
 CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY, username TEXT NOT NULL UNIQUE,
     password_hash TEXT NOT NULL, role TEXT NOT NULL CHECK(role IN ('admin','student')),
@@ -44,6 +49,7 @@ CREATE TABLE IF NOT EXISTS tokens (
 );
 CREATE TABLE IF NOT EXISTS tasks (
     id TEXT PRIMARY KEY, group_id INTEGER NOT NULL REFERENCES groups(id),
+    task_set_id INTEGER REFERENCES task_sets(id),
     title TEXT NOT NULL, statement TEXT NOT NULL, starter TEXT NOT NULL,
     UNIQUE(group_id,title)
 );
@@ -89,6 +95,10 @@ def initialize(path: Path) -> None:
     with database(path) as db:
         db.execute("PRAGMA journal_mode=WAL")
         db.executescript(SCHEMA)
+        columns = {row[1] for row in db.execute("PRAGMA table_info(tasks)")}
+        if "task_set_id" not in columns:
+            db.execute("ALTER TABLE tasks ADD COLUMN task_set_id INTEGER REFERENCES task_sets(id)")
+        db.execute("CREATE INDEX IF NOT EXISTS idx_tasks_set ON tasks(task_set_id)")
 
 
 def make_task_file(task: sqlite3.Row) -> str:
@@ -127,7 +137,9 @@ def create_app(config: dict | None = None) -> Flask:
     app = Flask(__name__)
     data_dir = Path(os.environ.get("ABC_CLASSROOM_DATA", Path(__file__).parent / "data"))
     app.config.update(DATA_DIR=data_dir, DATABASE=data_dir / "classroom.sqlite3",
-                      JUDGE=DockerJudge(os.environ.get("ABC_JUDGE_IMAGE", "abc-pro-judge:latest")),
+                      JUDGE=LocalJudge(Path(os.environ.get("ABC_CLASSROOM_COMPILER",
+                          Path(__file__).resolve().parent.parent / "Release" /
+                          "PascalABCNET-Portable-win-x64" / "bin-net10"))),
                       SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax",
                       MAX_CONTENT_LENGTH=MAX_SOURCE * 6 + 16384)
     if config:
@@ -231,9 +243,10 @@ def create_app(config: dict | None = None) -> Flask:
         user = student()
         with database(app.config["DATABASE"]) as db:
             rows = db.execute(
-                """SELECT t.id,t.title,COALESCE(p.status,'not_started') status,
-                   p.local_passed,p.local_total FROM tasks t LEFT JOIN progress p
-                   ON p.task_id=t.id AND p.user_id=? WHERE t.group_id=? ORDER BY t.title""",
+                """SELECT t.id,t.title,s.name task_set,COALESCE(p.status,'not_started') status,
+                   p.local_passed,p.local_total FROM tasks t LEFT JOIN task_sets s
+                   ON s.id=t.task_set_id LEFT JOIN progress p
+                   ON p.task_id=t.id AND p.user_id=? WHERE t.group_id=? ORDER BY s.name,t.title""",
                 (user["id"], user["group_id"]),
             ).fetchall()
         return jsonify(login=user["username"], tasks=[dict(row) for row in rows])
@@ -242,7 +255,8 @@ def create_app(config: dict | None = None) -> Flask:
     def assignments():
         user = student()
         with database(app.config["DATABASE"]) as db:
-            rows = db.execute("SELECT * FROM tasks WHERE group_id=? ORDER BY title",
+            rows = db.execute("""SELECT t.*,s.name task_set FROM tasks t LEFT JOIN task_sets s
+                               ON s.id=t.task_set_id WHERE t.group_id=? ORDER BY s.name,t.title""",
                               (user["group_id"],)).fetchall()
             group = db.execute("SELECT name FROM groups WHERE id=?",
                                (user["group_id"],)).fetchone()
@@ -252,7 +266,8 @@ def create_app(config: dict | None = None) -> Flask:
             for index, task in enumerate(rows, 1):
                 name = f"task-{index:02d}-{task['id'][:8]}.pas"
                 archive.writestr(name, make_task_file(task))
-                manifest.append({"id": task["id"], "title": task["title"], "file": name})
+                manifest.append({"id": task["id"], "title": task["title"],
+                                 "set": task["task_set"], "file": name})
             archive.writestr("assignment.json", json.dumps(
                 {"format": "abc.pro-classroom-v1", "group": group["name"], "tasks": manifest},
                 ensure_ascii=False, indent=2))
@@ -383,6 +398,7 @@ def create_app(config: dict | None = None) -> Flask:
                                             request.form.get("password", "")):
                 session.clear()
                 session["admin_id"] = user["id"]
+                session["csrf_token"] = secrets.token_urlsafe(32)
                 return redirect(url_for("admin_dashboard"))
             error = "Неверный логин или пароль"
         return render_template_string("""<!doctype html><html lang="ru"><meta charset="utf-8">
@@ -404,6 +420,132 @@ def create_app(config: dict | None = None) -> Flask:
         if row is None:
             abort(403)
 
+    def require_admin_form() -> None:
+        require_admin()
+        token = request.form.get("csrf_token", "")
+        if not token or not secrets.compare_digest(token, session.get("csrf_token", "")):
+            abort(403)
+
+    @app.route("/admin/manage", methods=["GET", "POST"])
+    def admin_manage():
+        require_admin()
+        if "csrf_token" not in session:
+            session["csrf_token"] = secrets.token_urlsafe(32)
+        if request.method == "POST":
+            require_admin_form()
+            action = request.form.get("action", "")
+            selected_id = request.form.get("task_id", "") if action == "test" else ""
+            try:
+                with database(app.config["DATABASE"]) as db:
+                    if action == "group":
+                        name = request.form.get("name", "").strip()
+                        if not 1 <= len(name) <= 100:
+                            raise ValueError("Название группы: от 1 до 100 символов")
+                        db.execute("INSERT INTO groups(name) VALUES(?)", (name,))
+                        message = f"Группа «{name}» создана"
+                    elif action == "set":
+                        group_id = int(request.form.get("group_id", "0"))
+                        name = request.form.get("name", "").strip()
+                        if not 1 <= len(name) <= 100:
+                            raise ValueError("Название набора: от 1 до 100 символов")
+                        if db.execute("SELECT 1 FROM groups WHERE id=?", (group_id,)).fetchone() is None:
+                            raise ValueError("Группа не найдена")
+                        db.execute("INSERT INTO task_sets(group_id,name) VALUES(?,?)", (group_id, name))
+                        message = f"Набор «{name}» создан"
+                    elif action == "student":
+                        group_id = int(request.form.get("group_id", "0"))
+                        login = request.form.get("login", "").strip()
+                        password = request.form.get("password", "")
+                        if db.execute("SELECT 1 FROM groups WHERE id=?", (group_id,)).fetchone() is None:
+                            raise ValueError("Группа не найдена")
+                        if not re.fullmatch(r"[A-Za-z0-9_.-]{3,40}", login):
+                            raise ValueError("Логин: 3–40 латинских букв, цифр, точек, _ или -")
+                        if len(password) < 8:
+                            raise ValueError("Пароль ученика: не менее 8 символов")
+                        db.execute("INSERT INTO users(username,password_hash,role,group_id) "
+                                   "VALUES(?,?,'student',?)",
+                                   (login, generate_password_hash(password), group_id))
+                        message = f"Ученик {login} добавлен"
+                    elif action == "task":
+                        set_id = int(request.form.get("set_id", "0"))
+                        task_set = db.execute("SELECT * FROM task_sets WHERE id=?", (set_id,)).fetchone()
+                        if task_set is None:
+                            raise ValueError("Набор заданий не найден")
+                        title = request.form.get("title", "").strip()
+                        if not 1 <= len(title) <= 150:
+                            raise ValueError("Название задания: от 1 до 150 символов")
+                        upload = request.files.get("file")
+                        if upload and upload.filename:
+                            if Path(upload.filename).suffix.lower() != ".pas":
+                                raise ValueError("Загрузите файл .pas")
+                            raw = upload.read(MAX_SOURCE + 1)
+                            if len(raw) > MAX_SOURCE:
+                                raise ValueError("Файл задания превышает 128 КиБ")
+                            try:
+                                statement, starter = extract_task_file(raw.decode("utf-8-sig"))
+                            except UnicodeError as exc:
+                                raise ValueError("Файл должен быть в UTF-8") from exc
+                        else:
+                            statement = request.form.get("statement", "").strip()
+                            starter = request.form.get("starter", "").strip()
+                        if not statement or "{" in statement or "}" in statement:
+                            raise ValueError("Условие должно быть непустым и без фигурных скобок")
+                        if len((statement + starter).encode("utf-8")) > MAX_SOURCE:
+                            raise ValueError("Задание превышает 128 КиБ")
+                        task_id = str(uuid.uuid4())
+                        selected_id = task_id
+                        db.execute("INSERT INTO tasks(id,group_id,task_set_id,title,statement,starter) "
+                                   "VALUES(?,?,?,?,?,?)", (task_id, task_set["group_id"],
+                                   set_id, title, statement, starter))
+                        message = f"Задание «{title}» создано; добавьте тесты"
+                    elif action == "test":
+                        task_id = request.form.get("task_id", "")
+                        if db.execute("SELECT 1 FROM tasks WHERE id=?", (task_id,)).fetchone() is None:
+                            raise ValueError("Задание не найдено")
+                        input_text = request.form.get("input_text", "")
+                        expected_text = request.form.get("expected_text", "")
+                        if (len(input_text.encode("utf-8")) > 65536 or
+                                len(expected_text.encode("utf-8")) > 65536):
+                            raise ValueError("Вход и ответ теста ограничены 64 КиБ каждый")
+                        count = db.execute("SELECT COUNT(*) FROM tests WHERE task_id=?",
+                                           (task_id,)).fetchone()[0]
+                        if count >= 100:
+                            raise ValueError("Не более 100 тестов на задание")
+                        db.execute("INSERT INTO tests(task_id,input_text,expected_text,is_public) "
+                                   "VALUES(?,?,?,?)", (task_id, input_text, expected_text,
+                                   int(request.form.get("is_public") == "1")))
+                        message = "Тест добавлен"
+                    else:
+                        abort(400)
+                    db.execute("INSERT INTO events(created_at) VALUES(?)", (int(time.time()),))
+            except sqlite3.IntegrityError:
+                flash("Такая группа, набор, логин или название задания уже существует", "error")
+            except ValueError as exc:
+                flash(f"Ошибка: {exc}", "error")
+            else:
+                flash(message, "success")
+            return redirect(url_for("admin_manage", task=selected_id))
+        with database(app.config["DATABASE"]) as db:
+            groups = [dict(row) for row in db.execute("SELECT * FROM groups ORDER BY name")]
+            sets = [dict(row) for row in db.execute(
+                "SELECT s.*,g.name group_name FROM task_sets s JOIN groups g ON g.id=s.group_id "
+                "ORDER BY g.name,s.name")]
+            tasks = [dict(row) for row in db.execute(
+                """SELECT t.id,t.title,t.statement,t.starter,t.task_set_id,g.name group_name,
+                   COALESCE(s.name,'Без набора') set_name,COUNT(x.id) test_count
+                   FROM tasks t JOIN groups g ON g.id=t.group_id
+                   LEFT JOIN task_sets s ON s.id=t.task_set_id
+                   LEFT JOIN tests x ON x.task_id=t.id
+                   GROUP BY t.id ORDER BY g.name,s.name,t.title""")]
+            selected_id = request.args.get("task", "")
+            selected = next((task for task in tasks if task["id"] == selected_id), None)
+            tests = ([dict(row) for row in db.execute(
+                "SELECT id,input_text,expected_text,is_public FROM tests WHERE task_id=? ORDER BY id",
+                (selected_id,))] if selected else [])
+        return render_template("admin_manage.html", groups=groups, sets=sets, tasks=tasks,
+                               selected=selected, tests=tests,
+                               csrf_token=session["csrf_token"])
+
     @app.get("/admin")
     def admin_dashboard():
         if "admin_id" not in session:
@@ -414,13 +556,14 @@ def create_app(config: dict | None = None) -> Flask:
         color:#222}table{border-collapse:collapse;width:100%}td,th{padding:10px;border-bottom:1px solid #ddd;
         text-align:left}th{background:#eee}.online{color:#167a3d}.offline{color:#888}
         .solved{color:#167a3d}.wrong,.error{color:#b22}.pending{color:#8a6500}</style>
-        <h1>abc.pro · класс</h1><p><a href="{{url_for('admin_logout')}}">Выйти</a>
+        <h1>abc.pro · класс</h1><p><a href="{{url_for('admin_manage')}}">Управление заданиями</a>
+        · <a href="{{url_for('admin_logout')}}">Выйти</a>
         · Данные обновляются при каждом результате проверки</p>
         <h2>Сводка по ученикам</h2><table><thead><tr><th>Группа</th><th>Ученик</th>
         <th>Подключение</th><th>Решено</th><th>Неверно</th><th>В работе</th><th>Всего задач</th>
         </tr></thead><tbody id="summary"></tbody></table>
         <h2>Задания</h2><table><thead><tr><th>Группа</th><th>Ученик</th>
-        <th>Подключение</th><th>Задание</th><th>Статус</th><th>Локальные тесты</th>
+        <th>Подключение</th><th>Набор</th><th>Задание</th><th>Статус</th><th>Локальные тесты</th>
         <th>Обновлено</th></tr></thead><tbody id="rows"></tbody></table>
         <script>const labels={not_started:'Не начата',started:'Задача запущена',pending:'Проверяется',
         solved:'Задача решена',wrong:'Решена неверно',error:'Ошибка проверки'};
@@ -432,11 +575,11 @@ def create_app(config: dict | None = None) -> Flask:
         .forEach((value,i)=>{let td=document.createElement('td');td.textContent=value;
         if(i==2)td.className=r.online?'online':'offline';tr.appendChild(td)});summary.appendChild(tr)}
         for(let r of data.rows){let tr=document.createElement('tr');let values=[r.group,r.student,
-        r.online?'В сети':'Не в сети',r.task,labels[r.status]||r.status,
+        r.online?'В сети':'Не в сети',r.task_set||'—',r.task,labels[r.status]||r.status,
         r.local_total==null?'—':`${r.local_passed}/${r.local_total}`,
         r.updated_at?new Date(r.updated_at*1000).toLocaleString():'—'];
         values.forEach((value,i)=>{let td=document.createElement('td');td.textContent=value;
-        if(i==2)td.className=r.online?'online':'offline';if(i==4)td.className=r.status;
+        if(i==2)td.className=r.online?'online':'offline';if(i==5)td.className=r.status;
         tr.appendChild(td)});body.appendChild(tr)}}refresh();
         new EventSource('/admin/events').onmessage=refresh;setInterval(refresh,10000)</script></html>""")
 
@@ -449,9 +592,11 @@ def create_app(config: dict | None = None) -> Flask:
                 FROM users u JOIN groups g ON g.id=u.group_id WHERE u.role='student'
                 ORDER BY g.name,u.username""").fetchall()
             rows = db.execute("""SELECT g.name group_name,u.username,u.last_seen,t.title,
+                s.name task_set,
                 COALESCE(p.status,'not_started') status,p.local_passed,p.local_total,p.updated_at,u.id user_id
                 FROM users u JOIN groups g ON g.id=u.group_id
-                JOIN tasks t ON t.group_id=g.id LEFT JOIN progress p
+                JOIN tasks t ON t.group_id=g.id LEFT JOIN task_sets s ON s.id=t.task_set_id
+                LEFT JOIN progress p
                 ON p.user_id=u.id AND p.task_id=t.id WHERE u.role='student'
                 ORDER BY g.name,u.username,t.title""").fetchall()
         summary = {user["id"]: {"group": user["group_name"], "student": user["username"],
@@ -471,7 +616,8 @@ def create_app(config: dict | None = None) -> Flask:
         return jsonify(summary=list(summary.values()), rows=[{"group": r["group_name"], "student": r["username"],
                              "online": r["last_seen"] is not None and
                              now - r["last_seen"] <= ONLINE_WINDOW,
-                             "task": r["title"], "status": r["status"],
+                             "task": r["title"], "task_set": r["task_set"],
+                             "status": r["status"],
                              "local_passed": r["local_passed"],
                              "local_total": r["local_total"],
                              "updated_at": r["updated_at"]} for r in rows])

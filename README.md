@@ -92,9 +92,13 @@ in `%LOCALAPPDATA%\Programs\abc.pro`. See the
 
 The abc.pro IDE can sign students in with a teacher-issued local IP address,
 port, login, and password. A Flask server on the teacher's computer stores task
-groups and tests, supplies a ZIP of Pascal assignments, verifies submissions in
-Docker, and shows a live per-student summary. See the
+groups, task sets and tests, supplies a ZIP of Pascal assignments, verifies
+submissions with the local .NET compiler from a Python virtual environment
+(Docker is optional), and shows a live per-student summary. Teachers create
+groups and assignments in the browser. See the
 [Russian setup and build guide](docs/classroom.md).
+The teacher server can be packaged separately with
+`scripts\build-classroom-server.ps1` as `Release-classroom\abc-pro-classroom-local-win-x64.zip`.
 
 The portable package also includes a separate browser notebook. Run
 `PascalABCNotebook.cmd` to create PascalABC.NET or SPython notebooks and show

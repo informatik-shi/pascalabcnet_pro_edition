@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>abc.pro — управление заданиями</title>
+  <style>
+    :root{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;color:#17233a;background:#f3f6fb}
+    *{box-sizing:border-box}body{max-width:1220px;margin:0 auto;padding:24px}
+    header{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap}
+    h1{margin:0}h2{font-size:1.2rem;margin:0 0 14px}h3{font-size:1rem;margin:20px 0 8px}
+    a{color:#2053ac}nav a{margin-left:16px}main{display:grid;grid-template-columns:minmax(300px,1fr) minmax(340px,1.2fr);gap:18px;margin-top:22px}
+    section{background:white;border:1px solid #dbe2ee;border-radius:12px;padding:20px;margin-bottom:18px;box-shadow:0 2px 8px #12213a0b}
+    form{display:grid;gap:10px}label{display:grid;gap:5px;font-weight:600}
+    input,select,textarea,button{font:inherit}input,select,textarea{width:100%;border:1px solid #aebbd0;border-radius:7px;padding:9px;background:white;color:inherit}
+    textarea{min-height:100px;resize:vertical;font-family:ui-monospace,Consolas,monospace;font-size:.94rem}
+    button{border:0;border-radius:7px;padding:10px 16px;background:#2157b5;color:white;font-weight:700;cursor:pointer;justify-self:start}
+    button:hover{background:#17458f}.hint{color:#53657e;font-size:.9rem;margin:0 0 12px}.messages{list-style:none;padding:0}
+    .messages li{padding:10px 14px;border-radius:8px;margin:8px 0;background:#e4f4e9}.messages .error{background:#ffe8e5;color:#9b2c22}
+    .task-list{list-style:none;padding:0;margin:0}.task-list li{border-bottom:1px solid #e5e9f1;padding:9px 0}
+    .task-list a{font-weight:650}.meta{display:block;color:#64748b;font-size:.88rem;margin-top:3px}
+    .preview{white-space:pre-wrap;word-break:break-word;background:#f4f6fa;padding:10px;border-radius:6px;max-height:160px;overflow:auto}
+    .test{border-top:1px solid #e5e9f1;padding:12px 0}.check{display:flex;align-items:center;gap:8px;font-weight:400}.check input{width:auto}
+    @media(max-width:760px){main{grid-template-columns:1fr}body{padding:15px}nav a{margin:0 14px 0 0}}
+  </style>
+</head>
+<body>
+  <header><h1>Задания abc.pro</h1><nav><a href="{{ url_for('admin_dashboard') }}">Сводка класса</a><a href="{{ url_for('admin_logout') }}">Выйти</a></nav></header>
+  <p class="hint">Группа определяет учеников, которым выдаются задания. Набор объединяет задания внутри группы.</p>
+  {% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}<ul class="messages">{% for category, message in messages %}<li class="{{ category }}">{{ message }}</li>{% endfor %}</ul>{% endif %}
+  {% endwith %}
+  <main>
+    <div>
+      <section>
+        <h2>1. Группа учеников</h2>
+        <form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="action" value="group">
+          <label>Название группы<input name="name" maxlength="100" placeholder="7-А" required></label><button>Создать группу</button>
+        </form>
+      </section>
+      <section>
+        <h2>2. Набор заданий</h2>
+        <form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="action" value="set">
+          <label>Группа<select name="group_id" required><option value="">Выберите группу</option>{% for group in groups %}<option value="{{ group.id }}">{{ group.name }}</option>{% endfor %}</select></label>
+          <label>Название набора<input name="name" maxlength="100" placeholder="Циклы и условия" required></label><button>Создать набор</button>
+        </form>
+      </section>
+      <section>
+        <h2>Ученик группы</h2>
+        <p class="hint">Создайте логин и пароль, затем передайте их ученику вместе с IP-адресом и портом сервера.</p>
+        <form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="action" value="student">
+          <label>Группа<select name="group_id" required><option value="">Выберите группу</option>{% for group in groups %}<option value="{{ group.id }}">{{ group.name }}</option>{% endfor %}</select></label>
+          <label>Логин<input name="login" minlength="3" maxlength="40" pattern="[A-Za-z0-9_.-]+" required autocomplete="off"></label>
+          <label>Пароль<input name="password" type="password" minlength="8" required autocomplete="new-password"></label>
+          <button>Добавить ученика</button>
+        </form>
+      </section>
+      <section>
+        <h2>3. Новое задание</h2>
+        <p class="hint">Введите условие и стартовый код либо загрузите UTF-8 файл .pas с условием в первых фигурных скобках. Файл имеет приоритет над полями ниже.</p>
+        <form method="post" enctype="multipart/form-data"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="action" value="task">
+          <label>Набор<select name="set_id" required><option value="">Выберите набор</option>{% for set in sets %}<option value="{{ set.id }}">{{ set.group_name }} / {{ set.name }}</option>{% endfor %}</select></label>
+          <label>Название<input name="title" maxlength="150" required placeholder="Сумма двух чисел"></label>
+          <label>Файл задания<input type="file" name="file" accept=".pas"></label>
+          <label>Условие<textarea name="statement" placeholder="Считайте два числа и выведите их сумму."></textarea></label>
+          <label>Стартовый код<textarea name="starter" placeholder="var a,b: integer;&#10;begin&#10;  Readln(a,b);&#10;end."></textarea></label>
+          <button>Создать задание</button>
+        </form>
+      </section>
+    </div>
+    <div>
+      <section>
+        <h2>Созданные задания</h2>
+        {% if tasks %}<ul class="task-list">{% for task in tasks %}<li><a href="{{ url_for('admin_manage', task=task.id) }}">{{ task.title }}</a><span class="meta">{{ task.group_name }} / {{ task.set_name }} · Тестов: {{ task.test_count }}</span></li>{% endfor %}</ul>
+        {% else %}<p class="hint">Создайте группу, набор и первое задание.</p>{% endif %}
+      </section>
+      {% if selected %}
+      <section>
+        <h2>{{ selected.title }}</h2>
+        <p class="meta">{{ selected.group_name }} / {{ selected.set_name }} · ID {{ selected.id }}</p>
+        <h3>Условие</h3><div class="preview">{{ selected.statement }}</div>
+        <h3>Стартовый код</h3><div class="preview">{{ selected.starter }}</div>
+        <h3>Добавить тест</h3>
+        <p class="hint">Открытый тест получит IDE ученика. Закрытый используется только при серверной проверке.</p>
+        <form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="action" value="test"><input type="hidden" name="task_id" value="{{ selected.id }}">
+          <label>Входные данные<textarea name="input_text" placeholder="2 3"></textarea></label>
+          <label>Ожидаемый вывод<textarea name="expected_text" placeholder="5"></textarea></label>
+          <label class="check"><input type="checkbox" name="is_public" value="1">Открытый тест</label>
+          <button>Добавить тест</button>
+        </form>
+        <h3>Тесты ({{ tests|length }})</h3>
+        {% for test in tests %}<div class="test"><strong>№ {{ loop.index }} · {{ 'Открытый' if test.is_public else 'Закрытый' }}</strong>
+          <p class="meta">Вход</p><div class="preview">{{ test.input_text }}</div>
+          <p class="meta">Ожидаемый вывод</p><div class="preview">{{ test.expected_text }}</div></div>
+        {% else %}<p class="hint">Для проверки задания нужен хотя бы один тест.</p>{% endfor %}
+      </section>
+      {% endif %}
+    </div>
+  </main>
+</body>
+</html>

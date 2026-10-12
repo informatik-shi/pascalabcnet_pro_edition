@@ -9,6 +9,7 @@ from pathlib import Path
 from werkzeug.security import generate_password_hash
 
 from ClassroomServer.app import create_app, database, extract_task_file, make_task_file
+from ClassroomServer.judge import JudgeUnavailable, LocalJudge
 
 
 class FakeJudge:
@@ -138,6 +139,91 @@ class ClassroomServerTests(unittest.TestCase):
         with database(self.database_path) as db:
             task = db.execute("SELECT * FROM tasks WHERE id=?", (self.task_id,)).fetchone()
         self.assertTrue(make_task_file(task).startswith("{abc.pro-task: "))
+
+    def test_teacher_creates_group_set_task_and_tests_in_browser(self):
+        self.assertEqual(self.client.get("/admin/manage").status_code, 401)
+        self.assertEqual(self.client.post("/admin/login", data={
+            "login": "teacher", "password": "teacher-pass"}).status_code, 302)
+        with self.client.session_transaction() as session:
+            csrf = session["csrf_token"]
+        self.assertEqual(self.client.post("/admin/manage", data={
+            "action": "group", "name": "9-В"}).status_code, 403)
+
+        def post(action, **fields):
+            return self.client.post("/admin/manage", data={
+                "csrf_token": csrf, "action": action, **fields},
+                follow_redirects=True)
+
+        self.assertIn("9-В".encode(), post("group", name="9-В").data)
+        self.assertIn("уже существует".encode(), post("group", name="9-В").data)
+        with database(self.database_path) as db:
+            group_id = db.execute("SELECT id FROM groups WHERE name='9-В'").fetchone()[0]
+        self.assertIn("Циклы".encode(), post("set", group_id=str(group_id),
+                                              name="Циклы").data)
+        with database(self.database_path) as db:
+            set_id = db.execute("SELECT id FROM task_sets WHERE name='Циклы'").fetchone()[0]
+        self.assertIn("charlie".encode(), post("student", group_id=str(group_id),
+                                               login="charlie", password="student-pass").data)
+        response = post("task", set_id=str(set_id), title="Квадрат числа",
+                        statement="Считайте число и выведите квадрат.",
+                        starter="begin Readln(n); Writeln(n*n) end.")
+        self.assertIn("Квадрат числа".encode(), response.data)
+        with database(self.database_path) as db:
+            task = db.execute("SELECT * FROM tasks WHERE title='Квадрат числа'").fetchone()
+        self.assertEqual(task["group_id"], group_id)
+        self.assertEqual(task["task_set_id"], set_id)
+        self.assertIn("Тест добавлен".encode(), post("test", task_id=task["id"],
+                input_text="3\n", expected_text="9\n", is_public="1").data)
+        self.assertIn("Тест добавлен".encode(), post("test", task_id=task["id"],
+                input_text="4\n", expected_text="16\n").data)
+        auth = self.login("charlie", "student-pass")
+        with zipfile.ZipFile(io.BytesIO(self.client.get("/api/assignments.zip",
+                                             headers=auth).data)) as archive:
+            manifest = json.loads(archive.read("assignment.json"))
+        self.assertEqual(manifest["tasks"], [{"id": task["id"],
+            "title": "Квадрат числа", "set": "Циклы",
+            "file": "task-01-" + task["id"][:8] + ".pas"}])
+        tests = self.client.get(f"/api/tasks/{task['id']}/tests", headers=auth).json["tests"]
+        self.assertEqual(tests, [{"input": "3\n", "expected": "9\n"}])
+        upload = io.BytesIO("{Найдите куб числа}\nbegin Writeln(8) end.".encode("utf-8"))
+        self.assertEqual(post("task", set_id=str(set_id), title="Куб числа",
+                              file=(upload, "cube.pas")).status_code, 200)
+        with database(self.database_path) as db:
+            imported = db.execute("SELECT statement,starter FROM tasks WHERE title='Куб числа'").fetchone()
+        self.assertEqual((imported["statement"], imported["starter"]),
+                         ("Найдите куб числа", "begin Writeln(8) end."))
+
+    def test_existing_database_gains_task_set_column(self):
+        legacy_path = Path(self.directory.name) / "legacy.sqlite3"
+        with database(legacy_path) as db:
+            db.executescript("""CREATE TABLE groups (id INTEGER PRIMARY KEY, name TEXT UNIQUE);
+                CREATE TABLE tasks (id TEXT PRIMARY KEY, group_id INTEGER NOT NULL,
+                title TEXT NOT NULL, statement TEXT NOT NULL, starter TEXT NOT NULL,
+                UNIQUE(group_id,title));
+                INSERT INTO groups(id,name) VALUES(1,'7-А');
+                INSERT INTO tasks VALUES('legacy-task',1,'Сумма','Выведите сумму','begin end.');""")
+        from ClassroomServer.app import initialize
+        initialize(legacy_path)
+        with database(legacy_path) as db:
+            task = db.execute("SELECT title,task_set_id FROM tasks WHERE id='legacy-task'").fetchone()
+        self.assertEqual((task["title"], task["task_set_id"]), ("Сумма", None))
+
+
+class LocalJudgeTests(unittest.TestCase):
+    def test_compiles_and_checks_real_pascal_program(self):
+        compiler = (Path(__file__).resolve().parent.parent / "Release" /
+                    "PascalABCNET-Portable-win-x64" / "bin-net10")
+        judge = LocalJudge(compiler)
+        try:
+            judge.validate()
+        except JudgeUnavailable as exc:
+            self.skipTest(str(exc))
+        source = "var a,b: integer; begin Readln(a,b); Writeln(a+b) end."
+        tests = [{"input_text": "2 3\n", "expected_text": "5\n"},
+                 {"input_text": "8 9\n", "expected_text": "17\n"}]
+        self.assertEqual(judge.judge(source, tests)[0], "solved")
+        tests[1]["expected_text"] = "18\n"
+        self.assertEqual(judge.judge(source, tests)[0], "wrong")
 
 
 if __name__ == "__main__":
