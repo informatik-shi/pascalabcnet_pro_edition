@@ -55,6 +55,10 @@ namespace VisualPascalABC
                     }
                     RunTabs[fileName].Run = true;
                     WorkbenchServiceFactory.DocumentService.SetTabPageText(RunTabs[fileName]);
+                    var classroomWorkbench = Workbench as Form1;
+                    if (classroomWorkbench != null)
+                        classroomWorkbench.ClassroomProgramStarted(RunTabs[fileName].FileName,
+                                                                   RunTabs[fileName].TextEditor.Text);
                 }
                 else
                 {

@@ -305,6 +305,7 @@ namespace VisualPascalABC
 
             LoadOptions();
             InitializeThemeMenu();
+            InitializeClassroom();
             ApplyEditorTheme();
 
             HelpExamplesDirectory = PascalABCCompiler.Tools.ReplaceAllKeys(Constants.HelpExamplesDirectory, WorkbenchStorage.StandartDirectories);
@@ -540,6 +541,9 @@ namespace VisualPascalABC
 
         private void Form1_FormClosed(object sender, FormClosedEventArgs e)
         {
+            classroomHeartbeat.Stop();
+            classroomHeartbeat.Dispose();
+            classroomClient.Dispose();
             WorkbenchServiceFactory.CodeCompletionParserController.StopParseThread();
         }
 

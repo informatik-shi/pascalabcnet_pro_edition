@@ -88,6 +88,14 @@ installs the IDE, compilers, SPython, and notebooks for the current Windows user
 in `%LOCALAPPDATA%\Programs\abc.pro`. See the
 [reproducible installer instructions](docs/build-abc-pro-installer.md).
 
+### Classroom server on a teacher computer
+
+The abc.pro IDE can sign students in with a teacher-issued local IP address,
+port, login, and password. A Flask server on the teacher's computer stores task
+groups and tests, supplies a ZIP of Pascal assignments, verifies submissions in
+Docker, and shows a live per-student summary. See the
+[Russian setup and build guide](docs/classroom.md).
+
 The portable package also includes a separate browser notebook. Run
 `PascalABCNotebook.cmd` to create PascalABC.NET or SPython notebooks and show
 graphics inline below code cells. See the [notebook guide](docs/notebook.md)
@@ -251,3 +259,12 @@ PascalABC.NET или SPython и показывает графику прямо �
 `Release-abc-pro`. Он устанавливает IDE, компиляторы, SPython и тетрадки в
 профиль текущего пользователя. Порядок сборки, установки и проверки описан в
 [инструкции по установщику](docs/build-abc-pro-installer.md).
+
+## Класс с сервером в локальной сети
+
+Преподаватель запускает сервер Flask на своём компьютере и выдаёт ученикам его
+IP-адрес, порт, логин и пароль. IDE скачивает архив заданий, проверяет открытые
+тесты локально и отправляет решение на дополнительную изолированную проверку.
+Сводная таблица учеников обновляется после каждого результата. Команды для
+установки, создания групп, задач и тестов приведены в
+[инструкции для класса](docs/classroom.md).

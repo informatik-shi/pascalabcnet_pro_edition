@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <OutputType>Exe</OutputType>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="..\..\VisualPascalABCNET\Classroom\LocalTestRunner.cs" Link="LocalTestRunner.cs" />
+    <Compile Include="..\..\VisualPascalABCNET\Classroom\ClassroomClient.cs" Link="ClassroomClient.cs" />
+    <Reference Include="System.Net.Http" />
+    <Reference Include="System.Web.Extensions" />
+  </ItemGroup>
+</Project>

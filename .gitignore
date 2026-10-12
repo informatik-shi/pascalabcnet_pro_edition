@@ -12,6 +12,8 @@
 
 # dirs for build temp files
 .codex-build/
+/ClassroomServer/data/
+**/__pycache__/
 /Release/PascalABCNET-Console-net10/
 /Release/PascalABCNET-Portable-win-x64/
 /Release/PascalABCNET-Portable-win-x64.zip
