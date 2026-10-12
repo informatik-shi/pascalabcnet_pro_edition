@@ -55,6 +55,70 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\build-classroom-
 в Linux-контейнере и завершится ошибкой, если проверка не работает. Убедитесь,
 что `docker version` показывает раздел **Server**.
 
+### Если Docker Desktop не запускается из-за `dockerInference` или `engine.sock`
+
+На Windows Docker Desktop может завершаться при инициализации сервисов с
+сообщением `The file cannot be accessed by the system` для
+`%LOCALAPPDATA%\Docker\run\dockerInference` или
+`%LOCALAPPDATA%\docker-secrets-engine\engine.sock`. Это ошибка доступа к
+временным Unix-сокетам Docker Desktop. Если сначала убрать только один сокет,
+при следующем запуске ошибка может появиться для второго. В [отчёте
+Docker](https://github.com/docker/desktop-feedback/issues/554) описано
+восстановление переносом **обоих каталогов до одного запуска**.
+
+Полностью закройте Docker Desktop. В PowerShell проверьте, что его процессы
+отсутствуют, а служба остановлена:
+
+```powershell
+Get-Process -Name 'Docker Desktop','com.docker.backend' -ErrorAction SilentlyContinue
+Get-Service -Name 'com.docker.service'
+```
+
+Следующие команды выполняйте только если первая команда ничего не вывела, а
+статус службы — `Stopped`. Они сохраняют каталоги с сокетами как резервные
+копии и создают пустые. Перед переносом пути проверяются относительно
+`%LOCALAPPDATA%`; образы и тома Docker в `Docker\wsl` не затрагиваются.
+
+```powershell
+$localData = [IO.Path]::GetFullPath([Environment]::GetFolderPath('LocalApplicationData')).TrimEnd('\')
+$dockerRoot = [IO.Path]::GetFullPath((Join-Path $localData 'Docker')).TrimEnd('\')
+$run = [IO.Path]::GetFullPath((Join-Path $dockerRoot 'run'))
+$secrets = [IO.Path]::GetFullPath((Join-Path $localData 'docker-secrets-engine'))
+$stamp = Get-Date -Format 'yyyyMMddHHmmss'
+$runBackup = [IO.Path]::GetFullPath((Join-Path $dockerRoot "run-broken-$stamp"))
+$secretsBackup = [IO.Path]::GetFullPath((Join-Path $localData "docker-secrets-engine-broken-$stamp"))
+if (-not $run.StartsWith($dockerRoot + '\', [StringComparison]::OrdinalIgnoreCase) -or
+    -not $runBackup.StartsWith($dockerRoot + '\', [StringComparison]::OrdinalIgnoreCase) -or
+    -not $secrets.StartsWith($localData + '\', [StringComparison]::OrdinalIgnoreCase) -or
+    -not $secretsBackup.StartsWith($localData + '\', [StringComparison]::OrdinalIgnoreCase)) {
+    throw 'Unexpected Docker socket paths'
+}
+if (Get-Process -Name 'Docker Desktop','com.docker.backend' -ErrorAction SilentlyContinue) {
+    throw 'Docker Desktop is still running'
+}
+if ((Get-Service -Name 'com.docker.service').Status -ne 'Stopped') {
+    throw 'Docker service is still running'
+}
+if (Test-Path -LiteralPath $runBackup -PathType Any) { throw 'Run backup already exists' }
+if (Test-Path -LiteralPath $secretsBackup -PathType Any) { throw 'Secrets backup already exists' }
+if (Test-Path -LiteralPath $run -PathType Container) {
+    Move-Item -LiteralPath $run -Destination $runBackup -ErrorAction Stop
+}
+if (Test-Path -LiteralPath $secrets -PathType Container) {
+    Move-Item -LiteralPath $secrets -Destination $secretsBackup -ErrorAction Stop
+}
+New-Item -ItemType Directory -Path $run -Force | Out-Null
+New-Item -ItemType Directory -Path $secrets -Force | Out-Null
+docker desktop start
+docker version
+```
+
+В выводе `docker version` должен появиться раздел **Server**. Если ошибка
+повторяется, сохраните резервные каталоги и диагностический отчёт Docker
+Desktop для поиска причины; сброс настроек к заводским для этой процедуры не
+нужен. Восстановление временных сокетов не гарантирует, что ошибка не
+повторится после очередного завершения Docker Desktop.
+
 ## Данные преподавателя
 
 По умолчанию база SQLite, закрытые тесты, учётные записи и ключ сессии
