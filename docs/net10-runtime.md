@@ -11,7 +11,7 @@ CompileNet10Plugin запускает Controller напрямую из этог�
 Для другой IDE можно указать абсолютный путь к тому же комплекту.
 После смены INI перезапустите IDE, чтобы завершился прежний Controller.
 
-Сборка проходит в свежем staging-каталоге `.codex-build/net10-runtime`.
+Сборка проходит в свежем staging-каталоге `.abcpro-build/net10-runtime`.
 Lib/Lng/Ico/Highlighting берутся только из версионируемых исходников bin,
 без legacy PCU и бинарников. В bin-net10 пользовательские посторонние файлы
 не удаляются. `net10-runtime.manifest.json` содержит состав комплекта и SHA256;

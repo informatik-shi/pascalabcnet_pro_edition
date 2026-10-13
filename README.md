@@ -99,6 +99,7 @@ groups and assignments in the browser. See the
 [Russian setup and build guide](docs/classroom.md).
 The teacher server can be packaged separately with
 `scripts\build-classroom-server.ps1` as `Release-classroom\abc-pro-classroom-local-win-x64.zip`.
+For the local server, follow the [Docker-free deployment guide](docs/classroom-no-docker.md).
 
 The portable package also includes a separate browser notebook. Run
 `PascalABCNotebook.cmd` to create PascalABC.NET or SPython notebooks and show

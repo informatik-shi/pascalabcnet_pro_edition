@@ -21,7 +21,7 @@ if (-not $release.StartsWith($root + '\', [StringComparison]::OrdinalIgnoreCase)
 $packageName = 'PascalABCNET-Portable-win-x64'
 $stage = [IO.Path]::GetFullPath((Join-Path $release $packageName))
 $zip = [IO.Path]::GetFullPath((Join-Path $release ($packageName + '.zip')))
-$notebookPublish = Join-Path $root '.codex-build\notebook-publish'
+$notebookPublish = Join-Path $root '.abcpro-build\notebook-publish'
 
 if ([string]::IsNullOrWhiteSpace($DotnetRoot)) {
     foreach ($candidate in @($env:DOTNET_ROOT, (Join-Path $env:USERPROFILE '.dotnet'),

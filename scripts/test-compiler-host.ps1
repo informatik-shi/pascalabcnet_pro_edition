@@ -13,7 +13,7 @@ if ([string]::IsNullOrWhiteSpace($PascalABCSourcePath)) {
     $PascalABCSourcePath = $repositoryRoot
 }
 $PascalABCSourcePath = [System.IO.Path]::GetFullPath($PascalABCSourcePath)
-$buildRoot = Join-Path $repositoryRoot '.codex-build\compiler-controller'
+$buildRoot = Join-Path $repositoryRoot '.abcpro-build\compiler-controller'
 $hostRoot = Join-Path $buildRoot 'host'
 $runtimeRoot = Join-Path $buildRoot 'runtime'
 $buildScript = Join-Path $PSScriptRoot 'build-compiler-host.ps1'

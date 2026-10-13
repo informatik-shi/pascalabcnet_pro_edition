@@ -9,7 +9,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $runtimeRoot = if ($PackageRoot) { [IO.Path]::GetFullPath($PackageRoot) } else { $root }
-$build = Join-Path $root '.codex-build'
+$build = Join-Path $root '.abcpro-build'
 $source = Join-Path $root 'TestSuiteAdditionalLanguages\SPythonTests\CompilationSamples\read_sbl_lambda.pys'
 $program = Join-Path $build 'read-sbl-lambda-test.pys'
 $executable = [IO.Path]::ChangeExtension($program, '.exe')

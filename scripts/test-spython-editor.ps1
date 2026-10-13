@@ -317,7 +317,7 @@ finally { $editor.Dispose() }
 $staticFlags = [Reflection.BindingFlags]'Static,NonPublic,Public'
 $workingDirectoryField = [VisualPascalABC.WorkbenchStorage].GetField('WorkingDirectory', $staticFlags)
 $oldWorkingDirectory = $workingDirectoryField.GetValue($null)
-$testDirectory = Join-Path $root ('.codex-build\new-file-' + [Guid]::NewGuid().ToString('N'))
+$testDirectory = Join-Path $root ('.abcpro-build\new-file-' + [Guid]::NewGuid().ToString('N'))
 [IO.Directory]::CreateDirectory($testDirectory) | Out-Null
 $diskFile = Join-Path $testDirectory 'Program2.pys'
 try {

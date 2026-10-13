@@ -34,7 +34,7 @@ $env:PABC_PYTHON_BRIDGE = Join-Path $package 'bin\Lib\SPython\matplotlib_bridge.
 if (-not (Test-Path -LiteralPath $env:PABC_PYTHON_BRIDGE)) {
     throw "Bridge not found: $env:PABC_PYTHON_BRIDGE"
 }
-$testPackages = Join-Path $root '.codex-build\python-packages'
+$testPackages = Join-Path $root '.abcpro-build\python-packages'
 if (-not $PackageRoot -and (Test-Path -LiteralPath $testPackages)) {
     $env:PYTHONPATH = $testPackages
 }
@@ -44,7 +44,7 @@ if ($Runtime -eq 'net10') {
     $env:DOTNET_ROOT_X64 = $env:DOTNET_ROOT
 }
 Add-Type -AssemblyName System.Drawing
-$build = Join-Path $root '.codex-build\matplotlib-tests'
+$build = Join-Path $root '.abcpro-build\matplotlib-tests'
 New-Item -ItemType Directory -Path $build -Force | Out-Null
 
 foreach ($name in @('matplotlib_pyplot', 'matplotlib_axes', 'matplotlib_imports')) {

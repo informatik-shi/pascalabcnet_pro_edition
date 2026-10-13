@@ -10,7 +10,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-$venv = [IO.Path]::GetFullPath((Join-Path $root '.codex-build\classroom-venv'))
+$venv = [IO.Path]::GetFullPath((Join-Path $root '.abcpro-build\classroom-venv'))
 if (-not $venv.StartsWith($root + '\', [StringComparison]::OrdinalIgnoreCase)) {
     throw "Unexpected virtual environment path: $venv"
 }

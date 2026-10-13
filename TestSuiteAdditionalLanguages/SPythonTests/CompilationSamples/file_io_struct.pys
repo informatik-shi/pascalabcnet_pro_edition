@@ -1,7 +1,7 @@
 import struct
 from struct import unpack
 
-text_file = open('.codex-build/file-io-test.txt', encoding='utf-8')
+text_file = open('.abcpro-build/file-io-test.txt', encoding='utf-8')
 print(text_file.readline() == 'one\n')
 print(text_file.tell() == 5)
 print(text_file.read(3) == 'two')
@@ -11,29 +11,29 @@ print(text_file.read() == 'one\ntwo\nthree\n')
 text_file.close()
 print(text_file.closed)
 
-unicode_file = open('.codex-build/file-io-unicode.txt', encoding='utf-8')
+unicode_file = open('.abcpro-build/file-io-unicode.txt', encoding='utf-8')
 print(unicode_file.read(1) == 'é')
 print(unicode_file.tell() == 2)
 unicode_file.seek(2)
 print(unicode_file.read() == '\n')
 unicode_file.close()
 
-raw_text = open('.codex-build/file-io-test.txt', newline='')
+raw_text = open('.abcpro-build/file-io-test.txt', newline='')
 print(raw_text.read() == 'one\r\ntwo\rthree\n')
 raw_text.close()
 
-cr_text = open('.codex-build/file-io-test.txt', newline='\r')
+cr_text = open('.abcpro-build/file-io-test.txt', newline='\r')
 print(cr_text.readline() == 'one\r')
 cr_text.close()
 
-text_file = open('.codex-build/file-io-test.txt')
+text_file = open('.abcpro-build/file-io-test.txt')
 line_count = 0
 for line in text_file:
     line_count += 1
 print(line_count == 3)
 text_file.close()
 
-binary_file = open(file='.codex-build/file-io-test.bin', mode='br')
+binary_file = open(file='.abcpro-build/file-io-test.bin', mode='br')
 data = binary_file.read()
 print(len(data) == 8)
 print(data[0] == 42)
@@ -68,20 +68,20 @@ print(binary_file.read().decode('ascii') == 'a')
 binary_file.close()
 print(binary_file.closed)
 
-float_file = open('.codex-build/file-io-float.bin', 'rb')
+float_file = open('.abcpro-build/file-io-float.bin', 'rb')
 float_values = struct.unpack('<f d e', float_file.read())
 print(float(float_values[0]) == 1.5)
 print(float(float_values[1]) == 1.5)
 print(float(float_values[2]) == 1.5)
 float_file.close()
 
-pascal_file = open('.codex-build/file-io-pascal.bin', 'rb')
+pascal_file = open('.abcpro-build/file-io-pascal.bin', 'rb')
 pascal_text = struct.unpack('8p', pascal_file.read())[0]
 print(str(pascal_text) == "b'Hello'")
 pascal_file.close()
 
 mode = 'rb'
-variable_binary_file = open('.codex-build/file-io-test.bin', mode)
+variable_binary_file = open('.abcpro-build/file-io-test.bin', mode)
 variable_data = variable_binary_file.read()
 print(len(variable_data) == 8)
 print(variable_data[0] == 42)
@@ -96,7 +96,7 @@ variable_binary_file.close()
 print(variable_binary_file.closed)
 
 mode = 'r'
-variable_text_file = open(file='.codex-build/file-io-test.txt', mode=mode)
+variable_text_file = open(file='.abcpro-build/file-io-test.txt', mode=mode)
 print(variable_text_file.readline() == 'one\n')
 print(variable_text_file.read(1)[0] + '!' == 't!')
 variable_text_file.close()
@@ -118,7 +118,7 @@ print(float_values[0] * 2 == 3.0)
 print(float_values[0] + float_values[1] == 3.0)
 print(struct.unpack_from('2s', data, 0)[0].hex() == '2a00')
 
-large_file = open('.codex-build/file-io-u64.bin', 'rb')
+large_file = open('.abcpro-build/file-io-u64.bin', 'rb')
 large_number = struct.unpack('<Q', large_file.read())[0]
 print(str(large_number + 1) == '18446744073709551616')
 large_file.close()

@@ -11,7 +11,7 @@ $ErrorActionPreference = 'Stop'
 $env:PYTHONIOENCODING = 'utf-8'
 $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $runtimeRoot = if ($PackageRoot) { [IO.Path]::GetFullPath($PackageRoot) } else { $root }
-$build = Join-Path $root '.codex-build\re-tests'
+$build = Join-Path $root '.abcpro-build\re-tests'
 $compiler = if ($Runtime -eq 'net10') {
     Join-Path $runtimeRoot 'bin-net10\pabcnetcclear.exe'
 } else {

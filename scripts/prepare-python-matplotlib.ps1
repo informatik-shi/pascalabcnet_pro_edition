@@ -5,7 +5,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-$cache = Join-Path $root '.codex-build\python-matplotlib'
+$cache = Join-Path $root '.abcpro-build\python-matplotlib'
 $archive = Join-Path $cache 'python-3.13.16-embed-amd64.zip'
 $runtime = Join-Path $cache 'runtime'
 $packages = Join-Path $cache 'site-packages-native-spython'

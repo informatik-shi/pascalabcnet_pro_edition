@@ -22,9 +22,9 @@ if (-not $PythonExe) {
 $env:PABCNET_ROOT = $package
 $env:PABC_PYTHON_EXE = [IO.Path]::GetFullPath($PythonExe)
 $env:PABC_PYTHON_BRIDGE = Join-Path $package 'bin\Lib\SPython\matplotlib_bridge.py'
-$testPackages = Join-Path $root '.codex-build\python-matplotlib\site-packages-native-spython'
+$testPackages = Join-Path $root '.abcpro-build\python-matplotlib\site-packages-native-spython'
 if (-not (Test-Path -LiteralPath $testPackages)) {
-    $testPackages = Join-Path $root '.codex-build\python-matplotlib\site-packages'
+    $testPackages = Join-Path $root '.abcpro-build\python-matplotlib\site-packages'
 }
 if (-not $PackageRoot -and (Test-Path -LiteralPath $testPackages)) {
     $env:PYTHONPATH = $testPackages
@@ -38,8 +38,8 @@ if ($Runtime -eq 'net10') {
 }
 $env:MPLBACKEND = 'Agg'
 $source = Join-Path $root 'TestSuiteAdditionalLanguages\SPythonTests\CompilationSamples\numpy_pandas_plot.pys'
-$build = Join-Path $root ".codex-build\numpy-pandas-tests\$Runtime"
-$reference = Join-Path $root '.codex-build\numpy-pandas-tests\cpython'
+$build = Join-Path $root ".abcpro-build\numpy-pandas-tests\$Runtime"
+$reference = Join-Path $root '.abcpro-build\numpy-pandas-tests\cpython'
 New-Item -ItemType Directory -Path $build, $reference -Force | Out-Null
 $nativeSource = Join-Path $root 'TestSuiteAdditionalLanguages\SPythonTests\CompilationSamples\numpy_pandas_native.pys'
 $nativeProgram = Join-Path $build 'numpy_pandas_native.pys'

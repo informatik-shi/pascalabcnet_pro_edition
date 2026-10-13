@@ -17,14 +17,14 @@ def readSbl(f_name, sampling_quant=2):
         return result
 
 
-for value in readSbl(".codex-build/sbl-2.bin"):
+for value in readSbl(".abcpro-build/sbl-2.bin"):
     print(value)
-for value in readSbl(".codex-build/sbl-4.bin", 4):
+for value in readSbl(".abcpro-build/sbl-4.bin", 4):
     print(value)
-for value in readSbl(".codex-build/sbl-8.bin", 8):
+for value in readSbl(".abcpro-build/sbl-8.bin", 8):
     print(value)
-print(len(readSbl(".codex-build/sbl-odd.bin")))
-print(len(readSbl(".codex-build/sbl-2.bin", 3)))
+print(len(readSbl(".abcpro-build/sbl-odd.bin")))
+print(len(readSbl(".abcpro-build/sbl-2.bin", 3)))
 
 add_one = lambda x: x + 1
 combine = lambda x, y: x * y + 1
@@ -41,7 +41,7 @@ print(shifted(2))
 
 def checkException():
     try:
-        with open(".codex-build/sbl-2.bin", "rb") as source:
+        with open(".abcpro-build/sbl-2.bin", "rb") as source:
             denominator = 0
             print(1 // denominator)
     except Exception as err:

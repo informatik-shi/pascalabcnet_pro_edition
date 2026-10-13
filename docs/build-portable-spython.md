@@ -246,7 +246,7 @@ python TestSuiteAdditionalLanguages\SPythonTests\CompilationSamples\read_sbl_lam
 Runtime, затем создаёт ZIP. Файл `bin\Lib\PABCRtl.dll` входит в ветку как
 готовая зависимость; сценарий не собирает эту DLL заново.
 Если старая portable-версия запущена из `Release`, укажите
-`-OutputRoot '.codex-build\release-next'`, чтобы не удалять используемую папку.
+`-OutputRoot '.abcpro-build\release-next'`, чтобы не удалять используемую папку.
 
 Тестовый сценарий запускайте после сборки. Он проверяет 24 сценария Enter
 через настоящий компонент редактора, обе палитры `.pys`, 20 тёмных режимов
@@ -719,7 +719,7 @@ scripts\test-spython-numpy-pandas.ps1 -Runtime net10 -PackageRoot 'Release\Pasca
 
 `scripts\prepare-python-matplotlib.ps1` загружает официальный встраиваемый
 Python 3.13.16, проверяет SHA-256 и устанавливает версии из
-`scripts\matplotlib-requirements.txt` в `.codex-build\python-matplotlib`.
+`scripts\matplotlib-requirements.txt` в `.abcpro-build\python-matplotlib`.
 Следующие сборки используют кэш. `build-portable.ps1` кладёт его в папку
 `python` архива и проверяет импорт Matplotlib и его NumPy до упаковки. Три примера
 `matplotlib_*.pys` проверяются против CPython: совпадают SHA-256 сохранённых

@@ -3,7 +3,7 @@
 //  Version:  1.1.3.301
 //  Machine:  DESKTOP-M2EE3IN
 //  DateTime: 10.10.2026 22:48:48
-//  UserName: CodexSandboxOffline
+//  UserName: LocalOfflineBuild
 //  GPLEX input file <SPythonLexer.lex>
 //  GPLEX frame file <embedded resource>
 //

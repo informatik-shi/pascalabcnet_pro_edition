@@ -10,7 +10,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $runtimeRoot = if ($PackageRoot) { [IO.Path]::GetFullPath($PackageRoot) } else { $root }
-$build = Join-Path $root '.codex-build'
+$build = Join-Path $root '.abcpro-build'
 $compiler = if ($Runtime -eq 'net10') {
     Join-Path $runtimeRoot 'bin-net10\pabcnetcclear.exe'
 } else {

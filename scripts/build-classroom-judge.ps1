@@ -12,7 +12,7 @@ $compiler = Join-Path $package 'bin-net10\pabcnetcclear.dll'
 if (-not (Test-Path -LiteralPath $compiler -PathType Leaf)) {
     throw "Missing .NET 10 compiler: $compiler"
 }
-$context = [IO.Path]::GetFullPath((Join-Path $root ('.codex-build\classroom-judge-' + [guid]::NewGuid().ToString('N'))))
+$context = [IO.Path]::GetFullPath((Join-Path $root ('.abcpro-build\classroom-judge-' + [guid]::NewGuid().ToString('N'))))
 if (-not $context.StartsWith($root + '\', [StringComparison]::OrdinalIgnoreCase)) {
     throw "Unsafe Docker context: $context"
 }

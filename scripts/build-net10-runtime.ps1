@@ -7,7 +7,7 @@ $ErrorActionPreference = 'Stop'
 $repositoryRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $destination = Join-Path $repositoryRoot 'bin-net10'
 # Build in a fresh directory: never distribute leftovers from a developer's bin.
-$stageParent = Join-Path $repositoryRoot '.codex-build\net10-runtime'
+$stageParent = Join-Path $repositoryRoot '.abcpro-build\net10-runtime'
 $stage = Join-Path $stageParent ([Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $stage -Force | Out-Null
 & dotnet build (Join-Path $repositoryRoot 'Net10Runtime.slnx') `

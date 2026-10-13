@@ -28,7 +28,7 @@ if ($Runtime -eq 'net10') {
     $env:DOTNET_ROOT_X64 = $env:DOTNET_ROOT
 }
 
-$testRoot = Join-Path $root ('.codex-build\type-annotations-test-' + $Runtime)
+$testRoot = Join-Path $root ('.abcpro-build\type-annotations-test-' + $Runtime)
 New-Item -ItemType Directory -Path $testRoot -Force | Out-Null
 $cases = @(
     @{ Name = 'unchanged_type'; Source = "a: int = 1`na = 2`na + 4`nprint(a)`n"; Output = '2' },

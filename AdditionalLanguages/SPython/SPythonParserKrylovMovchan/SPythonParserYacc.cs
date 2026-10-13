@@ -5,7 +5,7 @@
 // GPPG version 1.3.6
 // Machine:  DESKTOP-M2EE3IN
 // DateTime: 10.10.2026 23:27:00
-// UserName: CodexSandboxOffline
+// UserName: LocalOfflineBuild
 // Input file <SPythonParser.y>
 
 // options: no-lines gplex

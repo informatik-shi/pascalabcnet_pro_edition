@@ -11,7 +11,7 @@ $compiler = Join-Path $package 'bin-net10\pabcnetcclear.dll'
 if (-not (Test-Path -LiteralPath $compiler -PathType Leaf)) {
     throw "Compiler missing: $compiler"
 }
-$stage = [IO.Path]::GetFullPath((Join-Path $root ('.codex-build\classroom-package-' + [guid]::NewGuid().ToString('N'))))
+$stage = [IO.Path]::GetFullPath((Join-Path $root ('.abcpro-build\classroom-package-' + [guid]::NewGuid().ToString('N'))))
 $outputDir = [IO.Path]::GetFullPath((Join-Path $root 'Release-classroom'))
 $zip = Join-Path $outputDir 'abc-pro-classroom-local-win-x64.zip'
 if (-not $stage.StartsWith($root + '\', [StringComparison]::OrdinalIgnoreCase) -or
@@ -30,26 +30,27 @@ try {
     Copy-Item -LiteralPath (Join-Path $root 'ClassroomServer\templates') -Destination $server -Recurse
     Copy-Item -LiteralPath (Join-Path $root 'scripts\start-classroom-server.ps1') -Destination $scripts
     Copy-Item -LiteralPath (Join-Path $root 'docs\classroom.md') -Destination $docs
+    Copy-Item -LiteralPath (Join-Path $root 'docs\classroom-no-docker.md') -Destination $docs
     Copy-Item -LiteralPath (Join-Path $package 'bin-net10') -Destination $compilerTarget -Recurse
     @'
-abc.pro classroom server (local mode, no Docker)
+Сервер класса abc.pro без Docker
 
-Requirements: Windows, Python 3.10+, .NET 10 runtime.
-Unpack this ZIP to a writable folder. Open PowerShell in this folder.
+Требования: Windows, Python 3.10 или новее, среда выполнения .NET 10.
+Распакуйте архив в доступную для записи папку и откройте там PowerShell.
 
-First run:
-  py -3 -m venv .codex-build\classroom-venv
-  .\.codex-build\classroom-venv\Scripts\python.exe -m pip install -r ClassroomServer\requirements.txt
-  .\.codex-build\classroom-venv\Scripts\python.exe -m ClassroomServer init-admin teacher
+Первый запуск:
+  py -3 -m venv .abcpro-build\classroom-venv
+  .\.abcpro-build\classroom-venv\Scripts\python.exe -m pip install -r ClassroomServer\requirements.txt
+  .\.abcpro-build\classroom-venv\Scripts\python.exe -m ClassroomServer init-admin teacher
   powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\start-classroom-server.ps1
 
-Later runs:
+Следующие запуски:
   powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\start-classroom-server.ps1
 
-Open http://127.0.0.1:8080/admin and use the assignment management page.
-For remote classroom access, use the teacher computer's LAN IP address.
-Data is stored in ClassroomServer\data. Back it up separately.
-See docs\classroom.md for Russian setup and local-mode security limitations.
+Откройте http://127.0.0.1:8080/admin и войдите как преподаватель.
+Для учеников сообщите IP-адрес компьютера преподавателя в локальной сети.
+Данные находятся в ClassroomServer\data. Храните резервную копию отдельно.
+Подробная инструкция и ограничения: docs\classroom-no-docker.md.
 '@ | Set-Content -LiteralPath (Join-Path $stage 'README.txt') -Encoding UTF8
     New-Item -ItemType Directory -Path $outputDir -Force | Out-Null
     Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip -Force

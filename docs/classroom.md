@@ -1,5 +1,9 @@
 # Класс abc.pro: локальный сервер, задания и проверка
 
+Для установки сервера из готового архива без Docker начните с
+[пошаговой инструкции](classroom-no-docker.md). Ниже описаны также сборка из
+исходников и необязательная контейнерная проверка.
+
 Сервер работает **на компьютере преподавателя**. Ученические компьютеры в той
 же локальной сети подключаются к его IPv4-адресу и порту. Интернет, внешний
 хостинг и регистрация учеников на стороннем сервисе не нужны. Преподаватель
@@ -44,13 +48,13 @@
 Пример команд PowerShell из корня репозитория:
 
 ```powershell
-py -3 -m venv .codex-build\classroom-venv
-.\.codex-build\classroom-venv\Scripts\python.exe -m pip install -r ClassroomServer\requirements.txt
+py -3 -m venv .abcpro-build\classroom-venv
+.\.abcpro-build\classroom-venv\Scripts\python.exe -m pip install -r ClassroomServer\requirements.txt
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\build-portable.ps1
 ```
 
 Для запуска сервера служит `scripts\start-classroom-server.ps1`: он использует
-только Python из `.codex-build\classroom-venv`, при первом запуске создаёт
+только Python из `.abcpro-build\classroom-venv`, при первом запуске создаёт
 виртуальное окружение и устанавливает Flask и Waitress. Если зависимости
 обновились, запустите его с `-Setup`. Компилятор берётся из
 `Release\PascalABCNET-Portable-win-x64\bin-net10`. При ином расположении
@@ -75,7 +79,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\build-portable.p
 Создайте первую учётную запись преподавателя:
 
 ```powershell
-$python = '.\.codex-build\classroom-venv\Scripts\python.exe'
+$python = '.\.abcpro-build\classroom-venv\Scripts\python.exe'
 & $python -m ClassroomServer init-admin teacher
 ```
 
@@ -160,7 +164,7 @@ HTTP; по HTTP пароль идёт по локальной сети без ш
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\build-portable.ps1
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\build-abc-pro-installer.ps1 -PackageRoot 'Release\PascalABCNET-Portable-win-x64'
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\build-classroom-server.ps1
-.\.codex-build\classroom-venv\Scripts\python.exe -m unittest tests.test_classroom_server -v
+.\.abcpro-build\classroom-venv\Scripts\python.exe -m unittest tests.test_classroom_server -v
 & "$env:USERPROFILE\.dotnet\dotnet.exe" run --project tests\ClassroomLocalSmoke\ClassroomLocalSmoke.csproj --configuration Release -- "$(Resolve-Path bin\pabcnetcclear.exe)"
 ```
 
@@ -188,7 +192,7 @@ Flask-приложение, компилятор, скрипт запуска и
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\build-classroom-judge.ps1 -PackageRoot 'Release\PascalABCNET-Portable-win-x64'
-& .\.codex-build\classroom-venv\Scripts\python.exe -m ClassroomServer serve --judge docker --host 0.0.0.0 --port 8080
+& .\.abcpro-build\classroom-venv\Scripts\python.exe -m ClassroomServer serve --judge docker --host 0.0.0.0 --port 8080
 ```
 
 Команда сборки образа запускает тестовую Pascal-программу внутри контейнера.
