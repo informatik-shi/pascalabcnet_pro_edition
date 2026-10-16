@@ -1,9 +1,9 @@
 # Воспроизводимая сборка portable-версии с редактором SPython
 
 Готовый архив доступен в [релизах GitHub](https://github.com/informatik-shi/pascalabcnet_pro_edition/releases):
-[скачать portable-сборку для Windows x64](https://github.com/informatik-shi/pascalabcnet_pro_edition/releases/download/portable-2026-10-08.2/PascalABCNET-Portable-win-x64.zip).
-Ссылка ведёт на предыдущий опубликованный релиз; поддержка Matplotlib пока
-есть в ветке `portable` и в архиве, собранном по инструкции ниже.
+[скачать portable-сборку для Windows x64](https://github.com/informatik-shi/pascalabcnet_pro_edition/releases/download/portable-2026-10-16.1/PascalABCNET-Portable-win-x64.zip).
+Архив содержит исправленный запуск без прав администратора, поддержку
+Matplotlib и остальные изменения ветки `portable` на дату релиза.
 О запуске тетрадок и inline-графике читайте в
 [отдельном руководстве](notebook.md).
 

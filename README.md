@@ -11,7 +11,7 @@ two compiler targets:
 
 The [GitHub Releases page](https://github.com/informatik-shi/pascalabcnet_pro_edition/releases)
 contains ready-to-use builds. Download the
-[Windows x64 portable ZIP](https://github.com/informatik-shi/pascalabcnet_pro_edition/releases/download/portable-2026-10-08.2/PascalABCNET-Portable-win-x64.zip)
+[Windows x64 portable ZIP](https://github.com/informatik-shi/pascalabcnet_pro_edition/releases/download/portable-2026-10-16.1/PascalABCNET-Portable-win-x64.zip)
 for the IDE, both compilers, and browser notebooks. Extract it and run
 `PascalABCNET.cmd` for the IDE or `PascalABCNotebook.cmd` for
 notebooks. Installation is not required.
@@ -23,8 +23,8 @@ also supported; see the
 [build and usage notes](docs/build-portable-spython.md).
 The current `portable` branch runs its supported NumPy and pandas operations
 natively in SPython/.NET. Matplotlib rendering still uses the bundled Python
-runtime. The ZIP linked above predates those changes; build the current archive
-with `scripts\build-portable.ps1` using the steps in the usage notes.
+runtime. The linked ZIP contains these changes. To reproduce it, build the
+archive with `scripts\build-portable.ps1` using the steps in the usage notes.
 
 ## Building on Windows
 
