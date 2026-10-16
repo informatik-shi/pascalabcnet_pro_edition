@@ -50,6 +50,18 @@ namespace VisualPascalABC
             }
             else
             {
+                // A portable package can be read-only (for example on a school computer).
+                // The launcher selects a writable work directory without changing the package.
+                var portableWork = System.Environment.GetEnvironmentVariable("PABC_WORK_DIRECTORY");
+                if (!string.IsNullOrWhiteSpace(portableWork) &&
+                    Path.IsPathRooted(portableWork) && Directory.Exists(portableWork))
+                {
+                    DefaultWorkingDirectory = portableWork;
+                    HelpExamplesDirectory = Path.Combine(portableWork, "Samples");
+                    HelpTutorialExamplesDirectory = Path.Combine(portableWork, "Samples", "!Tutorial");
+                    DefaultOutputDirectory = Path.Combine(portableWork, "Output");
+                    return;
+                }
                 string PABCWorkIniFile = System.IO.Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().ManifestModule.FullyQualifiedName) + @"\pabcworknet.ini";
                 //System.Windows.Forms.MessageBox.Show(PABCWorkIniFile);
                 if (File.Exists(PABCWorkIniFile))

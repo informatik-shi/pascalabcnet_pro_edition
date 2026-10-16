@@ -1,9 +1,10 @@
 PascalABC.NET Portable (Windows x64)
 ====================================
 
-Распакуйте архив целиком в папку с правом записи. Запустите
-PascalABCNET.cmd для открытия IDE. Рабочая папка Work и все примеры
-находятся внутри архива. Установка и регистрация в GAC не нужны.
+Распакуйте архив целиком и запустите PascalABCNET.cmd. Права администратора
+не нужны. Если папка сборки доступна только для чтения, рабочие файлы
+сохраняются в %LOCALAPPDATA%\abc.pro\Work. Примеры находятся в Work\Samples
+внутри архива. Установка и регистрация в GAC не нужны.
 
 Компиляторы: pabcnetc.cmd программа.pas (обычный) и
 pabcnetc-net10.cmd программа.pas (.NET 10). Для запуска программы
@@ -15,10 +16,13 @@ Windows должна содержать .NET Framework 4.7.2 или новее �
 где можно выбрать PascalABC.NET или SPython. Графика показывается
 под ячейкой кода. Тетрадки сохраняются в Work\Notebooks.
 
-Extract the entire ZIP to a writable folder. Run PascalABCNET.cmd for the IDE.
-The IDE's default work folder is Work inside this package. The launch script
-updates bin\pabcworknet.ini after a folder move; no installer or GAC registration
-is needed.
+Extract the entire ZIP and run PascalABCNET.cmd for the IDE. No administrator
+rights are required. The work folder is Work inside the package when writable;
+otherwise it is %LOCALAPPDATA%\abc.pro\Work. The launcher does not modify bin.
+No installer or GAC registration is needed.
+
+If the IDE closes while loading, the launcher shows an error and writes logs to
+%LOCALAPPDATA%\abc.pro\Logs\portable-launch.log and ide-startup.log.
 
 Command-line compilers:
   pabcnetc.cmd program.pas

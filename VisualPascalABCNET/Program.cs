@@ -41,6 +41,7 @@ namespace VisualPascalABC
         [STAThread]
         static void Main(string[] args)
         {
+            StartupDiagnostics.Initialize();
             try
             {
                 Process cur_proc = Process.GetCurrentProcess();
@@ -103,12 +104,13 @@ namespace VisualPascalABC
                 Application.EnableVisualStyles();
                 Application.SetCompatibleTextRenderingDefault(false);
                 MainForm = new Form1();
+                StartupDiagnostics.Write("Main window created");
                 Application.Run(MainForm);
             }
             catch (Exception e)
             {
                 // Ёто ужасно! Ќадо обрабатывать все исключени€ раньше - чтобы оболочка не закрывалась!
-                MessageBox.Show(e.ToString());
+                StartupDiagnostics.Report(e);
             }
         }
     }

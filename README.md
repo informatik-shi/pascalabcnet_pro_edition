@@ -12,8 +12,8 @@ two compiler targets:
 The [GitHub Releases page](https://github.com/informatik-shi/pascalabcnet_pro_edition/releases)
 contains ready-to-use builds. Download the
 [Windows x64 portable ZIP](https://github.com/informatik-shi/pascalabcnet_pro_edition/releases/download/portable-2026-10-08.2/PascalABCNET-Portable-win-x64.zip)
-for the IDE, both compilers, and browser notebooks. Extract it to a writable
-folder and run `PascalABCNET.cmd` for the IDE or `PascalABCNotebook.cmd` for
+for the IDE, both compilers, and browser notebooks. Extract it and run
+`PascalABCNET.cmd` for the IDE or `PascalABCNotebook.cmd` for
 notebooks. Installation is not required.
 SPython supports read-only `open()` for text and binary files and the `struct`
 module for unpacking binary data. File modes can come from variables, and
@@ -66,12 +66,15 @@ Build the self-contained ZIP with:
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\build-portable.ps1
 ```
 
-The output is `Release\PascalABCNET-Portable-win-x64.zip`. Extract it to a
-writable folder and run `PascalABCNET.cmd`; the command-line launchers are
+The output is `Release\PascalABCNET-Portable-win-x64.zip`. Extract it and run
+`PascalABCNET.cmd` without administrator rights; the command-line launchers are
 `pabcnetc.cmd` and `pabcnetc-net10.cmd`. The package contains the .NET 10
 runtime and an app-local `PABCRtl.dll`, so it does not need a system-wide
 PascalABC.NET installation or GAC registration. Windows still needs its
 .NET Framework 4.7.2 or newer component for the IDE and classic compiler.
+If the extracted folder is read-only, the IDE stores work and settings under
+`%LOCALAPPDATA%\abc.pro\Work`. Startup errors are logged under
+`%LOCALAPPDATA%\abc.pro\Logs`.
 
 The prebuilt `bin\Lib\PABCRtl.dll` is included in this branch because the
 Pascal RTL is a required app-local runtime dependency. `-SkipBuild` repackages

@@ -291,6 +291,7 @@
       <DependentUpon>ViewOptionsContent.cs</DependentUpon>
     </Compile>
     <Compile Include="Program.cs" />
+    <Compile Include="StartupDiagnostics.cs" />
     <Compile Include="Config\AssemblyInfo.cs" />
     <Compile Include="Classroom\ClassroomClient.cs" />
     <Compile Include="Classroom\ClassroomIntegration.cs" />
