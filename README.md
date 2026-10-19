@@ -11,7 +11,7 @@ two compiler targets:
 
 The [GitHub Releases page](https://github.com/informatik-shi/pascalabcnet_pro_edition/releases)
 contains ready-to-use builds. Download the
-[Windows x64 portable ZIP](https://github.com/informatik-shi/pascalabcnet_pro_edition/releases/download/portable-2026-10-16.1/PascalABCNET-Portable-win-x64.zip)
+[Windows x64 portable ZIP](https://github.com/informatik-shi/pascalabcnet_pro_edition/releases/download/portable-2026-10-20.1/PascalABCNET-Portable-win-x64.zip)
 for the IDE, both compilers, and browser notebooks. Extract it and run
 `PascalABCNET.cmd` for the IDE or `PascalABCNotebook.cmd` for
 notebooks. Installation is not required.
@@ -74,7 +74,12 @@ PascalABC.NET installation or GAC registration. Windows still needs its
 .NET Framework 4.7.2 or newer component for the IDE and classic compiler.
 If the extracted folder is read-only, the IDE stores work and settings under
 `%LOCALAPPDATA%\abc.pro\Work`. Startup errors are logged under
-`%LOCALAPPDATA%\abc.pro\Logs`.
+`%LOCALAPPDATA%\abc.pro\Logs` (fallback: `%TEMP%\abc.pro\Logs`, then
+`%APPDATA%\abc.pro\Logs`). Each launch has separate bootstrap, launcher and IDE
+reports with matching session IDs. Run `Open-logs.cmd` to find reports, or open
+the file from the error dialog. Reports include full available exception chains,
+stacks, build/runtime versions, startup stages and process exit status. Use
+`PascalABCNET.cmd` for diagnostics before the IDE/CLR starts.
 
 The prebuilt `bin\Lib\PABCRtl.dll` is included in this branch because the
 Pascal RTL is a required app-local runtime dependency. `-SkipBuild` repackages

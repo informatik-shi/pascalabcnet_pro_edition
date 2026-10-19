@@ -23,6 +23,8 @@
   </PropertyGroup>
   
   <ItemGroup>
+    <Compile Include="..\Diagnostics\DiagnosticLog.cs" Link="Diagnostics\DiagnosticLog.cs" />
+    <Compile Include="..\Diagnostics\FailureDialog.cs" Link="Diagnostics\FailureDialog.cs" />
     <Compile Include="ABCHealth.cs">
       <SubType>Form</SubType>
     </Compile>

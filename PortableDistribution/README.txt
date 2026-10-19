@@ -21,8 +21,15 @@ rights are required. The work folder is Work inside the package when writable;
 otherwise it is %LOCALAPPDATA%\abc.pro\Work. The launcher does not modify bin.
 No installer or GAC registration is needed.
 
-If the IDE closes while loading, the launcher shows an error and writes logs to
-%LOCALAPPDATA%\abc.pro\Logs\portable-launch.log and ide-startup.log.
+При ошибке сообщение предлагает открыть диагностический отчёт. Передайте
+файлы bootstrap-<номер>.log, launcher-<номер>.log и ide-<номер>.log одного запуска
+из %LOCALAPPDATA%\abc.pro\Logs. Open-logs.cmd открывает папки отчётов.
+При недоступной записи резервные папки: %TEMP%\abc.pro\Logs, затем
+%APPDATA%\abc.pro\Logs. В сообщении указан фактический путь к файлу.
+Используйте PascalABCNET.cmd для диагностики до загрузки IDE/CLR.
+Отчёт содержит версии, стадию, исключение и стек; учебные файлы и пароли
+не собираются. Отключение питания и запрет записи во все папки перехватить
+невозможно. Обычное закрытие IDE не считается аварией.
 
 Command-line compilers:
   pabcnetc.cmd program.pas

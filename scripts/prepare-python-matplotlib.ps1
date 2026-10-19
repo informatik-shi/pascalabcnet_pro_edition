@@ -35,7 +35,7 @@ if (-not (Test-Path -LiteralPath $marker) -or
     }
     New-Item -ItemType Directory -Path $packages -Force | Out-Null
     & $PythonExe -m pip install --disable-pip-version-check --upgrade `
-        --only-binary=:all: --target $packages -r $requirements
+        --only-binary=:all: --target $packages -r $requirements | Out-Host
     if ($LASTEXITCODE -ne 0) { throw 'Matplotlib wheel installation failed.' }
     Set-Content -LiteralPath $marker -Value $requirementsHash -Encoding ascii
 }

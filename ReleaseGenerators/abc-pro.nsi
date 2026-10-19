@@ -1,4 +1,4 @@
-Unicode true
+﻿Unicode true
 RequestExecutionLevel user
 SetCompressor /SOLID lzma
 
@@ -34,7 +34,7 @@ SetCompressor /SOLID lzma
 !define MUI_ICON "..\VisualPascalABCNET\_ABC26.ico"
 !define MUI_UNICON "..\VisualPascalABCNET\_ABC26.ico"
 !define MUI_ABORTWARNING
-!define MUI_FINISHPAGE_RUN "$INSTDIR\abc.pro.exe"
+!define MUI_FINISHPAGE_RUN "$INSTDIR\PascalABCNET.cmd"
 !define MUI_FINISHPAGE_RUN_TEXT "Запустить abc.pro"
 
 Name "abc.pro"
@@ -79,8 +79,9 @@ install:
 
   WriteUninstaller "$INSTDIR\Uninstall.exe"
   CreateDirectory "$SMPROGRAMS\abc.pro"
-  CreateShortCut "$SMPROGRAMS\abc.pro\abc.pro.lnk" "$INSTDIR\abc.pro.exe"
+  CreateShortCut "$SMPROGRAMS\abc.pro\abc.pro.lnk" "$INSTDIR\PascalABCNET.cmd" "" "$INSTDIR\abc.pro.exe"
   CreateShortCut "$SMPROGRAMS\abc.pro\abc.pro Notebook.lnk" "$INSTDIR\abc.pro-notebook.cmd" "" "$INSTDIR\abc.pro.exe"
+  CreateShortCut "$SMPROGRAMS\abc.pro\Отчёты об ошибках.lnk" "$INSTDIR\Open-logs.cmd" "" "$INSTDIR\abc.pro.exe"
   CreateShortCut "$SMPROGRAMS\abc.pro\Удалить abc.pro.lnk" "$INSTDIR\Uninstall.exe"
 
   WriteRegStr HKCU "${PRODUCT_KEY}" "InstallDir" "$INSTDIR"
@@ -98,6 +99,7 @@ Section "Uninstall"
   SetShellVarContext current
   Delete "$SMPROGRAMS\abc.pro\abc.pro.lnk"
   Delete "$SMPROGRAMS\abc.pro\abc.pro Notebook.lnk"
+  Delete "$SMPROGRAMS\abc.pro\Отчёты об ошибках.lnk"
   Delete "$SMPROGRAMS\abc.pro\Удалить abc.pro.lnk"
   RMDir "$SMPROGRAMS\abc.pro"
   DeleteRegKey HKCU "${UNINSTALL_KEY}"
@@ -121,6 +123,8 @@ Section "Uninstall"
   Delete "$INSTDIR\PascalABCNotebook.cmd"
   Delete "$INSTDIR\README.txt"
   Delete "$INSTDIR\run-net10.cmd"
+  Delete "$INSTDIR\Open-logs.cmd"
+  Delete "$INSTDIR\abc.pro.exe.config"
   Delete "$INSTDIR\Uninstall.exe"
   RMDir "$INSTDIR"
 SectionEnd

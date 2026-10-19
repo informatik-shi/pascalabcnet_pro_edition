@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <StartupObject>DiagnosticTests.Driver</StartupObject>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="..\..\Diagnostics\DiagnosticLog.cs" Link="DiagnosticLog.cs" />
+    <Compile Include="..\..\ABCProLauncher\Program.cs" Link="Launcher.cs" />
+    <Compile Include="..\..\VisualPascalABCNET\StartupDiagnostics.cs" Link="StartupDiagnostics.cs" />
+    <Reference Include="System.Windows.Forms" />
+    <ProjectReference Include="MissingDependency\MissingDependency.csproj" />
+    <Compile Remove="MissingDependency\**\*.cs" />
+  </ItemGroup>
+</Project>

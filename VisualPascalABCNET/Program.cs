@@ -39,9 +39,9 @@ namespace VisualPascalABC
         static extern int IsIconic(IntPtr hWnd);
 
         [STAThread]
-        static void Main(string[] args)
+        internal static void Run(string[] args)
         {
-            StartupDiagnostics.Initialize();
+            ABCPro.Diagnostics.DiagnosticLog.SetStage("single instance check");
             try
             {
                 Process cur_proc = Process.GetCurrentProcess();
@@ -92,24 +92,27 @@ namespace VisualPascalABC
                         }
                 }
             }
-            catch
+            catch (Exception error)
             {
-
+                StartupDiagnostics.Write("Single instance check failed; continuing: " + error);
             }
             try
             {
 
+                ABCPro.Diagnostics.DiagnosticLog.SetStage("Windows Forms initialization");
                 if (Environment.OSVersion.Version.Major >= 6) SetProcessDPIAware();
                 CommandLineArgs = args;
                 Application.EnableVisualStyles();
                 Application.SetCompatibleTextRenderingDefault(false);
+                ABCPro.Diagnostics.DiagnosticLog.SetStage("main window construction / settings / plugins");
                 MainForm = new Form1();
                 StartupDiagnostics.Write("Main window created");
+                ABCPro.Diagnostics.DiagnosticLog.SetStage("IDE message loop");
                 Application.Run(MainForm);
             }
             catch (Exception e)
             {
-                // Это ужасно! Надо обрабатывать все исключения раньше - чтобы оболочка не закрывалась!
+                // Р­С‚Рѕ СѓР¶Р°СЃРЅРѕ! РќР°РґРѕ РѕР±СЂР°Р±Р°С‚С‹РІР°С‚СЊ РІСЃРµ РёСЃРєР»СЋС‡РµРЅРёСЏ СЂР°РЅСЊС€Рµ - С‡С‚РѕР±С‹ РѕР±РѕР»РѕС‡РєР° РЅРµ Р·Р°РєСЂС‹РІР°Р»Р°СЃСЊ!
                 StartupDiagnostics.Report(e);
             }
         }

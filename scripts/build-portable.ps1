@@ -48,6 +48,10 @@ if (-not $SkipBuild) {
         -p:PABCNET_LEGACY_ONLY=true -p:NuGetAudit=false --disable-build-servers --nologo -v:q --tl:off
     if ($LASTEXITCODE -ne 0) { throw 'Legacy IDE build failed.' }
 
+    & $dotnet build (Join-Path $root 'ABCProLauncher\ABCProLauncher.csproj') --configuration Release `
+        -p:NuGetAudit=false --disable-build-servers --nologo -v:q --tl:off
+    if ($LASTEXITCODE -ne 0) { throw 'Diagnostic launcher build failed.' }
+
     & (Join-Path $PSScriptRoot 'build-net10-runtime.ps1') -Configuration Release
     & $dotnet build (Join-Path $root 'VisualPlugins\CompileNet10\CompileNet10.csproj') `
         --configuration Release -p:NuGetAudit=false --disable-build-servers --nologo -v:q --tl:off
@@ -177,6 +181,8 @@ Set-Content -LiteralPath (Join-Path $pythonStage 'python313._pth') `
 if ($LASTEXITCODE -ne 0) { throw 'Bundled scientific Python packages do not start.' }
 
 Copy-Item -Path (Join-Path $root 'PortableDistribution\*') -Destination $stage -Recurse -Force
+Copy-Item -LiteralPath (Join-Path $root 'ABCProLauncher\bin\Release\net472\abc.pro.exe') -Destination $stage -Force
+Copy-Item -LiteralPath (Join-Path $root 'ABCProLauncher\bin\Release\net472\abc.pro.exe.config') -Destination $stage -Force
 Assert-File (Join-Path $notebookPublish 'PascalABCNotebook.dll')
 Copy-Item -LiteralPath $notebookPublish -Destination (Join-Path $stage 'notebook') -Recurse -Force
 Assert-File (Join-Path $stage 'notebook\wwwroot\index.html')
