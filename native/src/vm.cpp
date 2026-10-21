@@ -149,6 +149,44 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
         if (steps++ >= options.instruction_limit) trap(instruction, RuntimeError::instruction_limit);
         if (options.cancelled && options.cancelled()) trap(instruction, RuntimeError::cancelled);
         switch (instruction.op) {
+        case Op::endpoint_call: {
+            const auto method = static_cast<EndpointMethod>(instruction.operand);
+            std::optional<Value> argument;
+            if (method == EndpointMethod::add) argument = pop();
+            auto collection = std::get<std::shared_ptr<Aggregate>>(pop());
+            if (collection->nil) trap(instruction,RuntimeError::nil_reference);
+            auto& items = *collection->ends;
+            const bool lifo = type_info(program,instruction.type).kind == CompoundKind::stack;
+            if (method == EndpointMethod::add) {
+                items.push_back(values.cell(type_info(program,instruction.type).element,values.copy(*argument)));
+            } else if (method == EndpointMethod::is_empty) stack.emplace_back(items.empty());
+            else if (method == EndpointMethod::top || method == EndpointMethod::remove) {
+                if (items.empty()) trap(instruction,lifo ? RuntimeError::stack_empty : RuntimeError::queue_empty);
+                auto result = values.copy((lifo ? items.back() : items.front())->value);
+                if (method == EndpointMethod::remove) {
+                    if (lifo) items.pop_back(); else items.pop_front();
+                }
+                stack.push_back(std::move(result));
+            } else {
+                std::u16string text;
+                auto append = [&](const std::shared_ptr<Cell>& item) {
+                    auto part = std::get_if<std::u16string>(&item->value) ? std::get<std::u16string>(item->value)
+                        : from_utf8(format(item->value,instruction));
+                    if (part.size() >= 1'048'576 || text.size() > 1'048'576 - part.size() - 1)
+                        trap(instruction,RuntimeError::string_limit);
+                    text += part; text += u' ';
+                };
+                if (lifo) for (auto item = items.rbegin(); item != items.rend(); ++item) append(*item);
+                else for (const auto& item : items) append(item);
+                if (method == EndpointMethod::to_string) stack.emplace_back(std::move(text));
+                else {
+                    write(to_utf8(text,true),instruction);
+                    // Collections.Stack.Print also writes a newline in the original unit.
+                    if (lifo || method == EndpointMethod::println) write("\n",instruction);
+                }
+            }
+            break;
+        }
         case Op::read_value: stack.push_back(read_line(input,instruction)); break;
         case Op::increment: {
             const auto step=pop(); auto target=std::get<std::shared_ptr<Cell>>(pop()); auto operation=instruction;

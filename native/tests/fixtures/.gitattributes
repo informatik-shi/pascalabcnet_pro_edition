@@ -1,0 +1,2 @@
+# Expected console output includes significant spaces before line endings.
+*.out whitespace=-blank-at-eol

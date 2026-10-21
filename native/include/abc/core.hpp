@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <functional>
 #include <memory>
+#include <deque>
 #include <istream>
 #include <optional>
 #include <ostream>
@@ -48,7 +49,13 @@ struct Cell;
 using Value = std::variant<std::int32_t, std::int64_t, double, bool, std::u16string,
     std::shared_ptr<Aggregate>, std::shared_ptr<Cell>>;
 struct Cell { Type type; Value value; };
-struct Aggregate { Type type; std::vector<std::shared_ptr<Cell>> items; bool nil = false; };
+struct Aggregate {
+    Type type;
+    std::vector<std::shared_ptr<Cell>> items;
+    bool nil = false;
+    // Allocate deque storage only for constructed stacks and queues.
+    std::unique_ptr<std::deque<std::shared_ptr<Cell>>> ends;
+};
 Type value_type(const Value& value);
 std::u16string from_utf8(std::string_view text);
 std::string to_utf8(std::u16string_view text, bool replace_invalid = false);
@@ -61,7 +68,8 @@ enum class Op {
     make_default, ref_local, load_global, store_global, ref_global, store_ref,
     get_index, ref_index, get_field, ref_field, array_new, array_literal, length, resize_array,
     call_user, return_user, drop, list_add, list_remove, list_clear, list_contains,
-    read_lines, write_lines, array_copy, array_high, sequence_sort, sequence_fill, mutate_string, increment, read_value
+    read_lines, write_lines, array_copy, array_high, sequence_sort, sequence_fill, mutate_string, increment, read_value,
+    endpoint_call
 };
 
 struct Instruction {
@@ -77,7 +85,16 @@ struct Local {
     bool global = true;
 };
 
-enum class CompoundKind { array, record, list };
+enum class CompoundKind { array, record, list, stack, queue };
+inline bool indexed_sequence(CompoundKind kind) { return kind == CompoundKind::array || kind == CompoundKind::list; }
+inline bool endpoint_collection(CompoundKind kind) { return kind == CompoundKind::stack || kind == CompoundKind::queue; }
+enum class EndpointMethod { add, remove, top, is_empty, to_string, print, println };
+inline Type endpoint_result(Type element, EndpointMethod method) {
+    if (method == EndpointMethod::remove || method == EndpointMethod::top) return element;
+    if (method == EndpointMethod::is_empty) return Type::boolean;
+    if (method == EndpointMethod::to_string) return Type::string;
+    return Type::unit;
+}
 struct TypeInfo {
     std::string name;
     CompoundKind kind = CompoundKind::array;

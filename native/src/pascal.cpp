@@ -157,6 +157,7 @@ struct SyntaxStmt {
     std::unique_ptr<SyntaxExpr> target;
     std::vector<std::pair<Token,std::shared_ptr<SyntaxType>>> type_declarations;
     std::vector<std::shared_ptr<SyntaxRoutine>> routines;
+    bool collections_imported = false;
 };
 
 struct SyntaxParameter { Token name; std::shared_ptr<SyntaxType> type; bool by_reference; };
@@ -196,6 +197,7 @@ public:
                 const auto module = name();
                 if (module.text != "pabcsystem" && module.text != "arrays" && module.text != "collections")
                     throw Error("E_UNSUPPORTED", module.location, "Unit is not ported yet: '" + module.text + "'");
+                if (module.text == "collections") root.collections_imported = true;
             } while (accept(","));
             expect(";");
         }
@@ -246,7 +248,9 @@ private:
             expect("end");
         } else {
             result->token = name(); result->kind = result->token.text;
-            if (result->kind == "list" && accept("<")) { result->element = type_syntax(); expect(">"); }
+            if ((result->kind == "list" || result->kind == "stack" || result->kind == "queue") && accept("<")) {
+                result->element = type_syntax(); expect(">");
+            }
         }
         return result;
     }
@@ -454,6 +458,7 @@ Value literal(const Token& token) {
 class Analyzer {
 public:
     hir::Module analyze(const SyntaxStmt& source) {
+        collections_imported_ = source.collections_imported;
         for (const auto& [name, syntax] : source.type_declarations) {
             if (aliases_.contains(name.text) || find_type(name.text)) throw Error("E_DUPLICATE",name.location,"Duplicate type");
             aliases_[name.text] = resolve_type(*syntax);
@@ -502,7 +507,9 @@ private:
         for (std::size_t i = 0; i < module_.types.size(); ++i)
             if (module_.types[i].kind == kind && module_.types[i].element == element) return static_cast<Type>(64+i);
         if (module_.types.size() >= 1024) throw Error("E_LIMIT",{},"Type limit exceeded");
-        module_.types.push_back({kind == CompoundKind::array ? "array" : "list",kind,element,{}});
+        const auto name = kind == CompoundKind::array ? "array" : kind == CompoundKind::list ? "list"
+            : kind == CompoundKind::stack ? "stack" : "queue";
+        module_.types.push_back({name,kind,element,{}});
         return static_cast<Type>(63+module_.types.size());
     }
     const TypeInfo& info(Type type, SourceLocation location) const {
@@ -513,6 +520,10 @@ private:
         if (auto found=resolved_types_.find(&syntax); found!=resolved_types_.end()) return found->second;
         if (syntax.kind == "array" || (syntax.kind == "list" && syntax.element))
             return sequence_type(syntax.kind == "array" ? CompoundKind::array : CompoundKind::list,resolve_type(*syntax.element));
+        if ((syntax.kind == "stack" || syntax.kind == "queue") && syntax.element) {
+            if (!collections_imported_) throw Error("E_UNSUPPORTED",syntax.token.location,"Stack<T> and Queue<T> require uses Collections");
+            return sequence_type(syntax.kind == "stack" ? CompoundKind::stack : CompoundKind::queue,resolve_type(*syntax.element));
+        }
         if (syntax.kind == "record") {
             TypeInfo record{syntax.token.text,CompoundKind::record,Type::invalid,{}};
             for (const auto& [name,type] : syntax.fields) {
@@ -564,7 +575,7 @@ private:
                 result->kind = hir::ExprKind::array_new; result->type = sequence_type(CompoundKind::array,type);
                 result->arguments.push_back(convert(expression(*source.arguments[0]),Type::integer));
             } else {
-                if (!compound(type)) throw Error("E_TYPE",result->location,"new requires an array length, record or list type");
+                if (!compound(type)) throw Error("E_TYPE",result->location,"new requires an array length, record or collection type");
                 result->kind = hir::ExprKind::default_value; result->type = type; result->operation="new";
             }
             break;
@@ -572,13 +583,34 @@ private:
         case SyntaxExprKind::index: {
             result->left = expression(*source.left); result->right = convert(expression(*source.right),Type::integer);
             const auto& type = info(result->left->type,result->location);
-            if (type.kind == CompoundKind::record) throw Error("E_TYPE",result->location,"Record is not indexable");
+            if (!indexed_sequence(type.kind)) throw Error("E_TYPE",result->location,"Only arrays and lists are indexable");
             result->type = type.element; result->kind = hir::ExprKind::index; break;
         }
         case SyntaxExprKind::field:
         case SyntaxExprKind::member_call: {
             result->left = expression(*source.left); const auto receiver = result->left->type;
             const auto& type = info(receiver,result->location);
+            if (endpoint_collection(type.kind)) {
+                const auto& name = source.token.text;
+                const auto element = type.element;
+                EndpointMethod method;
+                if ((name == "push" && type.kind == CompoundKind::stack) || (name == "enqueue" && type.kind == CompoundKind::queue)) method = EndpointMethod::add;
+                else if ((name == "pop" && type.kind == CompoundKind::stack) || (name == "dequeue" && type.kind == CompoundKind::queue)) method = EndpointMethod::remove;
+                else if (name == "top") method = EndpointMethod::top;
+                else if (name == "isempty") method = EndpointMethod::is_empty;
+                else if (name == "tostring") method = EndpointMethod::to_string;
+                else if (name == "print") method = EndpointMethod::print;
+                else if (name == "println") method = EndpointMethod::println;
+                else throw Error("E_NAME",result->location,"Unknown stack or queue method '"+name+"'");
+                const auto count = method == EndpointMethod::add ? 1U : 0U;
+                if (source.arguments.size() != count) throw Error("E_TYPE",result->location,"Wrong collection method argument count");
+                if (method >= EndpointMethod::to_string && compound(element))
+                    throw Error("E_UNSUPPORTED",result->location,"Collection text output currently requires scalar elements");
+                result->kind = hir::ExprKind::endpoint_call; result->local = static_cast<std::size_t>(method);
+                result->type = endpoint_result(element,method);
+                if (count) result->arguments.push_back(convert(expression(*source.arguments[0]),element));
+                break;
+            }
             if (type.kind != CompoundKind::record) {
                 if ((source.token.text == "length" && type.kind == CompoundKind::array) || (source.token.text == "count" && type.kind == CompoundKind::list)) {
                     if (!source.arguments.empty()) throw Error("E_TYPE",result->location,"Property takes no arguments");
@@ -656,7 +688,7 @@ private:
                 result->kind = hir::ExprKind::array_literal; result->type = sequence_type(CompoundKind::array,element); break;
             }
             if (source.token.text == "length" && result->arguments.size() == 1 && compound(result->arguments[0]->type)) {
-                if (info(result->arguments[0]->type,result->location).kind == CompoundKind::record) throw Error("E_TYPE",result->location,"Length requires a sequence");
+                if (!indexed_sequence(info(result->arguments[0]->type,result->location).kind)) throw Error("E_TYPE",result->location,"Length requires an array or list");
                 result->kind = hir::ExprKind::length; result->left = std::move(result->arguments[0]); result->arguments.clear(); result->type = Type::integer; break;
             }
             if (source.token.text == "readalllines") {
@@ -673,7 +705,9 @@ private:
             }
             if (!result->arguments.empty() && compound(result->arguments[0]->type)) {
                 const auto sequence=result->arguments[0]->type; const auto& type=info(sequence,result->location); const auto& name=source.token.text;
-                if (type.kind!=CompoundKind::record && ((name=="copy" && type.kind==CompoundKind::array) || name=="high" || name=="sort" || name=="sortdescending" || name=="fillbyvalue")) {
+                if (endpoint_collection(type.kind) && (name=="copy" || name=="high" || name=="sort" || name=="sortdescending" || name=="fillbyvalue"))
+                    throw Error("E_TYPE",result->location,"Operation requires an array or list");
+                if (indexed_sequence(type.kind) && ((name=="copy" && type.kind==CompoundKind::array) || name=="high" || name=="sort" || name=="sortdescending" || name=="fillbyvalue")) {
                     const auto count=name=="fillbyvalue" ? 2U : 1U;
                     if (result->arguments.size()!=count) throw Error("E_TYPE",result->location,"Wrong sequence argument count");
                     result->left=std::move(result->arguments[0]);
@@ -905,6 +939,7 @@ private:
     std::map<const SyntaxType*,Type> resolved_types_;
     std::map<std::string,std::size_t> routine_names_;
     bool in_routine_ = false;
+    bool collections_imported_ = false;
     Type current_result_ = Type::unit;
     std::string current_name_;
     std::vector<std::map<std::string, std::size_t>> scopes_;

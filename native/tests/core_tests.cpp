@@ -413,6 +413,59 @@ void file_library() {
     compile_error("begin var x:=WriteAllText('file','x'); end.", "E_TYPE");
 }
 
+void endpoint_collections() {
+    result("uses Collections; begin var s:=new Stack<integer>; writeln(s.IsEmpty); s.Push(1); s.Push(2); writeln(s.Top,' ',s.Top(),' ',s.Pop(),' ',s.Pop,' ',s.IsEmpty()); s.Push(3); writeln(s.Pop); end.", "True\n2 2 2 1 True\n3\n");
+    result("uses Collections; begin var q:=new Queue<string>(); writeln(q.IsEmpty()); q.Enqueue('first'); q.Enqueue('second'); writeln(q.Top,' ',q.Top(),' ',q.Dequeue,' ',q.Dequeue(),' ',q.IsEmpty); q.Enqueue('again'); writeln(q.Top); end.", "True\nfirst first first second True\nagain\n");
+    result("uses Collections; type S=Stack<int64>; begin var s:=new S; s.Push(2147483648); s.Push(1); writeln(s.Pop,' ',s.Pop); end.", "1 2147483648\n");
+    result("uses Collections; begin var s:=new Stack<integer>; var alias:=s; alias.Push(7); writeln(s=alias,' ',s.Pop); end.", "True 7\n");
+    result("uses Collections; type P=record x:integer; end; begin var p:P; p.x:=3; var s:=new Stack<P>; s.Push(p); p.x:=9; var top:=s.Top; top.x:=8; var removed:=s.Pop; writeln(removed.x,' ',p.x,' ',s.IsEmpty); end.", "3 9 True\n");
+    result("uses Collections; begin var a:=Arr(1); var q:=new Queue<array of integer>; q.Enqueue(a); a[0]:=7; var b:=q.Dequeue; writeln(b[0]); end.", "7\n");
+    result("uses Collections; procedure Add(s:Stack<integer>); begin s.Push(4); end; procedure Replace(var s:Stack<integer>); begin s:=new Stack<integer>; s.Push(9); end; begin var s:=new Stack<integer>; Add(s); var alias:=s; Replace(s); writeln(s.Pop,' ',alias.Pop); end.", "9 4\n");
+    result("uses Collections; begin var s:Stack<integer>; var q:Queue<string>; writeln(s=nil,' ',q=nil); s:=new Stack<integer>; q:=new Queue<string>; writeln(s=nil,' ',q=nil); end.", "True True\nFalse False\n");
+    result("uses Collections; begin var s:=new Stack<integer>; var q:=new Queue<Stack<integer>>; s.Push(8); q.Enqueue(s); var popped:=q.Dequeue; writeln(popped.Pop,' ',s.IsEmpty); end.", "8 True\n");
+    result("uses Collections; begin var s:=new Stack<integer>; writeln('[',s.ToString,']'); s.Push(1); s.Push(2); writeln('[',s.ToString(),']'); s.Print; s.Println(); var q:=new Queue<integer>; q.Enqueue(1); q.Enqueue(2); writeln('[',q.ToString,']'); q.Print; write('|'); q.Println; end.", "[]\n[2 1 ]\n2 1 \n2 1 \n[1 2 ]\n1 2 |1 2 \n");
+    result("uses Collections; begin var q:=new Queue<string>; q.Enqueue('Привет 🌍'); q.Enqueue('nil'); writeln(q.ToString); var s:=new Stack<boolean>; s.Push(true); s.Push(false); writeln(s.ToString); end.", "Привет 🌍 nil \nFalse True \n");
+    result("uses Collections; begin var q:=new Queue<integer>; var i:=0; var sum:=0; while i<50000 do begin q.Enqueue(i); sum:=sum+q.Dequeue; Inc(i); end; writeln(sum,' ',q.IsEmpty); end.", "1249975000 True\n");
+    result("uses Collections; function Make:Queue<integer>; begin Result:=new Queue<integer>; Result.Enqueue(6); end; begin var a:=new Queue<integer>[2]; a[0]:=Make; writeln(a[0].Dequeue,' ',a[1]=nil); end.", "6 True\n");
+    for (const auto* text : {
+        "uses Collections; begin var s:=new Stack<integer>; s.Pop; end.",
+        "uses Collections; begin var s:=new Stack<integer>; writeln(s.Top); end.",
+        "uses Collections; begin var q:=new Queue<integer>; q.Dequeue; end.",
+        "uses Collections; begin var q:=new Queue<integer>; writeln(q.Top); end."}) runtime_error(text,"E_EMPTY");
+    runtime_error("uses Collections; begin var s:Stack<integer>; s.Push(1); end.","E_NIL");
+    runtime_error("uses Collections; begin var q:Queue<integer>; writeln(q.IsEmpty); end.","E_NIL");
+    compile_error("begin var s:=new Stack<integer>; end.","E_UNSUPPORTED");
+    compile_error("uses Collections; begin var q:=new Queue<integer>; q.Enqueue('bad'); end.","E_TYPE");
+    compile_error("uses Collections; begin var s:=new Stack<integer>; s.Push; end.","E_TYPE");
+    compile_error("uses Collections; begin var q:=new Queue<integer>; q.Dequeue(1); end.","E_TYPE");
+    compile_error("uses Collections; begin var q:=new Queue<integer>; q.Push(1); end.","E_NAME");
+    compile_error("uses Collections; begin var s:=new Stack<integer>; s.Enqueue(1); end.","E_NAME");
+    compile_error("uses Collections; begin var s:=new Stack<integer>; writeln(s[0]); end.","E_TYPE");
+    compile_error("uses Collections; begin var q:=new Queue<integer>; writeln(Length(q)); end.","E_TYPE");
+    compile_error("uses Collections; begin var s:=new Stack<integer>; Sort(s); end.","E_TYPE");
+    compile_error("uses Collections; begin var q:=new Queue<integer>; writeln(q.Count); end.","E_NAME");
+    compile_error("uses Collections; type P=record x:integer; end; begin var s:=new Stack<P>; s.Print; end.","E_UNSUPPORTED");
+    compile_error("uses Collections; begin var q:=new Queue<integer>; var s:=new Stack<integer>; q:=s; end.","E_TYPE");
+    for (const auto* name : {"Stack", "Queue"}) {
+        try {
+            (void)run(std::string("uses Collections; begin\n var c:=new ")+name+"<integer>;\n c.Top; end.");
+            require(false,"Expected bilingual empty-collection error");
+        } catch (const abc::Error& caught) {
+            require(caught.code=="E_EMPTY" && caught.location.line==3
+                && std::string(caught.what())==std::string(name)+" is empty"
+                && caught.russian==(std::string(name)=="Stack" ? "Стек пуст" : "Очередь пуста"),"Empty collection retains source line and both languages");
+        }
+    }
+    auto program=abc::compile("uses Collections; begin var s:=new Stack<integer>; s.Push(1); writeln(s.Pop); end.");
+    for (auto& instruction:program.code) if (instruction.op==abc::Op::endpoint_call) instruction.operand=999;
+    error([&]{abc::verify(program);},"E_BYTECODE");
+    program=abc::compile("uses Collections; begin var q:=new Queue<integer>; writeln(q.IsEmpty); end.");
+    program.types[0].kind=abc::CompoundKind::array;
+    error([&]{abc::verify(program);},"E_BYTECODE");
+    abc::ExecutionOptions limits; limits.allocation_limit=5;
+    error([&]{(void)run("uses Collections; begin var q:=new Queue<integer>; var i:=0; while i<10 do begin q.Enqueue(i); q.Dequeue; Inc(i); end; end.","",limits);},"E_LIMIT");
+}
+
 void library_bytecode() {
     auto program = abc::compile("begin writeln(Length('abc')); end.");
     std::size_t call = 0;
@@ -504,6 +557,7 @@ int main() {
     language_foundations();
     aggregate_semantics();
     file_library();
+    endpoint_collections();
     std::cout << (checks - failures) << '/' << checks << " checks passed\n";
     return failures == 0 ? 0 : 1;
 }

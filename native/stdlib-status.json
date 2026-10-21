@@ -7,7 +7,7 @@
     "arrays": "Dynamic and jagged arrays; zero-based index, reference assignment, Copy, SetLength; fixed-bound and rectangular arrays pending.",
     "records": "Nominal records, nested fields, value assignment; cyclic type definitions pending.",
     "routines": "Typed user functions/procedures, value and var parameters, recursion, Result and Exit; overloads, nested routines, defaults and user generics pending.",
-    "collections": "List<T> construction, Count, index, Add, RemoveAt, Clear, Contains. Other collection types and source Collections unit implementations pending.",
+    "collections": "List<T>: construction, Count, index, Add, RemoveAt, Clear, Contains. With uses Collections: Stack<T> Push/Pop, Queue<T> Enqueue/Dequeue; both Top, IsEmpty, ToString, Print, Println. Text output supports scalar elements only. Other collection types pending.",
     "files": "UTF-8 whole-text and line-array IO, Unicode paths, 1 MiB per file. Unlike the original Windows CP1251 default. Encoding overloads and classic/binary file handles pending."
   },
   "functions": [
@@ -150,8 +150,8 @@
     {
       "name": "Collections",
       "source": "bin/Lib/Collections.pas",
-      "status": "pending",
-      "notes": "The uses name is recognized, but this source unit's Stack, Queue, DynArray, SimpleSet, AssocArray and LinkedList are pending. The separate built-in List<T> profile does not count as a port of Collections.pas."
+      "status": "partial",
+      "notes": "Stack<T> and Queue<T> core methods are implemented with static element types and reference assignment. Top/Pop/Dequeue copy records by value. Scalar text output preserves order, trailing spaces and Stack.Print newline. DynArray, SimpleSet, AssocArray, LinkedList, node classes, compound-element text output, inheritance and source-unit loading remain pending."
     },
     {
       "name": "Controls",

@@ -55,6 +55,10 @@ private:
         switch (node.kind) {
         case hir::ExprKind::literal: constant(node.value, node.location); break;
         case hir::ExprKind::local: local(Op::load,node.local,node.location); break;
+        case hir::ExprKind::endpoint_call:
+            expression(*node.left);
+            for (const auto& argument : node.arguments) expression(*argument);
+            emit(Op::endpoint_call,node.left->type,node.local,node.location); break;
         case hir::ExprKind::read_lines:
             expression(*node.arguments[0]); emit(Op::read_lines,node.type,0,node.location); break;
         case hir::ExprKind::write_lines:
@@ -217,6 +221,12 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
     for (const auto& instruction : code) {
         const auto type = instruction.type;
         switch (instruction.op) {
+        case Op::endpoint_call:
+            if (!compound(type) || !endpoint_collection(type_info(program,type).kind)
+                || instruction.operand > static_cast<std::size_t>(EndpointMethod::println)) invalid(instruction,"Invalid stack or queue instruction");
+            if (instruction.operand >= static_cast<std::size_t>(EndpointMethod::to_string) && compound(type_info(program,type).element))
+                invalid(instruction,"Collection text output requires scalar elements");
+            break;
         case Op::read_value:
             if (!valid_type(type)) invalid(instruction,"Invalid read type"); break;
         case Op::increment:
@@ -233,7 +243,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         case Op::array_copy:
             if (!compound(type) || type_info(program,type).kind!=CompoundKind::array) invalid(instruction,"Copy requires array"); break;
         case Op::array_high: case Op::sequence_sort: case Op::sequence_fill:
-            if (!compound(type) || type_info(program,type).kind==CompoundKind::record) invalid(instruction,"Sequence required");
+            if (!compound(type) || !indexed_sequence(type_info(program,type).kind)) invalid(instruction,"Indexed sequence required");
             if (instruction.op==Op::sequence_sort && (compound(type_info(program,type).element) || instruction.operand>1)) invalid(instruction,"Invalid sort"); break;
         case Op::make_default: case Op::store_ref: case Op::drop:
             if (!valid_value_type(program,type) || (instruction.op==Op::make_default && instruction.operand>1)) invalid(instruction,"Invalid value type"); break;
@@ -244,7 +254,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         case Op::array_new: case Op::array_literal: case Op::resize_array:
             if (!compound(type) || type_info(program,type).kind != CompoundKind::array || instruction.operand > 4096) invalid(instruction,"Invalid array instruction"); break;
         case Op::get_index: case Op::ref_index: case Op::length:
-            if (!compound(type) || type_info(program,type).kind == CompoundKind::record) invalid(instruction,"Invalid sequence instruction"); break;
+            if (!compound(type) || !indexed_sequence(type_info(program,type).kind)) invalid(instruction,"Invalid sequence instruction"); break;
         case Op::get_field: case Op::ref_field:
             if (!compound(type) || type_info(program,type).kind != CompoundKind::record || instruction.operand >= type_info(program,type).fields.size()) invalid(instruction,"Invalid record access"); break;
         case Op::list_add: case Op::list_remove: case Op::list_clear: case Op::list_contains:
@@ -328,6 +338,15 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if (pop() != expected) invalid(instruction, "Operand type mismatch");
         };
         switch (instruction.op) {
+        case Op::endpoint_call: {
+            const auto method = static_cast<EndpointMethod>(instruction.operand);
+            const auto element = type_info(program,instruction.type).element;
+            if (method == EndpointMethod::add) require(element);
+            require(instruction.type);
+            const auto result = endpoint_result(element,method);
+            if (result != Type::unit) stack.push_back(result);
+            break;
+        }
         case Op::read_value: stack.push_back(instruction.type); break;
         case Op::increment: require(instruction.type); require(reference_type(instruction.type)); break;
         case Op::mutate_string: {
@@ -419,7 +438,7 @@ void verify(const Program& program) {
         if (type.kind == CompoundKind::record) {
             if (type.fields.size() > 256) throw Error("E_BYTECODE",{},"Too many record fields");
             for (const auto& field : type.fields) prior(field.type);
-        } else if (type.kind == CompoundKind::array || type.kind == CompoundKind::list) prior(type.element);
+        } else if (indexed_sequence(type.kind) || endpoint_collection(type.kind)) prior(type.element);
         else throw Error("E_BYTECODE",{},"Invalid compound kind");
         if (level > 32) throw Error("E_BYTECODE",{},"Type nesting limit exceeded"); depth[i] = level;
     }

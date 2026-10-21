@@ -32,6 +32,8 @@ struct Values {
             const auto& info = type_info(program, type);
             auto aggregate = std::make_shared<Aggregate>(); aggregate->type = type;
             aggregate->nil = info.kind != CompoundKind::record && !constructed;
+            if (endpoint_collection(info.kind) && constructed)
+                aggregate->ends = std::make_unique<std::deque<std::shared_ptr<Cell>>>();
             if (info.kind == CompoundKind::record)
                 for (const auto& field : info.fields) aggregate->items.push_back(cell(field.type, zero(field.type)));
             return aggregate;

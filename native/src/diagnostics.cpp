@@ -72,6 +72,10 @@ Error runtime_error(RuntimeError id, SourceLocation location, std::string_view c
         code = "E_ENCODING"; english = "Text file must contain valid UTF-8"; russian = "Текстовый файл должен содержать корректный UTF-8"; break;
     case RuntimeError::nil_reference:
         code = "E_NIL"; english = "Cannot access a nil reference"; russian = "Нельзя обратиться к пустой ссылке nil"; break;
+    case RuntimeError::stack_empty:
+        code = "E_EMPTY"; english = "Stack is empty"; russian = "Стек пуст"; break;
+    case RuntimeError::queue_empty:
+        code = "E_EMPTY"; english = "Queue is empty"; russian = "Очередь пуста"; break;
     default: throw std::logic_error("Unknown runtime diagnostic");
     }
     return Error(code, location, std::string(english) + std::string(context), std::string(russian) + std::string(context));
