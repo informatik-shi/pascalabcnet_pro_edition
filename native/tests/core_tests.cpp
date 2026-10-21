@@ -466,6 +466,52 @@ void endpoint_collections() {
     error([&]{(void)run("uses Collections; begin var q:=new Queue<integer>; var i:=0; while i<10 do begin q.Enqueue(i); q.Dequeue; Inc(i); end; end.","",limits);},"E_LIMIT");
 }
 
+void buffer_collections() {
+    result("uses Collections; begin var d:=new DynArray<integer>; writeln(d.Count,' ',d.Capacity,' ',MIN_CAP,' ',INC_CAP_FACTOR); d.Add(7); d.Add(2); d.Insert(1,9); writeln(d[0],d.Elem[1],d[2],' ',d.Count,' ',d.Find(9),' ',d.Find(3)); d.Remove(1); writeln(d.ToString); end.","0 4 4 2\n792 3 1 -1\n7 2 \n");
+    result("uses Collections; begin var d:=new DynArray<integer>(3); writeln(d.Count,' ',d.Capacity,' ',d[0]); d[0]:=1; d.Elem[1]:=2; d[2]:=3; d.Resize(1); d.Count:=3; writeln(d.ToString); d.Capacity:=12; d.Capacity:=2; d.Reserve(-1); writeln(d.Capacity); d.Resize(13); writeln(d.Count,' ',d.Capacity,' ',d[2],' ',d[12]); end.","3 10 0\n1 2 3 \n12\n13 26 3 0\n");
+    result("uses Collections; begin var d:=new DynArray<integer>(3); d[2]:=9; d.Resize(1); d.Reserve(20); d.Resize(21); writeln(d[2],' ',d.Capacity); end.","0 42\n");
+    result("uses Collections; begin var d:=new DynArray<integer>; d.Add(1); d.Add(2); d.Add(3); d.Remove(1); d.Resize(3); writeln(d.ToString); end.","1 3 3 \n");
+    result("uses Collections; type D=DynArray<string>; begin var d:=new D(1); d[0]:='Привет'; var alias:=d; alias.Add('мир'); alias.Elem[0]:='Здравствуйте'; writeln(d.Count,' ',d.ToString); end.","2 Здравствуйте мир \n");
+    result("uses Collections; type P=record x:integer; end; begin var d:=new DynArray<P>(1); var p:P; p.x:=7; d[0]:=p; p.x:=9; var q:=d[0]; q.x:=11; d.Insert(0,q); var a:=d[0]; var b:=d[1]; writeln(a.x,' ',b.x,' ',d.Find(p)); d.Remove(0); a:=d[0]; writeln(a.x); end.","11 7 -1\n7\n");
+    result("uses Collections; begin var d:=new DynArray<array of integer>; var a:=Arr(1); d.Add(a); a[0]:=8; var b:=d[0]; writeln(b[0],' ',d.Find(a),' ',d.Find(Arr(8))); end.","8 0 -1\n");
+    result("uses Collections; begin var s:=new SimpleSet<integer>; s.Add(3); s.Add(1); s.Add(3); s.Add(2); writeln('[',s.ToString,'] ',s.Contains(3),' ',s.Contains(9)); s.Remove(9); s.Remove(1); s.Add(1); writeln(s.ToString); end.","[3 1 2 ] True False\n3 2 1 \n");
+    result("uses Collections; type P=record x:integer; end; begin var s:=new SimpleSet<P>; var p:P; p.x:=7; s.Add(p); p.x:=8; writeln(s.Contains(p)); p.x:=7; writeln(s.Contains(p)); s.Add(p); s.Remove(p); writeln(s.Contains(p)); end.","False\nTrue\nFalse\n");
+    result("uses Collections; begin var s:=new SimpleSet<array of integer>; var a:=Arr(1); s.Add(a); s.Add(a); writeln(s.Contains(a),' ',s.Contains(Arr(1))); s.Remove(a); writeln(s.Contains(a)); end.","True False\nFalse\n");
+    result("uses Collections; begin var s:=new SimpleSet<string>; var alias:=s; alias.Add('🌍'); alias.Add('🌍'); s.Print; write('|'); s.Println; s.Remove('🌍'); writeln('[',s.ToString,']'); var d:=new DynArray<boolean>; d.Add(true); d.Print; write('|'); d.Println; end.","🌍 |🌍 \n[]\nTrue |True \n");
+    result("uses Collections; begin var d:DynArray<integer>; var s:SimpleSet<string>; writeln(d=nil,' ',s=nil); end.","True True\n");
+    result("uses Collections; procedure Add(d:DynArray<integer>); begin d.Add(5); end; function Make:SimpleSet<integer>; begin Result:=new SimpleSet<integer>; Result.Add(9); end; begin var d:=new DynArray<integer>; Add(d); var s:=Make; writeln(d[0],' ',s.Contains(9)); end.","5 True\n");
+    for (const auto* source : {
+        "uses Collections; begin var d:=new DynArray<integer>; d.Insert(0,1); end.",
+        "uses Collections; begin var d:=new DynArray<integer>(1); d.Insert(1,2); end.",
+        "uses Collections; begin var d:=new DynArray<integer>; d.Remove(0); end.",
+        "uses Collections; begin var d:=new DynArray<integer>; writeln(d[0]); end.",
+        "uses Collections; begin var d:=new DynArray<integer>(1); d[-1]:=2; end."}) runtime_error(source,"E_BOUNDS");
+    runtime_error("uses Collections; begin var d:=new DynArray<integer>(-1); end.","E_RANGE");
+    runtime_error("uses Collections; begin var d:=new DynArray<integer>; d.Count:=-1; end.","E_RANGE");
+    runtime_error("uses Collections; begin var d:=new DynArray<integer>(2147483647); end.","E_OVERFLOW");
+    runtime_error("uses Collections; begin var d:=new DynArray<integer>; d.Capacity:=1048577; end.","E_LIMIT");
+    runtime_error("uses Collections; begin var d:DynArray<integer>; d.Count:=1; end.","E_NIL");
+    runtime_error("uses Collections; begin var s:SimpleSet<integer>; s.Contains(1); end.","E_NIL");
+    compile_error("begin var d:=new DynArray<integer>; end.","E_UNSUPPORTED");
+    compile_error("begin writeln(MIN_CAP); end.","E_NAME");
+    compile_error("uses Collections; begin var d:=new DynArray<integer>; d.Add('bad'); end.","E_TYPE");
+    compile_error("uses Collections; begin var d:=new DynArray<integer>; d.Count(); end.","E_TYPE");
+    compile_error("uses Collections; begin var s:=new SimpleSet<integer>(1); end.","E_TYPE");
+    compile_error("uses Collections; begin var s:=new Stack<integer>(1); end.","E_TYPE");
+    compile_error("uses Collections; begin var s:=new SimpleSet<integer>; s.Remove('bad'); end.","E_TYPE");
+    compile_error("uses Collections; begin var s:=new SimpleSet<integer>; writeln(s.Count); end.","E_NAME");
+    compile_error("uses Collections; begin var s:=new SimpleSet<integer>; s[0]:=1; end.","E_TYPE");
+    compile_error("uses Collections; procedure P(var x:integer); begin end; begin var d:=new DynArray<integer>(1); P(d[0]); end.","E_TYPE");
+    compile_error("uses Collections; type P=record x:integer; end; begin var d:=new DynArray<P>(1); d[0].x:=1; end.","E_TYPE");
+    compile_error("uses Collections; type P=record x:integer; end; begin var s:=new SimpleSet<P>; s.Print; end.","E_UNSUPPORTED");
+    auto program=abc::compile("uses Collections; begin var d:=new DynArray<integer>(1); writeln(d[0]); end.");
+    for (auto& instruction:program.code) if (instruction.op==abc::Op::buffer_call) instruction.operand=999;
+    error([&]{abc::verify(program);},"E_BYTECODE");
+    program=abc::compile("uses Collections; begin var s:=new SimpleSet<integer>; s.Add(1); end.");
+    for (auto& instruction:program.code) if (instruction.op==abc::Op::buffer_call) instruction.operand=static_cast<std::size_t>(abc::BufferMethod::resize);
+    error([&]{abc::verify(program);},"E_BYTECODE");
+}
+
 void library_bytecode() {
     auto program = abc::compile("begin writeln(Length('abc')); end.");
     std::size_t call = 0;
@@ -558,6 +604,7 @@ int main() {
     aggregate_semantics();
     file_library();
     endpoint_collections();
+    buffer_collections();
     std::cout << (checks - failures) << '/' << checks << " checks passed\n";
     return failures == 0 ? 0 : 1;
 }

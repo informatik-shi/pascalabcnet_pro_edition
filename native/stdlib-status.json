@@ -7,9 +7,10 @@
     "arrays": "Dynamic and jagged arrays; zero-based index, reference assignment, Copy, SetLength; fixed-bound and rectangular arrays pending.",
     "records": "Nominal records, nested fields, value assignment; cyclic type definitions pending.",
     "routines": "Typed user functions/procedures, value and var parameters, recursion, Result and Exit; overloads, nested routines, defaults and user generics pending.",
-    "collections": "List<T>: construction, Count, index, Add, RemoveAt, Clear, Contains. With uses Collections: Stack<T> Push/Pop, Queue<T> Enqueue/Dequeue; both Top, IsEmpty, ToString, Print, Println. Text output supports scalar elements only. Other collection types pending.",
+    "collections": "List<T>: construction, Count, index, Add, RemoveAt, Clear, Contains. With uses Collections: Stack<T>, Queue<T>, DynArray<T>, SimpleSet<T>. DynArray: constructor size, indexed value get/set including Elem, writable Count/Capacity, Add/Insert/Remove/Find/Reserve/Resize. SimpleSet: Add/Remove/Contains, insertion order and value/reference equality. Scalar text output for all four classes. Other collection types pending.",
     "files": "UTF-8 whole-text and line-array IO, Unicode paths, 1 MiB per file. Unlike the original Windows CP1251 default. Encoding overloads and classic/binary file handles pending."
   },
+  "module_constants": { "Collections": { "MIN_CAP": 4, "INC_CAP_FACTOR": 2 } },
   "functions": [
     "Abs",
     "Sqr",
@@ -151,7 +152,7 @@
       "name": "Collections",
       "source": "bin/Lib/Collections.pas",
       "status": "partial",
-      "notes": "Stack<T> and Queue<T> core methods are implemented with static element types and reference assignment. Top/Pop/Dequeue copy records by value. Scalar text output preserves order, trailing spaces and Stack.Print newline. DynArray, SimpleSet, AssocArray, LinkedList, node classes, compound-element text output, inheritance and source-unit loading remain pending."
+      "notes": "Stack<T>, Queue<T>, DynArray<T> and SimpleSet<T> use static element types and reference assignment; records copy by value. DynArray retains original capacity/resize/insert rules. Text output is scalar-only, preserving order, trailing spaces and Stack.Print newline. DynArray property var-arguments and direct record-field writes through the indexer, AssocArray, LinkedList, node classes, compound-element text output, inheritance and source-unit loading remain pending."
     },
     {
       "name": "Controls",

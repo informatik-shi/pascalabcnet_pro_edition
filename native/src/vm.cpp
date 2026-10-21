@@ -62,6 +62,12 @@ std::string format(const Value& value, const Instruction& instruction) {
     return {buffer, result.ptr};
 }
 
+void append_collection_text(std::u16string& text, const Value& value, const Instruction& instruction) {
+    auto part = std::get_if<std::u16string>(&value) ? std::get<std::u16string>(value) : from_utf8(format(value,instruction));
+    if (part.size() >= 1'048'576 || text.size() > 1'048'576 - part.size() - 1) trap(instruction,RuntimeError::string_limit);
+    text += part; text += u' ';
+}
+
 Value read_line(std::istream& input, const Instruction& instruction) {
     constexpr std::size_t maximum_line = 1'048'576;
     std::string line;
@@ -149,6 +155,67 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
         if (steps++ >= options.instruction_limit) trap(instruction, RuntimeError::instruction_limit);
         if (options.cancelled && options.cancelled()) trap(instruction, RuntimeError::cancelled);
         switch (instruction.op) {
+        case Op::buffer_call: {
+            const auto method = static_cast<BufferMethod>(instruction.operand);
+            const auto& info = type_info(program,instruction.type);
+            const auto parameters = buffer_parameters(info.kind,info.element,method);
+            std::vector<Value> arguments(parameters.size());
+            for (std::size_t i=arguments.size();i>0;--i) arguments[i-1] = pop();
+            if (method == BufferMethod::construct) {
+                stack.emplace_back(values.buffer(instruction.type,std::get<std::int32_t>(arguments[0]))); break;
+            }
+            const auto target = std::get<std::shared_ptr<Aggregate>>(pop());
+            if (target->nil) trap(instruction,RuntimeError::nil_reference);
+            auto integer = [&](std::size_t i) { return std::get<std::int32_t>(arguments[i]); };
+            auto find = [&]() {
+                for (std::size_t i=0;i<target->count;++i) if (values.equal(target->items[i]->value,arguments[0])) return static_cast<std::int32_t>(i);
+                return std::int32_t{-1};
+            };
+            auto index = [&]() {
+                const auto i = integer(0);
+                if (i < 0 || static_cast<std::size_t>(i) >= target->count) trap(instruction,RuntimeError::index_bounds);
+                return static_cast<std::size_t>(i);
+            };
+            auto grow = [&]() {
+                if (target->count >= INT32_MAX) trap(instruction,RuntimeError::integer_overflow);
+                values.resize_buffer(target,static_cast<std::int32_t>(target->count)+1);
+            };
+            switch (method) {
+            case BufferMethod::add:
+                if (info.kind == CompoundKind::dynarray || find() == -1) { grow(); values.write(target->items[target->count-1],arguments[0]); }
+                break;
+            case BufferMethod::insert: {
+                const auto pos = index(); grow();
+                for (std::size_t i=target->count-1;i>pos;--i) values.write(target->items[i],target->items[i-1]->value);
+                values.write(target->items[pos],arguments[1]); break;
+            }
+            case BufferMethod::remove: {
+                const auto pos = info.kind == CompoundKind::simple_set ? find() : static_cast<std::int32_t>(index());
+                if (pos >= 0) {
+                    for (std::size_t i=static_cast<std::size_t>(pos);i+1<target->count;++i) values.write(target->items[i],target->items[i+1]->value);
+                    --target->count;
+                }
+                break;
+            }
+            case BufferMethod::find: stack.emplace_back(find()); break;
+            case BufferMethod::contains: stack.emplace_back(find() >= 0); break;
+            case BufferMethod::reserve: values.reserve_buffer(target,integer(0)); break;
+            case BufferMethod::resize: values.resize_buffer(target,integer(0)); break;
+            case BufferMethod::count: stack.emplace_back(static_cast<std::int32_t>(target->count)); break;
+            case BufferMethod::capacity: stack.emplace_back(static_cast<std::int32_t>(target->items.size())); break;
+            case BufferMethod::get: stack.push_back(values.copy(target->items[index()]->value)); break;
+            case BufferMethod::set: values.write(target->items[index()],arguments[1]); break;
+            case BufferMethod::to_string: case BufferMethod::print: case BufferMethod::println: {
+                std::u16string text;
+                for (std::size_t i=0;i<target->count;++i) append_collection_text(text,target->items[i]->value,instruction);
+                if (method == BufferMethod::to_string) stack.emplace_back(std::move(text));
+                else { write(to_utf8(text,true),instruction); if (method == BufferMethod::println) write("\n",instruction); }
+                break;
+            }
+            case BufferMethod::construct: break;
+            }
+            break;
+        }
         case Op::endpoint_call: {
             const auto method = static_cast<EndpointMethod>(instruction.operand);
             std::optional<Value> argument;
@@ -170,11 +237,7 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
             } else {
                 std::u16string text;
                 auto append = [&](const std::shared_ptr<Cell>& item) {
-                    auto part = std::get_if<std::u16string>(&item->value) ? std::get<std::u16string>(item->value)
-                        : from_utf8(format(item->value,instruction));
-                    if (part.size() >= 1'048'576 || text.size() > 1'048'576 - part.size() - 1)
-                        trap(instruction,RuntimeError::string_limit);
-                    text += part; text += u' ';
+                    append_collection_text(text,item->value,instruction);
                 };
                 if (lifo) for (auto item = items.rbegin(); item != items.rend(); ++item) append(*item);
                 else for (const auto& item : items) append(item);

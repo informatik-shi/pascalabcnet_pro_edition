@@ -74,6 +74,7 @@ def main():
                 ("structures.pas", "Точка: 3 4\nФакториал 10: 3628800\n1\n2\n5\n8\nИмен: 2\nПервое имя: Анна\n"),
                 ("files.pas", "Привет из C++ интерпретатора!\nПрочитано строк: 2\nВторая строка\n"),
                 ("collections.pas", "Стек: 30 20 10 \nОчередь: Анна Борис Вера \nПустая очередь: True\n"),
+                ("buffers.pas", "Массив: 10 20 30 \nРазмер: 3; ёмкость: 4\nПосле удаления: 20 30 \nБез повторов: Анна Борис \nЕсть Анна: False\n"),
             ]:
                 example = subprocess.run([runner, "run", str(folder / "examples" / source)],
                                          text=True, encoding="utf-8", capture_output=True,
@@ -137,7 +138,16 @@ def main():
                     or "RU: Длина строки не должна быть отрицательной" not in invalid.stderr
                     or f"{resize}:3:" not in invalid.stderr):
                 raise RuntimeError(f"{name} bilingual string mutation error failed: {invalid.stderr!r}")
-            results.append({"variant": name, "gui": "passed", "sum": 55, "type_error_before_output": "passed", "bilingual_runtime_error": "passed", "standard_library": "passed", "text_conversions": "passed", "string_mutations": "passed", "arrays_records_routines_lists": "passed", "text_files": "passed", "bilingual_array_error": "passed", "stacks_queues": "passed", "bilingual_empty_collections": "passed"})
+            negative = folder / "Размер DynArray.pas"
+            negative.write_text("uses Collections;\nbegin\n  var d:=new DynArray<integer>;\n  d.Count:=-1;\nend.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(negative)], text=True, encoding="utf-8",
+                                     capture_output=True, cwd=folder, env=env, timeout=10)
+            if (invalid.returncode != 1 or "E_RANGE" not in invalid.stderr
+                    or "EN: Array length must not be negative" not in invalid.stderr
+                    or "RU: Длина массива не должна быть отрицательной" not in invalid.stderr
+                    or f"{negative}:4:" not in invalid.stderr):
+                raise RuntimeError(f"{name} bilingual DynArray diagnostic failed: {invalid.stderr!r}")
+            results.append({"variant": name, "gui": "passed", "sum": 55, "type_error_before_output": "passed", "bilingual_runtime_error": "passed", "standard_library": "passed", "text_conversions": "passed", "string_mutations": "passed", "arrays_records_routines_lists": "passed", "text_files": "passed", "bilingual_array_error": "passed", "stacks_queues": "passed", "bilingual_empty_collections": "passed", "dynarray_simpleset": "passed", "bilingual_dynarray_error": "passed"})
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 

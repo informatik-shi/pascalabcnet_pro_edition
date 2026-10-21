@@ -53,6 +53,7 @@ struct Aggregate {
     Type type;
     std::vector<std::shared_ptr<Cell>> items;
     bool nil = false;
+    std::size_t count = 0; // Logical size of DynArray and SimpleSet; items holds capacity.
     // Allocate deque storage only for constructed stacks and queues.
     std::unique_ptr<std::deque<std::shared_ptr<Cell>>> ends;
 };
@@ -69,7 +70,7 @@ enum class Op {
     get_index, ref_index, get_field, ref_field, array_new, array_literal, length, resize_array,
     call_user, return_user, drop, list_add, list_remove, list_clear, list_contains,
     read_lines, write_lines, array_copy, array_high, sequence_sort, sequence_fill, mutate_string, increment, read_value,
-    endpoint_call
+    endpoint_call, buffer_call
 };
 
 struct Instruction {
@@ -85,9 +86,36 @@ struct Local {
     bool global = true;
 };
 
-enum class CompoundKind { array, record, list, stack, queue };
+enum class CompoundKind { array, record, list, stack, queue, dynarray, simple_set };
 inline bool indexed_sequence(CompoundKind kind) { return kind == CompoundKind::array || kind == CompoundKind::list; }
 inline bool endpoint_collection(CompoundKind kind) { return kind == CompoundKind::stack || kind == CompoundKind::queue; }
+inline bool buffer_collection(CompoundKind kind) { return kind == CompoundKind::dynarray || kind == CompoundKind::simple_set; }
+enum class BufferMethod { construct, add, insert, remove, find, contains, reserve, resize, count, capacity, get, set, to_string, print, println };
+inline bool buffer_method_allowed(CompoundKind kind, BufferMethod method) {
+    if (!buffer_collection(kind)) return false;
+    if (kind == CompoundKind::dynarray) return method != BufferMethod::contains;
+    return method == BufferMethod::add || method == BufferMethod::remove || method == BufferMethod::contains
+        || method >= BufferMethod::to_string;
+}
+inline std::vector<Type> buffer_parameters(CompoundKind kind, Type element, BufferMethod method) {
+    switch (method) {
+    case BufferMethod::construct: case BufferMethod::reserve: case BufferMethod::resize: case BufferMethod::get: return {Type::integer};
+    case BufferMethod::insert: case BufferMethod::set: return {Type::integer,element};
+    case BufferMethod::remove: return {kind == CompoundKind::simple_set ? element : Type::integer};
+    case BufferMethod::add: case BufferMethod::find: case BufferMethod::contains: return {element};
+    default: return {};
+    }
+}
+inline Type buffer_result(Type receiver, Type element, BufferMethod method) {
+    switch (method) {
+    case BufferMethod::construct: return receiver;
+    case BufferMethod::get: return element;
+    case BufferMethod::count: case BufferMethod::capacity: case BufferMethod::find: return Type::integer;
+    case BufferMethod::contains: return Type::boolean;
+    case BufferMethod::to_string: return Type::string;
+    default: return Type::unit;
+    }
+}
 enum class EndpointMethod { add, remove, top, is_empty, to_string, print, println };
 inline Type endpoint_result(Type element, EndpointMethod method) {
     if (method == EndpointMethod::remove || method == EndpointMethod::top) return element;

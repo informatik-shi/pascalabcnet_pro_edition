@@ -134,6 +134,7 @@ struct SyntaxExpr {
     unsigned depth = 1;
     std::shared_ptr<SyntaxType> constructed{};
     std::vector<std::unique_ptr<SyntaxExpr>> arguments{};
+    bool array_construction = false;
 };
 
 std::unique_ptr<SyntaxExpr> make_expression(SyntaxExprKind kind, Token token,
@@ -248,7 +249,7 @@ private:
             expect("end");
         } else {
             result->token = name(); result->kind = result->token.text;
-            if ((result->kind == "list" || result->kind == "stack" || result->kind == "queue") && accept("<")) {
+            if ((result->kind == "list" || result->kind == "stack" || result->kind == "queue" || result->kind == "dynarray" || result->kind == "simpleset") && accept("<")) {
                 result->element = type_syntax(); expect(">");
             }
         }
@@ -402,8 +403,11 @@ private:
         if (accept("new")) {
             const auto token = current_; auto type = type_syntax();
             auto result = make_expression(SyntaxExprKind::construction, token); result->constructed = type;
-            if (accept("[")) { result->arguments.push_back(expression()); expect("]"); }
-            else if (accept("(")) expect(")");
+            if (accept("[")) { result->array_construction = true; result->arguments.push_back(expression()); expect("]"); }
+            else if (accept("(")) {
+                if (!is(")")) result->arguments.push_back(expression());
+                expect(")");
+            }
             return postfix(std::move(result));
         }
         if (current_.kind == TokenKind::name && !reserved(current_.text))
@@ -508,7 +512,8 @@ private:
             if (module_.types[i].kind == kind && module_.types[i].element == element) return static_cast<Type>(64+i);
         if (module_.types.size() >= 1024) throw Error("E_LIMIT",{},"Type limit exceeded");
         const auto name = kind == CompoundKind::array ? "array" : kind == CompoundKind::list ? "list"
-            : kind == CompoundKind::stack ? "stack" : "queue";
+            : kind == CompoundKind::stack ? "stack" : kind == CompoundKind::queue ? "queue"
+            : kind == CompoundKind::dynarray ? "dynarray" : "simpleset";
         module_.types.push_back({name,kind,element,{}});
         return static_cast<Type>(63+module_.types.size());
     }
@@ -520,9 +525,11 @@ private:
         if (auto found=resolved_types_.find(&syntax); found!=resolved_types_.end()) return found->second;
         if (syntax.kind == "array" || (syntax.kind == "list" && syntax.element))
             return sequence_type(syntax.kind == "array" ? CompoundKind::array : CompoundKind::list,resolve_type(*syntax.element));
-        if ((syntax.kind == "stack" || syntax.kind == "queue") && syntax.element) {
-            if (!collections_imported_) throw Error("E_UNSUPPORTED",syntax.token.location,"Stack<T> and Queue<T> require uses Collections");
-            return sequence_type(syntax.kind == "stack" ? CompoundKind::stack : CompoundKind::queue,resolve_type(*syntax.element));
+        if ((syntax.kind == "stack" || syntax.kind == "queue" || syntax.kind == "dynarray" || syntax.kind == "simpleset") && syntax.element) {
+            if (!collections_imported_) throw Error("E_UNSUPPORTED",syntax.token.location,"This collection type requires uses Collections");
+            const auto kind = syntax.kind == "stack" ? CompoundKind::stack : syntax.kind == "queue" ? CompoundKind::queue
+                : syntax.kind == "dynarray" ? CompoundKind::dynarray : CompoundKind::simple_set;
+            return sequence_type(kind,resolve_type(*syntax.element));
         }
         if (syntax.kind == "record") {
             TypeInfo record{syntax.token.text,CompoundKind::record,Type::invalid,{}};
@@ -571,18 +578,35 @@ private:
         switch (source.kind) {
         case SyntaxExprKind::construction: {
             auto type = resolve_type(*source.constructed);
-            if (!source.arguments.empty()) {
+            if (source.array_construction) {
                 result->kind = hir::ExprKind::array_new; result->type = sequence_type(CompoundKind::array,type);
                 result->arguments.push_back(convert(expression(*source.arguments[0]),Type::integer));
             } else {
                 if (!compound(type)) throw Error("E_TYPE",result->location,"new requires an array length, record or collection type");
+                if (!source.arguments.empty()) {
+                    if (info(type,result->location).kind != CompoundKind::dynarray)
+                        throw Error("E_TYPE",result->location,"Only DynArray supports a constructor size argument");
+                    result->kind = hir::ExprKind::buffer_call; result->type = type;
+                    result->local = static_cast<std::size_t>(BufferMethod::construct);
+                    result->arguments.push_back(convert(expression(*source.arguments[0]),Type::integer)); break;
+                }
                 result->kind = hir::ExprKind::default_value; result->type = type; result->operation="new";
             }
             break;
         }
         case SyntaxExprKind::index: {
-            result->left = expression(*source.left); result->right = convert(expression(*source.right),Type::integer);
+            if (source.left->kind == SyntaxExprKind::field && source.left->token.text == "elem") {
+                auto receiver = expression(*source.left->left);
+                if (compound(receiver->type) && info(receiver->type,result->location).kind == CompoundKind::dynarray) result->left = std::move(receiver);
+            }
+            if (!result->left) result->left = expression(*source.left);
+            result->right = convert(expression(*source.right),Type::integer);
             const auto& type = info(result->left->type,result->location);
+            if (type.kind == CompoundKind::dynarray) {
+                result->kind = hir::ExprKind::buffer_call; result->type = type.element;
+                result->local = static_cast<std::size_t>(BufferMethod::get);
+                result->arguments.push_back(std::move(result->right)); break;
+            }
             if (!indexed_sequence(type.kind)) throw Error("E_TYPE",result->location,"Only arrays and lists are indexable");
             result->type = type.element; result->kind = hir::ExprKind::index; break;
         }
@@ -590,6 +614,33 @@ private:
         case SyntaxExprKind::member_call: {
             result->left = expression(*source.left); const auto receiver = result->left->type;
             const auto& type = info(receiver,result->location);
+            if (buffer_collection(type.kind)) {
+                const auto& name = source.token.text;
+                const auto kind = type.kind; const auto element = type.element;
+                BufferMethod method;
+                if (name == "add") method = BufferMethod::add;
+                else if (name == "remove") method = BufferMethod::remove;
+                else if (name == "contains" && kind == CompoundKind::simple_set) method = BufferMethod::contains;
+                else if (name == "insert" && kind == CompoundKind::dynarray) method = BufferMethod::insert;
+                else if (name == "find" && kind == CompoundKind::dynarray) method = BufferMethod::find;
+                else if (name == "reserve" && kind == CompoundKind::dynarray) method = BufferMethod::reserve;
+                else if (name == "resize" && kind == CompoundKind::dynarray) method = BufferMethod::resize;
+                else if (name == "count" && kind == CompoundKind::dynarray) method = BufferMethod::count;
+                else if (name == "capacity" && kind == CompoundKind::dynarray) method = BufferMethod::capacity;
+                else if (name == "tostring") method = BufferMethod::to_string;
+                else if (name == "print") method = BufferMethod::print;
+                else if (name == "println") method = BufferMethod::println;
+                else throw Error("E_NAME",result->location,"Unknown collection member '"+name+"'");
+                if (source.kind == SyntaxExprKind::member_call && (method == BufferMethod::count || method == BufferMethod::capacity))
+                    throw Error("E_TYPE",result->location,"Collection property is not callable");
+                const auto parameters = buffer_parameters(kind,element,method);
+                if (parameters.size() != source.arguments.size()) throw Error("E_TYPE",result->location,"Wrong collection argument count");
+                if (method >= BufferMethod::to_string && compound(element)) throw Error("E_UNSUPPORTED",result->location,"Collection text output currently requires scalar elements");
+                result->kind = hir::ExprKind::buffer_call; result->local = static_cast<std::size_t>(method);
+                result->type = buffer_result(receiver,element,method);
+                for (std::size_t i=0;i<parameters.size();++i) result->arguments.push_back(convert(expression(*source.arguments[i]),parameters[i]));
+                break;
+            }
             if (endpoint_collection(type.kind)) {
                 const auto& name = source.token.text;
                 const auto element = type.element;
@@ -648,6 +699,9 @@ private:
                 result->kind = hir::ExprKind::local;
                 result->local = *local;
                 result->type = module_.locals[*local].type;
+            } else if (collections_imported_ && (source.token.text == "min_cap" || source.token.text == "inc_cap_factor")) {
+                result->kind = hir::ExprKind::literal; result->type = Type::integer;
+                result->value = std::int32_t{source.token.text == "min_cap" ? 4 : 2};
             } else if (const auto value = stdlib::constant(source.token.text)) {
                 result->kind = hir::ExprKind::literal;
                 result->value = *value;
@@ -896,6 +950,16 @@ private:
         case SyntaxStmtKind::assignment:
             result.kind = hir::StmtKind::assign;
             result.target = expression(*source.target);
+            if (result.target->kind == hir::ExprKind::buffer_call) {
+                const auto method = static_cast<BufferMethod>(result.target->local);
+                if (method == BufferMethod::get || method == BufferMethod::count || method == BufferMethod::capacity) {
+                    auto setter = std::move(result.target);
+                    setter->arguments.push_back(convert(expression(*source.expression),setter->type));
+                    setter->local = static_cast<std::size_t>(method == BufferMethod::get ? BufferMethod::set
+                        : method == BufferMethod::count ? BufferMethod::resize : BufferMethod::reserve);
+                    setter->type = Type::unit; result.kind = hir::StmtKind::call; result.expression = std::move(setter); break;
+                }
+            }
             if (!lvalue(*result.target)) throw Error("E_TYPE",result.location,"Assignment target must be assignable");
             result.expression = convert(expression(*source.expression), result.target->type);
             break;
