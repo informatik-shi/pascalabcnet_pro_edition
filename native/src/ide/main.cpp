@@ -37,7 +37,7 @@ public:
 protected:
     void highlightBlock(const QString& text) override {
         const QRegularExpression tokens(QStringLiteral(
-            "\\b(begin|end|program|uses|type|var|array|of|record|function|procedure|new|nil|exit|result|list|stack|queue|dynarray|simpleset|assocarray|integer|int64|real|double|boolean|string|if|then|else|while|do|and|or|not|div|mod|true|false)\\b"),
+            "\\b(begin|end|program|uses|type|var|array|of|record|function|procedure|new|nil|exit|result|list|stack|queue|dynarray|simpleset|assocarray|linkedlist|linkedlistnode|integer|int64|real|double|boolean|string|if|then|else|while|do|and|or|not|div|mod|true|false)\\b"),
             QRegularExpression::CaseInsensitiveOption);
         auto matches = tokens.globalMatch(text);
         while (matches.hasNext()) {
@@ -45,7 +45,7 @@ protected:
             setFormat(match.capturedStart(), match.capturedLength(), QColor("#8ab4f8"));
         }
         const QRegularExpression functions(QStringLiteral(
-            "\\b(abs|sqr|sign|min|max|sin|sinh|cos|cosh|tan|tanh|arcsin|arccos|arctan|exp|ln|log|log2|log10|logn|sqrt|cbrt|isqrt|power|round|trunc|int|frac|floor|ceil|degtorad|radtodeg|length|copy|pos|posex|lastpos|concat|trim|trimleft|trimright|leftstr|rightstr|reversestring|comparestr|inttostr|strtoint|strtoint64|strtoreal|strtofloat|floattostr|setlength|insert|delete|inc|dec|write|writeln|readln|arr|high|sort|sortdescending|fillbyvalue|readalltext|writealltext|readalllines|writealllines|fileexists|count|add|removeat|clear|contains|push|pop|enqueue|dequeue|top|isempty|tostring|print|println|capacity|reserve|resize|find|remove|elem|min_cap|inc_cap_factor)\\b"),
+            "\\b(abs|sqr|sign|min|max|sin|sinh|cos|cosh|tan|tanh|arcsin|arccos|arctan|exp|ln|log|log2|log10|logn|sqrt|cbrt|isqrt|power|round|trunc|int|frac|floor|ceil|degtorad|radtodeg|length|copy|pos|posex|lastpos|concat|trim|trimleft|trimright|leftstr|rightstr|reversestring|comparestr|inttostr|strtoint|strtoint64|strtoreal|strtofloat|floattostr|setlength|insert|delete|inc|dec|write|writeln|readln|arr|high|sort|sortdescending|fillbyvalue|readalltext|writealltext|readalllines|writealllines|fileexists|count|add|removeat|clear|contains|push|pop|enqueue|dequeue|top|isempty|tostring|print|println|capacity|reserve|resize|find|remove|elem|min_cap|inc_cap_factor|first|last|prev|next|value|addfirst|addlast|addbefore|addafter|removefirst|removelast)\\b"),
             QRegularExpression::CaseInsensitiveOption);
         auto calls = functions.globalMatch(text);
         while (calls.hasNext()) {

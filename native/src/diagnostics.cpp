@@ -76,6 +76,8 @@ Error runtime_error(RuntimeError id, SourceLocation location, std::string_view c
         code = "E_EMPTY"; english = "Stack is empty"; russian = "Стек пуст"; break;
     case RuntimeError::queue_empty:
         code = "E_EMPTY"; english = "Queue is empty"; russian = "Очередь пуста"; break;
+    case RuntimeError::linked_empty:
+        code = "E_EMPTY"; english = "Linked list is empty"; russian = "Связанный список пуст"; break;
     default: throw std::logic_error("Unknown runtime diagnostic");
     }
     return Error(code, location, std::string(english) + std::string(context), std::string(russian) + std::string(context));

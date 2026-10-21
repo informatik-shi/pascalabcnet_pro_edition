@@ -33,6 +33,7 @@ struct Values {
             if (buffer_collection(info.kind) && constructed) return buffer(type,0);
             auto aggregate = std::make_shared<Aggregate>(); aggregate->type = type;
             aggregate->nil = info.kind != CompoundKind::record && !constructed;
+            if (info.kind == CompoundKind::linked_list && constructed) aggregate->links = std::make_unique<LinkedLinks>();
             if (endpoint_collection(info.kind) && constructed)
                 aggregate->ends = std::make_unique<std::deque<std::shared_ptr<Cell>>>();
             if (info.kind == CompoundKind::record)

@@ -1,4 +1,5 @@
 #include "abc/core.hpp"
+#include "../src/linked.hpp"
 
 #include <iostream>
 #include <filesystem>
@@ -555,6 +556,70 @@ void association_collections() {
     error([&]{(void)run("uses Collections; begin var m:=new AssocArray<string,integer>; m['a']:=1; m['b']:=2; end.","",limits);},"E_LIMIT");
 }
 
+void linked_collections() {
+    result("uses Collections; begin var l:=new LinkedList<integer>; writeln(l.First=nil,' ',l.Last=nil); l.AddFirst(2); l.AddFirst(1); l.AddLast(3); var n:=l.First; while n<>nil do begin write(n.Value); n:=n.Next; end; write(' '); n:=l.Last; while n<>nil do begin write(n.Value); n:=n.Prev; end; writeln(' ',l.First.Prev=nil,' ',l.Last.Next=nil); end.","True True\n123 321 True True\n");
+    result("uses Collections; begin var l:=new LinkedList<integer>; l.AddLast(1); l.AddLast(3); l.AddBefore(l.Last,2); l.AddAfter(l.Last,4); l.AddBefore(l.First,0); l.AddAfter(l.First.Next,8); var n:=l.First; while n<>nil do begin write(n.Value); n:=n.Next; end; writeln; l.Remove(l.First.Next.Next); l.Remove(l.First); l.Remove(l.Last); n:=l.First; while n<>nil do begin write(n.Value); n:=n.Next; end; writeln; end.","018234\n123\n");
+    result("uses Collections; begin var l:=new LinkedList<integer>; l.AddLast(1); l.AddLast(2); var old:=l.First; l.RemoveFirst; writeln(old.Value,' ',old.Next.Value,' ',l.First.Prev=nil); l.RemoveLast; writeln(l.First=nil,' ',l.Last=nil,' ',old.Next.Value); l.AddLast(3); writeln(l.First=l.Last); end.","1 2 True\nTrue True 2\nTrue\n");
+    result("uses Collections; begin var l:=new LinkedList<integer>; l.AddLast(1); l.AddLast(2); l.AddLast(3); var removed:=l.First.Next; l.Remove(removed); removed.Value:=9; writeln(l.First.Next=l.Last,' ',removed.Prev=l.First,' ',removed.Next=l.Last,' ',removed.Value); end.","True True True 9\n");
+    result("uses Collections; type N=LinkedListNode<integer>; begin var a:=new N(1,nil,nil); var b:=new N(2,a,nil); var c:=new N(3,nil,b); b.Value:=7; writeln(b.Prev=a,' ',a.Next=nil,' ',c.Next=b,' ',b.Value); end.","True True True 7\n");
+    result("uses Collections; type P=record x:integer; end; begin var p:P; p.x:=7; var l:=new LinkedList<P>; l.AddLast(p); p.x:=9; var q:=l.First.Value; q.x:=11; var stored:=l.First.Value; writeln(stored.x,' ',p.x); l.First.Value:=q; stored:=l.First.Value; writeln(stored.x); end.","7 9\n11\n");
+    result("uses Collections; begin var a:=Arr(1); var l:=new LinkedList<array of integer>; l.AddLast(a); a[0]:=8; var b:=l.First.Value; writeln(b[0]); end.","8\n");
+    result("uses Collections; function Head:LinkedListNode<integer>; begin var l:=new LinkedList<integer>; l.AddLast(1); l.AddLast(2); Result:=l.First; end; begin var h:=Head; writeln(h.Value,' ',h.Next.Value); end.","1 2\n");
+    result("uses Collections; begin var inner:=new LinkedList<integer>; var outer:=new LinkedList<LinkedList<integer>>; outer.AddLast(inner); var same:=outer.First.Value; same.AddLast(4); writeln(inner.First.Value); end.","4\n");
+    result("uses Collections; begin var l:=new LinkedList<integer>; writeln('[',l.ToString,']'); l.AddLast(1); l.AddLast(2); l.AddLast(3); writeln('[',l.ToString(),']'); l.Print; write('|'); l.Println; end.","[]\n[3 ]\n3 |3 \n");
+    result("uses Collections; begin var a:=new LinkedList<integer>; var b:=new LinkedList<integer>; a.AddLast(1); a.AddLast(2); b.AddLast(8); b.AddLast(9); a.AddBefore(b.Last,7); var n:=a.First; while n<>nil do begin write(n.Value); n:=n.Next; end; write(' '); n:=b.First; while n<>nil do begin write(n.Value); n:=n.Next; end; writeln; end.","12 879\n");
+    for (const auto* source : {
+        "uses Collections; begin var l:=new LinkedList<integer>; l.RemoveFirst; end.",
+        "uses Collections; begin var l:=new LinkedList<integer>; l.RemoveLast; end."}) runtime_error(source,"E_EMPTY");
+    for (const auto* source : {
+        "uses Collections; begin var l:LinkedList<integer>; l.AddFirst(1); end.",
+        "uses Collections; begin var l:=new LinkedList<integer>; l.Remove(nil); end.",
+        "uses Collections; begin var l:=new LinkedList<integer>; l.AddBefore(nil,1); end.",
+        "uses Collections; begin var n:LinkedListNode<integer>; writeln(n.Value); end.",
+        "uses Collections; begin var n:LinkedListNode<integer>; n.Value:=1; end."}) runtime_error(source,"E_NIL");
+    compile_error("begin var l:=new LinkedList<integer>; end.","E_UNSUPPORTED");
+    compile_error("uses Collections; begin var n:=new LinkedListNode<integer>; end.","E_TYPE");
+    compile_error("uses Collections; begin var n:=new LinkedListNode<integer>(1,nil); end.","E_TYPE");
+    compile_error("uses Collections; begin var d:=new DynArray<integer>(1,2); end.","E_TYPE");
+    compile_error("uses Collections; begin var l:=new LinkedList<integer>; l.AddLast('bad'); end.","E_TYPE");
+    compile_error("uses Collections; begin var l:=new LinkedList<integer>; var n:=new LinkedListNode<string>('x',nil,nil); l.Remove(n); end.","E_TYPE");
+    compile_error("uses Collections; begin var l:=new LinkedList<integer>; l.First:=nil; end.","E_TYPE");
+    compile_error("uses Collections; begin var n:=new LinkedListNode<integer>(1,nil,nil); n.Next:=nil; end.","E_TYPE");
+    compile_error("uses Collections; begin var l:=new LinkedList<integer>; l.First(); end.","E_TYPE");
+    compile_error("uses Collections; begin var l:=new LinkedList<integer>; writeln(l.Count); end.","E_NAME");
+    compile_error("uses Collections; type P=record x:integer; end; begin var l:=new LinkedList<P>; l.Print; end.","E_UNSUPPORTED");
+    compile_error("uses Collections; procedure P(var x:integer); begin end; begin var l:=new LinkedList<integer>; l.AddLast(1); P(l.First.Value); end.","E_TYPE");
+    const std::string cycle="uses Collections; begin var l:=new LinkedList<integer>; l.AddLast(1); l.AddLast(2); var n:=new LinkedListNode<integer>(4,l.Last,l.First); l.AddBefore(n,3); l.ToString; end.";
+    abc::ExecutionOptions limits; limits.instruction_limit=200;
+    error([&]{(void)run(cycle,"",limits);},"E_LIMIT");
+    limits={}; int polls=0; limits.cancelled=[&]{return ++polls>100;};
+    error([&]{(void)run(cycle,"",limits);},"E_CANCELLED");
+    limits={}; limits.allocation_limit=4;
+    error([&]{(void)run("uses Collections; begin var l:=new LinkedList<integer>; var i:=0; while i<10 do begin l.AddLast(i); l.RemoveFirst; Inc(i); end; end.","",limits);},"E_LIMIT");
+    try { (void)run("uses Collections;\nbegin\n var l:=new LinkedList<integer>;\n l.RemoveFirst; end."); require(false,"Expected empty-list error"); }
+    catch (const abc::Error& caught) {
+        require(caught.code=="E_EMPTY" && caught.location.line==4 && std::string(caught.what())=="Linked list is empty" && caught.russian=="Связанный список пуст","Empty-list diagnostic retains both languages and position");
+    }
+    auto program=abc::compile("uses Collections; begin var l:=new LinkedList<integer>; l.AddLast(1); end.");
+    for (auto& instruction:program.code) if (instruction.op==abc::Op::linked_call) instruction.operand=999;
+    error([&]{abc::verify(program);},"E_BYTECODE");
+    program=abc::compile("uses Collections; begin var l:=new LinkedList<integer>; end.");
+    program.types[1].key=abc::Type::integer;
+    error([&]{abc::verify(program);},"E_BYTECODE");
+    program=abc::compile("uses Collections; begin var n:LinkedListNode<integer>; end.");
+    for (auto& instruction:program.code) if (instruction.op==abc::Op::make_default) instruction.operand=1;
+    error([&]{abc::verify(program);},"E_BYTECODE");
+    program=abc::compile("uses Collections; begin var l:=new LinkedList<integer>; end.");
+    std::weak_ptr<abc::Aggregate> retained;
+    {
+        abc::Values values{program,16}; abc::LinkedRuntime runtime{values,{}};
+        auto a=runtime.node(static_cast<abc::Type>(64),std::int32_t{1});
+        auto b=runtime.node(static_cast<abc::Type>(64),std::int32_t{2},a,a);
+        a->links->prev=b; a->links->next=b; retained=a;
+    }
+    require(retained.expired(),"Node arena releases cyclic links when execution ends");
+}
+
 void library_bytecode() {
     auto program = abc::compile("begin writeln(Length('abc')); end.");
     std::size_t call = 0;
@@ -649,6 +714,7 @@ int main() {
     endpoint_collections();
     buffer_collections();
     association_collections();
+    linked_collections();
     std::cout << (checks - failures) << '/' << checks << " checks passed\n";
     return failures == 0 ? 0 : 1;
 }

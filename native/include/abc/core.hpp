@@ -46,6 +46,7 @@ bool can_widen(Type from, Type to);
 // Runtime representation is independent of the host's int, long and wchar_t.
 struct Aggregate;
 struct Cell;
+struct LinkedLinks { std::weak_ptr<Aggregate> prev, next; };
 using Value = std::variant<std::int32_t, std::int64_t, double, bool, std::u16string,
     std::shared_ptr<Aggregate>, std::shared_ptr<Cell>>;
 struct Cell { Type type; Value value; };
@@ -56,6 +57,7 @@ struct Aggregate {
     std::size_t count = 0; // Logical size of DynArray and SimpleSet; items holds capacity.
     // Allocate deque storage only for constructed stacks and queues.
     std::unique_ptr<std::deque<std::shared_ptr<Cell>>> ends;
+    std::unique_ptr<LinkedLinks> links;
 };
 Type value_type(const Value& value);
 std::u16string from_utf8(std::string_view text);
@@ -70,7 +72,7 @@ enum class Op {
     get_index, ref_index, get_field, ref_field, array_new, array_literal, length, resize_array,
     call_user, return_user, drop, list_add, list_remove, list_clear, list_contains,
     read_lines, write_lines, array_copy, array_high, sequence_sort, sequence_fill, mutate_string, increment, read_value,
-    endpoint_call, buffer_call, association_call
+    endpoint_call, buffer_call, association_call, linked_call
 };
 
 struct Instruction {
@@ -86,7 +88,7 @@ struct Local {
     bool global = true;
 };
 
-enum class CompoundKind { array, record, list, stack, queue, dynarray, simple_set, association };
+enum class CompoundKind { array, record, list, stack, queue, dynarray, simple_set, association, linked_node, linked_list };
 inline bool indexed_sequence(CompoundKind kind) { return kind == CompoundKind::array || kind == CompoundKind::list; }
 inline bool endpoint_collection(CompoundKind kind) { return kind == CompoundKind::stack || kind == CompoundKind::queue; }
 inline bool buffer_collection(CompoundKind kind) { return kind == CompoundKind::dynarray || kind == CompoundKind::simple_set; }
@@ -139,6 +141,31 @@ inline std::vector<Type> association_parameters(const TypeInfo& info, Associatio
 inline Type association_result(const TypeInfo& info, AssociationMethod method) {
     if (method == AssociationMethod::get) return info.element;
     if (method == AssociationMethod::to_string) return Type::string;
+    return Type::unit;
+}
+enum class LinkedMethod { construct, first, last, add_first, add_last, remove_first, remove_last,
+    add_before, add_after, remove, to_string, print, println, value, set_value, prev, next };
+inline bool linked_text_method(LinkedMethod method) {
+    return method == LinkedMethod::to_string || method == LinkedMethod::print || method == LinkedMethod::println;
+}
+inline bool linked_method_allowed(CompoundKind kind, LinkedMethod method) {
+    if (kind == CompoundKind::linked_node) return method == LinkedMethod::construct || method >= LinkedMethod::value;
+    return kind == CompoundKind::linked_list && method >= LinkedMethod::first && method <= LinkedMethod::println;
+}
+inline std::vector<Type> linked_parameters(Type receiver, const TypeInfo& info, LinkedMethod method) {
+    switch (method) {
+    case LinkedMethod::construct: return {info.element,receiver,receiver};
+    case LinkedMethod::add_first: case LinkedMethod::add_last: case LinkedMethod::set_value: return {info.element};
+    case LinkedMethod::add_before: case LinkedMethod::add_after: return {info.key,info.element};
+    case LinkedMethod::remove: return {info.key};
+    default: return {};
+    }
+}
+inline Type linked_result(Type receiver, const TypeInfo& info, LinkedMethod method) {
+    if (method == LinkedMethod::construct || method == LinkedMethod::prev || method == LinkedMethod::next) return receiver;
+    if (method == LinkedMethod::first || method == LinkedMethod::last) return info.key;
+    if (method == LinkedMethod::value) return info.element;
+    if (method == LinkedMethod::to_string) return Type::string;
     return Type::unit;
 }
 struct Parameter { std::size_t local; Type type; bool by_reference = false; };

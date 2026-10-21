@@ -4,6 +4,7 @@
 #include "stdlib.hpp"
 #include "runtime_values.hpp"
 #include "files.hpp"
+#include "linked.hpp"
 
 #include <charconv>
 #include <algorithm>
@@ -127,6 +128,7 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
         throw Error(error.code, error.location, error.what(), "Некорректный байт-код: выполнение невозможно");
     }
     Values values{program,options.allocation_limit};
+    LinkedRuntime linked{values,{}};
     std::vector<std::shared_ptr<Cell>> globals(program.locals.size());
     for (std::size_t i = 0; i < program.locals.size(); ++i) if (program.locals[i].global)
         globals[i] = values.cell(program.locals[i].type,values.zero(program.locals[i].type));
@@ -155,6 +157,48 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
         if (steps++ >= options.instruction_limit) trap(instruction, RuntimeError::instruction_limit);
         if (options.cancelled && options.cancelled()) trap(instruction, RuntimeError::cancelled);
         switch (instruction.op) {
+        case Op::linked_call: {
+            const auto method = static_cast<LinkedMethod>(instruction.operand);
+            const auto& info = type_info(program,instruction.type);
+            const auto parameters = linked_parameters(instruction.type,info,method);
+            std::vector<Value> arguments(parameters.size());
+            for (std::size_t i=arguments.size();i>0;--i) arguments[i-1] = pop();
+            if (method == LinkedMethod::construct) {
+                stack.emplace_back(linked.node(instruction.type,arguments[0],std::get<std::shared_ptr<Aggregate>>(arguments[1]),std::get<std::shared_ptr<Aggregate>>(arguments[2])));
+                break;
+            }
+            const auto target = linked.require(std::get<std::shared_ptr<Aggregate>>(pop()));
+            auto reference = [&](std::shared_ptr<Aggregate> node, Type type) {
+                if (node) stack.emplace_back(std::move(node)); else stack.push_back(values.zero(type));
+            };
+            switch (method) {
+            case LinkedMethod::first: reference(target->links->prev.lock(),info.key); break;
+            case LinkedMethod::last: reference(target->links->next.lock(),info.key); break;
+            case LinkedMethod::prev: reference(target->links->prev.lock(),instruction.type); break;
+            case LinkedMethod::next: reference(target->links->next.lock(),instruction.type); break;
+            case LinkedMethod::value: stack.push_back(values.copy(target->items[0]->value)); break;
+            case LinkedMethod::set_value: values.write(target->items[0],arguments[0]); break;
+            case LinkedMethod::add_first: case LinkedMethod::add_last: linked.add(target,arguments[0],method==LinkedMethod::add_first); break;
+            case LinkedMethod::remove_first: case LinkedMethod::remove_last: linked.remove_end(target,method==LinkedMethod::remove_first); break;
+            case LinkedMethod::add_before: case LinkedMethod::add_after:
+                linked.insert(target,std::get<std::shared_ptr<Aggregate>>(arguments[0]),arguments[1],method==LinkedMethod::add_before); break;
+            case LinkedMethod::remove: linked.remove(target,std::get<std::shared_ptr<Aggregate>>(arguments[0])); break;
+            case LinkedMethod::to_string: case LinkedMethod::print: case LinkedMethod::println: {
+                std::u16string text;
+                for (auto node=target->links->prev.lock();node;node=node->links->next.lock()) {
+                    if (steps++ >= options.instruction_limit) trap(instruction,RuntimeError::instruction_limit);
+                    if (options.cancelled && options.cancelled()) trap(instruction,RuntimeError::cancelled);
+                    // Original Collections.LinkedList.ToString replaces the result on each node.
+                    text.clear(); append_collection_text(text,node->items[0]->value,instruction);
+                }
+                if (method==LinkedMethod::to_string) stack.emplace_back(std::move(text));
+                else { write(to_utf8(text,true),instruction); if (method==LinkedMethod::println) write("\n",instruction); }
+                break;
+            }
+            case LinkedMethod::construct: break;
+            }
+            break;
+        }
         case Op::association_call: {
             const auto method = static_cast<AssociationMethod>(instruction.operand);
             const auto& info = type_info(program,instruction.type);

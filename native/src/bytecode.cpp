@@ -55,6 +55,10 @@ private:
         switch (node.kind) {
         case hir::ExprKind::literal: constant(node.value, node.location); break;
         case hir::ExprKind::local: local(Op::load,node.local,node.location); break;
+        case hir::ExprKind::linked_call:
+            if (node.left) expression(*node.left);
+            for (const auto& argument : node.arguments) expression(*argument);
+            emit(Op::linked_call,node.left ? node.left->type : node.type,node.local,node.location); break;
         case hir::ExprKind::association_call:
             expression(*node.left);
             for (const auto& argument : node.arguments) expression(*argument);
@@ -229,6 +233,11 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
     for (const auto& instruction : code) {
         const auto type = instruction.type;
         switch (instruction.op) {
+        case Op::linked_call:
+            if (!compound(type) || instruction.operand > static_cast<std::size_t>(LinkedMethod::next)
+                || !linked_method_allowed(type_info(program,type).kind,static_cast<LinkedMethod>(instruction.operand))) invalid(instruction,"Invalid linked instruction");
+            if (linked_text_method(static_cast<LinkedMethod>(instruction.operand)) && compound(type_info(program,type).element)) invalid(instruction,"Linked text output requires scalar elements");
+            break;
         case Op::association_call:
             if (!compound(type) || type_info(program,type).kind != CompoundKind::association
                 || instruction.operand > static_cast<std::size_t>(AssociationMethod::println)) invalid(instruction,"Invalid AssocArray instruction");
@@ -267,7 +276,10 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if (!compound(type) || !indexed_sequence(type_info(program,type).kind)) invalid(instruction,"Indexed sequence required");
             if (instruction.op==Op::sequence_sort && (compound(type_info(program,type).element) || instruction.operand>1)) invalid(instruction,"Invalid sort"); break;
         case Op::make_default: case Op::store_ref: case Op::drop:
-            if (!valid_value_type(program,type) || (instruction.op==Op::make_default && instruction.operand>1)) invalid(instruction,"Invalid value type"); break;
+            if (!valid_value_type(program,type) || (instruction.op==Op::make_default && instruction.operand>1)) invalid(instruction,"Invalid value type");
+            if (instruction.op==Op::make_default && instruction.operand && compound(type) && type_info(program,type).kind==CompoundKind::linked_node)
+                invalid(instruction,"Linked nodes require the typed constructor");
+            break;
         case Op::call_user:
             if (instruction.operand >= program.routines.size() || type != program.routines[instruction.operand].result) invalid(instruction,"Invalid user call"); break;
         case Op::return_user:
@@ -359,6 +371,16 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if (pop() != expected) invalid(instruction, "Operand type mismatch");
         };
         switch (instruction.op) {
+        case Op::linked_call: {
+            const auto method = static_cast<LinkedMethod>(instruction.operand);
+            const auto& info = type_info(program,instruction.type);
+            const auto parameters = linked_parameters(instruction.type,info,method);
+            for (auto parameter=parameters.rbegin();parameter!=parameters.rend();++parameter) require(*parameter);
+            if (method != LinkedMethod::construct) require(instruction.type);
+            const auto result = linked_result(instruction.type,info,method);
+            if (result != Type::unit) stack.push_back(result);
+            break;
+        }
         case Op::association_call: {
             const auto method = static_cast<AssociationMethod>(instruction.operand);
             const auto& info = type_info(program,instruction.type);
@@ -480,7 +502,12 @@ void verify(const Program& program) {
             if (type.fields.size() > 256) throw Error("E_BYTECODE",{},"Too many record fields");
             for (const auto& field : type.fields) prior(field.type);
         } else if (type.kind == CompoundKind::association) { prior(type.key); prior(type.element); }
-        else if (indexed_sequence(type.kind) || endpoint_collection(type.kind) || buffer_collection(type.kind)) prior(type.element);
+        else if (type.kind == CompoundKind::linked_list) {
+            prior(type.element); prior(type.key);
+            if (!compound(type.key) || type_info(program,type.key).kind != CompoundKind::linked_node || type_info(program,type.key).element != type.element)
+                throw Error("E_BYTECODE",{},"Invalid linked list node type");
+        }
+        else if (indexed_sequence(type.kind) || endpoint_collection(type.kind) || buffer_collection(type.kind) || type.kind == CompoundKind::linked_node) prior(type.element);
         else throw Error("E_BYTECODE",{},"Invalid compound kind");
         if (level > 32) throw Error("E_BYTECODE",{},"Type nesting limit exceeded"); depth[i] = level;
     }
