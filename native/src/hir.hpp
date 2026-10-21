@@ -7,7 +7,7 @@ namespace abc::hir {
 
 enum class ExprKind { literal, local, convert, unary, binary, call, default_value,
     index, field, array_new, array_literal, length, user_call, list_add, list_remove, list_clear, list_contains,
-    read_lines, write_lines, array_copy, array_high, sequence_sort, sequence_fill, null_literal, endpoint_call, buffer_call };
+    read_lines, write_lines, array_copy, array_high, sequence_sort, sequence_fill, null_literal, endpoint_call, buffer_call, association_call };
 struct Expr {
     ExprKind kind;
     Type type;

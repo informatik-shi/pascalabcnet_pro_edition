@@ -512,6 +512,49 @@ void buffer_collections() {
     error([&]{abc::verify(program);},"E_BYTECODE");
 }
 
+void association_collections() {
+    result("uses Collections; begin var m:=new AssocArray<string,integer>; writeln(m['missing'],' [',m.ToString,']'); m['b']:=2; m.Elem['a']:=1; m['b']:=3; writeln(m['b'],' ',m.Elem['a']); write(m.ToString); end.","0 []\n3 1\nb 3\r\na 1\r\n");
+    result("uses Collections; begin var m:=new AssocArray<integer,string>(); m.Print; m.Println; writeln('[',m.ToString,']'); m[7]:='Привет 🌍'; m.Print; write('|'); m.Println(); writeln(Length(m.ToString)); end.","[]\n7 Привет 🌍\r\n|7 Привет 🌍\r\n13\n");
+    result("uses Collections; type M=AssocArray<integer,int64>; begin var a:=new M; var b:AssocArray<integer,int64>:=a; b[1]:=2147483648; writeln(a=b,' ',a[1]); end.","True 2147483648\n");
+    result("uses Collections; begin var m:=new AssocArray<real,integer>; m[1]:=3; m[1.0]:=7; writeln(m[1]); end.","7\n");
+    result("uses Collections; begin var m:=new AssocArray<boolean,string>; m[true]:='yes'; m[false]:='no'; writeln(m[false],' ',m[true]); end.","no yes\n");
+    result("uses Collections; type P=record x:integer; end; begin var m:=new AssocArray<string,P>; var p:P; p.x:=7; m['p']:=p; p.x:=9; var q:=m['p']; q.x:=11; q:=m['p']; var missing:=m['missing']; missing.x:=4; var again:=m['missing']; writeln(q.x,' ',p.x,' ',again.x); end.","7 9 0\n");
+    result("uses Collections; type P=record x:integer; end; begin var m:=new AssocArray<P,string>; var p:P; p.x:=7; m[p]:='first'; p.x:=8; writeln('[',m[p],']'); p.x:=7; m[p]:='updated'; writeln(m[p]); end.","[]\nupdated\n");
+    result("uses Collections; begin var m:=new AssocArray<array of integer,string>; var a:=Arr(1); m[a]:='stored'; a[0]:=9; writeln(m[a],' [',m[Arr(9)],']'); m[nil]:='nil key'; writeln(m[nil]); end.","stored []\nnil key\n");
+    result("uses Collections; begin var m:=new AssocArray<string,array of integer>; var a:=Arr(1); m['a']:=a; a[0]:=8; var b:=m['a']; writeln(b[0],' ',m['missing']=nil); end.","8 True\n");
+    result("uses Collections; begin var m:=new AssocArray<string,AssocArray<integer,string>>; var inner:=new AssocArray<integer,string>; inner[1]:='value'; m['inner']:=inner; var alias:=m['inner']; writeln(alias[1],' ',m['missing']=nil); end.","value True\n");
+    result("uses Collections; var calls:integer; function Key:string; begin Inc(calls); Result:='key'; end; function V:integer; begin Inc(calls); Result:=9; end; begin var m:=new AssocArray<string,integer>; m[Key()]:=V(); writeln(calls,' ',m['key']); end.","2 9\n");
+    result("uses Collections; type M=AssocArray<string,integer>; var m:M; function Update:integer; begin m['key']:=7; Result:=9; end; begin m:=new M; m['key']:=Update(); writeln(m['key']); end.","9\n");
+    result("uses Collections; type M=AssocArray<string,integer>; procedure SetValue(m:M); begin m['x']:=4; end; procedure Replace(var m:M); begin m:=new M; m['x']:=9; end; begin var m:=new M; SetValue(m); var old:=m; Replace(m); writeln(old['x'],' ',m['x']); end.","4 9\n");
+    result("uses Collections; begin var maps:=new AssocArray<string,integer>[2]; maps[0]:=new AssocArray<string,integer>; maps[0]['x']:=3; writeln(maps[0]['x'],' ',maps[1]=nil); end.","3 True\n");
+    runtime_error("uses Collections; begin var m:AssocArray<string,integer>; writeln(m['x']); end.","E_NIL");
+    runtime_error("uses Collections; begin var m:AssocArray<string,integer>; m['x']:=1; end.","E_NIL");
+    compile_error("begin var m:=new AssocArray<string,integer>; end.","E_UNSUPPORTED");
+    compile_error("uses Collections; begin var m:=new AssocArray<string,integer>(1); end.","E_TYPE");
+    compile_error("uses Collections; begin var m:=new AssocArray<string,integer>; m[1]:=2; end.","E_TYPE");
+    compile_error("uses Collections; begin var m:=new AssocArray<string,integer>; writeln(m[1]); end.","E_TYPE");
+    compile_error("uses Collections; begin var m:=new AssocArray<string,integer>; m['x']:='bad'; end.","E_TYPE");
+    compile_error("uses Collections; begin var a:=new AssocArray<string,integer>; var b:=new AssocArray<integer,integer>; a:=b; end.","E_TYPE");
+    compile_error("uses Collections; begin var a:=new AssocArray<string,integer>; var b:=new AssocArray<string,string>; a:=b; end.","E_TYPE");
+    compile_error("uses Collections; begin var m:=new AssocArray<string,integer>; m.ContainsKey('x'); end.","E_NAME");
+    compile_error("uses Collections; begin var m:=new AssocArray<string,integer>; writeln(m.Count); end.","E_NAME");
+    compile_error("uses Collections; begin var m:=new AssocArray<string,integer>; m.Print(1); end.","E_TYPE");
+    compile_error("uses Collections; procedure P(var x:integer); begin end; begin var m:=new AssocArray<string,integer>; P(m['x']); end.","E_TYPE");
+    compile_error("uses Collections; type P=record x:integer; end; begin var m:=new AssocArray<string,P>; m['x'].x:=1; end.","E_TYPE");
+    compile_error("uses Collections; begin var m:=new AssocArray<array of integer,string>; m.Print; end.","E_UNSUPPORTED");
+    compile_error("uses Collections; begin var m:=new AssocArray<string,array of integer>; m.ToString; end.","E_UNSUPPORTED");
+    auto program=abc::compile("uses Collections; begin var m:=new AssocArray<string,integer>; m['x']:=1; end.");
+    for (auto& instruction:program.code) if (instruction.op==abc::Op::association_call) instruction.operand=999;
+    error([&]{abc::verify(program);},"E_BYTECODE");
+    program=abc::compile("uses Collections; begin var m:=new AssocArray<string,integer>; end.");
+    program.types[0].key=abc::Type::unit;
+    error([&]{abc::verify(program);},"E_BYTECODE");
+    program.types[0].key=static_cast<abc::Type>(64);
+    error([&]{abc::verify(program);},"E_BYTECODE");
+    abc::ExecutionOptions limits; limits.allocation_limit=3;
+    error([&]{(void)run("uses Collections; begin var m:=new AssocArray<string,integer>; m['a']:=1; m['b']:=2; end.","",limits);},"E_LIMIT");
+}
+
 void library_bytecode() {
     auto program = abc::compile("begin writeln(Length('abc')); end.");
     std::size_t call = 0;
@@ -605,6 +648,7 @@ int main() {
     file_library();
     endpoint_collections();
     buffer_collections();
+    association_collections();
     std::cout << (checks - failures) << '/' << checks << " checks passed\n";
     return failures == 0 ? 0 : 1;
 }

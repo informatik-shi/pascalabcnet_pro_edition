@@ -70,7 +70,7 @@ enum class Op {
     get_index, ref_index, get_field, ref_field, array_new, array_literal, length, resize_array,
     call_user, return_user, drop, list_add, list_remove, list_clear, list_contains,
     read_lines, write_lines, array_copy, array_high, sequence_sort, sequence_fill, mutate_string, increment, read_value,
-    endpoint_call, buffer_call
+    endpoint_call, buffer_call, association_call
 };
 
 struct Instruction {
@@ -86,7 +86,7 @@ struct Local {
     bool global = true;
 };
 
-enum class CompoundKind { array, record, list, stack, queue, dynarray, simple_set };
+enum class CompoundKind { array, record, list, stack, queue, dynarray, simple_set, association };
 inline bool indexed_sequence(CompoundKind kind) { return kind == CompoundKind::array || kind == CompoundKind::list; }
 inline bool endpoint_collection(CompoundKind kind) { return kind == CompoundKind::stack || kind == CompoundKind::queue; }
 inline bool buffer_collection(CompoundKind kind) { return kind == CompoundKind::dynarray || kind == CompoundKind::simple_set; }
@@ -128,7 +128,19 @@ struct TypeInfo {
     CompoundKind kind = CompoundKind::array;
     Type element = Type::invalid;
     std::vector<Local> fields;
+    Type key = Type::invalid;
 };
+enum class AssociationMethod { get, set, to_string, print, println };
+inline std::vector<Type> association_parameters(const TypeInfo& info, AssociationMethod method) {
+    if (method == AssociationMethod::get) return {info.key};
+    if (method == AssociationMethod::set) return {info.key,info.element};
+    return {};
+}
+inline Type association_result(const TypeInfo& info, AssociationMethod method) {
+    if (method == AssociationMethod::get) return info.element;
+    if (method == AssociationMethod::to_string) return Type::string;
+    return Type::unit;
+}
 struct Parameter { std::size_t local; Type type; bool by_reference = false; };
 struct Routine {
     std::string name;

@@ -126,6 +126,7 @@ struct SyntaxType {
     std::string kind;
     std::shared_ptr<SyntaxType> element;
     std::vector<std::pair<Token, std::shared_ptr<SyntaxType>>> fields;
+    std::shared_ptr<SyntaxType> key;
 };
 struct SyntaxExpr {
     SyntaxExprKind kind;
@@ -249,7 +250,9 @@ private:
             expect("end");
         } else {
             result->token = name(); result->kind = result->token.text;
-            if ((result->kind == "list" || result->kind == "stack" || result->kind == "queue" || result->kind == "dynarray" || result->kind == "simpleset") && accept("<")) {
+            if (result->kind == "assocarray" && accept("<")) {
+                result->key = type_syntax(); expect(","); result->element = type_syntax(); expect(">");
+            } else if ((result->kind == "list" || result->kind == "stack" || result->kind == "queue" || result->kind == "dynarray" || result->kind == "simpleset") && accept("<")) {
                 result->element = type_syntax(); expect(">");
             }
         }
@@ -521,10 +524,24 @@ private:
         if (!compound(type)) throw Error("E_TYPE",location,"Compound type required");
         return module_.types.at(static_cast<unsigned>(type)-64);
     }
+    Type association_type(Type key, Type element) {
+        for (std::size_t i=0;i<module_.types.size();++i) {
+            const auto& type = module_.types[i];
+            if (type.kind == CompoundKind::association && type.key == key && type.element == element) return static_cast<Type>(64+i);
+        }
+        if (module_.types.size() >= 1024) throw Error("E_LIMIT",{},"Type limit exceeded");
+        module_.types.push_back({"assocarray",CompoundKind::association,element,{},key});
+        return static_cast<Type>(63+module_.types.size());
+    }
     Type resolve_type(const SyntaxType& syntax) {
         if (auto found=resolved_types_.find(&syntax); found!=resolved_types_.end()) return found->second;
         if (syntax.kind == "array" || (syntax.kind == "list" && syntax.element))
             return sequence_type(syntax.kind == "array" ? CompoundKind::array : CompoundKind::list,resolve_type(*syntax.element));
+        if (syntax.kind == "assocarray" && syntax.key && syntax.element) {
+            if (!collections_imported_) throw Error("E_UNSUPPORTED",syntax.token.location,"AssocArray requires uses Collections");
+            const auto key = resolve_type(*syntax.key), element = resolve_type(*syntax.element);
+            return association_type(key,element);
+        }
         if ((syntax.kind == "stack" || syntax.kind == "queue" || syntax.kind == "dynarray" || syntax.kind == "simpleset") && syntax.element) {
             if (!collections_imported_) throw Error("E_UNSUPPORTED",syntax.token.location,"This collection type requires uses Collections");
             const auto kind = syntax.kind == "stack" ? CompoundKind::stack : syntax.kind == "queue" ? CompoundKind::queue
@@ -597,11 +614,22 @@ private:
         case SyntaxExprKind::index: {
             if (source.left->kind == SyntaxExprKind::field && source.left->token.text == "elem") {
                 auto receiver = expression(*source.left->left);
-                if (compound(receiver->type) && info(receiver->type,result->location).kind == CompoundKind::dynarray) result->left = std::move(receiver);
+                if (compound(receiver->type)) {
+                    const auto kind = info(receiver->type,result->location).kind;
+                    if (kind == CompoundKind::dynarray || kind == CompoundKind::association) result->left = std::move(receiver);
+                }
             }
             if (!result->left) result->left = expression(*source.left);
+            const auto receiver_type = result->left->type;
+            const auto kind = info(receiver_type,result->location).kind;
+            if (kind == CompoundKind::association) {
+                const auto key = info(receiver_type,result->location).key, element = info(receiver_type,result->location).element;
+                result->kind = hir::ExprKind::association_call; result->type = element;
+                result->local = static_cast<std::size_t>(AssociationMethod::get);
+                result->arguments.push_back(convert(expression(*source.right),key)); break;
+            }
             result->right = convert(expression(*source.right),Type::integer);
-            const auto& type = info(result->left->type,result->location);
+            const auto& type = info(receiver_type,result->location);
             if (type.kind == CompoundKind::dynarray) {
                 result->kind = hir::ExprKind::buffer_call; result->type = type.element;
                 result->local = static_cast<std::size_t>(BufferMethod::get);
@@ -614,6 +642,18 @@ private:
         case SyntaxExprKind::member_call: {
             result->left = expression(*source.left); const auto receiver = result->left->type;
             const auto& type = info(receiver,result->location);
+            if (type.kind == CompoundKind::association) {
+                const auto& name = source.token.text;
+                AssociationMethod method;
+                if (name == "tostring") method = AssociationMethod::to_string;
+                else if (name == "print") method = AssociationMethod::print;
+                else if (name == "println") method = AssociationMethod::println;
+                else throw Error("E_NAME",result->location,"Unknown AssocArray member '"+name+"'");
+                if (!source.arguments.empty()) throw Error("E_TYPE",result->location,"AssocArray text output takes no arguments");
+                if (compound(type.key) || compound(type.element)) throw Error("E_UNSUPPORTED",result->location,"AssocArray text output currently requires scalar keys and values");
+                result->kind = hir::ExprKind::association_call; result->local = static_cast<std::size_t>(method);
+                result->type = association_result(type,method); break;
+            }
             if (buffer_collection(type.kind)) {
                 const auto& name = source.token.text;
                 const auto kind = type.kind; const auto element = type.element;
@@ -950,6 +990,12 @@ private:
         case SyntaxStmtKind::assignment:
             result.kind = hir::StmtKind::assign;
             result.target = expression(*source.target);
+            if (result.target->kind == hir::ExprKind::association_call && result.target->local == static_cast<std::size_t>(AssociationMethod::get)) {
+                auto setter = std::move(result.target);
+                setter->arguments.push_back(convert(expression(*source.expression),setter->type));
+                setter->local = static_cast<std::size_t>(AssociationMethod::set); setter->type = Type::unit;
+                result.kind = hir::StmtKind::call; result.expression = std::move(setter); break;
+            }
             if (result.target->kind == hir::ExprKind::buffer_call) {
                 const auto method = static_cast<BufferMethod>(result.target->local);
                 if (method == BufferMethod::get || method == BufferMethod::count || method == BufferMethod::capacity) {

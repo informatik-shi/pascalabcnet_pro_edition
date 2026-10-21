@@ -155,6 +155,46 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
         if (steps++ >= options.instruction_limit) trap(instruction, RuntimeError::instruction_limit);
         if (options.cancelled && options.cancelled()) trap(instruction, RuntimeError::cancelled);
         switch (instruction.op) {
+        case Op::association_call: {
+            const auto method = static_cast<AssociationMethod>(instruction.operand);
+            const auto& info = type_info(program,instruction.type);
+            const auto parameters = association_parameters(info,method);
+            std::vector<Value> arguments(parameters.size());
+            for (std::size_t i=arguments.size();i>0;--i) arguments[i-1] = pop();
+            const auto target = std::get<std::shared_ptr<Aggregate>>(pop());
+            if (target->nil) trap(instruction,RuntimeError::nil_reference);
+            if (method == AssociationMethod::get || method == AssociationMethod::set) {
+                auto found = target->items.size();
+                for (std::size_t i=0;i<target->items.size();i+=2) if (values.equal(target->items[i]->value,arguments[0])) { found = i; break; }
+                if (method == AssociationMethod::get) {
+                    stack.push_back(found == target->items.size() ? values.zero(info.element) : values.copy(target->items[found+1]->value));
+                } else if (found != target->items.size()) values.write(target->items[found+1],arguments[1]);
+                else {
+                    if (values.remaining < 2 || target->items.size() > target->items.max_size()-2) trap(instruction,RuntimeError::allocation_limit);
+                    auto key = values.cell(info.key,values.copy(arguments[0]));
+                    auto value = values.cell(info.element,values.copy(arguments[1]));
+                    const auto next = target->items.size()+2;
+                    if (next > target->items.capacity()) {
+                        const auto capacity = target->items.capacity();
+                        target->items.reserve(capacity <= target->items.max_size()/2 ? std::max(next,capacity*2) : next);
+                    }
+                    target->items.push_back(std::move(key)); target->items.push_back(std::move(value));
+                }
+            } else {
+                std::u16string text;
+                for (std::size_t i=0;i<target->items.size();i+=2) {
+                    append_collection_text(text,target->items[i]->value,instruction);
+                    append_collection_text(text,target->items[i+1]->value,instruction);
+                    // Original AssocArray uses CRLF, including on non-Windows hosts.
+                    text.back() = u'\r';
+                    if (text.size() == 1'048'576) trap(instruction,RuntimeError::string_limit);
+                    text += u'\n';
+                }
+                if (method == AssociationMethod::to_string) stack.emplace_back(std::move(text));
+                else write(to_utf8(text,true),instruction); // Println also adds no extra newline.
+            }
+            break;
+        }
         case Op::buffer_call: {
             const auto method = static_cast<BufferMethod>(instruction.operand);
             const auto& info = type_info(program,instruction.type);

@@ -5,6 +5,10 @@
 #include <fstream>
 #include <iostream>
 #include <iterator>
+#ifdef _WIN32
+#include <fcntl.h>
+#include <io.h>
+#endif
 
 namespace {
 int cli(const std::vector<std::string>& arguments) {
@@ -53,6 +57,8 @@ int cli(const std::vector<std::string>& arguments) {
 
 #ifdef _WIN32
 int wmain(int argc, wchar_t** argv) {
+    // Preserve explicit CRLF inside strings instead of the CRT producing CRCRLF.
+    _setmode(_fileno(stdout),_O_BINARY);
     std::vector<std::string> arguments;
     for (int i = 0; i < argc; ++i) {
         std::u16string value;

@@ -55,6 +55,10 @@ private:
         switch (node.kind) {
         case hir::ExprKind::literal: constant(node.value, node.location); break;
         case hir::ExprKind::local: local(Op::load,node.local,node.location); break;
+        case hir::ExprKind::association_call:
+            expression(*node.left);
+            for (const auto& argument : node.arguments) expression(*argument);
+            emit(Op::association_call,node.left->type,node.local,node.location); break;
         case hir::ExprKind::buffer_call:
             if (node.left) expression(*node.left);
             for (const auto& argument : node.arguments) expression(*argument);
@@ -225,6 +229,12 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
     for (const auto& instruction : code) {
         const auto type = instruction.type;
         switch (instruction.op) {
+        case Op::association_call:
+            if (!compound(type) || type_info(program,type).kind != CompoundKind::association
+                || instruction.operand > static_cast<std::size_t>(AssociationMethod::println)) invalid(instruction,"Invalid AssocArray instruction");
+            if (instruction.operand >= static_cast<std::size_t>(AssociationMethod::to_string)
+                && (compound(type_info(program,type).key) || compound(type_info(program,type).element))) invalid(instruction,"AssocArray text output requires scalar types");
+            break;
         case Op::buffer_call:
             if (!compound(type) || instruction.operand > static_cast<std::size_t>(BufferMethod::println)
                 || !buffer_method_allowed(type_info(program,type).kind,static_cast<BufferMethod>(instruction.operand)))
@@ -349,6 +359,16 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if (pop() != expected) invalid(instruction, "Operand type mismatch");
         };
         switch (instruction.op) {
+        case Op::association_call: {
+            const auto method = static_cast<AssociationMethod>(instruction.operand);
+            const auto& info = type_info(program,instruction.type);
+            const auto parameters = association_parameters(info,method);
+            for (auto parameter=parameters.rbegin();parameter!=parameters.rend();++parameter) require(*parameter);
+            require(instruction.type);
+            const auto result = association_result(info,method);
+            if (result != Type::unit) stack.push_back(result);
+            break;
+        }
         case Op::buffer_call: {
             const auto method = static_cast<BufferMethod>(instruction.operand);
             const auto& info = type_info(program,instruction.type);
@@ -459,7 +479,8 @@ void verify(const Program& program) {
         if (type.kind == CompoundKind::record) {
             if (type.fields.size() > 256) throw Error("E_BYTECODE",{},"Too many record fields");
             for (const auto& field : type.fields) prior(field.type);
-        } else if (indexed_sequence(type.kind) || endpoint_collection(type.kind) || buffer_collection(type.kind)) prior(type.element);
+        } else if (type.kind == CompoundKind::association) { prior(type.key); prior(type.element); }
+        else if (indexed_sequence(type.kind) || endpoint_collection(type.kind) || buffer_collection(type.kind)) prior(type.element);
         else throw Error("E_BYTECODE",{},"Invalid compound kind");
         if (level > 32) throw Error("E_BYTECODE",{},"Type nesting limit exceeded"); depth[i] = level;
     }
