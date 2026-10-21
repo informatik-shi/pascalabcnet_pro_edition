@@ -1,0 +1,38 @@
+begin
+  var s := 'ab';
+  SetLength(s, 5);
+  Writeln(Length(s), ' [', s, ']');
+  var snapshot := s;
+  SetLength(s, 1);
+  Writeln('[', s, '] [', snapshot, ']');
+  SetLength(s, 0);
+  Insert('X', s, -5);
+  Insert('Y', s, 2147483647);
+  Writeln('[', s, ']');
+  Delete(s, 0, 1);
+  Delete(s, 1, 0);
+  Writeln('[', s, ']');
+  Delete(s, 2, 100);
+  Writeln('[', s, ']');
+  SetLength(s, 3);
+  Insert(s, s, 2);
+  Writeln(Length(s), ' [', s, ']');
+  Delete(s, 1, 100);
+  Writeln(Length(s), ' [', s, ']');
+  var empty: string;
+  SetLength(empty, 3);
+  Writeln('[', empty, ']');
+  s := 'Привет';
+  Insert('!', s, 4);
+  Writeln(s);
+  Delete(s, 2, 3);
+  Writeln(s);
+  SetLength(s, 2);
+  Writeln(s);
+  s := '';
+  var i := 0;
+  while i < 3 do begin Insert(IntToStr(i), s, 2147483647); Inc(i); end;
+  Writeln(s);
+  Delete(s, 2, 1);
+  Writeln(s);
+end.

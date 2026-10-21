@@ -54,6 +54,8 @@ Error runtime_error(RuntimeError id, SourceLocation location, std::string_view c
         code = "E_RANGE"; english = "Invalid string reversal index or length"; russian = "Некорректный индекс или длина разворачиваемой части строки"; break;
     case RuntimeError::decimal_separator:
         code = "E_RANGE"; english = "Decimal separator must not be empty"; russian = "Десятичный разделитель не должен быть пустым"; break;
+    case RuntimeError::string_length:
+        code = "E_RANGE"; english = "String length must not be negative"; russian = "Длина строки не должна быть отрицательной"; break;
     default: throw std::logic_error("Unknown runtime diagnostic");
     }
     return Error(code, location, std::string(english) + std::string(context), std::string(russian) + std::string(context));

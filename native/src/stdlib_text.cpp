@@ -140,6 +140,36 @@ std::u16string format_number(const Value& value, SourceLocation location) {
 
 std::optional<Value> invoke_text(Function function, std::span<const Value> arguments, SourceLocation location) {
     switch (function) {
+    case Function::resize_string: {
+        const auto& original = std::get<std::u16string>(arguments[0]);
+        const auto length = std::get<std::int32_t>(arguments[1]);
+        if (length < 0) throw runtime_error(RuntimeError::string_length, location);
+        if (length > 1'048'576) throw runtime_error(RuntimeError::string_limit, location);
+        auto result = original;
+        result.resize(static_cast<std::size_t>(length), u' ');
+        return result;
+    }
+    case Function::insert_string: {
+        const auto& substring = std::get<std::u16string>(arguments[0]);
+        const auto& original = std::get<std::u16string>(arguments[1]);
+        const auto index = std::get<std::int32_t>(arguments[2]);
+        constexpr std::size_t limit = 1'048'576;
+        if (original.size() > limit || substring.size() > limit - original.size())
+            throw runtime_error(RuntimeError::string_limit, location);
+        const auto start = index < 1 ? std::size_t{0}
+            : std::min(original.size(), static_cast<std::size_t>(index - 1));
+        auto result = original;
+        result.insert(start, substring);
+        return result;
+    }
+    case Function::delete_string: {
+        const auto& original = std::get<std::u16string>(arguments[0]);
+        const auto index = std::get<std::int32_t>(arguments[1]), count = std::get<std::int32_t>(arguments[2]);
+        if (index < 1 || count <= 0 || static_cast<std::size_t>(index - 1) >= original.size()) return original;
+        auto result = original;
+        result.erase(static_cast<std::size_t>(index - 1), static_cast<std::size_t>(count));
+        return result;
+    }
     case Function::int_to_str: case Function::float_to_str: return format_number(arguments[0], location);
     case Function::str_to_int: return parse_integer<std::int32_t>(std::get<std::u16string>(arguments[0]), location);
     case Function::str_to_int64: return parse_integer<std::int64_t>(std::get<std::u16string>(arguments[0]), location);

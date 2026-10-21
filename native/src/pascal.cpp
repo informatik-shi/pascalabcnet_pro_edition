@@ -136,7 +136,7 @@ std::unique_ptr<SyntaxExpr> make_expression(SyntaxExprKind kind, Token token,
     return std::make_unique<SyntaxExpr>(SyntaxExpr{kind, std::move(token), std::move(left), std::move(right), depth});
 }
 
-enum class SyntaxStmtKind { block, declaration, assignment, print, read, conditional, loop, increment };
+enum class SyntaxStmtKind { block, declaration, assignment, print, read, conditional, loop, increment, string_mutation };
 struct SyntaxStmt {
     SyntaxStmtKind kind = SyntaxStmtKind::block;
     Token token{TokenKind::eof, "", {}};
@@ -266,6 +266,13 @@ private:
                 result.kind = SyntaxStmtKind::increment;
                 result.names.push_back(name());
                 if (accept(",")) result.expression = expression();
+                expect(")");
+            } else if ((target.text == "setlength" || target.text == "insert" || target.text == "delete") && accept("(")) {
+                result.kind = SyntaxStmtKind::string_mutation;
+                if (!is(")")) do {
+                    if (result.arguments.size() >= 3) fail("Too many arguments for string procedure");
+                    result.arguments.push_back(expression());
+                } while (accept(","));
                 expect(")");
             } else {
                 result.kind = SyntaxStmtKind::assignment;
@@ -536,6 +543,36 @@ private:
                 }
                 result.statements.push_back(std::move(assignment));
             }
+            break;
+        }
+        case SyntaxStmtKind::string_mutation: {
+            if (lookup(source.names.front())) throw Error("E_TYPE", result.location, "Variable is not callable");
+            const auto& name = source.names.front().text;
+            const bool resize = name == "setlength", insert = name == "insert";
+            const std::size_t count = resize ? 2 : 3, reference = insert ? 1 : 0;
+            if (source.arguments.size() != count)
+                throw Error("E_TYPE", result.location, "Wrong argument count for '" + name + "'");
+            const auto& target = *source.arguments[reference];
+            if (target.kind != SyntaxExprKind::name)
+                throw Error("E_TYPE", target.token.location, "String var argument must be a variable");
+            result.kind = hir::StmtKind::assign;
+            result.local = resolve(target.token);
+            if (module_.locals[result.local].type != Type::string)
+                throw Error("E_TYPE", target.token.location, "String var argument must have type string");
+            const auto function = resize ? stdlib::Function::resize_string
+                : insert ? stdlib::Function::insert_string : stdlib::Function::delete_string;
+            const auto catalog = stdlib::signatures();
+            std::size_t intrinsic = 0;
+            while (intrinsic < catalog.size() && catalog[intrinsic].function != function) ++intrinsic;
+            if (intrinsic == catalog.size()) throw std::logic_error("Missing string mutation intrinsic");
+            auto call = std::make_unique<hir::Expr>();
+            call->kind = hir::ExprKind::call;
+            call->type = Type::string;
+            call->location = result.location;
+            call->local = intrinsic;
+            for (std::size_t i = 0; i < count; ++i)
+                call->arguments.push_back(convert(expression(*source.arguments[i]), catalog[intrinsic].parameters[i]));
+            result.expression = std::move(call);
             break;
         }
         case SyntaxStmtKind::increment: {

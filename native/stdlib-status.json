@@ -58,7 +58,10 @@
   ],
   "procedures": [
     "Inc",
-    "Dec"
+    "Dec",
+    "SetLength",
+    "Insert",
+    "Delete"
   ],
   "constants": [
     "Pi",

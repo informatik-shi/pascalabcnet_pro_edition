@@ -262,6 +262,55 @@ void text_library() {
     }
 }
 
+void mutable_strings() {
+    result("begin var s := 'ab'; SetLength(s,5); writeln(Length(s),' [',s,']'); end.", "5 [ab   ]\n");
+    result("begin var s: string; SetLength(s,3); writeln('[',s,']'); end.", "[   ]\n");
+    result("begin var s := 'abc'; SetLength(s,1); writeln(s); SetLength(s,0); writeln(Length(s)); end.", "a\n0\n");
+    result("begin var s := 'abc'; var original := s; SetLength(s,1); writeln(original,' ',s); end.", "abc a\n");
+    result("begin var s := 'ab'; Insert('X',s,2); writeln(s); end.", "aXb\n");
+    result("begin var s := 'ab'; Insert('X',s,-2147483648); Insert('Y',s,2147483647); writeln(s); end.", "XabY\n");
+    result("begin var s := ''; Insert('abc',s,1); Insert('',s,2); writeln(s); end.", "abc\n");
+    result("begin var s := 'abc'; Insert(s,s,2); writeln(s); end.", "aabcbc\n");
+    result("begin var s := 'abc'; var t := s; Insert('x',s,1); writeln(t,' ',s); end.", "abc xabc\n");
+    result("begin var s := 'abcdef'; Delete(s,2,3); writeln(s); end.", "aef\n");
+    result("begin var s := 'abc'; Delete(s,0,1); Delete(s,-1,2); Delete(s,4,2); Delete(s,1,-1); Delete(s,1,0); writeln(s); end.", "abc\n");
+    result("begin var s := 'abc'; Delete(s,2,2147483647); writeln(s); Delete(s,1,2147483647); writeln(Length(s)); end.", "a\n0\n");
+    result("begin var s := ''; Delete(s,1,10); writeln(s=''); end.", "True\n");
+    result("begin var s := 'Привет'; Insert('!',s,4); Delete(s,2,3); SetLength(s,2); writeln(s); end.", "Пв\n");
+    result("begin var s := '🌍'; SetLength(s,1); writeln(Length(s),' ',s); end.", "1 �\n");
+    result("begin var s := '🌍'; Insert('x',s,2); writeln(Length(s),' ',s); end.", "3 �x�\n");
+    result("begin var s := '🌍'; Delete(s,1,1); writeln(Length(s),' ',s); end.", "1 �\n");
+    result("begin var s := 'outer'; begin var s := 'inner'; SetLength(s,2); writeln(s); end; writeln(s); end.", "in\nouter\n");
+    result("begin var s := 'x'; if true then SetLength(s,3) else Delete(s,1,1); writeln('[',s,']'); end.", "[x  ]\n");
+    result("begin var s := ''; var i := 0; while i<3 do begin Insert(IntToStr(i),s,2147483647); Inc(i); end; writeln(s); end.", "012\n");
+    result("begin var s := 'abc'; SetLength(s,Length(s)+2); Insert(Copy(s,1,1),s,2); Delete(s,Length(s),1); writeln('[',s,']'); end.", "[aabc ]\n");
+    result("begin var s := 'x'; SetLength(s,1048576); writeln(Length(s)); Delete(s,1,1048576); writeln(Length(s)); end.", "1048576\n0\n");
+    compile_error("begin SetLength('abc',2); end.", "E_TYPE");
+    compile_error("begin var s := 'abc'; SetLength(Trim(s),2); end.", "E_TYPE");
+    compile_error("begin var n := 1; SetLength(n,2); end.", "E_TYPE");
+    compile_error("begin var s := 'abc'; SetLength(s,2.0); end.", "E_TYPE");
+    compile_error("begin var s := 'abc'; SetLength(s,2147483648); end.", "E_TYPE");
+    compile_error("begin var s := 'abc'; Insert(1,s,2); end.", "E_TYPE");
+    compile_error("begin Insert('a','b',1); end.", "E_TYPE");
+    compile_error("begin Delete('abc',1,1); end.", "E_TYPE");
+    compile_error("begin var s := 'abc'; Delete(s,1,true); end.", "E_TYPE");
+    compile_error("begin SetLength(); end.", "E_TYPE");
+    compile_error("begin var s := 'abc'; Insert(s,s); end.", "E_TYPE");
+    compile_error("begin var SetLength := 3; var s := 'abc'; SetLength(s,2); end.", "E_TYPE");
+    compile_error("begin SetLength(missing,2); end.", "E_NAME");
+    runtime_error("begin var s := 'abc'; SetLength(s,-1); end.", "E_RANGE");
+    runtime_error("begin var s := 'abc'; SetLength(s,1048577); end.", "E_LIMIT");
+    runtime_error("begin var s := ''; SetLength(s,1048576); Insert('x',s,1); end.", "E_LIMIT");
+    try { (void)run("begin\n  var s := 'abc';\n  SetLength(s,-1);\nend."); require(false, "Expected string length error"); }
+    catch (const abc::Error& caught) {
+        require(caught.location.line == 3 && caught.russian == "Длина строки не должна быть отрицательной",
+            "String mutation failure retains its source location and Russian explanation");
+    }
+    auto program = abc::compile("begin var s := 'abc'; Insert('x',s,2); end.");
+    for (auto& instruction : program.code) if (instruction.op == abc::Op::call_builtin) instruction.type = abc::Type::integer;
+    error([&] { abc::verify(program); }, "E_BYTECODE");
+}
+
 void library_bytecode() {
     auto program = abc::compile("begin writeln(Length('abc')); end.");
     std::size_t call = 0;
@@ -349,6 +398,7 @@ int main() {
     standard_library();
     library_bytecode();
     text_library();
+    mutable_strings();
     std::cout << (checks - failures) << '/' << checks << " checks passed\n";
     return failures == 0 ? 0 : 1;
 }

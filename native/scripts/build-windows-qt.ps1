@@ -36,7 +36,7 @@ F8 — проверить программу. F9 — запустить.
 
 Пока поддерживаются integer, int64, real/double, boolean, string,
 условия if и циклы while, базовая математика и строки PABCSystem.
-Примеры: examples/standard-library.pas и examples/text-numbers.pas.
+Примеры: examples/standard-library.pas, examples/text-numbers.pas, examples/string-editing.pas.
 Совместимость с PascalABC.NET частичная.
 Установка .NET, Python или Qt для запуска этого пакета не требуется.
 "@

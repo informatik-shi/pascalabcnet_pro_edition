@@ -64,6 +64,11 @@ std::span<const Signature> signatures() {
             add(name, {Type::string, Type::string}, Type::real, Function::str_to_real);
         }
         add("floattostr", {Type::real}, Type::string, Function::float_to_str);
+        // Compiler-only value operations: the frontend checks the var argument,
+        // then stores the resulting string after the call completes successfully.
+        add("$setlength", {Type::string, Type::integer}, Type::string, Function::resize_string);
+        add("$insert", {Type::string, Type::string, Type::integer}, Type::string, Function::insert_string);
+        add("$delete", {Type::string, Type::integer, Type::integer}, Type::string, Function::delete_string);
         return entries;
     }();
     return catalog;
