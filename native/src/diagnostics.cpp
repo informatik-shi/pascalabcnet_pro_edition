@@ -46,6 +46,14 @@ Error runtime_error(RuntimeError id, SourceLocation location, std::string_view c
         code = "E_RANGE"; english = "Round digits must be between 0 and 15"; russian = "Число знаков для Round должно быть от 0 до 15"; break;
     case RuntimeError::string_index:
         code = "E_RANGE"; english = "String search position must be at least 1"; russian = "Позиция поиска в строке должна быть не меньше 1"; break;
+    case RuntimeError::number_text:
+        code = "E_FORMAT"; english = "Invalid number text for "; russian = "Некорректная запись числа для типа "; break;
+    case RuntimeError::number_range:
+        code = "E_OVERFLOW"; english = "Number text is outside the range of "; russian = "Число в строке выходит за диапазон типа "; break;
+    case RuntimeError::string_slice:
+        code = "E_RANGE"; english = "Invalid string reversal index or length"; russian = "Некорректный индекс или длина разворачиваемой части строки"; break;
+    case RuntimeError::decimal_separator:
+        code = "E_RANGE"; english = "Decimal separator must not be empty"; russian = "Десятичный разделитель не должен быть пустым"; break;
     default: throw std::logic_error("Unknown runtime diagnostic");
     }
     return Error(code, location, std::string(english) + std::string(context), std::string(russian) + std::string(context));

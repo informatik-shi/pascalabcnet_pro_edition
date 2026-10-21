@@ -45,7 +45,7 @@ protected:
             setFormat(match.capturedStart(), match.capturedLength(), QColor("#8ab4f8"));
         }
         const QRegularExpression functions(QStringLiteral(
-            "\\b(abs|sqr|sign|min|max|sin|sinh|cos|cosh|tan|tanh|arcsin|arccos|arctan|exp|ln|log|log2|log10|logn|sqrt|cbrt|isqrt|power|round|trunc|int|frac|floor|ceil|degtorad|radtodeg|length|copy|pos|posex|lastpos|concat|inc|dec|write|writeln|readln)\\b"),
+            "\\b(abs|sqr|sign|min|max|sin|sinh|cos|cosh|tan|tanh|arcsin|arccos|arctan|exp|ln|log|log2|log10|logn|sqrt|cbrt|isqrt|power|round|trunc|int|frac|floor|ceil|degtorad|radtodeg|length|copy|pos|posex|lastpos|concat|trim|trimleft|trimright|leftstr|rightstr|reversestring|comparestr|inttostr|strtoint|strtoint64|strtoreal|strtofloat|floattostr|inc|dec|write|writeln|readln)\\b"),
             QRegularExpression::CaseInsensitiveOption);
         auto calls = functions.globalMatch(text);
         while (calls.hasNext()) {

@@ -41,7 +41,20 @@
     "Pos",
     "PosEx",
     "LastPos",
-    "Concat"
+    "Concat",
+    "Trim",
+    "TrimLeft",
+    "TrimRight",
+    "LeftStr",
+    "RightStr",
+    "ReverseString",
+    "CompareStr",
+    "IntToStr",
+    "StrToInt",
+    "StrToInt64",
+    "StrToReal",
+    "StrToFloat",
+    "FloatToStr"
   ],
   "procedures": [
     "Inc",

@@ -56,6 +56,13 @@ def main():
             if (library.returncode or "2500000000" not in library.stdout
                     or "Площадь круга: 78.54" not in library.stdout or "После Inc и Dec: 14" not in library.stdout):
                 raise RuntimeError(f"{name} standard library failed: {library.stdout!r}, {library.stderr!r}")
+            text_numbers = subprocess.run([runner, "run", str(folder / "examples" / "text-numbers.pas")],
+                                          text=True, encoding="utf-8", capture_output=True,
+                                          cwd=folder, env=env, timeout=10)
+            if (text_numbers.returncode or "Цена: 123.45" not in text_numbers.stdout
+                    or "Большое целое: 9223372036854775807" not in text_numbers.stdout
+                    or "Наоборот: lacsaP" not in text_numbers.stdout):
+                raise RuntimeError(f"{name} text conversions failed: {text_numbers.stdout!r}, {text_numbers.stderr!r}")
             bad = folder / "Ошибка типов.pas"
             bad.write_text("begin writeln('must never run'); var n := 1; n := 'bad'; end.", encoding="utf-8")
             rejected = subprocess.run([runner, "run", str(bad)], text=True, encoding="utf-8",
@@ -78,7 +85,16 @@ def main():
                     or "RU: Аргумент находится вне области определения функции" not in invalid.stderr
                     or f"{domain}:2:" not in invalid.stderr):
                 raise RuntimeError(f"{name} standard library runtime error failed: {invalid.stderr!r}")
-            results.append({"variant": name, "gui": "passed", "sum": 55, "type_error_before_output": "passed", "bilingual_runtime_error": "passed", "standard_library": "passed"})
+            conversion = folder / "Преобразование.pas"
+            conversion.write_text("begin\n  Writeln(StrToInt('bad'));\nend.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(conversion)], text=True, encoding="utf-8",
+                                     capture_output=True, cwd=folder, env=env, timeout=10)
+            if (invalid.returncode != 1 or "E_FORMAT" not in invalid.stderr
+                    or "EN: Invalid number text for integer" not in invalid.stderr
+                    or "RU: Некорректная запись числа для типа integer" not in invalid.stderr
+                    or f"{conversion}:2:" not in invalid.stderr):
+                raise RuntimeError(f"{name} bilingual conversion error failed: {invalid.stderr!r}")
+            results.append({"variant": name, "gui": "passed", "sum": 55, "type_error_before_output": "passed", "bilingual_runtime_error": "passed", "standard_library": "passed", "text_conversions": "passed"})
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 

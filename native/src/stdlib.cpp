@@ -48,6 +48,22 @@ std::span<const Signature> signatures() {
             add(name, {Type::string, Type::string, Type::integer}, Type::integer, function);
         }
         add("concat", {Type::string, Type::string}, Type::string, Function::concat);
+        for (auto [name, function] : {std::pair{"trim", Function::trim}, {"trimleft", Function::trim_left},
+            {"trimright", Function::trim_right}, {"reversestring", Function::reverse_string}})
+            add(name, {Type::string}, Type::string, function);
+        add("leftstr", {Type::string, Type::integer}, Type::string, Function::left_str);
+        add("rightstr", {Type::string, Type::integer}, Type::string, Function::right_str);
+        add("reversestring", {Type::string, Type::integer, Type::integer}, Type::string, Function::reverse_string);
+        add("comparestr", {Type::string, Type::string}, Type::integer, Function::compare_str);
+        add("inttostr", {Type::integer}, Type::string, Function::int_to_str);
+        add("inttostr", {Type::int64}, Type::string, Function::int_to_str);
+        add("strtoint", {Type::string}, Type::integer, Function::str_to_int);
+        add("strtoint64", {Type::string}, Type::int64, Function::str_to_int64);
+        for (auto name : {"strtoreal", "strtofloat"}) {
+            add(name, {Type::string}, Type::real, Function::str_to_real);
+            add(name, {Type::string, Type::string}, Type::real, Function::str_to_real);
+        }
+        add("floattostr", {Type::real}, Type::string, Function::float_to_str);
         return entries;
     }();
     return catalog;
@@ -109,6 +125,7 @@ Value invoke(std::size_t id, std::span<const Value> arguments, SourceLocation lo
     const auto& signature = signatures()[id]; // Verified before execution.
     const auto& value = arguments.front();
     const auto function = signature.function;
+    if (auto result = invoke_text(function, arguments, location)) return std::move(*result);
     if (function == Function::minimum || function == Function::maximum) {
         Value result = value;
         for (const auto& next : arguments.subspan(1))

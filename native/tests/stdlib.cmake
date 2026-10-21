@@ -1,9 +1,12 @@
-execute_process(COMMAND "${ABC_RUNNER}" run "${ABC_FIXTURE_DIR}/stdlib-compat.pas"
+if(NOT DEFINED ABC_FIXTURE_NAME)
+    set(ABC_FIXTURE_NAME stdlib-compat)
+endif()
+execute_process(COMMAND "${ABC_RUNNER}" run "${ABC_FIXTURE_DIR}/${ABC_FIXTURE_NAME}.pas"
     RESULT_VARIABLE status OUTPUT_VARIABLE actual ERROR_VARIABLE diagnostic ENCODING UTF-8 TIMEOUT 10)
 if(NOT status EQUAL 0)
     message(FATAL_ERROR "Standard library program failed: ${status}\n${diagnostic}")
 endif()
-file(READ "${ABC_FIXTURE_DIR}/stdlib-compat.out" expected)
+file(READ "${ABC_FIXTURE_DIR}/${ABC_FIXTURE_NAME}.out" expected)
 string(REPLACE "\r\n" "\n" actual "${actual}")
 string(REPLACE "\r\n" "\n" expected "${expected}")
 if(NOT actual STREQUAL expected)

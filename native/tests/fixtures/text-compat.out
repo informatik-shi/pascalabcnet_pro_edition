@@ -1,0 +1,18 @@
+[abc] [abc  ] [  abc]
+0 1
+При вет
+True True
+fedcba adcbef
+True True
+True True True
+-2147483648 -9223372036854775808
+2147483647 -2147483648
+42
+9223372036854775807 -9223372036854775808
+True True
+True True
+True True True
+1.25 -0.5 1000000
+0.0001 1E-05 10000000000000000 1E+17
+True True
+True

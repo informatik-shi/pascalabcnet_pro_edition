@@ -23,8 +23,9 @@ def main():
     parser.add_argument("--native", type=Path, required=True)
     parser.add_argument("--reference-compiler", type=Path, required=True)
     parser.add_argument("--dotnet-root", type=Path, help="Optional existing portable .NET runtime for the reference compiler")
+    parser.add_argument("--fixture", type=Path, default=Path(__file__).parent / "fixtures" / "stdlib-compat.pas")
     args = parser.parse_args()
-    fixture = Path(__file__).parent / "fixtures" / "stdlib-compat.pas"
+    fixture = args.fixture
     expected = fixture.with_suffix(".out").read_text(encoding="utf-8")
     env = os.environ.copy()
     if args.dotnet_root:

@@ -208,6 +208,60 @@ void standard_library() {
     }
 }
 
+void text_library() {
+    result("begin writeln('[',Trim('  abc  '),'] [',TrimLeft('  abc  '),'] [',TrimRight('  abc  '),']'); end.", "[abc] [abc  ] [  abc]\n");
+    result("begin writeln(Length(Trim('   ')), ' ', Length(Trim(' ')), ' ', Length(Trim('\t'))); end.", "0 1 1\n");
+    result("begin writeln(LeftStr('Привет',3), ' ', RightStr('Привет',3)); end.", "При вет\n");
+    result("begin writeln(LeftStr('abc',-1)='', ' ', RightStr('abc',0)='', ' ', LeftStr('abc',100)='abc'); end.", "True True True\n");
+    result("begin writeln(ReverseString('abcdef'), ' ', ReverseString('abcdef',2,3)); end.", "fedcba adcbef\n");
+    result("begin writeln(ReverseString('',1,0)='', ' ', ReverseString('abc',4,0)='abc'); end.", "True True\n");
+    result("begin var s := 'abc'; writeln(ReverseString(s), ' ', s); end.", "cba abc\n");
+    result("begin writeln(ReverseString(ReverseString('🌍'))); end.", "🌍\n");
+    result("begin writeln(ReverseString('🌍')); end.", "��\n");
+    result("begin writeln(CompareStr('abc','abd')<0, ' ', CompareStr('abc','abc')=0, ' ', CompareStr('abcd','abc')>0); end.", "True True True\n");
+    result("begin writeln(CompareStr('Я','я')<0, ' ', CompareStr('','')=0, ' ', CompareStr('','a')<0); end.", "True True True\n");
+    result("begin writeln(IntToStr(-2147483648),' ',IntToStr(-9223372036854775808),' ',IntToStr(0)); end.", "-2147483648 -9223372036854775808 0\n");
+    result("begin var n: integer := StrToInt(' +2147483647 '); writeln(n,' ',StrToInt('-2147483648')); end.", "2147483647 -2147483648\n");
+    result("begin writeln(StrToInt(' 42 '),' ',StrToInt('　-42　'),' ',StrToInt('\t42\t')); end.", "42 -42 42\n");
+    result("begin writeln(StrToInt64(' +9223372036854775807 '),' ',StrToInt64('-9223372036854775808')); end.", "9223372036854775807 -9223372036854775808\n");
+    result("begin writeln(StrToInt('00000000000000000000000042'),' ',StrToInt64('-0')); end.", "42 0\n");
+    result("begin writeln(StrToReal('1,234.5','.'),' ',StrToFloat(' +1.25e2 ')); end.", "1234.5 125\n");
+    result("begin writeln(StrToReal('1,25',','),' ',StrToFloat('1::25','::')); end.", "1.25 1.25\n");
+    result("begin writeln(StrToReal('.5'),' ',StrToReal('5.'),' ',StrToReal('1e-999'),' ',StrToReal('3e-324')>0); end.", "0.5 5 0 True\n");
+    result("begin writeln(StrToReal('0e999999999')=0,' ',StrToReal('-1e-999')=0); end.", "True True\n");
+    result("begin writeln(FloatToStr(1.25),' ',FloatToStr(-0.5),' ',FloatToStr(1000000.0)); end.", "1.25 -0.5 1000000\n");
+    result("begin writeln(FloatToStr(0.0001),' ',FloatToStr(0.00001),' ',FloatToStr(1e16),' ',FloatToStr(1e17)); end.", "0.0001 1E-05 10000000000000000 1E+17\n");
+    result("begin writeln(FloatToStr(-0.0),' ',FloatToStr(1.2345678901234567)); end.", "-0 1.2345678901234567\n");
+    result("begin writeln(StrToInt(IntToStr(MaxInt))=MaxInt,' ',StrToInt64(IntToStr(MaxInt64))=MaxInt64,' ',StrToReal(FloatToStr(MinReal))=MinReal); end.", "True True True\n");
+    result("begin var s: string; Readln(s); Writeln(StrToInt64(s)); end.", "42\n", std::string("42 \0\0\n", 6));
+    result("begin var s: string; Readln(s); Writeln(StrToReal(s)); end.", "1.5\n", std::string("1.5 \0\n", 6));
+    error([] { (void)run("begin var s: string; Readln(s); Writeln(StrToInt64(s)); end.", std::string("42\0 \n", 5)); }, "E_FORMAT");
+    error([] { (void)run("begin var s: string; Readln(s); Writeln(StrToInt(s)); end.", std::string("42\0\n", 4)); }, "E_FORMAT");
+    runtime_error("begin writeln(StrToInt('999999999999999999999x')); end.", "E_OVERFLOW");
+    runtime_error("begin writeln(StrToInt64('999999999999999999999x')); end.", "E_FORMAT");
+    for (const auto& source : {"begin writeln(StrToInt('')); end.", "begin writeln(StrToInt('+')); end.",
+        "begin writeln(StrToInt('--1')); end.", "begin writeln(StrToInt('1 2')); end.",
+        "begin writeln(StrToInt('1.0')); end.", "begin writeln(StrToInt64('9223372036854775807x')); end.",
+        "begin writeln(StrToReal('1.2.3')); end.", "begin writeln(StrToReal('1e+')); end.",
+        "begin writeln(StrToReal('1,,.2.3')); end.", "begin writeln(StrToReal('1,234.5')); end.",
+        "begin writeln(StrToInt64(' 42 ')); end."}) runtime_error(source, "E_FORMAT");
+    for (const auto& source : {"begin writeln(StrToInt('2147483648')); end.",
+        "begin writeln(StrToInt('-2147483649')); end.", "begin writeln(StrToInt64('9223372036854775808')); end.",
+        "begin writeln(StrToInt64('-9223372036854775809')); end.", "begin writeln(StrToReal('1e999')); end."}) runtime_error(source, "E_OVERFLOW");
+    for (const auto& source : {"begin writeln(ReverseString('abc',0,1)); end.",
+        "begin writeln(ReverseString('abc',1,-1)); end.", "begin writeln(ReverseString('abc',3,2)); end.",
+        "begin writeln(ReverseString('',2,0)); end.", "begin writeln(StrToReal('1','')); end."}) runtime_error(source, "E_RANGE");
+    compile_error("begin writeln(IntToStr(1.5)); end.", "E_TYPE");
+    compile_error("begin var n: integer := StrToInt64('1'); end.", "E_TYPE");
+    compile_error("begin writeln(Trim(1)); end.", "E_TYPE");
+    compile_error("begin writeln(LeftStr('abc',1.5)); end.", "E_TYPE");
+    try { (void)run("begin\n  Writeln(StrToInt('bad'));\nend."); require(false, "Expected conversion failure"); }
+    catch (const abc::Error& caught) {
+        require(caught.location.line == 2 && caught.russian == "Некорректная запись числа для типа integer",
+            "String conversion retains its source line and Russian type-specific message");
+    }
+}
+
 void library_bytecode() {
     auto program = abc::compile("begin writeln(Length('abc')); end.");
     std::size_t call = 0;
@@ -294,6 +348,7 @@ int main() {
     bilingual_diagnostics();
     standard_library();
     library_bytecode();
+    text_library();
     std::cout << (checks - failures) << '/' << checks << " checks passed\n";
     return failures == 0 ? 0 : 1;
 }
