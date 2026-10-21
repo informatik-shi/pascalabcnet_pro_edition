@@ -1,0 +1,562 @@
+{
+  "schema": 1,
+  "scope": "Top-level Pascal source units shipped in bin/Lib; external .NET assemblies and SPython are outside this inventory.",
+  "implementation": "native/src/stdlib.cpp",
+  "unit_loading": "Only the implicit PABCSystem and explicit uses PABCSystem are currently supported.",
+  "functions": [
+    "Abs",
+    "Sqr",
+    "Sign",
+    "Min",
+    "Max",
+    "Sin",
+    "Sinh",
+    "Cos",
+    "Cosh",
+    "Tan",
+    "Tanh",
+    "ArcSin",
+    "ArcCos",
+    "ArcTan",
+    "Exp",
+    "Ln",
+    "Log",
+    "Log2",
+    "Log10",
+    "LogN",
+    "Sqrt",
+    "Cbrt",
+    "ISqrt",
+    "Power",
+    "Round",
+    "Trunc",
+    "Int",
+    "Frac",
+    "Floor",
+    "Ceil",
+    "DegToRad",
+    "RadToDeg",
+    "Length",
+    "Copy",
+    "Pos",
+    "PosEx",
+    "LastPos",
+    "Concat"
+  ],
+  "procedures": [
+    "Inc",
+    "Dec"
+  ],
+  "constants": [
+    "Pi",
+    "E",
+    "MaxInt",
+    "MaxInt64",
+    "MaxReal",
+    "MaxDouble",
+    "MinReal",
+    "MinDouble"
+  ],
+  "modules": [
+    {
+      "name": "__RedirectIOMode",
+      "source": "bin/Lib/__RedirectIOMode.pas",
+      "status": "pending"
+    },
+    {
+      "name": "__RunMode",
+      "source": "bin/Lib/__RunMode.pas",
+      "status": "pending"
+    },
+    {
+      "name": "ABCButtons",
+      "source": "bin/Lib/ABCButtons.pas",
+      "status": "pending"
+    },
+    {
+      "name": "ABCDatabases",
+      "source": "bin/Lib/ABCDatabases.pas",
+      "status": "pending"
+    },
+    {
+      "name": "ABCHouse",
+      "source": "bin/Lib/ABCHouse.pas",
+      "status": "pending"
+    },
+    {
+      "name": "ABCObjects",
+      "source": "bin/Lib/ABCObjects.pas",
+      "status": "pending"
+    },
+    {
+      "name": "ABCSprites",
+      "source": "bin/Lib/ABCSprites.pas",
+      "status": "pending"
+    },
+    {
+      "name": "Arrays",
+      "source": "bin/Lib/Arrays.pas",
+      "status": "pending"
+    },
+    {
+      "name": "BBCMicrobit",
+      "source": "bin/Lib/BBCMicrobit.pas",
+      "status": "pending"
+    },
+    {
+      "name": "BlockFileOfT",
+      "source": "bin/Lib/BlockFileOfT.pas",
+      "status": "pending"
+    },
+    {
+      "name": "ClientServer",
+      "source": "bin/Lib/ClientServer.pas",
+      "status": "pending"
+    },
+    {
+      "name": "Collections",
+      "source": "bin/Lib/Collections.pas",
+      "status": "pending"
+    },
+    {
+      "name": "Controls",
+      "source": "bin/Lib/Controls.pas",
+      "status": "pending"
+    },
+    {
+      "name": "Coords",
+      "source": "bin/Lib/Coords.pas",
+      "status": "pending"
+    },
+    {
+      "name": "Countries",
+      "source": "bin/Lib/Countries.pas",
+      "status": "pending"
+    },
+    {
+      "name": "CRT",
+      "source": "bin/Lib/CRT.pas",
+      "status": "pending"
+    },
+    {
+      "name": "DataAdapters",
+      "source": "bin/Lib/DataAdapters.pas",
+      "status": "pending"
+    },
+    {
+      "name": "DataFrameABC",
+      "source": "bin/Lib/DataFrameABC.pas",
+      "status": "pending"
+    },
+    {
+      "name": "DataFrameABCCore",
+      "source": "bin/Lib/DataFrameABCCore.pas",
+      "status": "pending"
+    },
+    {
+      "name": "DMCollect",
+      "source": "bin/Lib/DMCollect.pas",
+      "status": "pending"
+    },
+    {
+      "name": "DMTaskMaker",
+      "source": "bin/Lib/DMTaskMaker.pas",
+      "status": "pending"
+    },
+    {
+      "name": "DMZadan",
+      "source": "bin/Lib/DMZadan.pas",
+      "status": "pending"
+    },
+    {
+      "name": "Drawman",
+      "source": "bin/Lib/Drawman.pas",
+      "status": "pending"
+    },
+    {
+      "name": "DrawManField",
+      "source": "bin/Lib/DrawManField.pas",
+      "status": "pending"
+    },
+    {
+      "name": "Events",
+      "source": "bin/Lib/Events.pas",
+      "status": "pending"
+    },
+    {
+      "name": "FilesOperations",
+      "source": "bin/Lib/FilesOperations.pas",
+      "status": "pending"
+    },
+    {
+      "name": "FormsABC",
+      "source": "bin/Lib/FormsABC.pas",
+      "status": "pending"
+    },
+    {
+      "name": "Graph3D",
+      "source": "bin/Lib/Graph3D.pas",
+      "status": "pending"
+    },
+    {
+      "name": "GraphABC",
+      "source": "bin/Lib/GraphABC.pas",
+      "status": "pending"
+    },
+    {
+      "name": "GraphABCHelper",
+      "source": "bin/Lib/GraphABCHelper.pas",
+      "status": "pending"
+    },
+    {
+      "name": "GraphWPF",
+      "source": "bin/Lib/GraphWPF.pas",
+      "status": "pending"
+    },
+    {
+      "name": "GraphWPFBase",
+      "source": "bin/Lib/GraphWPFBase.pas",
+      "status": "pending"
+    },
+    {
+      "name": "IniFile",
+      "source": "bin/Lib/IniFile.pas",
+      "status": "pending"
+    },
+    {
+      "name": "InspectionML",
+      "source": "bin/Lib/InspectionML.pas",
+      "status": "pending"
+    },
+    {
+      "name": "LightPT",
+      "source": "bin/Lib/LightPT.pas",
+      "status": "pending"
+    },
+    {
+      "name": "LinearAlgebraML",
+      "source": "bin/Lib/LinearAlgebraML.pas",
+      "status": "pending"
+    },
+    {
+      "name": "MetricsABC",
+      "source": "bin/Lib/MetricsABC.pas",
+      "status": "pending"
+    },
+    {
+      "name": "MLABC",
+      "source": "bin/Lib/MLABC.pas",
+      "status": "pending"
+    },
+    {
+      "name": "MLCoreABC",
+      "source": "bin/Lib/MLCoreABC.pas",
+      "status": "pending"
+    },
+    {
+      "name": "MLDatasets",
+      "source": "bin/Lib/MLDatasets.pas",
+      "status": "pending"
+    },
+    {
+      "name": "MLExceptions",
+      "source": "bin/Lib/MLExceptions.pas",
+      "status": "pending"
+    },
+    {
+      "name": "MLModelsABC",
+      "source": "bin/Lib/MLModelsABC.pas",
+      "status": "pending"
+    },
+    {
+      "name": "MLPipelineABC",
+      "source": "bin/Lib/MLPipelineABC.pas",
+      "status": "pending"
+    },
+    {
+      "name": "MLUtilsABC",
+      "source": "bin/Lib/MLUtilsABC.pas",
+      "status": "pending"
+    },
+    {
+      "name": "MPI",
+      "source": "bin/Lib/MPI.pas",
+      "status": "pending"
+    },
+    {
+      "name": "NumLibABC",
+      "source": "bin/Lib/NumLibABC.pas",
+      "status": "pending"
+    },
+    {
+      "name": "NUnitABC",
+      "source": "bin/Lib/NUnitABC.pas",
+      "status": "pending"
+    },
+    {
+      "name": "Oberon00System",
+      "source": "bin/Lib/Oberon00System.pas",
+      "status": "pending"
+    },
+    {
+      "name": "OpenCL",
+      "source": "bin/Lib/OpenCL.pas",
+      "status": "pending"
+    },
+    {
+      "name": "OpenCLABC",
+      "source": "bin/Lib/OpenCLABC.pas",
+      "status": "pending"
+    },
+    {
+      "name": "OpenGL",
+      "source": "bin/Lib/OpenGL.pas",
+      "status": "pending"
+    },
+    {
+      "name": "OpenGLABC",
+      "source": "bin/Lib/OpenGLABC.pas",
+      "status": "pending"
+    },
+    {
+      "name": "PABCExtensions",
+      "source": "bin/Lib/PABCExtensions.pas",
+      "status": "pending"
+    },
+    {
+      "name": "PABCSystem",
+      "source": "bin/Lib/PABCSystem.pas",
+      "status": "partial"
+    },
+    {
+      "name": "PlotML",
+      "source": "bin/Lib/PlotML.pas",
+      "status": "pending"
+    },
+    {
+      "name": "PlotWPF",
+      "source": "bin/Lib/PlotWPF.pas",
+      "status": "pending"
+    },
+    {
+      "name": "PointerTools",
+      "source": "bin/Lib/PointerTools.pas",
+      "status": "pending"
+    },
+    {
+      "name": "PointRect",
+      "source": "bin/Lib/PointRect.pas",
+      "status": "pending"
+    },
+    {
+      "name": "PreprocessorABC",
+      "source": "bin/Lib/PreprocessorABC.pas",
+      "status": "pending"
+    },
+    {
+      "name": "PT4",
+      "source": "bin/Lib/PT4.pas",
+      "status": "pending"
+    },
+    {
+      "name": "PT4_32",
+      "source": "bin/Lib/PT4_32.pas",
+      "status": "pending"
+    },
+    {
+      "name": "PT4Databases",
+      "source": "bin/Lib/PT4Databases.pas",
+      "status": "pending"
+    },
+    {
+      "name": "PT4Exam",
+      "source": "bin/Lib/PT4Exam.pas",
+      "status": "pending"
+    },
+    {
+      "name": "PT4MakerNetX",
+      "source": "bin/Lib/PT4MakerNetX.pas",
+      "status": "pending"
+    },
+    {
+      "name": "PT4TaskMakerNET",
+      "source": "bin/Lib/PT4TaskMakerNET.pas",
+      "status": "pending"
+    },
+    {
+      "name": "RBDMUtils",
+      "source": "bin/Lib/RBDMUtils.pas",
+      "status": "pending"
+    },
+    {
+      "name": "RBDMUtilsDemo",
+      "source": "bin/Lib/RBDMUtilsDemo.pas",
+      "status": "pending"
+    },
+    {
+      "name": "Robot",
+      "source": "bin/Lib/Robot.pas",
+      "status": "pending"
+    },
+    {
+      "name": "RobotField",
+      "source": "bin/Lib/RobotField.pas",
+      "status": "pending"
+    },
+    {
+      "name": "RobotTaskMaker",
+      "source": "bin/Lib/RobotTaskMaker.pas",
+      "status": "pending"
+    },
+    {
+      "name": "RobotZadan",
+      "source": "bin/Lib/RobotZadan.pas",
+      "status": "pending"
+    },
+    {
+      "name": "School",
+      "source": "bin/Lib/School.pas",
+      "status": "pending"
+    },
+    {
+      "name": "SF",
+      "source": "bin/Lib/SF.pas",
+      "status": "pending"
+    },
+    {
+      "name": "Sockets",
+      "source": "bin/Lib/Sockets.pas",
+      "status": "pending"
+    },
+    {
+      "name": "Sounds",
+      "source": "bin/Lib/Sounds.pas",
+      "status": "pending"
+    },
+    {
+      "name": "Speech",
+      "source": "bin/Lib/Speech.pas",
+      "status": "pending"
+    },
+    {
+      "name": "Tasks",
+      "source": "bin/Lib/Tasks.pas",
+      "status": "pending"
+    },
+    {
+      "name": "Tasks1Arr",
+      "source": "bin/Lib/Tasks1Arr.pas",
+      "status": "pending"
+    },
+    {
+      "name": "Tasks1Begin",
+      "source": "bin/Lib/Tasks1Begin.pas",
+      "status": "pending"
+    },
+    {
+      "name": "Tasks1BoolIfCase",
+      "source": "bin/Lib/Tasks1BoolIfCase.pas",
+      "status": "pending"
+    },
+    {
+      "name": "Tasks1Loops",
+      "source": "bin/Lib/Tasks1Loops.pas",
+      "status": "pending"
+    },
+    {
+      "name": "TasksArr",
+      "source": "bin/Lib/TasksArr.pas",
+      "status": "pending"
+    },
+    {
+      "name": "TasksMatr",
+      "source": "bin/Lib/TasksMatr.pas",
+      "status": "pending"
+    },
+    {
+      "name": "TasksStr",
+      "source": "bin/Lib/TasksStr.pas",
+      "status": "pending"
+    },
+    {
+      "name": "Timers",
+      "source": "bin/Lib/Timers.pas",
+      "status": "pending"
+    },
+    {
+      "name": "Turtle",
+      "source": "bin/Lib/Turtle.pas",
+      "status": "pending"
+    },
+    {
+      "name": "TurtleABC",
+      "source": "bin/Lib/TurtleABC.pas",
+      "status": "pending"
+    },
+    {
+      "name": "TurtleWPF",
+      "source": "bin/Lib/TurtleWPF.pas",
+      "status": "pending"
+    },
+    {
+      "name": "TwoPanelsWindow",
+      "source": "bin/Lib/TwoPanelsWindow.pas",
+      "status": "pending"
+    },
+    {
+      "name": "Utils",
+      "source": "bin/Lib/Utils.pas",
+      "status": "pending"
+    },
+    {
+      "name": "ValidationML",
+      "source": "bin/Lib/ValidationML.pas",
+      "status": "pending"
+    },
+    {
+      "name": "WPF",
+      "source": "bin/Lib/WPF.pas",
+      "status": "pending"
+    },
+    {
+      "name": "WPFObjects",
+      "source": "bin/Lib/WPFObjects.pas",
+      "status": "pending"
+    },
+    {
+      "name": "XLSX",
+      "source": "bin/Lib/XLSX.pas",
+      "status": "pending"
+    },
+    {
+      "name": "xPT4MakerNetX",
+      "source": "bin/Lib/xPT4MakerNetX.pas",
+      "status": "pending"
+    },
+    {
+      "name": "xPT4TaskMakerNET",
+      "source": "bin/Lib/xPT4TaskMakerNET.pas",
+      "status": "pending"
+    },
+    {
+      "name": "Мозаика",
+      "source": "bin/Lib/Мозаика.pas",
+      "status": "pending"
+    },
+    {
+      "name": "МозаикаABC",
+      "source": "bin/Lib/МозаикаABC.pas",
+      "status": "pending"
+    },
+    {
+      "name": "Робот",
+      "source": "bin/Lib/Робот.pas",
+      "status": "pending"
+    },
+    {
+      "name": "Чертежник",
+      "source": "bin/Lib/Чертежник.pas",
+      "status": "pending"
+    }
+  ]
+}

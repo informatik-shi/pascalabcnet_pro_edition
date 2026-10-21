@@ -1,0 +1,86 @@
+"""Check the actual Windows ZIPs without Qt/Tcl/Python directories in PATH."""
+import argparse
+import json
+import os
+from pathlib import Path
+import subprocess
+import tempfile
+import zipfile
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("dist", type=Path)
+    parser.add_argument("--variant", choices=["Qt", "TclTk", "both"], default="Qt")
+    args = parser.parse_args()
+    results = []
+    for name, editor in [("Qt", "abc-ide.exe"), ("TclTk", "abc-tk.exe")]:
+        if args.variant not in (name, "both"):
+            continue
+        archive = args.dist / f"ABC-Native-{name}-win-x64.zip"
+        with tempfile.TemporaryDirectory(prefix="ABC Native Проверка ") as temporary:
+            folder = Path(temporary)
+            with zipfile.ZipFile(archive) as package:
+                package.extractall(folder)
+            env = os.environ.copy()
+            windows = env.get("SystemRoot", r"C:\Windows")
+            env["PATH"] = str(Path(windows) / "System32") + os.pathsep + windows
+            for key in ["TCL_LIBRARY", "TK_LIBRARY", "TCLLIBPATH", "QT_PLUGIN_PATH", "QT_QPA_PLATFORM_PLUGIN_PATH", "QT_QPA_PLATFORM", "PYTHONPATH"]:
+                env.pop(key, None)
+            startup = {}
+            if os.name == "nt":
+                info = subprocess.STARTUPINFO()
+                info.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                info.wShowWindow = 0
+                startup["startupinfo"] = info
+            modes = [[]] if name == "TclTk" else [[], ["-platform", "offscreen"]]
+            for mode in modes:
+                gui_args = [str(folder / "bin" / editor), "--smoke-test", *mode]
+                gui = subprocess.run(gui_args, cwd=folder, env=env, capture_output=True, timeout=20, **startup)
+                if gui.returncode:
+                    raise RuntimeError(f"{name} editor failed: {gui.returncode}, {gui.stderr!r}")
+            if name == "Qt":
+                gui = subprocess.run([str(folder / "bin" / editor), "--smoke-runtime-error"],
+                                     cwd=folder, env=env, capture_output=True, timeout=20, **startup)
+                if gui.returncode:
+                    raise RuntimeError(f"Qt bilingual error GUI failed: {gui.returncode}, {gui.stderr!r}")
+            runner = str(folder / "bin" / "abc.exe")
+            example = subprocess.run([runner, "run", str(folder / "examples" / "sum.pas")],
+                                     input="10\n", text=True, encoding="utf-8", capture_output=True,
+                                     cwd=folder, env=env, timeout=10)
+            if example.returncode or "Сумма: 55" not in example.stdout:
+                raise RuntimeError(f"{name} sum failed: {example.stdout!r}, {example.stderr!r}")
+            library = subprocess.run([runner, "run", str(folder / "examples" / "standard-library.pas")],
+                                     text=True, encoding="utf-8", capture_output=True,
+                                     cwd=folder, env=env, timeout=10)
+            if (library.returncode or "2500000000" not in library.stdout
+                    or "Площадь круга: 78.54" not in library.stdout or "После Inc и Dec: 14" not in library.stdout):
+                raise RuntimeError(f"{name} standard library failed: {library.stdout!r}, {library.stderr!r}")
+            bad = folder / "Ошибка типов.pas"
+            bad.write_text("begin writeln('must never run'); var n := 1; n := 'bad'; end.", encoding="utf-8")
+            rejected = subprocess.run([runner, "run", str(bad)], text=True, encoding="utf-8",
+                                      capture_output=True, cwd=folder, env=env, timeout=10)
+            if rejected.returncode != 1 or rejected.stdout or "E_TYPE" not in rejected.stderr:
+                raise RuntimeError(f"{name} did not reject invalid program before execution")
+            zero = folder / "Деление на ноль.pas"
+            zero.write_text("begin\n  var zero := 0;\n  Writeln(10 div zero);\nend.", encoding="utf-8")
+            failed = subprocess.run([runner, "run", str(zero)], text=True, encoding="utf-8",
+                                    capture_output=True, cwd=folder, env=env, timeout=10)
+            if (failed.returncode != 1 or "EN: Division by zero" not in failed.stderr
+                    or "RU: Деление на ноль" not in failed.stderr or f"{zero}:3:" not in failed.stderr):
+                raise RuntimeError(f"{name} bilingual runtime diagnostic failed: {failed.stderr!r}")
+            domain = folder / "Область определения.pas"
+            domain.write_text("begin\n  Writeln(Sqrt(-1));\nend.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(domain)], text=True, encoding="utf-8",
+                                     capture_output=True, cwd=folder, env=env, timeout=10)
+            if (invalid.returncode != 1 or "E_DOMAIN" not in invalid.stderr
+                    or "EN: Argument is outside the function domain" not in invalid.stderr
+                    or "RU: Аргумент находится вне области определения функции" not in invalid.stderr
+                    or f"{domain}:2:" not in invalid.stderr):
+                raise RuntimeError(f"{name} standard library runtime error failed: {invalid.stderr!r}")
+            results.append({"variant": name, "gui": "passed", "sum": 55, "type_error_before_output": "passed", "bilingual_runtime_error": "passed", "standard_library": "passed"})
+    print(json.dumps(results, ensure_ascii=False, indent=2))
+
+
+if __name__ == "__main__":
+    main()

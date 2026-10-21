@@ -1,0 +1,32 @@
+{
+  "version": 5,
+  "cmakeMinimumRequired": { "major": 3, "minor": 24, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "core",
+      "displayName": "Console interpreter and tests",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/core",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "BUILD_TESTING": "ON",
+        "ABC_BUILD_IDE": "OFF"
+      }
+    },
+    {
+      "name": "desktop",
+      "displayName": "Qt editor and console interpreter",
+      "inherits": "core",
+      "binaryDir": "${sourceDir}/build/desktop",
+      "cacheVariables": { "ABC_BUILD_IDE": "ON" }
+    }
+  ],
+  "buildPresets": [
+    { "name": "core", "configurePreset": "core" },
+    { "name": "desktop", "configurePreset": "desktop" }
+  ],
+  "testPresets": [
+    { "name": "core", "configurePreset": "core", "output": { "outputOnFailure": true } },
+    { "name": "desktop", "configurePreset": "desktop", "output": { "outputOnFailure": true } }
+  ]
+}

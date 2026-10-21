@@ -1,5 +1,11 @@
 # PascalABC.NET
 
+The experimental [native C++ prototype](native/README.md) includes a typed Pascal
+interpreter and a Qt editor with a default night theme and bilingual English/Russian
+runtime diagnostics. Tcl/Tk is retained as a historical comparison prototype. The
+[architecture plan](docs/native-architecture.md) describes its intended scope
+(Russian). The existing .NET implementation remains the current application.
+
 PascalABC.NET is a modern Pascal programming language and an integrated
 development environment for Microsoft .NET. The repository currently supports
 two compiler targets:

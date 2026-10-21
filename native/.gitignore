@@ -1,0 +1,4 @@
+/build/
+/dist/*
+!/dist/ABC-Native-Qt-win-x64.zip
+/CMakeUserPresets.json
