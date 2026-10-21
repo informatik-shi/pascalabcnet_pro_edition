@@ -5,7 +5,9 @@
 
 namespace abc::hir {
 
-enum class ExprKind { literal, local, convert, unary, binary, call };
+enum class ExprKind { literal, local, convert, unary, binary, call, default_value,
+    index, field, array_new, array_literal, length, user_call, list_add, list_remove, list_clear, list_contains,
+    read_lines, write_lines, array_copy, array_high, sequence_sort, sequence_fill, null_literal };
 struct Expr {
     ExprKind kind;
     Type type;
@@ -17,7 +19,7 @@ struct Expr {
     std::vector<std::unique_ptr<Expr>> arguments{};
 };
 
-enum class StmtKind { block, assign, print, read, conditional, loop };
+enum class StmtKind { block, assign, print, read, conditional, loop, call, return_stmt, resize_array, increment, string_mutation };
 struct Stmt {
     StmtKind kind = StmtKind::block;
     SourceLocation location;
@@ -27,11 +29,16 @@ struct Stmt {
     std::vector<std::unique_ptr<Expr>> arguments;
     std::vector<Stmt> statements;
     std::unique_ptr<Stmt> body, alternative;
+    std::unique_ptr<Expr> target{};
 };
+
+struct RoutineBody { Routine signature; Stmt body; };
 
 struct Module {
     std::vector<Local> locals;
     Stmt body;
+    std::vector<TypeInfo> types;
+    std::vector<RoutineBody> routines;
 };
 
 Module analyze_pascal(std::string_view source);

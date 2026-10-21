@@ -11,7 +11,8 @@ std::string_view type_name(Type type) {
     case Type::real: return "real";
     case Type::boolean: return "boolean";
     case Type::string: return "string";
-    default: return "<invalid>";
+    case Type::unit: return "procedure";
+    default: return compound(type) ? "compound type" : "<invalid>";
     }
 }
 
@@ -32,6 +33,8 @@ bool can_widen(Type from, Type to) {
 }
 
 Type value_type(const Value& value) {
+    if (const auto* aggregate = std::get_if<std::shared_ptr<Aggregate>>(&value)) return *aggregate ? (*aggregate)->type : Type::invalid;
+    if (const auto* cell = std::get_if<std::shared_ptr<Cell>>(&value)) return *cell ? reference_type((*cell)->type) : Type::invalid;
     static constexpr std::array types{
         Type::integer, Type::int64, Type::real, Type::boolean, Type::string};
     return types.at(value.index());

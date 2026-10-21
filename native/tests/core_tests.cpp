@@ -1,6 +1,9 @@
 #include "abc/core.hpp"
 
 #include <iostream>
+#include <filesystem>
+#include <fstream>
+#include <chrono>
 #include <limits>
 #include <sstream>
 
@@ -307,8 +310,107 @@ void mutable_strings() {
             "String mutation failure retains its source location and Russian explanation");
     }
     auto program = abc::compile("begin var s := 'abc'; Insert('x',s,2); end.");
-    for (auto& instruction : program.code) if (instruction.op == abc::Op::call_builtin) instruction.type = abc::Type::integer;
+    for (auto& instruction : program.code) if (instruction.op == abc::Op::mutate_string) instruction.type = abc::Type::integer;
     error([&] { abc::verify(program); }, "E_BYTECODE");
+}
+
+void language_foundations() {
+    result("begin var a: array of integer; SetLength(a,3); a[0]:=10; a[2]:=20; writeln(Length(a),' ',a[1],' ',a[0]+a[2]); end.", "3 0 30\n");
+    result("begin var a := Arr(1,2,3); var b := a; b[1]:=9; writeln(a[1]); SetLength(b,4); b[1]:=7; writeln(a[1],' ',b[3]); end.", "9\n9 0\n");
+    result("begin var a := new real[2]; a[0]:=3; writeln(a.Length,' ',a[0]); end.", "2 3\n");
+    result("begin var a := Arr(1,2.5); writeln(a[0]+a[1]); end.", "3.5\n");
+    result("type Point = record x,y: integer; end; begin var p: Point; p.x:=4; p.y:=5; var q:=p; q.x:=9; writeln(p.x,' ',q.x,' ',p.y); end.", "4 9 5\n");
+    result("type Point = record x: integer; end; begin var a: array of Point; SetLength(a,2); a[0].x:=7; writeln(a[0].x,' ',a[1].x); end.", "7 0\n");
+    result("type Inner=record x: integer; end; Outer=record p: Inner; end; begin var a: Outer; a.p.x:=6; var b:=a; b.p.x:=8; writeln(a.p.x,' ',b.p.x); end.", "6 8\n");
+    result("function Twice(x: integer): integer; begin Result:=x*2; end; begin writeln(Twice(21)); end.", "42\n");
+    result("function F(n: integer): int64; begin if n<=1 then Exit(1); Result:=n*F(n-1); end; begin writeln(F(10)); end.", "3628800\n");
+    result("function F(n: integer): integer; begin if n=0 then F:=1 else F:=n*F(n-1); end; begin writeln(F(5)); end.", "120\n");
+    result("procedure Add(var n: integer; step: integer); begin n:=n+step; end; begin var n:=10; Add(n,5); writeln(n); end.", "15\n");
+    result("procedure Bump(var x,y: integer); begin Inc(x); Inc(y); end; begin var n:=1; Bump(n,n); writeln(n); end.", "3\n");
+    result("var g: integer; procedure Bump; begin Inc(g); end; begin Bump; Bump(); writeln(g); end.", "2\n");
+    result("function Message: string; begin Result:='Привет'; end; begin writeln(Message); end.", "Привет\n");
+    result("procedure Ignore; begin Exit; writeln('bad'); end; begin Ignore; writeln('ok'); end.", "ok\n");
+    result("type P=record x: integer; end; procedure Change(p: P); begin p.x:=8; end; begin var p:P; p.x:=3; Change(p); writeln(p.x); end.", "3\n");
+    result("type P=record x: integer; end; procedure Change(var p: P); begin p.x:=8; end; begin var p:P; Change(p); writeln(p.x); end.", "8\n");
+    result("procedure Change(a: array of integer); begin a[0]:=8; SetLength(a,3); end; begin var a:=Arr(1); Change(a); writeln(a[0],' ',Length(a)); end.", "8 1\n");
+    result("procedure Change(var a: array of integer); begin SetLength(a,3); end; begin var a:=Arr(1); Change(a); writeln(Length(a)); end.", "3\n");
+    result("procedure Change(var n: integer); begin n:=9; end; begin var a:=Arr(1,2); Change(a[1]); writeln(a[1]); end.", "9\n");
+    result("begin var xs := new List<integer>; xs.Add(3); xs.Add(5); xs[0]:=2; writeln(xs.Count,' ',xs.Contains(5)); xs.RemoveAt(0); writeln(xs[0]); xs.Clear(); writeln(xs.Count); end.", "2 True\n5\n0\n");
+    compile_error("function F(x: integer): integer; begin Result:='bad'; end; begin end.", "E_TYPE");
+    compile_error("procedure P(var x: integer); begin end; begin P(1); end.", "E_TYPE");
+    compile_error("procedure P(var x: int64); begin end; begin var n:=1; P(n); end.", "E_TYPE");
+    compile_error("begin var a:=Arr(1,2); a[0]:='bad'; end.", "E_TYPE");
+    compile_error("type P=record x: integer; end; begin var p:P; p.missing:=1; end.", "E_NAME");
+    compile_error("type P=record x: integer; end; Q=record x: integer; end; begin var p:P; var q:Q; p:=q; end.", "E_TYPE");
+    runtime_error("begin var a:=Arr(1); writeln(a[-1]); end.", "E_BOUNDS");
+    runtime_error("begin var a:=new integer[-1]; end.", "E_RANGE");
+    runtime_error("procedure Loop; begin Loop; end; begin Loop; end.", "E_LIMIT");
+}
+
+void aggregate_semantics() {
+    result("begin writeln('nil'); var a:=Arr('nil','value'); writeln(a[0]); end.", "nil\nnil\n");
+    result("begin var a: array of integer; writeln(a=nil,' ',Length(a)); SetLength(a,0); writeln(a=nil,' ',High(a)); end.", "True 0\nFalse -1\n");
+    result("begin var a:=Arr(3,1,2); var b:=Copy(a); Sort(a); SortDescending(b); writeln(a[0],a[1],a[2],' ',b[0],b[1],b[2]); FillByValue(a,9); writeln(a[2]); end.", "123 321\n9\n");
+    result("type P=record x: integer; end; begin var a:=new P[2]; a[0].x:=3; var b:=Copy(a); b[0].x:=8; writeln(a[0].x,' ',b[0].x); end.", "3 8\n");
+    result("type P=record x: integer; end; procedure Replace(var p:P; var x:integer); var q:P; begin q.x:=7; p:=q; x:=9; end; begin var p:P; Replace(p,p.x); writeln(p.x); end.", "9\n");
+    result("type P=record x: integer; end; begin var p:P; p.x:=3; var xs:=new List<P>; xs.Add(p); p.x:=8; var q:=xs[0]; writeln(q.x,' ',xs.Contains(q),' ',xs.Contains(p)); end.", "3 True False\n");
+    result("var calls:integer; function Index:integer; begin Inc(calls); Result:=0; end; begin var a:=Arr('abc'); SetLength(a[Index()],5); writeln(calls,' [',a[0],']'); end.", "1 [abc  ]\n");
+    result("begin var a:=Arr(1,2); Inc(a[0],2); Dec(a[1]); Readln(a[1]); writeln(a[0],' ',a[1]); end.", "3 7\n", "7\n");
+    result("function Step(var x:integer):integer; begin x:=10; Result:=2; end; begin var x:=1; Inc(x,Step(x)); writeln(x); end.", "12\n");
+    result("var text:string; function Position:integer; begin text:='XYZ'; Result:=2; end; begin text:='abc'; Insert('!',text,Position()); writeln(text); end.", "X!YZ\n");
+    result("begin var a:array of array of integer; SetLength(a,2); SetLength(a[0],3); a[0][1]:=7; writeln(a[0][1],' ',Length(a[1])); end.", "7 0\n");
+    result("type R=record a,b:record x:integer; end; end; begin var r:R; r.a.x:=3; r.b:=r.a; writeln(r.b.x); end.", "3\n");
+    runtime_error("begin var a: array of integer; writeln(a[0]); end.", "E_NIL");
+    runtime_error("begin var xs:List<integer>; writeln(xs.Count); end.", "E_NIL");
+    runtime_error("begin var a:=Arr(1); writeln(a[1]); end.", "E_BOUNDS");
+    runtime_error("begin var a:=new integer[1048577]; end.", "E_LIMIT");
+    compile_error("begin var a:=nil; end.", "E_TYPE");
+    compile_error("begin writeln(nil); end.", "E_TYPE");
+    compile_error("procedure P; begin end; begin var x:=P(); end.", "E_TYPE");
+    compile_error("procedure P; begin Exit(1); end; begin end.", "E_TYPE");
+    auto program=abc::compile("procedure P(var x:integer); begin x:=2; end; begin var x:=1; P(x); end.");
+    program.routines[0].parameters[0].type=abc::Type::string;
+    error([&] { abc::verify(program); }, "E_BYTECODE");
+    program=abc::compile("type R=record x:integer; end; begin var r:R; end.");
+    program.types[0].fields[0].type=static_cast<abc::Type>(64);
+    error([&] { abc::verify(program); }, "E_BYTECODE");
+}
+
+void file_library() {
+    namespace fs=std::filesystem;
+    const auto folder=fs::temp_directory_path()/fs::path(std::u8string(u8"ABC native файлы ")+std::u8string{});
+    const auto directory=fs::path(folder.native()+fs::path(std::to_string(std::chrono::steady_clock::now().time_since_epoch().count())).native());
+    if (!fs::create_directory(directory)) throw std::runtime_error("Cannot create unique file-test directory");
+    struct Cleanup {
+        fs::path path;
+        ~Cleanup() {
+            std::error_code error;
+            const auto parent=fs::weakly_canonical(fs::temp_directory_path(error),error);
+            if (error) return;
+            const auto target=fs::weakly_canonical(path,error);
+            if (!error && target.parent_path()==parent && target.filename().generic_u8string().starts_with(u8"ABC native "))
+                fs::remove_all(target,error);
+        }
+    } cleanup{directory};
+    auto quote=[](const fs::path& path) {
+        const auto u8=path.generic_u8string(); std::string result="'";
+        for (auto c:u8) { result+=static_cast<char>(c); if (c==u8'\'') result+='\''; }
+        return result+"'";
+    };
+    const auto path=directory/fs::path(u8"Текст.txt"), lines=directory/"lines.txt";
+    const auto file=quote(path), linefile=quote(lines);
+    result("begin writeln(FileExists("+file+")); WriteAllText("+file+",'Привет 🌍'); writeln(FileExists("+file+"),' ',ReadAllText("+file+")); end.", "False\nTrue Привет 🌍\n");
+    result("begin WriteAllLines("+linefile+",Arr('alpha','beta')); var lines:=ReadAllLines("+linefile+"); writeln(Length(lines),' ',lines[0],' ',lines[1]); end.", "2 alpha beta\n");
+    { std::ofstream out(path,std::ios::binary); out << "\xef\xbb\xbf" "a\r\nb\rc\n"; }
+    result("begin var lines:=ReadAllLines("+file+"); writeln(Length(lines),' ',lines[0],lines[1],lines[2]); end.", "3 abc\n");
+    { std::ofstream out(path,std::ios::binary); out << "\xff"; }
+    runtime_error("begin writeln(ReadAllText("+file+")); end.", "E_ENCODING");
+    runtime_error("begin writeln(ReadAllText("+quote(directory/"missing.txt")+")); end.", "E_IO");
+    runtime_error("begin WriteAllText("+quote(directory/"missing"/"file.txt")+",'x'); end.", "E_IO");
+    { std::ofstream out(path,std::ios::binary); out << std::string(1'048'577,'x'); }
+    runtime_error("begin writeln(ReadAllText("+file+")); end.", "E_LIMIT");
+    compile_error("begin WriteAllLines('file',Arr(1,2)); end.", "E_TYPE");
+    compile_error("begin var x:=WriteAllText('file','x'); end.", "E_TYPE");
 }
 
 void library_bytecode() {
@@ -399,6 +501,9 @@ int main() {
     library_bytecode();
     text_library();
     mutable_strings();
+    language_foundations();
+    aggregate_semantics();
+    file_library();
     std::cout << (checks - failures) << '/' << checks << " checks passed\n";
     return failures == 0 ? 0 : 1;
 }

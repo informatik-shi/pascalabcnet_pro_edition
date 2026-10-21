@@ -1,8 +1,15 @@
 {
   "schema": 1,
   "scope": "Top-level Pascal source units shipped in bin/Lib; external .NET assemblies and SPython are outside this inventory.",
-  "implementation": "native/src/stdlib.cpp",
-  "unit_loading": "Only the implicit PABCSystem and explicit uses PABCSystem are currently supported.",
+  "implementation": "native/src/stdlib.cpp, files.cpp, pascal.cpp, bytecode.cpp, vm.cpp",
+  "unit_loading": "PABCSystem is implicit. Explicit uses PABCSystem, Arrays, Collections enables the implemented built-in surface only; Pascal source units and old PCU files are not loaded.",
+  "typed_capabilities": {
+    "arrays": "Dynamic and jagged arrays; zero-based index, reference assignment, Copy, SetLength; fixed-bound and rectangular arrays pending.",
+    "records": "Nominal records, nested fields, value assignment; cyclic type definitions pending.",
+    "routines": "Typed user functions/procedures, value and var parameters, recursion, Result and Exit; overloads, nested routines, defaults and user generics pending.",
+    "collections": "List<T> construction, Count, index, Add, RemoveAt, Clear, Contains. Other collection types and source Collections unit implementations pending.",
+    "files": "UTF-8 whole-text and line-array IO, Unicode paths, 1 MiB per file. Unlike the original Windows CP1251 default. Encoding overloads and classic/binary file handles pending."
+  },
   "functions": [
     "Abs",
     "Sqr",
@@ -54,14 +61,24 @@
     "StrToInt64",
     "StrToReal",
     "StrToFloat",
-    "FloatToStr"
+    "FloatToStr",
+    "Arr",
+    "High",
+    "ReadAllText",
+    "ReadAllLines",
+    "FileExists"
   ],
   "procedures": [
     "Inc",
     "Dec",
     "SetLength",
     "Insert",
-    "Delete"
+    "Delete",
+    "Sort",
+    "SortDescending",
+    "FillByValue",
+    "WriteAllText",
+    "WriteAllLines"
   ],
   "constants": [
     "Pi",
@@ -112,7 +129,8 @@
     {
       "name": "Arrays",
       "source": "bin/Lib/Arrays.pas",
-      "status": "pending"
+      "status": "partial",
+      "notes": "Initial built-in array operation profile only; no source-unit loading, higher-order extensions or complete Arrays surface."
     },
     {
       "name": "BBCMicrobit",
@@ -132,7 +150,8 @@
     {
       "name": "Collections",
       "source": "bin/Lib/Collections.pas",
-      "status": "pending"
+      "status": "pending",
+      "notes": "The uses name is recognized, but this source unit's Stack, Queue, DynArray, SimpleSet, AssocArray and LinkedList are pending. The separate built-in List<T> profile does not count as a port of Collections.pas."
     },
     {
       "name": "Controls",

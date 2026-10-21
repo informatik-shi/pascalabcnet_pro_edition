@@ -2,8 +2,11 @@
 #include "number.hpp"
 #include "diagnostics.hpp"
 #include "stdlib.hpp"
+#include "runtime_values.hpp"
+#include "files.hpp"
 
 #include <charconv>
+#include <algorithm>
 #include <cmath>
 #include <limits>
 #include <type_traits>
@@ -13,17 +16,6 @@ namespace {
 
 [[noreturn]] void trap(const Instruction& instruction, RuntimeError id, std::string_view context = {}) {
     throw runtime_error(id, instruction.location, context);
-}
-
-Value zero(Type type) {
-    switch (type) {
-    case Type::integer: return std::int32_t{0};
-    case Type::int64: return std::int64_t{0};
-    case Type::real: return 0.0;
-    case Type::boolean: return false;
-    case Type::string: return std::u16string{};
-    default: throw runtime_error(RuntimeError::invalid_bytecode, {});
-    }
 }
 
 template<class T> T integer_operation(T a, T b, const Instruction& instruction) {
@@ -128,8 +120,17 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
     catch (const Error& error) {
         throw Error(error.code, error.location, error.what(), "Некорректный байт-код: выполнение невозможно");
     }
-    std::vector<Value> locals;
-    for (const auto& local : program.locals) locals.push_back(zero(local.type));
+    Values values{program,options.allocation_limit};
+    std::vector<std::shared_ptr<Cell>> globals(program.locals.size());
+    for (std::size_t i = 0; i < program.locals.size(); ++i) if (program.locals[i].global)
+        globals[i] = values.cell(program.locals[i].type,values.zero(program.locals[i].type));
+    struct Frame {
+        const std::vector<Instruction>* code;
+        const Routine* routine;
+        std::vector<std::shared_ptr<Cell>> locals;
+        std::size_t pc = 0, base = 0;
+    };
+    std::vector<Frame> frames{{&program.code,nullptr,globals,0,0}};
     std::vector<Value> stack;
     std::uint64_t steps = 0;
     std::size_t output_bytes = 0;
@@ -142,23 +143,176 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
         output_bytes += text.size();
     };
     auto pop = [&]() { auto value = std::move(stack.back()); stack.pop_back(); return value; };
-    std::size_t pc = 0;
-    while (pc < program.code.size()) {
-        const auto& instruction = program.code[pc++];
+    while (!frames.empty()) {
+        auto& frame = frames.back(); auto& locals = frame.locals;
+        const auto& instruction = (*frame.code)[frame.pc++]; values.location = instruction.location;
         if (steps++ >= options.instruction_limit) trap(instruction, RuntimeError::instruction_limit);
         if (options.cancelled && options.cancelled()) trap(instruction, RuntimeError::cancelled);
         switch (instruction.op) {
+        case Op::read_value: stack.push_back(read_line(input,instruction)); break;
+        case Op::increment: {
+            const auto step=pop(); auto target=std::get<std::shared_ptr<Cell>>(pop()); auto operation=instruction;
+            operation.op=instruction.operand ? Op::subtract : Op::add;
+            if (instruction.type==Type::integer) target->value=integer_operation(std::get<std::int32_t>(target->value),std::get<std::int32_t>(step),operation);
+            else target->value=integer_operation(std::get<std::int64_t>(target->value),std::get<std::int64_t>(step),operation);
+            break;
+        }
+        case Op::mutate_string: {
+            const auto& signature=stdlib::signatures()[instruction.operand];
+            const std::size_t ref=signature.function==stdlib::Function::insert_string ? 1 : 0;
+            std::vector<Value> arguments(signature.parameters.size());
+            for (std::size_t i=arguments.size();i>0;--i) arguments[i-1]=pop();
+            auto target=std::get<std::shared_ptr<Cell>>(arguments[ref]); arguments[ref]=target->value;
+            const auto result=stdlib::invoke(instruction.operand,arguments,instruction.location); values.write(target,result); break;
+        }
+        case Op::read_lines: {
+            const auto path=std::get<std::u16string>(pop()); const auto text=read_text_file(path,instruction.location);
+            auto result=values.array(instruction.type,0); std::size_t start=0;
+            for (std::size_t i=0;i<text.size();++i) if (text[i]==u'\r' || text[i]==u'\n') {
+                result->items.push_back(values.cell(Type::string,std::u16string(text.substr(start,i-start))));
+                if (text[i]==u'\r' && i+1<text.size() && text[i+1]==u'\n') ++i;
+                start=i+1;
+            }
+            if (start<text.size()) result->items.push_back(values.cell(Type::string,std::u16string(text.substr(start))));
+            stack.emplace_back(result); break;
+        }
+        case Op::write_lines: {
+            const auto lines=std::get<std::shared_ptr<Aggregate>>(pop()); const auto path=std::get<std::u16string>(pop());
+            if (lines->nil) trap(instruction,RuntimeError::nil_reference);
+            std::u16string text;
+            for (const auto& line:lines->items) {
+                const auto& part=std::get<std::u16string>(line->value);
+#ifdef _WIN32
+                const auto newline=u"\r\n";
+#else
+                const auto newline=u"\n";
+#endif
+                if (part.size()>1'048'576 || text.size()>1'048'576-part.size()) trap(instruction,RuntimeError::file_limit);
+                text+=part; text+=newline;
+                if (text.size()>1'048'576) trap(instruction,RuntimeError::file_limit);
+            }
+            write_text_file(path,text,instruction.location); break;
+        }
+        case Op::array_copy: {
+            const auto original=std::get<std::shared_ptr<Aggregate>>(pop());
+            if (original->nil) { stack.emplace_back(original); break; }
+            auto result=values.array(instruction.type,original->items.size());
+            for (std::size_t i=0;i<result->items.size();++i) values.write(result->items[i],original->items[i]->value);
+            stack.emplace_back(result); break;
+        }
+        case Op::array_high: {
+            auto array=std::get<std::shared_ptr<Aggregate>>(pop()); stack.emplace_back(static_cast<std::int32_t>(array->items.size())-1); break;
+        }
+        case Op::sequence_sort: {
+            auto sequence=std::get<std::shared_ptr<Aggregate>>(pop());
+            if (sequence->nil) trap(instruction,RuntimeError::nil_reference);
+            std::vector<Value> items;
+            for (const auto& item:sequence->items) items.push_back(item->value);
+            std::sort(items.begin(),items.end(),[&](const Value& a,const Value& b){ return instruction.operand ? a>b : a<b; });
+            for (std::size_t i=0;i<items.size();++i) values.write(sequence->items[i],items[i]); break;
+        }
+        case Op::sequence_fill: {
+            const auto value=pop(); auto sequence=std::get<std::shared_ptr<Aggregate>>(pop());
+            if (sequence->nil) trap(instruction,RuntimeError::nil_reference);
+            for (const auto& item:sequence->items) values.write(item,value); break;
+        }
+        case Op::make_default: stack.push_back(values.zero(instruction.type,instruction.operand!=0)); break;
+        case Op::load_global: stack.push_back(values.copy(globals[instruction.operand]->value)); break;
+        case Op::store_global: values.write(globals[instruction.operand],pop()); break;
+        case Op::ref_local: stack.emplace_back(locals[instruction.operand]); break;
+        case Op::ref_global: stack.emplace_back(globals[instruction.operand]); break;
+        case Op::store_ref: {
+            auto value = pop(); auto target = std::get<std::shared_ptr<Cell>>(pop()); values.write(target,value); break;
+        }
+        case Op::drop: (void)pop(); break;
+        case Op::get_index: case Op::ref_index: {
+            const auto index = std::get<std::int32_t>(pop()); auto array = std::get<std::shared_ptr<Aggregate>>(pop());
+            if (array->nil) trap(instruction,RuntimeError::nil_reference);
+            if (index < 0 || static_cast<std::size_t>(index) >= array->items.size()) trap(instruction,RuntimeError::index_bounds);
+            auto cell = array->items[static_cast<std::size_t>(index)];
+            if (instruction.op == Op::ref_index) stack.emplace_back(cell); else stack.push_back(values.copy(cell->value));
+            break;
+        }
+        case Op::get_field: {
+            auto record = std::get<std::shared_ptr<Aggregate>>(pop()); stack.push_back(values.copy(record->items[instruction.operand]->value)); break;
+        }
+        case Op::ref_field: {
+            auto record = std::get<std::shared_ptr<Aggregate>>(std::get<std::shared_ptr<Cell>>(pop())->value);
+            stack.emplace_back(record->items[instruction.operand]); break;
+        }
+        case Op::length: {
+            auto array = std::get<std::shared_ptr<Aggregate>>(pop());
+            if (array->nil && type_info(program,instruction.type).kind==CompoundKind::list) trap(instruction,RuntimeError::nil_reference);
+            stack.emplace_back(static_cast<std::int32_t>(array->items.size())); break;
+        }
+        case Op::array_new: case Op::array_literal: {
+            const auto count = instruction.op == Op::array_literal ? static_cast<std::int32_t>(instruction.operand) : std::get<std::int32_t>(pop());
+            if (count < 0) trap(instruction,RuntimeError::array_length);
+            auto array = values.array(instruction.type,static_cast<std::size_t>(count));
+            if (instruction.op == Op::array_literal)
+                for (auto n = array->items.size(); n > 0; --n) values.write(array->items[n-1],pop());
+            stack.emplace_back(array); break;
+        }
+        case Op::resize_array: {
+            const auto count = std::get<std::int32_t>(pop()); auto target = std::get<std::shared_ptr<Cell>>(pop());
+            if (count < 0) trap(instruction,RuntimeError::array_length);
+            const auto original = std::get<std::shared_ptr<Aggregate>>(target->value);
+            if (static_cast<std::size_t>(count) == original->items.size() && !original->nil) break;
+            auto result = values.array(instruction.type,static_cast<std::size_t>(count));
+            for (std::size_t i = 0; i < std::min(result->items.size(),original->items.size()); ++i) values.write(result->items[i],original->items[i]->value);
+            target->value = result; break;
+        }
+        case Op::list_add: {
+            auto value = pop(); auto list = std::get<std::shared_ptr<Aggregate>>(pop());
+            if (list->nil) trap(instruction,RuntimeError::nil_reference);
+            list->items.push_back(values.cell(type_info(program,instruction.type).element,values.copy(value))); break;
+        }
+        case Op::list_clear: {
+            auto list=std::get<std::shared_ptr<Aggregate>>(pop()); if (list->nil) trap(instruction,RuntimeError::nil_reference);
+            list->items.clear(); break;
+        }
+        case Op::list_remove: {
+            const auto index = std::get<std::int32_t>(pop()); auto list = std::get<std::shared_ptr<Aggregate>>(pop());
+            if (list->nil) trap(instruction,RuntimeError::nil_reference);
+            if (index < 0 || static_cast<std::size_t>(index) >= list->items.size()) trap(instruction,RuntimeError::index_bounds);
+            list->items.erase(list->items.begin()+index); break;
+        }
+        case Op::list_contains: {
+            auto value = pop(); auto list = std::get<std::shared_ptr<Aggregate>>(pop());
+            if (list->nil) trap(instruction,RuntimeError::nil_reference);
+            bool found = false;
+            for (const auto& item : list->items) if (values.equal(item->value,value)) { found = true; break; }
+            stack.emplace_back(found); break;
+        }
+        case Op::call_user: {
+            if (frames.size() > options.call_limit) trap(instruction,RuntimeError::call_limit);
+            const auto& routine = program.routines[instruction.operand];
+            Frame next{&routine.code,&routine,std::vector<std::shared_ptr<Cell>>(program.locals.size()),0,stack.size()-routine.parameters.size()};
+            for (auto index : routine.locals) next.locals[index] = values.cell(program.locals[index].type,values.zero(program.locals[index].type));
+            for (std::size_t i = routine.parameters.size(); i > 0; --i) {
+                const auto& parameter = routine.parameters[i-1]; auto value = pop();
+                if (parameter.by_reference) next.locals[parameter.local] = std::get<std::shared_ptr<Cell>>(value);
+                else values.write(next.locals[parameter.local],value);
+            }
+            frames.push_back(std::move(next)); break;
+        }
+        case Op::return_user: {
+            std::optional<Value> result;
+            if (frame.routine->result != Type::unit) result = values.copy(frame.locals[frame.routine->result_local]->value);
+            stack.resize(frame.base); frames.pop_back();
+            if (result) stack.push_back(std::move(*result)); break;
+        }
         case Op::call_builtin: {
             const auto count = stdlib::signatures()[instruction.operand].parameters.size();
             const auto start = stack.size() - count;
             auto value = stdlib::invoke(instruction.operand, std::span<const Value>(stack).subspan(start), instruction.location);
             stack.resize(start);
-            stack.push_back(std::move(value));
+            if (instruction.type != Type::unit) stack.push_back(std::move(value));
             break;
         }
-        case Op::push: stack.push_back(program.constants[instruction.operand]); break;
-        case Op::load: stack.push_back(locals[instruction.operand]); break;
-        case Op::store: locals[instruction.operand] = pop(); break;
+        case Op::push: stack.push_back(values.copy(program.constants[instruction.operand])); break;
+        case Op::load: stack.push_back(values.copy(locals[instruction.operand]->value)); break;
+        case Op::store: values.write(locals[instruction.operand],pop()); break;
         case Op::convert: {
             const auto value = pop();
             if (value_type(value) == instruction.type) stack.push_back(value);
@@ -219,8 +373,8 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
             const auto right = pop(), left = pop();
             bool result = false;
             switch (instruction.op) {
-            case Op::equal: result = left == right; break;
-            case Op::not_equal: result = left != right; break;
+            case Op::equal: result = values.equal(left,right); break;
+            case Op::not_equal: result = !values.equal(left,right); break;
             case Op::less: result = left < right; break;
             case Op::less_equal: result = left <= right; break;
             case Op::greater: result = left > right; break;
@@ -229,11 +383,11 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
             stack.emplace_back(result);
             break;
         }
-        case Op::jump: pc = instruction.operand; break;
-        case Op::jump_false: if (!std::get<bool>(pop())) pc = instruction.operand; break;
+        case Op::jump: frame.pc = instruction.operand; break;
+        case Op::jump_false: if (!std::get<bool>(pop())) frame.pc = instruction.operand; break;
         case Op::print: write(format(pop(), instruction), instruction); break;
         case Op::newline: write("\n", instruction); break;
-        case Op::read_line: locals[instruction.operand] = read_line(input, instruction); break;
+        case Op::read_line: (program.locals[instruction.operand].global ? globals : locals)[instruction.operand]->value = read_line(input, instruction); break;
         case Op::halt: return;
         }
     }

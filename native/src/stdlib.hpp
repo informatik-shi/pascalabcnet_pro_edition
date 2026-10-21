@@ -10,7 +10,7 @@ enum class Function {
     length, copy, pos, last_pos, concat,
     trim, trim_left, trim_right, left_str, right_str, reverse_string, compare_str,
     int_to_str, str_to_int, str_to_int64, str_to_real, float_to_str,
-    resize_string, insert_string, delete_string
+    resize_string, insert_string, delete_string, read_all_text, write_all_text, file_exists
 };
 struct Signature {
     std::string_view name;

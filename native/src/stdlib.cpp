@@ -1,5 +1,6 @@
 #include "stdlib.hpp"
 #include "diagnostics.hpp"
+#include "files.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -69,6 +70,9 @@ std::span<const Signature> signatures() {
         add("$setlength", {Type::string, Type::integer}, Type::string, Function::resize_string);
         add("$insert", {Type::string, Type::string, Type::integer}, Type::string, Function::insert_string);
         add("$delete", {Type::string, Type::integer, Type::integer}, Type::string, Function::delete_string);
+        add("readalltext", {Type::string}, Type::string, Function::read_all_text);
+        add("writealltext", {Type::string, Type::string}, Type::unit, Function::write_all_text);
+        add("fileexists", {Type::string}, Type::boolean, Function::file_exists);
         return entries;
     }();
     return catalog;
@@ -130,6 +134,11 @@ Value invoke(std::size_t id, std::span<const Value> arguments, SourceLocation lo
     const auto& signature = signatures()[id]; // Verified before execution.
     const auto& value = arguments.front();
     const auto function = signature.function;
+    if (function == Function::read_all_text) return read_text_file(std::get<std::u16string>(value),location);
+    if (function == Function::file_exists) return file_exists(std::get<std::u16string>(value));
+    if (function == Function::write_all_text) {
+        write_text_file(std::get<std::u16string>(value),std::get<std::u16string>(arguments[1]),location); return false;
+    }
     if (auto result = invoke_text(function, arguments, location)) return std::move(*result);
     if (function == Function::minimum || function == Function::maximum) {
         Value result = value;

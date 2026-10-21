@@ -11,6 +11,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 add_library(abc_core
     src/stdlib.cpp
+    src/files.cpp
     src/stdlib_text.cpp
     src/diagnostics.cpp
     src/types.cpp
@@ -61,6 +62,9 @@ if(BUILD_TESTING)
         "-DABC_RUNNER=$<TARGET_FILE:abc>" "-DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
         -DABC_FIXTURE_NAME=text-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")
     set_tests_properties(cli_type_error PROPERTIES WILL_FAIL TRUE)
+    add_test(NAME foundations_compatibility COMMAND ${CMAKE_COMMAND}
+        "-DABC_RUNNER=$<TARGET_FILE:abc>" "-DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
+        -DABC_FIXTURE_NAME=foundations-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")
     add_test(NAME string_mutation_compatibility COMMAND ${CMAKE_COMMAND}
         "-DABC_RUNNER=$<TARGET_FILE:abc>" "-DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
         -DABC_FIXTURE_NAME=mutation-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")

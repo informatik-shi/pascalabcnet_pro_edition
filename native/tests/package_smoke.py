@@ -70,6 +70,23 @@ def main():
                     or "После Delete: Привет, мир" not in mutations.stdout
                     or "После дополнения пробелами: [Привет   ]" not in mutations.stdout):
                 raise RuntimeError(f"{name} string mutations failed: {mutations.stdout!r}, {mutations.stderr!r}")
+            for source, expected in [
+                ("structures.pas", "Точка: 3 4\nФакториал 10: 3628800\n1\n2\n5\n8\nИмен: 2\nПервое имя: Анна\n"),
+                ("files.pas", "Привет из C++ интерпретатора!\nПрочитано строк: 2\nВторая строка\n"),
+            ]:
+                example = subprocess.run([runner, "run", str(folder / "examples" / source)],
+                                         text=True, encoding="utf-8", capture_output=True,
+                                         cwd=folder, env=env, timeout=10)
+                if example.returncode or example.stdout != expected:
+                    raise RuntimeError(f"{name} {source} failed: {example.stdout!r}, {example.stderr!r}")
+            bounds = folder / "Границы массива.pas"
+            bounds.write_text("begin\n  var a := Arr(1);\n  Writeln(a[1]);\nend.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(bounds)], text=True, encoding="utf-8",
+                                     capture_output=True, cwd=folder, env=env, timeout=10)
+            if (invalid.returncode != 1 or "E_BOUNDS" not in invalid.stderr
+                    or "EN:" not in invalid.stderr or "RU:" not in invalid.stderr
+                    or f"{bounds}:3:" not in invalid.stderr):
+                raise RuntimeError(f"{name} bilingual array diagnostic failed: {invalid.stderr!r}")
             bad = folder / "Ошибка типов.pas"
             bad.write_text("begin writeln('must never run'); var n := 1; n := 'bad'; end.", encoding="utf-8")
             rejected = subprocess.run([runner, "run", str(bad)], text=True, encoding="utf-8",
@@ -110,7 +127,7 @@ def main():
                     or "RU: Длина строки не должна быть отрицательной" not in invalid.stderr
                     or f"{resize}:3:" not in invalid.stderr):
                 raise RuntimeError(f"{name} bilingual string mutation error failed: {invalid.stderr!r}")
-            results.append({"variant": name, "gui": "passed", "sum": 55, "type_error_before_output": "passed", "bilingual_runtime_error": "passed", "standard_library": "passed", "text_conversions": "passed", "string_mutations": "passed"})
+            results.append({"variant": name, "gui": "passed", "sum": 55, "type_error_before_output": "passed", "bilingual_runtime_error": "passed", "standard_library": "passed", "text_conversions": "passed", "string_mutations": "passed", "arrays_records_routines_lists": "passed", "text_files": "passed", "bilingual_array_error": "passed"})
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 

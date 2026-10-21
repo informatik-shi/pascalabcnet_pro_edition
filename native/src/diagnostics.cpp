@@ -56,6 +56,22 @@ Error runtime_error(RuntimeError id, SourceLocation location, std::string_view c
         code = "E_RANGE"; english = "Decimal separator must not be empty"; russian = "Десятичный разделитель не должен быть пустым"; break;
     case RuntimeError::string_length:
         code = "E_RANGE"; english = "String length must not be negative"; russian = "Длина строки не должна быть отрицательной"; break;
+    case RuntimeError::allocation_limit:
+        code = "E_LIMIT"; english = "Aggregate allocation limit exceeded"; russian = "Превышен предел выделения памяти для значений"; break;
+    case RuntimeError::index_bounds:
+        code = "E_BOUNDS"; english = "Index is outside sequence bounds"; russian = "Индекс находится за границами массива или списка"; break;
+    case RuntimeError::array_length:
+        code = "E_RANGE"; english = "Array length must not be negative"; russian = "Длина массива не должна быть отрицательной"; break;
+    case RuntimeError::call_limit:
+        code = "E_LIMIT"; english = "Routine call depth limit exceeded"; russian = "Превышена допустимая глубина вызовов подпрограмм"; break;
+    case RuntimeError::file_io:
+        code = "E_IO"; english = "Cannot open, read or write the file"; russian = "Не удалось открыть, прочитать или записать файл"; break;
+    case RuntimeError::file_limit:
+        code = "E_LIMIT"; english = "File exceeds the 1 MiB limit"; russian = "Размер файла превышает предел 1 МиБ"; break;
+    case RuntimeError::file_encoding:
+        code = "E_ENCODING"; english = "Text file must contain valid UTF-8"; russian = "Текстовый файл должен содержать корректный UTF-8"; break;
+    case RuntimeError::nil_reference:
+        code = "E_NIL"; english = "Cannot access a nil reference"; russian = "Нельзя обратиться к пустой ссылке nil"; break;
     default: throw std::logic_error("Unknown runtime diagnostic");
     }
     return Error(code, location, std::string(english) + std::string(context), std::string(russian) + std::string(context));
