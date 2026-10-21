@@ -7,7 +7,7 @@
     <ApplicationIcon>..\VisualPascalABCNET\_ABC26.ico</ApplicationIcon>
     <ApplicationManifest>..\VisualPascalABCNET\app.manifest</ApplicationManifest>
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
-    <Version>4.0.0.3883</Version>
+    <Version>4.0.0.3884</Version>
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="..\Diagnostics\DiagnosticLog.cs" Link="Diagnostics\DiagnosticLog.cs" />

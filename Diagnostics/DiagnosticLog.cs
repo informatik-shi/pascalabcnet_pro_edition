@@ -81,10 +81,16 @@ namespace ABCPro.Diagnostics
         internal static void Failure(Exception error)
         {
             Failed = true;
-            Write("FAILURE (observed): " + error);
-            var types = error as ReflectionTypeLoadException;
-            if (types != null && types.LoaderExceptions != null)
-                foreach (var loader in types.LoaderExceptions) Write("Loader exception: " + loader);
+            WriteException("FAILURE (observed): ", error);
+        }
+        internal static void WriteException(string label, Exception error)
+        {
+            Write(label + error);
+            for (var cause = error; cause != null; cause = cause.InnerException) {
+                var types = cause as ReflectionTypeLoadException;
+                if (types != null && types.LoaderExceptions != null)
+                    foreach (var loader in types.LoaderExceptions) Write("Loader exception: " + loader);
+            }
         }
         internal static string RelatedReport(string component)
         {

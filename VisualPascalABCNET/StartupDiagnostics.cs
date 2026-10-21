@@ -45,6 +45,22 @@ namespace VisualPascalABC
             } catch (Exception e) { StartupDiagnostics.Report(e); }
         }
         [MethodImpl(MethodImplOptions.NoInlining)]
-        private static void StartIde(string[] args) { VisualPascalABCProgram.Run(args); }
+        private static void StartIde(string[] args)
+        {
+            RegisterLanguageDiagnostics();
+            VisualPascalABCProgram.Run(args);
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private static void RegisterLanguageDiagnostics()
+        {
+            Languages.Integration.LanguageIntegrator.LanguageLoaded += language =>
+                DiagnosticLog.Write("Language loaded: " + language.Name);
+            Languages.Integration.LanguageIntegrator.LanguageLoadFailed += (path, error) => {
+                DiagnosticLog.SetStage("language module loading");
+                DiagnosticLog.Write("Language module: " + path);
+                DiagnosticLog.WriteException("Language load error (observed): ", error);
+            };
+        }
     }
 }

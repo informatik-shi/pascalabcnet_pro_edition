@@ -88,6 +88,9 @@ namespace DiagnosticTests
                 if (mode == "loader") {
                     var missingDirectory = Path.Combine(root, "missing-dependency");
                     Directory.CreateDirectory(missingDirectory);
+                    foreach (var dependency in Directory.GetFiles(AppDomain.CurrentDomain.BaseDirectory, "*.dll"))
+                        if (Path.GetFileName(dependency) != "MissingDependency.dll")
+                            File.Copy(dependency, Path.Combine(missingDirectory, Path.GetFileName(dependency)));
                     executable = Path.Combine(missingDirectory, Path.GetFileName(self));
                     File.Copy(self, executable);
                 }

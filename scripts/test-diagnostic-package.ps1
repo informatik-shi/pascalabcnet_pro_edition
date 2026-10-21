@@ -40,10 +40,10 @@ foreach ($mode in @('writable', 'read-only')) {
             $launchLog = Read-Report 'launcher' $session
             if ($launchLog -match 'IDE PID=(\d+)') { $child = Get-Process -Id ([int]$Matches[1]) -ErrorAction SilentlyContinue }
             $ideLog = Read-Report 'ide' $session
-            if ($ideLog.Contains('Main window created') -or $ideLog.Contains('FAILURE')) { break }
+            if ($ideLog.Contains('Compiler initialization completed') -or $ideLog.Contains('FAILURE')) { break }
             Start-Sleep -Milliseconds 500
         }
-        if (-not $child -or -not $ideLog.Contains('Main window created') -or $ideLog.Contains('FAILURE')) { throw "IDE failed startup ($mode); session=$session" }
+        if (-not $child -or -not $ideLog.Contains('Compiler initialization completed') -or $ideLog.Contains('FAILURE')) { throw "IDE failed startup ($mode); session=$session" }
         if ($mode -eq 'read-only' -and -not $launchLog.Contains('Fallback work directory: writable')) { throw 'Read-only package did not use checked user work directory.' }
         $child.Refresh()
         if (-not $child.CloseMainWindow()) { throw 'Could not request normal IDE closure.' }

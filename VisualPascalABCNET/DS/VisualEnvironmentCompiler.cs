@@ -142,6 +142,7 @@ namespace VisualPascalABC
         
         private void CreateCompiler()
         {
+            ABCPro.Diagnostics.DiagnosticLog.SetStage("compiler initialization");
             standartCompiler = new PascalABCCompiler.Compiler(SourceFilesProvider, OnChangeCompilerState);
             CodeCompletion.CodeCompletionController.comp = new PascalABCCompiler.Compiler((PascalABCCompiler.Compiler)standartCompiler, SourceFilesProvider, OnChangeCompilerState);
             if (ProjectFactory.Instance.CurrentProject != null)
@@ -156,6 +157,8 @@ namespace VisualPascalABC
                 LoadRemoteCompiler();
             else
                 defaultCompilerType = PascalABCCompiler.CompilerType.Standart;
+            ABCPro.Diagnostics.DiagnosticLog.SetStage("IDE ready");
+            StartupDiagnostics.Write("Compiler initialization completed");
         }
         
         public void LoadRemoteCompiler()

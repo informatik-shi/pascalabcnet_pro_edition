@@ -31,6 +31,8 @@ namespace Languages.Facade
         { 
             get
             {
+                if (Languages.Count == 0)
+                    throw new InvalidOperationException("Не загружен основной язык PascalABC.NET. Проверьте первичную ошибку загрузки PascalABCLanguageInfo.dll в отчёте запуска.");
                 return Languages[0];
             }
         }

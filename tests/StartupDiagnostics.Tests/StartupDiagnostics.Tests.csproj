@@ -10,6 +10,7 @@
     <Compile Include="..\..\VisualPascalABCNET\StartupDiagnostics.cs" Link="StartupDiagnostics.cs" />
     <Reference Include="System.Windows.Forms" />
     <ProjectReference Include="MissingDependency\MissingDependency.csproj" />
+    <ProjectReference Include="..\..\LanguageIntegrator\LanguageIntegrator.csproj" />
     <Compile Remove="MissingDependency\**\*.cs" />
   </ItemGroup>
 </Project>

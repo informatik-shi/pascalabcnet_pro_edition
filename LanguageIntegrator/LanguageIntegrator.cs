@@ -29,6 +29,9 @@ namespace Languages.Integration
         /// </summary>
         public static event Action<string> LanguageLoadErrorOccured;
 
+        // Release builds must preserve the exception, not only the DLL name.
+        public static event Action<string, Exception> LanguageLoadFailed;
+
         /// <summary>
         /// Загружает все языки платформы из папки bin
         /// </summary>
@@ -43,10 +46,16 @@ namespace Languages.Integration
 
             FileInfo[] dllFiles = directory.GetFiles("*LanguageInfo.dll");
 
-            var mainLanguageDll = dllFiles.First(fileInfo => fileInfo.Name == StringConstants.pascalLanguageDllName);
+            var mainLanguageDll = dllFiles.FirstOrDefault(fileInfo =>
+                string.Equals(fileInfo.Name, StringConstants.pascalLanguageDllName, StringComparison.OrdinalIgnoreCase));
+            if (mainLanguageDll == null)
+                throw new FileNotFoundException("Не найден основной языковой модуль PascalABC.NET. Распакуйте сборку целиком.",
+                    Path.Combine(directoryName, StringConstants.pascalLanguageDllName));
 
             // первым добавляем PascalABC.NET
-            IntegrateLanguageFromAssembly(mainLanguageDll);
+            var mainLanguageError = IntegrateLanguageFromAssembly(mainLanguageDll);
+            if (mainLanguageError != null)
+                throw mainLanguageError;
 
             foreach (FileInfo languageFile in dllFiles.Where(dll => dll != mainLanguageDll))
             {
@@ -59,37 +68,43 @@ namespace Languages.Integration
         /// (класс должен реализовывать интерфейс ILanguage и его имя должно заканчиваться на Language)
         /// </summary>
         /// <param name="languageFile">dll, содержащая язык</param>
-        private static void IntegrateLanguageFromAssembly(FileInfo languageFile)
+        private static Exception IntegrateLanguageFromAssembly(FileInfo languageFile)
         {
+            ILanguage languageFound;
             try
             {
-                ILanguage languageFound = InstantiateLanguageAndAddToLanguagesList(languageFile);
+                languageFound = InstantiateLanguageAndAddToLanguagesList(languageFile);
 
                 if (languageFound == null)
                 {
                     throw new Exception("Language class wasn't found in language assembly. (To be found it should contain 'Language' in it's name)");
                 }
-
-                LanguageLoaded?.Invoke(languageFound);
-            }
-            catch (ReflectionTypeLoadException e)
-            {
-#if DEBUG
-                string errorMessage = e + Environment.NewLine;
-                errorMessage += "<Loader exceptions>:" + Environment.NewLine;
-                errorMessage += string.Join(Environment.NewLine, e.LoaderExceptions.Select(error => error.ToString())) + Environment.NewLine;
-                File.AppendAllText("log.txt", errorMessage);
-#endif
-                LanguageLoadErrorOccured?.Invoke(languageFile.Name);
             }
             catch (Exception e)
             {
-#if DEBUG
-                string errorMessage = e + Environment.NewLine;
-                File.AppendAllText("log.txt", errorMessage);
-#endif
+                var message = "Не удалось загрузить языковой модуль " + languageFile.Name + ".";
+                if (IsRemoteSourceBlocked(e))
+                    message += " Windows ограничила загрузку сборки (0x80131515). Возможная причина — метка скачивания из интернета. " +
+                        "Если вы доверяете источнику ZIP, откройте свойства исходного архива, нажмите «Разблокировать» и распакуйте его заново в новую папку.";
+                var failure = new InvalidOperationException(message, e);
+                // Diagnostics subscribers cannot replace the original load error.
+                if (LanguageLoadFailed != null)
+                    foreach (Action<string, Exception> observer in LanguageLoadFailed.GetInvocationList())
+                        try { observer(languageFile.FullName, failure); } catch { }
                 LanguageLoadErrorOccured?.Invoke(languageFile.Name);
+                return failure;
             }
+            LanguageLoaded?.Invoke(languageFound);
+            return null;
+        }
+
+        private static bool IsRemoteSourceBlocked(Exception error)
+        {
+            if (error == null) return false;
+            if (error is FileLoadException && error.HResult == unchecked((int)0x80131515)) return true;
+            var typeLoad = error as ReflectionTypeLoadException;
+            if (typeLoad?.LoaderExceptions != null && typeLoad.LoaderExceptions.Any(IsRemoteSourceBlocked)) return true;
+            return IsRemoteSourceBlocked(error.InnerException);
         }
 
         /// <summary>
@@ -108,7 +123,8 @@ namespace Languages.Integration
             ILanguage languageFound = null;
             foreach (Type type in types)
             {
-                if (type.Name.EndsWith("Language") && type.IsClass)
+                if (type.Name.EndsWith("Language", StringComparison.Ordinal) && type.IsClass &&
+                    !type.IsAbstract && typeof(ILanguage).IsAssignableFrom(type))
                 {
                     object obj = Activator.CreateInstance(type);
                     if (obj is ILanguage language)

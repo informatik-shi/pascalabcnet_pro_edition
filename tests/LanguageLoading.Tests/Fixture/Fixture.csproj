@@ -1,0 +1,4 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net472</TargetFramework><AssemblyName>PascalABCLanguageInfo</AssemblyName></PropertyGroup>
+  <ItemGroup><ProjectReference Include="..\Contracts\Contracts.csproj" /></ItemGroup>
+</Project>

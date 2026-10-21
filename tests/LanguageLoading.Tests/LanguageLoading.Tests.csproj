@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><TargetFramework>net472</TargetFramework><OutputType>Exe</OutputType></PropertyGroup>
+  <ItemGroup>
+    <Compile Remove="Contracts\**\*.cs;Fixture\**\*.cs" />
+    <Compile Include="..\..\LanguageIntegrator\LanguageIntegrator.cs" Link="LanguageIntegrator.cs" />
+    <Compile Include="..\..\LanguageIntegrator\LanguageProvider.cs" Link="LanguageProvider.cs" />
+    <Compile Include="..\..\Diagnostics\DiagnosticLog.cs" Link="DiagnosticLog.cs" />
+    <ProjectReference Include="Contracts\Contracts.csproj" />
+    <ProjectReference Include="Fixture\Fixture.csproj" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+</Project>

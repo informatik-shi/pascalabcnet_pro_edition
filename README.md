@@ -11,7 +11,7 @@ two compiler targets:
 
 The [GitHub Releases page](https://github.com/informatik-shi/pascalabcnet_pro_edition/releases)
 contains ready-to-use builds. Download the
-[Windows x64 portable ZIP](https://github.com/informatik-shi/pascalabcnet_pro_edition/releases/download/portable-2026-10-20.1/PascalABCNET-Portable-win-x64.zip)
+[Windows x64 portable ZIP](https://github.com/informatik-shi/pascalabcnet_pro_edition/releases/download/portable-2026-10-21.1/PascalABCNET-Portable-win-x64.zip)
 for the IDE, both compilers, and browser notebooks. Extract it and run
 `PascalABCNET.cmd` for the IDE or `PascalABCNotebook.cmd` for
 notebooks. Installation is not required.
