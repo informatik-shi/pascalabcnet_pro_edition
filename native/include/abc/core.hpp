@@ -88,7 +88,8 @@ struct Local {
     bool global = true;
 };
 
-enum class CompoundKind { array, record, list, stack, queue, dynarray, simple_set, association, linked_node, linked_list };
+enum class CompoundKind { array, record, list, stack, queue, dynarray, simple_set, association, linked_node, linked_list, single_node };
+inline bool node_kind(CompoundKind kind) { return kind == CompoundKind::linked_node || kind == CompoundKind::single_node; }
 inline bool indexed_sequence(CompoundKind kind) { return kind == CompoundKind::array || kind == CompoundKind::list; }
 inline bool endpoint_collection(CompoundKind kind) { return kind == CompoundKind::stack || kind == CompoundKind::queue; }
 inline bool buffer_collection(CompoundKind kind) { return kind == CompoundKind::dynarray || kind == CompoundKind::simple_set; }
@@ -144,17 +145,22 @@ inline Type association_result(const TypeInfo& info, AssociationMethod method) {
     return Type::unit;
 }
 enum class LinkedMethod { construct, first, last, add_first, add_last, remove_first, remove_last,
-    add_before, add_after, remove, to_string, print, println, value, set_value, prev, next };
+    add_before, add_after, remove, to_string, print, println, value, set_value, prev, next, set_next };
 inline bool linked_text_method(LinkedMethod method) {
     return method == LinkedMethod::to_string || method == LinkedMethod::print || method == LinkedMethod::println;
 }
 inline bool linked_method_allowed(CompoundKind kind, LinkedMethod method) {
-    if (kind == CompoundKind::linked_node) return method == LinkedMethod::construct || method >= LinkedMethod::value;
+    if (kind == CompoundKind::single_node) return method == LinkedMethod::construct || method == LinkedMethod::value
+        || method == LinkedMethod::set_value || method == LinkedMethod::next || method == LinkedMethod::set_next;
+    if (kind == CompoundKind::linked_node) return method == LinkedMethod::construct || (method >= LinkedMethod::value && method <= LinkedMethod::next);
     return kind == CompoundKind::linked_list && method >= LinkedMethod::first && method <= LinkedMethod::println;
 }
 inline std::vector<Type> linked_parameters(Type receiver, const TypeInfo& info, LinkedMethod method) {
     switch (method) {
-    case LinkedMethod::construct: return {info.element,receiver,receiver};
+    case LinkedMethod::construct:
+        if (info.kind == CompoundKind::single_node) return {info.element,receiver};
+        return {info.element,receiver,receiver};
+    case LinkedMethod::set_next: return {receiver};
     case LinkedMethod::add_first: case LinkedMethod::add_last: case LinkedMethod::set_value: return {info.element};
     case LinkedMethod::add_before: case LinkedMethod::add_after: return {info.key,info.element};
     case LinkedMethod::remove: return {info.key};

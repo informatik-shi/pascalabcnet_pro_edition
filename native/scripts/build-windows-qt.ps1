@@ -37,10 +37,10 @@ F8 — проверить программу. F9 — запустить.
 Поддерживаются integer, int64, real/double, boolean, string,
 динамические массивы, записи, пользовательские функции и процедуры с var-параметрами,
 условия if и циклы while, базовая математика, строки, List<T>, Stack<T>, Queue<T>,
-DynArray<T>, SimpleSet<T>, AssocArray<K,V>, LinkedList<T>, LinkedListNode<T> и текстовые файлы UTF-8.
+DynArray<T>, SimpleSet<T>, AssocArray<K,V>, LinkedList<T>, LinkedListNode<T>, SingleNode<T> и текстовые файлы UTF-8.
 Для классов Collections добавьте uses Collections;
 Примеры: examples/structures.pas, examples/files.pas, examples/collections.pas, examples/buffers.pas,
-examples/associations.pas, examples/linked-lists.pas, examples/standard-library.pas,
+examples/associations.pas, examples/linked-lists.pas, examples/single-nodes.pas, examples/standard-library.pas,
 examples/text-numbers.pas, examples/string-editing.pas.
 Совместимость с PascalABC.NET частичная.
 Установка .NET, Python или Qt для запуска этого пакета не требуется.

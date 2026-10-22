@@ -620,6 +620,47 @@ void linked_collections() {
     require(retained.expired(),"Node arena releases cyclic links when execution ends");
 }
 
+void single_nodes() {
+    result("uses Collections; begin var tail:=new SingleNode<integer>(3,nil); var head:=new SingleNode<integer>(1,tail); head.Next:=new SingleNode<integer>(2,tail); var n:=head; while n<>nil do begin write(n.Data); n:=n.Next; end; writeln; head.Next:=nil; writeln(head.Next=nil,' ',tail.Data); end.","123\nTrue 3\n");
+    result("uses Collections; begin var n:=new SingleNode<string>('Привет 🌍',nil); var alias:=n; alias.Data:='изменено'; n.Next:=n; writeln(n.Data,' ',n.Next=n,' ',alias=n); n.Next:=nil; end.","изменено True True\n");
+    result("uses Collections; type N=SingleNode<int64>; begin var n:=new N(2147483648,nil); var m:SingleNode<int64>:=n; m.Data:=1; writeln(n.Data); end.","1\n");
+    result("uses Collections; type P=record x:integer; end; begin var p:P; p.x:=7; var n:=new SingleNode<P>(p,nil); p.x:=9; var q:=n.Data; q.x:=11; var stored:=n.Data; writeln(stored.x,' ',p.x); n.Data:=q; stored:=n.Data; writeln(stored.x); end.","7 9\n11\n");
+    result("uses Collections; begin var a:=Arr(1); var n:=new SingleNode<array of integer>(a,nil); a[0]:=8; var b:=n.Data; writeln(b[0]); end.","8\n");
+    result("uses Collections; begin var inner:=new SingleNode<integer>(4,nil); var outer:=new SingleNode<SingleNode<integer>>(inner,nil); var alias:=outer.Data; alias.Data:=5; writeln(inner.Data); end.","5\n");
+    result("uses Collections; function Head:SingleNode<integer>; begin var t:=new SingleNode<integer>(2,nil); Result:=new SingleNode<integer>(1,t); end; begin var n:=Head; writeln(n.Data,' ',n.Next.Data); end.","1 2\n");
+    result("uses Collections; begin var a:=new SingleNode<integer>[2]; a[0]:=new SingleNode<integer>(7,nil); writeln(a[0].Data,' ',a[1]=nil); end.","7 True\n");
+    result("uses Collections; type N=SingleNode<integer>; var n:N; var calls:integer; function Receiver:N; begin Inc(calls); Result:=n; end; function Value:integer; begin Inc(calls); Result:=9; end; begin n:=new N(1,nil); Receiver().Data:=Value(); writeln(calls,' ',n.Data); end.","2 9\n");
+    for (const auto* source : {
+        "uses Collections; begin var n:SingleNode<integer>; writeln(n.Data); end.",
+        "uses Collections; begin var n:SingleNode<integer>; n.Data:=1; end.",
+        "uses Collections; begin var n:SingleNode<integer>; n.Next:=nil; end."}) runtime_error(source,"E_NIL");
+    compile_error("begin var n:=new SingleNode<integer>(1,nil); end.","E_UNSUPPORTED");
+    compile_error("uses Collections; begin var n:=new SingleNode<integer>; end.","E_TYPE");
+    compile_error("uses Collections; begin var n:=new SingleNode<integer>(1,nil,nil); end.","E_TYPE");
+    compile_error("uses Collections; begin var n:=new SingleNode<integer>(1,nil); n.Data:='bad'; end.","E_TYPE");
+    compile_error("uses Collections; begin var n:=new SingleNode<integer>(1,nil); n.Next:=new SingleNode<string>('x',nil); end.","E_TYPE");
+    compile_error("uses Collections; begin var n:=new SingleNode<integer>(1,nil); n.Next:=new LinkedListNode<integer>(2,nil,nil); end.","E_TYPE");
+    compile_error("uses Collections; begin var n:=new SingleNode<integer>(1,nil); writeln(n.Value); end.","E_NAME");
+    compile_error("uses Collections; begin var n:=new SingleNode<integer>(1,nil); writeln(n.Prev); end.","E_NAME");
+    compile_error("uses Collections; begin var n:=new SingleNode<integer>(1,nil); n.Next(); end.","E_TYPE");
+    compile_error("uses Collections; procedure P(var x:integer); begin end; begin var n:=new SingleNode<integer>(1,nil); P(n.Data); end.","E_TYPE");
+    auto program=abc::compile("uses Collections; begin var n:=new SingleNode<integer>(1,nil); n.Next:=nil; end.");
+    for (auto& instruction:program.code) if (instruction.op==abc::Op::linked_call) instruction.operand=static_cast<std::size_t>(abc::LinkedMethod::prev);
+    error([&]{abc::verify(program);},"E_BYTECODE");
+    program=abc::compile("uses Collections; begin var n:SingleNode<integer>; end.");
+    for (auto& instruction:program.code) if (instruction.op==abc::Op::make_default) instruction.operand=1;
+    error([&]{abc::verify(program);},"E_BYTECODE");
+    std::weak_ptr<abc::Aggregate> retained;
+    {
+        abc::Values values{program,16}; abc::LinkedRuntime runtime{values,{}};
+        auto n=runtime.node(static_cast<abc::Type>(64),std::int32_t{1});
+        n->links->next=n; retained=n;
+    }
+    require(retained.expired(),"Single-node self-reference releases with the execution arena");
+    abc::ExecutionOptions limits; limits.instruction_limit=200;
+    error([&]{(void)run("uses Collections; begin var n:=new SingleNode<integer>(1,nil); n.Next:=n; while n<>nil do n:=n.Next; end.","",limits);},"E_LIMIT");
+}
+
 void library_bytecode() {
     auto program = abc::compile("begin writeln(Length('abc')); end.");
     std::size_t call = 0;
@@ -715,6 +756,7 @@ int main() {
     buffer_collections();
     association_collections();
     linked_collections();
+    single_nodes();
     std::cout << (checks - failures) << '/' << checks << " checks passed\n";
     return failures == 0 ? 0 : 1;
 }

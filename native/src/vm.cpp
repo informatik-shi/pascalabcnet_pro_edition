@@ -164,7 +164,8 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
             std::vector<Value> arguments(parameters.size());
             for (std::size_t i=arguments.size();i>0;--i) arguments[i-1] = pop();
             if (method == LinkedMethod::construct) {
-                stack.emplace_back(linked.node(instruction.type,arguments[0],std::get<std::shared_ptr<Aggregate>>(arguments[1]),std::get<std::shared_ptr<Aggregate>>(arguments[2])));
+                if (info.kind == CompoundKind::single_node) stack.emplace_back(linked.node(instruction.type,arguments[0],{},std::get<std::shared_ptr<Aggregate>>(arguments[1])));
+                else stack.emplace_back(linked.node(instruction.type,arguments[0],std::get<std::shared_ptr<Aggregate>>(arguments[1]),std::get<std::shared_ptr<Aggregate>>(arguments[2])));
                 break;
             }
             const auto target = linked.require(std::get<std::shared_ptr<Aggregate>>(pop()));
@@ -176,6 +177,11 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
             case LinkedMethod::last: reference(target->links->next.lock(),info.key); break;
             case LinkedMethod::prev: reference(target->links->prev.lock(),instruction.type); break;
             case LinkedMethod::next: reference(target->links->next.lock(),instruction.type); break;
+            case LinkedMethod::set_next: {
+                auto next = std::get<std::shared_ptr<Aggregate>>(arguments[0]);
+                if (next->nil) target->links->next.reset(); else target->links->next=next;
+                break;
+            }
             case LinkedMethod::value: stack.push_back(values.copy(target->items[0]->value)); break;
             case LinkedMethod::set_value: values.write(target->items[0],arguments[0]); break;
             case LinkedMethod::add_first: case LinkedMethod::add_last: linked.add(target,arguments[0],method==LinkedMethod::add_first); break;

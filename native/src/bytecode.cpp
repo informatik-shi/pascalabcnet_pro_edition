@@ -234,7 +234,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         const auto type = instruction.type;
         switch (instruction.op) {
         case Op::linked_call:
-            if (!compound(type) || instruction.operand > static_cast<std::size_t>(LinkedMethod::next)
+            if (!compound(type) || instruction.operand > static_cast<std::size_t>(LinkedMethod::set_next)
                 || !linked_method_allowed(type_info(program,type).kind,static_cast<LinkedMethod>(instruction.operand))) invalid(instruction,"Invalid linked instruction");
             if (linked_text_method(static_cast<LinkedMethod>(instruction.operand)) && compound(type_info(program,type).element)) invalid(instruction,"Linked text output requires scalar elements");
             break;
@@ -277,7 +277,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if (instruction.op==Op::sequence_sort && (compound(type_info(program,type).element) || instruction.operand>1)) invalid(instruction,"Invalid sort"); break;
         case Op::make_default: case Op::store_ref: case Op::drop:
             if (!valid_value_type(program,type) || (instruction.op==Op::make_default && instruction.operand>1)) invalid(instruction,"Invalid value type");
-            if (instruction.op==Op::make_default && instruction.operand && compound(type) && type_info(program,type).kind==CompoundKind::linked_node)
+            if (instruction.op==Op::make_default && instruction.operand && compound(type) && node_kind(type_info(program,type).kind))
                 invalid(instruction,"Linked nodes require the typed constructor");
             break;
         case Op::call_user:
@@ -507,7 +507,7 @@ void verify(const Program& program) {
             if (!compound(type.key) || type_info(program,type.key).kind != CompoundKind::linked_node || type_info(program,type.key).element != type.element)
                 throw Error("E_BYTECODE",{},"Invalid linked list node type");
         }
-        else if (indexed_sequence(type.kind) || endpoint_collection(type.kind) || buffer_collection(type.kind) || type.kind == CompoundKind::linked_node) prior(type.element);
+        else if (indexed_sequence(type.kind) || endpoint_collection(type.kind) || buffer_collection(type.kind) || node_kind(type.kind)) prior(type.element);
         else throw Error("E_BYTECODE",{},"Invalid compound kind");
         if (level > 32) throw Error("E_BYTECODE",{},"Type nesting limit exceeded"); depth[i] = level;
     }

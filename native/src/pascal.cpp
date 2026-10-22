@@ -252,7 +252,7 @@ private:
             result->token = name(); result->kind = result->token.text;
             if (result->kind == "assocarray" && accept("<")) {
                 result->key = type_syntax(); expect(","); result->element = type_syntax(); expect(">");
-            } else if ((result->kind == "list" || result->kind == "stack" || result->kind == "queue" || result->kind == "dynarray" || result->kind == "simpleset" || result->kind == "linkedlist" || result->kind == "linkedlistnode") && accept("<")) {
+            } else if ((result->kind == "list" || result->kind == "stack" || result->kind == "queue" || result->kind == "dynarray" || result->kind == "simpleset" || result->kind == "linkedlist" || result->kind == "linkedlistnode" || result->kind == "singlenode") && accept("<")) {
                 result->element = type_syntax(); expect(">");
             }
         }
@@ -521,7 +521,8 @@ private:
         if (module_.types.size() >= 1024) throw Error("E_LIMIT",{},"Type limit exceeded");
         const auto name = kind == CompoundKind::array ? "array" : kind == CompoundKind::list ? "list"
             : kind == CompoundKind::stack ? "stack" : kind == CompoundKind::queue ? "queue"
-            : kind == CompoundKind::dynarray ? "dynarray" : kind == CompoundKind::linked_node ? "linkedlistnode" : "simpleset";
+            : kind == CompoundKind::dynarray ? "dynarray" : kind == CompoundKind::linked_node ? "linkedlistnode"
+            : kind == CompoundKind::single_node ? "singlenode" : "simpleset";
         module_.types.push_back({name,kind,element,{}});
         return static_cast<Type>(63+module_.types.size());
     }
@@ -546,6 +547,10 @@ private:
             if (!collections_imported_) throw Error("E_UNSUPPORTED",syntax.token.location,"AssocArray requires uses Collections");
             const auto key = resolve_type(*syntax.key), element = resolve_type(*syntax.element);
             return association_type(key,element);
+        }
+        if (syntax.kind == "singlenode" && syntax.element) {
+            if (!collections_imported_) throw Error("E_UNSUPPORTED",syntax.token.location,"SingleNode requires uses Collections");
+            return sequence_type(CompoundKind::single_node,resolve_type(*syntax.element));
         }
         if ((syntax.kind == "linkedlist" || syntax.kind == "linkedlistnode") && syntax.element) {
             if (!collections_imported_) throw Error("E_UNSUPPORTED",syntax.token.location,"LinkedList requires uses Collections");
@@ -616,9 +621,9 @@ private:
                 result->arguments.push_back(convert(expression(*source.arguments[0]),Type::integer));
             } else {
                 if (!compound(type)) throw Error("E_TYPE",result->location,"new requires an array length, record or collection type");
-                if (info(type,result->location).kind == CompoundKind::linked_node) {
+                if (node_kind(info(type,result->location).kind)) {
                     const auto parameters = linked_parameters(type,info(type,result->location),LinkedMethod::construct);
-                    if (source.arguments.size() != parameters.size()) throw Error("E_TYPE",result->location,"LinkedListNode requires a value, previous node and next node");
+                    if (source.arguments.size() != parameters.size()) throw Error("E_TYPE",result->location,"Wrong node constructor argument count");
                     result->kind = hir::ExprKind::linked_call; result->type = type;
                     result->local = static_cast<std::size_t>(LinkedMethod::construct);
                     for (std::size_t i=0;i<parameters.size();++i) result->arguments.push_back(convert(expression(*source.arguments[i]),parameters[i]));
@@ -666,13 +671,13 @@ private:
         case SyntaxExprKind::member_call: {
             result->left = expression(*source.left); const auto receiver = result->left->type;
             const auto& type = info(receiver,result->location);
-            if (type.kind == CompoundKind::linked_list || type.kind == CompoundKind::linked_node) {
+            if (type.kind == CompoundKind::linked_list || node_kind(type.kind)) {
                 const auto& name = source.token.text; const auto kind = type.kind;
                 LinkedMethod method; bool property = false;
-                if (kind == CompoundKind::linked_node) {
+                if (node_kind(kind)) {
                     property = true;
-                    if (name == "value") method = LinkedMethod::value;
-                    else if (name == "prev") method = LinkedMethod::prev;
+                    if ((name == "value" && kind == CompoundKind::linked_node) || (name == "data" && kind == CompoundKind::single_node)) method = LinkedMethod::value;
+                    else if (name == "prev" && kind == CompoundKind::linked_node) method = LinkedMethod::prev;
                     else if (name == "next") method = LinkedMethod::next;
                     else throw Error("E_NAME",result->location,"Unknown linked node member '"+name+"'");
                 } else {
@@ -1047,6 +1052,13 @@ private:
         case SyntaxStmtKind::assignment:
             result.kind = hir::StmtKind::assign;
             result.target = expression(*source.target);
+            if (result.target->kind == hir::ExprKind::linked_call && result.target->local == static_cast<std::size_t>(LinkedMethod::next)
+                && info(result.target->left->type,result.location).kind == CompoundKind::single_node) {
+                auto setter = std::move(result.target);
+                setter->arguments.push_back(convert(expression(*source.expression),setter->type));
+                setter->local = static_cast<std::size_t>(LinkedMethod::set_next); setter->type = Type::unit;
+                result.kind = hir::StmtKind::call; result.expression = std::move(setter); break;
+            }
             if (result.target->kind == hir::ExprKind::linked_call && result.target->local == static_cast<std::size_t>(LinkedMethod::value)) {
                 auto setter = std::move(result.target);
                 setter->arguments.push_back(convert(expression(*source.expression),setter->type));
