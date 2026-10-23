@@ -53,7 +53,13 @@ struct Values {
         }
         return value;
     }
+    void own_list_cell(const std::shared_ptr<Cell>& cell, const std::shared_ptr<Aggregate>& list) {
+        cell->list_owner=list;
+        if (compound(cell->type) && type_info(program,cell->type).kind==CompoundKind::record)
+            for (const auto& field:std::get<std::shared_ptr<Aggregate>>(cell->value)->items) own_list_cell(field,list);
+    }
     void write(const std::shared_ptr<Cell>& target, const Value& value) {
+        if (const auto owner=target->list_owner.lock()) ++owner->version;
         if (compound(target->type) && type_info(program,target->type).kind == CompoundKind::record) {
             const auto original = std::get<std::shared_ptr<Aggregate>>(target->value);
             const auto source = std::get<std::shared_ptr<Aggregate>>(value);

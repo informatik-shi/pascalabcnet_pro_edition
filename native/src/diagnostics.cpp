@@ -6,6 +6,8 @@ Error runtime_error(RuntimeError id, SourceLocation location, std::string_view c
     switch (id) {
     case RuntimeError::integer_overflow:
         code = "E_OVERFLOW"; english = "Integer overflow"; russian = "Переполнение целого числа"; break;
+    case RuntimeError::collection_changed:
+        code = "E_MODIFIED"; english = "Collection was modified during enumeration"; russian = "Коллекция изменена во время перебора"; break;
     case RuntimeError::file_erase:
         code = "E_IO"; english = "Cannot erase text file"; russian = "Не удалось удалить текстовый файл"; break;
     case RuntimeError::file_rename:

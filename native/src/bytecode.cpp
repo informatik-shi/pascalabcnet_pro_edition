@@ -232,6 +232,30 @@ private:
             finish_loop(condition);
             break;
         }
+        case hir::StmtKind::foreach_loop: {
+            const auto sequence=node.expression->type;
+            const auto element=type_info(program_,sequence).element;
+            expression(*node.expression); local(Op::store,node.sequence_local,node.location);
+            local(Op::load,node.sequence_local,node.location); emit(Op::iteration_version,sequence,0,node.location);
+            local(Op::store,node.version_local,node.location);
+            constant(std::int32_t{0},node.location); local(Op::store,node.index_local,node.location);
+            const auto start=code_->size();
+            local(Op::load,node.sequence_local,node.location); local(Op::load,node.version_local,node.location);
+            emit(Op::iteration_check,sequence,0,node.location);
+            local(Op::load,node.index_local,node.location); local(Op::load,node.sequence_local,node.location);
+            emit(Op::length,sequence,0,node.location); emit(Op::less,Type::integer,0,node.location);
+            const auto done=emit(Op::jump_false,Type::invalid,0,node.location);
+            local(Op::load,node.sequence_local,node.location); local(Op::load,node.index_local,node.location);
+            emit(Op::get_index,sequence,0,node.location);
+            if (element!=node.target->type) emit(Op::convert,node.target->type,0,node.location);
+            local(Op::store,node.target->local,node.location);
+            loops_.emplace_back(); statement(*node.body);
+            const auto advance=code_->size();
+            local(Op::load,node.index_local,node.location); constant(std::int32_t{1},node.location);
+            emit(Op::add,Type::integer,0,node.location); local(Op::store,node.index_local,node.location);
+            emit(Op::jump,Type::invalid,start,node.location);
+            (*code_)[done].operand=code_->size(); finish_loop(advance); break;
+        }
         case hir::StmtKind::for_loop: {
             for (const auto& child:node.statements) statement(child);
             const auto type=node.target->type;
@@ -294,6 +318,10 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
     for (const auto& instruction : code) {
         const auto type = instruction.type;
         switch (instruction.op) {
+        case Op::iteration_version: case Op::iteration_check:
+            if (!compound(type) || !indexed_sequence(type_info(program,type).kind) || instruction.operand)
+                invalid(instruction,"Invalid foreach sequence instruction");
+            break;
         case Op::linked_call:
             if (!compound(type) || instruction.operand > static_cast<std::size_t>(LinkedMethod::set_next)
                 || !linked_method_allowed(type_info(program,type).kind,static_cast<LinkedMethod>(instruction.operand))) invalid(instruction,"Invalid linked instruction");
@@ -438,6 +466,8 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if (pop() != expected) invalid(instruction, "Operand type mismatch");
         };
         switch (instruction.op) {
+        case Op::iteration_version: require(instruction.type); stack.push_back(Type::int64); break;
+        case Op::iteration_check: require(Type::int64); require(instruction.type); break;
         case Op::linked_call: {
             const auto method = static_cast<LinkedMethod>(instruction.operand);
             const auto& info = type_info(program,instruction.type);

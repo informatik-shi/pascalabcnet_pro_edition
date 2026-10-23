@@ -54,12 +54,13 @@ struct LinkedLinks { std::weak_ptr<Aggregate> prev, next; };
 struct NilString { auto operator<=>(const NilString&) const = default; };
 using Value = std::variant<std::int32_t, std::int64_t, double, bool, std::u16string,
     std::shared_ptr<Aggregate>, std::shared_ptr<Cell>, NilString, std::shared_ptr<TextFile>>;
-struct Cell { Type type; Value value; };
+struct Cell { Type type; Value value; std::weak_ptr<Aggregate> list_owner{}; };
 struct Aggregate {
     Type type;
     std::vector<std::shared_ptr<Cell>> items;
     bool nil = false;
     std::size_t count = 0; // Logical size of DynArray and SimpleSet; items holds capacity.
+    std::uint64_t version = 0; // List enumerators detect successful writes and structural changes.
     // Allocate deque storage only for constructed stacks and queues.
     std::unique_ptr<std::deque<std::shared_ptr<Cell>>> ends;
     std::unique_ptr<LinkedLinks> links;
@@ -80,7 +81,8 @@ enum class Op {
     get_index, ref_index, get_field, ref_field, array_new, array_literal, length, resize_array,
     call_user, return_user, drop, list_add, list_remove, list_clear, list_contains,
     read_lines, write_lines, array_copy, array_high, sequence_sort, sequence_fill, mutate_string, increment, read_value,
-    endpoint_call, buffer_call, association_call, linked_call, file_print, file_newline, file_read, file_skip_line, file_output
+    endpoint_call, buffer_call, association_call, linked_call, file_print, file_newline, file_read, file_skip_line, file_output,
+    iteration_version, iteration_check
 };
 enum class TextOutput { write, writeln, print, println };
 

@@ -146,7 +146,7 @@ std::unique_ptr<SyntaxExpr> make_expression(SyntaxExprKind kind, Token token,
 }
 
 enum class SyntaxStmtKind { block, declaration, assignment, print, read, conditional, loop, increment, string_mutation, call, return_stmt,
-    for_loop, repeat_loop, break_stmt, continue_stmt };
+    for_loop, repeat_loop, break_stmt, continue_stmt, foreach_loop };
 struct SyntaxRoutine;
 struct SyntaxStmt {
     SyntaxStmtKind kind = SyntaxStmtKind::block;
@@ -176,7 +176,7 @@ bool reserved(std::string_view text) {
     static const std::set<std::string_view> words{
         "program", "begin", "end", "var", "if", "then", "else", "while", "do", "and", "or", "not",
         "div", "mod", "true", "false", "uses", "unit", "type", "const", "function", "procedure",
-        "for", "to", "downto", "repeat", "until", "case", "of", "array", "record", "class", "nil",
+        "for", "to", "downto", "repeat", "until", "foreach", "in", "case", "of", "array", "record", "class", "nil",
         "new", "set", "try", "except", "finally", "raise", "break", "continue", "exit", "writeln", "write", "readln", "read"};
     return words.contains(text);
 }
@@ -321,6 +321,14 @@ private:
             result.kind=SyntaxStmtKind::break_stmt;
         } else if (accept("continue")) {
             result.kind=SyntaxStmtKind::continue_stmt;
+        } else if (accept("foreach")) {
+            result.kind=SyntaxStmtKind::foreach_loop; result.declares_control=accept("var");
+            if (is("(")) throw Error("E_UNSUPPORTED",current_.location,"Foreach tuple deconstruction is not ported yet");
+            result.names.push_back(name());
+            if (accept(":")) { result.annotation=type_syntax(); result.declares_control=true; }
+            expect("in"); result.expression=expression();
+            if (is("index")) throw Error("E_UNSUPPORTED",current_.location,"Foreach index is not ported yet");
+            expect("do"); result.body=std::make_unique<SyntaxStmt>(statement());
         } else if (accept("for")) {
             result.kind=SyntaxStmtKind::for_loop; result.declares_control=accept("var");
             result.names.push_back(name());
@@ -615,6 +623,9 @@ private:
         throw Error("E_UNSUPPORTED",syntax.token.location,"Unknown or unsupported type '"+syntax.kind+"'");
     }
     bool lvalue(const hir::Expr& expression) const {
+        if (expression.kind==hir::ExprKind::index && expression.left->kind==hir::ExprKind::local
+            && for_controls_.contains(expression.left->local) && compound(expression.left->type)
+            && indexed_sequence(info(expression.left->type,expression.location).kind)) return true;
         return (expression.kind == hir::ExprKind::local && !for_controls_.contains(expression.local))
             || ((expression.kind == hir::ExprKind::index || expression.kind == hir::ExprKind::field) && lvalue(*expression.left));
     }
@@ -1172,6 +1183,37 @@ private:
             if (!loop_depth_) throw Error("E_SYNTAX",result.location,"Break/Continue requires an enclosing loop");
             result.kind=source.kind==SyntaxStmtKind::break_stmt ? hir::StmtKind::break_stmt : hir::StmtKind::continue_stmt;
             break;
+        case SyntaxStmtKind::foreach_loop: {
+            result.kind=hir::StmtKind::foreach_loop; result.expression=expression(*source.expression);
+            const auto sequence=result.expression->type;
+            if (!compound(sequence) || !indexed_sequence(info(sequence,result.location).kind))
+                throw Error("E_UNSUPPORTED",result.location,"Foreach currently requires an array or List<T>");
+            const auto element=info(sequence,result.location).element;
+            scopes_.emplace_back(); const auto& name=source.names.front();
+            std::size_t control;
+            if (source.declares_control) {
+                const auto type=source.annotation ? resolve_type(*source.annotation) : element;
+                control=module_.locals.size(); module_.locals.push_back({name.text,type,!in_routine_});
+                scopes_.back()[name.text]=control;
+            } else {
+                control=resolve(name);
+                if (for_controls_.contains(control)) throw Error("E_TYPE",name.location,"Cannot reuse an active iteration variable");
+                if (in_routine_ && module_.locals[control].global) throw Error("E_TYPE",name.location,"Foreach variable must be local to the routine");
+                if (in_routine_ && current_result_!=Type::unit && module_.locals[control].name=="result")
+                    throw Error("E_UNSUPPORTED",name.location,"Function Result as foreach variable is not supported");
+            }
+            const auto type=module_.locals[control].type;
+            if (!can_widen(element,type)) throw Error("E_TYPE",name.location,"Foreach element cannot be converted to the iteration variable type");
+            auto temporary=[&](Type type) {
+                const auto local=module_.locals.size(); module_.locals.push_back({"$foreach_"+std::to_string(local),type,!in_routine_}); return local;
+            };
+            result.sequence_local=temporary(sequence); result.index_local=temporary(Type::integer); result.version_local=temporary(Type::int64);
+            result.target=std::make_unique<hir::Expr>(); result.target->kind=hir::ExprKind::local;
+            result.target->local=control; result.target->type=type; result.target->location=name.location;
+            for_controls_.insert(control); ++loop_depth_;
+            result.body=std::make_unique<hir::Stmt>(scoped_statement(*source.body));
+            --loop_depth_; for_controls_.erase(control); scopes_.pop_back(); break;
+        }
         case SyntaxStmtKind::for_loop: {
             auto initial=expression(*source.expression);
             scopes_.emplace_back();

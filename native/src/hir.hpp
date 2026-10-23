@@ -20,12 +20,13 @@ struct Expr {
 };
 
 enum class StmtKind { block, assign, print, read, conditional, loop, call, return_stmt, resize_array, increment, string_mutation,
-    for_loop, repeat_loop, break_stmt, continue_stmt };
+    for_loop, repeat_loop, break_stmt, continue_stmt, foreach_loop };
 struct Stmt {
     StmtKind kind = StmtKind::block;
     SourceLocation location;
     std::size_t local = 0;
     bool newline = false;
+    std::size_t sequence_local = 0, index_local = 0, version_local = 0;
     std::unique_ptr<Expr> expression;
     std::vector<std::unique_ptr<Expr>> arguments;
     std::vector<Stmt> statements;

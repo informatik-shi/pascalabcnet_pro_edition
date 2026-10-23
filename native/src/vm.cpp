@@ -171,6 +171,16 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
         if (steps++ >= options.instruction_limit) trap(instruction, RuntimeError::instruction_limit);
         if (options.cancelled && options.cancelled()) trap(instruction, RuntimeError::cancelled);
         switch (instruction.op) {
+        case Op::iteration_version: case Op::iteration_check: {
+            const auto expected=instruction.op==Op::iteration_check ? std::get<std::int64_t>(pop()) : 0;
+            const auto sequence=std::get<std::shared_ptr<Aggregate>>(pop());
+            if (sequence->nil) trap(instruction,RuntimeError::nil_reference);
+            const auto version=static_cast<std::int64_t>(sequence->version);
+            if (instruction.op==Op::iteration_version) stack.emplace_back(version);
+            else if (type_info(program,instruction.type).kind==CompoundKind::list && version!=expected)
+                trap(instruction,RuntimeError::collection_changed);
+            break;
+        }
         case Op::linked_call: {
             const auto method = static_cast<LinkedMethod>(instruction.operand);
             const auto& info = type_info(program,instruction.type);
@@ -385,8 +395,8 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
         case Op::increment: {
             const auto step=pop(); auto target=std::get<std::shared_ptr<Cell>>(pop()); auto operation=instruction;
             operation.op=instruction.operand ? Op::subtract : Op::add;
-            if (instruction.type==Type::integer) target->value=integer_operation(std::get<std::int32_t>(target->value),std::get<std::int32_t>(step),operation);
-            else target->value=integer_operation(std::get<std::int64_t>(target->value),std::get<std::int64_t>(step),operation);
+            if (instruction.type==Type::integer) values.write(target,integer_operation(std::get<std::int32_t>(target->value),std::get<std::int32_t>(step),operation));
+            else values.write(target,integer_operation(std::get<std::int64_t>(target->value),std::get<std::int64_t>(step),operation));
             break;
         }
         case Op::mutate_string: {
@@ -438,6 +448,7 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
         case Op::sequence_sort: {
             auto sequence=std::get<std::shared_ptr<Aggregate>>(pop());
             if (sequence->nil) trap(instruction,RuntimeError::nil_reference);
+            if (type_info(program,instruction.type).kind==CompoundKind::list) ++sequence->version;
             std::vector<Value> items;
             for (const auto& item:sequence->items) items.push_back(item->value);
             std::sort(items.begin(),items.end(),[&](const Value& a,const Value& b){
@@ -495,22 +506,23 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
             if (static_cast<std::size_t>(count) == original->items.size() && !original->nil) break;
             auto result = values.array(instruction.type,static_cast<std::size_t>(count));
             for (std::size_t i = 0; i < std::min(result->items.size(),original->items.size()); ++i) values.write(result->items[i],original->items[i]->value);
-            target->value = result; break;
+            values.write(target,result); break;
         }
         case Op::list_add: {
             auto value = pop(); auto list = std::get<std::shared_ptr<Aggregate>>(pop());
             if (list->nil) trap(instruction,RuntimeError::nil_reference);
-            list->items.push_back(values.cell(type_info(program,instruction.type).element,values.copy(value))); break;
+            auto item=values.cell(type_info(program,instruction.type).element,values.copy(value)); values.own_list_cell(item,list);
+            list->items.push_back(std::move(item)); ++list->version; break;
         }
         case Op::list_clear: {
             auto list=std::get<std::shared_ptr<Aggregate>>(pop()); if (list->nil) trap(instruction,RuntimeError::nil_reference);
-            list->items.clear(); break;
+            list->items.clear(); ++list->version; break;
         }
         case Op::list_remove: {
             const auto index = std::get<std::int32_t>(pop()); auto list = std::get<std::shared_ptr<Aggregate>>(pop());
             if (list->nil) trap(instruction,RuntimeError::nil_reference);
             if (index < 0 || static_cast<std::size_t>(index) >= list->items.size()) trap(instruction,RuntimeError::index_bounds);
-            list->items.erase(list->items.begin()+index); break;
+            list->items.erase(list->items.begin()+index); ++list->version; break;
         }
         case Op::list_contains: {
             auto value = pop(); auto list = std::get<std::shared_ptr<Aggregate>>(pop());

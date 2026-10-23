@@ -85,6 +85,7 @@ def main():
                 ("text-methods.pas", "Файл: Заметка.txt\nПервое слово: Цена:\nЧисло: 125\nОстаток: Количество: 3\nКонец файла: True\n"),
                 ("text-file-changes.pas", "Файл переименован: True\nИмя в переменной: Исходная заметка.txt\nЗаписано на C++\nФайл удалён: True\n"),
                 ("loops.pas", "Сумма: 55\nОбратный отсчёт: 3 2 1 \nПовторений: 3\nНечётные: 1 3 5 \n"),
+                ("foreach.pas", "Сумма: 14\nИмена: Анна Борис \nНечётные: 3 1 1 5 \n"),
             ]:
                 example = subprocess.run([runner, "run", str(folder / "examples" / source)],
                                          text=True, encoding="utf-8", capture_output=True,
@@ -270,12 +271,26 @@ def main():
                                      capture_output=True, cwd=folder, env=env, timeout=10)
             if invalid.returncode != 1 or invalid.stdout or "E_TYPE" not in invalid.stderr:
                 raise RuntimeError(f"{name} for control mutation was not rejected before output")
+            loop.write_text("begin\n var l:=new List<integer>; l.Add(1);\n foreach var x in l do l.Add(2);\nend.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(loop)], text=True, encoding="utf-8",
+                                     capture_output=True, cwd=folder, env=env, timeout=10)
+            if (invalid.returncode != 1 or "E_MODIFIED" not in invalid.stderr
+                    or "EN: Collection was modified during enumeration" not in invalid.stderr
+                    or "RU: Коллекция изменена во время перебора" not in invalid.stderr
+                    or f"{loop}:3:" not in invalid.stderr):
+                raise RuntimeError(f"{name} bilingual foreach mutation error failed: {invalid.stderr!r}")
+            loop.write_text("begin Writeln('must never run'); foreach var x in Arr(1) do Inc(x); end.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(loop)], text=True, encoding="utf-8",
+                                     capture_output=True, cwd=folder, env=env, timeout=10)
+            if invalid.returncode != 1 or invalid.stdout or "E_TYPE" not in invalid.stderr:
+                raise RuntimeError(f"{name} foreach variable mutation was not checked before output")
             results[-1].update({"directories": "passed", "bilingual_directory_error": "passed", "nil_strings": "passed", "bilingual_nil_string": "passed"})
             results[-1]["renames_and_no_overwrite"] = "passed"
             results[-1].update({"classic_text_files": "passed", "bilingual_text_file_error": "passed"})
             results[-1].update({"text_methods": "passed", "bilingual_text_method_error": "passed"})
             results[-1].update({"text_erase_rename": "passed", "bilingual_text_change_error": "passed", "open_text_lock": "passed"})
             results[-1].update({"structured_loops": "passed", "bilingual_loop_limit": "passed", "readonly_for_control": "passed"})
+            results[-1].update({"typed_foreach": "passed", "bilingual_modified_list": "passed", "readonly_foreach": "passed"})
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 

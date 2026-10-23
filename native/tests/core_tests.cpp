@@ -216,6 +216,87 @@ void structured_loops() {
     }
 }
 
+void foreach_loops() {
+    result("begin var sum:=0; foreach var x in Arr(1,2,3,4) do sum:=sum+x; Writeln(sum); end.","10\n");
+    result("begin var x:=99; foreach x in Arr(1,2,3) do Write(x); Writeln(' ',x); foreach x in new integer[0] do Write('bad'); Writeln(x); end.","123 3\n3\n");
+    result("begin foreach var x:int64 in Arr(1,2) do Write(x,' '); foreach x:real in Arr(3,4) do Write(x,' '); Writeln; end.","1 2 3 4 \n");
+    result("begin var x:=9; foreach var x in Arr(x,x+1) do Write(x,' '); Writeln(x); end.","9 10 9\n");
+    result("begin foreach var x in Arr(true,false) do Writeln(x); foreach var s in Arr(nil,'текст','') do Writeln('[',s,']'); end.","True\nFalse\n[nil]\n[текст]\n[]\n");
+    result("begin var a:=Arr(1,2,3); foreach var x in a do begin Write(x); if x=1 then a[1]:=9; end; Writeln; end.","193\n");
+    result("begin var a:=Arr(1,2,3); foreach var x in a do begin Write(x); a:=Arr(99); end; Writeln(' ',a[0]); end.","123 99\n");
+    result("begin var a:=Arr(1,2,3); foreach var x in a do begin Write(x); SetLength(a,0); end; Writeln(' ',Length(a)); end.","123 0\n");
+    result("begin var a:=new integer[0]; foreach var x in a do Write('bad'); Writeln('empty'); end.","empty\n");
+    result("begin var l:=new List<integer>; l.Add(1); l.Add(2); l.Add(3); foreach var x in l do Write(x); Writeln; end.","123\n");
+    result("begin var l:=new List<integer>; foreach var x in l do Write('bad'); Writeln(l.Count); end.","0\n");
+    result("begin var l:=new List<integer>; l.Add(1); l.Add(2); foreach var x in l do begin Write(x); l:=new List<integer>; end; Writeln(' ',l.Count); end.","12 0\n");
+    result("var calls:integer; function Source:array of integer; begin Inc(calls); Result:=Arr(1,2,3); end; begin foreach var x in Source do Write(x); Writeln(' ',calls); end.","123 1\n");
+    result("var calls:integer; function Source:List<integer>; begin Inc(calls); Result:=new List<integer>; Result.Add(7); Result.Add(8); end; begin foreach var x in Source do Write(x); Writeln(' ',calls); end.","78 1\n");
+    result("begin foreach var i in Arr(1,2) do foreach var j in Arr(3,4) do Write(i,j,' '); Writeln; foreach var i in Arr(1,2) do foreach var i in Arr(5,6) do Write(i); Writeln; end.","13 14 23 24 \n5656\n");
+    result("begin var n:=0; foreach var x in Arr(1,2,3,4,5) do begin if x mod 2=0 then continue; if x>3 then break; n:=n+x; end; Writeln(n); end.","4\n");
+    result("begin var n:=0; for var i:=1 to 2 do begin foreach var x in Arr(1,2,3) do begin if x=2 then break; Inc(n); end; end; repeat foreach var x in Arr(1,2) do begin Inc(n); continue; end; until n=4; Writeln(n); end.","4\n");
+    result("function Sum(a:array of integer):integer; begin foreach var x in a do Result:=Result+x; end; function Recur(n:integer):integer; begin if n=0 then Exit(0); foreach var x in Arr(n) do Result:=x+Recur(n-1); end; begin Writeln(Sum(Arr(4,5)),' ',Recur(4)); end.","9 10\n");
+    result("function Find:integer; begin foreach var x in Arr(1,2,3) do if x=2 then Exit(x); end; begin Writeln(Find); end.","2\n");
+    result("type Point=record x:integer; end; begin var p:Point; p.x:=3; var a:=Arr(p,p); foreach var item in a do begin var editable:=item; editable.x:=99; Writeln(item.x); a[1].x:=7; end; Writeln(a[0].x,' ',a[1].x); end.","3\n7\n3 7\n");
+    result("type P=record x:integer; end; begin var p:P; p.x:=3; var l:=new List<P>; l.Add(p); foreach var item in l do begin var editable:=item; editable.x:=99; Writeln(item.x); end; Writeln(l[0].x); end.","3\n3\n");
+    result("begin var row:=Arr(1); var a:=Arr(row); foreach var item in a do item[0]:=9; Writeln(row[0]); end.","9\n");
+    result("begin var inner:=new List<integer>; var outer:=new List<List<integer>>; outer.Add(inner); foreach var item in outer do begin item.Add(7); item[0]:=8; end; Writeln(inner[0]); end.","8\n");
+    result("uses Collections; begin var node:=new SingleNode<integer>(1,nil); foreach var item in Arr(node) do item.Data:=7; Writeln(node.Data); end.","7\n");
+    result("procedure Sum(var total:integer; a:array of integer); begin var x:integer; foreach x in a do total:=total+x; end; begin var n:=0; Sum(n,Arr(1,2,3)); Writeln(n); end.","6\n");
+    result("begin var l:=new List<integer>; l.Add(1); foreach var x in l do begin l.Add(2); break; end; Writeln(l.Count); end.","2\n");
+    result("function F(l:List<integer>):integer; begin foreach var x in l do begin l.Clear; Exit(x); end; end; begin var l:=new List<integer>; l.Add(7); Writeln(F(l),' ',l.Count); end.","7 0\n");
+    for (const auto* operation:{"l.Add(2)","l.RemoveAt(0)","l.Clear","l[0]:=l[0]","Inc(l[0])","Sort(l)","FillByValue(l,9)"})
+        runtime_error(std::string("begin var l:=new List<integer>; l.Add(1); foreach var x in l do ")+operation+"; end.","E_MODIFIED");
+    runtime_error("begin var l:=new List<integer>; l.Add(1); var alias:=l; foreach var x in l do begin alias.Clear; continue; end; end.","E_MODIFIED");
+    runtime_error("begin var l:=new List<string>; l.Add('x'); foreach var s in l do SetLength(l[0],2); end.","E_MODIFIED");
+    runtime_error("begin var l:=new List<array of integer>; l.Add(Arr(1)); foreach var item in l do SetLength(l[0],2); end.","E_MODIFIED");
+    runtime_error("type P=record x:integer; end; begin var l:=new List<P>; var p:P; l.Add(p); foreach var item in l do l[0].x:=7; end.","E_MODIFIED");
+    error([&]{(void)run("begin var l:=new List<integer>; l.Add(1); foreach var x in l do Readln(l[0]); end.","9\n");},"E_MODIFIED");
+    runtime_error("begin var a:array of integer; foreach var x in a do Write(x); end.","E_NIL");
+    runtime_error("begin var l:List<integer>; foreach var x in l do Write(x); end.","E_NIL");
+    for (const auto* source:{"begin foreach var x in Arr(1,2) do x:=9; end.","begin foreach var x in Arr(1,2) do Inc(x); end.",
+        "begin foreach var x in Arr(1) do Readln(x); end.",
+        "procedure P(var n:integer); begin end; begin foreach var x in Arr(1) do P(x); end.",
+        "begin foreach var x:integer in Arr(2147483648) do Write(x); end.",
+        "begin var s:string; foreach s in Arr(1) do Write(s); end.",
+        "begin foreach var x in Arr(1) do foreach x in Arr(2) do Write(x); end.",
+        "begin foreach var x in Arr(1) do for x:=1 to 2 do Write(x); end.",
+        "begin for var x:=1 to 2 do foreach x in Arr(1) do Write(x); end.",
+        "begin foreach var row in Arr(Arr(1)) do row:=Arr(2); end.",
+        "type P=record x:integer; end; begin foreach var p in new P[1] do p.x:=7; end.",
+        "var x:integer; procedure P; begin foreach x in Arr(1) do Write(x); end; begin P; end."}) compile_error(source,"E_TYPE");
+    compile_error("begin foreach x in Arr(1) do Write(x); end.","E_NAME");
+    compile_error("begin foreach var x in Arr(1) do Write(x); Writeln(x); end.","E_NAME");
+    for (const auto* source:{"begin foreach var x in 1 do Write(x); end.","begin foreach var x in 'abc' do Write(x); end.",
+        "begin foreach var x in nil do Write(x); end.",
+        "uses Collections; begin foreach var x in new Stack<integer> do Write(x); end.",
+        "uses Collections; begin foreach var x in new DynArray<integer> do Write(x); end.",
+        "begin foreach var (x,y) in Arr(1) do Write(x); end.",
+        "begin foreach var x in Arr(1) index i do Write(x); end."}) compile_error(source,"E_UNSUPPORTED");
+    abc::ExecutionOptions limits; limits.instruction_limit=60;
+    error([&]{(void)run("begin foreach var x in new integer[100] do continue; end.","",limits);},"E_LIMIT");
+    limits={}; int polls=0; limits.cancelled=[&]{return ++polls>30;};
+    error([&]{(void)run("begin foreach var x in new integer[100] do continue; end.","",limits);},"E_CANCELLED");
+    limits={}; limits.allocation_limit=3;
+    error([&]{(void)run("begin foreach var x in Arr(1) do Write(x); end.","",limits);},"E_LIMIT");
+    auto program=abc::compile("begin foreach var x in Arr(1) do Write(x); end.");
+    for (auto& instruction:program.code) if (instruction.op==abc::Op::iteration_check) instruction.operand=1;
+    error([&]{abc::verify(program);},"E_BYTECODE");
+    program=abc::compile("begin foreach var x in Arr(1) do Write(x); end.");
+    for (auto& instruction:program.code) if (instruction.op==abc::Op::iteration_version) instruction.type=abc::Type::integer;
+    error([&]{abc::verify(program);},"E_BYTECODE");
+    program=abc::compile("begin foreach var x in Arr(1) do Write(x); end.");
+    for (auto& instruction:program.code) if (instruction.op==abc::Op::iteration_check) instruction.op=abc::Op::iteration_version;
+    error([&]{abc::verify(program);},"E_BYTECODE");
+    std::istringstream input; std::ostringstream output;
+    error([&]{abc::execute(abc::compile("begin Writeln('must not run'); foreach var x in Arr(1) do Inc(x); end."),input,output);},"E_TYPE");
+    require(output.str().empty(),"Foreach variable types and readonly status are checked before output");
+    try { (void)run("begin\n var l:=new List<integer>; l.Add(1);\n foreach var x in l do l.Clear;\nend."); require(false,"Expected modified list diagnostic"); }
+    catch (const abc::Error& caught) {
+        require(caught.code=="E_MODIFIED" && caught.location.line==3 && caught.russian=="Коллекция изменена во время перебора",
+            "Modified List foreach error carries both languages and source position");
+    }
+}
+
 void arithmetic() {
     for (const auto& source : {
         "begin writeln(2147483647 + 1); end.",
@@ -1219,6 +1300,7 @@ void verifier() {
 int main() {
     language();
     structured_loops();
+    foreach_loops();
     arithmetic();
     verifier();
     bilingual_diagnostics();
