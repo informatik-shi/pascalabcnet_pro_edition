@@ -7,7 +7,8 @@
     "arrays": "Dynamic and jagged arrays; zero-based index, reference assignment, Copy, SetLength; fixed-bound and rectangular arrays pending.",
     "records": "Nominal records, nested fields, value assignment; cyclic type definitions pending.",
     "routines": "Typed user functions/procedures, value and var parameters, recursion, Result and Exit; overloads, nested routines, defaults and user generics pending.",
-    "collections": "List<T>: construction, Count, index, Add, RemoveAt, Clear, Contains. With uses Collections: Stack<T>, Queue<T>, DynArray<T>, SimpleSet<T>, AssocArray<K,V>, LinkedList<T>, LinkedListNode<T>, SingleNode<T>. SingleNode has typed constructor(data,next) and writable Data/Next; it is distinct from LinkedListNode. All eight source class families now have a basic native profile. Execution-owned node arena uses weak links. Missing string values currently become empty strings instead of .NET null. Other collection features pending.",
+    "collections": "List<T>: construction, Count, index, Add, RemoveAt, Clear, Contains. With uses Collections: Stack<T>, Queue<T>, DynArray<T>, SimpleSet<T>, AssocArray<K,V>, LinkedList<T>, LinkedListNode<T>, SingleNode<T>. SingleNode has typed constructor(data,next) and writable Data/Next; it is distinct from LinkedListNode. All eight source class families now have a basic native profile. Execution-owned node arena uses weak links. Generic defaults preserve nil strings, including record fields. Other collection features pending.",
+    "strings": "UTF-16 strings with a distinct typed nil value. Original normal/generic initialization, comparison, concatenation, output, mutations and implemented library functions handle nil. Queue text concatenation treats nil as empty; collection element ToString reports E_NIL. Numeric conversions retain their different nil rules.",
     "files": "UTF-8 whole-text and line-array IO, Unicode paths, 1 MiB per file. Unlike the original Windows CP1251 default. Encoding overloads and classic/binary file handles pending."
   },
   "module_constants": { "Collections": { "MIN_CAP": 4, "INC_CAP_FACTOR": 2 } },
@@ -152,7 +153,7 @@
       "name": "Collections",
       "source": "bin/Lib/Collections.pas",
       "status": "partial",
-      "notes": "All eight class families have a basic native profile: SingleNode, Stack, Queue, DynArray, SimpleSet, AssocArray, LinkedList and LinkedListNode. Types are static; records copy by value and collections/nodes preserve references. Original resize/formatting/rewiring rules are retained. Node arena and weak links prevent C++ ownership cycles. Text output is scalar-only; missing strings use empty strings, not .NET null. Property var-arguments/direct record-field writes, compound-element text output, inherited .NET behavior and source-unit loading remain pending."
+      "notes": "All eight class families have a basic native profile: SingleNode, Stack, Queue, DynArray, SimpleSet, AssocArray, LinkedList and LinkedListNode. Types are static; records copy by value and collections/nodes preserve references. Original resize/formatting/rewiring rules are retained, including generic nil-string defaults. Node arena and weak links prevent C++ ownership cycles. Text output is scalar-only; Queue concatenates nil as empty, while element ToString traps on nil. Property var-arguments/direct record-field writes, compound-element text output, inherited .NET behavior and source-unit loading remain pending."
     },
     {
       "name": "Controls",

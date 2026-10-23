@@ -598,6 +598,9 @@ private:
         throw Error("E_NAME", token.location, "Unknown name '" + token.text + "'");
     }
     std::unique_ptr<hir::Expr> convert(std::unique_ptr<hir::Expr> expression, Type type) {
+        if (expression->type == Type::nil && type == Type::string) {
+            expression->type=type; expression->kind=hir::ExprKind::literal; expression->value=NilString{}; return expression;
+        }
         if (expression->type == Type::nil && compound(type) && info(type,expression->location).kind!=CompoundKind::record) {
             expression->type=type; expression->kind=hir::ExprKind::default_value; return expression;
         }
@@ -834,9 +837,11 @@ private:
             }
             if (source.token.text == "arr") {
                 if (result->arguments.empty()) throw Error("E_TYPE",result->location,"Cannot infer empty Arr element type");
-                auto element = result->arguments.front()->type;
+                auto element = Type::nil;
+                for (const auto& argument : result->arguments) if (argument->type != Type::nil) { element=argument->type; break; }
                 if (element == Type::unit || element == Type::nil) throw Error("E_TYPE",result->location,"Procedure has no value");
                 for (const auto& argument : result->arguments) {
+                    if (argument->type == Type::nil && (element == Type::string || compound(element))) continue;
                     if (can_widen(element,argument->type)) element = argument->type;
                     else if (!can_widen(argument->type,element)) throw Error("E_TYPE",result->location,"Incompatible array elements");
                 }
@@ -941,6 +946,10 @@ private:
                 break;
             }
             const bool comparison = op == "=" || op == "<>" || op == "<" || op == "<=" || op == ">" || op == ">=";
+            if ((op == "+" || comparison) && (left == Type::string || right == Type::string)) {
+                if (left == Type::nil) { result->left=convert(std::move(result->left),Type::string); left=Type::string; }
+                if (right == Type::nil) { result->right=convert(std::move(result->right),Type::string); right=Type::string; }
+            }
             if ((op=="=" || op=="<>") && (compound(left) || compound(right))) {
                 if (left==Type::nil) { result->left=convert(std::move(result->left),right); left=right; }
                 if (right==Type::nil) { result->right=convert(std::move(result->right),left); right=left; }

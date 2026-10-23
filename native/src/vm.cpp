@@ -52,6 +52,7 @@ template<class T> T integer_operation(T a, T b, const Instruction& instruction) 
 }
 
 std::string format(const Value& value, const Instruction& instruction) {
+    if (std::holds_alternative<NilString>(value)) return "nil";
     if (const auto* text = std::get_if<std::u16string>(&value)) return to_utf8(*text, true);
     if (const auto* boolean = std::get_if<bool>(&value)) return *boolean ? "True" : "False";
     char buffer[128];
@@ -63,8 +64,9 @@ std::string format(const Value& value, const Instruction& instruction) {
     return {buffer, result.ptr};
 }
 
-void append_collection_text(std::u16string& text, const Value& value, const Instruction& instruction) {
-    auto part = std::get_if<std::u16string>(&value) ? std::get<std::u16string>(value) : from_utf8(format(value,instruction));
+void append_collection_text(std::u16string& text, const Value& value, const Instruction& instruction, bool concatenate = false) {
+    if (!concatenate && std::holds_alternative<NilString>(value)) trap(instruction,RuntimeError::nil_reference);
+    auto part = value_type(value) == Type::string ? string_text(value) : from_utf8(format(value,instruction));
     if (part.size() >= 1'048'576 || text.size() > 1'048'576 - part.size() - 1) trap(instruction,RuntimeError::string_limit);
     text += part; text += u' ';
 }
@@ -217,7 +219,7 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
                 auto found = target->items.size();
                 for (std::size_t i=0;i<target->items.size();i+=2) if (values.equal(target->items[i]->value,arguments[0])) { found = i; break; }
                 if (method == AssociationMethod::get) {
-                    stack.push_back(found == target->items.size() ? values.zero(info.element) : values.copy(target->items[found+1]->value));
+                    stack.push_back(found == target->items.size() ? values.zero(info.element,false,true) : values.copy(target->items[found+1]->value));
                 } else if (found != target->items.size()) values.write(target->items[found+1],arguments[1]);
                 else {
                     if (values.remaining < 2 || target->items.size() > target->items.max_size()-2) trap(instruction,RuntimeError::allocation_limit);
@@ -327,7 +329,7 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
             } else {
                 std::u16string text;
                 auto append = [&](const std::shared_ptr<Cell>& item) {
-                    append_collection_text(text,item->value,instruction);
+                    append_collection_text(text,item->value,instruction,!lifo);
                 };
                 if (lifo) for (auto item = items.rbegin(); item != items.rend(); ++item) append(*item);
                 else for (const auto& item : items) append(item);
@@ -357,7 +359,7 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
             const auto result=stdlib::invoke(instruction.operand,arguments,instruction.location); values.write(target,result); break;
         }
         case Op::read_lines: {
-            const auto path=std::get<std::u16string>(pop()); const auto text=read_text_file(path,instruction.location);
+            const auto path=pop(); const auto text=read_text_file(string_text(path),instruction.location);
             auto result=values.array(instruction.type,0); std::size_t start=0;
             for (std::size_t i=0;i<text.size();++i) if (text[i]==u'\r' || text[i]==u'\n') {
                 result->items.push_back(values.cell(Type::string,std::u16string(text.substr(start,i-start))));
@@ -368,11 +370,11 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
             stack.emplace_back(result); break;
         }
         case Op::write_lines: {
-            const auto lines=std::get<std::shared_ptr<Aggregate>>(pop()); const auto path=std::get<std::u16string>(pop());
+            const auto lines=std::get<std::shared_ptr<Aggregate>>(pop()); const auto path=pop();
             if (lines->nil) trap(instruction,RuntimeError::nil_reference);
             std::u16string text;
             for (const auto& line:lines->items) {
-                const auto& part=std::get<std::u16string>(line->value);
+                const auto& part=string_text(line->value);
 #ifdef _WIN32
                 const auto newline=u"\r\n";
 #else
@@ -382,7 +384,7 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
                 text+=part; text+=newline;
                 if (text.size()>1'048'576) trap(instruction,RuntimeError::file_limit);
             }
-            write_text_file(path,text,instruction.location); break;
+            write_text_file(string_text(path),text,instruction.location); break;
         }
         case Op::array_copy: {
             const auto original=std::get<std::shared_ptr<Aggregate>>(pop());
@@ -399,7 +401,10 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
             if (sequence->nil) trap(instruction,RuntimeError::nil_reference);
             std::vector<Value> items;
             for (const auto& item:sequence->items) items.push_back(item->value);
-            std::sort(items.begin(),items.end(),[&](const Value& a,const Value& b){ return instruction.operand ? a>b : a<b; });
+            std::sort(items.begin(),items.end(),[&](const Value& a,const Value& b){
+                if (value_type(a)==Type::string) return instruction.operand ? compare_strings(a,b)>0 : compare_strings(a,b)<0;
+                return instruction.operand ? a>b : a<b;
+            });
             for (std::size_t i=0;i<items.size();++i) values.write(sequence->items[i],items[i]); break;
         }
         case Op::sequence_fill: {
@@ -538,12 +543,12 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
                 std::get<std::int64_t>(left), std::get<std::int64_t>(right), instruction));
             else if (instruction.type == Type::string) {
                 constexpr std::size_t string_limit = 1'048'576;
-                auto& a = std::get<std::u16string>(left);
-                const auto& b = std::get<std::u16string>(right);
+                auto a = string_text(left);
+                const auto& b = string_text(right);
                 if (b.size() > string_limit || a.size() > string_limit - b.size())
                     trap(instruction, RuntimeError::string_limit);
                 a += b;
-                stack.push_back(std::move(left));
+                stack.emplace_back(std::move(a));
             } else {
                 const auto a = std::get<double>(left), b = std::get<double>(right);
                 double result = 0;
@@ -563,6 +568,18 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
         case Op::equal: case Op::not_equal: case Op::less: case Op::less_equal: case Op::greater: case Op::greater_equal: {
             const auto right = pop(), left = pop();
             bool result = false;
+            if (instruction.type==Type::string) {
+                const auto order=compare_strings(left,right);
+                switch (instruction.op) {
+                case Op::equal: result=order==0; break;
+                case Op::not_equal: result=order!=0; break;
+                case Op::less: result=order<0; break;
+                case Op::less_equal: result=order<=0; break;
+                case Op::greater: result=order>0; break;
+                default: result=order>=0;
+                }
+                stack.emplace_back(result); break;
+            }
             switch (instruction.op) {
             case Op::equal: result = values.equal(left,right); break;
             case Op::not_equal: result = !values.equal(left,right); break;

@@ -134,10 +134,10 @@ Value invoke(std::size_t id, std::span<const Value> arguments, SourceLocation lo
     const auto& signature = signatures()[id]; // Verified before execution.
     const auto& value = arguments.front();
     const auto function = signature.function;
-    if (function == Function::read_all_text) return read_text_file(std::get<std::u16string>(value),location);
-    if (function == Function::file_exists) return file_exists(std::get<std::u16string>(value));
+    if (function == Function::read_all_text) return read_text_file(string_text(value),location);
+    if (function == Function::file_exists) return file_exists(string_text(value));
     if (function == Function::write_all_text) {
-        write_text_file(std::get<std::u16string>(value),std::get<std::u16string>(arguments[1]),location); return false;
+        write_text_file(string_text(value),string_text(arguments[1]),location); return false;
     }
     if (auto result = invoke_text(function, arguments, location)) return std::move(*result);
     if (function == Function::minimum || function == Function::maximum) {
@@ -182,7 +182,7 @@ Value invoke(std::size_t id, std::span<const Value> arguments, SourceLocation lo
         return lower;
     }
     if (signature.parameters.front() == Type::string) {
-        const auto& text = std::get<std::u16string>(value);
+        const auto& text = string_text(value);
         if (function == Function::length) {
             if (text.size() > static_cast<std::size_t>(std::numeric_limits<std::int32_t>::max()))
                 throw runtime_error(RuntimeError::integer_overflow, location);
@@ -195,7 +195,7 @@ Value invoke(std::size_t id, std::span<const Value> arguments, SourceLocation lo
             if (start >= text.size() || count <= 0) return std::u16string{};
             return text.substr(start, static_cast<std::size_t>(count));
         }
-        const auto& other = std::get<std::u16string>(arguments[1]);
+        const auto& other = string_text(arguments[1]);
         if (function == Function::concat) {
             constexpr std::size_t limit = 1'048'576;
             if (text.size() > limit || other.size() > limit - text.size())
@@ -203,6 +203,8 @@ Value invoke(std::size_t id, std::span<const Value> arguments, SourceLocation lo
             return text + other;
         }
         // Pos/LastPos take (substring, text, optional one-based starting index).
+        if (text.empty()) return std::int32_t{0};
+        if (std::holds_alternative<NilString>(arguments[1])) throw runtime_error(RuntimeError::nil_reference,location);
         const auto from = arguments.size() == 3 ? std::get<std::int32_t>(arguments[2])
             : function == Function::pos ? 1 : static_cast<std::int32_t>(other.size());
         if (text.empty() || from > static_cast<std::int64_t>(other.size())) return std::int32_t{0};

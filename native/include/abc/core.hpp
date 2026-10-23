@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <cstddef>
+#include <compare>
 #include <functional>
 #include <memory>
 #include <deque>
@@ -47,8 +48,10 @@ bool can_widen(Type from, Type to);
 struct Aggregate;
 struct Cell;
 struct LinkedLinks { std::weak_ptr<Aggregate> prev, next; };
+// A null string keeps its static string type and differs from an empty string.
+struct NilString { auto operator<=>(const NilString&) const = default; };
 using Value = std::variant<std::int32_t, std::int64_t, double, bool, std::u16string,
-    std::shared_ptr<Aggregate>, std::shared_ptr<Cell>>;
+    std::shared_ptr<Aggregate>, std::shared_ptr<Cell>, NilString>;
 struct Cell { Type type; Value value; };
 struct Aggregate {
     Type type;
@@ -60,6 +63,9 @@ struct Aggregate {
     std::unique_ptr<LinkedLinks> links;
 };
 Type value_type(const Value& value);
+// Use only where Pascal string operations explicitly treat nil as empty.
+const std::u16string& string_text(const Value& value);
+int compare_strings(const Value& left, const Value& right);
 std::u16string from_utf8(std::string_view text);
 std::string to_utf8(std::u16string_view text, bool replace_invalid = false);
 

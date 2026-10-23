@@ -78,6 +78,7 @@ def main():
                 ("associations.pas", "Цена яблок: 125\nНет цены: 0\nВсе цены:\nЯблоки 125\nГруши 150\n"),
                 ("linked-lists.pas", "Вперёд: Анна Борис Вера \nНазад после удаления: Вера Анна \n"),
                 ("single-nodes.pas", "Цепочка: Анна Борис Вера \nПосле изменения: Анна Виктория\n"),
+                ("nil-strings.pas", "Нет значения: nil\nЭто nil: True\nПустая строка — nil: False\nДлина nil: 0\nСоединение: [текст]\nПосле Insert: Новое имя\n"),
             ]:
                 example = subprocess.run([runner, "run", str(folder / "examples" / source)],
                                          text=True, encoding="utf-8", capture_output=True,
@@ -180,6 +181,14 @@ def main():
                     or "RU: Превышен предел числа выполняемых инструкций" not in invalid.stderr
                     or f"{linked}:7:" not in invalid.stderr):
                 raise RuntimeError(f"{name} cyclic linked-list limit failed: {invalid.stderr!r}")
+            nil_string = folder / "Строковый nil.pas"
+            nil_string.write_text("begin\n var s:string:=nil;\n Writeln(Trim(s));\nend.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(nil_string)], text=True, encoding="utf-8",
+                                     capture_output=True, cwd=folder, env=env, timeout=10)
+            if (invalid.returncode != 1 or "E_NIL" not in invalid.stderr
+                    or "EN: Cannot access a nil reference" not in invalid.stderr
+                    or "RU: Нельзя обратиться к пустой ссылке nil" not in invalid.stderr or f"{nil_string}:3:" not in invalid.stderr):
+                raise RuntimeError(f"{name} bilingual nil-string error failed: {invalid.stderr!r}")
             single = folder / "Односвязный узел.pas"
             single.write_text("uses Collections;\nbegin\n var n:SingleNode<integer>;\n n.Next:=nil;\nend.", encoding="utf-8")
             invalid = subprocess.run([runner, "run", str(single)], text=True, encoding="utf-8",

@@ -141,7 +141,7 @@ std::u16string format_number(const Value& value, SourceLocation location) {
 std::optional<Value> invoke_text(Function function, std::span<const Value> arguments, SourceLocation location) {
     switch (function) {
     case Function::resize_string: {
-        const auto& original = std::get<std::u16string>(arguments[0]);
+        const auto& original = string_text(arguments[0]);
         const auto length = std::get<std::int32_t>(arguments[1]);
         if (length < 0) throw runtime_error(RuntimeError::string_length, location);
         if (length > 1'048'576) throw runtime_error(RuntimeError::string_limit, location);
@@ -150,8 +150,8 @@ std::optional<Value> invoke_text(Function function, std::span<const Value> argum
         return result;
     }
     case Function::insert_string: {
-        const auto& substring = std::get<std::u16string>(arguments[0]);
-        const auto& original = std::get<std::u16string>(arguments[1]);
+        const auto& substring = string_text(arguments[0]);
+        const auto& original = string_text(arguments[1]);
         const auto index = std::get<std::int32_t>(arguments[2]);
         constexpr std::size_t limit = 1'048'576;
         if (original.size() > limit || substring.size() > limit - original.size())
@@ -163,7 +163,8 @@ std::optional<Value> invoke_text(Function function, std::span<const Value> argum
         return result;
     }
     case Function::delete_string: {
-        const auto& original = std::get<std::u16string>(arguments[0]);
+        if (std::holds_alternative<NilString>(arguments[0])) return arguments[0];
+        const auto& original = string_text(arguments[0]);
         const auto index = std::get<std::int32_t>(arguments[1]), count = std::get<std::int32_t>(arguments[2]);
         if (index < 1 || count <= 0 || static_cast<std::size_t>(index - 1) >= original.size()) return original;
         auto result = original;
@@ -171,33 +172,42 @@ std::optional<Value> invoke_text(Function function, std::span<const Value> argum
         return result;
     }
     case Function::int_to_str: case Function::float_to_str: return format_number(arguments[0], location);
-    case Function::str_to_int: return parse_integer<std::int32_t>(std::get<std::u16string>(arguments[0]), location);
-    case Function::str_to_int64: return parse_integer<std::int64_t>(std::get<std::u16string>(arguments[0]), location);
-    case Function::str_to_real:
-        return parse_decimal(std::get<std::u16string>(arguments[0]), arguments.size() == 2
-            ? std::u16string_view(std::get<std::u16string>(arguments[1])) : u".", arguments.size() == 2 ? u',' : u'.', location);
+    case Function::str_to_int:
+        if (std::holds_alternative<NilString>(arguments[0])) throw runtime_error(RuntimeError::nil_reference,location);
+        return parse_integer<std::int32_t>(string_text(arguments[0]), location);
+    case Function::str_to_int64:
+        if (std::holds_alternative<NilString>(arguments[0])) return std::int64_t{0};
+        return parse_integer<std::int64_t>(string_text(arguments[0]), location);
+    case Function::str_to_real: {
+        if (arguments.size()==2 && string_text(arguments[1]).empty()) throw runtime_error(RuntimeError::decimal_separator,location);
+        if (std::holds_alternative<NilString>(arguments[0])) return 0.0;
+        return parse_decimal(string_text(arguments[0]), arguments.size() == 2
+            ? std::u16string_view(string_text(arguments[1])) : u".", arguments.size() == 2 ? u',' : u'.', location);
+    }
     case Function::compare_str: {
-        const auto& left = std::get<std::u16string>(arguments[0]);
-        const auto& right = std::get<std::u16string>(arguments[1]);
+        const auto& left = string_text(arguments[0]);
+        const auto& right = string_text(arguments[1]);
         for (std::size_t i = 0; i < std::min(left.size(), right.size()); ++i)
             if (left[i] != right[i]) return std::int32_t(left[i]) - std::int32_t(right[i]);
         return static_cast<std::int32_t>(left.size()) - static_cast<std::int32_t>(right.size());
     }
     case Function::trim: case Function::trim_left: case Function::trim_right: {
-        auto text = std::u16string_view(std::get<std::u16string>(arguments[0]));
+        if (std::holds_alternative<NilString>(arguments[0])) throw runtime_error(RuntimeError::nil_reference,location);
+        auto text = std::u16string_view(string_text(arguments[0]));
         if (function != Function::trim_right) while (!text.empty() && text.front() == u' ') text.remove_prefix(1);
         if (function != Function::trim_left) while (!text.empty() && text.back() == u' ') text.remove_suffix(1);
         return std::u16string(text);
     }
     case Function::left_str: case Function::right_str: {
-        const auto& text = std::get<std::u16string>(arguments[0]);
+        const auto& text = string_text(arguments[0]);
         const auto count = std::get<std::int32_t>(arguments[1]);
         if (count <= 0) return std::u16string{};
         const auto length = std::min(text.size(), static_cast<std::size_t>(count));
         return text.substr(function == Function::left_str ? 0 : text.size() - length, length);
     }
     case Function::reverse_string: {
-        auto text = std::get<std::u16string>(arguments[0]);
+        if (std::holds_alternative<NilString>(arguments[0])) throw runtime_error(RuntimeError::nil_reference,location);
+        auto text = string_text(arguments[0]);
         std::size_t start = 0, length = text.size();
         if (arguments.size() == 3) {
             const auto index = std::get<std::int32_t>(arguments[1]), count = std::get<std::int32_t>(arguments[2]);

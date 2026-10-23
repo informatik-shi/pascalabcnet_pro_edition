@@ -41,7 +41,8 @@ DynArray<T>, SimpleSet<T>, AssocArray<K,V>, LinkedList<T>, LinkedListNode<T>, Si
 Для классов Collections добавьте uses Collections;
 Примеры: examples/structures.pas, examples/files.pas, examples/collections.pas, examples/buffers.pas,
 examples/associations.pas, examples/linked-lists.pas, examples/single-nodes.pas, examples/standard-library.pas,
-examples/text-numbers.pas, examples/string-editing.pas.
+examples/text-numbers.pas, examples/string-editing.pas, examples/nil-strings.pas.
+Строковый nil отличается от пустой строки; стандартные строковые операции учитывают это различие.
 Совместимость с PascalABC.NET частичная.
 Установка .NET, Python или Qt для запуска этого пакета не требуется.
 "@

@@ -1,0 +1,26 @@
+False False False False
+False False
+[nil] True []
+null key / empty key
+True False False True True False True
+[] [x] [x] []
+0 [] [] [] 0
+0 0 0 0
+0 0 0 False
+[nil]
+False []
+[  ]
+True
+0
+2 [] tail False
+True
+kept
+True
+True
+True
+[ ] True
+True True
+False True
+True False
+[nil] [] aa bb
+bb aa [] [nil]

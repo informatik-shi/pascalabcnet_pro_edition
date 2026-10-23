@@ -28,16 +28,28 @@ bool numeric(Type type) {
 }
 
 bool can_widen(Type from, Type to) {
-    return from == to || (from == Type::integer && to == Type::int64)
+    return from == to || (from == Type::nil && to == Type::string) || (from == Type::integer && to == Type::int64)
         || ((from == Type::integer || from == Type::int64) && to == Type::real);
 }
 
 Type value_type(const Value& value) {
+    if (std::holds_alternative<NilString>(value)) return Type::string;
     if (const auto* aggregate = std::get_if<std::shared_ptr<Aggregate>>(&value)) return *aggregate ? (*aggregate)->type : Type::invalid;
     if (const auto* cell = std::get_if<std::shared_ptr<Cell>>(&value)) return *cell ? reference_type((*cell)->type) : Type::invalid;
     static constexpr std::array types{
         Type::integer, Type::int64, Type::real, Type::boolean, Type::string};
     return types.at(value.index());
+}
+
+const std::u16string& string_text(const Value& value) {
+    static const std::u16string empty;
+    return std::holds_alternative<NilString>(value) ? empty : std::get<std::u16string>(value);
+}
+
+int compare_strings(const Value& left, const Value& right) {
+    const bool a = std::holds_alternative<NilString>(left), b = std::holds_alternative<NilString>(right);
+    if (a || b) return a == b ? 0 : a ? -1 : 1;
+    return string_text(left).compare(string_text(right));
 }
 
 std::u16string from_utf8(std::string_view text) {

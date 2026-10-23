@@ -99,6 +99,50 @@ void language() {
     catch (const abc::Error& caught) { require(caught.location.line == 3, "Diagnostic points to assignment source line"); }
 }
 
+void nullable_strings() {
+    result("begin var s:string:=nil; writeln('[',s,'] ',s=nil,' ',s='',' ',s='nil'); end.","[nil] True False False\n");
+    result("begin var s:string:=nil; writeln(s<'',' ',s<='',' ',s>'',' ',s>='',' ',''>s,' ',''<>s); end.","True True False False True True\n");
+    result("begin var s:string:=nil; writeln('[',s+'','] [','x'+s,'] [',nil+'x','] [',Concat(nil,nil),']'); end.","[] [x] [x] []\n");
+    result("begin var s:string:=nil; writeln(Length(s),' [',Copy(s,1,2),'] [',LeftStr(s,2),'] [',RightStr(s,2),'] ',CompareStr(s,''),' ',CompareStr('',nil)); end.","0 [] [] [] 0 0\n");
+    result("begin writeln(Pos(nil,nil),' ',LastPos(nil,nil),' ',Pos('',nil,0),' ',LastPos(nil,'abc',-1)); end.","0 0 0 0\n");
+    result("begin writeln(StrToInt64(nil),' ',StrToReal(nil),' ',StrToFloat(nil,'.'),' ',FileExists(nil)); end.","0 0 0 False\n");
+    result("begin var s:string:=nil; Delete(s,1,2); writeln(s=nil); Insert(nil,s,1); writeln(s=nil,' [',s,']'); s:=nil; SetLength(s,2); writeln('[',s,']'); end.","True\nFalse []\n[  ]\n");
+    result("type Rec=record s:string; end; function F:string; begin end; begin var s:string; var r:Rec; var a:=new string[1]; writeln(s=nil,' ',r.s=nil,' ',a[0]=nil,' ',F=nil); end.","False False False False\n");
+    result("begin var a:=new string[1]; SetLength(a,3); var b:array of string; SetLength(b,1); writeln(a[1]=nil,' ',b[0]=nil); end.","False False\n");
+    result("uses Collections; begin var m:=new AssocArray<string,string>; writeln(m['absent'],' ',m['absent']=nil,' [',m.ToString,']'); m[nil]:='null'; m['']:='empty'; writeln(m[nil],' ',m['']); end.","nil True []\nnull empty\n");
+    result("uses Collections; type Rec=record s:string; end; begin var m:=new AssocArray<string,Rec>; var r:=m['x']; writeln(r.s=nil); var d:=new DynArray<Rec>(1); r:=d[0]; writeln(r.s=nil); end.","True\nTrue\n");
+    result("uses Collections; begin var d:=new DynArray<string>(1); writeln(d[0]=nil); d[0]:='kept'; d.Resize(0); d.Resize(1); writeln(d[0]); d.Resize(8); writeln(d[1]=nil); end.","True\nkept\nTrue\n");
+    result("uses Collections; begin var q:=new Queue<string>; q.Enqueue(nil); writeln('[',q.ToString,'] ',q.Top=nil); var s:=new SimpleSet<string>; s.Add(nil); s.Add(''); s.Add(nil); writeln(s.Contains(nil),' ',s.Contains('')); s.Remove(nil); writeln(s.Contains(nil),' ',s.Contains('')); end.","[ ] True\nTrue True\nFalse True\n");
+    result("begin var a:=Arr(nil,'b','','a'); Sort(a); writeln('[',a[0],'] [',a[1],'] ',a[2],' ',a[3]); SortDescending(a); writeln(a[0],' ',a[1],' [',a[2],'] [',a[3],']'); end.","[nil] [] a b\nb a [] [nil]\n");
+    result("begin var l:=new List<string>; l.Add(nil); writeln(l.Contains(nil),' ',l.Contains('')); l.Add(''); writeln(l.Contains('')); end.","True False\nTrue\n");
+    result("function F(s:string):string; begin Result:=s; end; procedure P(var s:string); begin s:=nil; end; begin var s:='x'; P(s); writeln(F(s)=nil); var a:=Arr('x'); P(a[0]); writeln(a[0]=nil); end.","True\nTrue\n");
+    for (auto source : {"begin writeln(Trim(nil)); end.", "begin writeln(TrimLeft(nil)); end.",
+         "begin writeln(TrimRight(nil)); end.", "begin writeln(ReverseString(nil)); end.",
+         "begin writeln(ReverseString(nil,1,0)); end.", "begin writeln(StrToInt(nil)); end.",
+         "begin writeln(Pos('x',nil)); end.", "begin writeln(LastPos('x',nil,1)); end.",
+         "uses Collections; begin var s:=new Stack<string>; s.Push(nil); writeln(s.ToString); end.",
+         "uses Collections; begin var d:=new DynArray<string>(1); writeln(d.ToString); end.",
+         "uses Collections; begin var s:=new SimpleSet<string>; s.Add(nil); s.Print; end.",
+         "uses Collections; begin var m:=new AssocArray<string,string>; m['x']:=nil; m.Println; end.",
+         "uses Collections; begin var l:=new LinkedList<string>; l.AddLast(nil); writeln(l.ToString); end."})
+        runtime_error(source,"E_NIL");
+    runtime_error("begin Writeln(ReadAllText(nil)); end.","E_IO");
+    runtime_error("begin WriteAllText(nil,'x'); end.","E_IO");
+    runtime_error("begin Writeln(StrToReal(nil,'')); end.","E_RANGE");
+    compile_error("begin var s:string:=nil; var n:integer:=s; end.","E_TYPE");
+    compile_error("begin var n:=nil; end.","E_TYPE");
+    compile_error("begin var a:=Arr(nil,nil); end.","E_TYPE");
+    compile_error("begin var a:=Arr(nil,1); end.","E_TYPE");
+    auto program=abc::compile("begin var s:string:=nil; writeln(s); end.");
+    require(abc::value_type(abc::NilString{})==abc::Type::string,"Null string retains its static string type");
+    for (auto& instruction:program.code) if (instruction.op==abc::Op::push && instruction.type==abc::Type::string) { instruction.type=abc::Type::integer; break; }
+    error([&] { abc::verify(program); },"E_BYTECODE");
+    try { (void)run("begin\n var s:string:=nil;\n Writeln(Trim(s));\nend."); require(false,"Expected null string failure"); }
+    catch (const abc::Error& caught) {
+        require(caught.code=="E_NIL" && caught.location.line==3 && !caught.russian.empty(),"Null string error retains source line and both languages");
+    }
+}
+
 void arithmetic() {
     for (const auto& source : {
         "begin writeln(2147483647 + 1); end.",
@@ -401,6 +445,8 @@ void file_library() {
     const auto path=directory/fs::path(u8"Текст.txt"), lines=directory/"lines.txt";
     const auto file=quote(path), linefile=quote(lines);
     result("begin writeln(FileExists("+file+")); WriteAllText("+file+",'Привет 🌍'); writeln(FileExists("+file+"),' ',ReadAllText("+file+")); end.", "False\nTrue Привет 🌍\n");
+    result("begin var s:string:=nil; WriteAllText("+file+",s); writeln(Length(ReadAllText("+file+"))); end.","0\n");
+    result("begin var a:=new string[2]; a[0]:=nil; a[1]:='tail'; WriteAllLines("+linefile+",a); var b:=ReadAllLines("+linefile+"); writeln(Length(b),' [',b[0],'] ',b[1],' ',b[0]=nil); end.","2 [] tail False\n");
     result("begin WriteAllLines("+linefile+",Arr('alpha','beta')); var lines:=ReadAllLines("+linefile+"); writeln(Length(lines),' ',lines[0],' ',lines[1]); end.", "2 alpha beta\n");
     { std::ofstream out(path,std::ios::binary); out << "\xef\xbb\xbf" "a\r\nb\rc\n"; }
     result("begin var lines:=ReadAllLines("+file+"); writeln(Length(lines),' ',lines[0],lines[1],lines[2]); end.", "3 abc\n");
@@ -520,8 +566,8 @@ void association_collections() {
     result("uses Collections; begin var m:=new AssocArray<real,integer>; m[1]:=3; m[1.0]:=7; writeln(m[1]); end.","7\n");
     result("uses Collections; begin var m:=new AssocArray<boolean,string>; m[true]:='yes'; m[false]:='no'; writeln(m[false],' ',m[true]); end.","no yes\n");
     result("uses Collections; type P=record x:integer; end; begin var m:=new AssocArray<string,P>; var p:P; p.x:=7; m['p']:=p; p.x:=9; var q:=m['p']; q.x:=11; q:=m['p']; var missing:=m['missing']; missing.x:=4; var again:=m['missing']; writeln(q.x,' ',p.x,' ',again.x); end.","7 9 0\n");
-    result("uses Collections; type P=record x:integer; end; begin var m:=new AssocArray<P,string>; var p:P; p.x:=7; m[p]:='first'; p.x:=8; writeln('[',m[p],']'); p.x:=7; m[p]:='updated'; writeln(m[p]); end.","[]\nupdated\n");
-    result("uses Collections; begin var m:=new AssocArray<array of integer,string>; var a:=Arr(1); m[a]:='stored'; a[0]:=9; writeln(m[a],' [',m[Arr(9)],']'); m[nil]:='nil key'; writeln(m[nil]); end.","stored []\nnil key\n");
+    result("uses Collections; type P=record x:integer; end; begin var m:=new AssocArray<P,string>; var p:P; p.x:=7; m[p]:='first'; p.x:=8; writeln('[',m[p],']'); p.x:=7; m[p]:='updated'; writeln(m[p]); end.","[nil]\nupdated\n");
+    result("uses Collections; begin var m:=new AssocArray<array of integer,string>; var a:=Arr(1); m[a]:='stored'; a[0]:=9; writeln(m[a],' [',m[Arr(9)],']'); m[nil]:='nil key'; writeln(m[nil]); end.","stored [nil]\nnil key\n");
     result("uses Collections; begin var m:=new AssocArray<string,array of integer>; var a:=Arr(1); m['a']:=a; a[0]:=8; var b:=m['a']; writeln(b[0],' ',m['missing']=nil); end.","8 True\n");
     result("uses Collections; begin var m:=new AssocArray<string,AssocArray<integer,string>>; var inner:=new AssocArray<integer,string>; inner[1]:='value'; m['inner']:=inner; var alias:=m['inner']; writeln(alias[1],' ',m['missing']=nil); end.","value True\n");
     result("uses Collections; var calls:integer; function Key:string; begin Inc(calls); Result:='key'; end; function V:integer; begin Inc(calls); Result:=9; end; begin var m:=new AssocArray<string,integer>; m[Key()]:=V(); writeln(calls,' ',m['key']); end.","2 9\n");
@@ -749,6 +795,7 @@ int main() {
     library_bytecode();
     text_library();
     mutable_strings();
+    nullable_strings();
     language_foundations();
     aggregate_semantics();
     file_library();
