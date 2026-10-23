@@ -9,7 +9,7 @@
     "routines": "Typed user functions/procedures, value and var parameters, recursion, Result and Exit; overloads, nested routines, defaults and user generics pending.",
     "collections": "List<T>: construction, Count, index, Add, RemoveAt, Clear, Contains. With uses Collections: Stack<T>, Queue<T>, DynArray<T>, SimpleSet<T>, AssocArray<K,V>, LinkedList<T>, LinkedListNode<T>, SingleNode<T>. SingleNode has typed constructor(data,next) and writable Data/Next; it is distinct from LinkedListNode. All eight source class families now have a basic native profile. Execution-owned node arena uses weak links. Generic defaults preserve nil strings, including record fields. Other collection features pending.",
     "strings": "UTF-16 strings with a distinct typed nil value. Original normal/generic initialization, comparison, concatenation, output, mutations and implemented library functions handle nil. Queue text concatenation treats nil as empty; collection element ToString reports E_NIL. Numeric conversions retain their different nil rules.",
-    "files": "UTF-8 whole-text and line-array IO, Unicode paths, 1 MiB per file. Unlike the original Windows CP1251 default. Encoding overloads and classic/binary file handles pending."
+    "files": "UTF-8 whole-text and line-array IO, Unicode paths, 1 MiB per file. GetDir/GetCurrentDir, ChDir/SetCurrentDir with per-execution cwd, MkDir/CreateDir, empty-directory RmDir/RemoveDir, DeleteFile and lexical ChangeFileNameExtension. Host cwd is unchanged, including on failure. Unlike the original Windows CP1251 text default. Rename operations, encoding overloads and classic/binary file handles pending."
   },
   "module_constants": { "Collections": { "MIN_CAP": 4, "INC_CAP_FACTOR": 2 } },
   "functions": [
@@ -68,7 +68,14 @@
     "High",
     "ReadAllText",
     "ReadAllLines",
-    "FileExists"
+    "FileExists",
+    "GetDir",
+    "GetCurrentDir",
+    "CreateDir",
+    "RemoveDir",
+    "DeleteFile",
+    "SetCurrentDir",
+    "ChangeFileNameExtension"
   ],
   "procedures": [
     "Inc",
@@ -80,7 +87,10 @@
     "SortDescending",
     "FillByValue",
     "WriteAllText",
-    "WriteAllLines"
+    "WriteAllLines",
+    "ChDir",
+    "MkDir",
+    "RmDir"
   ],
   "constants": [
     "Pi",

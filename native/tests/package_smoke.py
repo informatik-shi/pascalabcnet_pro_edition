@@ -79,6 +79,7 @@ def main():
                 ("linked-lists.pas", "Вперёд: Анна Борис Вера \nНазад после удаления: Вера Анна \n"),
                 ("single-nodes.pas", "Цепочка: Анна Борис Вера \nПосле изменения: Анна Виктория\n"),
                 ("nil-strings.pas", "Нет значения: nil\nЭто nil: True\nПустая строка — nil: False\nДлина nil: 0\nСоединение: [текст]\nПосле Insert: Новое имя\n"),
+                ("directories.pas", "Файл в выбранной папке\nНовое имя: заметка.bak\nФайл удалён: True\nВложенная папка удалена: True\nПапка примера удалена: True\n"),
             ]:
                 example = subprocess.run([runner, "run", str(folder / "examples" / source)],
                                          text=True, encoding="utf-8", capture_output=True,
@@ -181,6 +182,16 @@ def main():
                     or "RU: Превышен предел числа выполняемых инструкций" not in invalid.stderr
                     or f"{linked}:7:" not in invalid.stderr):
                 raise RuntimeError(f"{name} cyclic linked-list limit failed: {invalid.stderr!r}")
+            directory_error = folder / "Ошибка каталога.pas"
+            for operation in ["ChDir(nil)", "MkDir(nil)", "RmDir(nil)"]:
+                directory_error.write_text(f"begin\n {operation};\nend.", encoding="utf-8")
+                invalid = subprocess.run([runner, "run", str(directory_error)], text=True, encoding="utf-8",
+                                         capture_output=True, cwd=folder, env=env, timeout=10)
+                if (invalid.returncode != 1 or "E_IO" not in invalid.stderr
+                        or "EN: Directory operation failed" not in invalid.stderr
+                        or "RU: Не удалось выполнить операцию с каталогом" not in invalid.stderr
+                        or f"{directory_error}:2:" not in invalid.stderr):
+                    raise RuntimeError(f"{name} bilingual directory error failed: {invalid.stderr!r}")
             nil_string = folder / "Строковый nil.pas"
             nil_string.write_text("begin\n var s:string:=nil;\n Writeln(Trim(s));\nend.", encoding="utf-8")
             invalid = subprocess.run([runner, "run", str(nil_string)], text=True, encoding="utf-8",
@@ -205,6 +216,7 @@ def main():
                     or "RU: Превышен предел числа выполняемых инструкций" not in invalid.stderr or f"{single}:5:" not in invalid.stderr):
                 raise RuntimeError(f"{name} SingleNode cycle limit failed: {invalid.stderr!r}")
             results.append({"variant": name, "gui": "passed", "sum": 55, "type_error_before_output": "passed", "bilingual_runtime_error": "passed", "standard_library": "passed", "text_conversions": "passed", "string_mutations": "passed", "arrays_records_routines_lists": "passed", "text_files": "passed", "bilingual_array_error": "passed", "stacks_queues": "passed", "bilingual_empty_collections": "passed", "dynarray_simpleset": "passed", "bilingual_dynarray_error": "passed", "assocarray": "passed", "typed_keys_before_output": "passed", "bilingual_assocarray_error": "passed", "linked_lists": "passed", "bilingual_linked_error": "passed", "cyclic_linked_limit": "passed", "single_nodes": "passed", "bilingual_single_error": "passed", "single_cycle_limit": "passed"})
+            results[-1].update({"directories": "passed", "bilingual_directory_error": "passed", "nil_strings": "passed", "bilingual_nil_string": "passed"})
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 

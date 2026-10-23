@@ -131,6 +131,7 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
     }
     Values values{program,options.allocation_limit};
     LinkedRuntime linked{values,{}};
+    FileContext files;
     std::vector<std::shared_ptr<Cell>> globals(program.locals.size());
     for (std::size_t i = 0; i < program.locals.size(); ++i) if (program.locals[i].global)
         globals[i] = values.cell(program.locals[i].type,values.zero(program.locals[i].type));
@@ -356,10 +357,10 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
             std::vector<Value> arguments(signature.parameters.size());
             for (std::size_t i=arguments.size();i>0;--i) arguments[i-1]=pop();
             auto target=std::get<std::shared_ptr<Cell>>(arguments[ref]); arguments[ref]=target->value;
-            const auto result=stdlib::invoke(instruction.operand,arguments,instruction.location); values.write(target,result); break;
+            const auto result=stdlib::invoke(instruction.operand,arguments,instruction.location,files); values.write(target,result); break;
         }
         case Op::read_lines: {
-            const auto path=pop(); const auto text=read_text_file(string_text(path),instruction.location);
+            const auto path=pop(); const auto text=read_text_file(files,string_text(path),instruction.location);
             auto result=values.array(instruction.type,0); std::size_t start=0;
             for (std::size_t i=0;i<text.size();++i) if (text[i]==u'\r' || text[i]==u'\n') {
                 result->items.push_back(values.cell(Type::string,std::u16string(text.substr(start,i-start))));
@@ -384,7 +385,7 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
                 text+=part; text+=newline;
                 if (text.size()>1'048'576) trap(instruction,RuntimeError::file_limit);
             }
-            write_text_file(string_text(path),text,instruction.location); break;
+            write_text_file(files,string_text(path),text,instruction.location); break;
         }
         case Op::array_copy: {
             const auto original=std::get<std::shared_ptr<Aggregate>>(pop());
@@ -501,7 +502,7 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
         case Op::call_builtin: {
             const auto count = stdlib::signatures()[instruction.operand].parameters.size();
             const auto start = stack.size() - count;
-            auto value = stdlib::invoke(instruction.operand, std::span<const Value>(stack).subspan(start), instruction.location);
+            auto value = stdlib::invoke(instruction.operand, std::span<const Value>(stack).subspan(start), instruction.location,files);
             stack.resize(start);
             if (instruction.type != Type::unit) stack.push_back(std::move(value));
             break;

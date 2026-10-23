@@ -814,6 +814,11 @@ private:
             } else if (auto routine = routine_names_.find(source.token.text); routine != routine_names_.end() && module_.routines[routine->second].signature.parameters.empty()) {
                 SyntaxExpr call{SyntaxExprKind::call,source.token,{},{},1,{},{}};
                 return expression(call);
+            } else if (std::any_of(stdlib::signatures().begin(),stdlib::signatures().end(),[&](const stdlib::Signature& signature) {
+                return signature.name==source.token.text && signature.parameters.empty();
+            })) {
+                SyntaxExpr call{SyntaxExprKind::call,source.token,{},{},1,{},{}};
+                return expression(call);
             } else {
                 (void)resolve(source.token);
             }

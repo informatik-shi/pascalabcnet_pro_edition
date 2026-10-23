@@ -1,0 +1,16 @@
+True
+True True
+True True
+True hello 2 beta
+False False False
+False True
+True False
+True False
+True False False
+True True False
+False False False False
+False False False
+report.old.dat report.txt
+[.txt] [a.b.] [a.b]
+[a/.txt] [] [nil]
+dir.ext/file.txt dir.ext/file

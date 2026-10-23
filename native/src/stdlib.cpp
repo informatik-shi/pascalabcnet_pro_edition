@@ -73,6 +73,16 @@ std::span<const Signature> signatures() {
         add("readalltext", {Type::string}, Type::string, Function::read_all_text);
         add("writealltext", {Type::string, Type::string}, Type::unit, Function::write_all_text);
         add("fileexists", {Type::string}, Type::boolean, Function::file_exists);
+        add("getdir", {}, Type::string, Function::get_dir);
+        add("getcurrentdir", {}, Type::string, Function::get_dir);
+        add("chdir", {Type::string}, Type::unit, Function::change_dir);
+        add("mkdir", {Type::string}, Type::unit, Function::make_dir);
+        add("rmdir", {Type::string}, Type::unit, Function::remove_dir);
+        add("createdir", {Type::string}, Type::boolean, Function::create_dir);
+        add("removedir", {Type::string}, Type::boolean, Function::try_remove_dir);
+        add("deletefile", {Type::string}, Type::boolean, Function::delete_file);
+        add("setcurrentdir", {Type::string}, Type::boolean, Function::set_current_dir);
+        add("changefilenameextension", {Type::string,Type::string}, Type::string, Function::change_extension);
         return entries;
     }();
     return catalog;
@@ -130,14 +140,28 @@ double round_even(double value) {
 }
 } // namespace
 
-Value invoke(std::size_t id, std::span<const Value> arguments, SourceLocation location) {
+Value invoke(std::size_t id, std::span<const Value> arguments, SourceLocation location, FileContext& files) {
     const auto& signature = signatures()[id]; // Verified before execution.
-    const auto& value = arguments.front();
     const auto function = signature.function;
-    if (function == Function::read_all_text) return read_text_file(string_text(value),location);
-    if (function == Function::file_exists) return file_exists(string_text(value));
+    if (function == Function::get_dir) return files.directory(location);
+    const auto& value = arguments.front();
+    if (function == Function::change_dir) { files.change_directory(string_text(value),location); return false; }
+    if (function == Function::make_dir) { create_directory(files,string_text(value),location); return false; }
+    if (function == Function::remove_dir) { remove_directory(files,string_text(value),location); return false; }
+    if (function == Function::create_dir || function == Function::try_remove_dir || function == Function::set_current_dir) {
+        try {
+            if (function == Function::create_dir) create_directory(files,string_text(value),location);
+            else if (function == Function::try_remove_dir) remove_directory(files,string_text(value),location);
+            else files.change_directory(string_text(value),location);
+            return true;
+        } catch (const Error& error) { if (error.code!="E_IO") throw; return false; }
+    }
+    if (function == Function::delete_file) return delete_file(files,string_text(value));
+    if (function == Function::change_extension) return change_file_extension(value,arguments[1],location);
+    if (function == Function::read_all_text) return read_text_file(files,string_text(value),location);
+    if (function == Function::file_exists) return file_exists(files,string_text(value));
     if (function == Function::write_all_text) {
-        write_text_file(string_text(value),string_text(arguments[1]),location); return false;
+        write_text_file(files,string_text(value),string_text(arguments[1]),location); return false;
     }
     if (auto result = invoke_text(function, arguments, location)) return std::move(*result);
     if (function == Function::minimum || function == Function::maximum) {

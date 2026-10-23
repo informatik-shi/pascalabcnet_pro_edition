@@ -456,8 +456,59 @@ void file_library() {
     runtime_error("begin WriteAllText("+quote(directory/"missing"/"file.txt")+",'x'); end.", "E_IO");
     { std::ofstream out(path,std::ios::binary); out << std::string(1'048'577,'x'); }
     runtime_error("begin writeln(ReadAllText("+file+")); end.", "E_LIMIT");
+    const auto home=fs::current_path();
+    const auto base=quote(directory), child=quote(directory/fs::path(u8"Вложенная папка")), deep=quote(directory/fs::path(u8"Вложенная папка")/"deep");
+    result("begin writeln(CreateDir("+deep+"),' ',CreateDir("+child+")); writeln(SetCurrentDir("+child+"),' ',GetDir=GetCurrentDir()); WriteAllText('local.txt','local'); writeln(FileExists('local.txt'),' ',ReadAllText('local.txt')); WriteAllLines('lines.txt',Arr('alpha','beta')); var lines:=ReadAllLines('lines.txt'); writeln(Length(lines),' ',lines[1]); end.","True True\nTrue True\nTrue local\n2 beta\n");
+    require(fs::current_path()==home,"Program current directory does not change the host current directory");
+    require(fs::exists(directory/fs::path(u8"Вложенная папка")/"local.txt"),"Relative writes use the program directory");
+    result("begin ChDir("+child+"); writeln(SetCurrentDir('missing'),' ',FileExists('local.txt')); writeln(RemoveDir('.'),' ',DeleteFile('.'),' ',FileExists('.')); RmDir('deep'); writeln(DeleteFile('local.txt'),' ',DeleteFile('local.txt')); end.","False True\nFalse False False\nTrue False\n");
+    result("begin ChDir("+base+"); writeln(RemoveDir('Вложенная папка'),' ',CreateDir('folder-as-file.txt'),' ',DeleteFile('folder-as-file.txt')); end.","False True False\n");
+    result("begin ChDir("+base+"); RmDir('folder-as-file.txt'); ChDir('Вложенная папка'); writeln(DeleteFile('lines.txt')); ChDir('..'); writeln(RemoveDir('Вложенная папка'),' ',RemoveDir('Вложенная папка')); end.","True\nTrue False\n");
+    require(fs::current_path()==home,"Nested ChDir operations remain local to one execution");
+    result("begin writeln(CreateDir("+file+"),' ',SetCurrentDir("+file+"),' ',RemoveDir("+file+")); end.","False False False\n");
+    result("begin writeln(CreateDir(nil),' ',RemoveDir(nil),' ',DeleteFile(nil),' ',SetCurrentDir(nil)); writeln(CreateDir(''),' ',RemoveDir(''),' ',SetCurrentDir('')); end.","False False False False\nFalse False False\n");
+    runtime_error("begin MkDir(nil); end.","E_IO");
+    runtime_error("begin ChDir("+quote(directory/"missing")+"); end.","E_IO");
+    runtime_error("begin RmDir("+file+"); end.","E_IO");
+    runtime_error("begin MkDir("+file+"); end.","E_IO");
+    runtime_error("begin ChDir("+base+"); Writeln(1 div 0); end.","E_DIV_ZERO");
+    require(fs::current_path()==home,"Runtime failure cannot leak a changed directory into the host");
+    const auto selected=quote(directory/"selected-empty");
+#ifdef _WIN32
+    result("begin MkDir("+selected+"); ChDir("+selected+"); writeln(RemoveDir('.')); end.","False\n");
+    result("begin writeln(RemoveDir("+selected+")); end.","True\n");
+#else
+    runtime_error("begin MkDir("+selected+"); ChDir("+selected+"); RmDir(GetDir); Writeln(GetDir); end.","E_IO");
+#endif
+    result("begin writeln(GetDir=GetCurrentDir()); end.","True\n");
+    result("begin var p:string; Readln(p); writeln(CreateDir(p),' ',RemoveDir(p),' ',DeleteFile(p),' ',SetCurrentDir(p)); end.","False False False False\n",std::string("bad\0path\n",9));
+    try { (void)run("begin\n RmDir("+quote(directory/"missing")+");\nend."); require(false,"Expected directory failure"); }
+    catch (const abc::Error& caught) {
+        require(caught.code=="E_IO" && caught.location.line==2 && std::string(caught.what())=="Directory operation failed"
+            && caught.russian=="Не удалось выполнить операцию с каталогом","Directory error has source location and both languages");
+    }
+    compile_error("begin writeln(GetDir(1)); end.","E_TYPE");
+    compile_error("begin MkDir(1); end.","E_TYPE");
+    compile_error("begin var n:integer:=GetCurrentDir; end.","E_TYPE");
+    compile_error("begin var b:boolean:=ChDir('x'); end.","E_TYPE");
+    compile_error("begin var s:=ChangeFileNameExtension('x',1); end.","E_TYPE");
+    compile_error("begin MkDir("+quote(directory/"must-not-exist")+"); if false then begin var n:integer:='bad'; end; end.","E_TYPE");
+    require(!fs::exists(directory/"must-not-exist"),"All types are checked before directory effects");
     compile_error("begin WriteAllLines('file',Arr(1,2)); end.", "E_TYPE");
     compile_error("begin var x:=WriteAllText('file','x'); end.", "E_TYPE");
+}
+
+void file_extensions() {
+    result("begin writeln(ChangeFileNameExtension('report.old.txt','dat'),' ',ChangeFileNameExtension('report','txt')); end.","report.old.dat report.txt\n");
+    result("begin writeln('[',ChangeFileNameExtension('.hidden','.txt'),'] [',ChangeFileNameExtension('a.b.c',''),'] [',ChangeFileNameExtension('a.b.c',nil),']'); end.","[.txt] [a.b.] [a.b]\n");
+    result("begin writeln('[',ChangeFileNameExtension('a/','.txt'),'] [',ChangeFileNameExtension('','.txt'),'] [',ChangeFileNameExtension(nil,'.txt'),']'); end.","[a/.txt] [] [nil]\n");
+    result("begin writeln(ChangeFileNameExtension('dir.ext/file','.txt'),' ',ChangeFileNameExtension('dir.ext/file',nil)); end.","dir.ext/file.txt dir.ext/file\n");
+    result("begin writeln(ChangeFileNameExtension('Каталог/Документ.старое','новое'),' ',ChangeFileNameExtension('nil','.txt')); end.","Каталог/Документ.новое nil.txt\n");
+    result("begin writeln(ChangeFileNameExtension(nil,nil)=nil,' ',ChangeFileNameExtension('','')=''); end.","True True\n");
+    runtime_error("begin var s:='x'; var i:=0; while i<20 do begin s:=s+s; Inc(i); end; Writeln(ChangeFileNameExtension(s,'.txt')); end.","E_LIMIT");
+    auto program=abc::compile("begin Writeln(GetDir); end.");
+    for (auto& instruction:program.code) if (instruction.op==abc::Op::call_builtin) { instruction.type=abc::Type::integer; break; }
+    error([&] { abc::verify(program); },"E_BYTECODE");
 }
 
 void endpoint_collections() {
@@ -799,6 +850,7 @@ int main() {
     language_foundations();
     aggregate_semantics();
     file_library();
+    file_extensions();
     endpoint_collections();
     buffer_collections();
     association_collections();

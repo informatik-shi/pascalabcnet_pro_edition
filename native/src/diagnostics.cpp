@@ -66,6 +66,8 @@ Error runtime_error(RuntimeError id, SourceLocation location, std::string_view c
         code = "E_LIMIT"; english = "Routine call depth limit exceeded"; russian = "Превышена допустимая глубина вызовов подпрограмм"; break;
     case RuntimeError::file_io:
         code = "E_IO"; english = "Cannot open, read or write the file"; russian = "Не удалось открыть, прочитать или записать файл"; break;
+    case RuntimeError::directory_io:
+        code = "E_IO"; english = "Directory operation failed"; russian = "Не удалось выполнить операцию с каталогом"; break;
     case RuntimeError::file_limit:
         code = "E_LIMIT"; english = "File exceeds the 1 MiB limit"; russian = "Размер файла превышает предел 1 МиБ"; break;
     case RuntimeError::file_encoding:
