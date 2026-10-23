@@ -98,6 +98,7 @@ void remove_directory(const FileContext& files, std::u16string_view path, Source
 bool delete_file(const FileContext& files, std::u16string_view path) {
     if (!file_exists(files,path)) return false;
     const auto target=files.resolve(path,{});
+    if (files.text_file_locked(target)) return false;
 #ifdef _WIN32
     return ::_wremove(target.c_str())==0;
 #else

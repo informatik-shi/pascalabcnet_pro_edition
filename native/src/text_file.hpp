@@ -6,7 +6,7 @@
 namespace abc {
 class FileContext;
 struct TextFile {
-    std::filesystem::path filename;
+    std::filesystem::path filename, opened_filename;
     std::u16string content, pending;
     std::size_t cursor=0, position=0, size=0;
     bool reading=false;
@@ -26,4 +26,6 @@ void text_skip_line(TextFile& file, SourceLocation location);
 bool text_eof(TextFile& file, bool line, bool skip_space, SourceLocation location);
 void text_assign(FileContext& files, TextFile& file, const Value& name, SourceLocation location);
 void text_open(FileContext& files, const std::shared_ptr<TextFile>& file, unsigned mode, SourceLocation location);
+void text_erase(const FileContext& files, const TextFile& file, SourceLocation location);
+void text_rename(FileContext& files, const TextFile& file, const Value& name, SourceLocation location);
 } // namespace abc

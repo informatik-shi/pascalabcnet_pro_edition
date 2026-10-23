@@ -697,19 +697,23 @@ private:
                 }
                 static const std::set<std::string> methods={"readinteger","readreal","readstring","readboolean","readword",
                     "readlninteger","readlnreal","readlnstring","readlnboolean","readln","reset","rewrite","append",
-                    "eof","eoln","seekeof","seekeoln","close","flush","name","fullname","readtoend"};
+                    "eof","eoln","seekeof","seekeoln","close","flush","name","fullname","readtoend","erase","rename"};
                 if (!methods.contains(name)) throw Error("E_NAME",result->location,"Text member is not ported: '"+name+"'");
-                if (!source.arguments.empty()) throw Error("E_TYPE",result->location,"Text method takes no arguments");
+                const auto count=name=="rename" ? 1U : 0U;
+                if (source.arguments.size()!=count) throw Error("E_TYPE",result->location,"Wrong Text method argument count");
                 const std::string_view target=name=="readword" ? "readlexem" : name=="readln" ? "$text_skip_line"
                     : name=="name" ? "$text_name" : name=="fullname" ? "$text_full_name" : name=="readtoend" ? "$text_read_end" : std::string_view(name);
                 const auto catalog=stdlib::signatures();
                 const auto found=std::find_if(catalog.begin(),catalog.end(),[&](const auto& signature) {
-                    return signature.name==target && signature.parameters.size()==1 && signature.parameters[0]==Type::text_file;
+                    return signature.name==target && signature.parameters.size()==count+1 && signature.parameters[0]==Type::text_file;
                 });
                 if (found==catalog.end()) throw Error("E_HIR",result->location,"Missing Text method signature");
                 result->kind=hir::ExprKind::call; result->type=found->result;
                 result->local=static_cast<std::size_t>(found-catalog.begin());
-                result->arguments.push_back(std::move(result->left)); break;
+                result->arguments.push_back(std::move(result->left));
+                for (std::size_t n=0;n<source.arguments.size();++n)
+                    result->arguments.push_back(convert(expression(*source.arguments[n]),found->parameters[n+1]));
+                break;
             }
             const auto& type = info(receiver,result->location);
             if (type.kind == CompoundKind::linked_list || node_kind(type.kind)) {

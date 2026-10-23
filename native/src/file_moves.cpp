@@ -73,12 +73,14 @@ bool FileContext::rename(std::u16string_view source, std::u16string_view destina
         if (!directory) {
             if (from.filename().empty() || to.filename().empty() || !fs::is_regular_file(from,error) || error) return false;
             if (from==to) return true;
+            if (text_file_locked(from)) return false;
         } else {
             // Directory.Move also accepts files, but a trailing source separator
             // explicitly requires a directory. Destination separators are trimmed.
             if (from.filename().empty() && !fs::is_directory(from,error)) return false;
             from=trim_separator(std::move(from)); to=trim_separator(std::move(to));
             if (from==to || !fs::exists(fs::symlink_status(from,error)) || error) return false;
+            if (text_file_locked(from,true)) return false;
         }
         std::optional<fs::path> next_directory;
         if (directory && !fs::is_symlink(from,error) && fs::is_directory(from,error)) {

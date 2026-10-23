@@ -83,6 +83,7 @@ def main():
                 ("renames.pas", "Файл переименован: True\nКаталог переименован: True\nТекст заметки\nЗанятое имя: False\nСуществующий текст\n"),
                 ("text-files.pas", "Сумма: 30\nСтрока из файла\nКонец файла: True\nДобавленная строка\n"),
                 ("text-methods.pas", "Файл: Заметка.txt\nПервое слово: Цена:\nЧисло: 125\nОстаток: Количество: 3\nКонец файла: True\n"),
+                ("text-file-changes.pas", "Файл переименован: True\nИмя в переменной: Исходная заметка.txt\nЗаписано на C++\nФайл удалён: True\n"),
             ]:
                 example = subprocess.run([runner, "run", str(folder / "examples" / source)],
                                          text=True, encoding="utf-8", capture_output=True,
@@ -118,6 +119,21 @@ def main():
                         or f"EN: {container} is empty" not in invalid.stderr
                         or f"RU: {russian}" not in invalid.stderr or f"{empty}:4:" not in invalid.stderr):
                     raise RuntimeError(f"{name} bilingual {container} diagnostic failed: {invalid.stderr!r}")
+            for body, english, russian in [
+                ("var f:Text; Assign(f,'.');\n f.Erase;", "Cannot erase text file", "Не удалось удалить текстовый файл"),
+                ("var f:Text; Assign(f,'rename-source.txt'); WriteAllText('rename-source.txt','source'); WriteAllText('rename-target.txt','occupied');\n f.Rename('rename-target.txt');", "Cannot rename text file", "Не удалось переименовать текстовый файл"),
+                ("var f:=OpenWrite('locked-text.txt'); f.Close; f.Reset;\n f.Erase;", "Cannot erase text file", "Не удалось удалить текстовый файл"),
+            ]:
+                file_error.write_text(f"begin\n {body}\nend.", encoding="utf-8")
+                invalid = subprocess.run([runner, "run", str(file_error)], text=True, encoding="utf-8",
+                                         capture_output=True, cwd=folder, env=env, timeout=10)
+                if (invalid.returncode != 1 or "E_IO" not in invalid.stderr
+                        or f"EN: {english}" not in invalid.stderr or f"RU: {russian}" not in invalid.stderr
+                        or f"{file_error}:3:" not in invalid.stderr):
+                    raise RuntimeError(f"{name} bilingual file change error failed: {invalid.stderr!r}")
+            if ((folder / "rename-source.txt").read_text(encoding="utf-8") != "source"
+                    or (folder / "rename-target.txt").read_text(encoding="utf-8") != "occupied"):
+                raise RuntimeError(f"{name} Text Rename replaced an occupied destination")
             bounds = folder / "Границы массива.pas"
             bounds.write_text("begin\n  var a := Arr(1);\n  Writeln(a[1]);\nend.", encoding="utf-8")
             invalid = subprocess.run([runner, "run", str(bounds)], text=True, encoding="utf-8",
@@ -243,6 +259,7 @@ def main():
             results[-1]["renames_and_no_overwrite"] = "passed"
             results[-1].update({"classic_text_files": "passed", "bilingual_text_file_error": "passed"})
             results[-1].update({"text_methods": "passed", "bilingual_text_method_error": "passed"})
+            results[-1].update({"text_erase_rename": "passed", "bilingual_text_change_error": "passed", "open_text_lock": "passed"})
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 

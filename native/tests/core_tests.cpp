@@ -703,7 +703,7 @@ void text_files() {
         "begin var f:Text; f.Reset('x'); end.","begin var f:Text; f.Name:='bad'; end.",
         "begin var f:Text; Writeln(f.FullName(1)); end.","begin var f:Text; f.ReadWord(1); end.",
         "begin var f:Text; f.Eof:=true; end."}) compile_error(source,"E_TYPE");
-    for (const auto* method:{"Lines","ReadChar","ReadInt64","Erase","Rename","Missing"})
+    for (const auto* method:{"Lines","ReadChar","ReadInt64","Missing"})
         compile_error(std::string("begin var f:Text; f.")+method+"; end.","E_NAME");
     runtime_error("begin var f:Text; Writeln(f.Name); end.","E_NIL");
     runtime_error("begin var f:Text; Writeln(f.FullName); end.","E_NIL");
@@ -734,6 +734,96 @@ void text_files() {
     catch (const abc::Error& caught) {
         require(caught.code=="E_NIL" && caught.location.line==3 && caught.russian=="Нельзя обратиться к пустой ссылке nil",
             "Text member error retains both languages and source line");
+    }
+}
+
+void text_file_changes() {
+    namespace fs=std::filesystem;
+    const auto root=fs::temp_directory_path();
+    const auto directory=root/fs::path("ABC text changes "+std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    if (!fs::create_directory(directory)) throw std::runtime_error("Cannot create file-change test directory");
+    struct Cleanup {
+        fs::path path,root;
+        ~Cleanup() {
+            std::error_code error;
+            const auto target=fs::weakly_canonical(path,error), parent=fs::weakly_canonical(root,error);
+            if (!error && target.parent_path()==parent && target.filename().generic_u8string().starts_with(u8"ABC text changes ")) fs::remove_all(target,error);
+        }
+    } cleanup{directory,root};
+    auto quote=[](const fs::path& path) {
+        const auto bytes=path.generic_u8string(); std::string result="'";
+        for (auto c:bytes) { result+=static_cast<char>(c); if (c==u8'\'') result+='\''; }
+        return result+"'";
+    };
+    const auto source=directory/"source.txt", destination=directory/"destination.txt";
+    const auto from=quote(source), to=quote(destination), folder=quote(directory);
+    const auto prefix="begin WriteAllText("+from+",'source'); var f:Text; Assign(f,"+from+"); ";
+    result(prefix+"Rename(f,"+to+"); Writeln(FileExists("+from+"),' ',FileExists("+to+"),' ',f.Name); f.Erase; Writeln(ReadAllText("+to+")); Assign(f,"+to+"); Erase(f); f.Erase(); Writeln(FileExists("+to+"),' ',f.Name); end.","False True source.txt\nsource\nFalse destination.txt\n");
+    result(prefix+"f.Rename("+from+"); Writeln(ReadAllText("+from+")); f.Erase; end.","source\n");
+    result("procedure MoveFile(f:Text; name:string); begin f.Rename(name); end; begin WriteAllText("+from+",'routines'); var f:Text; Assign(f,"+from+"); var alias:=f; MoveFile(alias,"+to+"); Writeln(f.Name,' ',alias.Name,' ',ReadAllText("+to+")); Assign(alias,"+to+"); f.Erase; end.","source.txt source.txt routines\n");
+    result("var calls:integer; var f:Text; function GetFile:Text; begin Inc(calls); Result:=f; end; begin WriteAllText("+from+",'once'); Assign(f,"+from+"); GetFile().Rename("+to+"); Writeln(calls,' ',ReadAllText("+to+")); Assign(f,"+to+"); f.Erase; end.","1 once\n");
+    fs::create_directory(directory/"child");
+    result(prefix+"ChDir("+quote(directory/"child")+"); f.Rename('relative.txt'); Writeln(FileExists('relative.txt'),' ',FileExists("+from+"),' ',f.Name); Assign(f,'relative.txt'); f.Erase; end.","True False source.txt\n");
+    for (const auto* operation:{"Erase(f)","f.Erase","Rename(f,'new.txt')","f.Rename('new.txt')"})
+        runtime_error(std::string("begin var f:Text; ")+operation+"; end.","E_IO");
+    runtime_error("uses Collections; begin var m:=new AssocArray<string,Text>; Erase(m['missing']); end.","E_NIL");
+    runtime_error("uses Collections; begin var m:=new AssocArray<string,Text>; m['missing'].Rename('new.txt'); end.","E_NIL");
+    runtime_error("begin var f:Text; Assign(f,"+from+"); f.Rename("+to+"); end.","E_IO");
+    runtime_error(prefix+"WriteAllText("+to+",'occupied'); f.Rename("+to+"); end.","E_IO");
+    result("begin Writeln(ReadAllText("+from+"),' ',ReadAllText("+to+")); end.","source occupied\n");
+    for (const auto& target:{std::string("nil"),std::string("''"),folder,quote(directory/"absent"/"file.txt")})
+        runtime_error(prefix+"Rename(f,"+target+"); end.","E_IO");
+    runtime_error(prefix+"var bad:string; SetLength(bad,1); f.Rename(bad); end.","E_IO");
+    runtime_error("begin var f:Text; Assign(f,"+folder+"); f.Erase; end.","E_IO");
+    runtime_error("begin var f:Text; Assign(f,"+folder+"); f.Rename("+quote(directory/"folder-copy")+"); end.","E_IO");
+    require(fs::is_directory(directory/"child"),"Erase and Rename never remove directories");
+    { std::ofstream out(source,std::ios::binary); out << std::string(1'048'577,'\xff'); }
+    result("begin DeleteFile("+to+"); var f:Text; Assign(f,"+from+"); f.Rename("+to+"); Writeln(FileExists("+from+"),' ',FileExists("+to+")); end.","False True\n");
+    { std::ifstream input(destination,std::ios::binary); const std::string bytes((std::istreambuf_iterator<char>(input)),{});
+      require(bytes==std::string(1'048'577,'\xff'),"Text Rename preserves binary files beyond the text IO limit"); }
+    result("begin var f:Text; Assign(f,"+to+"); f.Erase; end.","");
+    runtime_error(prefix+"f.Rename("+to+"); f.Reset; end.","E_IO");
+    result("begin Writeln(ReadAllText("+to+")); DeleteFile("+to+"); end.","source\n");
+    result(prefix+"var reader:=OpenRead("+from+"); Assign(reader,"+to+"); WriteAllText("+to+",'other'); reader.Erase; Writeln(FileExists("+from+"),' ',FileExists("+to+"),' ',reader.ReadToEnd); reader.Close; f.Erase; end.","True False source\n");
+#ifdef _WIN32
+    runtime_error(prefix+"var reader:=OpenRead("+from+"); f.Erase; end.","E_IO");
+    runtime_error(prefix+"var reader:=OpenRead("+from+"); f.Rename("+to+"); end.","E_IO");
+    result(prefix+"var reader:=OpenRead("+from+"); Writeln(DeleteFile("+from+"),' ',RenameFile("+from+","+to+")); reader.Close; f.Erase; end.","False False\n");
+    runtime_error(prefix+"var reader:=OpenRead("+from+"); Assign(reader,"+to+"); f.Erase; end.","E_IO");
+    result("begin var f:=OpenWrite("+from+"); WriteAllText("+to+",'other'); Assign(f,"+to+"); f.Rewrite; Writeln(DeleteFile("+from+"),' ',DeleteFile("+to+")); f.Close; Writeln(DeleteFile("+from+")); end.","False True\nTrue\n");
+    result(prefix+"var reader:=OpenRead("+from+"); Writeln(RenameFile("+from+","+from+")); reader.Close; f.Erase; end.","True\n");
+    result("begin WriteAllText("+quote(directory/"child"/"held.txt")+",'held'); var reader:=OpenRead("+quote(directory/"child"/"held.txt")+"); Writeln(RenameDirectory("+quote(directory/"child")+","+quote(directory/"moved-child")+")); reader.Close; Writeln(RenameDirectory("+quote(directory/"child")+","+quote(directory/"moved-child")+")); Writeln(RenameDirectory("+quote(directory/"moved-child")+","+quote(directory/"child")+")); end.","False\nTrue\nTrue\n");
+    { std::ofstream out(source); out << "read only"; }
+    require(::SetFileAttributesW(source.c_str(),FILE_ATTRIBUTE_READONLY)!=0,"Prepare readonly erase test");
+    runtime_error("begin var f:Text; Assign(f,"+from+"); f.Erase; end.","E_IO");
+    require(::SetFileAttributesW(source.c_str(),FILE_ATTRIBUTE_NORMAL)!=0,"Restore readonly test file");
+#else
+    result(prefix+"var reader:=OpenRead("+from+"); f.Erase; Writeln(FileExists("+from+"),' ',reader.ReadToEnd); reader.Close; end.","False source\n");
+    result(prefix+"var reader:=OpenRead("+from+"); f.Rename("+to+"); Writeln(FileExists("+from+"),' ',ReadAllText("+to+"),' ',reader.ReadToEnd); reader.Close; Assign(f,"+to+"); f.Erase; end.","False source source\n");
+    std::error_code link_error;
+    fs::create_symlink(directory/"missing-target",directory/"dangling",link_error);
+    if (!link_error) {
+        result("begin var f:Text; Assign(f,"+quote(directory/"dangling")+"); f.Erase; end.","");
+        require(!fs::is_symlink(fs::symlink_status(directory/"dangling")),"Erase removes dangling links without touching targets");
+    }
+#endif
+    result("begin var f:Text; Assign(f,"+from+"); f.Erase; f.Erase; end.","");
+    for (const auto* program:{"begin Erase('x'); end.","begin var f:Text; Erase(f,1); end.",
+        "begin var f:Text; Rename(f,1); end.","begin var f:Text; f.Erase(1); end.",
+        "begin var f:Text; f.Rename; end.","begin var f:Text; f.Rename('a','b'); end.",
+        "begin var f:Text; var n:integer:=f.Erase; end."}) compile_error(program,"E_TYPE");
+    result("begin WriteAllText("+from+",'preserved'); end.","");
+    error([&]{(void)run("begin var f:Text; Assign(f,"+from+"); f.Erase; f.Rename(1); end.");},"E_TYPE");
+    result("begin Writeln(ReadAllText("+from+")); DeleteFile("+from+"); end.","preserved\n");
+    auto program=abc::compile("begin var f:Text; Rename(f,'x'); end.");
+    for (auto& instruction:program.code) if (instruction.op==abc::Op::push) { instruction.type=abc::Type::integer; program.constants[instruction.operand]=std::int32_t{1}; }
+    error([&]{abc::verify(program);},"E_BYTECODE");
+    for (const auto* operation:{"f.Erase","f.Rename('new.txt')"}) {
+        try { (void)run("begin\n var f:Text; Assign(f,"+folder+");\n "+operation+";\nend."); require(false,"Expected file-change error"); }
+        catch (const abc::Error& caught) {
+            require(caught.code=="E_IO" && caught.location.line==3 && !caught.russian.empty()
+                && std::string(caught.what()).starts_with("Cannot "),"Erase and Rename report both languages and source line");
+        }
     }
 }
 
@@ -1078,6 +1168,7 @@ int main() {
     file_library();
     file_extensions();
     text_files();
+    text_file_changes();
     endpoint_collections();
     buffer_collections();
     association_collections();

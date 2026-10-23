@@ -76,7 +76,7 @@ C++ с известными до выполнения типами; мост к 
 | LinkedList | `LinkedList<T>`, `LinkedListNode<T>`, `First/Last`, `Value/Prev/Next`, вставка и удаление узлов, текстовый вывод |
 | SingleNode | `SingleNode<T>(data,next)`, изменяемые свойства `Data/Next`, перепривязка цепочек |
 | Текстовые файлы | `ReadAllText`, `WriteAllText`, `ReadAllLines`, `WriteAllLines`, `FileExists` |
-| Файловые переменные | `Text`, `TextFile`, `Assign/AssignFile`, `Reset`, `Rewrite`, `Append`, `Close/CloseFile`, `Flush`, `Read/Readln`, `Write/Writeln`, `Eof/Eoln`, `SeekEof/SeekEoln`, `OpenRead/OpenWrite/OpenAppend`, типизированные `Read*` |
+| Файловые переменные | `Text`, `TextFile`, `Assign/AssignFile`, `Reset`, `Rewrite`, `Append`, `Close/CloseFile`, `Flush`, `Read/Readln`, `Write/Writeln`, `Eof/Eoln`, `SeekEof/SeekEoln`, `OpenRead/OpenWrite/OpenAppend`, типизированные `Read*`, `Erase`, `Rename` |
 | Методы Text | Чтение скалярных значений, `ReadWord`, `ReadToEnd`, `Name/FullName`, `Write/Writeln`, `Print/Println`, управление режимом, позицией чтения и закрытием |
 | Каталоги и имена | `GetDir`, `GetCurrentDir`, `ChDir`, `SetCurrentDir`, `MkDir`, `CreateDir`, `RmDir`, `RemoveDir`, `DeleteFile`, `RenameFile`, `RenameDirectory`, `ChangeFileNameExtension` |
 | Константы | `Pi`, `E`, `MaxInt`, `MaxInt64`, `MaxReal`, `MaxDouble`, `MinReal`, `MinDouble` |
@@ -458,8 +458,33 @@ CP1251; новая переносимая реализация использу�
 Пустая ссылка вместо объекта всегда вызывает `E_NIL`.
 `Name/FullName` до `Assign` и `ReadToEnd` без открытого читателя также дают `E_NIL`,
 как обращение к отсутствующему внутреннему объекту в исходной реализации.
-Методы `Erase/Rename`, `ReadChar/ReadlnChar`, `Lines`, перегрузки с `Encoding`
+Методы `ReadChar/ReadlnChar`, `Lines`, перегрузки с `Encoding`
 и изменение разделителя `PrintDelimDefault` ещё предстоит перенести.
+
+`Erase(f)` и `f.Erase` удаляют файл с назначенным именем. Отсутствующий файл
+в существующей папке не вызывает ошибки; каталог не удаляется. Поведение основано
+на исходной обёртке `FileInfo.Delete` и правилах [File.Delete](https://learn.microsoft.com/en-us/dotnet/api/system.io.file.delete).
+`Rename(f,newname)` и `f.Rename(newname)` перемещают файл без замены занятого имени,
+по правилам исходного [File.Move](https://learn.microsoft.com/en-us/dotnet/api/system.io.file.move).
+Это процедуры: отказ доступа, занятое имя и другие
+сбои дают `E_IO` с английским и русским текстом и позицией вызова.
+До `Assign` используется сообщение о неназначенном имени; пустая ссылка даёт `E_NIL`.
+
+Переименование сохраняет прежние `f.Name/FullName`, как исходный вызов `File.Move`
+без изменения `FileInfo`: для работы с новым путём нужно повторить `Assign`.
+Прежнее назначенное имя берётся относительно папки во время `Assign`, а относительное
+новое имя — относительно текущей папки во время `Rename`. Подпрограммы и копии
+переменной сохраняют общую ссылку на объект. Для этих двух операций не требуется
+декодировать содержимое: двоичные данные и файлы более 1 МиБ сохраняются.
+Ограничения переноса между файловыми системами те же, что у `RenameFile` выше.
+
+В Windows открытые `Text` текущего выполнения препятствуют удалению и перемещению
+файла до `Close`, в том числе через другую переменную, `DeleteFile`, `RenameFile`
+и перенос содержащего каталога. Учитывается именно открытый путь: поздний `Assign`
+меняет назначенное имя, но не переносит уже открытый поток. На Unix удаление или
+перемещение открытого файла разрешается ОС; уже открытый читатель сохраняет свой
+снимок до закрытия. Это учёт объектов внутри выполнения; полная совместимость
+блокировок между процессами и всех случаев символических ссылок пока не заявляется.
 
 Примеры: [массивы, записи и функции](examples/structures.pas), [файлы](examples/files.pas),
 [стеки и очереди](examples/collections.pas),
@@ -472,6 +497,7 @@ CP1251; новая переносимая реализация использу�
 [переименование](examples/renames.pas),
 [классические текстовые файлы](examples/text-files.pas),
 [методы текстового файла](examples/text-methods.pas),
+[удаление и переименование через Text](examples/text-file-changes.pas),
 [математика](examples/standard-library.pas), [строки и числа](examples/text-numbers.pas),
 [изменение строк](examples/string-editing.pas).
 Корпуса [базовой библиотеки](tests/fixtures/stdlib-compat.pas),
@@ -501,8 +527,9 @@ python native/tests/reference_compat.py --native native/build/qt-editor/Release/
 а не равенство кодировок создаваемых файлов.
 Эта сверка не означает полной совместимости всей стандартной библиотеки.
 Корпуса [классических текстовых файлов](tests/fixtures/text-files-compat.pas)
-и [методов Text](tests/fixtures/text-methods-compat.pas) проходят CTest по ожидаемому
-выводу. Полная сверка этих двух корпусов с оригинальным компилятором пока не
+и [методов Text](tests/fixtures/text-methods-compat.pas),
+[изменений файлов Text](tests/fixtures/text-changes-compat.pas) проходят CTest по ожидаемому
+выводу. Полная сверка этих трёх корпусов с оригинальным компилятором пока не
 выполнена; в число двенадцати сверенных корпусов они не включены.
 
 Следующие части переноса: дополнительные коллекции и файловые операции,
@@ -548,7 +575,7 @@ cmake --build native/build/default --config Release
 ctest --test-dir native/build/default -C Release --output-on-failure
 ```
 
-Проверка от 23 октября 2026 года: MSVC Release — 695 проверок ядра и 20 тестов
+Проверка от 23 октября 2026 года: MSVC Release — 745 проверок ядра и 21 тест
 CTest вместе с Qt; Clang 22 без санитайзера также проверен. Дополнительный локальный
 прогон Clang 22/AddressSanitizer на Windows не завершён: обработчик исключений
 аварийно останавливается, в том числе в отдельной минимальной программе с

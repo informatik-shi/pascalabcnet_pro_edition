@@ -5,6 +5,16 @@
 #include <algorithm>
 #include <charconv>
 #include <limits>
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#else
+#include <cerrno>
+#include <unistd.h>
+#endif
 
 namespace abc {
 namespace {
@@ -50,6 +60,24 @@ void FileContext::prepare_text_open(const std::shared_ptr<TextFile>& file, Sourc
     if (open_texts_.size()>=64) throw runtime_error(RuntimeError::file_open_limit,location);
     open_texts_.push_back(file);
 }
+bool FileContext::text_file_locked(const std::filesystem::path& path, bool subtree) const {
+#ifdef _WIN32
+    for (const auto& weak:open_texts_) if (const auto file=weak.lock(); file && file->is_open()) {
+        auto cursor=file->opened_filename;
+        while (!cursor.empty()) {
+            if (cursor==path) return true;
+            std::error_code error;
+            if (std::filesystem::equivalent(cursor,path,error) && !error) return true;
+            const auto parent=cursor.parent_path();
+            if (!subtree || parent==cursor) break;
+            cursor=parent;
+        }
+    }
+#else
+    (void)path; (void)subtree;
+#endif
+    return false;
+}
 void TextFile::flush(SourceLocation location) {
     if (!writer.is_open()) return;
     const auto bytes=to_utf8(pending,true);
@@ -65,7 +93,7 @@ void TextFile::close(SourceLocation location) {
         flush(location); writer.close();
         if (writer.fail()) throw runtime_error(RuntimeError::file_io,location);
     }
-    reading=false; std::u16string{}.swap(content); cursor=0;
+    reading=false; std::u16string{}.swap(content); cursor=0; opened_filename.clear();
 }
 void text_assign(FileContext& files, TextFile& file, const Value& name, SourceLocation location) {
     file.filename=files.resolve(string_text(name),location);
@@ -82,7 +110,7 @@ void text_open(FileContext& files, const std::shared_ptr<TextFile>& pointer, uns
     if (file.is_open()) file.close(location);
     if (mode==0) {
         file.content=read_text_file(files,file.filename.u16string(),location);
-        file.cursor=0; file.reading=true; return;
+        file.cursor=0; file.reading=true; file.opened_filename=file.filename; return;
     }
     std::error_code error;
     const auto existing=std::filesystem::file_size(file.filename,error);
@@ -98,7 +126,22 @@ void text_open(FileContext& files, const std::shared_ptr<TextFile>& pointer, uns
         if (file.writer) file.position=file.size=static_cast<std::size_t>(file.writer.tellp());
     }
     if (!file.writer) { file.writer.close(); file.writer.clear(); throw runtime_error(RuntimeError::file_io,location); }
-    file.pending.clear();
+    file.pending.clear(); file.opened_filename=file.filename;
+}
+void text_erase(const FileContext& files, const TextFile& file, SourceLocation location) {
+    assigned(file,location);
+    if (files.text_file_locked(file.filename)) throw runtime_error(RuntimeError::file_erase,location);
+#ifdef _WIN32
+    if (::DeleteFileW(file.filename.c_str()) || ::GetLastError()==ERROR_FILE_NOT_FOUND) return;
+#else
+    if (::unlink(file.filename.c_str())==0 || errno==ENOENT) return;
+#endif
+    throw runtime_error(RuntimeError::file_erase,location);
+}
+void text_rename(FileContext& files, const TextFile& file, const Value& name, SourceLocation location) {
+    assigned(file,location);
+    if (!files.rename(file.filename.u16string(),string_text(name),false)) throw runtime_error(RuntimeError::file_rename,location);
+    // PABCSystem calls File.Move rather than FileInfo.MoveTo: keep the assigned name.
 }
 void text_write(TextFile& file, std::u16string_view value, SourceLocation location) {
     assigned(file,location);

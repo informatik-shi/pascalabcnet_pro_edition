@@ -102,6 +102,8 @@ std::span<const Signature> signatures() {
         for (auto [name,type]:{std::pair{"readlninteger",Type::integer},{"readlnint64",Type::int64},{"readlnreal",Type::real},
             {"readlnboolean",Type::boolean},{"readstring",Type::string},{"readlnstring",Type::string}}) add(name,{Type::text_file},type,Function::text_read_line);
         add("readlexem",{Type::text_file},Type::string,Function::text_read_word);
+        add("erase",{Type::text_file},Type::unit,Function::text_erase);
+        add("rename",{Type::text_file,Type::string},Type::unit,Function::text_rename);
         // Internal signatures are shared by Text member calls and bytecode verification.
         add("$text_skip_line",{Type::text_file},Type::unit,Function::text_skip_line);
         add("$text_name",{Type::text_file},Type::string,Function::text_name);
@@ -169,7 +171,7 @@ Value invoke(std::size_t id, std::span<const Value> arguments, SourceLocation lo
     const auto function = signature.function;
     if (function == Function::get_dir) return files.directory(location);
     const auto& value = arguments.front();
-    if (function>=Function::text_assign && function<=Function::text_read_end) {
+    if (function>=Function::text_assign && function<=Function::text_rename) {
         if (function==Function::text_open_read || function==Function::text_open_write || function==Function::text_open_append) {
             auto file=std::make_shared<TextFile>(); text_assign(files,*file,value,location);
             text_open(files,file,function==Function::text_open_read ? 0 : function==Function::text_open_write ? 1 : 2,location);
@@ -193,6 +195,8 @@ Value invoke(std::size_t id, std::span<const Value> arguments, SourceLocation lo
         case Function::text_name: return text_name(file,false,location);
         case Function::text_full_name: return text_name(file,true,location);
         case Function::text_read_end: return text_read_end(file,location);
+        case Function::text_erase: text_erase(files,file,location); return false;
+        case Function::text_rename: text_rename(files,file,arguments[1],location); return false;
         default: throw runtime_error(RuntimeError::invalid_bytecode,location);
         }
     }
