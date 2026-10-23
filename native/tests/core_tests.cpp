@@ -153,6 +153,69 @@ void nullable_strings() {
     }
 }
 
+void structured_loops() {
+    result("begin var sum:=0; for var i:=1 to 10 do sum:=sum+i; Writeln(sum); end.","55\n");
+    result("begin for var i:=3 downto 1 do Write(i); Writeln; end.","321\n");
+    result("begin var i:integer; for i:=1 to 3 do Write(i); Writeln(' ',i); for i:=7 to 2 do Write('bad'); Writeln(i); for i:=0 downto 2 do Write('bad'); Writeln(i); end.","123 3\n7\n0\n");
+    result("begin var n:=3; var count:=0; for var i:=1 to n do begin n:=99; Inc(count); end; Writeln(count); end.","3\n");
+    result("function Start:integer; begin Write('S'); Result:=1; end; function Finish:integer; begin Write('F'); Result:=2; end; begin for var i:=Start to Finish do Write(i); Write('|'); var j:integer; for j:=Start to Finish do Write(j); Writeln; end.","SF12|FS12\n");
+    result("begin var i:=8; for var i:=i to i+1 do Write(i); Writeln(' ',i); for j:integer:=2 to j+2 do Write(j); Writeln; end.","89 8\n234\n");
+    result("type Index=int64; begin for var i:Index:=2147483648 to 2147483650 do Writeln(i); end.","2147483648\n2147483649\n2147483650\n");
+    result("begin for var i:=MaxInt-1 to MaxInt do Writeln(i); for var i:integer:=-2147483648 downto -2147483648 do begin Writeln(i); continue; end; end.","2147483646\n2147483647\n-2147483648\n");
+    result("begin for var i:int64:=MaxInt64-1 to MaxInt64 do begin Writeln(i); continue; end; for var i:=-9223372036854775808 downto -9223372036854775808 do Writeln(i); end.","9223372036854775806\n9223372036854775807\n-9223372036854775808\n");
+    result("begin for var i:=1 to 3 do begin for var j:=3 downto 1 do begin if j=2 then continue; Write(i,j,' '); end; end; Writeln; end.","13 11 23 21 33 31 \n");
+    result("begin var n:=0; for var i:=1 to 3 do begin for var j:=1 to 5 do begin if j=3 then break; Inc(n); end; end; Writeln(n); end.","6\n");
+    result("begin var i:=0; var sum:=0; while i<5 do begin Inc(i); if i mod 2=0 then continue; sum:=sum+i; end; Writeln(sum); while true do begin Inc(i); break; end; Writeln(i); end.","9\n6\n");
+    result("begin var n:=0; repeat Inc(n); until true; Writeln(n); repeat Inc(n); until n=4; Writeln(n); repeat until true; end.","1\n4\n");
+    result("var n,calls:integer; function Done:boolean; begin Inc(calls); Result:=n>=3; end; begin repeat Inc(n); continue; until Done; Writeln(n,' ',calls); end.","3 3\n");
+    result("begin var n:=0; repeat Inc(n); if n=2 then break; until false; Writeln(n); repeat var m:=0; repeat Inc(m); until m=2; Inc(n); until n=4; Writeln(n); end.","2\n4\n");
+    result("begin var n:=0; repeat Inc(n); var x:=n; until x=3; Writeln(n); end.","3\n");
+    result("begin var n:=0; for var i:=1 to 3 do begin repeat Inc(n); break; until false; if i=2 then continue; Write(i); end; Writeln(' ',n); end.","13 3\n");
+    result("begin var n:=0; for var i:=1 to 2 do begin var x:integer; Inc(x); Write(x); end; repeat var x:integer; Inc(x); Inc(n); Write(x); until n=2; Writeln; end.","1111\n");
+    result("function Find(n:integer):integer; begin for var i:=1 to n do if i=3 then Exit(i); end; function Once:integer; begin repeat Exit(7); until false; end; begin Writeln(Find(5),' ',Find(1),' ',Once); end.","3 0 7\n");
+    result("function Sum(n:integer):integer; begin for var i:=1 to n do Result:=Result+i; end; function Recur(n:integer):integer; begin Result:=1; for var i:=1 to n do Result:=Result+Recur(i-1); end; begin Writeln(Sum(5),' ',Recur(4)); end.","15 16\n");
+    result("procedure Count(var n:integer); begin for n:=1 to 3 do Write(n); end; begin var n:=0; Count(n); Writeln(' ',n); end.","123 3\n");
+    result("begin for var i:=1 to 2 do for var i:=1 to 2 do Write(i); Writeln; end.","1212\n");
+    result("begin for var i:=1 to 3 do ; var n:=0; while n<1 do Inc(n); Writeln(n); end.","1\n");
+    for (const auto* source:{"begin for var i:=1 to 2 do i:=9; end.","begin for var i:=1 to 2 do Inc(i); end.",
+        "begin for var i:=1 to 2 do Dec(i); end.","begin for var i:=1 to 2 do Readln(i); end.",
+        "begin var f:Text; for var i:=1 to 2 do Read(f,i); end.",
+        "procedure P(var n:integer); begin Inc(n); end; begin for var i:=1 to 2 do P(i); end.",
+        "begin var i:=0; for i:=1 to 2 do for i:=1 to 2 do Write(i); end.",
+        "begin for var i:=1.5 to 2 do Write(i); end.","begin for var i:=true to false do Write(i); end.",
+        "begin var i:real; for i:=1 to 2 do Write(i); end.","begin for var i:=1 to 2147483648 do Write(i); end.",
+        "begin for var i:=1 to 1.5 do Write(i); end.","begin for var i:=1 to 2 do if true then i:=0; end.",
+        "begin repeat until 1; end.","begin repeat until 'yes'; end.",
+        "var i:integer; procedure P; begin for i:=1 to 2 do Write(i); end; begin P; end."}) compile_error(source,"E_TYPE");
+    compile_error("begin for var i:=1 to 2 do Write(i); Writeln(i); end.","E_NAME");
+    compile_error("begin repeat var n:=1; until n=1; Writeln(n); end.","E_NAME");
+    compile_error("begin for i:=1 to 2 do Write(i); end.","E_NAME");
+    compile_error("begin for var i:=1 to 3 step 2 do Write(i); end.","E_UNSUPPORTED");
+    compile_error("function F:integer; begin for Result:=1 to 3 do Write(Result); end; begin end.","E_UNSUPPORTED");
+    for (const auto* source:{"begin break; end.","begin continue; end.","begin if true then break; end.",
+        "procedure P; begin continue; end; begin while true do P; end.",
+        "begin for var i:=1 2 do Write(i); end.","begin repeat Write(1); end.","begin repeat Write(1) Write(2); until true; end."}) compile_error(source,"E_SYNTAX");
+    abc::ExecutionOptions limits; limits.instruction_limit=100;
+    error([&]{(void)run("begin repeat continue; until false; end.","",limits);},"E_LIMIT");
+    error([&]{(void)run("begin for var i:int64:=1 to MaxInt64 do continue; end.","",limits);},"E_LIMIT");
+    limits={}; int polls=0; limits.cancelled=[&]{return ++polls>30;};
+    error([&]{(void)run("begin repeat until false; end.","",limits);},"E_CANCELLED");
+    limits={}; limits.output_limit=4;
+    error([&]{(void)run("begin for var i:=1 to 8 do Write(i); end.","",limits);},"E_LIMIT");
+    limits={}; limits.allocation_limit=1;
+    error([&]{(void)run("begin for var i:=1 to 1 do Write(i); end.","",limits);},"E_LIMIT");
+    auto program=abc::compile("begin for var i:int64:=1 to 3 do if i=2 then continue; end.");
+    for (auto& instruction:program.code) if (instruction.op==abc::Op::jump) { instruction.operand=program.code.size(); break; }
+    error([&]{abc::verify(program);},"E_BYTECODE");
+    std::istringstream input; std::ostringstream output;
+    error([&]{abc::execute(abc::compile("begin Writeln('must not run'); for var i:=1 to 2 do Inc(i); end."),input,output);},"E_TYPE");
+    require(output.str().empty(),"Readonly for controls are checked before any output");
+    try { (void)run("begin\n repeat\n Writeln(1 div 0);\n until true;\nend."); require(false,"Expected repeat runtime error"); }
+    catch (const abc::Error& caught) {
+        require(caught.code=="E_DIV_ZERO" && caught.location.line==3 && caught.russian=="Деление на ноль", "Loop body errors retain source line and both languages");
+    }
+}
+
 void arithmetic() {
     for (const auto& source : {
         "begin writeln(2147483647 + 1); end.",
@@ -1155,6 +1218,7 @@ void verifier() {
 
 int main() {
     language();
+    structured_loops();
     arithmetic();
     verifier();
     bilingual_diagnostics();

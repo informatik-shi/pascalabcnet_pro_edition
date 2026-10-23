@@ -151,6 +151,11 @@ private:
         case hir::StmtKind::block:
             for (const auto& child : node.statements) statement(child);
             break;
+        case hir::StmtKind::break_stmt: case hir::StmtKind::continue_stmt: {
+            if (loops_.empty()) throw Error("E_HIR",node.location,"Loop jump has no enclosing loop");
+            auto& jumps=node.kind==hir::StmtKind::break_stmt ? loops_.back().breaks : loops_.back().continues;
+            jumps.push_back(emit(Op::jump,Type::invalid,0,node.location)); break;
+        }
         case hir::StmtKind::assign:
             if (node.target) { reference(*node.target); expression(*node.expression); emit(Op::store_ref,node.target->type,0,node.location); }
             else { expression(*node.expression); local(Op::store,node.local,node.location); }
@@ -212,13 +217,54 @@ private:
             const auto start = code_->size();
             expression(*node.expression);
             const auto branch = emit(Op::jump_false, Type::invalid, 0, node.location);
+            loops_.emplace_back();
             statement(*node.body);
             emit(Op::jump, Type::invalid, start, node.location);
             (*code_)[branch].operand = code_->size();
+            finish_loop(start);
+            break;
+        }
+        case hir::StmtKind::repeat_loop: {
+            const auto start=code_->size(); loops_.emplace_back();
+            for (const auto& child:node.statements) statement(child);
+            const auto condition=code_->size();
+            expression(*node.expression); emit(Op::jump_false,Type::invalid,start,node.location);
+            finish_loop(condition);
+            break;
+        }
+        case hir::StmtKind::for_loop: {
+            for (const auto& child:node.statements) statement(child);
+            const auto type=node.target->type;
+            const auto control=node.target->local;
+            const auto compare=[&](Op op) {
+                local(Op::load,control,node.location); local(Op::load,node.local,node.location);
+                emit(op,type,0,node.location);
+            };
+            compare(node.newline ? Op::greater_equal : Op::less_equal);
+            const auto empty=emit(Op::jump_false,Type::invalid,0,node.location);
+            const auto start=code_->size(); loops_.emplace_back();
+            statement(*node.body);
+            const auto advance=code_->size();
+            // Stop at the bound before incrementing, including MaxInt/MinInt64.
+            compare(node.newline ? Op::greater : Op::less);
+            const auto done=emit(Op::jump_false,Type::invalid,0,node.location);
+            local(Op::load,control,node.location);
+            constant(type==Type::integer ? Value{std::int32_t{1}} : Value{std::int64_t{1}},node.location);
+            emit(node.newline ? Op::subtract : Op::add,type,0,node.location); local(Op::store,control,node.location);
+            emit(Op::jump,Type::invalid,start,node.location);
+            (*code_)[empty].operand=(*code_)[done].operand=code_->size();
+            finish_loop(advance);
             break;
         }
         }
     }
+    void finish_loop(std::size_t continuation) {
+        for (auto jump:loops_.back().breaks) (*code_)[jump].operand=code_->size();
+        for (auto jump:loops_.back().continues) (*code_)[jump].operand=continuation;
+        loops_.pop_back();
+    }
+    struct LoopJumps { std::vector<std::size_t> breaks,continues; };
+    std::vector<LoopJumps> loops_;
     Program program_;
     std::vector<Instruction>* code_ = nullptr;
     std::optional<std::size_t> routine_;

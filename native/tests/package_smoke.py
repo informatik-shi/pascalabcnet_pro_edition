@@ -84,6 +84,7 @@ def main():
                 ("text-files.pas", "Сумма: 30\nСтрока из файла\nКонец файла: True\nДобавленная строка\n"),
                 ("text-methods.pas", "Файл: Заметка.txt\nПервое слово: Цена:\nЧисло: 125\nОстаток: Количество: 3\nКонец файла: True\n"),
                 ("text-file-changes.pas", "Файл переименован: True\nИмя в переменной: Исходная заметка.txt\nЗаписано на C++\nФайл удалён: True\n"),
+                ("loops.pas", "Сумма: 55\nОбратный отсчёт: 3 2 1 \nПовторений: 3\nНечётные: 1 3 5 \n"),
             ]:
                 example = subprocess.run([runner, "run", str(folder / "examples" / source)],
                                          text=True, encoding="utf-8", capture_output=True,
@@ -255,11 +256,26 @@ def main():
                     or "RU: Превышен предел числа выполняемых инструкций" not in invalid.stderr or f"{single}:5:" not in invalid.stderr):
                 raise RuntimeError(f"{name} SingleNode cycle limit failed: {invalid.stderr!r}")
             results.append({"variant": name, "gui": "passed", "sum": 55, "type_error_before_output": "passed", "bilingual_runtime_error": "passed", "standard_library": "passed", "text_conversions": "passed", "string_mutations": "passed", "arrays_records_routines_lists": "passed", "text_files": "passed", "bilingual_array_error": "passed", "stacks_queues": "passed", "bilingual_empty_collections": "passed", "dynarray_simpleset": "passed", "bilingual_dynarray_error": "passed", "assocarray": "passed", "typed_keys_before_output": "passed", "bilingual_assocarray_error": "passed", "linked_lists": "passed", "bilingual_linked_error": "passed", "cyclic_linked_limit": "passed", "single_nodes": "passed", "bilingual_single_error": "passed", "single_cycle_limit": "passed"})
+            loop = folder / "Циклы.pas"
+            loop.write_text("begin\n repeat until false;\nend.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(loop), "--max-instructions=50"], text=True, encoding="utf-8",
+                                     capture_output=True, cwd=folder, env=env, timeout=10)
+            if (invalid.returncode != 1 or "E_LIMIT" not in invalid.stderr
+                    or "EN: Instruction limit exceeded" not in invalid.stderr
+                    or "RU: Превышен предел числа выполняемых инструкций" not in invalid.stderr
+                    or f"{loop}:2:" not in invalid.stderr):
+                raise RuntimeError(f"{name} bilingual loop limit failed: {invalid.stderr!r}")
+            loop.write_text("begin Writeln('must never run'); for var i:=1 to 2 do Inc(i); end.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(loop)], text=True, encoding="utf-8",
+                                     capture_output=True, cwd=folder, env=env, timeout=10)
+            if invalid.returncode != 1 or invalid.stdout or "E_TYPE" not in invalid.stderr:
+                raise RuntimeError(f"{name} for control mutation was not rejected before output")
             results[-1].update({"directories": "passed", "bilingual_directory_error": "passed", "nil_strings": "passed", "bilingual_nil_string": "passed"})
             results[-1]["renames_and_no_overwrite"] = "passed"
             results[-1].update({"classic_text_files": "passed", "bilingual_text_file_error": "passed"})
             results[-1].update({"text_methods": "passed", "bilingual_text_method_error": "passed"})
             results[-1].update({"text_erase_rename": "passed", "bilingual_text_change_error": "passed", "open_text_lock": "passed"})
+            results[-1].update({"structured_loops": "passed", "bilingual_loop_limit": "passed", "readonly_for_control": "passed"})
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 

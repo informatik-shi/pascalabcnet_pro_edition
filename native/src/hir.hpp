@@ -19,7 +19,8 @@ struct Expr {
     std::vector<std::unique_ptr<Expr>> arguments{};
 };
 
-enum class StmtKind { block, assign, print, read, conditional, loop, call, return_stmt, resize_array, increment, string_mutation };
+enum class StmtKind { block, assign, print, read, conditional, loop, call, return_stmt, resize_array, increment, string_mutation,
+    for_loop, repeat_loop, break_stmt, continue_stmt };
 struct Stmt {
     StmtKind kind = StmtKind::block;
     SourceLocation location;

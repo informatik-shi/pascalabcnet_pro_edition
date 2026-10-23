@@ -145,7 +145,8 @@ std::unique_ptr<SyntaxExpr> make_expression(SyntaxExprKind kind, Token token,
     return std::make_unique<SyntaxExpr>(SyntaxExpr{kind, std::move(token), std::move(left), std::move(right), depth, {}});
 }
 
-enum class SyntaxStmtKind { block, declaration, assignment, print, read, conditional, loop, increment, string_mutation, call, return_stmt };
+enum class SyntaxStmtKind { block, declaration, assignment, print, read, conditional, loop, increment, string_mutation, call, return_stmt,
+    for_loop, repeat_loop, break_stmt, continue_stmt };
 struct SyntaxRoutine;
 struct SyntaxStmt {
     SyntaxStmtKind kind = SyntaxStmtKind::block;
@@ -160,6 +161,7 @@ struct SyntaxStmt {
     std::vector<std::pair<Token,std::shared_ptr<SyntaxType>>> type_declarations;
     std::vector<std::shared_ptr<SyntaxRoutine>> routines;
     bool collections_imported = false;
+    bool declares_control = false, descending = false;
 };
 
 struct SyntaxParameter { Token name; std::shared_ptr<SyntaxType> type; bool by_reference; };
@@ -307,6 +309,7 @@ private:
     }
     SyntaxStmt statement() {
         DepthGuard guard(depth_, current_.location);
+        if (is(";")) return SyntaxStmt{};
         if (is("begin")) return block();
         if (accept("var")) return declaration();
         SyntaxStmt result;
@@ -314,6 +317,29 @@ private:
         if (accept("exit")) {
             result.kind = SyntaxStmtKind::return_stmt;
             if (accept("(")) { if (!is(")")) result.expression = expression(); expect(")"); }
+        } else if (accept("break")) {
+            result.kind=SyntaxStmtKind::break_stmt;
+        } else if (accept("continue")) {
+            result.kind=SyntaxStmtKind::continue_stmt;
+        } else if (accept("for")) {
+            result.kind=SyntaxStmtKind::for_loop; result.declares_control=accept("var");
+            result.names.push_back(name());
+            if (accept(":")) { result.annotation=type_syntax(); result.declares_control=true; }
+            expect(":="); result.expression=expression();
+            if (!is("to") && !is("downto")) fail("Expected to or downto in for loop");
+            result.descending=accept("downto"); if (!result.descending) expect("to");
+            result.arguments.push_back(expression());
+            if (is("step")) throw Error("E_UNSUPPORTED",current_.location,"For step is not ported yet");
+            expect("do"); result.body=std::make_unique<SyntaxStmt>(statement());
+        } else if (accept("repeat")) {
+            result.kind=SyntaxStmtKind::repeat_loop;
+            while (!is("until")) {
+                if (current_.kind==TokenKind::eof || is("end")) fail("Expected until after repeat body");
+                if (accept(";")) continue;
+                result.statements.push_back(statement());
+                if (!accept(";") && !is("until")) fail("Expected ';' between repeat statements");
+            }
+            expect("until"); result.expression=expression();
         } else if (accept("if")) {
             result.kind = SyntaxStmtKind::conditional;
             result.expression = expression();
@@ -588,8 +614,8 @@ private:
         if (auto found = aliases_.find(syntax.kind); found != aliases_.end()) return found->second;
         throw Error("E_UNSUPPORTED",syntax.token.location,"Unknown or unsupported type '"+syntax.kind+"'");
     }
-    static bool lvalue(const hir::Expr& expression) {
-        return expression.kind == hir::ExprKind::local
+    bool lvalue(const hir::Expr& expression) const {
+        return (expression.kind == hir::ExprKind::local && !for_controls_.contains(expression.local))
             || ((expression.kind == hir::ExprKind::index || expression.kind == hir::ExprKind::field) && lvalue(*expression.left));
     }
     std::optional<std::size_t> lookup(const Token& token) const {
@@ -1142,6 +1168,51 @@ private:
             break;
         case SyntaxStmtKind::call:
             result.kind = hir::StmtKind::call; result.expression = expression(*source.expression); break;
+        case SyntaxStmtKind::break_stmt: case SyntaxStmtKind::continue_stmt:
+            if (!loop_depth_) throw Error("E_SYNTAX",result.location,"Break/Continue requires an enclosing loop");
+            result.kind=source.kind==SyntaxStmtKind::break_stmt ? hir::StmtKind::break_stmt : hir::StmtKind::continue_stmt;
+            break;
+        case SyntaxStmtKind::for_loop: {
+            auto initial=expression(*source.expression);
+            scopes_.emplace_back();
+            const auto& name=source.names.front();
+            std::size_t control;
+            if (source.declares_control) {
+                const auto type=source.annotation ? resolve_type(*source.annotation) : initial->type;
+                control=module_.locals.size(); module_.locals.push_back({name.text,type,!in_routine_});
+                scopes_.back()[name.text]=control;
+            } else {
+                control=resolve(name);
+                if (for_controls_.contains(control)) throw Error("E_TYPE",name.location,"Cannot reuse an active for control variable");
+                if (in_routine_ && module_.locals[control].global) throw Error("E_TYPE",name.location,"For control must be local to the routine");
+                if (in_routine_ && current_result_!=Type::unit && module_.locals[control].name=="result") throw Error("E_UNSUPPORTED",name.location,"Function Result as for control is not supported");
+            }
+            const auto type=module_.locals[control].type;
+            if (type!=Type::integer && type!=Type::int64) throw Error("E_TYPE",name.location,"For control must be integer or int64");
+            initial=convert(std::move(initial),type);
+            auto finish=convert(expression(*source.arguments[0]),type);
+            const auto bound=module_.locals.size(); module_.locals.push_back({"$for_bound_"+std::to_string(bound),type,!in_routine_});
+            auto assign=[&](std::size_t local,std::unique_ptr<hir::Expr> value) {
+                hir::Stmt node; node.kind=hir::StmtKind::assign; node.local=local; node.location=value->location;
+                node.expression=std::move(value); result.statements.push_back(std::move(node));
+            };
+            // Match the source converter: declared counters initialize before the bound;
+            // pre-existing counters evaluate the bound before their initializer.
+            if (source.declares_control) { assign(control,std::move(initial)); assign(bound,std::move(finish)); }
+            else { assign(bound,std::move(finish)); assign(control,std::move(initial)); }
+            result.kind=hir::StmtKind::for_loop; result.local=bound; result.newline=source.descending;
+            result.target=std::make_unique<hir::Expr>(); result.target->kind=hir::ExprKind::local;
+            result.target->local=control; result.target->type=type; result.target->location=name.location;
+            for_controls_.insert(control); ++loop_depth_;
+            result.body=std::make_unique<hir::Stmt>(scoped_statement(*source.body));
+            --loop_depth_; for_controls_.erase(control); scopes_.pop_back(); break;
+        }
+        case SyntaxStmtKind::repeat_loop:
+            result.kind=hir::StmtKind::repeat_loop; scopes_.emplace_back(); ++loop_depth_;
+            for (const auto& child:source.statements) result.statements.push_back(statement(child));
+            result.expression=expression(*source.expression);
+            if (result.expression->type!=Type::boolean) throw Error("E_TYPE",result.expression->location,"Until condition must be boolean");
+            --loop_depth_; scopes_.pop_back(); break;
         case SyntaxStmtKind::return_stmt:
             result.kind = hir::StmtKind::return_stmt;
             if (source.expression) {
@@ -1182,7 +1253,9 @@ private:
             result.expression = expression(*source.expression);
             if (result.expression->type != Type::boolean)
                 throw Error("E_TYPE", result.expression->location, "Condition must be boolean");
+            if (source.kind==SyntaxStmtKind::loop) ++loop_depth_;
             result.body = std::make_unique<hir::Stmt>(scoped_statement(*source.body));
+            if (source.kind==SyntaxStmtKind::loop) --loop_depth_;
             if (source.alternative) result.alternative = std::make_unique<hir::Stmt>(scoped_statement(*source.alternative));
             break;
         }
@@ -1197,6 +1270,8 @@ private:
     Type current_result_ = Type::unit;
     std::string current_name_;
     std::vector<std::map<std::string, std::size_t>> scopes_;
+    std::set<std::size_t> for_controls_;
+    unsigned loop_depth_=0;
 };
 
 } // namespace
