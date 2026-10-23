@@ -20,6 +20,8 @@ TextFile& text_file(const Value& value, SourceLocation location);
 void text_write(TextFile& file, std::u16string_view value, SourceLocation location);
 Value text_read(TextFile& file, Type type, SourceLocation location);
 std::u16string text_word(TextFile& file, SourceLocation location);
+std::u16string text_name(const TextFile& file, bool full, SourceLocation location);
+std::u16string text_read_end(TextFile& file, SourceLocation location);
 void text_skip_line(TextFile& file, SourceLocation location);
 bool text_eof(TextFile& file, bool line, bool skip_space, SourceLocation location);
 void text_assign(FileContext& files, TextFile& file, const Value& name, SourceLocation location);

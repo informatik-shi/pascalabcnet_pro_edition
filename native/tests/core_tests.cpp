@@ -618,8 +618,8 @@ void text_files() {
             if (!error && target.parent_path()==parent && target.filename().generic_u8string().starts_with(u8"ABC native text ")) fs::remove_all(target,error);
         }
     } cleanup{directory,root};
-    auto quote=[](const fs::path& path) {
-        const auto bytes=path.generic_u8string(); std::string result="'";
+    auto quote=[](const fs::path& path, bool native=false) {
+        const auto bytes=native ? path.u8string() : path.generic_u8string(); std::string result="'";
         for (auto c:bytes) { result+=static_cast<char>(c); if (c==u8'\'') result+='\''; }
         return result+"'";
     };
@@ -686,6 +686,54 @@ void text_files() {
     try { (void)run("begin\n var f:Text;\n Writeln(f,1);\nend."); require(false,"Expected file error"); }
     catch (const abc::Error& caught) {
         require(caught.code=="E_IO" && caught.location.line==3 && !caught.russian.empty(),"Text file error retains source line and both languages");
+    }
+    result("begin var f:Text; f.Write; f.Print(); f.Flush; end.","");
+    result("begin var f:=OpenWrite("+file+"); f.Write(1,' ',2); f.Writeln; f.Print(3,4); f.Println('a','b'); f.Println(); f.Writeln('last'); f.Flush(); f.Close; f.Reset(); Writeln('[',f.ReadString,']'); Writeln('[',f.ReadlnString(),']'); Writeln('[',f.ReadlnString,']'); Writeln('[',f.ReadString(),'] ',f.Eof()); f.Close(); end.","[1 2]\n[3 4 a b]\n[]\n[last] True\n");
+    result("begin var f:=OpenWrite("+file+"); f.Writeln(' 42 rest'); f.Writeln('1.5'); f.Writeln('TRUE'); f.Writeln('word tail'); f.Close; f.Reset; Writeln(f.ReadInteger,' [',f.ReadString,']'); Writeln(f.ReadlnReal(),' ',f.ReadlnBoolean); Writeln(f.ReadWord); Writeln('[',f.ReadlnString,'] ',f.SeekEof); f.Close; f.Append; f.Println('добавлено','🌍'); f.Close; f.Reset; f.Readln; f.Readln(); f.Readln; f.Readln; Writeln(f.ReadString); f.Close; end.","42 [ rest]\n1.5 True\nword\n[ tail] True\nдобавлено 🌍\n");
+    result("begin var f:Text; Assign(f,"+quote(directory/"missing.txt")+"); Writeln(f.Name,' ',f.FullName()="+quote(directory/"missing.txt",true)+"); ChDir("+quote(directory/"child")+"); Writeln(f.FullName="+quote(directory/"missing.txt",true)+"); end.","missing.txt True\nTrue\n");
+    { std::ofstream out(path,std::ios::binary); out << "12 rest\r\nnext\rtail\n"; }
+    result("begin var f:=OpenRead("+file+"); Writeln(f.ReadInteger); Writeln('[',f.ReadToEnd(),']'); Writeln(f.Eof,' [',f.ReadToEnd,']'); f.Close; Writeln(f.Name); end.","12\n[ rest\r\nnext\rtail\n]\nTrue []\ntext.txt\n");
+    result("begin var f:=OpenRead("+file+"); Writeln(f.ReadlnInteger,' ',f.Eoln); f.Readln; Writeln(f.ReadlnString,' ',f.SeekEoln()); f.Close; end.","12 False\ntail True\n");
+    result("var calls:integer; var f:Text; function GetFile:Text; begin Inc(calls); Result:=f; end; function Change:integer; begin Write(f,'pre'); Result:=2; end; begin f:=OpenWrite("+file+"); GetFile().Print(1,Change); f.Close; Writeln(ReadAllText("+file+"),' ',calls); end.","pre1 2  1\n");
+    result("var f,g:Text; function Change:integer; begin f:=g; Result:=2; end; begin f:=OpenWrite("+file+"); g:=OpenWrite("+other+"); var saved:=f; f.Println(1,Change); saved.Close; g.Close; Writeln(ReadAllLines("+file+")[0],' [',ReadAllText("+other+"),']'); end.","1 2 []\n");
+    result("type Holder=record f:Text; end; begin var h:Holder; h.f:=OpenRead("+file+"); var a:=new Text[1]; a[0]:=h.f; Writeln(a[0].ReadInteger,' ',h.f.ReadlnInteger); a[0].Close; end.","1 2\n");
+    result("begin var f:=OpenWrite("+file+"); var s:string:=nil; f.Write(1,2,3,4,5,6,7,8,9,0,1,2,3,4,5,6); f.Print(s,'',true,1.5); f.Close; Writeln(ReadAllText("+file+")); end.","1234567890123456nil  True 1.5 \n");
+    for (const auto* source:{"begin var f:Text; f.Writeln(Arr(1)); end.","begin var f:Text; f.Print(f); end.",
+        "begin var f:Text; var n:integer:=f.Write(1); end.","begin var f:Text; f.Readln(1); end.",
+        "begin var f:Text; f.Reset('x'); end.","begin var f:Text; f.Name:='bad'; end.",
+        "begin var f:Text; Writeln(f.FullName(1)); end.","begin var f:Text; f.ReadWord(1); end.",
+        "begin var f:Text; f.Eof:=true; end."}) compile_error(source,"E_TYPE");
+    for (const auto* method:{"Lines","ReadChar","ReadInt64","Erase","Rename","Missing"})
+        compile_error(std::string("begin var f:Text; f.")+method+"; end.","E_NAME");
+    runtime_error("begin var f:Text; Writeln(f.Name); end.","E_NIL");
+    runtime_error("begin var f:Text; Writeln(f.FullName); end.","E_NIL");
+    runtime_error("begin var f:Text; Writeln(f.ReadToEnd); end.","E_NIL");
+    runtime_error("begin var f:=OpenWrite("+file+"); Writeln(f.ReadToEnd); end.","E_NIL");
+    runtime_error("begin var f:=OpenRead("+file+"); f.Close; Writeln(f.ReadToEnd); end.","E_NIL");
+    runtime_error("begin var f:=OpenRead("+file+"); f.Println(1); end.","E_IO");
+    runtime_error("begin var f:Text; f.Writeln; end.","E_IO");
+    runtime_error("uses Collections; begin var m:=new AssocArray<string,Text>; m['missing'].Close; end.","E_NIL");
+    runtime_error("uses Collections; begin var m:=new AssocArray<string,Text>; m['missing'].Write; end.","E_NIL");
+    runtime_error("begin var f:=OpenWrite("+file+"); var s:='x'; var i:=0; while i<20 do begin s:=s+s; Inc(i); end; f.Print(s); end.","E_LIMIT");
+    result("begin var f:=OpenWrite("+other+"); f.Write('preserved'); f.Close; end.","");
+    compile_error("begin var f:=OpenWrite("+other+"); f.Writeln('must not run'); f.ReadInteger(1); end.","E_TYPE");
+    result("begin Writeln(ReadAllText("+other+")); end.","preserved\n");
+    program=abc::compile("begin var f:Text; f.Println(1); end.");
+    for (auto& instruction:program.code) if (instruction.op==abc::Op::file_output) instruction.operand=68;
+    error([&]{abc::verify(program);},"E_BYTECODE");
+    program=abc::compile("begin var f:Text; f.Print(1); end.");
+    for (auto& instruction:program.code) if (instruction.op==abc::Op::file_output) instruction.type=abc::Type::integer;
+    error([&]{abc::verify(program);},"E_BYTECODE");
+    program=abc::compile("begin var f:Text; f.Print(1); end.");
+    for (auto& instruction:program.code) if (instruction.op==abc::Op::file_output) instruction.operand=10;
+    error([&]{abc::verify(program);},"E_BYTECODE");
+    program=abc::compile("begin var f:Text; f.Print(1); end.");
+    for (auto& instruction:program.code) if (instruction.op==abc::Op::push) { instruction.op=abc::Op::make_default; instruction.type=abc::Type::text_file; instruction.operand=0; }
+    error([&]{abc::verify(program);},"E_BYTECODE");
+    try { (void)run("begin\n var f:Text;\n Writeln(f.ReadToEnd);\nend."); require(false,"Expected Text method error"); }
+    catch (const abc::Error& caught) {
+        require(caught.code=="E_NIL" && caught.location.line==3 && caught.russian=="Нельзя обратиться к пустой ссылке nil",
+            "Text member error retains both languages and source line");
     }
 }
 

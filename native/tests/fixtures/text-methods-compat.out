@@ -1,0 +1,10 @@
+native-text-methods.txt True
+12 34
+[1 2 a b]
+[]
+True 1.5
+last [ word] True True
+[]
+added 3 True
+pre1 2  1
+[pre1] False True

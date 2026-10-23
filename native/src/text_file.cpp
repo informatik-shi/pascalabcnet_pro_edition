@@ -145,6 +145,15 @@ Value text_read(TextFile& file, Type type, SourceLocation location) {
     return type==Type::integer ? Value{static_cast<std::int32_t>(value)} : Value{value};
 }
 std::u16string text_word(TextFile& file, SourceLocation location) { return read_token(file,location); }
+std::u16string text_name(const TextFile& file, bool full, SourceLocation location) {
+    if (file.filename.empty()) throw runtime_error(RuntimeError::nil_reference,location);
+    try { return (full ? file.filename : file.filename.filename()).u16string(); }
+    catch (const std::filesystem::filesystem_error&) { throw runtime_error(RuntimeError::file_io,location); }
+}
+std::u16string text_read_end(TextFile& file, SourceLocation location) {
+    if (!file.reading) throw runtime_error(RuntimeError::nil_reference,location);
+    auto result=file.content.substr(file.cursor); file.cursor=file.content.size(); return result;
+}
 void text_skip_line(TextFile& file, SourceLocation location) {
     (void)read_remaining_line(file,location);
     if (file.cursor<file.content.size()) {

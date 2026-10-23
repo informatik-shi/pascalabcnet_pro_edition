@@ -64,6 +64,16 @@ std::string format(const Value& value, const Instruction& instruction) {
     if (result.ec != std::errc{}) trap(instruction, RuntimeError::number_format);
     return {buffer, result.ptr};
 }
+std::u16string file_text(const Value& value, const Instruction& instruction) {
+    if (std::holds_alternative<NilString>(value)) return u"nil";
+    return value_type(value)==Type::string ? string_text(value) : from_utf8(format(value,instruction));
+}
+constexpr std::u16string_view file_newline=
+#ifdef _WIN32
+    u"\r\n";
+#else
+    u"\n";
+#endif
 
 void append_collection_text(std::u16string& text, const Value& value, const Instruction& instruction, bool concatenate = false) {
     if (!concatenate && std::holds_alternative<NilString>(value)) trap(instruction,RuntimeError::nil_reference);
@@ -347,20 +357,30 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
         case Op::read_value: stack.push_back(read_line(input,instruction)); break;
         case Op::file_print: {
             const auto value=pop(); auto& file=text_file(stack.back(),instruction.location);
-            const auto part=std::holds_alternative<NilString>(value) ? std::u16string(u"nil")
-                : value_type(value)==Type::string ? string_text(value) : from_utf8(format(value,instruction));
-            text_write(file,part,instruction.location); break;
+            text_write(file,file_text(value,instruction),instruction.location); break;
+        }
+        case Op::file_output: {
+            std::vector<Value> arguments(instruction.operand/4);
+            for (auto value=arguments.rbegin();value!=arguments.rend();++value) *value=pop();
+            const auto receiver=pop();
+            const auto method=static_cast<TextOutput>(instruction.operand%4);
+            auto& file=text_file(receiver,instruction.location);
+            // Empty Write and Print do not require an assigned or open file.
+            if (arguments.empty() && (method==TextOutput::write || method==TextOutput::print)) break;
+            for (std::size_t n=0;n<arguments.size();++n) {
+                text_write(file,file_text(arguments[n],instruction),instruction.location);
+                if (method==TextOutput::print || (method==TextOutput::println && n+1<arguments.size()))
+                    text_write(file,u" ",instruction.location);
+            }
+            if (method==TextOutput::writeln || method==TextOutput::println) text_write(file,file_newline,instruction.location);
+            break;
         }
         case Op::file_read: {
             const auto target=std::get<std::shared_ptr<Cell>>(pop());
             values.write(target,text_read(text_file(stack.back(),instruction.location),instruction.type,instruction.location)); break;
         }
         case Op::file_newline:
-#ifdef _WIN32
-            text_write(text_file(stack.back(),instruction.location),u"\r\n",instruction.location); break;
-#else
-            text_write(text_file(stack.back(),instruction.location),u"\n",instruction.location); break;
-#endif
+            text_write(text_file(stack.back(),instruction.location),file_newline,instruction.location); break;
         case Op::file_skip_line: text_skip_line(text_file(stack.back(),instruction.location),instruction.location); break;
         case Op::increment: {
             const auto step=pop(); auto target=std::get<std::shared_ptr<Cell>>(pop()); auto operation=instruction;

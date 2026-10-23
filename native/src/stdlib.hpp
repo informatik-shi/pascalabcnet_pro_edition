@@ -16,7 +16,7 @@ enum class Function {
     rename_file, rename_directory,
     text_assign, text_reset, text_rewrite, text_append, text_close, text_flush,
     text_eof, text_eoln, text_seek_eof, text_seek_eoln, text_open_read, text_open_write, text_open_append,
-    text_read, text_read_line, text_read_word
+    text_read, text_read_line, text_read_word, text_skip_line, text_name, text_full_name, text_read_end
 };
 struct Signature {
     std::string_view name;

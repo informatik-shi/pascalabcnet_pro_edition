@@ -82,6 +82,7 @@ def main():
                 ("directories.pas", "Файл в выбранной папке\nНовое имя: заметка.bak\nФайл удалён: True\nВложенная папка удалена: True\nПапка примера удалена: True\n"),
                 ("renames.pas", "Файл переименован: True\nКаталог переименован: True\nТекст заметки\nЗанятое имя: False\nСуществующий текст\n"),
                 ("text-files.pas", "Сумма: 30\nСтрока из файла\nКонец файла: True\nДобавленная строка\n"),
+                ("text-methods.pas", "Файл: Заметка.txt\nПервое слово: Цена:\nЧисло: 125\nОстаток: Количество: 3\nКонец файла: True\n"),
             ]:
                 example = subprocess.run([runner, "run", str(folder / "examples" / source)],
                                          text=True, encoding="utf-8", capture_output=True,
@@ -101,6 +102,14 @@ def main():
                         or f"{file_error}:3:" not in invalid.stderr):
                     raise RuntimeError(f"{name} bilingual text file error failed: {invalid.stderr!r}")
             empty = folder / "Пустая коллекция.pas"
+            file_error.write_text("begin\n var f:Text;\n Writeln(f.ReadToEnd);\nend.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(file_error)], text=True, encoding="utf-8",
+                                     capture_output=True, cwd=folder, env=env, timeout=10)
+            if (invalid.returncode != 1 or "E_NIL" not in invalid.stderr
+                    or "EN: Cannot access a nil reference" not in invalid.stderr
+                    or "RU: Нельзя обратиться к пустой ссылке nil" not in invalid.stderr
+                    or f"{file_error}:3:" not in invalid.stderr):
+                raise RuntimeError(f"{name} bilingual Text member error failed: {invalid.stderr!r}")
             for container, method, russian in [("Stack", "Pop", "Стек пуст"), ("Queue", "Dequeue", "Очередь пуста")]:
                 empty.write_text(f"uses Collections;\nbegin\n  var c:=new {container}<integer>;\n  c.{method};\nend.", encoding="utf-8")
                 invalid = subprocess.run([runner, "run", str(empty)], text=True, encoding="utf-8",
@@ -233,6 +242,7 @@ def main():
             results[-1].update({"directories": "passed", "bilingual_directory_error": "passed", "nil_strings": "passed", "bilingual_nil_string": "passed"})
             results[-1]["renames_and_no_overwrite"] = "passed"
             results[-1].update({"classic_text_files": "passed", "bilingual_text_file_error": "passed"})
+            results[-1].update({"text_methods": "passed", "bilingual_text_method_error": "passed"})
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 

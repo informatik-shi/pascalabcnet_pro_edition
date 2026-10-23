@@ -80,8 +80,9 @@ enum class Op {
     get_index, ref_index, get_field, ref_field, array_new, array_literal, length, resize_array,
     call_user, return_user, drop, list_add, list_remove, list_clear, list_contains,
     read_lines, write_lines, array_copy, array_high, sequence_sort, sequence_fill, mutate_string, increment, read_value,
-    endpoint_call, buffer_call, association_call, linked_call, file_print, file_newline, file_read, file_skip_line
+    endpoint_call, buffer_call, association_call, linked_call, file_print, file_newline, file_read, file_skip_line, file_output
 };
+enum class TextOutput { write, writeln, print, println };
 
 struct Instruction {
     Op op = Op::halt;

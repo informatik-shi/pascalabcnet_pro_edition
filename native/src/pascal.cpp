@@ -433,7 +433,8 @@ private:
                 const auto token = result->token;
                 result = make_expression(SyntaxExprKind::index, token, std::move(result), std::move(index));
             } else if (accept(".")) {
-                const auto field = name();
+                // These standard Text methods also have statement keyword spellings.
+                const auto field = is("write") || is("writeln") || is("readln") ? consume() : name();
                 result = make_expression(SyntaxExprKind::field, field, std::move(result));
             } else if (accept("(")) {
                 if (result->kind != SyntaxExprKind::name && result->kind != SyntaxExprKind::field) fail("Expression is not callable");
@@ -681,6 +682,35 @@ private:
         case SyntaxExprKind::field:
         case SyntaxExprKind::member_call: {
             result->left = expression(*source.left); const auto receiver = result->left->type;
+            if (receiver==Type::text_file) {
+                const auto& name=source.token.text;
+                if (name=="write" || name=="writeln" || name=="print" || name=="println") {
+                    result->kind=hir::ExprKind::file_output; result->type=Type::unit;
+                    result->local=static_cast<std::size_t>(name=="write" ? TextOutput::write : name=="writeln" ? TextOutput::writeln
+                        : name=="print" ? TextOutput::print : TextOutput::println);
+                    for (const auto& argument:source.arguments) {
+                        auto value=expression(*argument);
+                        if (!scalar(value->type)) throw Error("E_TYPE",value->location,"Text output requires scalar values");
+                        result->arguments.push_back(std::move(value));
+                    }
+                    break;
+                }
+                static const std::set<std::string> methods={"readinteger","readreal","readstring","readboolean","readword",
+                    "readlninteger","readlnreal","readlnstring","readlnboolean","readln","reset","rewrite","append",
+                    "eof","eoln","seekeof","seekeoln","close","flush","name","fullname","readtoend"};
+                if (!methods.contains(name)) throw Error("E_NAME",result->location,"Text member is not ported: '"+name+"'");
+                if (!source.arguments.empty()) throw Error("E_TYPE",result->location,"Text method takes no arguments");
+                const std::string_view target=name=="readword" ? "readlexem" : name=="readln" ? "$text_skip_line"
+                    : name=="name" ? "$text_name" : name=="fullname" ? "$text_full_name" : name=="readtoend" ? "$text_read_end" : std::string_view(name);
+                const auto catalog=stdlib::signatures();
+                const auto found=std::find_if(catalog.begin(),catalog.end(),[&](const auto& signature) {
+                    return signature.name==target && signature.parameters.size()==1 && signature.parameters[0]==Type::text_file;
+                });
+                if (found==catalog.end()) throw Error("E_HIR",result->location,"Missing Text method signature");
+                result->kind=hir::ExprKind::call; result->type=found->result;
+                result->local=static_cast<std::size_t>(found-catalog.begin());
+                result->arguments.push_back(std::move(result->left)); break;
+            }
             const auto& type = info(receiver,result->location);
             if (type.kind == CompoundKind::linked_list || node_kind(type.kind)) {
                 const auto& name = source.token.text; const auto kind = type.kind;

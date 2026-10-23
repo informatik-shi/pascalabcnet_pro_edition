@@ -55,6 +55,11 @@ private:
         switch (node.kind) {
         case hir::ExprKind::literal: constant(node.value, node.location); break;
         case hir::ExprKind::local: local(Op::load,node.local,node.location); break;
+        case hir::ExprKind::file_output:
+            expression(*node.left);
+            for (const auto& argument:node.arguments) expression(*argument);
+            // Low two bits select Write/Writeln/Print/Println; remaining bits hold arity.
+            emit(Op::file_output,Type::text_file,node.arguments.size()*4+node.local,node.location); break;
         case hir::ExprKind::linked_call:
             if (node.left) expression(*node.left);
             for (const auto& argument : node.arguments) expression(*argument);
@@ -273,6 +278,8 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if (!scalar(type) || instruction.operand) invalid(instruction,"Invalid typed file IO"); break;
         case Op::file_newline: case Op::file_skip_line:
             if (type!=Type::text_file || instruction.operand) invalid(instruction,"Invalid text file instruction"); break;
+        case Op::file_output:
+            if (type!=Type::text_file || instruction.operand/4>16) invalid(instruction,"Invalid Text output method"); break;
         case Op::increment:
             if ((type!=Type::integer && type!=Type::int64) || instruction.operand>1) invalid(instruction,"Invalid increment"); break;
         case Op::mutate_string:
@@ -428,6 +435,10 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         case Op::file_print: require(instruction.type); require(Type::text_file); stack.push_back(Type::text_file); break;
         case Op::file_read: require(reference_type(instruction.type)); require(Type::text_file); stack.push_back(Type::text_file); break;
         case Op::file_newline: case Op::file_skip_line: require(Type::text_file); stack.push_back(Type::text_file); break;
+        case Op::file_output:
+            for (std::size_t n=0;n<instruction.operand/4;++n)
+                if (!scalar(pop())) invalid(instruction,"Text output requires scalar arguments");
+            require(Type::text_file); break;
         case Op::increment: require(instruction.type); require(reference_type(instruction.type)); break;
         case Op::mutate_string: {
             const auto& signature=stdlib::signatures()[instruction.operand];
