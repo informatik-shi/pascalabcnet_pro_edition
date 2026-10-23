@@ -12,6 +12,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 add_library(abc_core
     src/stdlib.cpp
     src/files.cpp
+    src/file_moves.cpp
     src/stdlib_text.cpp
     src/diagnostics.cpp
     src/types.cpp
@@ -89,6 +90,9 @@ if(BUILD_TESTING)
     add_test(NAME directory_compatibility COMMAND ${CMAKE_COMMAND}
         "-DABC_RUNNER=$<TARGET_FILE:abc>" "-DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
         -DABC_FIXTURE_NAME=directories-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")
+    add_test(NAME rename_compatibility COMMAND ${CMAKE_COMMAND}
+        "-DABC_RUNNER=$<TARGET_FILE:abc>" "-DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
+        -DABC_FIXTURE_NAME=renames-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")
 endif()
 
 install(TARGETS abc RUNTIME DESTINATION bin)

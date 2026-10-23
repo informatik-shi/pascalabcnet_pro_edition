@@ -83,6 +83,8 @@ std::span<const Signature> signatures() {
         add("deletefile", {Type::string}, Type::boolean, Function::delete_file);
         add("setcurrentdir", {Type::string}, Type::boolean, Function::set_current_dir);
         add("changefilenameextension", {Type::string,Type::string}, Type::string, Function::change_extension);
+        add("renamefile", {Type::string,Type::string}, Type::boolean, Function::rename_file);
+        add("renamedirectory", {Type::string,Type::string}, Type::boolean, Function::rename_directory);
         return entries;
     }();
     return catalog;
@@ -157,6 +159,8 @@ Value invoke(std::size_t id, std::span<const Value> arguments, SourceLocation lo
         } catch (const Error& error) { if (error.code!="E_IO") throw; return false; }
     }
     if (function == Function::delete_file) return delete_file(files,string_text(value));
+    if (function == Function::rename_file || function == Function::rename_directory)
+        return files.rename(string_text(value),string_text(arguments[1]),function==Function::rename_directory);
     if (function == Function::change_extension) return change_file_extension(value,arguments[1],location);
     if (function == Function::read_all_text) return read_text_file(files,string_text(value),location);
     if (function == Function::file_exists) return file_exists(files,string_text(value));

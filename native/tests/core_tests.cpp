@@ -7,6 +7,16 @@
 #include <chrono>
 #include <limits>
 #include <sstream>
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#endif
+#ifdef __linux__
+#include <sys/stat.h>
+#endif
 
 namespace {
 int failures = 0;
@@ -428,9 +438,10 @@ void file_library() {
     if (!fs::create_directory(directory)) throw std::runtime_error("Cannot create unique file-test directory");
     struct Cleanup {
         fs::path path;
+        fs::path root=fs::temp_directory_path();
         ~Cleanup() {
             std::error_code error;
-            const auto parent=fs::weakly_canonical(fs::temp_directory_path(error),error);
+            const auto parent=fs::weakly_canonical(root,error);
             if (error) return;
             const auto target=fs::weakly_canonical(path,error);
             if (!error && target.parent_path()==parent && target.filename().generic_u8string().starts_with(u8"ABC native "))
@@ -496,6 +507,89 @@ void file_library() {
     require(!fs::exists(directory/"must-not-exist"),"All types are checked before directory effects");
     compile_error("begin WriteAllLines('file',Arr(1,2)); end.", "E_TYPE");
     compile_error("begin var x:=WriteAllText('file','x'); end.", "E_TYPE");
+
+    const auto moves=quote(directory/"moves");
+    result("begin MkDir("+moves+"); ChDir("+moves+"); WriteAllText('from.txt','source'); writeln(RenameFile('from.txt','renamed.txt'),' ',FileExists('from.txt'),' ',ReadAllText('renamed.txt')); writeln(RenameFile('renamed.txt','./renamed.txt')); end.","True False source\nTrue\n");
+    result("begin ChDir("+moves+"); WriteAllText('occupied.txt','target'); writeln(RenameFile('renamed.txt','occupied.txt'),' ',ReadAllText('renamed.txt'),' ',ReadAllText('occupied.txt')); MkDir('occupied-dir'); writeln(RenameFile('renamed.txt','occupied-dir'),' ',ReadAllText('renamed.txt')); end.","False source target\nFalse source\n");
+    result("begin ChDir("+moves+"); writeln(RenameFile('missing.txt','new.txt'),' ',RenameFile('missing.txt','missing.txt'),' ',RenameFile('renamed.txt','missing/target.txt')); writeln(FileExists('renamed.txt')); end.","False False False\nTrue\n");
+    result("begin ChDir("+moves+"); MkDir('from-dir/child'); WriteAllText('from-dir/child/note.txt','inside'); writeln(RenameFile('from-dir','bad-dir')); writeln(RenameDirectory('from-dir','renamed-dir'),' ',ReadAllText('renamed-dir/child/note.txt')); writeln(RenameDirectory('renamed-dir','renamed-dir'),' ',RenameDirectory('renamed-dir','occupied-dir'),' ',RenameDirectory('renamed-dir','occupied.txt')); writeln(ReadAllText('renamed-dir/child/note.txt'),' ',ReadAllText('occupied.txt')); end.","False\nTrue inside\nFalse False False\ninside target\n");
+    result("begin ChDir("+moves+"); writeln(RenameDirectory('renamed-dir','renamed-dir/child/subdir'),' ',RenameDirectory('missing-dir','new-dir'),' ',RenameDirectory('renamed-dir','missing-parent/new-dir')); writeln(RenameDirectory('renamed.txt','via-directory.txt'),' ',ReadAllText('via-directory.txt')); end.","False False False\nTrue source\n");
+    result("begin ChDir("+moves+"); WriteAllText('имя''файла.txt','данные 🌍'); writeln(RenameFile('имя''файла.txt','новое имя.txt'),' ',ReadAllText('новое имя.txt')); MkDir('старое имя'); writeln(RenameDirectory('старое имя','новое имя')); end.","True данные 🌍\nTrue\n");
+    result("begin ChDir("+moves+"); WriteAllText('case.txt','case'); MkDir('case-dir'); writeln(RenameFile('case.txt','CASE.txt'),' ',RenameDirectory('case-dir','CASE-DIR')); end.","True True\n");
+    bool file_case=false, directory_case=false;
+    for (const auto& entry:fs::directory_iterator(directory/"moves")) {
+        if (entry.path().filename()=="CASE.txt") file_case=true;
+        if (entry.path().filename()=="CASE-DIR") directory_case=true;
+    }
+    require(file_case && directory_case,"Case-only rename changes the stored file and directory names");
+    result("begin writeln(RenameFile(nil,'x'),' ',RenameFile('x',nil),' ',RenameDirectory(nil,'x'),' ',RenameDirectory('x',nil)); writeln(RenameFile('','x'),' ',RenameFile('x',''),' ',RenameDirectory('','x'),' ',RenameDirectory('x','')); end.","False False False False\nFalse False False False\n");
+    result("begin ChDir("+moves+"); var p:string; Readln(p); writeln(RenameFile('via-directory.txt',p),' ',RenameFile(p,'x'),' ',RenameDirectory('renamed-dir',p),' ',RenameDirectory(p,'x')); writeln(FileExists('via-directory.txt')); end.","False False False False\nTrue\n",std::string("bad\0path\n",9));
+    const auto binary=directory/"moves"/"binary.bin", renamed_binary=directory/"moves"/"renamed.bin";
+    const std::string binary_data=std::string("\0\xff\x80",3)+std::string(1'048'577,'x');
+    { std::ofstream out(binary,std::ios::binary); out.write(binary_data.data(),static_cast<std::streamsize>(binary_data.size())); }
+    result("begin writeln(RenameFile("+quote(binary)+","+quote(renamed_binary)+")); end.","True\n");
+    { std::ifstream in(renamed_binary,std::ios::binary); const std::string moved((std::istreambuf_iterator<char>(in)),{});
+      require(!fs::exists(binary) && moved==binary_data,"Rename preserves arbitrary binary bytes without the text IO limit"); }
+    std::error_code link_error;
+    { std::ofstream out(directory/"moves"/"hard-source.txt"); out << "hard"; }
+    fs::create_hard_link(directory/"moves"/"hard-source.txt",directory/"moves"/"hard-link.txt",link_error);
+    if (!link_error) {
+#ifdef _WIN32
+        result("begin ChDir("+moves+"); writeln(RenameFile('hard-source.txt','hard-link.txt')); end.","True\n");
+        require(!fs::exists(directory/"moves"/"hard-source.txt") && fs::exists(directory/"moves"/"hard-link.txt"),"Windows removes the source name when moving onto the same file's hard link");
+#else
+        result("begin ChDir("+moves+"); writeln(RenameFile('hard-source.txt','hard-link.txt')); end.","True\n");
+        require(fs::exists(directory/"moves"/"hard-source.txt") && fs::exists(directory/"moves"/"hard-link.txt"),"Unix same-inode rename leaves both hard links present");
+#endif
+    }
+    fs::create_symlink("via-directory.txt",directory/"moves"/"link-a",link_error);
+    if (!link_error) {
+        fs::create_symlink("via-directory.txt",directory/"moves"/"link-b",link_error);
+        if (!link_error) result("begin ChDir("+moves+"); writeln(RenameFile('link-a','link-b'),' ',RenameFile('link-a','moved-link'),' ',ReadAllText('moved-link')); end.","False True source\n");
+        fs::create_symlink("absent-target",directory/"moves"/"broken-link",link_error);
+        if (!link_error) result("begin ChDir("+moves+"); writeln(RenameFile('via-directory.txt','broken-link')); end.","False\n");
+    }
+    result("begin MkDir("+moves+"+'/selected/child'); ChDir("+moves+"+'/selected/child'); WriteAllText('inside.txt','selected'); end.","");
+#ifdef _WIN32
+    result("begin ChDir("+moves+"+'/selected/child'); writeln(RenameDirectory('.','../renamed-child'),' ',RenameDirectory('..','../../renamed-parent'),' ',FileExists('inside.txt')); end.","False False True\n");
+    const auto locked_path=directory/"moves"/"via-directory.txt";
+    const auto locked=::CreateFileW(locked_path.c_str(),GENERIC_READ,FILE_SHARE_READ|FILE_SHARE_WRITE,nullptr,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,nullptr);
+    require(locked!=INVALID_HANDLE_VALUE,"Open file without delete sharing for rename test");
+    if (locked!=INVALID_HANDLE_VALUE) {
+        result("begin ChDir("+moves+"); writeln(RenameFile('via-directory.txt','locked-destination'),' ',RenameDirectory('via-directory.txt','locked-destination')); end.","False False\n");
+        ::CloseHandle(locked);
+    }
+#else
+    result("begin ChDir("+moves+"+'/selected/child'); writeln(RenameDirectory('.','../renamed-child'),' ',FileExists('inside.txt')); writeln(RenameDirectory('..','../../renamed-parent'),' ',FileExists('inside.txt'),' ',SetCurrentDir(GetDir)); end.","True True\nTrue True True\n");
+#endif
+    require(fs::current_path()==home,"Renaming the program directory does not change the host cwd");
+#ifdef __linux__
+    // /dev/shm normally provides a second, writable filesystem in Linux CI.
+    struct stat local_volume{}, shared_volume{};
+    if (::stat(directory.c_str(),&local_volume)==0 && ::stat("/dev/shm",&shared_volume)==0
+        && local_volume.st_dev!=shared_volume.st_dev) {
+        const auto shared=fs::path("/dev/shm")/directory.filename();
+        std::error_code shared_error;
+        if (fs::create_directory(shared,shared_error) && !shared_error) {
+            Cleanup cleanup_shared{shared,fs::path("/dev/shm")};
+            const auto cross_source=directory/"cross-device.bin", cross_target=shared/"cross-device.bin";
+            { std::ofstream out(cross_source,std::ios::binary); out.write(binary_data.data(),static_cast<std::streamsize>(binary_data.size())); }
+            result("begin writeln(RenameFile("+quote(cross_source)+","+quote(cross_target)+")); end.","True\n");
+            { std::ifstream in(cross_target,std::ios::binary); const std::string copied((std::istreambuf_iterator<char>(in)),{});
+              require(!fs::exists(cross_source) && copied==binary_data,"Cross-filesystem rename copies binary bytes then removes the source"); }
+            fs::create_directory(directory/"cross-directory");
+            result("begin writeln(RenameDirectory("+quote(directory/"cross-directory")+","+quote(shared/"cross-directory")+")); end.","False\n");
+            require(fs::exists(directory/"cross-directory") && !fs::exists(shared/"cross-directory"),"Cross-filesystem directory rename does not copy the tree");
+            result("begin WriteAllText("+quote(cross_source)+",'source'); WriteAllText("+quote(cross_target)+",'target'); writeln(RenameFile("+quote(cross_source)+","+quote(cross_target)+"),' ',ReadAllText("+quote(cross_source)+"),' ',ReadAllText("+quote(cross_target)+")); end.","False source target\n");
+        }
+    }
+#endif
+    error([&] { (void)run("begin RenameFile("+quote(directory/"moves"/"via-directory.txt")+","+quote(directory/"moves"/"must-not-move")+"); var n:integer:='bad'; end."); },"E_TYPE");
+    require(fs::exists(directory/"moves"/"via-directory.txt") && !fs::exists(directory/"moves"/"must-not-move"),"Type errors are rejected before rename effects");
+    compile_error("begin Writeln(RenameFile('x',1)); end.","E_TYPE");
+    compile_error("begin Writeln(RenameDirectory(1,'x')); end.","E_TYPE");
+    compile_error("begin Writeln(RenameFile('x')); end.","E_TYPE");
+    compile_error("begin var n:integer:=RenameDirectory('x','y'); end.","E_TYPE");
 }
 
 void file_extensions() {

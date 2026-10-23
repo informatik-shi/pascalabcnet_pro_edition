@@ -74,7 +74,7 @@ C++ с известными до выполнения типами; мост к 
 | LinkedList | `LinkedList<T>`, `LinkedListNode<T>`, `First/Last`, `Value/Prev/Next`, вставка и удаление узлов, текстовый вывод |
 | SingleNode | `SingleNode<T>(data,next)`, изменяемые свойства `Data/Next`, перепривязка цепочек |
 | Текстовые файлы | `ReadAllText`, `WriteAllText`, `ReadAllLines`, `WriteAllLines`, `FileExists` |
-| Каталоги и имена | `GetDir`, `GetCurrentDir`, `ChDir`, `SetCurrentDir`, `MkDir`, `CreateDir`, `RmDir`, `RemoveDir`, `DeleteFile`, `ChangeFileNameExtension` |
+| Каталоги и имена | `GetDir`, `GetCurrentDir`, `ChDir`, `SetCurrentDir`, `MkDir`, `CreateDir`, `RmDir`, `RemoveDir`, `DeleteFile`, `RenameFile`, `RenameDirectory`, `ChangeFileNameExtension` |
 | Константы | `Pi`, `E`, `MaxInt`, `MaxInt64`, `MaxReal`, `MaxDouble`, `MinReal`, `MinDouble` |
 
 Типы аргументов, выбор перегрузки и тип результата определяются до выполнения.
@@ -351,8 +351,35 @@ Unicode; относительные пути отсчитываются от т�
 файл на диске. Точка перед расширением необязательна; `ext=nil` убирает расширение,
 `ext=''` оставляет завершающую точку. `name=nil` возвращает строковый `nil`,
 пустое имя остаётся пустым. Учитываются разделители каталогов текущей ОС.
-Переименование файлов/каталогов, классические файловые дескрипторы и дисковые
-функции ещё не перенесены.
+Классические файловые дескрипторы и дисковые функции ещё не перенесены.
+
+`RenameFile(source,destination)` и `RenameDirectory(source,destination)` возвращают
+`boolean`: занятое имя другого объекта, отсутствующий источник, пустой путь,
+`nil` и отказ доступа дают `False`. Промежуточные папки назначения не создаются.
+Бинарные данные сохраняются без декодирования и не ограничиваются пределом
+текстового чтения. Каталоги перемещаются вместе с содержимым.
+`RenameFile` для существующего файла с тем же нормализованным именем возвращает
+`True`; `RenameDirectory` с тем же именем — `False`. Изменение только регистра
+поддерживается системной операцией. Как и исходный `Directory.Move`,
+`RenameDirectory` допускает перемещение обычного файла; `RenameFile` каталог не принимает.
+
+Занятое имя защищено самой ОС: используются
+[MoveFileExW без REPLACE_EXISTING](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-movefileexw),
+[renameat2 с NOREPLACE](https://man7.org/linux/man-pages/man2/rename.2.html) и
+[renamex_np с EXCL](https://github.com/apple-oss-distributions/xnu/blob/main/bsd/sys/stdio.h).
+При неподдерживаемой эксклюзивной операции каталог возвращает `False`; для файла
+на Unix возможен переход к созданию жёсткой ссылки или копированию без замены.
+Перенос файла между файловыми системами выполняется копированием с удалением
+источника, как у [File.Move](https://learn.microsoft.com/en-us/dotnet/api/system.io.file.move).
+Такая операция не атомарна; при сбое может остаться копия, в том числе неполная.
+Перемещение каталогов между файловыми системами не поддерживается.
+
+В Windows переименование текущей папки программы и её предков возвращает `False`;
+на Unix после их успешного перемещения контекст программы получает новый путь.
+Папка редактора при этом не меняется. Для двух жёстких ссылок на один файл сохранены
+правила ОС: Windows убирает исходное имя, Unix оставляет оба.
+Файловые отказы этих двух функций возвращают `False`, как исходные обёртки;
+они не превращаются в исключение выполнения.
 
 **Отличие совместимости:** исходный `PABCSystem` на Windows по умолчанию использует
 CP1251; новая переносимая реализация использует UTF-8. Перегрузки с `Encoding`,
@@ -367,6 +394,7 @@ CP1251; новая переносимая реализация использу�
 [односвязные узлы](examples/single-nodes.pas),
 [строковый nil](examples/nil-strings.pas),
 [каталоги и имена файлов](examples/directories.pas),
+[переименование](examples/renames.pas),
 [математика](examples/standard-library.pas), [строки и числа](examples/text-numbers.pas),
 [изменение строк](examples/string-editing.pas).
 Корпуса [базовой библиотеки](tests/fixtures/stdlib-compat.pas),
@@ -379,7 +407,8 @@ CP1251; новая переносимая реализация использу�
 [связанных списков](tests/fixtures/linked-compat.pas),
 [SingleNode](tests/fixtures/single-compat.pas) и
 [строкового nil](tests/fixtures/nil-strings-compat.pas),
-[каталогов и имён](tests/fixtures/directories-compat.pas) проверяются CTest
+[каталогов и имён](tests/fixtures/directories-compat.pas),
+[переименования](tests/fixtures/renames-compat.pas) проверяются CTest
 по точному ожидаемому выводу. При наличии оригинального компилятора
 можно дополнительно сравнить обе реализации:
 
@@ -389,7 +418,7 @@ python native/tests/reference_compat.py --native native/build/qt-editor/Release/
 
 Если .NET отсутствует в системе, `--dotnet-root /path/to/existing/dotnet` позволяет
 использовать уже распакованный runtime только для эталонной проверки.
-На Windows одиннадцать корпусов сверены с имеющимся PascalABC.NET/.NET 10 в поддержанном
+На Windows двенадцать корпусов сверены с имеющимся PascalABC.NET/.NET 10 в поддержанном
 профиле, включая строковый `nil`: результаты совпали.
 Файловые проверки сравнивают результат чтения после записи каждой реализацией,
 а не равенство кодировок создаваемых файлов.
@@ -438,7 +467,7 @@ cmake --build native/build/default --config Release
 ctest --test-dir native/build/default -C Release --output-on-failure
 ```
 
-Проверка от 23 октября 2026 года: MSVC Release — 577 проверок ядра и 17 тестов
+Проверка от 23 октября 2026 года: MSVC Release — 602 проверки ядра и 18 тестов
 CTest вместе с Qt; Clang 22 без санитайзера также проверен. Дополнительный локальный
 прогон Clang 22/AddressSanitizer на Windows не завершён: обработчик исключений
 аварийно останавливается, в том числе в отдельной минимальной программе с

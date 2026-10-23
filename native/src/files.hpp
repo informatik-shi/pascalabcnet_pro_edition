@@ -9,6 +9,7 @@ public:
     std::filesystem::path resolve(std::u16string_view path, SourceLocation location) const;
     std::u16string directory(SourceLocation location) const;
     void change_directory(std::u16string_view path, SourceLocation location);
+    bool rename(std::u16string_view source, std::u16string_view destination, bool directory);
 private:
     std::filesystem::path current_;
 };

@@ -12,7 +12,8 @@ enum class Function {
     trim, trim_left, trim_right, left_str, right_str, reverse_string, compare_str,
     int_to_str, str_to_int, str_to_int64, str_to_real, float_to_str,
     resize_string, insert_string, delete_string, read_all_text, write_all_text, file_exists,
-    get_dir, change_dir, make_dir, remove_dir, create_dir, try_remove_dir, delete_file, set_current_dir, change_extension
+    get_dir, change_dir, make_dir, remove_dir, create_dir, try_remove_dir, delete_file, set_current_dir, change_extension,
+    rename_file, rename_directory
 };
 struct Signature {
     std::string_view name;
