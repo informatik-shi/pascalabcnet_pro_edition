@@ -1,6 +1,7 @@
 #pragma once
 #include "abc/core.hpp"
 #include "diagnostics.hpp"
+#include "text_file.hpp"
 
 namespace abc {
 inline const TypeInfo& type_info(const Program& program, Type type) {
@@ -9,7 +10,7 @@ inline const TypeInfo& type_info(const Program& program, Type type) {
     return program.types[index];
 }
 inline bool valid_value_type(const Program& program, Type type) {
-    return numeric(type) || type == Type::boolean || type == Type::string
+    return scalar(type) || type==Type::text_file
         || (compound(type) && static_cast<unsigned>(type) - 64U < program.types.size());
 }
 struct Values {
@@ -28,6 +29,7 @@ struct Values {
         case Type::real: return 0.0;
         case Type::boolean: return false;
         case Type::string: return generic ? Value{NilString{}} : Value{std::u16string{}};
+        case Type::text_file: return generic ? Value{std::shared_ptr<TextFile>{}} : Value{std::make_shared<TextFile>()};
         default: {
             const auto& info = type_info(program, type);
             if (buffer_collection(info.kind) && constructed) return buffer(type,0);

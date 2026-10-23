@@ -81,12 +81,25 @@ def main():
                 ("nil-strings.pas", "Нет значения: nil\nЭто nil: True\nПустая строка — nil: False\nДлина nil: 0\nСоединение: [текст]\nПосле Insert: Новое имя\n"),
                 ("directories.pas", "Файл в выбранной папке\nНовое имя: заметка.bak\nФайл удалён: True\nВложенная папка удалена: True\nПапка примера удалена: True\n"),
                 ("renames.pas", "Файл переименован: True\nКаталог переименован: True\nТекст заметки\nЗанятое имя: False\nСуществующий текст\n"),
+                ("text-files.pas", "Сумма: 30\nСтрока из файла\nКонец файла: True\nДобавленная строка\n"),
             ]:
                 example = subprocess.run([runner, "run", str(folder / "examples" / source)],
                                          text=True, encoding="utf-8", capture_output=True,
                                          cwd=folder, env=env, timeout=10)
                 if example.returncode or example.stdout != expected:
                     raise RuntimeError(f"{name} {source} failed: {example.stdout!r}, {example.stderr!r}")
+            file_error = folder / "Ошибка текстового файла.pas"
+            for body, code, english, russian in [
+                ("var f:Text;\n Writeln(f,1);", "E_IO", "Text file has not been assigned a filename", "Текстовому файлу не назначено имя"),
+                ("var f:=OpenWrite('empty.txt'); Close(f); Reset(f);\n ReadInteger(f);", "E_EOF", "Cannot read a token past the end of the text file", "Нельзя прочитать значение после конца текстового файла"),
+            ]:
+                file_error.write_text(f"begin\n {body}\nend.", encoding="utf-8")
+                invalid = subprocess.run([runner, "run", str(file_error)], text=True, encoding="utf-8",
+                                         capture_output=True, cwd=folder, env=env, timeout=10)
+                if (invalid.returncode != 1 or code not in invalid.stderr
+                        or f"EN: {english}" not in invalid.stderr or f"RU: {russian}" not in invalid.stderr
+                        or f"{file_error}:3:" not in invalid.stderr):
+                    raise RuntimeError(f"{name} bilingual text file error failed: {invalid.stderr!r}")
             empty = folder / "Пустая коллекция.pas"
             for container, method, russian in [("Stack", "Pop", "Стек пуст"), ("Queue", "Dequeue", "Очередь пуста")]:
                 empty.write_text(f"uses Collections;\nbegin\n  var c:=new {container}<integer>;\n  c.{method};\nend.", encoding="utf-8")
@@ -219,6 +232,7 @@ def main():
             results.append({"variant": name, "gui": "passed", "sum": 55, "type_error_before_output": "passed", "bilingual_runtime_error": "passed", "standard_library": "passed", "text_conversions": "passed", "string_mutations": "passed", "arrays_records_routines_lists": "passed", "text_files": "passed", "bilingual_array_error": "passed", "stacks_queues": "passed", "bilingual_empty_collections": "passed", "dynarray_simpleset": "passed", "bilingual_dynarray_error": "passed", "assocarray": "passed", "typed_keys_before_output": "passed", "bilingual_assocarray_error": "passed", "linked_lists": "passed", "bilingual_linked_error": "passed", "cyclic_linked_limit": "passed", "single_nodes": "passed", "bilingual_single_error": "passed", "single_cycle_limit": "passed"})
             results[-1].update({"directories": "passed", "bilingual_directory_error": "passed", "nil_strings": "passed", "bilingual_nil_string": "passed"})
             results[-1]["renames_and_no_overwrite"] = "passed"
+            results[-1].update({"classic_text_files": "passed", "bilingual_text_file_error": "passed"})
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 

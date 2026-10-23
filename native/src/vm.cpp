@@ -5,6 +5,7 @@
 #include "runtime_values.hpp"
 #include "files.hpp"
 #include "linked.hpp"
+#include "text_file.hpp"
 
 #include <charconv>
 #include <algorithm>
@@ -344,6 +345,23 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
             break;
         }
         case Op::read_value: stack.push_back(read_line(input,instruction)); break;
+        case Op::file_print: {
+            const auto value=pop(); auto& file=text_file(stack.back(),instruction.location);
+            const auto part=std::holds_alternative<NilString>(value) ? std::u16string(u"nil")
+                : value_type(value)==Type::string ? string_text(value) : from_utf8(format(value,instruction));
+            text_write(file,part,instruction.location); break;
+        }
+        case Op::file_read: {
+            const auto target=std::get<std::shared_ptr<Cell>>(pop());
+            values.write(target,text_read(text_file(stack.back(),instruction.location),instruction.type,instruction.location)); break;
+        }
+        case Op::file_newline:
+#ifdef _WIN32
+            text_write(text_file(stack.back(),instruction.location),u"\r\n",instruction.location); break;
+#else
+            text_write(text_file(stack.back(),instruction.location),u"\n",instruction.location); break;
+#endif
+        case Op::file_skip_line: text_skip_line(text_file(stack.back(),instruction.location),instruction.location); break;
         case Op::increment: {
             const auto step=pop(); auto target=std::get<std::shared_ptr<Cell>>(pop()); auto operation=instruction;
             operation.op=instruction.operand ? Op::subtract : Op::add;

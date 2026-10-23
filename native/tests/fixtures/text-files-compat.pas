@@ -1,0 +1,31 @@
+type Holder=record f:Text; end;
+procedure AddLine(f:Text; s:string);
+begin Writeln(f,s); end;
+begin
+  var f:TextFile;
+  Write(f); Read(f); Flush(f);
+  AssignFile(f,'native-stream-test.txt'); Rewrite(f);
+  Writeln(f,12,' ',34,' tail'); Writeln(f,'second'); CloseFile(f);
+  Reset(f); var a,b:integer; var s:string;
+  Read(f,a,b); Read(f,s); Writeln(a,' ',b,' [',s,'] ',Eoln(f),' ',Eof(f));
+  Readln(f,s); Writeln('[',s,']');
+  Readln(f,s); Writeln(s,' ',Eof(f),' ',Eoln(f));
+  Readln(f,s); Writeln('[',s,']'); Close(f);
+  Append(f); var alias:=f; AddLine(alias,'third'); Close(alias);
+  Reset(f,'native-stream-test.txt'); Readln(f,a,b); Readln(f,s); Writeln(a,' ',b,' ',s);
+  Writeln(ReadString(f),' ',Eof(f)); Close(f);
+  Rewrite(f); Write(f,'abc'); Rewrite(f); Write(f,'X'); Close(f);
+  Writeln(ReadAllText('native-stream-test.txt'));
+  Rewrite(f); Write(f,'abcdef'); Flush(f); Rewrite(f); Write(f,'XY'); Close(f);
+  Writeln(ReadAllText('native-stream-test.txt'));
+  var outputFile:=OpenWrite('native-stream-test.txt');
+  Writeln(outputFile,' 10 2147483648 1.5 True word');
+  Writeln(outputFile,'   '); Close(outputFile);
+  var inputFile:=OpenRead('native-stream-test.txt');
+  Writeln(ReadInteger(inputFile),' ',ReadInt64(inputFile),' ',ReadReal(inputFile),' ',ReadBoolean(inputFile),' ',ReadLexem(inputFile));
+  Writeln(SeekEoln(inputFile)); Readln(inputFile); Writeln(SeekEof(inputFile)); Close(inputFile);
+  var h:Holder; Assign(h.f,'native-stream-holder.txt'); Rewrite(h.f); Writeln(h.f,'record'); Close(h.f);
+  var arrayOfFiles:=new Text[1]; Assign(arrayOfFiles[0],'native-stream-array.txt'); Rewrite(arrayOfFiles[0]); Writeln(arrayOfFiles[0],'array'); Close(arrayOfFiles[0]);
+  Writeln(ReadAllLines('native-stream-holder.txt')[0],' ',ReadAllLines('native-stream-array.txt')[0]);
+  DeleteFile('native-stream-test.txt'); DeleteFile('native-stream-holder.txt'); DeleteFile('native-stream-array.txt');
+end.

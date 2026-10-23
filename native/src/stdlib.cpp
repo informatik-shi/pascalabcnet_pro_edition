@@ -1,6 +1,7 @@
 #include "stdlib.hpp"
 #include "diagnostics.hpp"
 #include "files.hpp"
+#include "text_file.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -85,6 +86,22 @@ std::span<const Signature> signatures() {
         add("changefilenameextension", {Type::string,Type::string}, Type::string, Function::change_extension);
         add("renamefile", {Type::string,Type::string}, Type::boolean, Function::rename_file);
         add("renamedirectory", {Type::string,Type::string}, Type::boolean, Function::rename_directory);
+        for (auto name:{"assign","assignfile"}) add(name,{Type::text_file,Type::string},Type::unit,Function::text_assign);
+        for (auto [name,function]:{std::pair{"reset",Function::text_reset},{"rewrite",Function::text_rewrite},{"append",Function::text_append}}) {
+            add(name,{Type::text_file},Type::unit,function);
+            add(name,{Type::text_file,Type::string},Type::unit,function);
+        }
+        for (auto name:{"close","closefile"}) add(name,{Type::text_file},Type::unit,Function::text_close);
+        add("flush",{Type::text_file},Type::unit,Function::text_flush);
+        for (auto [name,function]:{std::pair{"eof",Function::text_eof},{"eoln",Function::text_eoln},
+            {"seekeof",Function::text_seek_eof},{"seekeoln",Function::text_seek_eoln}}) add(name,{Type::text_file},Type::boolean,function);
+        for (auto [name,function]:{std::pair{"openread",Function::text_open_read},{"openwrite",Function::text_open_write},
+            {"openappend",Function::text_open_append}}) add(name,{Type::string},Type::text_file,function);
+        for (auto [name,type]:{std::pair{"readinteger",Type::integer},{"readint64",Type::int64},{"readreal",Type::real},{"readboolean",Type::boolean}})
+            add(name,{Type::text_file},type,Function::text_read);
+        for (auto [name,type]:{std::pair{"readlninteger",Type::integer},{"readlnint64",Type::int64},{"readlnreal",Type::real},
+            {"readlnboolean",Type::boolean},{"readstring",Type::string},{"readlnstring",Type::string}}) add(name,{Type::text_file},type,Function::text_read_line);
+        add("readlexem",{Type::text_file},Type::string,Function::text_read_word);
         return entries;
     }();
     return catalog;
@@ -147,6 +164,29 @@ Value invoke(std::size_t id, std::span<const Value> arguments, SourceLocation lo
     const auto function = signature.function;
     if (function == Function::get_dir) return files.directory(location);
     const auto& value = arguments.front();
+    if (function>=Function::text_assign && function<=Function::text_read_word) {
+        if (function==Function::text_open_read || function==Function::text_open_write || function==Function::text_open_append) {
+            auto file=std::make_shared<TextFile>(); text_assign(files,*file,value,location);
+            text_open(files,file,function==Function::text_open_read ? 0 : function==Function::text_open_write ? 1 : 2,location);
+            return file;
+        }
+        auto& file=text_file(value,location);
+        switch (function) {
+        case Function::text_assign: text_assign(files,file,arguments[1],location); return false;
+        case Function::text_reset: case Function::text_rewrite: case Function::text_append:
+            if (arguments.size()==2) text_assign(files,file,arguments[1],location);
+            text_open(files,std::get<std::shared_ptr<TextFile>>(value),function==Function::text_reset ? 0 : function==Function::text_rewrite ? 1 : 2,location); return false;
+        case Function::text_close: file.close(location); return false;
+        case Function::text_flush: file.flush(location); return false;
+        case Function::text_eof: case Function::text_eoln: case Function::text_seek_eof: case Function::text_seek_eoln:
+            return text_eof(file,function==Function::text_eoln || function==Function::text_seek_eoln,
+                function==Function::text_seek_eof || function==Function::text_seek_eoln,location);
+        case Function::text_read: return text_read(file,signature.result,location);
+        case Function::text_read_line: { auto result=text_read(file,signature.result,location); text_skip_line(file,location); return result; }
+        case Function::text_read_word: return text_word(file,location);
+        default: throw runtime_error(RuntimeError::invalid_bytecode,location);
+        }
+    }
     if (function == Function::change_dir) { files.change_directory(string_text(value),location); return false; }
     if (function == Function::make_dir) { create_directory(files,string_text(value),location); return false; }
     if (function == Function::remove_dir) { remove_directory(files,string_text(value),location); return false; }

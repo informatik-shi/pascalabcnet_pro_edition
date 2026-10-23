@@ -66,6 +66,18 @@ Error runtime_error(RuntimeError id, SourceLocation location, std::string_view c
         code = "E_LIMIT"; english = "Routine call depth limit exceeded"; russian = "Превышена допустимая глубина вызовов подпрограмм"; break;
     case RuntimeError::file_io:
         code = "E_IO"; english = "Cannot open, read or write the file"; russian = "Не удалось открыть, прочитать или записать файл"; break;
+    case RuntimeError::file_unassigned:
+        code="E_IO"; english="Text file has not been assigned a filename"; russian="Текстовому файлу не назначено имя"; break;
+    case RuntimeError::file_closed:
+        code="E_IO"; english="Text file is not open"; russian="Текстовый файл не открыт"; break;
+    case RuntimeError::file_read_mode:
+        code="E_IO"; english="Text file is not open for reading"; russian="Текстовый файл не открыт для чтения"; break;
+    case RuntimeError::file_write_mode:
+        code="E_IO"; english="Text file is not open for writing"; russian="Текстовый файл не открыт для записи"; break;
+    case RuntimeError::file_end:
+        code="E_EOF"; english="Cannot read a token past the end of the text file"; russian="Нельзя прочитать значение после конца текстового файла"; break;
+    case RuntimeError::file_open_limit:
+        code="E_LIMIT"; english="Too many open text files (limit 64)"; russian="Превышен предел числа открытых текстовых файлов (64)"; break;
     case RuntimeError::directory_io:
         code = "E_IO"; english = "Directory operation failed"; russian = "Не удалось выполнить операцию с каталогом"; break;
     case RuntimeError::file_limit:

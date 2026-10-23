@@ -605,6 +605,90 @@ void file_extensions() {
     error([&] { abc::verify(program); },"E_BYTECODE");
 }
 
+void text_files() {
+    namespace fs=std::filesystem;
+    const auto root=fs::temp_directory_path();
+    const auto directory=root/fs::path("ABC native text "+std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    if (!fs::create_directory(directory)) throw std::runtime_error("Cannot create text-file test directory");
+    struct Cleanup {
+        fs::path path,root;
+        ~Cleanup() {
+            std::error_code error;
+            const auto target=fs::weakly_canonical(path,error), parent=fs::weakly_canonical(root,error);
+            if (!error && target.parent_path()==parent && target.filename().generic_u8string().starts_with(u8"ABC native text ")) fs::remove_all(target,error);
+        }
+    } cleanup{directory,root};
+    auto quote=[](const fs::path& path) {
+        const auto bytes=path.generic_u8string(); std::string result="'";
+        for (auto c:bytes) { result+=static_cast<char>(c); if (c==u8'\'') result+='\''; }
+        return result+"'";
+    };
+    const auto file=quote(directory/"text.txt"), other=quote(directory/"other.txt");
+    result("begin var f:Text; Assign(f,"+file+"); Rewrite(f); Writeln(f,12,' ',34,' tail'); Close(f); Reset(f); var a,b:integer; var s:string; Read(f,a,b); Read(f,s); Writeln(a,' ',b,' [',s,'] ',Eoln(f),' ',Eof(f)); Readln(f,s); Writeln('[',s,'] ',Eof(f)); Readln(f,s); Writeln('[',s,']'); Close(f); end.","12 34 [ tail] True False\n[] True\n[]\n");
+    result("procedure Add(f:Text); begin Writeln(f,'добавлено 🌍'); end; begin var f:=OpenAppend("+file+"); var alias:=f; Add(alias); Close(alias); var g:=OpenRead("+file+"); Readln(g); Writeln(ReadString(g)); Close(g); end.","добавлено 🌍\n");
+    result("begin var f:=new TextFile; Rewrite(f,"+file+"); Write(f,'abc'); Rewrite(f); Write(f,'X'); Close(f); Writeln(ReadAllText("+file+")); Rewrite(f); Write(f,'abcdef'); Flush(f); Rewrite(f); Write(f,'XY'); Close(f); Writeln(ReadAllText("+file+")); end.","abcX\nXYcdef\n");
+    result("begin var f:Text; Write(f); Read(f); Flush(f); AssignFile(f,"+file+"); Rewrite(f); Writeln(f,1,' ',2147483648,' ',1.5,' ',True,' word'); CloseFile(f); Reset(f); Writeln(ReadInteger(f),' ',ReadInt64(f),' ',ReadReal(f),' ',ReadBoolean(f),' ',ReadLexem(f)); Writeln(SeekEoln(f)); Readln(f); Writeln(SeekEof(f)); Close(f); end.","1 2147483648 1.5 True word\nTrue\nTrue\n");
+    result("begin var f:=OpenWrite("+file+"); Writeln(f,'a'); Writeln(f,'b'); Close(f); Reset(f); var s,t:string; Readln(f,s,t); Writeln('[',s,'] [',t,']'); Writeln(ReadlnString(f)); Close(f); end.","[a] []\nb\n");
+    result("type Holder=record f:Text; end; begin var h:Holder; var a:=new Text[2]; Assign(h.f,"+file+"); Rewrite(h.f); Writeln(h.f,'record'); Close(h.f); Assign(a[1],"+other+"); Rewrite(a[1]); Writeln(a[1],'array'); Close(a[1]); Writeln(ReadAllLines("+file+")[0],' ',ReadAllLines("+other+")[0]); end.","record array\n");
+    result("function Make:Text; begin Rewrite(Result,"+file+"); end; begin var f:=Make; Writeln(f,'result'); Close(f); Writeln(ReadAllLines("+file+")[0]); end.","result\n");
+    result("begin var f:Text; Assign(f,"+file+"); MkDir("+quote(directory/"child")+"); ChDir("+quote(directory/"child")+"); Rewrite(f); Writeln(f,'bound'); Close(f); Writeln(ReadAllLines("+file+")[0],' ',FileExists('text.txt')); end.","bound False\n");
+    result("begin var f:=OpenWrite("+file+"); Writeln(f,'automatic close'); end.","");
+    result("begin Writeln(ReadAllLines("+file+")[0]); end.","automatic close\n");
+    const auto path=directory/"text.txt";
+    { std::ofstream out(path,std::ios::binary); out << "\xef\xbb\xbf" "first\rsecond\r\nthird\n"; }
+    result("begin var f:=OpenRead("+file+"); while not Eof(f) do Writeln('[',ReadString(f),']'); Close(f); end.","[first]\n[second]\n[third]\n");
+    { std::ofstream out(path,std::ios::binary); out << "  \t\r\n42  \t\n"; }
+    result("begin var f:=OpenRead("+file+"); Writeln(SeekEoln(f),' ',Eof(f)); Readln(f); Writeln(ReadlnInteger(f),' ',Eof(f)); Close(f); end.","True False\n42 True\n");
+    { std::ofstream out(path,std::ios::binary); out << "\xe3\x80\x80" "42 9223372036854775807 -1.5e2 FALSE"; }
+    result("begin var f:=OpenRead("+file+"); var n:integer; var big:int64; var r:real; var b:boolean; Read(f,n,big,r,b); Writeln(n,' ',big,' ',r,' ',b); Close(f); end.","42 9223372036854775807 -150 False\n");
+    { std::ofstream out(path,std::ios::binary); out.write("42\0\0\n",5); }
+    result("begin var f:=OpenRead("+file+"); Writeln(ReadInteger(f)); Close(f); end.","42\n");
+    { std::ofstream out(path,std::ios::binary); out << "2147483648"; }
+    runtime_error("begin var f:=OpenRead("+file+"); var n:integer; Read(f,n); end.","E_OVERFLOW");
+    { std::ofstream out(path,std::ios::binary); out << "999999999999999999999999x"; }
+    runtime_error("begin var f:=OpenRead("+file+"); ReadInteger(f); end.","E_FORMAT");
+    { std::ofstream out(path,std::ios::binary); out << "maybe"; }
+    runtime_error("begin var f:=OpenRead("+file+"); var b:boolean; Readln(f,b); end.","E_FORMAT");
+    { std::ofstream out(path,std::ios::binary); }
+    runtime_error("begin var f:=OpenRead("+file+"); ReadInteger(f); end.","E_EOF");
+    runtime_error("begin var f:Text; Reset(f); end.","E_IO");
+    runtime_error("begin var f:Text; Writeln(f,1); end.","E_IO");
+    runtime_error("begin var f:Text; Close(f); end.","E_IO");
+    runtime_error("begin var f:=OpenWrite("+file+"); Writeln(f,1); Close(f); Close(f); end.","E_IO");
+    runtime_error("begin var f:=OpenWrite("+file+"); Eof(f); end.","E_IO");
+    runtime_error("begin var f:=OpenWrite("+file+"); var n:integer; Read(f,n); end.","E_IO");
+    runtime_error("begin var f:=OpenRead("+file+"); Writeln(f,'bad'); end.","E_IO");
+    { std::ofstream out(path,std::ios::binary); out << "\xff"; }
+    runtime_error("begin var f:=OpenRead("+file+"); end.","E_ENCODING");
+    { std::ofstream out(path,std::ios::binary); out << std::string(1'048'577,'x'); }
+    runtime_error("begin var f:=OpenRead("+file+"); end.","E_LIMIT");
+    runtime_error("begin var f:=OpenAppend("+file+"); end.","E_LIMIT");
+    runtime_error("begin var f:=OpenWrite("+file+"); var s:='x'; var i:=0; while i<20 do begin s:=s+s; Inc(i); end; Write(f,s); Writeln(f); end.","E_LIMIT");
+    result("begin var f:=OpenWrite("+file+"); var s:='a'; var i:=0; while i<11 do begin s:=s+s; Inc(i); end; Write(f,s); Flush(f); Close(f); Writeln(Length(ReadAllText("+file+"))); end.","2048\n");
+    result("begin var f:=OpenWrite("+file+"); Write(f,Copy('🌍',1,1)); Write(f,Copy('🌍',2,1)); Close(f); Writeln(ReadAllText("+file+")); end.","🌍\n");
+    runtime_error("begin var files:=new List<Text>; var i:=0; while i<65 do begin files.Add(OpenRead("+file+")); Inc(i); end; end.","E_LIMIT");
+    result("begin var files:=new List<Text>; var i:=0; while i<200 do begin var f:=OpenRead("+file+"); Close(f); files.Add(f); Inc(i); end; Writeln(files.Count); end.","200\n");
+    runtime_error("uses Collections; begin var m:=new AssocArray<string,Text>; Reset(m['absent']); end.","E_NIL");
+    for (auto source:{"begin var f:Text; var n:integer:=f; end.","begin var f:Text; f:=nil; end.",
+         "begin var f:Text; Writeln(f=f); end.","begin var f:Text; var n:integer; Read(f,1); end.",
+         "begin var f:Text; Writeln(1,f); end.","begin var f:Text; Readln(1); end.",
+         "begin var a:=new Text[2]; Sort(a); end.","begin var f:Text; Reset(f,1); end.",
+         "begin var f:=new Text(1); end.","begin var f:Text; Read(f,f); end."}) compile_error(source,"E_TYPE");
+    compile_error("uses Collections; begin var s:=new Stack<Text>; Writeln(s.ToString); end.","E_UNSUPPORTED");
+    error([&]{ (void)run("begin var f:=OpenWrite("+other+"); Writeln(f,'must not run'); var n:integer:='bad'; end."); },"E_TYPE");
+    result("begin Writeln(ReadAllLines("+other+")[0]); end.","array\n");
+    auto program=abc::compile("begin var f:Text; Rewrite(f,'x'); Writeln(f,1); end.");
+    for (auto& instruction:program.code) if (instruction.op==abc::Op::file_print) { instruction.type=abc::Type::text_file; break; }
+    error([&]{abc::verify(program);},"E_BYTECODE");
+    program=abc::compile("begin var f:Text; var n:integer; Readln(f,n); end.");
+    for (auto& instruction:program.code) if (instruction.op==abc::Op::file_read) { instruction.type=abc::Type::real; break; }
+    error([&]{abc::verify(program);},"E_BYTECODE");
+    try { (void)run("begin\n var f:Text;\n Writeln(f,1);\nend."); require(false,"Expected file error"); }
+    catch (const abc::Error& caught) {
+        require(caught.code=="E_IO" && caught.location.line==3 && !caught.russian.empty(),"Text file error retains source line and both languages");
+    }
+}
+
 void endpoint_collections() {
     result("uses Collections; begin var s:=new Stack<integer>; writeln(s.IsEmpty); s.Push(1); s.Push(2); writeln(s.Top,' ',s.Top(),' ',s.Pop(),' ',s.Pop,' ',s.IsEmpty()); s.Push(3); writeln(s.Pop); end.", "True\n2 2 2 1 True\n3\n");
     result("uses Collections; begin var q:=new Queue<string>(); writeln(q.IsEmpty()); q.Enqueue('first'); q.Enqueue('second'); writeln(q.Top,' ',q.Top(),' ',q.Dequeue,' ',q.Dequeue(),' ',q.IsEmpty); q.Enqueue('again'); writeln(q.Top); end.", "True\nfirst first first second True\nagain\n");
@@ -945,6 +1029,7 @@ int main() {
     aggregate_semantics();
     file_library();
     file_extensions();
+    text_files();
     endpoint_collections();
     buffer_collections();
     association_collections();

@@ -172,13 +172,23 @@ private:
             } else emit(Op::halt,Type::invalid,0,node.location);
             break;
         case hir::StmtKind::print:
+            if (node.target) expression(*node.target);
             for (const auto& argument : node.arguments) {
                 expression(*argument);
-                emit(Op::print, argument->type, 0, argument->location);
+                emit(node.target ? Op::file_print : Op::print, argument->type, 0, argument->location);
             }
-            if (node.newline) emit(Op::newline, Type::invalid, 0, node.location);
+            if (node.newline) emit(node.target ? Op::file_newline : Op::newline,node.target ? Type::text_file : Type::invalid,0,node.location);
+            if (node.target) emit(Op::drop,Type::text_file,0,node.location);
             break;
         case hir::StmtKind::read:
+            if (node.target->type==Type::text_file) {
+                expression(*node.target);
+                for (const auto& target:node.arguments) {
+                    reference(*target); emit(Op::file_read,target->type,0,target->location);
+                }
+                if (node.newline) emit(Op::file_skip_line,Type::text_file,0,node.location);
+                emit(Op::drop,Type::text_file,0,node.location); break;
+            }
             reference(*node.target); emit(Op::read_value,node.target->type,0,node.location);
             emit(Op::store_ref,node.target->type,0,node.location); break;
         case hir::StmtKind::increment:
@@ -236,29 +246,33 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         case Op::linked_call:
             if (!compound(type) || instruction.operand > static_cast<std::size_t>(LinkedMethod::set_next)
                 || !linked_method_allowed(type_info(program,type).kind,static_cast<LinkedMethod>(instruction.operand))) invalid(instruction,"Invalid linked instruction");
-            if (linked_text_method(static_cast<LinkedMethod>(instruction.operand)) && compound(type_info(program,type).element)) invalid(instruction,"Linked text output requires scalar elements");
+            if (linked_text_method(static_cast<LinkedMethod>(instruction.operand)) && !scalar(type_info(program,type).element)) invalid(instruction,"Linked text output requires scalar elements");
             break;
         case Op::association_call:
             if (!compound(type) || type_info(program,type).kind != CompoundKind::association
                 || instruction.operand > static_cast<std::size_t>(AssociationMethod::println)) invalid(instruction,"Invalid AssocArray instruction");
             if (instruction.operand >= static_cast<std::size_t>(AssociationMethod::to_string)
-                && (compound(type_info(program,type).key) || compound(type_info(program,type).element))) invalid(instruction,"AssocArray text output requires scalar types");
+                && (!scalar(type_info(program,type).key) || !scalar(type_info(program,type).element))) invalid(instruction,"AssocArray text output requires scalar types");
             break;
         case Op::buffer_call:
             if (!compound(type) || instruction.operand > static_cast<std::size_t>(BufferMethod::println)
                 || !buffer_method_allowed(type_info(program,type).kind,static_cast<BufferMethod>(instruction.operand)))
                 invalid(instruction,"Invalid buffer collection instruction");
-            if (instruction.operand >= static_cast<std::size_t>(BufferMethod::to_string) && compound(type_info(program,type).element))
+            if (instruction.operand >= static_cast<std::size_t>(BufferMethod::to_string) && !scalar(type_info(program,type).element))
                 invalid(instruction,"Collection text output requires scalar elements");
             break;
         case Op::endpoint_call:
             if (!compound(type) || !endpoint_collection(type_info(program,type).kind)
                 || instruction.operand > static_cast<std::size_t>(EndpointMethod::println)) invalid(instruction,"Invalid stack or queue instruction");
-            if (instruction.operand >= static_cast<std::size_t>(EndpointMethod::to_string) && compound(type_info(program,type).element))
+            if (instruction.operand >= static_cast<std::size_t>(EndpointMethod::to_string) && !scalar(type_info(program,type).element))
                 invalid(instruction,"Collection text output requires scalar elements");
             break;
         case Op::read_value:
             if (!valid_type(type)) invalid(instruction,"Invalid read type"); break;
+        case Op::file_print: case Op::file_read:
+            if (!scalar(type) || instruction.operand) invalid(instruction,"Invalid typed file IO"); break;
+        case Op::file_newline: case Op::file_skip_line:
+            if (type!=Type::text_file || instruction.operand) invalid(instruction,"Invalid text file instruction"); break;
         case Op::increment:
             if ((type!=Type::integer && type!=Type::int64) || instruction.operand>1) invalid(instruction,"Invalid increment"); break;
         case Op::mutate_string:
@@ -274,7 +288,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if (!compound(type) || type_info(program,type).kind!=CompoundKind::array) invalid(instruction,"Copy requires array"); break;
         case Op::array_high: case Op::sequence_sort: case Op::sequence_fill:
             if (!compound(type) || !indexed_sequence(type_info(program,type).kind)) invalid(instruction,"Indexed sequence required");
-            if (instruction.op==Op::sequence_sort && (compound(type_info(program,type).element) || instruction.operand>1)) invalid(instruction,"Invalid sort"); break;
+            if (instruction.op==Op::sequence_sort && (!scalar(type_info(program,type).element) || instruction.operand>1)) invalid(instruction,"Invalid sort"); break;
         case Op::make_default: case Op::store_ref: case Op::drop:
             if (!valid_value_type(program,type) || (instruction.op==Op::make_default && instruction.operand>1)) invalid(instruction,"Invalid value type");
             if (instruction.op==Op::make_default && instruction.operand && compound(type) && node_kind(type_info(program,type).kind))
@@ -332,7 +346,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if (type != Type::integer && type != Type::int64) invalid(instruction, "Integer division requires integer");
             break;
         case Op::equal: case Op::not_equal:
-            if (!valid_value_type(program,type)) invalid(instruction,"Invalid equality type"); break;
+            if (!valid_value_type(program,type) || type==Type::text_file) invalid(instruction,"Invalid equality type"); break;
         case Op::print:
             if (!valid_type(type)) invalid(instruction, "Invalid value type"); break;
         case Op::less: case Op::less_equal: case Op::greater: case Op::greater_equal:
@@ -411,6 +425,9 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             break;
         }
         case Op::read_value: stack.push_back(instruction.type); break;
+        case Op::file_print: require(instruction.type); require(Type::text_file); stack.push_back(Type::text_file); break;
+        case Op::file_read: require(reference_type(instruction.type)); require(Type::text_file); stack.push_back(Type::text_file); break;
+        case Op::file_newline: case Op::file_skip_line: require(Type::text_file); stack.push_back(Type::text_file); break;
         case Op::increment: require(instruction.type); require(reference_type(instruction.type)); break;
         case Op::mutate_string: {
             const auto& signature=stdlib::signatures()[instruction.operand];

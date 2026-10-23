@@ -36,7 +36,8 @@ public:
 // English remains available through what(); runtime diagnostics also carry Russian.
 std::string format_diagnostic(const Error& error, std::string_view filename);
 
-enum class Type { integer, int64, real, boolean, string, invalid, unit, nil, first_compound = 64 };
+enum class Type { integer, int64, real, boolean, string, invalid, unit, nil, text_file, first_compound = 64 };
+inline bool scalar(Type t) { return t==Type::integer || t==Type::int64 || t==Type::real || t==Type::boolean || t==Type::string; }
 inline bool compound(Type t) { return static_cast<unsigned>(t) >= 64 && static_cast<unsigned>(t) < 0x40000000U; }
 inline Type reference_type(Type t) { return static_cast<Type>(static_cast<unsigned>(t) | 0x40000000U); }
 std::string_view type_name(Type type);
@@ -47,11 +48,12 @@ bool can_widen(Type from, Type to);
 // Runtime representation is independent of the host's int, long and wchar_t.
 struct Aggregate;
 struct Cell;
+struct TextFile;
 struct LinkedLinks { std::weak_ptr<Aggregate> prev, next; };
 // A null string keeps its static string type and differs from an empty string.
 struct NilString { auto operator<=>(const NilString&) const = default; };
 using Value = std::variant<std::int32_t, std::int64_t, double, bool, std::u16string,
-    std::shared_ptr<Aggregate>, std::shared_ptr<Cell>, NilString>;
+    std::shared_ptr<Aggregate>, std::shared_ptr<Cell>, NilString, std::shared_ptr<TextFile>>;
 struct Cell { Type type; Value value; };
 struct Aggregate {
     Type type;
@@ -78,7 +80,7 @@ enum class Op {
     get_index, ref_index, get_field, ref_field, array_new, array_literal, length, resize_array,
     call_user, return_user, drop, list_add, list_remove, list_clear, list_contains,
     read_lines, write_lines, array_copy, array_high, sequence_sort, sequence_fill, mutate_string, increment, read_value,
-    endpoint_call, buffer_call, association_call, linked_call
+    endpoint_call, buffer_call, association_call, linked_call, file_print, file_newline, file_read, file_skip_line
 };
 
 struct Instruction {

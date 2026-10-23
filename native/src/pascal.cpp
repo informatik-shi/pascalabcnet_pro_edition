@@ -175,7 +175,7 @@ bool reserved(std::string_view text) {
         "program", "begin", "end", "var", "if", "then", "else", "while", "do", "and", "or", "not",
         "div", "mod", "true", "false", "uses", "unit", "type", "const", "function", "procedure",
         "for", "to", "downto", "repeat", "until", "case", "of", "array", "record", "class", "nil",
-        "new", "set", "try", "except", "finally", "raise", "break", "continue", "exit", "writeln", "write", "readln"};
+        "new", "set", "try", "except", "finally", "raise", "break", "continue", "exit", "writeln", "write", "readln", "read"};
     return words.contains(text);
 }
 
@@ -334,10 +334,14 @@ private:
                 }
                 expect(")");
             }
-        } else if (accept("readln")) {
+        } else if (is("readln") || is("read")) {
             result.kind = SyntaxStmtKind::read;
+            consume();
             expect("(");
-            result.target = expression();
+            if (!is(")")) do {
+                if (result.arguments.size()>=17) fail("Too many Read arguments");
+                result.arguments.push_back(expression());
+            } while (accept(","));
             expect(")");
         } else if (current_.kind == TokenKind::name && !reserved(current_.text)) {
             const auto target = name();
@@ -623,6 +627,10 @@ private:
                 result->kind = hir::ExprKind::array_new; result->type = sequence_type(CompoundKind::array,type);
                 result->arguments.push_back(convert(expression(*source.arguments[0]),Type::integer));
             } else {
+                if (type==Type::text_file) {
+                    if (!source.arguments.empty()) throw Error("E_TYPE",result->location,"Text constructor takes no arguments");
+                    result->kind=hir::ExprKind::default_value; result->type=type; result->operation="new"; break;
+                }
                 if (!compound(type)) throw Error("E_TYPE",result->location,"new requires an array length, record or collection type");
                 if (node_kind(info(type,result->location).kind)) {
                     const auto parameters = linked_parameters(type,info(type,result->location),LinkedMethod::construct);
@@ -699,7 +707,7 @@ private:
                     else throw Error("E_NAME",result->location,"Unknown linked list member '"+name+"'");
                 }
                 if (property && source.kind == SyntaxExprKind::member_call) throw Error("E_TYPE",result->location,"Linked property is not callable");
-                if (linked_text_method(method) && compound(type.element)) throw Error("E_UNSUPPORTED",result->location,"Linked list text output currently requires scalar elements");
+                if (linked_text_method(method) && !scalar(type.element)) throw Error("E_UNSUPPORTED",result->location,"Linked list text output currently requires scalar elements");
                 const auto parameters = linked_parameters(receiver,type,method);
                 result->kind = hir::ExprKind::linked_call; result->local = static_cast<std::size_t>(method);
                 result->type = linked_result(receiver,type,method);
@@ -715,7 +723,7 @@ private:
                 else if (name == "println") method = AssociationMethod::println;
                 else throw Error("E_NAME",result->location,"Unknown AssocArray member '"+name+"'");
                 if (!source.arguments.empty()) throw Error("E_TYPE",result->location,"AssocArray text output takes no arguments");
-                if (compound(type.key) || compound(type.element)) throw Error("E_UNSUPPORTED",result->location,"AssocArray text output currently requires scalar keys and values");
+                if (!scalar(type.key) || !scalar(type.element)) throw Error("E_UNSUPPORTED",result->location,"AssocArray text output currently requires scalar keys and values");
                 result->kind = hir::ExprKind::association_call; result->local = static_cast<std::size_t>(method);
                 result->type = association_result(type,method); break;
             }
@@ -740,7 +748,7 @@ private:
                     throw Error("E_TYPE",result->location,"Collection property is not callable");
                 const auto parameters = buffer_parameters(kind,element,method);
                 if (parameters.size() != source.arguments.size()) throw Error("E_TYPE",result->location,"Wrong collection argument count");
-                if (method >= BufferMethod::to_string && compound(element)) throw Error("E_UNSUPPORTED",result->location,"Collection text output currently requires scalar elements");
+                if (method >= BufferMethod::to_string && !scalar(element)) throw Error("E_UNSUPPORTED",result->location,"Collection text output currently requires scalar elements");
                 result->kind = hir::ExprKind::buffer_call; result->local = static_cast<std::size_t>(method);
                 result->type = buffer_result(receiver,element,method);
                 for (std::size_t i=0;i<parameters.size();++i) result->arguments.push_back(convert(expression(*source.arguments[i]),parameters[i]));
@@ -760,7 +768,7 @@ private:
                 else throw Error("E_NAME",result->location,"Unknown stack or queue method '"+name+"'");
                 const auto count = method == EndpointMethod::add ? 1U : 0U;
                 if (source.arguments.size() != count) throw Error("E_TYPE",result->location,"Wrong collection method argument count");
-                if (method >= EndpointMethod::to_string && compound(element))
+                if (method >= EndpointMethod::to_string && !scalar(element))
                     throw Error("E_UNSUPPORTED",result->location,"Collection text output currently requires scalar elements");
                 result->kind = hir::ExprKind::endpoint_call; result->local = static_cast<std::size_t>(method);
                 result->type = endpoint_result(element,method);
@@ -883,7 +891,7 @@ private:
                         result->kind=hir::ExprKind::sequence_fill; result->type=Type::unit;
                         result->right=convert(std::move(result->arguments[1]),type.element);
                     } else {
-                        if (compound(type.element)) throw Error("E_TYPE",result->location,"Sort requires scalar elements");
+                        if (!scalar(type.element)) throw Error("E_TYPE",result->location,"Sort requires scalar elements");
                         result->kind=hir::ExprKind::sequence_sort; result->type=Type::unit; result->local=name=="sortdescending" ? 1 : 0;
                     }
                     result->arguments.clear(); break;
@@ -1112,15 +1120,28 @@ private:
             result.newline = source.token.text == "writeln";
             for (const auto& argument : source.arguments) {
                 auto value = expression(*argument);
-                if (compound(value->type) || value->type == Type::unit || value->type == Type::nil) throw Error("E_TYPE",value->location,"Write requires scalar values");
+                if (argument==source.arguments.front() && value->type==Type::text_file) { result.target=std::move(value); continue; }
+                if (!scalar(value->type)) throw Error("E_TYPE",value->location,"Write requires scalar values");
                 result.arguments.push_back(std::move(value));
             }
             break;
-        case SyntaxStmtKind::read:
-            result.kind = hir::StmtKind::read; result.target=expression(*source.target);
-            if (!lvalue(*result.target) || compound(result.target->type) || result.target->type==Type::unit)
+        case SyntaxStmtKind::read: {
+            if (source.arguments.empty()) throw Error("E_TYPE",result.location,"Read requires a file or variable");
+            result.kind = hir::StmtKind::read; result.target=expression(*source.arguments[0]);
+            result.newline=source.token.text=="readln";
+            if (result.target->type==Type::text_file) {
+                for (std::size_t i=1;i<source.arguments.size();++i) {
+                    auto target=expression(*source.arguments[i]);
+                    if (!lvalue(*target) || !scalar(target->type)) throw Error("E_TYPE",target->location,"File Read requires scalar variables");
+                    result.arguments.push_back(std::move(target));
+                }
+                break;
+            }
+            if (!result.newline) throw Error("E_UNSUPPORTED",result.location,"Console Read is not implemented; use Readln or Read with a Text file");
+            if (source.arguments.size()!=1 || !lvalue(*result.target) || !scalar(result.target->type))
                 throw Error("E_TYPE",result.location,"Readln requires a scalar variable");
             break;
+        }
         case SyntaxStmtKind::conditional:
         case SyntaxStmtKind::loop:
             result.kind = source.kind == SyntaxStmtKind::conditional ? hir::StmtKind::conditional : hir::StmtKind::loop;

@@ -1,0 +1,12 @@
+12 34 [ tail] True False
+[]
+second True True
+[]
+12 34 second
+third True
+abcX
+XYcdef
+10 2147483648 1.5 True word
+True
+True
+record array

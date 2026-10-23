@@ -11,6 +11,7 @@ std::string_view type_name(Type type) {
     case Type::real: return "real";
     case Type::boolean: return "boolean";
     case Type::string: return "string";
+    case Type::text_file: return "Text";
     case Type::unit: return "procedure";
     default: return compound(type) ? "compound type" : "<invalid>";
     }
@@ -20,6 +21,7 @@ std::optional<Type> find_type(std::string_view name) {
     for (auto type : {Type::integer, Type::int64, Type::real, Type::boolean, Type::string})
         if (name == type_name(type)) return type;
     if (name == "double") return Type::real;
+    if (name == "text" || name == "textfile") return Type::text_file;
     return std::nullopt;
 }
 
@@ -33,6 +35,7 @@ bool can_widen(Type from, Type to) {
 }
 
 Type value_type(const Value& value) {
+    if (std::holds_alternative<std::shared_ptr<TextFile>>(value)) return Type::text_file;
     if (std::holds_alternative<NilString>(value)) return Type::string;
     if (const auto* aggregate = std::get_if<std::shared_ptr<Aggregate>>(&value)) return *aggregate ? (*aggregate)->type : Type::invalid;
     if (const auto* cell = std::get_if<std::shared_ptr<Cell>>(&value)) return *cell ? reference_type((*cell)->type) : Type::invalid;

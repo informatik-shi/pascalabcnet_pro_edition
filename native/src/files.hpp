@@ -10,8 +10,10 @@ public:
     std::u16string directory(SourceLocation location) const;
     void change_directory(std::u16string_view path, SourceLocation location);
     bool rename(std::u16string_view source, std::u16string_view destination, bool directory);
+    void prepare_text_open(const std::shared_ptr<TextFile>& file, SourceLocation location);
 private:
     std::filesystem::path current_;
+    std::vector<std::weak_ptr<TextFile>> open_texts_;
 };
 std::u16string read_text_file(const FileContext& files, std::u16string_view path, SourceLocation location);
 void write_text_file(const FileContext& files, std::u16string_view path, std::u16string_view text, SourceLocation location);
