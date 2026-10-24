@@ -768,6 +768,44 @@ void text_files() {
         return result+"'";
     };
     const auto file=quote(directory/"text.txt"), other=quote(directory/"other.txt");
+    const std::string unit_newline=
+#ifdef _WIN32
+        "\r\n";
+#else
+        "\n";
+#endif
+    result("uses Events,PointRect,FilesOperations; begin WriteStringToFile("+file+",'one'#13'two'#10'three'#13#10'four'); Write(ReadFileToEnd("+file+")); end.","one"+unit_newline+"two"+unit_newline+"three"+unit_newline+"four"+unit_newline);
+    result("uses FilesOperations; begin FilesOperations.WriteStringToFile("+file+",'abc'); Write(FilesOperations.ReadFileToEnd("+file+")); end.","abc"+unit_newline);
+    result("uses FilesOperations; begin WriteStringToFile("+file+",''); Writeln(ReadFileToEnd("+file+")=''); WriteStringToFile("+file+",#13#10); Write(ReadFileToEnd("+file+")); end.","True\n"+unit_newline);
+    result("uses FilesOperations; begin var s:string:=nil; WriteStringToFile("+file+",s); Writeln(ReadAllText("+file+")); WriteStringToFile("+file+",'Я🌍'); Writeln(ReadAllText("+file+")); end.","nil\nЯ🌍\n");
+    result("uses FilesOperations; function ReadFileToEnd(name:string):string; begin Result:='local'; end; begin WriteStringToFile("+file+",'native'); Writeln(ReadFileToEnd("+file+"),' ',Pos('native',FilesOperations.ReadFileToEnd("+file+"))=1); end.","local True\n");
+    result("uses FilesOperations; type R=record ReadFileToEnd:string; end; begin var FilesOperations:R; FilesOperations.ReadFileToEnd:='field'; Writeln(FilesOperations.ReadFileToEnd); end.","field\n");
+    result("uses FilesOperations; begin MkDir("+quote(directory/"unit-child")+"); ChDir("+quote(directory/"unit-child")+"); WriteStringToFile('relative.txt','local'); Writeln(ReadAllText('relative.txt')); end.","local\n");
+    runtime_error("uses FilesOperations; begin Writeln(ReadFileToEnd("+quote(directory/"missing-unit.txt")+")); end.","E_IO");
+    runtime_error("uses FilesOperations; begin WriteStringToFile(nil,'bad'); end.","E_IO");
+    runtime_error("uses FilesOperations; begin Writeln(ReadFileToEnd(nil)); end.","E_IO");
+    runtime_error("uses FilesOperations; begin WriteStringToFile("+file+",StringOfChar('Я',1048576)); end.","E_LIMIT");
+    result("uses FilesOperations; begin WriteStringToFile("+file+",StringOfChar(#10,524288)); Writeln(Length(ReadFileToEnd("+file+"))); end.",std::to_string(524288*unit_newline.size())+"\n");
+#ifdef _WIN32
+    runtime_error("uses FilesOperations; begin WriteStringToFile("+file+",StringOfChar(#10,1048576)); ReadFileToEnd("+file+"); end.","E_LIMIT");
+#else
+    result("uses FilesOperations; begin WriteStringToFile("+file+",StringOfChar(#10,1048576)); Writeln(Length(ReadFileToEnd("+file+"))); end.","1048576\n");
+#endif
+    runtime_error("uses FilesOperations; begin WriteAllText("+file+",'x'); var files:=new Text[64]; for var i:=0 to 63 do files[i]:=OpenRead("+file+"); Writeln(ReadFileToEnd("+file+")); end.","E_LIMIT");
+    result("uses FilesOperations; begin var name:="+quote(directory/fs::path(u8"Заметка 🌍.txt"))+"; WriteStringToFile(name,'Unicode'); Writeln(ReadAllText(name),' ',DeleteFile(name)); end.","Unicode True\n");
+    try { (void)run("uses FilesOperations;\nbegin\nReadFileToEnd("+quote(directory/"absent-unit.txt")+");\nend."); require(false,"Expected FilesOperations IO diagnostic"); }
+    catch (const abc::Error& caught) { require(caught.code=="E_IO" && caught.location.line==3 && !caught.russian.empty(),"FilesOperations retains call-site location and bilingual IO errors"); }
+    result("begin Writeln(PABCSystem.Abs(-4),' ',PABCSystem.Chr(65)); end.","4 A\n");
+    for (const auto* source:{"begin Writeln(ReadFileToEnd('x')); end.","begin WriteStringToFile('x','y'); end.",
+        "begin Writeln(FilesOperations.ReadFileToEnd('x')); end.","uses Events; begin Writeln(Events.Abs(1)); end.",
+        "uses FilesOperations; begin Writeln(FilesOperations.Abs(1)); end."}) compile_error(source,"E_NAME");
+    for (const auto* source:{"uses FilesOperations; begin Writeln(ReadFileToEnd(1)); end.",
+        "uses FilesOperations; begin WriteStringToFile('x',1); end.","uses FilesOperations; begin FilesOperations.WriteStringToFile('x'); end."}) compile_error(source,"E_TYPE");
+    {
+        std::istringstream input; std::ostringstream output;
+        error([&]{abc::execute(abc::compile("begin Writeln('must not run'); WriteStringToFile('x','y'); end."),input,output);},"E_NAME");
+        require(output.str().empty(),"Unit imports are checked before execution");
+    }
     result("begin var f:=OpenWrite("+file+"); f.Write(' ',#13,#10,'Я','🌍'); f.Close; f.Reset; Writeln(Ord(ReadChar(f)),' ',Ord(f.ReadChar),' ',Ord(f.ReadChar),' ',f.ReadChar); Writeln(Ord(f.ReadChar),' ',Ord(f.ReadChar),' ',Ord(f.ReadChar),' ',f.Eof); f.Close; end.","32 13 10 Я\n55356 57101 65535 True\n");
     result("begin var f:=OpenWrite("+file+"); f.Writeln('ax'); f.Writeln('by'); f.Close; f.Reset; Writeln(ReadlnChar(f),' ',f.ReadlnChar,' ',f.Eof); f.Close; end.","a b True\n");
     result("begin var f:=OpenWrite("+file+"); f.Write('Яx 65535'); f.Close; f.Reset; var c:char; var w:word; Read(f,c); Writeln(c); Read(f,c); Read(f,w); Writeln(c,' ',w); f.Close; end.","Я\nx 65535\n");

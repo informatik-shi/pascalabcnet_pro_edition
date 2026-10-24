@@ -166,6 +166,7 @@ struct SyntaxStmt {
     std::unique_ptr<SyntaxExpr> target;
     std::vector<std::pair<Token,std::shared_ptr<SyntaxType>>> type_declarations;
     std::vector<std::shared_ptr<SyntaxRoutine>> routines;
+    std::set<std::string> imported_units;
     bool collections_imported = false;
     bool declares_control = false, descending = false;
 };
@@ -205,9 +206,11 @@ public:
         if (accept("uses")) {
             do {
                 const auto module = name();
-                if (module.text != "pabcsystem" && module.text != "arrays" && module.text != "collections")
+                if (module.text != "pabcsystem" && module.text != "arrays" && module.text != "collections"
+                    && module.text != "filesoperations" && module.text != "events" && module.text != "pointrect")
                     throw Error("E_UNSUPPORTED", module.location, "Unit is not ported yet: '" + module.text + "'");
                 if (module.text == "collections") root.collections_imported = true;
+                root.imported_units.insert(module.text);
             } while (accept(","));
             expect(";");
         }
@@ -536,6 +539,7 @@ class Analyzer {
 public:
     hir::Module analyze(const SyntaxStmt& source) {
         collections_imported_ = source.collections_imported;
+        imported_units_=source.imported_units; imported_units_.insert("pabcsystem");
         for (const auto& [name, syntax] : source.type_declarations) {
             if (aliases_.contains(name.text) || find_type(name.text)) throw Error("E_DUPLICATE",name.location,"Duplicate type");
             aliases_[name.text] = resolve_type(*syntax);
@@ -754,6 +758,11 @@ private:
         }
         case SyntaxExprKind::field:
         case SyntaxExprKind::member_call: {
+            if (source.left->kind==SyntaxExprKind::name && !lookup(source.left->token) && imported_units_.contains(source.left->token.text)) {
+                result->kind=hir::ExprKind::call;
+                for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
+                bind_builtin(*result,source.token.text,source.left->token.text); break;
+            }
             result->left = expression(*source.left); const auto receiver = result->left->type;
             if ((receiver==Type::string && source.token.text=="length") || (receiver==Type::character && source.token.text=="todigit")) {
                 if (!source.arguments.empty() || (receiver==Type::string && source.kind==SyntaxExprKind::member_call))
@@ -1024,45 +1033,7 @@ private:
                     result->arguments.clear(); break;
                 }
             }
-            const auto catalog = stdlib::signatures();
-            std::vector<std::size_t> candidates;
-            bool known = false;
-            for (std::size_t i = 0; i < catalog.size(); ++i) {
-                const auto& signature = catalog[i];
-                if (signature.name != source.token.text) continue;
-                known = true;
-                if (signature.parameters.size() != result->arguments.size()) continue;
-                bool compatible = true;
-                for (std::size_t n = 0; n < signature.parameters.size(); ++n)
-                    if (!can_widen(result->arguments[n]->type, signature.parameters[n])) compatible = false;
-                if (compatible) candidates.push_back(i);
-            }
-            if (!known) throw Error("E_NAME", result->location, "Unknown function '" + source.token.text + "'");
-            // Partial order: an overload wins only if no parameter needs a wider type.
-            const auto dominates = [&](std::size_t a, std::size_t b) {
-                bool better = false;
-                for (std::size_t n = 0; n < catalog[a].parameters.size(); ++n) {
-                    const auto left = catalog[a].parameters[n], right = catalog[b].parameters[n];
-                    if (!can_widen(left, right)) return false;
-                    if (left != right) better = true;
-                }
-                return better;
-            };
-            std::optional<std::size_t> chosen;
-            for (auto candidate : candidates) {
-                bool dominated = false;
-                for (auto other : candidates) if (dominates(other, candidate)) dominated = true;
-                if (!dominated) {
-                    if (chosen) throw Error("E_TYPE", result->location, "Ambiguous overload for '" + source.token.text + "'");
-                    chosen = candidate;
-                }
-            }
-            if (!chosen) throw Error("E_TYPE", result->location, "No matching overload for '" + source.token.text + "'");
-            const auto& signature = catalog[*chosen];
-            result->local = *chosen;
-            result->type = signature.result;
-            for (std::size_t n = 0; n < result->arguments.size(); ++n)
-                result->arguments[n] = convert(std::move(result->arguments[n]), signature.parameters[n]);
+            bind_builtin(*result,source.token.text);
             break;
         }
         case SyntaxExprKind::unary:
@@ -1132,6 +1103,45 @@ private:
         }
         }
         return result;
+    }
+    void bind_builtin(hir::Expr& result, std::string_view name, std::string_view unit = {}) {
+        const auto catalog=stdlib::signatures(); std::vector<std::size_t> candidates; bool known=false;
+        for (std::size_t i=0;i<catalog.size();++i) {
+            const auto& signature=catalog[i];
+            if (signature.name!=name) continue;
+            if (unit.empty()) {
+                if (!signature.unit.empty() && !imported_units_.contains(std::string(signature.unit))) continue;
+            } else if (signature.unit != (unit=="pabcsystem" ? std::string_view{} : unit)) continue;
+            known=true;
+            if (signature.parameters.size()!=result.arguments.size()) continue;
+            bool compatible=true;
+            for (std::size_t n=0;n<signature.parameters.size();++n)
+                if (!can_widen(result.arguments[n]->type,signature.parameters[n])) compatible=false;
+            if (compatible) candidates.push_back(i);
+        }
+        if (!known) throw Error("E_NAME",result.location,"Unknown function '"+std::string(name)+"'");
+        const auto dominates=[&](std::size_t a,std::size_t b) {
+            bool better=false;
+            for (std::size_t n=0;n<catalog[a].parameters.size();++n) {
+                const auto left=catalog[a].parameters[n],right=catalog[b].parameters[n];
+                if (!can_widen(left,right)) return false;
+                if (left!=right) better=true;
+            }
+            return better;
+        };
+        std::optional<std::size_t> chosen;
+        for (auto candidate:candidates) {
+            bool dominated=false;
+            for (auto other:candidates) if (dominates(other,candidate)) dominated=true;
+            if (!dominated) {
+                if (chosen) throw Error("E_TYPE",result.location,"Ambiguous overload for '"+std::string(name)+"'");
+                chosen=candidate;
+            }
+        }
+        if (!chosen) throw Error("E_TYPE",result.location,"No matching overload for '"+std::string(name)+"'");
+        const auto& signature=catalog[*chosen]; result.local=*chosen; result.type=signature.result;
+        for (std::size_t n=0;n<result.arguments.size();++n)
+            result.arguments[n]=convert(std::move(result.arguments[n]),signature.parameters[n]);
     }
     hir::Stmt scoped_statement(const SyntaxStmt& source) {
         scopes_.emplace_back();
@@ -1389,6 +1399,7 @@ private:
     std::map<std::string,std::size_t> routine_names_;
     bool in_routine_ = false;
     bool collections_imported_ = false;
+    std::set<std::string> imported_units_;
     Type current_result_ = Type::unit;
     std::string current_name_;
     std::vector<std::map<std::string, std::size_t>> scopes_;

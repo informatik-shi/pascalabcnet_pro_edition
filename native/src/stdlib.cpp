@@ -2,6 +2,7 @@
 #include "diagnostics.hpp"
 #include "files.hpp"
 #include "text_file.hpp"
+#include "file_operations.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -13,9 +14,11 @@ namespace abc::stdlib {
 std::span<const Signature> signatures() {
     static const auto catalog = [] {
         std::vector<Signature> entries;
-        auto add = [&](std::string_view name, std::vector<Type> parameters, Type result, Function function) {
-            entries.push_back({name, std::move(parameters), result, function});
+        auto add = [&](std::string_view name, std::vector<Type> parameters, Type result, Function function, std::string_view unit = {}) {
+            entries.push_back({name, std::move(parameters), result, function,unit});
         };
+        add("readfiletoend",{Type::string},Type::string,Function::files_read_to_end,"filesoperations");
+        add("writestringtofile",{Type::string,Type::string},Type::unit,Function::files_write_string,"filesoperations");
         for (auto type : {Type::integer, Type::int64, Type::real}) {
             add("abs", {type}, type, Function::abs);
             add("sqr", {type}, type == Type::integer ? Type::int64 : type, Function::sqr);
@@ -190,6 +193,8 @@ Value invoke(std::size_t id, std::span<const Value> arguments, SourceLocation lo
     const auto function = signature.function;
     if (function == Function::get_dir) return files.directory(location);
     const auto& value = arguments.front();
+    if (function==Function::files_read_to_end) return file_operations_read(files,value,location);
+    if (function==Function::files_write_string) { file_operations_write(files,value,arguments[1],location); return false; }
     if (function==Function::ordinal) {
         if (const auto* ch=std::get_if<char16_t>(&value)) return static_cast<std::uint16_t>(*ch);
         if (const auto* flag=std::get_if<bool>(&value)) return std::int32_t(*flag);

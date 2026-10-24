@@ -87,6 +87,7 @@ def main():
                 ("loops.pas", "Сумма: 55\nОбратный отсчёт: 3 2 1 \nПовторений: 3\nНечётные: 1 3 5 \n"),
                 ("foreach.pas", "Сумма: 14\nИмена: Анна Борис \nНечётные: 3 1 1 5 \n"),
                 ("characters.pas", "Буква: Б\nКод UTF-16: 1041\nИмя: Инна\nАлфавит: абвгде\nСимволы: И|н|н|а|\n"),
+                ("file-operations.pas", "Прочитано:\nПервая строка\nВторая строка\nФайл удалён: True\n"),
             ]:
                 example = subprocess.run([runner, "run", str(folder / "examples" / source)],
                                          text=True, encoding="utf-8", capture_output=True,
@@ -94,6 +95,18 @@ def main():
                 if example.returncode or example.stdout != expected:
                     raise RuntimeError(f"{name} {source} failed: {example.stdout!r}, {example.stderr!r}")
             character = folder / "Ошибки символов.pas"
+            character.write_text("begin Writeln('must never run'); WriteStringToFile('absent-unit.txt','bad'); end.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(character)], text=True, encoding="utf-8",
+                                     capture_output=True, cwd=folder, env=env, timeout=10)
+            if invalid.returncode != 1 or invalid.stdout or "E_NAME" not in invalid.stderr or (folder / "absent-unit.txt").exists():
+                raise RuntimeError(f"{name} unit import was not checked before execution")
+            character.write_text("uses FilesOperations;\nbegin\n ReadFileToEnd('absent-unit.txt');\nend.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(character)], text=True, encoding="utf-8",
+                                     capture_output=True, cwd=folder, env=env, timeout=10)
+            if (invalid.returncode != 1 or "E_IO" not in invalid.stderr or f"{character}:3:" not in invalid.stderr
+                    or "EN: Cannot open, read or write the file" not in invalid.stderr
+                    or "RU: Не удалось открыть, прочитать или записать файл" not in invalid.stderr):
+                raise RuntimeError(f"{name} bilingual FilesOperations error failed: {invalid.stderr!r}")
             for source in [
                 "begin Writeln('must never run'); var c:='a'; c:='ab'; end.",
                 "begin Writeln('must never run'); var s:='ab'; s[1]:='XY'; end.",
@@ -315,6 +328,8 @@ def main():
             results[-1].update({"structured_loops": "passed", "bilingual_loop_limit": "passed", "readonly_for_control": "passed"})
             results[-1].update({"typed_foreach": "passed", "bilingual_modified_list": "passed", "readonly_foreach": "passed"})
             results[-1].update({"characters_and_word": "passed", "string_character_assignment": "passed", "bilingual_character_errors": "passed", "character_types_before_output": "passed"})
+            results[-1]["files_operations_unit"] = "passed"
+            results[-1]["unit_import_before_output"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 
