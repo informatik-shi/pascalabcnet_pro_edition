@@ -671,10 +671,16 @@ private:
         throw Error("E_NAME", token.location, "Unknown name '" + token.text + "'");
     }
     std::unique_ptr<hir::Expr> convert(std::unique_ptr<hir::Expr> expression, Type type) {
-        if (type==Type::word && expression->type==Type::integer && expression->kind==hir::ExprKind::literal) {
-            const auto value=std::get<std::int32_t>(expression->value);
-            if (value<0 || value>65535) throw Error("E_RANGE",expression->location,"Word constant must be in 0..65535");
-            expression->type=type; expression->value=static_cast<std::uint16_t>(value); return expression;
+        if (small_integer(type) && (expression->type==Type::integer || expression->type==Type::int64) && expression->kind==hir::ExprKind::literal) {
+            const auto value=expression->type==Type::integer ? std::int64_t(std::get<std::int32_t>(expression->value)) : std::get<std::int64_t>(expression->value);
+            const auto [minimum,maximum]=small_integer_bounds(type);
+            if (value<minimum || value>maximum) throw Error("E_RANGE",expression->location,"Constant is outside the range of "+std::string(type_name(type)));
+            expression->type=type;
+            if (type==Type::byte) expression->value=static_cast<std::uint8_t>(value);
+            else if (type==Type::shortint) expression->value=static_cast<std::int8_t>(value);
+            else if (type==Type::smallint) expression->value=static_cast<std::int16_t>(value);
+            else expression->value=static_cast<std::uint16_t>(value);
+            return expression;
         }
         if (expression->type == Type::nil && type == Type::string) {
             expression->type=type; expression->kind=hir::ExprKind::literal; expression->value=NilString{}; return expression;
@@ -992,7 +998,13 @@ private:
                 for (const auto& argument : result->arguments) {
                     if (argument->type == Type::nil) continue;
                     if (can_widen(element,argument->type)) element = argument->type;
-                    else if (!can_widen(argument->type,element)) throw Error("E_TYPE",result->location,"Incompatible array elements");
+                    else if (!can_widen(argument->type,element)) {
+                        bool joined=false;
+                        if (numeric(element) && numeric(argument->type))
+                            for (auto type:{Type::byte,Type::shortint,Type::smallint,Type::word,Type::integer,Type::int64,Type::real})
+                                if (can_widen(element,type) && can_widen(argument->type,type)) { element=type; joined=true; break; }
+                        if (!joined) throw Error("E_TYPE",result->location,"Incompatible array elements");
+                    }
                 }
                 for (auto& argument : result->arguments) argument = convert(std::move(argument),element);
                 result->kind = hir::ExprKind::array_literal; result->type = sequence_type(CompoundKind::array,element); break;
@@ -1039,7 +1051,7 @@ private:
         case SyntaxExprKind::unary:
             result->kind = hir::ExprKind::unary;
             result->left = expression(*source.left);
-            if (result->left->type==Type::word) result->left=convert(std::move(result->left),Type::integer);
+            if (source.token.text=="-" && small_integer(result->left->type)) result->left=convert(std::move(result->left),Type::integer);
             result->type = result->left->type;
             if (source.token.text == "not" ? result->type != Type::boolean : !numeric(result->type))
                 throw Error("E_TYPE", source.token.location, "Invalid operand for '" + source.token.text + "'");
@@ -1058,9 +1070,9 @@ private:
                 break;
             }
             const bool comparison = op == "=" || op == "<>" || op == "<" || op == "<=" || op == ">" || op == ">=";
-            if (op=="*" && (((left==Type::string || left==Type::character) && (right==Type::integer || right==Type::word))
-                || ((right==Type::string || right==Type::character) && (left==Type::integer || left==Type::word)))) {
-                const auto left_type=left==Type::integer || left==Type::word ? Type::integer : Type::string;
+            if (op=="*" && (((left==Type::string || left==Type::character) && (right==Type::integer || small_integer(right)))
+                || ((right==Type::string || right==Type::character) && (left==Type::integer || small_integer(left))))) {
+                const auto left_type=left==Type::integer || small_integer(left) ? Type::integer : Type::string;
                 const auto right_type=left_type==Type::integer ? Type::string : Type::integer;
                 result->arguments.push_back(convert(std::move(result->left),left_type));
                 result->arguments.push_back(convert(std::move(result->right),right_type));
@@ -1105,6 +1117,8 @@ private:
         return result;
     }
     void bind_builtin(hir::Expr& result, std::string_view name, std::string_view unit = {}) {
+        if ((unit.empty() || unit=="pabcsystem") && name=="sqr" && result.arguments.size()==1 && result.arguments[0]->type==Type::word)
+            throw Error("E_UNSUPPORTED",result.location,"Sqr(word) requires the uint64 result type, which is not ported yet");
         const auto catalog=stdlib::signatures(); std::vector<std::size_t> candidates; bool known=false;
         for (std::size_t i=0;i<catalog.size();++i) {
             const auto& signature=catalog[i];
@@ -1217,7 +1231,7 @@ private:
             if (lookup(source.names.front())) throw Error("E_TYPE",result.location,"Variable is not callable");
             result.kind=hir::StmtKind::increment; result.target=expression(*source.target);
             const auto type=result.target->type;
-            if (!lvalue(*result.target) || (type!=Type::integer && type!=Type::int64 && type!=Type::character && type!=Type::word)) throw Error("E_TYPE",result.location,"Inc/Dec requires an ordinal variable");
+            if (!lvalue(*result.target) || (type!=Type::integer && type!=Type::int64 && type!=Type::character && !small_integer(type))) throw Error("E_TYPE",result.location,"Inc/Dec requires an ordinal variable");
             result.newline=source.names.front().text=="dec";
             const auto step_type=type==Type::int64 ? type : Type::integer;
             if (source.expression) result.expression=convert(expression(*source.expression),step_type);
@@ -1320,7 +1334,7 @@ private:
                 if (in_routine_ && current_result_!=Type::unit && module_.locals[control].name=="result") throw Error("E_UNSUPPORTED",name.location,"Function Result as for control is not supported");
             }
             const auto type=module_.locals[control].type;
-            if (type!=Type::integer && type!=Type::int64 && type!=Type::character && type!=Type::word) throw Error("E_TYPE",name.location,"For control must be an ordinal type");
+            if (type!=Type::integer && type!=Type::int64 && type!=Type::character && !small_integer(type)) throw Error("E_TYPE",name.location,"For control must be an ordinal type");
             initial=convert(std::move(initial),type);
             auto finish=convert(expression(*source.arguments[0]),type);
             const auto bound=module_.locals.size(); module_.locals.push_back({"$for_bound_"+std::to_string(bound),type,!in_routine_});

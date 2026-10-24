@@ -34,14 +34,14 @@ F8 — проверить программу. F9 — запустить.
 Ошибки выполнения показываются на английском (EN) и русском (RU),
 с кодом ошибки, строкой и столбцом исходника.
 
-Поддерживаются integer, int64, real/double, boolean, char, word, string,
+Поддерживаются integer, int64, real/double, boolean, char, byte, shortint, smallint, word, string,
 динамические массивы, записи, пользовательские функции и процедуры с var-параметрами,
 условия if, циклы while/for/repeat и foreach по строкам/массивам/List<T>, break/continue, базовая математика, строки, List<T>, Stack<T>, Queue<T>,
 DynArray<T>, SimpleSet<T>, AssocArray<K,V>, LinkedList<T>, LinkedListNode<T>, SingleNode<T> и текстовые файлы UTF-8.
 Для классов Collections добавьте uses Collections; Для ReadFileToEnd/WriteStringToFile — uses FilesOperations;
 Примеры: examples/structures.pas, examples/files.pas, examples/collections.pas, examples/buffers.pas,
 examples/associations.pas, examples/linked-lists.pas, examples/single-nodes.pas, examples/standard-library.pas,
-examples/text-numbers.pas, examples/string-editing.pas, examples/nil-strings.pas, examples/directories.pas, examples/renames.pas, examples/text-files.pas, examples/text-methods.pas, examples/text-file-changes.pas, examples/loops.pas, examples/foreach.pas, examples/characters.pas, examples/file-operations.pas.
+examples/text-numbers.pas, examples/string-editing.pas, examples/nil-strings.pas, examples/directories.pas, examples/renames.pas, examples/text-files.pas, examples/text-methods.pas, examples/text-file-changes.pas, examples/loops.pas, examples/foreach.pas, examples/characters.pas, examples/file-operations.pas, examples/small-integers.pas.
 Text/TextFile: Assign, Reset, Rewrite, Append, Read/Readln, Write/Writeln, Eof, Flush и Close.
 Методы Text: ReadWord, ReadToEnd, Name/FullName, Write/Writeln, Print/Println, Erase/Rename и чтение значений.
 Добавлены создание, удаление и переименование файлов и каталогов, работа с текущей папкой программы.

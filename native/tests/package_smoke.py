@@ -88,6 +88,7 @@ def main():
                 ("foreach.pas", "Сумма: 14\nИмена: Анна Борис \nНечётные: 3 1 1 5 \n"),
                 ("characters.pas", "Буква: Б\nКод UTF-16: 1041\nИмя: Инна\nАлфавит: абвгде\nСимволы: И|н|н|а|\n"),
                 ("file-operations.pas", "Прочитано:\nПервая строка\nВторая строка\nФайл удалён: True\n"),
+                ("small-integers.pas", "Значения: 255 -128 -32768\nСумма с расширением: 256\nКвадрат: 65025\nГраница byte: 254|255|\nМассив smallint: 1 -2\n"),
             ]:
                 example = subprocess.run([runner, "run", str(folder / "examples" / source)],
                                          text=True, encoding="utf-8", capture_output=True,
@@ -110,6 +111,7 @@ def main():
             for source in [
                 "begin Writeln('must never run'); var c:='a'; c:='ab'; end.",
                 "begin Writeln('must never run'); var s:='ab'; s[1]:='XY'; end.",
+                "begin Writeln('must never run'); var i:integer:=2; var b:byte:=i; end.",
             ]:
                 character.write_text(source, encoding="utf-8")
                 invalid = subprocess.run([runner, "run", str(character)], text=True, encoding="utf-8",
@@ -118,6 +120,7 @@ def main():
                     raise RuntimeError(f"{name} character types were not checked before execution")
             for source, code, english, russian in [
                 ("var c:=#65535;\n Inc(c);", "E_OVERFLOW", "Integer overflow", "Переполнение целого числа"),
+                ("var b:byte:=255;\n Inc(b);", "E_OVERFLOW", "Integer overflow", "Переполнение целого числа"),
                 ("var c:='Я';\n Writeln(c.ToDigit);", "E_FORMAT", "Character is not a decimal digit from 0 to 9", "Символ не является десятичной цифрой от 0 до 9"),
                 ("var s:='ab';\n s[0]:='X';", "E_BOUNDS", "Index is outside sequence bounds", "Индекс находится за границами строки, массива или списка"),
             ]:
@@ -330,6 +333,7 @@ def main():
             results[-1].update({"characters_and_word": "passed", "string_character_assignment": "passed", "bilingual_character_errors": "passed", "character_types_before_output": "passed"})
             results[-1]["files_operations_unit"] = "passed"
             results[-1]["unit_import_before_output"] = "passed"
+            results[-1]["small_integer_types"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 

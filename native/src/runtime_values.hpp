@@ -30,6 +30,9 @@ struct Values {
         case Type::boolean: return false;
         case Type::character: return char16_t{0};
         case Type::word: return std::uint16_t{0};
+        case Type::byte: return std::uint8_t{0};
+        case Type::shortint: return std::int8_t{0};
+        case Type::smallint: return std::int16_t{0};
         case Type::string: return generic ? Value{NilString{}} : Value{std::u16string{}};
         case Type::text_file: return generic ? Value{std::shared_ptr<TextFile>{}} : Value{std::make_shared<TextFile>()};
         default: {

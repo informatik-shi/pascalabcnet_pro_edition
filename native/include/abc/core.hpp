@@ -36,8 +36,18 @@ public:
 // English remains available through what(); runtime diagnostics also carry Russian.
 std::string format_diagnostic(const Error& error, std::string_view filename);
 
-enum class Type { integer, int64, real, boolean, string, invalid, unit, nil, text_file, character, word, first_compound = 64 };
-inline bool scalar(Type t) { return t==Type::integer || t==Type::int64 || t==Type::real || t==Type::boolean || t==Type::string || t==Type::character || t==Type::word; }
+enum class Type { integer, int64, real, boolean, string, invalid, unit, nil, text_file, character, word, byte, shortint, smallint, first_compound = 64 };
+inline bool small_integer(Type t) { return t==Type::word || t==Type::byte || t==Type::shortint || t==Type::smallint; }
+inline bool scalar(Type t) { return t==Type::integer || t==Type::int64 || t==Type::real || t==Type::boolean || t==Type::string || t==Type::character || small_integer(t); }
+inline std::pair<std::int64_t,std::int64_t> small_integer_bounds(Type t) {
+    switch (t) {
+    case Type::byte: return {0,255};
+    case Type::shortint: return {-128,127};
+    case Type::smallint: return {-32768,32767};
+    case Type::word: return {0,65535};
+    default: throw std::logic_error("Small integer type required");
+    }
+}
 inline bool compound(Type t) { return static_cast<unsigned>(t) >= 64 && static_cast<unsigned>(t) < 0x40000000U; }
 inline Type reference_type(Type t) { return static_cast<Type>(static_cast<unsigned>(t) | 0x40000000U); }
 std::string_view type_name(Type type);
@@ -53,7 +63,8 @@ struct LinkedLinks { std::weak_ptr<Aggregate> prev, next; };
 // A null string keeps its static string type and differs from an empty string.
 struct NilString { auto operator<=>(const NilString&) const = default; };
 using Value = std::variant<std::int32_t, std::int64_t, double, bool, std::u16string,
-    std::shared_ptr<Aggregate>, std::shared_ptr<Cell>, NilString, std::shared_ptr<TextFile>, char16_t, std::uint16_t>;
+    std::shared_ptr<Aggregate>, std::shared_ptr<Cell>, NilString, std::shared_ptr<TextFile>, char16_t, std::uint16_t,
+    std::uint8_t, std::int8_t, std::int16_t>;
 struct Cell { Type type; Value value; std::weak_ptr<Aggregate> list_owner{}; };
 struct Aggregate {
     Type type;

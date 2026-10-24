@@ -6,6 +6,7 @@
 #include "files.hpp"
 #include "linked.hpp"
 #include "text_file.hpp"
+#include "integer_values.hpp"
 
 #include <charconv>
 #include <algorithm>
@@ -62,6 +63,9 @@ std::string format(const Value& value, const Instruction& instruction) {
     if (const auto* integer = std::get_if<std::int32_t>(&value)) result = std::to_chars(buffer, buffer + sizeof buffer, *integer);
     else if (const auto* wide = std::get_if<std::int64_t>(&value)) result = std::to_chars(buffer, buffer + sizeof buffer, *wide);
     else if (const auto* word = std::get_if<std::uint16_t>(&value)) result = std::to_chars(buffer, buffer + sizeof buffer, *word);
+    else if (const auto* byte_value = std::get_if<std::uint8_t>(&value)) result = std::to_chars(buffer, buffer + sizeof buffer, *byte_value);
+    else if (const auto* short_value = std::get_if<std::int8_t>(&value)) result = std::to_chars(buffer, buffer + sizeof buffer, *short_value);
+    else if (const auto* small_value = std::get_if<std::int16_t>(&value)) result = std::to_chars(buffer, buffer + sizeof buffer, *small_value);
     else result = std::to_chars(buffer, buffer + sizeof buffer, std::get<double>(value));
     if (result.ec != std::errc{}) trap(instruction, RuntimeError::number_format);
     return {buffer, result.ptr};
@@ -137,6 +141,9 @@ Value read_line(std::istream& input, const Instruction& instruction) {
     switch (instruction.type) {
     case Type::integer: return parse.operator()<std::int32_t>();
     case Type::word: return parse.operator()<std::uint16_t>();
+    case Type::byte: return parse.operator()<std::uint8_t>();
+    case Type::shortint: return parse.operator()<std::int8_t>();
+    case Type::smallint: return parse.operator()<std::int16_t>();
     case Type::int64: return parse.operator()<std::int64_t>();
     case Type::real: return parse.operator()<double>();
     default: trap(instruction, RuntimeError::invalid_bytecode);
@@ -422,11 +429,12 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
             if (instruction.type==Type::integer) values.write(target,integer_operation(std::get<std::int32_t>(target->value),std::get<std::int32_t>(step),operation));
             else if (instruction.type==Type::int64) values.write(target,integer_operation(std::get<std::int64_t>(target->value),std::get<std::int64_t>(step),operation));
             else {
-                const auto old=instruction.type==Type::character ? std::int64_t(std::get<char16_t>(target->value)) : std::int64_t(std::get<std::uint16_t>(target->value));
+                const auto old=integral_number(target->value,instruction.location);
                 const auto amount=std::int64_t(std::get<std::int32_t>(step));
                 const auto next=instruction.operand ? old-amount : old+amount;
-                if (next<0 || next>65535) trap(instruction,RuntimeError::integer_overflow);
-                values.write(target,instruction.type==Type::character ? Value{static_cast<char16_t>(next)} : Value{static_cast<std::uint16_t>(next)});
+                const auto [minimum,maximum]=instruction.type==Type::character ? std::pair<std::int64_t,std::int64_t>{0,65535} : small_integer_bounds(instruction.type);
+                if (next<minimum || next>maximum) trap(instruction,RuntimeError::integer_overflow);
+                values.write(target,instruction.type==Type::character ? Value{static_cast<char16_t>(next)} : checked_small_integer(instruction.type,next,instruction.location));
             }
             break;
         }
@@ -604,10 +612,11 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
             const auto value = pop();
             if (value_type(value) == instruction.type) stack.push_back(value);
             else if (instruction.type==Type::string) stack.emplace_back(std::u16string(1,std::get<char16_t>(value)));
-            else if (value_type(value)==Type::word) {
-                const auto n=std::get<std::uint16_t>(value);
+            else if (small_integer(value_type(value))) {
+                const auto n=integral_number(value,instruction.location);
                 if (instruction.type==Type::integer) stack.emplace_back(std::int32_t(n));
                 else if (instruction.type==Type::int64) stack.emplace_back(std::int64_t(n));
+                else if (small_integer(instruction.type)) stack.push_back(checked_small_integer(instruction.type,n,instruction.location));
                 else stack.emplace_back(double(n));
             }
             else if (instruction.type == Type::int64) stack.emplace_back(static_cast<std::int64_t>(std::get<std::int32_t>(value)));

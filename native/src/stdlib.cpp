@@ -3,6 +3,7 @@
 #include "files.hpp"
 #include "text_file.hpp"
 #include "file_operations.hpp"
+#include "integer_values.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -19,6 +20,13 @@ std::span<const Signature> signatures() {
         };
         add("readfiletoend",{Type::string},Type::string,Function::files_read_to_end,"filesoperations");
         add("writestringtofile",{Type::string,Type::string},Type::unit,Function::files_write_string,"filesoperations");
+        for (auto type:{Type::byte,Type::shortint,Type::smallint,Type::word}) {
+            add("abs",{type},type,Function::abs);
+            add("sign",{type},Type::integer,Function::sign);
+            add("min",{type,type},type,Function::minimum);
+            add("max",{type,type},type,Function::maximum);
+            if (type!=Type::word) add("sqr",{type},Type::integer,Function::sqr);
+        }
         for (auto type : {Type::integer, Type::int64, Type::real}) {
             add("abs", {type}, type, Function::abs);
             add("sqr", {type}, type == Type::integer ? Type::int64 : type, Function::sqr);
@@ -58,10 +66,12 @@ std::span<const Signature> signatures() {
         }
         add("char",{Type::character},Type::character,Function::character);
         for (auto name:{"ord","ordunicode"}) add(name,{Type::character},Type::word,Function::ordinal);
-        for (auto type:{Type::integer,Type::int64,Type::word}) add("ord",{type},type,Function::ordinal);
+        for (auto type:{Type::integer,Type::int64,Type::word,Type::byte,Type::shortint,Type::smallint}) add("ord",{type},type,Function::ordinal);
         add("ord",{Type::boolean},Type::integer,Function::ordinal);
-        for (auto type:{Type::integer,Type::int64,Type::word,Type::character}) add("word",{type},Type::word,Function::to_word);
-        for (auto type:{Type::integer,Type::int64,Type::word,Type::character,Type::boolean}) {
+        for (auto target:{Type::word,Type::byte,Type::shortint,Type::smallint})
+            for (auto source:{Type::integer,Type::int64,Type::word,Type::character,Type::byte,Type::shortint,Type::smallint})
+                add(type_name(target),{source},target,Function::integer_cast);
+        for (auto type:{Type::integer,Type::int64,Type::word,Type::character,Type::boolean,Type::byte,Type::shortint,Type::smallint}) {
             add("succ",{type},type,Function::successor);
             add("pred",{type},type,Function::predecessor);
         }
@@ -200,14 +210,11 @@ Value invoke(std::size_t id, std::span<const Value> arguments, SourceLocation lo
         if (const auto* flag=std::get_if<bool>(&value)) return std::int32_t(*flag);
         return value;
     }
-    if (function==Function::character || function==Function::to_word) {
-        const auto number=std::visit([](const auto& v)->std::int64_t {
-            using T=std::decay_t<decltype(v)>;
-            if constexpr (std::is_integral_v<T>) return static_cast<std::int64_t>(v);
-            else return 0;
-        },value);
-        if (number<0 || number>65535) throw runtime_error(RuntimeError::number_range,location,function==Function::character ? "char" : "word");
-        return function==Function::character ? Value{static_cast<char16_t>(number)} : Value{static_cast<std::uint16_t>(number)};
+    if (function==Function::integer_cast) return checked_small_integer(signature.result,integral_number(value,location),location);
+    if (function==Function::character) {
+        const auto number=integral_number(value,location);
+        if (number<0 || number>65535) throw runtime_error(RuntimeError::number_range,location,"char");
+        return static_cast<char16_t>(number);
     }
     if (function==Function::successor || function==Function::predecessor) {
         return std::visit([&](const auto& v)->Value {
@@ -277,12 +284,20 @@ Value invoke(std::size_t id, std::span<const Value> arguments, SourceLocation lo
         return result;
     }
     if (function == Function::sign) {
+        if (small_integer(value_type(value))) { const auto n=integral_number(value,location); return std::int32_t((n>0)-(n<0)); }
         if (const auto* n = std::get_if<std::int32_t>(&value)) return std::int32_t((*n > 0) - (*n < 0));
         if (const auto* n = std::get_if<std::int64_t>(&value)) return std::int32_t((*n > 0) - (*n < 0));
         const auto n = std::get<double>(value);
         return std::int32_t((n > 0) - (n < 0));
     }
     if (function == Function::abs || function == Function::sqr) {
+        if (small_integer(value_type(value))) {
+            const auto n=integral_number(value,location);
+            if (function==Function::sqr) return static_cast<std::int32_t>(n*n);
+            const auto magnitude=n<0 ? -n : n;
+            if (magnitude>small_integer_bounds(value_type(value)).second) throw runtime_error(RuntimeError::integer_overflow,location);
+            return checked_small_integer(value_type(value),magnitude,location);
+        }
         if (const auto* n = std::get_if<std::int32_t>(&value)) {
             if (function == Function::sqr) return std::int64_t(*n) * std::int64_t(*n);
             if (*n == std::numeric_limits<std::int32_t>::min()) throw runtime_error(RuntimeError::integer_overflow, location);

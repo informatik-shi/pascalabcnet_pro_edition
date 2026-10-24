@@ -810,6 +810,10 @@ void text_files() {
     result("begin var f:=OpenWrite("+file+"); f.Writeln('ax'); f.Writeln('by'); f.Close; f.Reset; Writeln(ReadlnChar(f),' ',f.ReadlnChar,' ',f.Eof); f.Close; end.","a b True\n");
     result("begin var f:=OpenWrite("+file+"); f.Write('Яx 65535'); f.Close; f.Reset; var c:char; var w:word; Read(f,c); Writeln(c); Read(f,c); Read(f,w); Writeln(c,' ',w); f.Close; end.","Я\nx 65535\n");
     result("begin var f:=OpenWrite("+file+"); f.Write(#55356,#57101); f.Close; Writeln(ReadAllText("+file+")); end.","🌍\n");
+    result("begin var f:=OpenWrite("+file+"); f.Writeln(byte(255),' ',shortint(-128),' ',smallint(-32768)); f.Close; f.Reset; var b:byte; var s:shortint; var n:smallint; Read(f,b,s,n); Writeln(b,' ',s,' ',n); f.Close; end.","255 -128 -32768\n");
+    runtime_error("begin WriteAllText("+file+",'256'); var f:=OpenRead("+file+"); var b:byte; Read(f,b); end.","E_OVERFLOW");
+    runtime_error("begin WriteAllText("+file+",'-129'); var f:=OpenRead("+file+"); var s:shortint; Read(f,s); end.","E_OVERFLOW");
+    runtime_error("begin WriteAllText("+file+",'32768'); var f:=OpenRead("+file+"); var n:smallint; Read(f,n); end.","E_OVERFLOW");
     result("begin var f:Text; Assign(f,"+file+"); Rewrite(f); Writeln(f,12,' ',34,' tail'); Close(f); Reset(f); var a,b:integer; var s:string; Read(f,a,b); Read(f,s); Writeln(a,' ',b,' [',s,'] ',Eoln(f),' ',Eof(f)); Readln(f,s); Writeln('[',s,'] ',Eof(f)); Readln(f,s); Writeln('[',s,']'); Close(f); end.","12 34 [ tail] True False\n[] True\n[]\n");
     result("procedure Add(f:Text); begin Writeln(f,'добавлено 🌍'); end; begin var f:=OpenAppend("+file+"); var alias:=f; Add(alias); Close(alias); var g:=OpenRead("+file+"); Readln(g); Writeln(ReadString(g)); Close(g); end.","добавлено 🌍\n");
     result("begin var f:=new TextFile; Rewrite(f,"+file+"); Write(f,'abc'); Rewrite(f); Write(f,'X'); Close(f); Writeln(ReadAllText("+file+")); Rewrite(f); Write(f,'abcdef'); Flush(f); Rewrite(f); Write(f,'XY'); Close(f); Writeln(ReadAllText("+file+")); end.","abcX\nXYcdef\n");
@@ -1337,6 +1341,65 @@ void verifier() {
     abc::execute(program, in, out);
     require(out.str() == "42", "Verifier and runtime agree on identity conversion");
 }
+void small_integers() {
+    result("begin var b:byte; var s:shortint; var n:smallint; Writeln(b,' ',s,' ',n); b:=255; s:=-128; n:=-32768; Writeln(b,' ',s,' ',n); end.","0 0 0\n255 -128 -32768\n");
+    result("begin var b:=byte(255); var s:=shortint(-128); var n:=smallint(-32768); Writeln(b+1,' ',s-1,' ',n-1,' ',-b,' ',b div 2,' ',s mod 3); end.","256 -129 -32769 -255 127 -2\n");
+    result("procedure P(var b:byte; var s:shortint; var n:smallint; var w:word); begin Inc(b); Inc(s); Inc(n); Inc(w); end; begin var b:=byte(1); var pb:=+b; var ps:=+shortint(-2); var pn:=+smallint(-3); var pw:=+word(4); P(pb,ps,pn,pw); Writeln(b,' ',pb,' ',ps,' ',pn,' ',pw); end.","1 2 -1 -2 5\n");
+    result("begin var b:=byte(65); var w:word:=b; var s:smallint:=b; var i:integer:=b; var n:int64:=b; var r:real:=b; Writeln(w,' ',s,' ',i,' ',n,' ',r,' ',Chr(b)); end.","65 65 65 65 65 A\n");
+    result("begin var s:=shortint(-12); var n:smallint:=s; var i:integer:=n; var big:int64:=n; var r:real:=n; Writeln(s,' ',n,' ',i,' ',big,' ',r,' ',IntToStr(s)); end.","-12 -12 -12 -12 -12 -12\n");
+    result("begin Writeln(Abs(shortint(-127)),' ',Abs(smallint(-32767)),' ',Abs(byte(255)),' ',Abs(word(65535))); Writeln(Sign(shortint(-1)),' ',Sign(byte(0)),' ',Sign(word(65535))); Writeln(Sqr(byte(255)),' ',Sqr(shortint(-128)),' ',Sqr(smallint(-32768))); end.","127 32767 255 65535\n-1 0 1\n65025 16384 1073741824\n");
+    result("begin Writeln(Min(byte(1),byte(2)),' ',Max(shortint(-1),shortint(1)),' ',Min(smallint(-32768),smallint(1)),' ',Max(word(65535),word(1))); end.","1 1 -32768 65535\n");
+    result("begin var b:=byte(1); var s:=shortint(-1); var n:=smallint(20); Inc(b,2); Dec(s,-2); Inc(n,-5); Writeln(b,' ',s,' ',n); Writeln(Ord(b),' ',Ord(s),' ',Ord(n)); end.","3 1 15\n3 1 15\n");
+    result("begin Writeln(Succ(byte(254)),' ',Pred(byte(1)),' ',Succ(shortint(-128)),' ',Pred(shortint(127)),' ',Succ(smallint(32766)),' ',Pred(smallint(-32767))); end.","255 0 -127 126 32767 -32768\n");
+    result("begin Writeln(byte('A'),' ',shortint(word(127)),' ',smallint(byte(255)),' ',byte(2147483648-2147483648)); end.","65 127 255 0\n");
+    result("begin var a:=Arr(byte(1),shortint(-2)); Writeln(a[0],' ',a[1]); var b:=Arr(word(65535),smallint(-3)); Writeln(b[0],' ',b[1]); end.","1 -2\n65535 -3\n");
+    result("type R=record b:byte; s:shortint; n:smallint; end; begin var r:R; r.b:=255; r.s:=-128; r.n:=-32768; var copy:=r; Dec(copy.b); Inc(copy.s); Inc(copy.n); Writeln(r.b,' ',r.s,' ',r.n,' ',copy.b,' ',copy.s,' ',copy.n); end.","255 -128 -32768 254 -127 -32767\n");
+    result("procedure P(var b:byte; var s:shortint; var n:smallint); begin Inc(b); Dec(s); Inc(n); end; function F(b:byte):byte; begin Result:=Succ(b); end; begin var b:=byte(1); var s:=shortint(0); var n:=smallint(4); P(b,s,n); Writeln(b,' ',s,' ',n,' ',F(b)); end.","2 -1 5 3\n");
+    result("uses Collections; begin var a:=new byte[2]; Writeln(a[0]); a[1]:=255; var l:=new List<shortint>; l.Add(-128); l.Add(127); Sort(l); Writeln(a[1],' ',l[0],' ',l[1]); var m:=new AssocArray<byte,smallint>; Writeln(m[byte(1)]); m[byte(1)]:=-32768; Writeln(m[byte(1)]); end.","0\n255 -128 127\n0\n-32768\n");
+    result("uses Collections; begin var s:=new Stack<byte>; s.Push(255); s.Push(1); Writeln(s.ToString); var q:=new Queue<shortint>; q.Enqueue(-128); Writeln(q.Dequeue); var d:=new DynArray<smallint>(1); Writeln(d[0]); d[0]:=-32768; Writeln(d.ToString); end.","1 255 \n-128\n0\n-32768 \n");
+    result("begin for var b:byte:=254 to 255 do Writeln(b); for var s:shortint:=-127 downto -128 do Writeln(s); for var n:smallint:=32766 to 32767 do Writeln(n); end.","254\n255\n-127\n-128\n32766\n32767\n");
+    result("begin for var b:byte:=0 downto 0 do Writeln(b); for var s:shortint:=127 to 127 do Writeln(s); for var n:smallint:=-32768 downto -32768 do Writeln(n); end.","0\n127\n-32768\n");
+    result("begin foreach var n:smallint in Arr(byte(2),byte(3)) do Write(n); foreach var n:integer in Arr(shortint(-1),shortint(1)) do Write(n); Writeln; var b:=byte(2); Writeln('X'*b,' ',b*'Y'); end.","23-11\nXX YY\n");
+    result("begin var b:byte; var s:shortint; var n:smallint; Readln(b); Readln(s); Readln(n); Writeln(b,' ',s,' ',n); end.","255 -128 -32768\n","255\n-128\n-32768\n");
+    for (const auto* source:{"begin var n:byte:=-1; end.","begin var n:byte:=256; end.",
+        "begin var n:shortint:=-129; end.","begin var n:shortint:=128; end.",
+        "begin var n:smallint:=-32769; end.","begin var n:smallint:=32768; end.",
+        "begin var n:byte:=9223372036854775807; end."}) compile_error(source,"E_RANGE");
+    for (const auto* source:{"begin var b:byte; var s:shortint:=b; end.","begin var s:shortint; var b:byte:=s; end.",
+        "begin var i:integer:=1; var b:byte:=i; end.","procedure P(var n:integer); begin end; begin var b:byte; P(b); end.",
+        "begin foreach var b:byte in Arr(word(1)) do Write(b); end.",
+        "begin for var b:byte:=0 to 1 do Inc(b); end.","begin var a:=new byte[1]; a[0]:='X'; end."}) compile_error(source,"E_TYPE");
+    for (const auto* source:{"begin Writeln(byte(-1)); end.","begin Writeln(byte(256)); end.",
+        "begin Writeln(shortint(-129)); end.","begin Writeln(shortint(128)); end.",
+        "begin Writeln(smallint(-32769)); end.","begin Writeln(smallint(32768)); end.",
+        "begin Writeln(byte(word(65535))); end.","begin Writeln(byte(9223372036854775807)); end.",
+        "begin Writeln(Succ(byte(255))); end.","begin Writeln(Pred(byte(0))); end.",
+        "begin Writeln(Succ(shortint(127))); end.","begin Writeln(Pred(shortint(-128))); end.",
+        "begin Writeln(Succ(smallint(32767))); end.","begin Writeln(Pred(smallint(-32768))); end.",
+        "begin var b:byte:=255; Inc(b); end.","begin var b:byte; Dec(b); end.",
+        "begin var s:shortint:=-128; Dec(s); end.","begin var s:shortint:=127; Inc(s); end.",
+        "begin var n:smallint:=-32768; Dec(n); end.","begin var n:smallint:=32767; Inc(n); end.",
+        "begin var b:=byte(1); Inc(b,2147483647); end."}) runtime_error(source,"E_OVERFLOW");
+    runtime_error("begin Writeln(Abs(shortint(-128))); end.","E_OVERFLOW");
+    runtime_error("begin Writeln(Abs(smallint(-32768))); end.","E_OVERFLOW");
+    compile_error("begin Writeln(Sqr(word(65535))); end.","E_UNSUPPORTED");
+    compile_error("uses FilesOperations; begin Writeln(FilesOperations.Sqr(word(1))); end.","E_NAME");
+    runtime_error("begin var l:=new List<byte>; l.Add(1); foreach var b in l do Inc(l[0]); end.","E_MODIFIED");
+    error([&]{(void)run("begin var b:byte; Readln(b); end.","256\n");},"E_INPUT");
+    error([&]{(void)run("begin var s:shortint; Readln(s); end.","-129\n");},"E_INPUT");
+    auto program=abc::compile("begin var b:=byte(1); var s:=shortint(2); var n:=smallint(3); var o:=Ord(b); var a:=Arr(b,s); end.");
+    require(program.locals[0].type==abc::Type::byte && program.locals[1].type==abc::Type::shortint && program.locals[2].type==abc::Type::smallint && program.locals[3].type==abc::Type::byte,"Small integer types and Ord results remain statically distinct");
+    require(program.types[0].element==abc::Type::smallint,"Array inference joins byte and shortint into smallint");
+    program=abc::compile("begin var a:=Abs(byte(2)); var s:=Sqr(byte(2)); var m:=Min(shortint(1),shortint(2)); var w:=Max(word(1),word(2)); end.");
+    require(program.locals[0].type==abc::Type::byte && program.locals[1].type==abc::Type::integer && program.locals[2].type==abc::Type::shortint && program.locals[3].type==abc::Type::word,"Small integer math overloads preserve declared source result types");
+    program=abc::compile("begin var b:byte:=2; Inc(b); end.");
+    for (auto& instruction:program.code) if (instruction.op==abc::Op::increment) instruction.type=abc::Type::shortint;
+    error([&]{abc::verify(program);},"E_BYTECODE");
+    program=abc::compile("begin Writeln(byte(2)+byte(3)); end.");
+    for (auto& instruction:program.code) if (instruction.op==abc::Op::add) instruction.type=abc::Type::byte;
+    error([&]{abc::verify(program);},"E_BYTECODE");
+}
+
 void characters() {
     result("begin var c:char; var w:word; Writeln(Ord(c),' ',w); c:='Я'; w:=Ord(c); Writeln(c,' ',w,' ',w+1); end.","0 0\nЯ 1071 1072\n");
     result("begin var c:='A'; Writeln(Ord(c),' ',Succ(c),' ',Pred(c),' ',Chr(90),' ',ChrUnicode(1071)); end.","65 B @ Z Я\n");
@@ -1423,6 +1486,7 @@ int main() {
     structured_loops();
     foreach_loops();
     characters();
+    small_integers();
     arithmetic();
     verifier();
     bilingual_diagnostics();

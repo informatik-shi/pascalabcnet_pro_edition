@@ -2,6 +2,7 @@
 #include "files.hpp"
 #include "diagnostics.hpp"
 #include "stdlib.hpp"
+#include "integer_values.hpp"
 #include <algorithm>
 #include <charconv>
 #include <limits>
@@ -188,11 +189,10 @@ Value text_read(TextFile& file, Type type, SourceLocation location) {
     auto view=std::string_view(bytes); if (view.starts_with('+')) view.remove_prefix(1);
     std::int64_t value=0;
     const auto converted=std::from_chars(view.data(),view.data()+view.size(),value);
-    if (converted.ec!=std::errc{} || (type==Type::integer && (value<INT32_MIN || value>INT32_MAX))
-        || (type==Type::word && (value<0 || value>65535)))
+    if (converted.ec!=std::errc{} || (type==Type::integer && (value<INT32_MIN || value>INT32_MAX)))
         throw runtime_error(RuntimeError::number_range,location,type_name(type));
-    return type==Type::integer ? Value{static_cast<std::int32_t>(value)}
-        : type==Type::word ? Value{static_cast<std::uint16_t>(value)} : Value{value};
+    if (small_integer(type)) return checked_small_integer(type,value,location);
+    return type==Type::integer ? Value{static_cast<std::int32_t>(value)} : Value{value};
 }
 std::u16string text_word(TextFile& file, SourceLocation location) { return read_token(file,location); }
 std::u16string text_name(const TextFile& file, bool full, SourceLocation location) {

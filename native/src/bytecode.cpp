@@ -276,7 +276,7 @@ private:
             // Stop at the bound before incrementing, including MaxInt/MinInt64.
             compare(node.newline ? Op::greater : Op::less);
             const auto done=emit(Op::jump_false,Type::invalid,0,node.location);
-            if (type==Type::character || type==Type::word) {
+            if (type==Type::character || small_integer(type)) {
                 reference(*node.target); constant(std::int32_t{1},node.location);
                 emit(Op::increment,type,node.newline ? 1 : 0,node.location);
             } else {
@@ -366,7 +366,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         case Op::file_output:
             if (type!=Type::text_file || instruction.operand/4>16) invalid(instruction,"Invalid Text output method"); break;
         case Op::increment:
-            if ((type!=Type::integer && type!=Type::int64 && type!=Type::character && type!=Type::word) || instruction.operand>1) invalid(instruction,"Invalid increment"); break;
+            if ((type!=Type::integer && type!=Type::int64 && type!=Type::character && !small_integer(type)) || instruction.operand>1) invalid(instruction,"Invalid increment"); break;
         case Op::mutate_string:
             if (type!=Type::string || instruction.operand>=stdlib::signatures().size()) invalid(instruction,"Invalid string mutation");
             {
@@ -427,16 +427,16 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if (!numeric(type) && type!=Type::string) invalid(instruction,"Invalid conversion target");
             break;
         case Op::negate:
-            if (!numeric(type) || type==Type::word) invalid(instruction, "Invalid numeric type");
+            if (!numeric(type) || small_integer(type)) invalid(instruction, "Invalid numeric type");
             break;
         case Op::logical_not:
             if (type != Type::boolean) invalid(instruction, "Invalid logical type");
             break;
         case Op::add:
-            if ((!numeric(type) && type != Type::string) || type==Type::word) invalid(instruction, "Invalid addition type");
+            if ((!numeric(type) && type != Type::string) || small_integer(type)) invalid(instruction, "Invalid addition type");
             break;
         case Op::subtract: case Op::multiply:
-            if (!numeric(type) || type==Type::word) invalid(instruction, "Invalid arithmetic type");
+            if (!numeric(type) || small_integer(type)) invalid(instruction, "Invalid arithmetic type");
             break;
         case Op::divide_real:
             if (type != Type::real) invalid(instruction, "Real division requires real");
