@@ -1,6 +1,7 @@
 #include "hir.hpp"
 #include "number.hpp"
 #include "stdlib.hpp"
+#include "integer_values.hpp"
 
 
 #include <algorithm>
@@ -528,8 +529,13 @@ Value literal(const Token& token) {
     }
     std::int64_t value = 0;
     const auto parsed = std::from_chars(token.text.data(), token.text.data() + token.text.size(), value);
+    if (parsed.ec==std::errc::result_out_of_range && !token.text.starts_with('-')) {
+        std::uint64_t wide=0;
+        const auto converted=std::from_chars(token.text.data(),token.text.data()+token.text.size(),wide);
+        if (converted.ec==std::errc{} && converted.ptr==token.text.data()+token.text.size()) return wide;
+    }
     if (parsed.ec != std::errc{} || parsed.ptr != token.text.data() + token.text.size())
-        throw Error("E_RANGE", token.location, "Integer literal is out of int64 range");
+        throw Error("E_RANGE", token.location, "Integer literal is outside the supported integer range");
     if (value >= std::numeric_limits<std::int32_t>::min() && value <= std::numeric_limits<std::int32_t>::max())
         return static_cast<std::int32_t>(value);
     return value;
@@ -671,15 +677,16 @@ private:
         throw Error("E_NAME", token.location, "Unknown name '" + token.text + "'");
     }
     std::unique_ptr<hir::Expr> convert(std::unique_ptr<hir::Expr> expression, Type type) {
-        if (small_integer(type) && (expression->type==Type::integer || expression->type==Type::int64) && expression->kind==hir::ExprKind::literal) {
-            const auto value=expression->type==Type::integer ? std::int64_t(std::get<std::int32_t>(expression->value)) : std::get<std::int64_t>(expression->value);
-            const auto [minimum,maximum]=small_integer_bounds(type);
-            if (value<minimum || value>maximum) throw Error("E_RANGE",expression->location,"Constant is outside the range of "+std::string(type_name(type)));
+        if (integer_type(type) && integer_type(expression->type) && expression->kind==hir::ExprKind::literal && !can_widen(expression->type,type)) {
+            try {
+                if (small_integer(type)) expression->value=checked_small_integer(type,integral_number(expression->value,expression->location,type_name(type)),expression->location);
+                else if (wide_unsigned(type)) expression->value=checked_unsigned_integer(type,expression->value,expression->location);
+                else expression->value=checked_signed_integer(type,expression->value,expression->location);
+            } catch (const Error& error) {
+                if (error.code!="E_OVERFLOW") throw;
+                throw Error("E_RANGE",expression->location,"Constant is outside the range of "+std::string(type_name(type)));
+            }
             expression->type=type;
-            if (type==Type::byte) expression->value=static_cast<std::uint8_t>(value);
-            else if (type==Type::shortint) expression->value=static_cast<std::int8_t>(value);
-            else if (type==Type::smallint) expression->value=static_cast<std::int16_t>(value);
-            else expression->value=static_cast<std::uint16_t>(value);
             return expression;
         }
         if (expression->type == Type::nil && type == Type::string) {
@@ -765,6 +772,11 @@ private:
         case SyntaxExprKind::field:
         case SyntaxExprKind::member_call: {
             if (source.left->kind==SyntaxExprKind::name && !lookup(source.left->token) && imported_units_.contains(source.left->token.text)) {
+                if (source.kind==SyntaxExprKind::field && source.left->token.text=="pabcsystem") {
+                    if (auto value=stdlib::constant(source.token.text)) {
+                        result->kind=hir::ExprKind::literal; result->type=value_type(*value); result->value=std::move(*value); break;
+                    }
+                }
                 result->kind=hir::ExprKind::call;
                 for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
                 bind_builtin(*result,source.token.text,source.left->token.text); break;
@@ -954,6 +966,11 @@ private:
                 result->kind = hir::ExprKind::local;
                 result->local = *local;
                 result->type = module_.locals[*local].type;
+            } else if (auto routine = routine_names_.find(source.token.text); routine != routine_names_.end()) {
+                if (!module_.routines[routine->second].signature.parameters.empty())
+                    throw Error("E_TYPE",result->location,"Routine requires arguments; routine values are not supported yet");
+                SyntaxExpr call{SyntaxExprKind::call,source.token,{},{},1,{},{}};
+                return expression(call);
             } else if (collections_imported_ && (source.token.text == "min_cap" || source.token.text == "inc_cap_factor")) {
                 result->kind = hir::ExprKind::literal; result->type = Type::integer;
                 result->value = std::int32_t{source.token.text == "min_cap" ? 4 : 2};
@@ -961,9 +978,6 @@ private:
                 result->kind = hir::ExprKind::literal;
                 result->value = *value;
                 result->type = value_type(*value);
-            } else if (auto routine = routine_names_.find(source.token.text); routine != routine_names_.end() && module_.routines[routine->second].signature.parameters.empty()) {
-                SyntaxExpr call{SyntaxExprKind::call,source.token,{},{},1,{},{}};
-                return expression(call);
             } else if (std::any_of(stdlib::signatures().begin(),stdlib::signatures().end(),[&](const stdlib::Signature& signature) {
                 return signature.name==source.token.text && signature.parameters.empty();
             })) {
@@ -997,11 +1011,14 @@ private:
                 if (element == Type::unit || element == Type::nil) throw Error("E_TYPE",result->location,"Procedure has no value");
                 for (const auto& argument : result->arguments) {
                     if (argument->type == Type::nil) continue;
+                    if ((element==Type::uint64 && integer_type(argument->type)) || (argument->type==Type::uint64 && integer_type(element))) {
+                        element=Type::uint64; continue;
+                    }
                     if (can_widen(element,argument->type)) element = argument->type;
                     else if (!can_widen(argument->type,element)) {
                         bool joined=false;
                         if (numeric(element) && numeric(argument->type))
-                            for (auto type:{Type::byte,Type::shortint,Type::smallint,Type::word,Type::integer,Type::int64,Type::real})
+                            for (auto type:{Type::byte,Type::shortint,Type::smallint,Type::word,Type::integer,Type::int64,Type::longword,Type::uint64,Type::real})
                                 if (can_widen(element,type) && can_widen(argument->type,type)) { element=type; joined=true; break; }
                         if (!joined) throw Error("E_TYPE",result->location,"Incompatible array elements");
                     }
@@ -1052,6 +1069,7 @@ private:
             result->kind = hir::ExprKind::unary;
             result->left = expression(*source.left);
             if (source.token.text=="-" && small_integer(result->left->type)) result->left=convert(std::move(result->left),Type::integer);
+            if (source.token.text=="-" && result->left->type==Type::longword) result->left=convert(std::move(result->left),Type::int64);
             result->type = result->left->type;
             if (source.token.text == "not" ? result->type != Type::boolean : !numeric(result->type))
                 throw Error("E_TYPE", source.token.location, "Invalid operand for '" + source.token.text + "'");
@@ -1099,7 +1117,8 @@ private:
                 if ((op == "div" || op == "mod") && (left == Type::real || right == Type::real))
                     throw Error("E_TYPE", result->location, "div and mod require integer operands");
                 const auto common = op == "/" || left == Type::real || right == Type::real ? Type::real
-                    : left == Type::int64 || right == Type::int64 ? Type::int64 : Type::integer;
+                    : left==Type::uint64 || right==Type::uint64 ? Type::uint64
+                    : left == Type::int64 || right == Type::int64 || left==Type::longword || right==Type::longword ? Type::int64 : Type::integer;
                 result->left = convert(std::move(result->left), common);
                 result->right = convert(std::move(result->right), common);
                 result->type = comparison ? Type::boolean : common;
@@ -1107,7 +1126,7 @@ private:
                 result->type = comparison ? Type::boolean : Type::string;
             } else if (left==Type::character && right==Type::character && comparison) {
                 result->type=Type::boolean;
-            } else if (left == Type::boolean && right == Type::boolean && (op == "=" || op == "<>")) {
+            } else if (left == Type::boolean && right == Type::boolean && comparison) {
                 result->type = Type::boolean;
             } else throw Error("E_TYPE", result->location, "Incompatible operands for '" + op + "': "
                 + std::string(type_name(left)) + " and " + std::string(type_name(right)));
@@ -1117,8 +1136,22 @@ private:
         return result;
     }
     void bind_builtin(hir::Expr& result, std::string_view name, std::string_view unit = {}) {
-        if ((unit.empty() || unit=="pabcsystem") && name=="sqr" && result.arguments.size()==1 && result.arguments[0]->type==Type::word)
-            throw Error("E_UNSUPPORTED",result.location,"Sqr(word) requires the uint64 result type, which is not ported yet");
+        if ((unit.empty() || unit=="pabcsystem") && (name=="min" || name=="max") && result.arguments.size()>=2 && result.arguments.size()<=4
+            && std::all_of(result.arguments.begin(),result.arguments.end(),[](const auto& arg){return integer_type(arg->type);})) {
+            Type context=Type::invalid;
+            for (const auto& arg:result.arguments) {
+                if (arg->type==Type::uint64) { context=Type::uint64; break; }
+                if (arg->type==Type::longword) context=Type::longword;
+            }
+            bool compatible=context!=Type::invalid;
+            if (context==Type::longword) for (const auto& arg:result.arguments) {
+                if (can_widen(arg->type,context)) continue;
+                if (arg->kind!=hir::ExprKind::literal) { compatible=false; break; }
+                try { if (unsigned_number(arg->value,arg->location)>UINT32_MAX) compatible=false; }
+                catch (const Error& error) { if (error.code!="E_OVERFLOW") throw; compatible=false; }
+            }
+            if (compatible) for (auto& arg:result.arguments) arg=convert(std::move(arg),context);
+        }
         const auto catalog=stdlib::signatures(); std::vector<std::size_t> candidates; bool known=false;
         for (std::size_t i=0;i<catalog.size();++i) {
             const auto& signature=catalog[i];
@@ -1231,9 +1264,13 @@ private:
             if (lookup(source.names.front())) throw Error("E_TYPE",result.location,"Variable is not callable");
             result.kind=hir::StmtKind::increment; result.target=expression(*source.target);
             const auto type=result.target->type;
-            if (!lvalue(*result.target) || (type!=Type::integer && type!=Type::int64 && type!=Type::character && !small_integer(type))) throw Error("E_TYPE",result.location,"Inc/Dec requires an ordinal variable");
+            if (!lvalue(*result.target) || !ordinal(type)) throw Error("E_TYPE",result.location,"Inc/Dec requires an ordinal variable");
             result.newline=source.names.front().text=="dec";
-            const auto step_type=type==Type::int64 ? type : Type::integer;
+            if (type==Type::boolean) {
+                if (source.expression) throw Error("E_TYPE",result.location,"Boolean Inc/Dec takes no step argument");
+                break;
+            }
+            const auto step_type=increment_step_type(type);
             if (source.expression) result.expression=convert(expression(*source.expression),step_type);
             else {
                 result.expression=std::make_unique<hir::Expr>(); result.expression->kind=hir::ExprKind::literal;
@@ -1334,7 +1371,7 @@ private:
                 if (in_routine_ && current_result_!=Type::unit && module_.locals[control].name=="result") throw Error("E_UNSUPPORTED",name.location,"Function Result as for control is not supported");
             }
             const auto type=module_.locals[control].type;
-            if (type!=Type::integer && type!=Type::int64 && type!=Type::character && !small_integer(type)) throw Error("E_TYPE",name.location,"For control must be an ordinal type");
+            if (!ordinal(type)) throw Error("E_TYPE",name.location,"For control must be an ordinal type");
             initial=convert(std::move(initial),type);
             auto finish=convert(expression(*source.arguments[0]),type);
             const auto bound=module_.locals.size(); module_.locals.push_back({"$for_bound_"+std::to_string(bound),type,!in_routine_});

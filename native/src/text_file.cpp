@@ -187,6 +187,12 @@ Value text_read(TextFile& file, Type type, SourceLocation location) {
         throw runtime_error(RuntimeError::number_text,location,type_name(type));
     auto bytes=to_utf8(token);
     auto view=std::string_view(bytes); if (view.starts_with('+')) view.remove_prefix(1);
+    if (wide_unsigned(type)) {
+        std::uint64_t value=0;
+        const auto converted=std::from_chars(view.data(),view.data()+view.size(),value);
+        if (converted.ec!=std::errc{} || converted.ptr!=view.data()+view.size()) throw runtime_error(RuntimeError::number_range,location,type_name(type));
+        return checked_unsigned_integer(type,Value{value},location);
+    }
     std::int64_t value=0;
     const auto converted=std::from_chars(view.data(),view.data()+view.size(),value);
     if (converted.ec!=std::errc{} || (type==Type::integer && (value<INT32_MIN || value>INT32_MAX)))

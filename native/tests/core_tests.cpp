@@ -40,18 +40,19 @@ void result(std::string_view source, std::string_view expected, std::string inpu
     catch (const std::exception& error) { require(false, std::string(source) + " -> " + error.what()); }
 }
 
-template<class F> void error(F action, std::string_view code) {
-    try { action(); require(false, std::string("Expected ") + std::string(code)); }
-    catch (const abc::Error& caught) { require(caught.code == code, std::string("Expected ") + std::string(code) + ", got " + caught.code); }
+template<class F> void error(F action, std::string_view code, std::string_view source = {}) {
+    const auto context=source.empty() ? std::string{} : " in "+std::string(source);
+    try { action(); require(false, std::string("Expected ") + std::string(code)+context); }
+    catch (const abc::Error& caught) { require(caught.code == code, std::string("Expected ") + std::string(code) + ", got " + caught.code+context); }
     catch (const std::exception& caught) { require(false, caught.what()); }
 }
 
 void compile_error(std::string_view source, std::string_view code) {
-    error([&] { (void)abc::compile(source); }, code);
+    error([&] { (void)abc::compile(source); }, code,source);
 }
 
 void runtime_error(std::string_view source, std::string_view code) {
-    error([&] { (void)run(source); }, code);
+    error([&] { (void)run(source); }, code,source);
 }
 
 void language() {
@@ -87,10 +88,11 @@ void language() {
     compile_error("begin begin var n := 1; end; writeln(n); end.", "E_NAME");
     compile_error("begin if true then var n := 1; writeln(n); end.", "E_NAME");
     compile_error("begin if 1 then writeln(1); end.", "E_TYPE");
-    compile_error("begin var n: integer := 2147483648; end.", "E_TYPE");
+    compile_error("begin var n: integer := 2147483648; end.", "E_RANGE");
     compile_error("begin var x := 2.5 div 2; end.", "E_TYPE");
     compile_error("begin var a: bigint; end.", "E_UNSUPPORTED");
-    compile_error("begin writeln(9223372036854775808); end.", "E_RANGE");
+    result("begin writeln(9223372036854775808); end.","9223372036854775808\n");
+    compile_error("begin writeln(18446744073709551616); end.", "E_RANGE");
     compile_error("begin writeln(1e9999); end.", "E_RANGE");
     compile_error("begin writeln(1e-9999); end.", "E_RANGE");
     compile_error("begin writeln(1e); end.", "E_SYNTAX");
@@ -182,12 +184,13 @@ void structured_loops() {
         "begin var f:Text; for var i:=1 to 2 do Read(f,i); end.",
         "procedure P(var n:integer); begin Inc(n); end; begin for var i:=1 to 2 do P(i); end.",
         "begin var i:=0; for i:=1 to 2 do for i:=1 to 2 do Write(i); end.",
-        "begin for var i:=1.5 to 2 do Write(i); end.","begin for var i:=true to false do Write(i); end.",
-        "begin var i:real; for i:=1 to 2 do Write(i); end.","begin for var i:=1 to 2147483648 do Write(i); end.",
+        "begin for var i:=1.5 to 2 do Write(i); end.",
+        "begin var i:real; for i:=1 to 2 do Write(i); end.",
         "begin for var i:=1 to 1.5 do Write(i); end.","begin for var i:=1 to 2 do if true then i:=0; end.",
         "begin repeat until 1; end.","begin repeat until 'yes'; end.",
         "var i:integer; procedure P; begin for i:=1 to 2 do Write(i); end; begin P; end."}) compile_error(source,"E_TYPE");
     compile_error("begin for var i:=1 to 2 do Write(i); Writeln(i); end.","E_NAME");
+    compile_error("begin for var i:=1 to 2147483648 do Write(i); end.","E_RANGE");
     compile_error("begin repeat var n:=1; until n=1; Writeln(n); end.","E_NAME");
     compile_error("begin for i:=1 to 2 do Write(i); end.","E_NAME");
     compile_error("begin for var i:=1 to 3 step 2 do Write(i); end.","E_UNSUPPORTED");
@@ -378,7 +381,7 @@ void standard_library() {
     compile_error("begin writeln(Min(true,false)); end.", "E_TYPE");
     compile_error("begin var n := 2.0; Inc(n); end.", "E_TYPE");
     compile_error("begin var n := 2; Inc(n,1.5); end.", "E_TYPE");
-    compile_error("begin var n := 2; Inc(n,2147483648); end.", "E_TYPE");
+    compile_error("begin var n := 2; Inc(n,2147483648); end.", "E_RANGE");
     compile_error("begin var Abs := 2; writeln(Abs(1)); end.", "E_TYPE");
     compile_error("begin writeln('must not run'); if false then writeln(UnknownFunction(1)); end.", "E_NAME");
     compile_error("uses GraphABC; begin end.", "E_UNSUPPORTED");
@@ -491,7 +494,7 @@ void mutable_strings() {
     compile_error("begin var s := 'abc'; SetLength(Trim(s),2); end.", "E_TYPE");
     compile_error("begin var n := 1; SetLength(n,2); end.", "E_TYPE");
     compile_error("begin var s := 'abc'; SetLength(s,2.0); end.", "E_TYPE");
-    compile_error("begin var s := 'abc'; SetLength(s,2147483648); end.", "E_TYPE");
+    compile_error("begin var s := 'abc'; SetLength(s,2147483648); end.", "E_RANGE");
     compile_error("begin var s := 'abc'; Insert(1,s,2); end.", "E_TYPE");
     compile_error("begin Insert('a','b',1); end.", "E_TYPE");
     compile_error("begin Delete('abc',1,1); end.", "E_TYPE");
@@ -814,6 +817,10 @@ void text_files() {
     runtime_error("begin WriteAllText("+file+",'256'); var f:=OpenRead("+file+"); var b:byte; Read(f,b); end.","E_OVERFLOW");
     runtime_error("begin WriteAllText("+file+",'-129'); var f:=OpenRead("+file+"); var s:shortint; Read(f,s); end.","E_OVERFLOW");
     runtime_error("begin WriteAllText("+file+",'32768'); var f:=OpenRead("+file+"); var n:smallint; Read(f,n); end.","E_OVERFLOW");
+    result("begin var f:=OpenWrite("+file+"); f.Writeln(MaxLongWord,' ',MaxUInt64); f.Close; f.Reset; var w:longword; var u:uint64; Read(f,w,u); Writeln(w,' ',u); f.Close; end.","4294967295 18446744073709551615\n");
+    runtime_error("begin WriteAllText("+file+",'18446744073709551616'); var f:=OpenRead("+file+"); var u:uint64; Read(f,u); end.","E_OVERFLOW");
+    runtime_error("begin WriteAllText("+file+",'-1'); var f:=OpenRead("+file+"); var u:uint64; Read(f,u); end.","E_OVERFLOW");
+    runtime_error("begin WriteAllText("+file+",'4294967296'); var f:=OpenRead("+file+"); var w:longword; Read(f,w); end.","E_OVERFLOW");
     result("begin var f:Text; Assign(f,"+file+"); Rewrite(f); Writeln(f,12,' ',34,' tail'); Close(f); Reset(f); var a,b:integer; var s:string; Read(f,a,b); Read(f,s); Writeln(a,' ',b,' [',s,'] ',Eoln(f),' ',Eof(f)); Readln(f,s); Writeln('[',s,'] ',Eof(f)); Readln(f,s); Writeln('[',s,']'); Close(f); end.","12 34 [ tail] True False\n[] True\n[]\n");
     result("procedure Add(f:Text); begin Writeln(f,'добавлено 🌍'); end; begin var f:=OpenAppend("+file+"); var alias:=f; Add(alias); Close(alias); var g:=OpenRead("+file+"); Readln(g); Writeln(ReadString(g)); Close(g); end.","добавлено 🌍\n");
     result("begin var f:=new TextFile; Rewrite(f,"+file+"); Write(f,'abc'); Rewrite(f); Write(f,'X'); Close(f); Writeln(ReadAllText("+file+")); Rewrite(f); Write(f,'abcdef'); Flush(f); Rewrite(f); Write(f,'XY'); Close(f); Writeln(ReadAllText("+file+")); end.","abcX\nXYcdef\n");
@@ -1341,7 +1348,61 @@ void verifier() {
     abc::execute(program, in, out);
     require(out.str() == "42", "Verifier and runtime agree on identity conversion");
 }
+void unsigned_integers() {
+    result("begin var w:longword; var u:uint64; Writeln(w,' ',u); w:=4294967295; u:=18446744073709551615; Writeln(w,' ',u); end.","0 0\n4294967295 18446744073709551615\n");
+    result("begin var w:=longword(4294967295); Writeln(w+1,' ',w-longword(1),' ',w*longword(2),' ',-w,' ',w div longword(2)); end.","4294967296 4294967294 8589934590 -4294967295 2147483647\n");
+    result("begin var u:=MaxUInt64; Writeln(u+0,' ',u-1,' ',u div 2,' ',u mod 2); Writeln(u>18446744073709551614,' ',u=u,' ',uint64(0)*u); end.","18446744073709551615 18446744073709551614 9223372036854775807 1\nTrue True 0\n");
+    result("begin Writeln(Sqr(MaxWord),' ',Sqr(MaxLongWord),' ',Sqr(uint64(4294967295))); Writeln(Abs(MaxUInt64),' ',Sign(MaxUInt64),' ',Ord(MaxUInt64)); end.","4294836225 18446744065119617025 18446744065119617025\n18446744073709551615 1 18446744073709551615\n");
+    result("begin Writeln(Min(MaxUInt64,1),' ',Max(uint64(0),MaxUInt64,1),' ',Min(MaxLongWord,1),' ',Min(MaxLongWord,-1)); end.","1 18446744073709551615 1 -1\n");
+    result("begin Writeln(Pred(MaxUInt64),' ',Succ(uint64(0)),' ',Succ(longword(4294967294)),' ',Pred(MaxLongWord)); Writeln(+MaxUInt64,' ',-uint64(0)); end.","18446744073709551614 1 4294967295 4294967294\n18446744073709551615 0\n");
+    result("begin var u:=MaxUInt64; Dec(u); Inc(u,-1); Dec(u,-1); Writeln(u); u:=9223372036854775808; Inc(u,-9223372036854775808); Writeln(u); var w:longword:=2147483648; Inc(w,-2147483648); Writeln(w); end.","18446744073709551614\n0\n0\n");
+    result("begin var w:longword:=MaxByte; var u:uint64:=w; var n:int64:=w; var r:real:=MaxUInt64; Writeln(w,' ',u,' ',n,' ',r>1e19); Writeln(byte(uint64(255)),' ',integer(longword(123)),' ',int64(MaxInt),' ',integer(true),' ',Chr(uint64(65))); end.","255 255 255 True\n255 123 2147483647 1 A\n");
+    result("function Next(u:uint64):uint64; begin Result:=u+1; end; procedure Advance(var w:longword); begin Inc(w); end; begin var w:longword:=4294967294; Advance(w); Writeln(w,' ',Next(MaxInt64)); end.","4294967295 9223372036854775808\n");
+    result("type R=record u:uint64; w:longword; end; begin var r:R; r.u:=MaxUInt64; r.w:=MaxLongWord; var copy:=r; Dec(copy.u); Dec(copy.w); Writeln(r.u,' ',copy.u,' ',r.w,' ',copy.w); end.","18446744073709551615 18446744073709551614 4294967295 4294967294\n");
+    result("begin var a:=Arr(1,MaxUInt64); Writeln(a[0],' ',a[1]); var b:=Arr(-1,MaxLongWord); Writeln(b[0],' ',b[1]); var l:=new List<uint64>; l.Add(MaxUInt64); l.Add(0); Sort(l); Writeln(l[0],' ',l[1]); end.","1 18446744073709551615\n-1 4294967295\n0 18446744073709551615\n");
+    result("uses Collections; begin var s:=new Stack<uint64>; s.Push(MaxUInt64); Writeln(s.Pop); var m:=new AssocArray<uint64,longword>; Writeln(m[MaxUInt64]); m[MaxUInt64]:=MaxLongWord; Writeln(m[MaxUInt64]); end.","18446744073709551615\n0\n4294967295\n");
+    result("begin for var u:=MaxUInt64-1 to MaxUInt64 do Writeln(u); for var u:uint64:=0 downto 0 do Writeln(u); for var w:longword:=4294967294 to MaxLongWord do Writeln(w); end.","18446744073709551614\n18446744073709551615\n0\n4294967294\n4294967295\n");
+    result("begin for var u:=18446744073709551615 to 18446744073709551615 do Writeln(u); for var w:longword:=0 downto 0 do Writeln(w); foreach var u:uint64 in Arr(MaxWord,word(1)) do Writeln(u); end.","18446744073709551615\n0\n65535\n1\n");
+    result("begin var w:longword; var u:uint64; Readln(w); Readln(u); Writeln(w,' ',u); end.","4294967295 18446744073709551615\n","4294967295\n18446744073709551615\n");
+    result("begin Writeln(MaxByte,' ',MaxShortInt,' ',MaxSmallInt,' ',MaxWord,' ',PABCSystem.MaxLongWord,' ',PABCSystem.MaxUInt64); Writeln(Ord(END_OF_LINE_SYMBOL),' ',__IS_SYSTEM_MODULE,' ',Pos('№',AllDelimiters)>0); end.","255 127 32767 65535 4294967295 18446744073709551615\n10 True True\n");
+    result("function MaxByte:integer; begin Result:=7; end; begin Writeln(MaxByte,' ',PABCSystem.MaxByte); end.","7 255\n");
+    compile_error("function MaxUInt64(x:integer):integer; begin Result:=x; end; begin Writeln(MaxUInt64); end.","E_TYPE");
+    for (const auto* source:{"begin var u:uint64:=-1; end.","begin var w:longword:=4294967296; end.","begin var u:uint64:=18446744073709551616; end."}) compile_error(source,"E_RANGE");
+    for (const auto* source:{"begin var n:int64:=1; var u:uint64:=n; end.","begin var u:=MaxUInt64; var n:int64:=u; end.",
+        "begin var u:=MaxUInt64; var n:integer:=1; Writeln(u+n); end.","begin for var u:uint64:=0 to 1 do Inc(u); end.",
+        "procedure P(var n:int64); begin end; begin var u:uint64; P(u); end."}) compile_error(source,"E_TYPE");
+    for (const auto* source:{"begin Writeln(MaxUInt64+1); end.","begin Writeln(uint64(0)-1); end.",
+        "begin Writeln(MaxUInt64*2); end.","begin Writeln(Sqr(uint64(4294967296))); end.",
+        "begin Writeln(uint64(-1)); end.","begin Writeln(longword(-1)); end.","begin Writeln(longword(MaxUInt64)); end.",
+        "begin Writeln(byte(MaxUInt64)); end.","begin Writeln(int64(MaxUInt64)); end.","begin Writeln(integer(MaxLongWord)); end.",
+        "begin Writeln(-uint64(1)); end.","begin Writeln(Succ(MaxUInt64)); end.","begin Writeln(Pred(uint64(0))); end.",
+        "begin var u:=MaxUInt64; Inc(u); end.","begin var u:uint64; Dec(u); end.",
+        "begin var w:=MaxLongWord; Inc(w); end.","begin var w:longword; Dec(w); end."}) runtime_error(source,"E_OVERFLOW");
+    runtime_error("begin Writeln(MaxUInt64 div 0); end.","E_DIV_ZERO");
+    runtime_error("begin Writeln(MaxUInt64 mod 0); end.","E_DIV_ZERO");
+    runtime_error("begin var l:=new List<uint64>; l.Add(1); foreach var u in l do Inc(l[0]); end.","E_MODIFIED");
+    auto program=abc::compile("begin var u:=18446744073709551615; var w:=MaxLongWord; var sum:=w+w; var square:=Sqr(MaxWord); var least:=Min(u,1); end.");
+    require(program.locals[0].type==abc::Type::uint64 && program.locals[1].type==abc::Type::longword && program.locals[2].type==abc::Type::int64 && program.locals[3].type==abc::Type::uint64 && program.locals[4].type==abc::Type::uint64,"Unsigned literals, arithmetic, Sqr(word) and Min results have exact static types");
+    program=abc::compile("begin var u:=MaxUInt64; Writeln(u-1); end.");
+    for (auto& instruction:program.code) if (instruction.op==abc::Op::subtract) instruction.type=abc::Type::longword;
+    error([&]{abc::verify(program);},"E_BYTECODE");
+    program=abc::compile("begin var u:uint64; Inc(u); end.");
+    for (auto& instruction:program.code) if (instruction.op==abc::Op::increment) instruction.type=abc::Type::longword;
+    error([&]{abc::verify(program);},"E_BYTECODE");
+    program=abc::compile("begin var b:boolean; Inc(b); end.");
+    for (auto& instruction:program.code) if (instruction.op==abc::Op::increment) instruction.type=abc::Type::integer;
+    error([&]{abc::verify(program);},"E_BYTECODE");
+}
+
 void small_integers() {
+    result("begin Writeln(Succ(false),' ',Succ(true),' ',Pred(false),' ',Pred(true)); var b:boolean; Inc(b); Writeln(b); Inc(b); Writeln(b); Dec(b); Writeln(b); Dec(b); Writeln(b); end.","True False True False\nTrue\nFalse\nTrue\nFalse\n");
+    result("begin Writeln(false<true,' ',false<=false,' ',true>false,' ',true>=true); for var b:=false to true do Write(Ord(b)); Write(' '); for var b:=true downto false do Write(Ord(b)); Writeln; for var b:=true to false do Write('bad'); for var b:=false downto true do Write('bad'); end.","True True True True\n01 10\n");
+    result("begin for var b:=true to true do Writeln(b); for var b:=false downto false do Writeln(b); var count:=0; for var b:=false to true do begin Inc(count); if not b then continue; Write(b); end; Writeln(' ',count); end.","True\nFalse\nTrue 2\n");
+    result("type R=record b:boolean; end; procedure Flip(var b:boolean); begin Dec(b); end; begin var r:R; Flip(r.b); var a:=Arr(true,false); Inc(a[0]); Dec(a[1]); Writeln(r.b,' ',a[0],' ',a[1]); end.","True False True\n");
+    runtime_error("begin var l:=new List<boolean>; l.Add(true); foreach var b in l do Dec(l[0]); end.","E_MODIFIED");
+    compile_error("begin var b:boolean; Inc(b,1); end.","E_TYPE");
+    compile_error("begin var b:boolean; Dec(b,false); end.","E_TYPE");
+    compile_error("begin for var b:=false to true do Inc(b); end.","E_TYPE");
     result("begin var b:byte; var s:shortint; var n:smallint; Writeln(b,' ',s,' ',n); b:=255; s:=-128; n:=-32768; Writeln(b,' ',s,' ',n); end.","0 0 0\n255 -128 -32768\n");
     result("begin var b:=byte(255); var s:=shortint(-128); var n:=smallint(-32768); Writeln(b+1,' ',s-1,' ',n-1,' ',-b,' ',b div 2,' ',s mod 3); end.","256 -129 -32769 -255 127 -2\n");
     result("procedure P(var b:byte; var s:shortint; var n:smallint; var w:word); begin Inc(b); Inc(s); Inc(n); Inc(w); end; begin var b:=byte(1); var pb:=+b; var ps:=+shortint(-2); var pn:=+smallint(-3); var pw:=+word(4); P(pb,ps,pn,pw); Writeln(b,' ',pb,' ',ps,' ',pn,' ',pw); end.","1 2 -1 -2 5\n");
@@ -1382,7 +1443,7 @@ void small_integers() {
         "begin var b:=byte(1); Inc(b,2147483647); end."}) runtime_error(source,"E_OVERFLOW");
     runtime_error("begin Writeln(Abs(shortint(-128))); end.","E_OVERFLOW");
     runtime_error("begin Writeln(Abs(smallint(-32768))); end.","E_OVERFLOW");
-    compile_error("begin Writeln(Sqr(word(65535))); end.","E_UNSUPPORTED");
+    result("begin Writeln(Sqr(word(65535))); end.","4294836225\n");
     compile_error("uses FilesOperations; begin Writeln(FilesOperations.Sqr(word(1))); end.","E_NAME");
     runtime_error("begin var l:=new List<byte>; l.Add(1); foreach var b in l do Inc(l[0]); end.","E_MODIFIED");
     error([&]{(void)run("begin var b:byte; Readln(b); end.","256\n");},"E_INPUT");
@@ -1487,6 +1548,7 @@ int main() {
     foreach_loops();
     characters();
     small_integers();
+    unsigned_integers();
     arithmetic();
     verifier();
     bilingual_diagnostics();

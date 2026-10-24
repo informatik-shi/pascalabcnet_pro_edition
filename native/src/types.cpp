@@ -16,6 +16,8 @@ std::string_view type_name(Type type) {
     case Type::byte: return "byte";
     case Type::shortint: return "shortint";
     case Type::smallint: return "smallint";
+    case Type::longword: return "longword";
+    case Type::uint64: return "uint64";
     case Type::text_file: return "Text";
     case Type::unit: return "procedure";
     default: return compound(type) ? "compound type" : "<invalid>";
@@ -23,7 +25,7 @@ std::string_view type_name(Type type) {
 }
 
 std::optional<Type> find_type(std::string_view name) {
-    for (auto type : {Type::integer, Type::int64, Type::real, Type::boolean, Type::string, Type::character, Type::word, Type::byte, Type::shortint, Type::smallint})
+    for (auto type : {Type::integer, Type::int64, Type::real, Type::boolean, Type::string, Type::character, Type::word, Type::byte, Type::shortint, Type::smallint, Type::longword, Type::uint64})
         if (name == type_name(type)) return type;
     if (name == "double") return Type::real;
     if (name == "text" || name == "textfile") return Type::text_file;
@@ -31,11 +33,14 @@ std::optional<Type> find_type(std::string_view name) {
 }
 
 bool numeric(Type type) {
-    return type == Type::integer || type == Type::int64 || type == Type::real || small_integer(type);
+    return integer_type(type) || type == Type::real;
 }
 
 bool can_widen(Type from, Type to) {
     return from == to || (from == Type::character && to == Type::string)
+        || (wide_unsigned(from) && to==Type::real)
+        || (from==Type::longword && (to==Type::int64 || to==Type::uint64))
+        || ((from==Type::byte || from==Type::word) && wide_unsigned(to))
         || (small_integer(from) && (to == Type::integer || to == Type::int64 || to == Type::real))
         || (from==Type::byte && (to==Type::word || to==Type::smallint))
         || (from==Type::shortint && to==Type::smallint)
@@ -49,6 +54,8 @@ Type value_type(const Value& value) {
     if (std::holds_alternative<std::uint8_t>(value)) return Type::byte;
     if (std::holds_alternative<std::int8_t>(value)) return Type::shortint;
     if (std::holds_alternative<std::int16_t>(value)) return Type::smallint;
+    if (std::holds_alternative<std::uint32_t>(value)) return Type::longword;
+    if (std::holds_alternative<std::uint64_t>(value)) return Type::uint64;
     if (std::holds_alternative<std::shared_ptr<TextFile>>(value)) return Type::text_file;
     if (std::holds_alternative<NilString>(value)) return Type::string;
     if (const auto* aggregate = std::get_if<std::shared_ptr<Aggregate>>(&value)) return *aggregate ? (*aggregate)->type : Type::invalid;

@@ -27,6 +27,16 @@ std::span<const Signature> signatures() {
             add("max",{type,type},type,Function::maximum);
             if (type!=Type::word) add("sqr",{type},Type::integer,Function::sqr);
         }
+        add("sqr",{Type::word},Type::uint64,Function::sqr);
+        for (auto type:{Type::longword,Type::uint64}) {
+            add("abs",{type},type,Function::abs);
+            add("sqr",{type},Type::uint64,Function::sqr);
+            add("sign",{type},Type::integer,Function::sign);
+            for (std::size_t count=2;count<=4;++count) {
+                add("min",std::vector<Type>(count,type),type,Function::minimum);
+                add("max",std::vector<Type>(count,type),type,Function::maximum);
+            }
+        }
         for (auto type : {Type::integer, Type::int64, Type::real}) {
             add("abs", {type}, type, Function::abs);
             add("sqr", {type}, type == Type::integer ? Type::int64 : type, Function::sqr);
@@ -63,15 +73,19 @@ std::span<const Signature> signatures() {
         for (auto name:{"chr","chrunicode","char"}) {
             add(name,{Type::word},Type::character,Function::character);
             add(name,{Type::integer},Type::character,Function::character);
+            add(name,{Type::int64},Type::character,Function::character);
+            add(name,{Type::longword},Type::character,Function::character);
+            add(name,{Type::uint64},Type::character,Function::character);
         }
         add("char",{Type::character},Type::character,Function::character);
         for (auto name:{"ord","ordunicode"}) add(name,{Type::character},Type::word,Function::ordinal);
-        for (auto type:{Type::integer,Type::int64,Type::word,Type::byte,Type::shortint,Type::smallint}) add("ord",{type},type,Function::ordinal);
+        for (auto type:{Type::integer,Type::int64,Type::word,Type::byte,Type::shortint,Type::smallint,Type::longword,Type::uint64}) add("ord",{type},type,Function::ordinal);
         add("ord",{Type::boolean},Type::integer,Function::ordinal);
-        for (auto target:{Type::word,Type::byte,Type::shortint,Type::smallint})
-            for (auto source:{Type::integer,Type::int64,Type::word,Type::character,Type::byte,Type::shortint,Type::smallint})
+        for (auto target:{Type::word,Type::byte,Type::shortint,Type::smallint,Type::integer,Type::int64,Type::longword,Type::uint64})
+            for (auto source:{Type::integer,Type::int64,Type::word,Type::character,Type::byte,Type::shortint,Type::smallint,Type::longword,Type::uint64})
                 add(type_name(target),{source},target,Function::integer_cast);
-        for (auto type:{Type::integer,Type::int64,Type::word,Type::character,Type::boolean,Type::byte,Type::shortint,Type::smallint}) {
+        add("integer",{Type::boolean},Type::integer,Function::integer_cast);
+        for (auto type:{Type::integer,Type::int64,Type::word,Type::character,Type::boolean,Type::byte,Type::shortint,Type::smallint,Type::longword,Type::uint64}) {
             add("succ",{type},type,Function::successor);
             add("pred",{type},type,Function::predecessor);
         }
@@ -147,6 +161,22 @@ std::span<const Signature> signatures() {
 }
 
 std::optional<Value> constant(std::string_view name) {
+    if (name=="maxbyte") return std::numeric_limits<std::uint8_t>::max();
+    if (name=="maxshortint") return std::numeric_limits<std::int8_t>::max();
+    if (name=="maxsmallint") return std::numeric_limits<std::int16_t>::max();
+    if (name=="maxword") return std::numeric_limits<std::uint16_t>::max();
+    if (name=="maxlongword") return std::numeric_limits<std::uint32_t>::max();
+    if (name=="maxuint64") return std::numeric_limits<std::uint64_t>::max();
+    if (name=="__is_system_module") return true;
+    if (name=="end_of_line_symbol") return char16_t{10};
+    if (name=="alldelimiters") return std::u16string(u" <>=^`|~$№§!\"#%&'()*,+-./:;?@[\\]_{}«­·»\t\n\r");
+    if (name=="newline") return std::u16string(
+#ifdef _WIN32
+        u"\r\n"
+#else
+        u"\n"
+#endif
+    );
     if (name == "pi") return std::numbers::pi;
     if (name == "e") return std::numbers::e;
     if (name == "maxint") return std::numeric_limits<std::int32_t>::max();
@@ -210,13 +240,18 @@ Value invoke(std::size_t id, std::span<const Value> arguments, SourceLocation lo
         if (const auto* flag=std::get_if<bool>(&value)) return std::int32_t(*flag);
         return value;
     }
-    if (function==Function::integer_cast) return checked_small_integer(signature.result,integral_number(value,location),location);
+    if (function==Function::integer_cast) {
+        if (wide_unsigned(signature.result)) return checked_unsigned_integer(signature.result,value,location);
+        if (signature.result==Type::integer || signature.result==Type::int64) return checked_signed_integer(signature.result,value,location);
+        return checked_small_integer(signature.result,integral_number(value,location,type_name(signature.result)),location);
+    }
     if (function==Function::character) {
-        const auto number=integral_number(value,location);
+        const auto number=integral_number(value,location,"char");
         if (number<0 || number>65535) throw runtime_error(RuntimeError::number_range,location,"char");
         return static_cast<char16_t>(number);
     }
     if (function==Function::successor || function==Function::predecessor) {
+        if (const auto* flag=std::get_if<bool>(&value)) return !*flag;
         return std::visit([&](const auto& v)->Value {
             using T=std::decay_t<decltype(v)>;
             if constexpr (std::is_integral_v<T>) {
@@ -284,6 +319,7 @@ Value invoke(std::size_t id, std::span<const Value> arguments, SourceLocation lo
         return result;
     }
     if (function == Function::sign) {
+        if (wide_unsigned(value_type(value))) return std::int32_t(unsigned_number(value,location)>0);
         if (small_integer(value_type(value))) { const auto n=integral_number(value,location); return std::int32_t((n>0)-(n<0)); }
         if (const auto* n = std::get_if<std::int32_t>(&value)) return std::int32_t((*n > 0) - (*n < 0));
         if (const auto* n = std::get_if<std::int64_t>(&value)) return std::int32_t((*n > 0) - (*n < 0));
@@ -291,6 +327,12 @@ Value invoke(std::size_t id, std::span<const Value> arguments, SourceLocation lo
         return std::int32_t((n > 0) - (n < 0));
     }
     if (function == Function::abs || function == Function::sqr) {
+        if (function==Function::sqr && signature.result==Type::uint64) {
+            const auto n=unsigned_number(value,location);
+            if (n && n>UINT64_MAX/n) throw runtime_error(RuntimeError::integer_overflow,location);
+            return n*n;
+        }
+        if (wide_unsigned(value_type(value))) return value;
         if (small_integer(value_type(value))) {
             const auto n=integral_number(value,location);
             if (function==Function::sqr) return static_cast<std::int32_t>(n*n);

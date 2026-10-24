@@ -53,6 +53,24 @@ template<class T> T integer_operation(T a, T b, const Instruction& instruction) 
     }
 }
 
+std::uint64_t unsigned_operation(std::uint64_t a, std::uint64_t b, const Instruction& instruction) {
+    switch (instruction.op) {
+    case Op::add:
+        if (a>UINT64_MAX-b) trap(instruction,RuntimeError::integer_overflow);
+        return a+b;
+    case Op::subtract:
+        if (a<b) trap(instruction,RuntimeError::integer_overflow);
+        return a-b;
+    case Op::multiply:
+        if (b && a>UINT64_MAX/b) trap(instruction,RuntimeError::integer_overflow);
+        return a*b;
+    case Op::divide_int: case Op::modulo:
+        if (!b) trap(instruction,RuntimeError::division_zero);
+        return instruction.op==Op::modulo ? a%b : a/b;
+    default: trap(instruction,RuntimeError::invalid_bytecode);
+    }
+}
+
 std::string format(const Value& value, const Instruction& instruction) {
     if (std::holds_alternative<NilString>(value)) return "nil";
     if (const auto* text = std::get_if<std::u16string>(&value)) return to_utf8(*text, true);
@@ -66,6 +84,8 @@ std::string format(const Value& value, const Instruction& instruction) {
     else if (const auto* byte_value = std::get_if<std::uint8_t>(&value)) result = std::to_chars(buffer, buffer + sizeof buffer, *byte_value);
     else if (const auto* short_value = std::get_if<std::int8_t>(&value)) result = std::to_chars(buffer, buffer + sizeof buffer, *short_value);
     else if (const auto* small_value = std::get_if<std::int16_t>(&value)) result = std::to_chars(buffer, buffer + sizeof buffer, *small_value);
+    else if (const auto* unsigned32 = std::get_if<std::uint32_t>(&value)) result = std::to_chars(buffer, buffer + sizeof buffer, *unsigned32);
+    else if (const auto* unsigned64 = std::get_if<std::uint64_t>(&value)) result = std::to_chars(buffer, buffer + sizeof buffer, *unsigned64);
     else result = std::to_chars(buffer, buffer + sizeof buffer, std::get<double>(value));
     if (result.ec != std::errc{}) trap(instruction, RuntimeError::number_format);
     return {buffer, result.ptr};
@@ -144,6 +164,8 @@ Value read_line(std::istream& input, const Instruction& instruction) {
     case Type::byte: return parse.operator()<std::uint8_t>();
     case Type::shortint: return parse.operator()<std::int8_t>();
     case Type::smallint: return parse.operator()<std::int16_t>();
+    case Type::longword: return parse.operator()<std::uint32_t>();
+    case Type::uint64: return parse.operator()<std::uint64_t>();
     case Type::int64: return parse.operator()<std::int64_t>();
     case Type::real: return parse.operator()<double>();
     default: trap(instruction, RuntimeError::invalid_bytecode);
@@ -424,9 +446,13 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
             text_write(text_file(stack.back(),instruction.location),file_newline,instruction.location); break;
         case Op::file_skip_line: text_skip_line(text_file(stack.back(),instruction.location),instruction.location); break;
         case Op::increment: {
+            if (instruction.type==Type::boolean) {
+                const auto target=std::get<std::shared_ptr<Cell>>(pop()); values.write(target,!std::get<bool>(target->value)); break;
+            }
             const auto step=pop(); auto target=std::get<std::shared_ptr<Cell>>(pop()); auto operation=instruction;
             operation.op=instruction.operand ? Op::subtract : Op::add;
-            if (instruction.type==Type::integer) values.write(target,integer_operation(std::get<std::int32_t>(target->value),std::get<std::int32_t>(step),operation));
+            if (wide_unsigned(instruction.type)) values.write(target,shifted_unsigned(instruction.type,target->value,integral_number(step,instruction.location),instruction.operand!=0,instruction.location));
+            else if (instruction.type==Type::integer) values.write(target,integer_operation(std::get<std::int32_t>(target->value),std::get<std::int32_t>(step),operation));
             else if (instruction.type==Type::int64) values.write(target,integer_operation(std::get<std::int64_t>(target->value),std::get<std::int64_t>(step),operation));
             else {
                 const auto old=integral_number(target->value,instruction.location);
@@ -612,6 +638,11 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
             const auto value = pop();
             if (value_type(value) == instruction.type) stack.push_back(value);
             else if (instruction.type==Type::string) stack.emplace_back(std::u16string(1,std::get<char16_t>(value)));
+            else if (wide_unsigned(instruction.type)) stack.push_back(checked_unsigned_integer(instruction.type,value,instruction.location));
+            else if (wide_unsigned(value_type(value))) {
+                if (instruction.type==Type::real) stack.emplace_back(static_cast<double>(unsigned_number(value,instruction.location)));
+                else stack.push_back(checked_signed_integer(instruction.type,value,instruction.location));
+            }
             else if (small_integer(value_type(value))) {
                 const auto n=integral_number(value,instruction.location);
                 if (instruction.type==Type::integer) stack.emplace_back(std::int32_t(n));
@@ -637,6 +668,10 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
                 const auto n = std::get<std::int64_t>(value);
                 if (n == std::numeric_limits<std::int64_t>::min()) trap(instruction, RuntimeError::integer_overflow);
                 stack.emplace_back(-n);
+            } else if (instruction.type==Type::uint64) {
+                const auto n=std::get<std::uint64_t>(value);
+                if (n) trap(instruction,RuntimeError::integer_overflow);
+                stack.emplace_back(std::uint64_t{0});
             } else stack.emplace_back(-std::get<double>(value));
             break;
         }
@@ -648,6 +683,8 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
                 std::get<std::int32_t>(left), std::get<std::int32_t>(right), instruction));
             else if (instruction.type == Type::int64) stack.emplace_back(integer_operation(
                 std::get<std::int64_t>(left), std::get<std::int64_t>(right), instruction));
+            else if (instruction.type==Type::uint64) stack.emplace_back(unsigned_operation(
+                std::get<std::uint64_t>(left),std::get<std::uint64_t>(right),instruction));
             else if (instruction.type == Type::string) {
                 constexpr std::size_t string_limit = 1'048'576;
                 auto a = string_text(left);

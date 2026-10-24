@@ -206,7 +206,8 @@ private:
             reference(*node.target); emit(Op::read_value,node.target->type,0,node.location);
             emit(Op::store_ref,node.target->type,0,node.location); break;
         case hir::StmtKind::increment:
-            reference(*node.target); expression(*node.expression); emit(Op::increment,node.target->type,node.newline ? 1 : 0,node.location); break;
+            reference(*node.target); if (node.expression) expression(*node.expression);
+            emit(Op::increment,node.target->type,node.newline ? 1 : 0,node.location); break;
         case hir::StmtKind::conditional: {
             expression(*node.expression);
             const auto branch = emit(Op::jump_false, Type::invalid, 0, node.location);
@@ -276,8 +277,9 @@ private:
             // Stop at the bound before incrementing, including MaxInt/MinInt64.
             compare(node.newline ? Op::greater : Op::less);
             const auto done=emit(Op::jump_false,Type::invalid,0,node.location);
-            if (type==Type::character || small_integer(type)) {
-                reference(*node.target); constant(std::int32_t{1},node.location);
+            if (type==Type::character || type==Type::boolean || small_integer(type) || wide_unsigned(type)) {
+                reference(*node.target);
+                if (type!=Type::boolean) constant(increment_step_type(type)==Type::int64 ? Value{std::int64_t{1}} : Value{std::int32_t{1}},node.location);
                 emit(Op::increment,type,node.newline ? 1 : 0,node.location);
             } else {
                 local(Op::load,control,node.location);
@@ -366,7 +368,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         case Op::file_output:
             if (type!=Type::text_file || instruction.operand/4>16) invalid(instruction,"Invalid Text output method"); break;
         case Op::increment:
-            if ((type!=Type::integer && type!=Type::int64 && type!=Type::character && !small_integer(type)) || instruction.operand>1) invalid(instruction,"Invalid increment"); break;
+            if (!ordinal(type) || instruction.operand>1) invalid(instruction,"Invalid increment"); break;
         case Op::mutate_string:
             if (type!=Type::string || instruction.operand>=stdlib::signatures().size()) invalid(instruction,"Invalid string mutation");
             {
@@ -427,29 +429,29 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if (!numeric(type) && type!=Type::string) invalid(instruction,"Invalid conversion target");
             break;
         case Op::negate:
-            if (!numeric(type) || small_integer(type)) invalid(instruction, "Invalid numeric type");
+            if (!numeric(type) || small_integer(type) || type==Type::longword) invalid(instruction, "Invalid numeric type");
             break;
         case Op::logical_not:
             if (type != Type::boolean) invalid(instruction, "Invalid logical type");
             break;
         case Op::add:
-            if ((!numeric(type) && type != Type::string) || small_integer(type)) invalid(instruction, "Invalid addition type");
+            if ((!numeric(type) && type != Type::string) || small_integer(type) || type==Type::longword) invalid(instruction, "Invalid addition type");
             break;
         case Op::subtract: case Op::multiply:
-            if (!numeric(type) || small_integer(type)) invalid(instruction, "Invalid arithmetic type");
+            if (!numeric(type) || small_integer(type) || type==Type::longword) invalid(instruction, "Invalid arithmetic type");
             break;
         case Op::divide_real:
             if (type != Type::real) invalid(instruction, "Real division requires real");
             break;
         case Op::divide_int: case Op::modulo:
-            if (type != Type::integer && type != Type::int64) invalid(instruction, "Integer division requires integer");
+            if (type != Type::integer && type != Type::int64 && type!=Type::uint64) invalid(instruction, "Integer division requires integer");
             break;
         case Op::equal: case Op::not_equal:
             if (!valid_value_type(program,type) || type==Type::text_file) invalid(instruction,"Invalid equality type"); break;
         case Op::print:
             if (!valid_type(type)) invalid(instruction, "Invalid value type"); break;
         case Op::less: case Op::less_equal: case Op::greater: case Op::greater_equal:
-            if (!numeric(type) && type != Type::string && type!=Type::character) invalid(instruction, "Invalid ordered comparison");
+            if (!numeric(type) && type != Type::string && type!=Type::character && type!=Type::boolean) invalid(instruction, "Invalid ordered comparison");
             break;
         case Op::newline: break;
         case Op::halt: if (routine) invalid(instruction,"Routine cannot halt module"); break;
@@ -534,7 +536,9 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
                 if (!scalar(pop())) invalid(instruction,"Text output requires scalar arguments");
             require(Type::text_file); break;
         case Op::set_character: require(Type::character); require(Type::integer); require(reference_type(Type::string)); break;
-        case Op::increment: require(instruction.type==Type::int64 ? Type::int64 : Type::integer); require(reference_type(instruction.type)); break;
+        case Op::increment:
+            if (instruction.type!=Type::boolean) require(increment_step_type(instruction.type));
+            require(reference_type(instruction.type)); break;
         case Op::mutate_string: {
             const auto& signature=stdlib::signatures()[instruction.operand];
             const std::size_t ref=signature.function==stdlib::Function::insert_string ? 1 : 0;
