@@ -125,7 +125,7 @@ void nullable_strings() {
     result("uses Collections; begin var q:=new Queue<string>; q.Enqueue(nil); writeln('[',q.ToString,'] ',q.Top=nil); var s:=new SimpleSet<string>; s.Add(nil); s.Add(''); s.Add(nil); writeln(s.Contains(nil),' ',s.Contains('')); s.Remove(nil); writeln(s.Contains(nil),' ',s.Contains('')); end.","[ ] True\nTrue True\nFalse True\n");
     result("begin var a:=Arr(nil,'b','','a'); Sort(a); writeln('[',a[0],'] [',a[1],'] ',a[2],' ',a[3]); SortDescending(a); writeln(a[0],' ',a[1],' [',a[2],'] [',a[3],']'); end.","[nil] [] a b\nb a [] [nil]\n");
     result("begin var l:=new List<string>; l.Add(nil); writeln(l.Contains(nil),' ',l.Contains('')); l.Add(''); writeln(l.Contains('')); end.","True False\nTrue\n");
-    result("function F(s:string):string; begin Result:=s; end; procedure P(var s:string); begin s:=nil; end; begin var s:='x'; P(s); writeln(F(s)=nil); var a:=Arr('x'); P(a[0]); writeln(a[0]=nil); end.","True\nTrue\n");
+    result("function F(s:string):string; begin Result:=s; end; procedure P(var s:string); begin s:=nil; end; begin var s:string:='x'; P(s); writeln(F(s)=nil); var a:=new string[1]; a[0]:='x'; P(a[0]); writeln(a[0]=nil); end.","True\nTrue\n");
     for (auto source : {"begin writeln(Trim(nil)); end.", "begin writeln(TrimLeft(nil)); end.",
          "begin writeln(TrimRight(nil)); end.", "begin writeln(ReverseString(nil)); end.",
          "begin writeln(ReverseString(nil,1,0)); end.", "begin writeln(StrToInt(nil)); end.",
@@ -266,7 +266,7 @@ void foreach_loops() {
         "var x:integer; procedure P; begin foreach x in Arr(1) do Write(x); end; begin P; end."}) compile_error(source,"E_TYPE");
     compile_error("begin foreach x in Arr(1) do Write(x); end.","E_NAME");
     compile_error("begin foreach var x in Arr(1) do Write(x); Writeln(x); end.","E_NAME");
-    for (const auto* source:{"begin foreach var x in 1 do Write(x); end.","begin foreach var x in 'abc' do Write(x); end.",
+    for (const auto* source:{"begin foreach var x in 1 do Write(x); end.",
         "begin foreach var x in nil do Write(x); end.",
         "uses Collections; begin foreach var x in new Stack<integer> do Write(x); end.",
         "uses Collections; begin foreach var x in new DynArray<integer> do Write(x); end.",
@@ -329,7 +329,7 @@ void arithmetic() {
     options = {};
     options.output_limit = 2;
     error([&] { (void)run("begin writeln('abc'); end.", "", options); }, "E_LIMIT");
-    runtime_error("begin var s := 'a'; var n := 0; while n < 30 do begin s := s + s; n := n + 1; end; end.", "E_LIMIT");
+    runtime_error("begin var s:string := 'a'; var n := 0; while n < 30 do begin s := s + s; n := n + 1; end; end.", "E_LIMIT");
 }
 
 void standard_library() {
@@ -402,7 +402,7 @@ void standard_library() {
     runtime_error("begin writeln(Round(1.2,-1)); end.", "E_RANGE");
     runtime_error("begin writeln(Pos('a','abc',0)); end.", "E_RANGE");
     runtime_error("begin writeln(LastPos('a','abc',0)); end.", "E_RANGE");
-    runtime_error("begin var s := 'a'; var n := 0; while n < 21 do begin s := Concat(s,s); Inc(n); end; end.", "E_LIMIT");
+    runtime_error("begin var s:string := 'a'; var n := 0; while n < 21 do begin s := Concat(s,s); Inc(n); end; end.", "E_LIMIT");
     try { (void)run("begin\n  Writeln(Sqrt(-1));\nend."); require(false, "Expected domain error"); }
     catch (const abc::Error& caught) {
         require(caught.location.line == 2 && caught.russian == "Аргумент находится вне области определения функции",
@@ -483,10 +483,10 @@ void mutable_strings() {
     result("begin var s := '🌍'; Insert('x',s,2); writeln(Length(s),' ',s); end.", "3 �x�\n");
     result("begin var s := '🌍'; Delete(s,1,1); writeln(Length(s),' ',s); end.", "1 �\n");
     result("begin var s := 'outer'; begin var s := 'inner'; SetLength(s,2); writeln(s); end; writeln(s); end.", "in\nouter\n");
-    result("begin var s := 'x'; if true then SetLength(s,3) else Delete(s,1,1); writeln('[',s,']'); end.", "[x  ]\n");
+    result("begin var s:string := 'x'; if true then SetLength(s,3) else Delete(s,1,1); writeln('[',s,']'); end.", "[x  ]\n");
     result("begin var s := ''; var i := 0; while i<3 do begin Insert(IntToStr(i),s,2147483647); Inc(i); end; writeln(s); end.", "012\n");
     result("begin var s := 'abc'; SetLength(s,Length(s)+2); Insert(Copy(s,1,1),s,2); Delete(s,Length(s),1); writeln('[',s,']'); end.", "[aabc ]\n");
-    result("begin var s := 'x'; SetLength(s,1048576); writeln(Length(s)); Delete(s,1,1048576); writeln(Length(s)); end.", "1048576\n0\n");
+    result("begin var s:string := 'x'; SetLength(s,1048576); writeln(Length(s)); Delete(s,1,1048576); writeln(Length(s)); end.", "1048576\n0\n");
     compile_error("begin SetLength('abc',2); end.", "E_TYPE");
     compile_error("begin var s := 'abc'; SetLength(Trim(s),2); end.", "E_TYPE");
     compile_error("begin var n := 1; SetLength(n,2); end.", "E_TYPE");
@@ -743,7 +743,7 @@ void file_extensions() {
     result("begin writeln(ChangeFileNameExtension('dir.ext/file','.txt'),' ',ChangeFileNameExtension('dir.ext/file',nil)); end.","dir.ext/file.txt dir.ext/file\n");
     result("begin writeln(ChangeFileNameExtension('Каталог/Документ.старое','новое'),' ',ChangeFileNameExtension('nil','.txt')); end.","Каталог/Документ.новое nil.txt\n");
     result("begin writeln(ChangeFileNameExtension(nil,nil)=nil,' ',ChangeFileNameExtension('','')=''); end.","True True\n");
-    runtime_error("begin var s:='x'; var i:=0; while i<20 do begin s:=s+s; Inc(i); end; Writeln(ChangeFileNameExtension(s,'.txt')); end.","E_LIMIT");
+    runtime_error("begin var s:string:='x'; var i:=0; while i<20 do begin s:=s+s; Inc(i); end; Writeln(ChangeFileNameExtension(s,'.txt')); end.","E_LIMIT");
     auto program=abc::compile("begin Writeln(GetDir); end.");
     for (auto& instruction:program.code) if (instruction.op==abc::Op::call_builtin) { instruction.type=abc::Type::integer; break; }
     error([&] { abc::verify(program); },"E_BYTECODE");
@@ -768,6 +768,10 @@ void text_files() {
         return result+"'";
     };
     const auto file=quote(directory/"text.txt"), other=quote(directory/"other.txt");
+    result("begin var f:=OpenWrite("+file+"); f.Write(' ',#13,#10,'Я','🌍'); f.Close; f.Reset; Writeln(Ord(ReadChar(f)),' ',Ord(f.ReadChar),' ',Ord(f.ReadChar),' ',f.ReadChar); Writeln(Ord(f.ReadChar),' ',Ord(f.ReadChar),' ',Ord(f.ReadChar),' ',f.Eof); f.Close; end.","32 13 10 Я\n55356 57101 65535 True\n");
+    result("begin var f:=OpenWrite("+file+"); f.Writeln('ax'); f.Writeln('by'); f.Close; f.Reset; Writeln(ReadlnChar(f),' ',f.ReadlnChar,' ',f.Eof); f.Close; end.","a b True\n");
+    result("begin var f:=OpenWrite("+file+"); f.Write('Яx 65535'); f.Close; f.Reset; var c:char; var w:word; Read(f,c); Writeln(c); Read(f,c); Read(f,w); Writeln(c,' ',w); f.Close; end.","Я\nx 65535\n");
+    result("begin var f:=OpenWrite("+file+"); f.Write(#55356,#57101); f.Close; Writeln(ReadAllText("+file+")); end.","🌍\n");
     result("begin var f:Text; Assign(f,"+file+"); Rewrite(f); Writeln(f,12,' ',34,' tail'); Close(f); Reset(f); var a,b:integer; var s:string; Read(f,a,b); Read(f,s); Writeln(a,' ',b,' [',s,'] ',Eoln(f),' ',Eof(f)); Readln(f,s); Writeln('[',s,'] ',Eof(f)); Readln(f,s); Writeln('[',s,']'); Close(f); end.","12 34 [ tail] True False\n[] True\n[]\n");
     result("procedure Add(f:Text); begin Writeln(f,'добавлено 🌍'); end; begin var f:=OpenAppend("+file+"); var alias:=f; Add(alias); Close(alias); var g:=OpenRead("+file+"); Readln(g); Writeln(ReadString(g)); Close(g); end.","добавлено 🌍\n");
     result("begin var f:=new TextFile; Rewrite(f,"+file+"); Write(f,'abc'); Rewrite(f); Write(f,'X'); Close(f); Writeln(ReadAllText("+file+")); Rewrite(f); Write(f,'abcdef'); Flush(f); Rewrite(f); Write(f,'XY'); Close(f); Writeln(ReadAllText("+file+")); end.","abcX\nXYcdef\n");
@@ -807,8 +811,8 @@ void text_files() {
     { std::ofstream out(path,std::ios::binary); out << std::string(1'048'577,'x'); }
     runtime_error("begin var f:=OpenRead("+file+"); end.","E_LIMIT");
     runtime_error("begin var f:=OpenAppend("+file+"); end.","E_LIMIT");
-    runtime_error("begin var f:=OpenWrite("+file+"); var s:='x'; var i:=0; while i<20 do begin s:=s+s; Inc(i); end; Write(f,s); Writeln(f); end.","E_LIMIT");
-    result("begin var f:=OpenWrite("+file+"); var s:='a'; var i:=0; while i<11 do begin s:=s+s; Inc(i); end; Write(f,s); Flush(f); Close(f); Writeln(Length(ReadAllText("+file+"))); end.","2048\n");
+    runtime_error("begin var f:=OpenWrite("+file+"); var s:string:='x'; var i:=0; while i<20 do begin s:=s+s; Inc(i); end; Write(f,s); Writeln(f); end.","E_LIMIT");
+    result("begin var f:=OpenWrite("+file+"); var s:string:='a'; var i:=0; while i<11 do begin s:=s+s; Inc(i); end; Write(f,s); Flush(f); Close(f); Writeln(Length(ReadAllText("+file+"))); end.","2048\n");
     result("begin var f:=OpenWrite("+file+"); Write(f,Copy('🌍',1,1)); Write(f,Copy('🌍',2,1)); Close(f); Writeln(ReadAllText("+file+")); end.","🌍\n");
     runtime_error("begin var files:=new List<Text>; var i:=0; while i<65 do begin files.Add(OpenRead("+file+")); Inc(i); end; end.","E_LIMIT");
     result("begin var files:=new List<Text>; var i:=0; while i<200 do begin var f:=OpenRead("+file+"); Close(f); files.Add(f); Inc(i); end; Writeln(files.Count); end.","200\n");
@@ -847,7 +851,7 @@ void text_files() {
         "begin var f:Text; f.Reset('x'); end.","begin var f:Text; f.Name:='bad'; end.",
         "begin var f:Text; Writeln(f.FullName(1)); end.","begin var f:Text; f.ReadWord(1); end.",
         "begin var f:Text; f.Eof:=true; end."}) compile_error(source,"E_TYPE");
-    for (const auto* method:{"Lines","ReadChar","ReadInt64","Missing"})
+    for (const auto* method:{"Lines","ReadInt64","Missing"})
         compile_error(std::string("begin var f:Text; f.")+method+"; end.","E_NAME");
     runtime_error("begin var f:Text; Writeln(f.Name); end.","E_NIL");
     runtime_error("begin var f:Text; Writeln(f.FullName); end.","E_NIL");
@@ -858,7 +862,7 @@ void text_files() {
     runtime_error("begin var f:Text; f.Writeln; end.","E_IO");
     runtime_error("uses Collections; begin var m:=new AssocArray<string,Text>; m['missing'].Close; end.","E_NIL");
     runtime_error("uses Collections; begin var m:=new AssocArray<string,Text>; m['missing'].Write; end.","E_NIL");
-    runtime_error("begin var f:=OpenWrite("+file+"); var s:='x'; var i:=0; while i<20 do begin s:=s+s; Inc(i); end; f.Print(s); end.","E_LIMIT");
+    runtime_error("begin var f:=OpenWrite("+file+"); var s:string:='x'; var i:=0; while i<20 do begin s:=s+s; Inc(i); end; f.Print(s); end.","E_LIMIT");
     result("begin var f:=OpenWrite("+other+"); f.Write('preserved'); f.Close; end.","");
     compile_error("begin var f:=OpenWrite("+other+"); f.Writeln('must not run'); f.ReadInteger(1); end.","E_TYPE");
     result("begin Writeln(ReadAllText("+other+")); end.","preserved\n");
@@ -1295,12 +1299,92 @@ void verifier() {
     abc::execute(program, in, out);
     require(out.str() == "42", "Verifier and runtime agree on identity conversion");
 }
+void characters() {
+    result("begin var c:char; var w:word; Writeln(Ord(c),' ',w); c:='Я'; w:=Ord(c); Writeln(c,' ',w,' ',w+1); end.","0 0\nЯ 1071 1072\n");
+    result("begin var c:='A'; Writeln(Ord(c),' ',Succ(c),' ',Pred(c),' ',Chr(90),' ',ChrUnicode(1071)); end.","65 B @ Z Я\n");
+    result("begin Writeln(OrdUnicode(#55296),' ',Ord(#65535),' ',Ord(True),' ',Ord(False),' ',Ord(2147483648)); end.","55296 65535 1 0 2147483648\n");
+    result("begin Writeln(#65+'B',' ',#0=#0,' ',#10<#13,' ',#65535>#0); Writeln('a'+'b',' ','a'+'bc',' ','ab'+'c',' ',nil+'x',' ','x'+nil); end.","AB True True True\nab abc abc x x\n");
+    result("begin var w:word:=65535; Writeln(w,' ',Ord(w),' ',Pred(w),' ',word(12),' ',char(w)); end.","65535 65535 65534 12 ￿\n");
+    result("begin var w:word:=65; var a:integer:=w; var b:int64:=w; var r:real:=w; Writeln(a,' ',b,' ',r,' ',Chr(w),' ',word('Я')); Writeln(-w,' ',w div 2,' ',Abs(w)); end.","65 65 65 A 1071\n-65 32 65\n");
+    result("begin var c:='a'; Inc(c); Inc(c,2); Dec(c); Dec(c,-1); Writeln(c); Inc(c,-2); Writeln(c); var w:word:=4; Dec(w,3); Inc(w,2); Writeln(w); end.","d\nb\n3\n");
+    result("function F(c:char):char; begin Result:=Succ(c); end; procedure P(var c:char); begin Inc(c); end; begin var c:='Я'; P(c); Writeln(F(c)); end.","б\n");
+    result("type Pair=record c:char; w:word; end; begin var a:=new Pair[1]; a[0].c:='X'; a[0].w:=Ord('Y'); var b:=a[0]; Inc(b.c); Inc(b.w); Writeln(a[0].c,' ',a[0].w,' ',b.c,' ',b.w); end.","X 89 Y 90\n");
+    result("uses Collections; begin var s:=new Stack<char>; s.Push('A'); s.Push('Я'); Writeln(s.ToString); Writeln(s.Pop,' ',s.Top); var m:=new AssocArray<char,word>; Writeln(m['x']); m['x']:=Ord('Z'); Writeln(m['x']); end.","Я A \nЯ A\n0\n90\n");
+    result("begin var a:=Arr('z','a','Я'); Sort(a); Writeln(a[0],a[1],a[2]); var l:=new List<char>; l.Add('b'); l.Add('a'); Sort(l); Writeln(l.Contains('b'),' ',l[0]); end.","azЯ\nTrue a\n");
+    result("begin var s:string:='Яx'; Writeln(s[1],' ',Ord(s[2])); var copy:=s; s[1]:='A'; Writeln(s,' ',copy); end.","Я 120\nAx Яx\n");
+    result("type R=record s:string; end; begin var r:R; r.s:='ab'; r.s[2]:='Я'; var a:=new string[1]; a[0]:=r.s; a[0][1]:='X'; Writeln(r.s,' ',a[0]); end.","aЯ XЯ\n");
+    result("begin var l:=new List<string>; l.Add('ab'); l[0][1]:='X'; Writeln(l[0]); end.","Xb\n");
+    result("begin var s:='abcd'; var i:=0; foreach var c in s do begin Inc(i); s:='new'; if c='b' then continue; Write(c); if i=3 then break; end; Writeln(' ',s); end.","ac new\n");
+    result("var calls:integer; function F:string; begin Inc(calls); Result:='аб'; end; begin foreach var c in F() do Write(c); Writeln(' ',calls); end.","аб 1\n");
+    result("begin foreach var c:string in 'аб' do Writeln(c+'!'); foreach var c in '🌍' do Writeln(Ord(c)); end.","а!\nб!\n55356\n57101\n");
+    result("begin var s:string; foreach var c in s do Write('bad'); var c:char; foreach c in 'ab' do Write(c); Writeln(c); end.","abb\n");
+    result("begin for var c:='a' to 'c' do Write(c); Write(' '); for var c:='в' downto 'а' do Write(c); Writeln; for var c:=#65535 to #65535 do Writeln(Ord(c)); for var c:=#0 downto #0 do Writeln(Ord(c)); end.","abc вба\n65535\n0\n");
+    result("begin for var w:word:=65534 to 65535 do Writeln(w); for var w:word:=0 downto 0 do Writeln(w); end.","65534\n65535\n0\n");
+    result("begin var c:char; Readln(c); Writeln(c); var w:word; Readln(w); Writeln(w); end."," \n65535\n"," word\n65535\n");
+    for (const auto* source:{"begin var c:char:=12; end.","begin var c:char:='ab'; end.",
+        "begin var c:='a'; c:='ab'; end.","begin var c:char; c:=nil; end.",
+        "begin var c:='a'; Writeln(c div 2); end.","begin var s:='ab'; s[1]:='XY'; end.",
+        "begin var s:='ab'; s[1]:=65; end.","begin foreach var c in 'ab' do c:='x'; end.",
+        "begin for var c:='a' to 'b' do Inc(c); end.","begin foreach var s in Arr('ab') do s[1]:='x'; end.",
+        "procedure P(var c:char); begin end; begin var s:='ab'; P(s[1]); end."}) compile_error(source,"E_TYPE");
+    for (const auto* source:{"begin Writeln(#65536); end.","begin Writeln(#99999999999999999999999); end.",
+        "begin var w:word:=65536; end."}) compile_error(source,"E_RANGE");
+    compile_error("begin Writeln(#); end.","E_SYNTAX");
+    for (const auto* source:{"begin Writeln(Chr(-1)); end.","begin Writeln(Chr(65536)); end.","begin Writeln(word(65536)); end."}) runtime_error(source,"E_OVERFLOW");
+    for (const auto* source:{"begin Writeln(Succ(#65535)); end.","begin Writeln(Pred(#0)); end.",
+        "begin var c:=#65535; Inc(c); end.","begin var c:=#0; Dec(c); end.",
+        "begin var c:='a'; Inc(c,2147483647); end.","begin var w:word; Dec(w); end.",
+        "begin var w:word:=65535; Inc(w); end.","begin Writeln(Succ(word(65535))); end."}) runtime_error(source,"E_OVERFLOW");
+    for (const auto* source:{"begin var s:='ab'; Writeln(s[0]); end.","begin var s:='ab'; s[3]:='X'; end.",
+        "begin var s:='ab'; Writeln(s[-2147483648]); end."}) runtime_error(source,"E_BOUNDS");
+    runtime_error("begin var s:string:=nil; Writeln(s[1]); end.","E_NIL");
+    runtime_error("begin var s:string:=nil; s[1]:='X'; end.","E_NIL");
+    runtime_error("begin var s:string:=nil; foreach var c in s do Write(c); end.","E_NIL");
+    runtime_error("begin var l:=new List<string>; l.Add('ab'); foreach var s in l do l[0][1]:='X'; end.","E_MODIFIED");
+    auto program=abc::compile("begin var c:='x'; var w:=Ord(c); end.");
+    require(program.locals[0].type==abc::Type::character && program.locals[1].type==abc::Type::word,"Character and Ord result types are statically known");
+    program=abc::compile("begin var s:='ab'; s[1]:='X'; end.");
+    for (auto& instruction:program.code) if (instruction.op==abc::Op::set_character) instruction.type=abc::Type::integer;
+    error([&]{abc::verify(program);},"E_BYTECODE");
+    program=abc::compile("begin Writeln('ab'[1]); end.");
+    for (auto& instruction:program.code) if (instruction.op==abc::Op::get_index) instruction.operand=2;
+    error([&]{abc::verify(program);},"E_BYTECODE");
+    try { (void)run("begin\nvar c:=#65535;\nInc(c);\nend."); require(false,"Expected character overflow"); }
+    catch (const abc::Error& caught) { require(caught.code=="E_OVERFLOW" && caught.location.line==3 && !caught.russian.empty(),"Character overflow retains source location and both languages"); }
+    result("begin Writeln('A'#66'Я'); Writeln(('a'#0'b').Length,' ',Ord(('a'#0'b')[2])); Writeln(#55356#57101); end.","ABЯ\n3 0\n🌍\n");
+    result("begin var s:=#65''; s:='abc'; Writeln(s.Length,' ',''.Length,' ',('a'+'b').Length); end.","3 0 2\n");
+    result("begin Writeln(StringOfChar('Я',3),' ',StringOfChar(#0,2).Length); Writeln('ab'*3,' ',3*'Я',' ',('ab'*0).Length,' ',('a'*(-1)).Length); end.","ЯЯЯ 2\nababab ЯЯЯ 0 0\n");
+    result("begin var s:string:=nil; Writeln((s*2147483647).Length,' ',(''*2147483647).Length,' ',('a'*(-2147483648)).Length); end.","0 0 0\n");
+    result("var calls:string; function S:string; begin calls:=calls+'S'; Result:='x'; end; function N:integer; begin calls:=calls+'N'; Result:=2; end; begin Writeln(S()*N(),' ',calls); calls:=''; Writeln(N()*S(),' ',calls); end.","xx SN\nxx NS\n");
+    result("begin Writeln('7'.ToDigit,' ','0'.ToDigit(),' ',ToDigit('9')); end.","7 0 9\n");
+    result("begin var n:word:=3; Writeln('a'*n,' ',n*'b'); end.","aaa bbb\n");
+    runtime_error("begin Writeln(StringOfChar('X',-1)); end.","E_RANGE");
+    runtime_error("begin Writeln(StringOfChar('X',1048577)); end.","E_LIMIT");
+    runtime_error("begin Writeln('ab'*2147483647); end.","E_LIMIT");
+    runtime_error("begin Writeln(2147483647*'X'); end.","E_LIMIT");
+    runtime_error("begin var s:string:=nil; Writeln(s.Length); end.","E_NIL");
+    runtime_error("begin Writeln('Я'.ToDigit); end.","E_FORMAT");
+    runtime_error("begin Writeln('١'.ToDigit); end.","E_FORMAT");
+    compile_error("begin Writeln(StringOfChar('ab',2)); end.","E_TYPE");
+    compile_error("begin Writeln('a'*2.0); end.","E_TYPE");
+    compile_error("begin Writeln('7'.ToDigit(1)); end.","E_TYPE");
+    compile_error("begin Writeln('abc'.Length()); end.","E_TYPE");
+    program=abc::compile("begin var text:='abc'; foreach var c in text do Write(c); end.");
+    for (auto& instruction:program.code) if (instruction.op==abc::Op::iteration_check) instruction.type=abc::Type::character;
+    error([&]{abc::verify(program);},"E_BYTECODE");
+    program=abc::compile("begin var text:='abc'; text[1]:='X'; end.");
+    for (auto& instruction:program.code) if (instruction.op==abc::Op::set_character) instruction.operand=1;
+    error([&]{abc::verify(program);},"E_BYTECODE");
+    abc::ExecutionOptions limits; limits.instruction_limit=30;
+    error([&]{(void)run("begin foreach var c in StringOfChar('a',100) do continue; end.","",limits);},"E_LIMIT");
+}
 } // namespace
 
 int main() {
     language();
     structured_loops();
     foreach_loops();
+    characters();
     arithmetic();
     verifier();
     bilingual_diagnostics();

@@ -11,6 +11,8 @@ std::string_view type_name(Type type) {
     case Type::real: return "real";
     case Type::boolean: return "boolean";
     case Type::string: return "string";
+    case Type::character: return "char";
+    case Type::word: return "word";
     case Type::text_file: return "Text";
     case Type::unit: return "procedure";
     default: return compound(type) ? "compound type" : "<invalid>";
@@ -18,7 +20,7 @@ std::string_view type_name(Type type) {
 }
 
 std::optional<Type> find_type(std::string_view name) {
-    for (auto type : {Type::integer, Type::int64, Type::real, Type::boolean, Type::string})
+    for (auto type : {Type::integer, Type::int64, Type::real, Type::boolean, Type::string, Type::character, Type::word})
         if (name == type_name(type)) return type;
     if (name == "double") return Type::real;
     if (name == "text" || name == "textfile") return Type::text_file;
@@ -26,15 +28,19 @@ std::optional<Type> find_type(std::string_view name) {
 }
 
 bool numeric(Type type) {
-    return type == Type::integer || type == Type::int64 || type == Type::real;
+    return type == Type::integer || type == Type::int64 || type == Type::real || type == Type::word;
 }
 
 bool can_widen(Type from, Type to) {
-    return from == to || (from == Type::nil && to == Type::string) || (from == Type::integer && to == Type::int64)
+    return from == to || (from == Type::character && to == Type::string)
+        || (from == Type::word && (to == Type::integer || to == Type::int64 || to == Type::real))
+        || (from == Type::nil && to == Type::string) || (from == Type::integer && to == Type::int64)
         || ((from == Type::integer || from == Type::int64) && to == Type::real);
 }
 
 Type value_type(const Value& value) {
+    if (std::holds_alternative<char16_t>(value)) return Type::character;
+    if (std::holds_alternative<std::uint16_t>(value)) return Type::word;
     if (std::holds_alternative<std::shared_ptr<TextFile>>(value)) return Type::text_file;
     if (std::holds_alternative<NilString>(value)) return Type::string;
     if (const auto* aggregate = std::get_if<std::shared_ptr<Aggregate>>(&value)) return *aggregate ? (*aggregate)->type : Type::invalid;

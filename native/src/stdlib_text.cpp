@@ -140,6 +140,31 @@ std::u16string format_number(const Value& value, SourceLocation location) {
 
 std::optional<Value> invoke_text(Function function, std::span<const Value> arguments, SourceLocation location) {
     switch (function) {
+    case Function::string_length:
+        if (std::holds_alternative<NilString>(arguments[0])) throw runtime_error(RuntimeError::nil_reference,location);
+        return static_cast<std::int32_t>(string_text(arguments[0]).size());
+    case Function::to_digit: {
+        const auto ch=std::get<char16_t>(arguments[0]);
+        if (ch<u'0' || ch>u'9') throw runtime_error(RuntimeError::character_digit,location);
+        return std::int32_t(ch-u'0');
+    }
+    case Function::string_of_char: {
+        const auto length=std::get<std::int32_t>(arguments[1]);
+        if (length<0) throw runtime_error(RuntimeError::string_length,location);
+        if (length>1'048'576) throw runtime_error(RuntimeError::string_limit,location);
+        return std::u16string(static_cast<std::size_t>(length),std::get<char16_t>(arguments[0]));
+    }
+    case Function::repeat_string: {
+        const bool reversed=value_type(arguments[0])==Type::integer;
+        const auto& text=string_text(arguments[reversed ? 1 : 0]);
+        const auto count=std::get<std::int32_t>(arguments[reversed ? 0 : 1]);
+        if (count<=0 || text.empty()) return std::u16string{};
+        if (text.size()>1'048'576 || static_cast<std::size_t>(count)>1'048'576/text.size())
+            throw runtime_error(RuntimeError::string_limit,location);
+        std::u16string result; result.reserve(text.size()*static_cast<std::size_t>(count));
+        for (std::int32_t i=0;i<count;++i) result+=text;
+        return result;
+    }
     case Function::resize_string: {
         const auto& original = string_text(arguments[0]);
         const auto length = std::get<std::int32_t>(arguments[1]);

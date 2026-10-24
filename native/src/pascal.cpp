@@ -13,7 +13,7 @@
 namespace abc {
 namespace {
 
-enum class TokenKind { name, number, text, symbol, eof };
+enum class TokenKind { name, number, text, character_code, symbol, eof };
 struct Token {
     TokenKind kind;
     std::string text;
@@ -55,6 +55,12 @@ public:
                 while (digit(peek())) number += take();
             }
             return {TokenKind::number, std::move(number), start};
+        }
+        if (peek() == '#') {
+            take(); std::string number;
+            while (digit(peek())) number += take();
+            if (number.empty()) throw Error("E_SYNTAX",start,"Expected a character code after #");
+            return {TokenKind::character_code,std::move(number),start};
         }
         if (peek() == '\'') {
             take();
@@ -120,7 +126,7 @@ private:
     SourceLocation position_;
 };
 
-enum class SyntaxExprKind { literal, name, unary, binary, call, index, field, member_call, construction };
+enum class SyntaxExprKind { literal, literal_group, name, unary, binary, call, index, field, member_call, construction };
 struct SyntaxType {
     Token token;
     std::string kind;
@@ -438,9 +444,20 @@ private:
             }
             return make_expression(SyntaxExprKind::unary, op, prefix());
         }
-        if (accept("(")) { auto result = expression(); expect(")"); return result; }
-        if (current_.kind == TokenKind::number || current_.kind == TokenKind::text || is("true") || is("false") || is("nil"))
-            return make_expression(SyntaxExprKind::literal, consume());
+        if (accept("(")) { auto result = expression(); expect(")"); return postfix(std::move(result)); }
+        if (current_.kind==TokenKind::text || current_.kind==TokenKind::character_code) {
+            auto result=make_expression(SyntaxExprKind::literal,consume());
+            if (current_.kind==TokenKind::text || current_.kind==TokenKind::character_code) {
+                auto group=make_expression(SyntaxExprKind::literal_group,result->token);
+                group->arguments.push_back(std::move(result));
+                do { group->arguments.push_back(make_expression(SyntaxExprKind::literal,consume())); }
+                while (current_.kind==TokenKind::text || current_.kind==TokenKind::character_code);
+                result=std::move(group);
+            }
+            return postfix(std::move(result));
+        }
+        if (current_.kind == TokenKind::number || is("true") || is("false") || is("nil"))
+            return postfix(make_expression(SyntaxExprKind::literal, consume()));
         if (accept("new")) {
             const auto token = current_; auto type = type_syntax();
             auto result = make_expression(SyntaxExprKind::construction, token); result->constructed = type;
@@ -489,7 +506,16 @@ private:
 };
 
 Value literal(const Token& token) {
-    if (token.kind == TokenKind::text) return from_utf8(token.text);
+    if (token.kind == TokenKind::text) {
+        auto text=from_utf8(token.text);
+        return text.size()==1 ? Value{text.front()} : Value{std::move(text)};
+    }
+    if (token.kind == TokenKind::character_code) {
+        std::uint32_t code=0;
+        const auto parsed=std::from_chars(token.text.data(),token.text.data()+token.text.size(),code);
+        if (parsed.ec!=std::errc{} || code>65535) throw Error("E_RANGE",token.location,"Character code must be in 0..65535");
+        return static_cast<char16_t>(code);
+    }
     if (token.text == "true" || token.text == "false") return token.text == "true";
     if (token.text.find_first_of(".eE") != std::string::npos) {
         double value = 0;
@@ -623,6 +649,7 @@ private:
         throw Error("E_UNSUPPORTED",syntax.token.location,"Unknown or unsupported type '"+syntax.kind+"'");
     }
     bool lvalue(const hir::Expr& expression) const {
+        if (expression.kind==hir::ExprKind::index && expression.left->type==Type::string) return false;
         if (expression.kind==hir::ExprKind::index && expression.left->kind==hir::ExprKind::local
             && for_controls_.contains(expression.left->local) && compound(expression.left->type)
             && indexed_sequence(info(expression.left->type,expression.location).kind)) return true;
@@ -640,6 +667,11 @@ private:
         throw Error("E_NAME", token.location, "Unknown name '" + token.text + "'");
     }
     std::unique_ptr<hir::Expr> convert(std::unique_ptr<hir::Expr> expression, Type type) {
+        if (type==Type::word && expression->type==Type::integer && expression->kind==hir::ExprKind::literal) {
+            const auto value=std::get<std::int32_t>(expression->value);
+            if (value<0 || value>65535) throw Error("E_RANGE",expression->location,"Word constant must be in 0..65535");
+            expression->type=type; expression->value=static_cast<std::uint16_t>(value); return expression;
+        }
         if (expression->type == Type::nil && type == Type::string) {
             expression->type=type; expression->kind=hir::ExprKind::literal; expression->value=NilString{}; return expression;
         }
@@ -699,6 +731,10 @@ private:
             }
             if (!result->left) result->left = expression(*source.left);
             const auto receiver_type = result->left->type;
+            if (receiver_type==Type::string) {
+                result->right=convert(expression(*source.right),Type::integer);
+                result->type=Type::character; result->kind=hir::ExprKind::index; break;
+            }
             const auto kind = info(receiver_type,result->location).kind;
             if (kind == CompoundKind::association) {
                 const auto key = info(receiver_type,result->location).key, element = info(receiver_type,result->location).element;
@@ -719,6 +755,17 @@ private:
         case SyntaxExprKind::field:
         case SyntaxExprKind::member_call: {
             result->left = expression(*source.left); const auto receiver = result->left->type;
+            if ((receiver==Type::string && source.token.text=="length") || (receiver==Type::character && source.token.text=="todigit")) {
+                if (!source.arguments.empty() || (receiver==Type::string && source.kind==SyntaxExprKind::member_call))
+                    throw Error("E_TYPE",result->location,"Wrong scalar member arguments");
+                const auto name=receiver==Type::string ? "$string_length" : "todigit";
+                const auto catalog=stdlib::signatures();
+                const auto found=std::find_if(catalog.begin(),catalog.end(),[&](const auto& signature){return signature.name==name;});
+                if (found==catalog.end()) throw Error("E_HIR",result->location,"Missing scalar member signature");
+                result->kind=hir::ExprKind::call; result->type=found->result;
+                result->local=static_cast<std::size_t>(found-catalog.begin());
+                result->arguments.push_back(std::move(result->left)); break;
+            }
             if (receiver==Type::text_file) {
                 const auto& name=source.token.text;
                 if (name=="write" || name=="writeln" || name=="print" || name=="println") {
@@ -732,8 +779,8 @@ private:
                     }
                     break;
                 }
-                static const std::set<std::string> methods={"readinteger","readreal","readstring","readboolean","readword",
-                    "readlninteger","readlnreal","readlnstring","readlnboolean","readln","reset","rewrite","append",
+                static const std::set<std::string> methods={"readinteger","readreal","readstring","readboolean","readword","readchar",
+                    "readlninteger","readlnreal","readlnstring","readlnboolean","readlnchar","readln","reset","rewrite","append",
                     "eof","eoln","seekeof","seekeoln","close","flush","name","fullname","readtoend","erase","rename"};
                 if (!methods.contains(name)) throw Error("E_NAME",result->location,"Text member is not ported: '"+name+"'");
                 const auto count=name=="rename" ? 1U : 0U;
@@ -872,6 +919,15 @@ private:
             }
             throw Error("E_NAME",result->location,"Unknown record field '"+source.token.text+"'");
         }
+        case SyntaxExprKind::literal_group: {
+            std::u16string text;
+            for (const auto& part:source.arguments) {
+                auto value=literal(part->token);
+                if (const auto* ch=std::get_if<char16_t>(&value)) text+=*ch;
+                else text+=std::get<std::u16string>(value);
+            }
+            result->kind=hir::ExprKind::literal; result->type=Type::string; result->value=std::move(text); break;
+        }
         case SyntaxExprKind::literal:
             if (source.token.kind==TokenKind::name && source.token.text=="nil") { result->kind=hir::ExprKind::null_literal; result->type=Type::nil; break; }
             result->kind = hir::ExprKind::literal;
@@ -925,7 +981,7 @@ private:
                 for (const auto& argument : result->arguments) if (argument->type != Type::nil) { element=argument->type; break; }
                 if (element == Type::unit || element == Type::nil) throw Error("E_TYPE",result->location,"Procedure has no value");
                 for (const auto& argument : result->arguments) {
-                    if (argument->type == Type::nil && (element == Type::string || compound(element))) continue;
+                    if (argument->type == Type::nil) continue;
                     if (can_widen(element,argument->type)) element = argument->type;
                     else if (!can_widen(argument->type,element)) throw Error("E_TYPE",result->location,"Incompatible array elements");
                 }
@@ -1012,6 +1068,7 @@ private:
         case SyntaxExprKind::unary:
             result->kind = hir::ExprKind::unary;
             result->left = expression(*source.left);
+            if (result->left->type==Type::word) result->left=convert(std::move(result->left),Type::integer);
             result->type = result->left->type;
             if (source.token.text == "not" ? result->type != Type::boolean : !numeric(result->type))
                 throw Error("E_TYPE", source.token.location, "Invalid operand for '" + source.token.text + "'");
@@ -1030,9 +1087,25 @@ private:
                 break;
             }
             const bool comparison = op == "=" || op == "<>" || op == "<" || op == "<=" || op == ">" || op == ">=";
-            if ((op == "+" || comparison) && (left == Type::string || right == Type::string)) {
+            if (op=="*" && (((left==Type::string || left==Type::character) && (right==Type::integer || right==Type::word))
+                || ((right==Type::string || right==Type::character) && (left==Type::integer || left==Type::word)))) {
+                const auto left_type=left==Type::integer || left==Type::word ? Type::integer : Type::string;
+                const auto right_type=left_type==Type::integer ? Type::string : Type::integer;
+                result->arguments.push_back(convert(std::move(result->left),left_type));
+                result->arguments.push_back(convert(std::move(result->right),right_type));
+                const auto catalog=stdlib::signatures();
+                const auto found=std::find_if(catalog.begin(),catalog.end(),[&](const auto& signature) {
+                    return signature.name=="$repeat" && signature.parameters[0]==left_type;
+                });
+                if (found==catalog.end()) throw Error("E_HIR",result->location,"Missing string repetition signature");
+                result->kind=hir::ExprKind::call; result->type=Type::string;
+                result->local=static_cast<std::size_t>(found-catalog.begin()); break;
+            }
+            if ((op == "+" || comparison) && (left == Type::string || right == Type::string || (op=="+" && (left==Type::character || right==Type::character)))) {
                 if (left == Type::nil) { result->left=convert(std::move(result->left),Type::string); left=Type::string; }
                 if (right == Type::nil) { result->right=convert(std::move(result->right),Type::string); right=Type::string; }
+                if (left==Type::character) { result->left=convert(std::move(result->left),Type::string); left=Type::string; }
+                if (right==Type::character) { result->right=convert(std::move(result->right),Type::string); right=Type::string; }
             }
             if ((op=="=" || op=="<>") && (compound(left) || compound(right))) {
                 if (left==Type::nil) { result->left=convert(std::move(result->left),right); left=right; }
@@ -1049,6 +1122,8 @@ private:
                 result->type = comparison ? Type::boolean : common;
             } else if (left == Type::string && right == Type::string && (op == "+" || comparison)) {
                 result->type = comparison ? Type::boolean : Type::string;
+            } else if (left==Type::character && right==Type::character && comparison) {
+                result->type=Type::boolean;
             } else if (left == Type::boolean && right == Type::boolean && (op == "=" || op == "<>")) {
                 result->type = Type::boolean;
             } else throw Error("E_TYPE", result->location, "Incompatible operands for '" + op + "': "
@@ -1132,19 +1207,24 @@ private:
             if (lookup(source.names.front())) throw Error("E_TYPE",result.location,"Variable is not callable");
             result.kind=hir::StmtKind::increment; result.target=expression(*source.target);
             const auto type=result.target->type;
-            if (!lvalue(*result.target) || (type!=Type::integer && type!=Type::int64)) throw Error("E_TYPE",result.location,"Inc/Dec requires an integer variable");
+            if (!lvalue(*result.target) || (type!=Type::integer && type!=Type::int64 && type!=Type::character && type!=Type::word)) throw Error("E_TYPE",result.location,"Inc/Dec requires an ordinal variable");
             result.newline=source.names.front().text=="dec";
-            if (source.expression) result.expression=convert(expression(*source.expression),type);
+            const auto step_type=type==Type::int64 ? type : Type::integer;
+            if (source.expression) result.expression=convert(expression(*source.expression),step_type);
             else {
                 result.expression=std::make_unique<hir::Expr>(); result.expression->kind=hir::ExprKind::literal;
-                result.expression->type=type; result.expression->location=result.location;
-                result.expression->value=type==Type::integer ? Value(std::int32_t{1}) : Value(std::int64_t{1});
+                result.expression->type=step_type; result.expression->location=result.location;
+                result.expression->value=step_type==Type::integer ? Value(std::int32_t{1}) : Value(std::int64_t{1});
             }
             break;
         }
         case SyntaxStmtKind::assignment:
             result.kind = hir::StmtKind::assign;
             result.target = expression(*source.target);
+            if (result.target->kind==hir::ExprKind::index && result.target->left->type==Type::string) {
+                if (!lvalue(*result.target->left)) throw Error("E_TYPE",result.location,"String character assignment requires a writable string");
+                result.expression=convert(expression(*source.expression),Type::character); break;
+            }
             if (result.target->kind == hir::ExprKind::linked_call && result.target->local == static_cast<std::size_t>(LinkedMethod::next)
                 && info(result.target->left->type,result.location).kind == CompoundKind::single_node) {
                 auto setter = std::move(result.target);
@@ -1186,9 +1266,9 @@ private:
         case SyntaxStmtKind::foreach_loop: {
             result.kind=hir::StmtKind::foreach_loop; result.expression=expression(*source.expression);
             const auto sequence=result.expression->type;
-            if (!compound(sequence) || !indexed_sequence(info(sequence,result.location).kind))
-                throw Error("E_UNSUPPORTED",result.location,"Foreach currently requires an array or List<T>");
-            const auto element=info(sequence,result.location).element;
+            if (sequence!=Type::string && (!compound(sequence) || !indexed_sequence(info(sequence,result.location).kind)))
+                throw Error("E_UNSUPPORTED",result.location,"Foreach requires a string, array or List<T>");
+            const auto element=sequence==Type::string ? Type::character : info(sequence,result.location).element;
             scopes_.emplace_back(); const auto& name=source.names.front();
             std::size_t control;
             if (source.declares_control) {
@@ -1230,7 +1310,7 @@ private:
                 if (in_routine_ && current_result_!=Type::unit && module_.locals[control].name=="result") throw Error("E_UNSUPPORTED",name.location,"Function Result as for control is not supported");
             }
             const auto type=module_.locals[control].type;
-            if (type!=Type::integer && type!=Type::int64) throw Error("E_TYPE",name.location,"For control must be integer or int64");
+            if (type!=Type::integer && type!=Type::int64 && type!=Type::character && type!=Type::word) throw Error("E_TYPE",name.location,"For control must be an ordinal type");
             initial=convert(std::move(initial),type);
             auto finish=convert(expression(*source.arguments[0]),type);
             const auto bound=module_.locals.size(); module_.locals.push_back({"$for_bound_"+std::to_string(bound),type,!in_routine_});

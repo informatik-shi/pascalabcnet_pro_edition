@@ -157,7 +157,11 @@ private:
             jumps.push_back(emit(Op::jump,Type::invalid,0,node.location)); break;
         }
         case hir::StmtKind::assign:
-            if (node.target) { reference(*node.target); expression(*node.expression); emit(Op::store_ref,node.target->type,0,node.location); }
+            if (node.target && node.target->kind==hir::ExprKind::index && node.target->left->type==Type::string) {
+                reference(*node.target->left); expression(*node.target->right); expression(*node.expression);
+                emit(Op::set_character,Type::string,0,node.location);
+            }
+            else if (node.target) { reference(*node.target); expression(*node.expression); emit(Op::store_ref,node.target->type,0,node.location); }
             else { expression(*node.expression); local(Op::store,node.local,node.location); }
             break;
         case hir::StmtKind::string_mutation: {
@@ -234,7 +238,7 @@ private:
         }
         case hir::StmtKind::foreach_loop: {
             const auto sequence=node.expression->type;
-            const auto element=type_info(program_,sequence).element;
+            const auto element=sequence==Type::string ? Type::character : type_info(program_,sequence).element;
             expression(*node.expression); local(Op::store,node.sequence_local,node.location);
             local(Op::load,node.sequence_local,node.location); emit(Op::iteration_version,sequence,0,node.location);
             local(Op::store,node.version_local,node.location);
@@ -246,7 +250,7 @@ private:
             emit(Op::length,sequence,0,node.location); emit(Op::less,Type::integer,0,node.location);
             const auto done=emit(Op::jump_false,Type::invalid,0,node.location);
             local(Op::load,node.sequence_local,node.location); local(Op::load,node.index_local,node.location);
-            emit(Op::get_index,sequence,0,node.location);
+            emit(Op::get_index,sequence,sequence==Type::string ? 1 : 0,node.location);
             if (element!=node.target->type) emit(Op::convert,node.target->type,0,node.location);
             local(Op::store,node.target->local,node.location);
             loops_.emplace_back(); statement(*node.body);
@@ -272,9 +276,14 @@ private:
             // Stop at the bound before incrementing, including MaxInt/MinInt64.
             compare(node.newline ? Op::greater : Op::less);
             const auto done=emit(Op::jump_false,Type::invalid,0,node.location);
-            local(Op::load,control,node.location);
-            constant(type==Type::integer ? Value{std::int32_t{1}} : Value{std::int64_t{1}},node.location);
-            emit(node.newline ? Op::subtract : Op::add,type,0,node.location); local(Op::store,control,node.location);
+            if (type==Type::character || type==Type::word) {
+                reference(*node.target); constant(std::int32_t{1},node.location);
+                emit(Op::increment,type,node.newline ? 1 : 0,node.location);
+            } else {
+                local(Op::load,control,node.location);
+                constant(type==Type::integer ? Value{std::int32_t{1}} : Value{std::int64_t{1}},node.location);
+                emit(node.newline ? Op::subtract : Op::add,type,0,node.location); local(Op::store,control,node.location);
+            }
             emit(Op::jump,Type::invalid,start,node.location);
             (*code_)[empty].operand=(*code_)[done].operand=code_->size();
             finish_loop(advance);
@@ -298,7 +307,7 @@ private:
     throw Error("E_BYTECODE", instruction.location, std::move(message));
 }
 
-bool valid_type(Type type) { return numeric(type) || type == Type::boolean || type == Type::string; }
+bool valid_type(Type type) { return scalar(type); }
 
 } // namespace
 
@@ -318,8 +327,10 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
     for (const auto& instruction : code) {
         const auto type = instruction.type;
         switch (instruction.op) {
+        case Op::set_character:
+            if (type!=Type::string || instruction.operand) invalid(instruction,"Invalid string character assignment"); break;
         case Op::iteration_version: case Op::iteration_check:
-            if (!compound(type) || !indexed_sequence(type_info(program,type).kind) || instruction.operand)
+            if ((type!=Type::string && (!compound(type) || !indexed_sequence(type_info(program,type).kind))) || instruction.operand)
                 invalid(instruction,"Invalid foreach sequence instruction");
             break;
         case Op::linked_call:
@@ -355,7 +366,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         case Op::file_output:
             if (type!=Type::text_file || instruction.operand/4>16) invalid(instruction,"Invalid Text output method"); break;
         case Op::increment:
-            if ((type!=Type::integer && type!=Type::int64) || instruction.operand>1) invalid(instruction,"Invalid increment"); break;
+            if ((type!=Type::integer && type!=Type::int64 && type!=Type::character && type!=Type::word) || instruction.operand>1) invalid(instruction,"Invalid increment"); break;
         case Op::mutate_string:
             if (type!=Type::string || instruction.operand>=stdlib::signatures().size()) invalid(instruction,"Invalid string mutation");
             {
@@ -382,6 +393,10 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         case Op::array_new: case Op::array_literal: case Op::resize_array:
             if (!compound(type) || type_info(program,type).kind != CompoundKind::array || instruction.operand > 4096) invalid(instruction,"Invalid array instruction"); break;
         case Op::get_index: case Op::ref_index: case Op::length:
+            if (type==Type::string) {
+                if (instruction.op==Op::ref_index || instruction.operand>(instruction.op==Op::get_index ? 1U : 0U)) invalid(instruction,"Invalid string sequence instruction");
+                break;
+            }
             if (!compound(type) || !indexed_sequence(type_info(program,type).kind)) invalid(instruction,"Invalid sequence instruction"); break;
         case Op::get_field: case Op::ref_field:
             if (!compound(type) || type_info(program,type).kind != CompoundKind::record || instruction.operand >= type_info(program,type).fields.size()) invalid(instruction,"Invalid record access"); break;
@@ -408,17 +423,20 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         case Op::jump: case Op::jump_false:
             if (instruction.operand >= code.size()) invalid(instruction, "Invalid branch target");
             break;
-        case Op::convert: case Op::negate:
-            if (!numeric(type)) invalid(instruction, "Invalid numeric type");
+        case Op::convert:
+            if (!numeric(type) && type!=Type::string) invalid(instruction,"Invalid conversion target");
+            break;
+        case Op::negate:
+            if (!numeric(type) || type==Type::word) invalid(instruction, "Invalid numeric type");
             break;
         case Op::logical_not:
             if (type != Type::boolean) invalid(instruction, "Invalid logical type");
             break;
         case Op::add:
-            if (!numeric(type) && type != Type::string) invalid(instruction, "Invalid addition type");
+            if ((!numeric(type) && type != Type::string) || type==Type::word) invalid(instruction, "Invalid addition type");
             break;
         case Op::subtract: case Op::multiply:
-            if (!numeric(type)) invalid(instruction, "Invalid arithmetic type");
+            if (!numeric(type) || type==Type::word) invalid(instruction, "Invalid arithmetic type");
             break;
         case Op::divide_real:
             if (type != Type::real) invalid(instruction, "Real division requires real");
@@ -431,7 +449,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         case Op::print:
             if (!valid_type(type)) invalid(instruction, "Invalid value type"); break;
         case Op::less: case Op::less_equal: case Op::greater: case Op::greater_equal:
-            if (!numeric(type) && type != Type::string) invalid(instruction, "Invalid ordered comparison");
+            if (!numeric(type) && type != Type::string && type!=Type::character) invalid(instruction, "Invalid ordered comparison");
             break;
         case Op::newline: break;
         case Op::halt: if (routine) invalid(instruction,"Routine cannot halt module"); break;
@@ -515,7 +533,8 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             for (std::size_t n=0;n<instruction.operand/4;++n)
                 if (!scalar(pop())) invalid(instruction,"Text output requires scalar arguments");
             require(Type::text_file); break;
-        case Op::increment: require(instruction.type); require(reference_type(instruction.type)); break;
+        case Op::set_character: require(Type::character); require(Type::integer); require(reference_type(Type::string)); break;
+        case Op::increment: require(instruction.type==Type::int64 ? Type::int64 : Type::integer); require(reference_type(instruction.type)); break;
         case Op::mutate_string: {
             const auto& signature=stdlib::signatures()[instruction.operand];
             const std::size_t ref=signature.function==stdlib::Function::insert_string ? 1 : 0;
@@ -542,6 +561,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         case Op::resize_array: require(Type::integer); require(reference_type(instruction.type)); break;
         case Op::get_index: case Op::ref_index:
             require(Type::integer); require(instruction.type);
+            if (instruction.type==Type::string) { stack.push_back(Type::character); break; }
             stack.push_back(instruction.op == Op::get_index ? type_info(program,instruction.type).element : reference_type(type_info(program,instruction.type).element)); break;
         case Op::get_field: case Op::ref_field:
             require(instruction.op == Op::get_field ? instruction.type : reference_type(instruction.type));

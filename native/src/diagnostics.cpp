@@ -4,6 +4,8 @@ namespace abc {
 Error runtime_error(RuntimeError id, SourceLocation location, std::string_view context) {
     const char *code, *english, *russian;
     switch (id) {
+    case RuntimeError::character_digit:
+        code = "E_FORMAT"; english = "Character is not a decimal digit from 0 to 9"; russian = "Символ не является десятичной цифрой от 0 до 9"; break;
     case RuntimeError::integer_overflow:
         code = "E_OVERFLOW"; english = "Integer overflow"; russian = "Переполнение целого числа"; break;
     case RuntimeError::collection_changed:
@@ -65,7 +67,7 @@ Error runtime_error(RuntimeError id, SourceLocation location, std::string_view c
     case RuntimeError::allocation_limit:
         code = "E_LIMIT"; english = "Aggregate allocation limit exceeded"; russian = "Превышен предел выделения памяти для значений"; break;
     case RuntimeError::index_bounds:
-        code = "E_BOUNDS"; english = "Index is outside sequence bounds"; russian = "Индекс находится за границами массива или списка"; break;
+        code = "E_BOUNDS"; english = "Index is outside sequence bounds"; russian = "Индекс находится за границами строки, массива или списка"; break;
     case RuntimeError::array_length:
         code = "E_RANGE"; english = "Array length must not be negative"; russian = "Длина массива не должна быть отрицательной"; break;
     case RuntimeError::call_limit:

@@ -13,7 +13,7 @@ enum class Function {
     int_to_str, str_to_int, str_to_int64, str_to_real, float_to_str,
     resize_string, insert_string, delete_string, read_all_text, write_all_text, file_exists,
     get_dir, change_dir, make_dir, remove_dir, create_dir, try_remove_dir, delete_file, set_current_dir, change_extension,
-    rename_file, rename_directory,
+    rename_file, rename_directory, ordinal, character, to_word, successor, predecessor, string_of_char, repeat_string, to_digit, string_length,
     text_assign, text_reset, text_rewrite, text_append, text_close, text_flush,
     text_eof, text_eoln, text_seek_eof, text_seek_eoln, text_open_read, text_open_write, text_open_append,
     text_read, text_read_line, text_read_word, text_skip_line, text_name, text_full_name, text_read_end, text_erase, text_rename

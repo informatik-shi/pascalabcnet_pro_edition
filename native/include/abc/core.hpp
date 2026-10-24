@@ -36,8 +36,8 @@ public:
 // English remains available through what(); runtime diagnostics also carry Russian.
 std::string format_diagnostic(const Error& error, std::string_view filename);
 
-enum class Type { integer, int64, real, boolean, string, invalid, unit, nil, text_file, first_compound = 64 };
-inline bool scalar(Type t) { return t==Type::integer || t==Type::int64 || t==Type::real || t==Type::boolean || t==Type::string; }
+enum class Type { integer, int64, real, boolean, string, invalid, unit, nil, text_file, character, word, first_compound = 64 };
+inline bool scalar(Type t) { return t==Type::integer || t==Type::int64 || t==Type::real || t==Type::boolean || t==Type::string || t==Type::character || t==Type::word; }
 inline bool compound(Type t) { return static_cast<unsigned>(t) >= 64 && static_cast<unsigned>(t) < 0x40000000U; }
 inline Type reference_type(Type t) { return static_cast<Type>(static_cast<unsigned>(t) | 0x40000000U); }
 std::string_view type_name(Type type);
@@ -53,7 +53,7 @@ struct LinkedLinks { std::weak_ptr<Aggregate> prev, next; };
 // A null string keeps its static string type and differs from an empty string.
 struct NilString { auto operator<=>(const NilString&) const = default; };
 using Value = std::variant<std::int32_t, std::int64_t, double, bool, std::u16string,
-    std::shared_ptr<Aggregate>, std::shared_ptr<Cell>, NilString, std::shared_ptr<TextFile>>;
+    std::shared_ptr<Aggregate>, std::shared_ptr<Cell>, NilString, std::shared_ptr<TextFile>, char16_t, std::uint16_t>;
 struct Cell { Type type; Value value; std::weak_ptr<Aggregate> list_owner{}; };
 struct Aggregate {
     Type type;
@@ -82,7 +82,7 @@ enum class Op {
     call_user, return_user, drop, list_add, list_remove, list_clear, list_contains,
     read_lines, write_lines, array_copy, array_high, sequence_sort, sequence_fill, mutate_string, increment, read_value,
     endpoint_call, buffer_call, association_call, linked_call, file_print, file_newline, file_read, file_skip_line, file_output,
-    iteration_version, iteration_check
+    iteration_version, iteration_check, set_character
 };
 enum class TextOutput { write, writeln, print, println };
 

@@ -7,6 +7,7 @@
 #include <cmath>
 #include <limits>
 #include <numbers>
+#include <type_traits>
 
 namespace abc::stdlib {
 std::span<const Signature> signatures() {
@@ -43,6 +44,24 @@ std::span<const Signature> signatures() {
         add("power", {Type::real, Type::real}, Type::real, Function::power);
         add("logn", {Type::real, Type::real}, Type::real, Function::logn);
         add("length", {Type::string}, Type::integer, Function::length);
+        add("stringofchar",{Type::character,Type::integer},Type::string,Function::string_of_char);
+        add("$repeat",{Type::string,Type::integer},Type::string,Function::repeat_string);
+        add("$repeat",{Type::integer,Type::string},Type::string,Function::repeat_string);
+        add("todigit",{Type::character},Type::integer,Function::to_digit);
+        add("$string_length",{Type::string},Type::integer,Function::string_length);
+        for (auto name:{"chr","chrunicode","char"}) {
+            add(name,{Type::word},Type::character,Function::character);
+            add(name,{Type::integer},Type::character,Function::character);
+        }
+        add("char",{Type::character},Type::character,Function::character);
+        for (auto name:{"ord","ordunicode"}) add(name,{Type::character},Type::word,Function::ordinal);
+        for (auto type:{Type::integer,Type::int64,Type::word}) add("ord",{type},type,Function::ordinal);
+        add("ord",{Type::boolean},Type::integer,Function::ordinal);
+        for (auto type:{Type::integer,Type::int64,Type::word,Type::character}) add("word",{type},Type::word,Function::to_word);
+        for (auto type:{Type::integer,Type::int64,Type::word,Type::character,Type::boolean}) {
+            add("succ",{type},type,Function::successor);
+            add("pred",{type},type,Function::predecessor);
+        }
         add("copy", {Type::string, Type::integer, Type::integer}, Type::string, Function::copy);
         for (auto name : {"pos", "posex", "lastpos"}) {
             const auto function = std::string_view(name) == "lastpos" ? Function::last_pos : Function::pos;
@@ -97,10 +116,10 @@ std::span<const Signature> signatures() {
             {"seekeof",Function::text_seek_eof},{"seekeoln",Function::text_seek_eoln}}) add(name,{Type::text_file},Type::boolean,function);
         for (auto [name,function]:{std::pair{"openread",Function::text_open_read},{"openwrite",Function::text_open_write},
             {"openappend",Function::text_open_append}}) add(name,{Type::string},Type::text_file,function);
-        for (auto [name,type]:{std::pair{"readinteger",Type::integer},{"readint64",Type::int64},{"readreal",Type::real},{"readboolean",Type::boolean}})
+        for (auto [name,type]:{std::pair{"readinteger",Type::integer},{"readint64",Type::int64},{"readreal",Type::real},{"readboolean",Type::boolean},{"readchar",Type::character}})
             add(name,{Type::text_file},type,Function::text_read);
         for (auto [name,type]:{std::pair{"readlninteger",Type::integer},{"readlnint64",Type::int64},{"readlnreal",Type::real},
-            {"readlnboolean",Type::boolean},{"readstring",Type::string},{"readlnstring",Type::string}}) add(name,{Type::text_file},type,Function::text_read_line);
+            {"readlnboolean",Type::boolean},{"readlnchar",Type::character},{"readstring",Type::string},{"readlnstring",Type::string}}) add(name,{Type::text_file},type,Function::text_read_line);
         add("readlexem",{Type::text_file},Type::string,Function::text_read_word);
         add("erase",{Type::text_file},Type::unit,Function::text_erase);
         add("rename",{Type::text_file,Type::string},Type::unit,Function::text_rename);
@@ -171,6 +190,31 @@ Value invoke(std::size_t id, std::span<const Value> arguments, SourceLocation lo
     const auto function = signature.function;
     if (function == Function::get_dir) return files.directory(location);
     const auto& value = arguments.front();
+    if (function==Function::ordinal) {
+        if (const auto* ch=std::get_if<char16_t>(&value)) return static_cast<std::uint16_t>(*ch);
+        if (const auto* flag=std::get_if<bool>(&value)) return std::int32_t(*flag);
+        return value;
+    }
+    if (function==Function::character || function==Function::to_word) {
+        const auto number=std::visit([](const auto& v)->std::int64_t {
+            using T=std::decay_t<decltype(v)>;
+            if constexpr (std::is_integral_v<T>) return static_cast<std::int64_t>(v);
+            else return 0;
+        },value);
+        if (number<0 || number>65535) throw runtime_error(RuntimeError::number_range,location,function==Function::character ? "char" : "word");
+        return function==Function::character ? Value{static_cast<char16_t>(number)} : Value{static_cast<std::uint16_t>(number)};
+    }
+    if (function==Function::successor || function==Function::predecessor) {
+        return std::visit([&](const auto& v)->Value {
+            using T=std::decay_t<decltype(v)>;
+            if constexpr (std::is_integral_v<T>) {
+                const bool up=function==Function::successor;
+                if (up ? v==std::numeric_limits<T>::max() : v==std::numeric_limits<T>::min())
+                    throw runtime_error(RuntimeError::integer_overflow,location);
+                return static_cast<T>(up ? v+1 : v-1);
+            } else throw runtime_error(RuntimeError::invalid_bytecode,location);
+        },value);
+    }
     if (function>=Function::text_assign && function<=Function::text_rename) {
         if (function==Function::text_open_read || function==Function::text_open_write || function==Function::text_open_append) {
             auto file=std::make_shared<TextFile>(); text_assign(files,*file,value,location);

@@ -1,0 +1,31 @@
+type Point=record letter:char; code:word; end;
+function Next(c:char):char;
+begin Result:=Succ(c); end;
+procedure Advance(var c:char);
+begin Inc(c); end;
+begin
+  var p:Point; p.letter:='Я'; p.code:=Ord(p.letter);
+  var copy:=p; Advance(copy.letter);
+  Writeln(p.letter,' ',p.code,' ',copy.letter,' ',Next(copy.letter));
+  for var c:='a' to 'c' do Write(c);
+  for var c:='в' downto 'а' do Write(c);
+  Writeln;
+  var text:='abcd'; var old:=text; text[2]:='Я';
+  Writeln(text,' ',old,' ',text[2]);
+  foreach var c in text do begin Write(c); text:='new'; end;
+  Writeln(' ',text);
+  foreach var c in '🌍' do Writeln(Ord(c));
+  var letters:=Arr('Я','a','z'); Sort(letters);
+  foreach var c in letters do Write(c);
+  Writeln;
+  var w:word:=65534; Inc(w); Writeln(w,' ',w+1,' ',word('Я'));
+  Writeln(Ord(#0),' ',Ord(#65535),' ',ChrUnicode(1071));
+  var f:=OpenWrite('native-characters.txt');
+  f.Write(' ',#13,#10,'Я',#55356,#57101); f.Close; f.Reset;
+  Writeln(Ord(f.ReadChar),' ',Ord(f.ReadChar),' ',Ord(f.ReadChar),' ',f.ReadChar);
+  Writeln(Ord(f.ReadChar),' ',Ord(f.ReadChar),' ',Ord(f.ReadChar),' ',f.Eof);
+  f.Close; f.Erase;
+  Writeln('A'#66'Я',' ',#55356#57101);
+  Writeln('Я'*3,' ',2*'ab',' ',StringOfChar('X',3));
+  Writeln(('a'#0'b').Length,' ','7'.ToDigit);
+end.

@@ -163,6 +163,11 @@ void text_write(TextFile& file, std::u16string_view value, SourceLocation locati
 }
 Value text_read(TextFile& file, Type type, SourceLocation location) {
     if (type==Type::string) return read_remaining_line(file,location);
+    if (type==Type::character) {
+        readable(file,location);
+        if (file.cursor==file.content.size()) return char16_t{65535}; // StreamReader.Read() returns -1, cast to char by PABCSystem.
+        return file.content[file.cursor++];
+    }
     auto token=read_token(file,location);
     if (type==Type::boolean) {
         for (auto& c:token) if (c>=u'A' && c<=u'Z') c=static_cast<char16_t>(c+32);
@@ -183,9 +188,11 @@ Value text_read(TextFile& file, Type type, SourceLocation location) {
     auto view=std::string_view(bytes); if (view.starts_with('+')) view.remove_prefix(1);
     std::int64_t value=0;
     const auto converted=std::from_chars(view.data(),view.data()+view.size(),value);
-    if (converted.ec!=std::errc{} || (type==Type::integer && (value<INT32_MIN || value>INT32_MAX)))
+    if (converted.ec!=std::errc{} || (type==Type::integer && (value<INT32_MIN || value>INT32_MAX))
+        || (type==Type::word && (value<0 || value>65535)))
         throw runtime_error(RuntimeError::number_range,location,type_name(type));
-    return type==Type::integer ? Value{static_cast<std::int32_t>(value)} : Value{value};
+    return type==Type::integer ? Value{static_cast<std::int32_t>(value)}
+        : type==Type::word ? Value{static_cast<std::uint16_t>(value)} : Value{value};
 }
 std::u16string text_word(TextFile& file, SourceLocation location) { return read_token(file,location); }
 std::u16string text_name(const TextFile& file, bool full, SourceLocation location) {

@@ -86,12 +86,35 @@ def main():
                 ("text-file-changes.pas", "Файл переименован: True\nИмя в переменной: Исходная заметка.txt\nЗаписано на C++\nФайл удалён: True\n"),
                 ("loops.pas", "Сумма: 55\nОбратный отсчёт: 3 2 1 \nПовторений: 3\nНечётные: 1 3 5 \n"),
                 ("foreach.pas", "Сумма: 14\nИмена: Анна Борис \nНечётные: 3 1 1 5 \n"),
+                ("characters.pas", "Буква: Б\nКод UTF-16: 1041\nИмя: Инна\nАлфавит: абвгде\nСимволы: И|н|н|а|\n"),
             ]:
                 example = subprocess.run([runner, "run", str(folder / "examples" / source)],
                                          text=True, encoding="utf-8", capture_output=True,
                                          cwd=folder, env=env, timeout=10)
                 if example.returncode or example.stdout != expected:
                     raise RuntimeError(f"{name} {source} failed: {example.stdout!r}, {example.stderr!r}")
+            character = folder / "Ошибки символов.pas"
+            for source in [
+                "begin Writeln('must never run'); var c:='a'; c:='ab'; end.",
+                "begin Writeln('must never run'); var s:='ab'; s[1]:='XY'; end.",
+            ]:
+                character.write_text(source, encoding="utf-8")
+                invalid = subprocess.run([runner, "run", str(character)], text=True, encoding="utf-8",
+                                         capture_output=True, cwd=folder, env=env, timeout=10)
+                if invalid.returncode != 1 or invalid.stdout or "E_TYPE" not in invalid.stderr:
+                    raise RuntimeError(f"{name} character types were not checked before execution")
+            for source, code, english, russian in [
+                ("var c:=#65535;\n Inc(c);", "E_OVERFLOW", "Integer overflow", "Переполнение целого числа"),
+                ("var c:='Я';\n Writeln(c.ToDigit);", "E_FORMAT", "Character is not a decimal digit from 0 to 9", "Символ не является десятичной цифрой от 0 до 9"),
+                ("var s:='ab';\n s[0]:='X';", "E_BOUNDS", "Index is outside sequence bounds", "Индекс находится за границами строки, массива или списка"),
+            ]:
+                character.write_text(f"begin\n {source}\nend.", encoding="utf-8")
+                invalid = subprocess.run([runner, "run", str(character)], text=True, encoding="utf-8",
+                                         capture_output=True, cwd=folder, env=env, timeout=10)
+                if (invalid.returncode != 1 or code not in invalid.stderr
+                        or f"EN: {english}" not in invalid.stderr or f"RU: {russian}" not in invalid.stderr
+                        or f"{character}:3:" not in invalid.stderr):
+                    raise RuntimeError(f"{name} bilingual character diagnostic failed: {invalid.stderr!r}")
             file_error = folder / "Ошибка текстового файла.pas"
             for body, code, english, russian in [
                 ("var f:Text;\n Writeln(f,1);", "E_IO", "Text file has not been assigned a filename", "Текстовому файлу не назначено имя"),
@@ -291,6 +314,7 @@ def main():
             results[-1].update({"text_erase_rename": "passed", "bilingual_text_change_error": "passed", "open_text_lock": "passed"})
             results[-1].update({"structured_loops": "passed", "bilingual_loop_limit": "passed", "readonly_for_control": "passed"})
             results[-1].update({"typed_foreach": "passed", "bilingual_modified_list": "passed", "readonly_foreach": "passed"})
+            results[-1].update({"characters_and_word": "passed", "string_character_assignment": "passed", "bilingual_character_errors": "passed", "character_types_before_output": "passed"})
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 
