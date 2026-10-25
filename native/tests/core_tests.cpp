@@ -56,6 +56,34 @@ void runtime_error(std::string_view source, std::string_view code) {
     error([&] { (void)run(source); }, code,source);
 }
 
+void console_functions() {
+    result("begin var a:=ReadInteger; var b:=ReadInt64(); var c:=ReadReal; var d:=ReadBoolean; Writeln(a,' ',b,' ',c,' ',d); Writeln('[',ReadString,']'); Writeln(ReadlnString()); end.","12 2147483648 1.25 True\n[ tail]\nnext\n","12 2147483648 1.25 TRUE tail\nnext\n");
+    result("begin Writeln(ReadlnInteger,' ',ReadlnInt64(),' ',ReadlnReal,' ',ReadlnBoolean); end.","12 2147483648 1.5 False\n","12 ignored\n2147483648 ignored\n1.5 ignored\nFalse ignored\n");
+    result("begin Writeln(Ord(ReadChar),' ',Ord(ReadlnChar())); Writeln(ReadString); Writeln(ReadlnString); end.","65 32\nfirst\nsecond\n","A tail\nfirst\nsecond\n");
+    result("begin Writeln(ReadLexem,'|',ReadLexem()); Writeln('[',ReadString,']'); end.","one|два\n[ tail]\n","  one\tдва tail\n");
+    result("begin Writeln('[',ReadString,'] [',ReadlnString,'] ',Ord(ReadChar),' ',Ord(ReadlnChar)); end.","[] [] 65535 65535\n");
+    result("begin Writeln(ReadString,'|',ReadString,'|',ReadlnString); end.","one|two|three\n","one\rtwo\nthree\r\n");
+    result("begin var n:=PABCSystem.ReadInteger(); var s:=PABCSystem.ReadString; Writeln(n,' [',s,']'); end.","4 [ tail]\n","4 tail\n");
+    result("begin var n:=ReadInteger('Число:'); Writeln(n); var s:=ReadString('Строка:'); Writeln('[',s,']'); end.","Число: 7\nСтрока: [ rest]\n","7 rest\n");
+    result("begin Writeln(ReadlnInteger(''),' ',ReadlnReal('Real:'),' ',ReadlnBoolean('Flag:')); end."," Real: Flag: 7 1.5 True\n","7 tail\n1.5 tail\nTrue tail\n");
+    result("begin var p:string:=nil; var s:=ReadString(p); Writeln(s); end.","nil line\n","line\n");
+    result("begin Writeln(Ord(ReadChar('Char:')),' ',Ord(ReadlnChar('End:'))); Writeln(ReadlnString('Next:')); end.","Char: End: 65 32\nNext: next\n","A ignored\nnext\n");
+    result("function ReadInteger:integer; begin Result:=9; end; begin Writeln(ReadInteger,' ',PABCSystem.ReadInteger); end.","9 7\n","7\n");
+    error([&]{(void)run("begin ReadLexem; end.");},"E_INPUT");
+    error([&]{(void)run("begin ReadInteger; end.","no\n");},"E_INPUT");
+    for (const auto source:{"begin ReadInteger(1); end.","begin ReadlnString(1); end.","begin ReadChar(true); end.","begin ReadLexem('prompt'); end.","begin ReadReal('a','b'); end.","begin var n:integer:=ReadInt64; end."}) compile_error(source,"E_TYPE");
+    abc::ExecutionOptions options; options.output_limit=2;
+    error([&]{(void)run("begin ReadInteger('abc'); end.","7\n",options);},"E_LIMIT");
+    std::istringstream input; std::ostringstream output;
+    auto program=abc::compile("begin Writeln('before ',1 div 0); end.");
+    error([&]{abc::execute(program,input,output);},"E_DIV_ZERO");
+    require(output.str().empty(),"Write arguments are evaluated before the first output");
+    result("begin Writeln(1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17); end.","1234567891011121314151617\n");
+    program=abc::compile("begin Writeln(1); end.");
+    for (auto& instruction:program.code) if (instruction.op==abc::Op::console_output) instruction.type=abc::Type::integer;
+    error([&]{abc::verify(program);},"E_BYTECODE");
+}
+
 void console_input() {
     result("begin var a,b:integer; var x:real; var flag:boolean; Read(a,b,x,flag); Writeln(a,' ',b,' ',x,' ',flag); var s:string; Read(s); Writeln('[',s,']'); Readln; Readln(s); Writeln(s); end.","12 -3 1.5 True\n[ rest]\nnext\n","12 -3 1.5 TRUE rest\nnext\n");
     result("begin var a,b:integer; Readln(a,b); Writeln(a,' ',b); var s:string; Readln(s); Writeln(s); end.","1 2\nnext\n"," 1 2 ignored\nnext\n");
@@ -66,7 +94,7 @@ void console_input() {
     result("begin var c,d:char; Read(c,d); Writeln(Ord(c),' ',Ord(d)); Readln; Readln(c); Writeln(Ord(c)); end.","55356 57101\n10\n","🌍\n\n");
     result("begin var c:char; Readln(c); Writeln(Ord(c)); var s:string; Readln(s); Writeln(s); end.","13\nnext\n","\r\nnext\n");
     result("begin var a:byte; var b:shortint; var c:smallint; var d:word; var e:longword; var f:uint64; var g:int64; Readln(a,b,c,d,e,f,g); Writeln(a,' ',b,' ',c,' ',d,' ',e,' ',f,' ',g); end.","255 -128 -32768 65535 4294967295 18446744073709551615 -9223372036854775808\n","255 -128 -32768 65535 4294967295 18446744073709551615 -9223372036854775808\n");
-    result("var a:array of integer; function Index:integer; begin Writeln(a[0]); Result:=1; end; begin a:=Arr(0,0); Read(a[0],a[Index()]); Writeln(a[0],' ',a[1]); end.","0\n9 8\n","9 8\n");
+    result("var a:array of integer; function Index:integer; begin Writeln(a[0]); Result:=1; end; begin a:=Arr(0,0); Read(a[0],a[Index()]); Writeln(a[0],' ',a[1]); end.","9\n9 8\n","9 8\n");
     result("type R=record n:integer; end; begin var r:R; var a:=Arr(0); Readln(r.n,a[0]); Writeln(r.n,' ',a[0]); end.","8 9\n","8 9 tail\n");
     result("uses Arrays; begin var a:=new integer[3]; ReadArray(a); a.Writeln(','); var s:string; Readln(s); Writeln(s); end.","1,2,3\nnext\n","1 2\n3 tail\nnext\n");
     result("uses Arrays; begin var a:=new real[3]; Arrays.ReadArray(a); a.Writeln(','); end.","1.5,-2,30\n","1.5 -2 3e1\n");
@@ -78,12 +106,13 @@ void console_input() {
     runtime_error("uses Arrays; begin var a:array of integer; ReadArray(a); end.","E_NIL");
     error([&]{(void)run("uses Arrays; begin var a:=new integer[2]; ReadArray(a); end.","1\n");},"E_INPUT");
     for (const auto input:{"256\n","-1\n","1.5\n","bad\n"}) error([&]{(void)run("begin var b:byte; Read(b); end.",input);},"E_INPUT");
-    for (const auto source:{"begin Read(); end.","begin var n:integer; Read(n,1); end.","begin var a:=Arr(1); Read(a); end.","begin for var i:=1 to 2 do Read(i); end.","begin foreach var c in 'ab' do Readln(c); end.","uses Arrays; begin var a:=new byte[2]; ReadArray(a); end.","uses Arrays; begin ReadArray(Arr(1),2); end."}) compile_error(source,"E_TYPE");
+    result("begin Read; Read(); Writeln('ok'); end.","ok\n");
+    for (const auto source:{"begin var n:integer; Read(n,1); end.","begin var a:=Arr(1); Read(a); end.","begin for var i:=1 to 2 do Read(i); end.","begin foreach var c in 'ab' do Readln(c); end.","uses Arrays; begin var a:=new byte[2]; ReadArray(a); end.","uses Arrays; begin ReadArray(Arr(1),2); end."}) compile_error(source,"E_TYPE");
     compile_error("begin var a:=Arr(1); ReadArray(a); end.","E_NAME");
     std::istringstream input("9 8\n"); std::ostringstream output;
-    auto program=abc::compile("begin var a:=Arr(0); var b:array of integer; Read(a[0],b[0]); end.");
+    auto program=abc::compile("var a:array of integer; function Bad:integer; begin Write(a[0]); Result:=0; end; begin a:=Arr(0); var b:array of integer; Read(a[0],b[Bad()]); end.");
     error([&]{abc::execute(program,input,output);},"E_NIL");
-    require(input.peek()=='9',"Console var arguments are captured before any input is consumed");
+    require(output.str()=="9","Earlier console input occurs before evaluating a later receiver, matching source lowering");
     program=abc::compile("begin var n:integer; Readln(n); end.");
     for (auto& instruction:program.code) if (instruction.op==abc::Op::read_console) instruction.operand=0;
     error([&]{abc::verify(program);},"E_BYTECODE");
@@ -1034,7 +1063,7 @@ void text_files() {
     error([&]{ (void)run("begin var f:=OpenWrite("+other+"); Writeln(f,'must not run'); var n:integer:='bad'; end."); },"E_TYPE");
     result("begin Writeln(ReadAllLines("+other+")[0]); end.","array\n");
     auto program=abc::compile("begin var f:Text; Rewrite(f,'x'); Writeln(f,1); end.");
-    for (auto& instruction:program.code) if (instruction.op==abc::Op::file_print) { instruction.type=abc::Type::text_file; break; }
+    for (auto& instruction:program.code) if (instruction.op==abc::Op::file_output) { instruction.type=abc::Type::integer; break; }
     error([&]{abc::verify(program);},"E_BYTECODE");
     program=abc::compile("begin var f:Text; var n:integer; Readln(f,n); end.");
     for (auto& instruction:program.code) if (instruction.op==abc::Op::file_read) { instruction.type=abc::Type::real; break; }
@@ -1780,6 +1809,7 @@ int main() {
     array_output();
     bitwise_operations();
     console_input();
+    console_functions();
     sequence_mutations();
     arithmetic();
     verifier();

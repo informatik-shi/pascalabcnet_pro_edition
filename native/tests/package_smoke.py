@@ -51,6 +51,11 @@ def main():
             if console.returncode or console.stdout != "Два целых: Сумма: 15\nТри числа: 1, 2, 3\n":
                 raise RuntimeError(f"{name} shared console input failed: {console.stdout!r}, {console.stderr!r}")
             console_source = folder / "Консольный ввод.pas"
+            console = subprocess.run([runner, "run", str(folder / "examples" / "console-functions.pas")],
+                                     input="42 tail\nАнна\n", text=True, encoding="utf-8",
+                                     capture_output=True, cwd=folder, env=env, timeout=10)
+            if console.returncode or console.stdout != "Введите число: Введите имя: Здравствуйте, Анна! Число: 42\n":
+                raise RuntimeError(f"{name} typed console functions/prompts failed: {console.stdout!r}, {console.stderr!r}")
             console_source.write_text("begin var c:char; Readln(c); Writeln(Ord(c)); end.", encoding="utf-8")
             console = subprocess.run([runner, "run", str(console_source)], input=b"\r\n",
                                      capture_output=True, cwd=folder, env=env, timeout=10)
@@ -369,6 +374,7 @@ def main():
             results[-1]["extended_math"] = "passed"
             results[-1]["arrays_output_and_bitwise"] = "passed"
             results[-1]["shared_console_and_readarray"] = "passed"
+            results[-1]["typed_console_functions_and_prompts"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 

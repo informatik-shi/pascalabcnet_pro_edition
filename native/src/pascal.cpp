@@ -1546,7 +1546,6 @@ private:
             result.kind = hir::StmtKind::read;
             result.newline=source.token.text=="readln";
             if (source.arguments.empty()) {
-                if (!result.newline) throw Error("E_TYPE",result.location,"Read requires a file or variable");
                 break;
             }
             auto first=expression(*source.arguments[0]);

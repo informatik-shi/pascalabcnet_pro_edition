@@ -7,6 +7,8 @@ class ConsoleInput {
 public:
     ConsoleInput(std::istream& input, const ExecutionOptions& options) : input_(input), options_(options) {}
     Value read(Type type, SourceLocation location);
+    std::u16string token(SourceLocation location);
+    std::u16string read_line(SourceLocation location);
     void skip_line(SourceLocation location);
 private:
     bool ensure(SourceLocation location);

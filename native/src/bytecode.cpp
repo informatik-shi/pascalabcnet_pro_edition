@@ -204,12 +204,9 @@ private:
             break;
         case hir::StmtKind::print:
             if (node.target) expression(*node.target);
-            for (const auto& argument : node.arguments) {
-                expression(*argument);
-                emit(node.target ? Op::file_print : Op::print, argument->type, 0, argument->location);
-            }
-            if (node.newline) emit(node.target ? Op::file_newline : Op::newline,node.target ? Type::text_file : Type::invalid,0,node.location);
-            if (node.target) emit(Op::drop,Type::text_file,0,node.location);
+            for (const auto& argument : node.arguments) expression(*argument);
+            if (node.target) emit(Op::file_output,Type::text_file,node.arguments.size()*4+static_cast<std::size_t>(node.newline ? TextOutput::writeln : TextOutput::write),node.location);
+            else emit(Op::console_output,Type::unit,node.arguments.size()*2+(node.newline ? 1U : 0U),node.location);
             break;
         case hir::StmtKind::read:
             if (node.target && node.target->type==Type::text_file) {
@@ -220,8 +217,10 @@ private:
                 if (node.newline) emit(Op::file_skip_line,Type::text_file,0,node.location);
                 emit(Op::drop,Type::text_file,0,node.location); break;
             }
-            for (const auto& target:node.arguments) reference(*target);
-            emit(Op::read_console,Type::unit,node.arguments.size()*2+(node.newline ? 1U : 0U),node.location); break;
+            // The original converter lowers Read(a,b) into separate calls.
+            for (const auto& target:node.arguments) { reference(*target); emit(Op::read_console,Type::unit,2,target->location); }
+            if (node.newline || node.arguments.empty()) emit(Op::read_console,Type::unit,node.newline ? 1U : 0U,node.location);
+            break;
         case hir::StmtKind::increment:
             reference(*node.target); if (node.expression) expression(*node.expression);
             emit(Op::increment,node.target->type,node.newline ? 1 : 0,node.location); break;
@@ -346,8 +345,10 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
     for (const auto& instruction : code) {
         const auto type = instruction.type;
         switch (instruction.op) {
+        case Op::console_output:
+            if (type!=Type::unit || instruction.operand/2>4096) invalid(instruction,"Invalid console output"); break;
         case Op::read_console:
-            if (type!=Type::unit || !instruction.operand || instruction.operand/2>16) invalid(instruction,"Invalid console input"); break;
+            if (type!=Type::unit || instruction.operand/2>16) invalid(instruction,"Invalid console input"); break;
         case Op::read_array:
             if (!compound(type) || type_info(program,type).kind!=CompoundKind::array || instruction.operand
                 || (type_info(program,type).element!=Type::integer && type_info(program,type).element!=Type::real && type_info(program,type).element!=Type::string))
@@ -410,7 +411,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         case Op::file_newline: case Op::file_skip_line:
             if (type!=Type::text_file || instruction.operand) invalid(instruction,"Invalid text file instruction"); break;
         case Op::file_output:
-            if (type!=Type::text_file || instruction.operand/4>16) invalid(instruction,"Invalid Text output method"); break;
+            if (type!=Type::text_file || instruction.operand/4>4096) invalid(instruction,"Invalid Text output method"); break;
         case Op::increment:
             if (!ordinal(type) || instruction.operand>1) invalid(instruction,"Invalid increment"); break;
         case Op::mutate_string:
@@ -579,6 +580,9 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if (result != Type::unit) stack.push_back(result);
             break;
         }
+        case Op::console_output:
+            for (std::size_t i=0;i<instruction.operand/2;++i) if (!scalar(pop())) invalid(instruction,"Console output requires scalar values");
+            break;
         case Op::read_console:
             for (std::size_t i=0;i<instruction.operand/2;++i) {
                 const auto type=static_cast<unsigned>(pop());

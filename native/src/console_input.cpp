@@ -33,6 +33,31 @@ void ConsoleInput::skip_line(SourceLocation location) {
         if (line_[cursor_++]==u'\n') break;
     }
 }
+std::u16string ConsoleInput::read_line(SourceLocation location) {
+    check(location);
+    if (!ensure(location)) return {};
+    auto result=std::get<std::u16string>(read(Type::string,location));
+    if (ensure(location)) {
+        const auto end=line_[cursor_++];
+        if (end==u'\r' && ensure(location) && line_[cursor_]==u'\n') ++cursor_;
+    }
+    return result;
+}
+std::u16string ConsoleInput::token(SourceLocation location) {
+    check(location);
+    const auto space=[](char16_t c){return c==u' ' || c==u'\t' || c==u'\r' || c==u'\n';};
+    while (ensure(location) && space(line_[cursor_])) {
+        if ((cursor_&255U)==0) check(location);
+        ++cursor_;
+    }
+    if (!ensure(location)) throw runtime_error(RuntimeError::input_end,location);
+    std::u16string result;
+    while (ensure(location) && !space(line_[cursor_])) {
+        if ((cursor_&255U)==0) check(location);
+        result+=line_[cursor_++];
+    }
+    return result;
+}
 Value ConsoleInput::read(Type type, SourceLocation location) {
     check(location);
     if (type==Type::character) return ensure(location) ? line_[cursor_++] : char16_t{65535};
@@ -45,18 +70,7 @@ Value ConsoleInput::read(Type type, SourceLocation location) {
         }
         return result; // Read(string) leaves the line terminator for Readln.
     }
-    const auto space=[](char16_t c){return c==u' ' || c==u'\t' || c==u'\r' || c==u'\n';};
-    while (ensure(location) && space(line_[cursor_])) {
-        if ((cursor_&255U)==0) check(location);
-        ++cursor_;
-    }
-    if (!ensure(location)) throw runtime_error(RuntimeError::input_end,location);
-    std::u16string token;
-    while (ensure(location) && !space(line_[cursor_])) {
-        if ((cursor_&255U)==0) check(location);
-        token+=line_[cursor_++];
-    }
-    auto bytes=to_utf8(token,true);
+    auto bytes=to_utf8(token(location),true);
     auto text=std::string_view(bytes);
     if (type==Type::boolean) {
         for (auto& ch:bytes) if (ch>='A' && ch<='Z') ch=static_cast<char>(ch+32);

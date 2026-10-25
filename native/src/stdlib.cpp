@@ -5,6 +5,7 @@
 #include "file_operations.hpp"
 #include "integer_values.hpp"
 #include "random.hpp"
+#include "console_input.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -25,6 +26,18 @@ std::span<const Signature> signatures() {
         add("randomize",{},Type::unit,Function::random_reset);
         add("randomize",{Type::integer},Type::unit,Function::random_reset);
         add("setrandomseed",{Type::integer},Type::unit,Function::random_reset);
+        struct ConsoleEntry { std::string_view read, readln; Type type; };
+        for (auto [read,readln,type]:{ConsoleEntry{"readinteger","readlninteger",Type::integer},
+            {"readint64","readlnint64",Type::int64},{"readreal","readlnreal",Type::real},
+            {"readboolean","readlnboolean",Type::boolean},{"readchar","readlnchar",Type::character},
+            {"readstring","readlnstring",Type::string}}) {
+            for (auto prompt:{false,true}) {
+                const auto parameters=prompt ? std::vector<Type>{Type::string} : std::vector<Type>{};
+                add(read,parameters,type,type==Type::string ? Function::console_line : Function::console_read);
+                add(readln,parameters,type,type==Type::string ? Function::console_line : Function::console_readln);
+            }
+        }
+        add("readlexem",{},Type::string,Function::console_token);
         add("random",{},Type::real,Function::random_real);
         add("random",{Type::integer},Type::integer,Function::random_integer);
         add("random",{Type::integer,Type::integer},Type::integer,Function::random_integer);
@@ -255,9 +268,21 @@ double round_digits(double value, std::int32_t digits, SourceLocation location) 
 }
 } // namespace
 
-Value invoke(std::size_t id, std::span<const Value> arguments, SourceLocation location, FileContext& files, RandomContext& random) {
+Value invoke(std::size_t id, std::span<const Value> arguments, SourceLocation location, Context& context) {
+    auto& files=context.files; auto& random=context.random;
     const auto& signature = signatures()[id]; // Verified before execution.
     const auto function = signature.function;
+    if (function>=Function::console_read && function<=Function::console_token) {
+        if (!arguments.empty()) {
+            context.write_text(std::holds_alternative<NilString>(arguments[0]) ? std::u16string_view{u"nil"} : std::u16string_view{string_text(arguments[0])},location);
+            context.write_text(u" ",location);
+        }
+        if (function==Function::console_line) return context.console.read_line(location);
+        if (function==Function::console_token) return context.console.token(location);
+        auto value=context.console.read(signature.result,location);
+        if (function==Function::console_readln) context.console.skip_line(location);
+        return value;
+    }
     if (function == Function::get_dir) return files.directory(location);
     if (function==Function::random_reset) {
         if (arguments.empty()) random.randomize(location);

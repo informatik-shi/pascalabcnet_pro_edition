@@ -166,12 +166,23 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
         output_bytes += text.size();
     };
     auto pop = [&]() { auto value = std::move(stack.back()); stack.pop_back(); return value; };
+    stdlib::Context services{files,random,console,[&](std::u16string_view text,SourceLocation location) {
+        Instruction instruction; instruction.location=location;
+        write(to_utf8(text,true),instruction);
+    }};
     while (!frames.empty()) {
         auto& frame = frames.back(); auto& locals = frame.locals;
         const auto& instruction = (*frame.code)[frame.pc++]; values.location = instruction.location;
         if (steps++ >= options.instruction_limit) trap(instruction, RuntimeError::instruction_limit);
         if (options.cancelled && options.cancelled()) trap(instruction, RuntimeError::cancelled);
         switch (instruction.op) {
+        case Op::console_output: {
+            std::vector<Value> arguments(instruction.operand/2);
+            for (auto i=arguments.size();i>0;--i) arguments[i-1]=pop();
+            for (const auto& value:arguments) write(format(value,instruction),instruction);
+            if (instruction.operand&1U) write("\n",instruction);
+            break;
+        }
         case Op::read_console: {
             std::vector<std::shared_ptr<Cell>> targets(instruction.operand/2);
             for (auto i=targets.size();i>0;--i) targets[i-1]=std::get<std::shared_ptr<Cell>>(pop());
@@ -315,12 +326,12 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
                 if ((sampled++&255U)==0 && options.cancelled && options.cancelled()) trap(instruction,RuntimeError::cancelled);
                 Value value;
                 if (method==RandomArrayMethod::scaled_real) {
-                    const auto sample=stdlib::invoke(id,{},instruction.location,files,random);
+                    const auto sample=stdlib::invoke(id,{},instruction.location,services);
                     const auto number=std::get<double>(sample)*(std::get<double>(parameters[1])-std::get<double>(parameters[0]));
                     if (std::isnan(number)) trap(instruction,RuntimeError::math_domain);
                     if (!std::isfinite(number)) trap(instruction,RuntimeError::real_overflow);
                     value=number;
-                } else value=stdlib::invoke(id,std::span<const Value>(parameters.data(),count),instruction.location,files,random);
+                } else value=stdlib::invoke(id,std::span<const Value>(parameters.data(),count),instruction.location,services);
                 values.write(cell,value);
             }
             if (instruction.op==Op::random_array) stack.emplace_back(target);
@@ -586,7 +597,7 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
             std::vector<Value> arguments(signature.parameters.size());
             for (std::size_t i=arguments.size();i>0;--i) arguments[i-1]=pop();
             auto target=std::get<std::shared_ptr<Cell>>(arguments[ref]); arguments[ref]=target->value;
-            const auto result=stdlib::invoke(instruction.operand,arguments,instruction.location,files,random); values.write(target,result); break;
+            const auto result=stdlib::invoke(instruction.operand,arguments,instruction.location,services); values.write(target,result); break;
         }
         case Op::read_lines: {
             const auto path=pop(); const auto text=read_text_file(files,string_text(path),instruction.location);
@@ -742,7 +753,7 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
         case Op::call_builtin: {
             const auto count = stdlib::signatures()[instruction.operand].parameters.size();
             const auto start = stack.size() - count;
-            auto value = stdlib::invoke(instruction.operand, std::span<const Value>(stack).subspan(start), instruction.location,files,random);
+            auto value = stdlib::invoke(instruction.operand, std::span<const Value>(stack).subspan(start), instruction.location,services);
             stack.resize(start);
             if (instruction.type != Type::unit) stack.push_back(std::move(value));
             break;
