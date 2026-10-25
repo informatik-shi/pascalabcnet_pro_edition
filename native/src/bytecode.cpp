@@ -45,7 +45,9 @@ private:
     void reference(const hir::Expr& node) {
         if (node.kind == hir::ExprKind::local) local(Op::ref_local,node.local,node.location);
         else if (node.kind == hir::ExprKind::index) {
-            expression(*node.left); expression(*node.right); emit(Op::ref_index,node.left->type,0,node.location);
+            expression(*node.left); expression(*node.right);
+            for (const auto& argument:node.arguments) expression(*argument);
+            emit(Op::ref_index,node.left->type,0,node.location);
         } else if (node.kind == hir::ExprKind::field) {
             reference(*node.left); emit(Op::ref_field,node.left->type,node.local,node.location);
         } else throw Error("E_HIR",node.location,"Expression is not assignable");
@@ -53,6 +55,12 @@ private:
     void expression(const hir::Expr& node) {
         if (node.type == Type::invalid) throw Error("E_HIR", node.location, "Unresolved expression type");
         switch (node.kind) {
+        case hir::ExprKind::write_matrix:
+            expression(*node.left); for (const auto& argument:node.arguments) expression(*argument);
+            emit(Op::write_matrix,node.left->type,node.local,node.location); break;
+        case hir::ExprKind::array_query:
+            expression(*node.left); if (node.right) expression(*node.right);
+            emit(Op::array_query,node.left->type,node.local,node.location); break;
         case hir::ExprKind::read_array:
             expression(*node.left); emit(Op::read_array,node.left->type,0,node.location); break;
         case hir::ExprKind::write_array:
@@ -104,13 +112,16 @@ private:
                 node.left ? node.left->type : node.type,node.local,node.location); break;
         case hir::ExprKind::default_value: emit(Op::make_default,node.type,node.operation=="new" ? 1 : 0,node.location); break;
         case hir::ExprKind::index:
-            expression(*node.left); expression(*node.right); emit(Op::get_index,node.left->type,0,node.location); break;
+            expression(*node.left); expression(*node.right);
+            for (const auto& argument:node.arguments) expression(*argument);
+            emit(Op::get_index,node.left->type,0,node.location); break;
         case hir::ExprKind::field:
             expression(*node.left); emit(Op::get_field,node.left->type,node.local,node.location); break;
         case hir::ExprKind::length:
-            expression(*node.left); emit(Op::length,node.left->type,0,node.location); break;
+            expression(*node.left); emit(Op::length,node.left->type,node.local,node.location); break;
         case hir::ExprKind::array_new:
-            expression(*node.arguments[0]); emit(Op::array_new,node.type,0,node.location); break;
+            for (const auto& argument:node.arguments) expression(*argument);
+            emit(Op::array_new,node.type,0,node.location); break;
         case hir::ExprKind::array_literal:
             for (const auto& argument : node.arguments) expression(*argument);
             emit(Op::array_literal,node.type,node.arguments.size(),node.location); break;
@@ -190,7 +201,11 @@ private:
             emit(Op::mutate_string,Type::string,node.local,node.location); break;
         }
         case hir::StmtKind::resize_array:
-            reference(*node.target); expression(*node.expression); emit(Op::resize_array,node.target->type,0,node.location); break;
+            reference(*node.target);
+            if (type_info(program_,node.target->type).rank==2) expression(*node.target);
+            expression(*node.expression);
+            for (const auto& argument:node.arguments) expression(*argument);
+            emit(Op::resize_array,node.target->type,0,node.location); break;
         case hir::StmtKind::call:
             expression(*node.expression);
             if (node.expression->type != Type::unit) emit(Op::drop,node.expression->type,0,node.location);
@@ -267,7 +282,7 @@ private:
             emit(Op::length,sequence,0,node.location); emit(Op::less,Type::integer,0,node.location);
             const auto done=emit(Op::jump_false,Type::invalid,0,node.location);
             local(Op::load,node.sequence_local,node.location); local(Op::load,node.index_local,node.location);
-            emit(Op::get_index,sequence,sequence==Type::string ? 1 : 0,node.location);
+            emit(Op::get_index,sequence,sequence==Type::string || type_info(program_,sequence).rank==2 ? 1 : 0,node.location);
             if (element!=node.target->type) emit(Op::convert,node.target->type,0,node.location);
             local(Op::store,node.target->local,node.location);
             loops_.emplace_back(); statement(*node.body);
@@ -345,17 +360,26 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
     for (const auto& instruction : code) {
         const auto type = instruction.type;
         switch (instruction.op) {
+        case Op::write_matrix:
+            if (!compound(type) || type_info(program,type).kind!=CompoundKind::array || type_info(program,type).rank!=2
+                || !scalar(type_info(program,type).element) || instruction.operand>1
+                || (instruction.operand==1)!=(type_info(program,type).element==Type::real)) invalid(instruction,"Invalid matrix output");
+            break;
+        case Op::array_query:
+            if (!compound(type) || type_info(program,type).kind!=CompoundKind::array || instruction.operand>static_cast<std::size_t>(ArrayQuery::length_or_zero))
+                invalid(instruction,"Invalid array query");
+            break;
         case Op::console_output:
             if (type!=Type::unit || instruction.operand/2>4096) invalid(instruction,"Invalid console output"); break;
         case Op::read_console:
             if (type!=Type::unit || instruction.operand/2>16) invalid(instruction,"Invalid console input"); break;
         case Op::read_array:
-            if (!compound(type) || type_info(program,type).kind!=CompoundKind::array || instruction.operand
+            if (!compound(type) || type_info(program,type).kind!=CompoundKind::array || type_info(program,type).rank!=1 || instruction.operand
                 || (type_info(program,type).element!=Type::integer && type_info(program,type).element!=Type::real && type_info(program,type).element!=Type::string))
                 invalid(instruction,"Invalid array input");
             break;
         case Op::write_array:
-            if (!compound(type) || type_info(program,type).kind!=CompoundKind::array || !scalar(type_info(program,type).element) || instruction.operand>3)
+            if (!compound(type) || type_info(program,type).kind!=CompoundKind::array || (type_info(program,type).rank!=1 && !(instruction.operand&2U)) || !scalar(type_info(program,type).element) || instruction.operand>3)
                 invalid(instruction,"Invalid typed array output");
             break;
         case Op::swap_values:
@@ -363,7 +387,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         case Op::sequence_mutate:
             if (instruction.operand>static_cast<std::size_t>(SequenceMutation::swap_indices)
                 || (type==Type::string ? instruction.operand>static_cast<std::size_t>(SequenceMutation::reverse_range)
-                    : !compound(type) || !indexed_sequence(type_info(program,type).kind))
+                    : !compound(type) || !indexed_sequence(type_info(program,type).kind) || type_info(program,type).rank!=1)
                 || (instruction.operand==static_cast<std::size_t>(SequenceMutation::swap_indices) && type_info(program,type).kind!=CompoundKind::array))
                 invalid(instruction,"Invalid sequence mutation");
             break;
@@ -422,12 +446,12 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             }
             break;
         case Op::read_lines: case Op::write_lines:
-            if (!compound(type) || type_info(program,type).kind!=CompoundKind::array || type_info(program,type).element!=Type::string) invalid(instruction,"File lines require string array"); break;
+            if (!compound(type) || type_info(program,type).kind!=CompoundKind::array || type_info(program,type).rank!=1 || type_info(program,type).element!=Type::string) invalid(instruction,"File lines require string array"); break;
         case Op::array_copy:
             if (!compound(type) || type_info(program,type).kind!=CompoundKind::array) invalid(instruction,"Copy requires array"); break;
         case Op::array_high: case Op::sequence_sort: case Op::sequence_fill:
             if (!compound(type) || !indexed_sequence(type_info(program,type).kind)) invalid(instruction,"Indexed sequence required");
-            if (instruction.op==Op::sequence_sort && (!scalar(type_info(program,type).element) || instruction.operand>1)) invalid(instruction,"Invalid sort"); break;
+            if (instruction.op==Op::sequence_sort && (!scalar(type_info(program,type).element) || type_info(program,type).rank!=1 || instruction.operand>1)) invalid(instruction,"Invalid sort"); break;
         case Op::make_default: case Op::store_ref: case Op::drop:
             if (!valid_value_type(program,type) || (instruction.op==Op::make_default && instruction.operand>1)) invalid(instruction,"Invalid value type");
             if (instruction.op==Op::make_default && instruction.operand && compound(type) && node_kind(type_info(program,type).kind))
@@ -438,13 +462,18 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         case Op::return_user:
             if (!routine || type != routine->result) invalid(instruction,"Invalid return"); break;
         case Op::array_new: case Op::array_literal: case Op::resize_array:
-            if (!compound(type) || type_info(program,type).kind != CompoundKind::array || instruction.operand > 4096) invalid(instruction,"Invalid array instruction"); break;
+            if (!compound(type) || type_info(program,type).kind != CompoundKind::array
+                || (instruction.op==Op::array_literal ? instruction.operand>4096 || type_info(program,type).rank!=1 : instruction.operand!=0)) invalid(instruction,"Invalid array instruction");
+            break;
         case Op::get_index: case Op::ref_index: case Op::length:
             if (type==Type::string) {
                 if (instruction.op==Op::ref_index || instruction.operand>(instruction.op==Op::get_index ? 1U : 0U)) invalid(instruction,"Invalid string sequence instruction");
                 break;
             }
-            if (!compound(type) || !indexed_sequence(type_info(program,type).kind)) invalid(instruction,"Invalid sequence instruction"); break;
+            if (!compound(type) || !indexed_sequence(type_info(program,type).kind)) invalid(instruction,"Invalid sequence instruction");
+            if (instruction.operand && !(instruction.operand==1 && (instruction.op==Op::length || (instruction.op==Op::get_index && type_info(program,type).rank==2))))
+                invalid(instruction,"Invalid sequence access mode");
+            break;
         case Op::get_field: case Op::ref_field:
             if (!compound(type) || type_info(program,type).kind != CompoundKind::record || instruction.operand >= type_info(program,type).fields.size()) invalid(instruction,"Invalid record access"); break;
         case Op::list_add: case Op::list_remove: case Op::list_clear: case Op::list_contains:
@@ -621,6 +650,9 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if (mutation_result(method)) stack.push_back(instruction.type);
             break;
         }
+        case Op::write_matrix:
+            if (instruction.operand) require(Type::integer);
+            require(Type::integer); require(instruction.type); break;
         case Op::write_array: require(Type::string); require(instruction.type); break;
         case Op::sequence_sort: require(instruction.type); break;
         case Op::sequence_fill: require(type_info(program,instruction.type).element); require(instruction.type); break;
@@ -633,17 +665,30 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         case Op::random_array: case Op::fill_random_array: {
             const auto parameters=random_array_parameters(static_cast<RandomArrayMethod>(instruction.operand));
             for (auto type=parameters.rbegin();type!=parameters.rend();++type) require(*type);
-            if (instruction.op==Op::random_array) { require(Type::integer); stack.push_back(instruction.type); }
+            if (instruction.op==Op::random_array) {
+                for (unsigned i=0;i<type_info(program,instruction.type).rank;++i) require(Type::integer);
+                stack.push_back(instruction.type);
+            }
             else require(instruction.type);
             break;
         }
-        case Op::array_new: require(Type::integer); stack.push_back(instruction.type); break;
+        case Op::array_query:
+            if (instruction.operand!=static_cast<std::size_t>(ArrayQuery::rank)) require(Type::integer);
+            require(instruction.type); stack.push_back(Type::integer); break;
+        case Op::array_new:
+            for (unsigned i=0;i<type_info(program,instruction.type).rank;++i) require(Type::integer);
+            stack.push_back(instruction.type); break;
         case Op::array_literal:
             for (std::size_t n = 0; n < instruction.operand; ++n) require(type_info(program,instruction.type).element);
             stack.push_back(instruction.type); break;
-        case Op::resize_array: require(Type::integer); require(reference_type(instruction.type)); break;
+        case Op::resize_array:
+            for (unsigned i=0;i<type_info(program,instruction.type).rank;++i) require(Type::integer);
+            if (type_info(program,instruction.type).rank==2) require(instruction.type);
+            require(reference_type(instruction.type)); break;
         case Op::get_index: case Op::ref_index:
-            require(Type::integer); require(instruction.type);
+            require(Type::integer);
+            if (instruction.type!=Type::string && type_info(program,instruction.type).rank==2 && !instruction.operand) require(Type::integer);
+            require(instruction.type);
             if (instruction.type==Type::string) { stack.push_back(Type::character); break; }
             stack.push_back(instruction.op == Op::get_index ? type_info(program,instruction.type).element : reference_type(type_info(program,instruction.type).element)); break;
         case Op::get_field: case Op::ref_field:
@@ -704,6 +749,7 @@ void verify(const Program& program) {
     std::vector<unsigned> depth(program.types.size());
     for (std::size_t i = 0; i < program.types.size(); ++i) {
         const auto& type = program.types[i]; unsigned level = 1;
+        if (type.rank<1 || type.rank>2 || (type.kind!=CompoundKind::array && type.rank!=1)) throw Error("E_BYTECODE",{},"Invalid array rank");
         auto prior = [&](Type t) {
             if (!valid_value_type(program,t) || (compound(t) && static_cast<unsigned>(t)-64 >= i)) throw Error("E_BYTECODE",{},"Invalid or cyclic type dependency");
             if (compound(t)) level = std::max(level,depth[static_cast<unsigned>(t)-64]+1);

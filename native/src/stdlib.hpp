@@ -16,7 +16,7 @@ enum class Function {
     rename_file, rename_directory, ordinal, character, integer_cast, successor, predecessor, string_of_char, repeat_string, to_digit, string_length,
     files_read_to_end, files_write_string,
     random_reset, random_integer, random_real, random_char, random_rounded,
-    console_read, console_readln, console_line, console_token,
+    console_read, console_readln, console_line, console_token, format_value,
     text_assign, text_reset, text_rewrite, text_append, text_close, text_flush,
     text_eof, text_eoln, text_seek_eof, text_seek_eoln, text_open_read, text_open_write, text_open_append,
     text_read, text_read_line, text_read_word, text_skip_line, text_name, text_full_name, text_read_end, text_erase, text_rename

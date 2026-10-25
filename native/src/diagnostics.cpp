@@ -4,6 +4,8 @@ namespace abc {
 Error runtime_error(RuntimeError id, SourceLocation location, std::string_view context) {
     const char *code, *english, *russian;
     switch (id) {
+    case RuntimeError::field_width:
+        code="E_RANGE"; english="Field width cannot be negative"; russian="Ширина поля не может быть отрицательной"; break;
     case RuntimeError::random_range:
         code = "E_RANGE"; english = "Random bounds are invalid"; russian = "Некорректные границы генератора случайных чисел"; break;
     case RuntimeError::random_source:

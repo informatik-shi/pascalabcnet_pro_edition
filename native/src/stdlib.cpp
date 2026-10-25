@@ -6,6 +6,7 @@
 #include "integer_values.hpp"
 #include "random.hpp"
 #include "console_input.hpp"
+#include "formatting.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -38,6 +39,9 @@ std::span<const Signature> signatures() {
             }
         }
         add("readlexem",{},Type::string,Function::console_token);
+        for (auto type:{Type::integer,Type::int64,Type::real,Type::boolean,Type::character,Type::string,Type::byte,Type::shortint,Type::smallint,Type::word,Type::longword,Type::uint64})
+            add("formatvalue",{type,Type::integer},Type::string,Function::format_value);
+        add("formatvalue",{Type::real,Type::integer,Type::integer},Type::string,Function::format_value);
         add("random",{},Type::real,Function::random_real);
         add("random",{Type::integer},Type::integer,Function::random_integer);
         add("random",{Type::integer,Type::integer},Type::integer,Function::random_integer);
@@ -319,6 +323,7 @@ Value invoke(std::size_t id, std::span<const Value> arguments, SourceLocation lo
         return checked_real(rounded,location);
     }
     const auto& value = arguments.front();
+    if (function==Function::format_value) return format_field(value,std::get<std::int32_t>(arguments[1]),arguments.size()==3 ? std::optional<std::int32_t>{std::get<std::int32_t>(arguments[2])} : std::nullopt,location);
     if (function==Function::gcd) {
         const auto calculate=[&]<class T>(T a,T b)->Value {
             if (a==std::numeric_limits<T>::min() || b==std::numeric_limits<T>::min())

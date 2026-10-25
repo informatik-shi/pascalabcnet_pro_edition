@@ -91,6 +91,12 @@ struct Values {
         for (std::size_t i = 0; i < size; ++i) result->items.push_back(cell(element, zero(element,false,generic)));
         return result;
     }
+    std::shared_ptr<Aggregate> matrix(Type type, std::int32_t rows, std::int32_t columns) {
+        if (rows<0 || columns<0) throw runtime_error(RuntimeError::array_length,location);
+        const auto r=static_cast<std::size_t>(rows), c=static_cast<std::size_t>(columns);
+        if (r && c>remaining/r) throw runtime_error(RuntimeError::allocation_limit,location);
+        auto result=array(type,r*c); result->rows=r; result->columns=c; return result;
+    }
     std::shared_ptr<Aggregate> buffer(Type type, std::int32_t size) {
         if (size < 0) throw runtime_error(RuntimeError::array_length,location);
         if (size > (INT32_MAX-4)/2) throw runtime_error(RuntimeError::integer_overflow,location);

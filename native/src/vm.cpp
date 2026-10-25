@@ -10,6 +10,7 @@
 #include "random.hpp"
 #include "console_input.hpp"
 #include "console_output.hpp"
+#include "formatting.hpp"
 
 #include <charconv>
 #include <algorithm>
@@ -172,6 +173,36 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
         if (steps++ >= options.instruction_limit) trap(instruction, RuntimeError::instruction_limit);
         if (options.cancelled && options.cancelled()) trap(instruction, RuntimeError::cancelled);
         switch (instruction.op) {
+        case Op::write_matrix: {
+            const auto digits=instruction.operand ? std::optional<std::int32_t>{std::get<std::int32_t>(pop())} : std::nullopt;
+            const auto width=std::get<std::int32_t>(pop()); const auto matrix=std::get<std::shared_ptr<Aggregate>>(pop());
+            if (matrix->nil) trap(instruction,RuntimeError::nil_reference);
+            for (std::size_t r=0;r<matrix->rows;++r) {
+                if ((r&255U)==0 && options.cancelled && options.cancelled()) trap(instruction,RuntimeError::cancelled);
+                for (std::size_t c=0;c<matrix->columns;++c) {
+                    if ((c&255U)==0 && options.cancelled && options.cancelled()) trap(instruction,RuntimeError::cancelled);
+                    write(format_field(matrix->items[r*matrix->columns+c]->value,width,digits,instruction.location),instruction);
+                    write(u" ",instruction);
+                }
+                write(u"\n",instruction);
+            }
+            break;
+        }
+        case Op::array_query: {
+            const auto query=static_cast<ArrayQuery>(instruction.operand);
+            const auto dimension=query==ArrayQuery::rank ? 0 : std::get<std::int32_t>(pop());
+            const auto array=std::get<std::shared_ptr<Aggregate>>(pop());
+            if (array->nil) {
+                if (query!=ArrayQuery::length_or_zero) trap(instruction,RuntimeError::nil_reference);
+                stack.emplace_back(std::int32_t{0}); break;
+            }
+            const auto rank=type_info(program,instruction.type).rank;
+            if (query==ArrayQuery::rank) { stack.emplace_back(static_cast<std::int32_t>(rank)); break; }
+            if (dimension<0 || static_cast<unsigned>(dimension)>=rank) trap(instruction,RuntimeError::index_bounds);
+            const auto size=rank==1 ? array->items.size() : dimension==0 ? array->rows : array->columns;
+            stack.emplace_back(query==ArrayQuery::lower_bound ? std::int32_t{0} : static_cast<std::int32_t>(size)-(query==ArrayQuery::upper_bound ? 1 : 0));
+            break;
+        }
         case Op::console_output: {
             std::vector<Value> arguments(instruction.operand/2);
             for (auto i=arguments.size();i>0;--i) arguments[i-1]=pop();
@@ -238,6 +269,19 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
         case Op::write_array: {
             const auto delimiter=pop(); const auto sequence=std::get<std::shared_ptr<Aggregate>>(pop());
             if (sequence->nil && (instruction.operand&2U)) trap(instruction,RuntimeError::nil_reference);
+            if (type_info(program,instruction.type).rank==2) {
+                for (std::size_t r=0;r<sequence->rows;++r) {
+                    if ((r&255U)==0 && options.cancelled && options.cancelled()) trap(instruction,RuntimeError::cancelled);
+                    for (std::size_t c=0;c<sequence->columns;++c) {
+                        if ((c&255U)==0 && options.cancelled && options.cancelled()) trap(instruction,RuntimeError::cancelled);
+                        write(scalar_text(sequence->items[r*sequence->columns+c]->value,instruction),instruction);
+                        write(scalar_text(delimiter,instruction),instruction);
+                    }
+                    write(u"\n",instruction);
+                }
+                if (instruction.operand&1U) write(u"\n",instruction);
+                break;
+            }
             for (std::size_t i=0;i<sequence->items.size();++i) {
                 if ((i&255U)==0 && options.cancelled && options.cancelled()) trap(instruction,RuntimeError::cancelled);
                 if (i) write(scalar_text(delimiter,instruction),instruction);
@@ -310,8 +354,11 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
             std::shared_ptr<Aggregate> target;
             if (instruction.op==Op::random_array) {
                 const auto length=std::get<std::int32_t>(pop());
-                if (length<0) trap(instruction,RuntimeError::array_length);
-                target=values.array(instruction.type,static_cast<std::size_t>(length));
+                if (type_info(program,instruction.type).rank==2) target=values.matrix(instruction.type,std::get<std::int32_t>(pop()),length);
+                else {
+                    if (length<0) trap(instruction,RuntimeError::array_length);
+                    target=values.array(instruction.type,static_cast<std::size_t>(length));
+                }
             } else {
                 target=std::get<std::shared_ptr<Aggregate>>(pop());
                 if (target->nil) trap(instruction,RuntimeError::nil_reference);
@@ -627,11 +674,13 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
             const auto original=std::get<std::shared_ptr<Aggregate>>(pop());
             if (original->nil) { stack.emplace_back(original); break; }
             auto result=values.array(instruction.type,original->items.size());
+            result->rows=original->rows; result->columns=original->columns;
             for (std::size_t i=0;i<result->items.size();++i) values.write(result->items[i],original->items[i]->value);
             stack.emplace_back(result); break;
         }
         case Op::array_high: {
-            auto array=std::get<std::shared_ptr<Aggregate>>(pop()); stack.emplace_back(static_cast<std::int32_t>(array->items.size())-1); break;
+            auto array=std::get<std::shared_ptr<Aggregate>>(pop());
+            stack.emplace_back(static_cast<std::int32_t>(type_info(program,instruction.type).rank==2 ? array->rows : array->items.size())-1); break;
         }
         case Op::sequence_sort: {
             auto sequence=std::get<std::shared_ptr<Aggregate>>(pop());
@@ -660,15 +709,24 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
         }
         case Op::drop: (void)pop(); break;
         case Op::get_index: case Op::ref_index: {
-            const auto index = std::int64_t(std::get<std::int32_t>(pop())); const auto value=pop();
+            const auto last=std::int64_t(std::get<std::int32_t>(pop()));
+            const bool matrix=instruction.type!=Type::string && type_info(program,instruction.type).rank==2 && !instruction.operand;
+            const auto first=matrix ? std::int64_t(std::get<std::int32_t>(pop())) : last;
+            const auto value=pop();
             if (instruction.type==Type::string) {
                 if (std::holds_alternative<NilString>(value)) trap(instruction,RuntimeError::nil_reference);
-                const auto& text=string_text(value); const auto offset=index-(instruction.operand ? 0 : 1);
+                const auto& text=string_text(value); const auto offset=first-(instruction.operand ? 0 : 1);
                 if (offset<0 || static_cast<std::size_t>(offset)>=text.size()) trap(instruction,RuntimeError::index_bounds);
                 stack.emplace_back(text[static_cast<std::size_t>(offset)]); break;
             }
             auto array = std::get<std::shared_ptr<Aggregate>>(value);
             if (array->nil) trap(instruction,RuntimeError::nil_reference);
+            std::int64_t index=first;
+            if (matrix) {
+                if (first<0 || last<0 || static_cast<std::uint64_t>(first)>=array->rows || static_cast<std::uint64_t>(last)>=array->columns)
+                    trap(instruction,RuntimeError::index_bounds);
+                index=static_cast<std::int64_t>(static_cast<std::size_t>(first)*array->columns+static_cast<std::size_t>(last));
+            }
             if (index < 0 || static_cast<std::size_t>(index) >= array->items.size()) trap(instruction,RuntimeError::index_bounds);
             auto cell = array->items[static_cast<std::size_t>(index)];
             if (instruction.op == Op::ref_index) stack.emplace_back(cell); else stack.push_back(values.copy(cell->value));
@@ -685,10 +743,14 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
             const auto value=pop();
             if (instruction.type==Type::string) { stack.emplace_back(static_cast<std::int32_t>(string_text(value).size())); break; }
             auto array = std::get<std::shared_ptr<Aggregate>>(value);
-            if (array->nil && type_info(program,instruction.type).kind==CompoundKind::list) trap(instruction,RuntimeError::nil_reference);
+            if (array->nil && (instruction.operand || type_info(program,instruction.type).kind==CompoundKind::list)) trap(instruction,RuntimeError::nil_reference);
             stack.emplace_back(static_cast<std::int32_t>(array->items.size())); break;
         }
         case Op::array_new: case Op::array_literal: {
+            if (type_info(program,instruction.type).rank==2) {
+                const auto columns=std::get<std::int32_t>(pop()), rows=std::get<std::int32_t>(pop());
+                stack.emplace_back(values.matrix(instruction.type,rows,columns)); break;
+            }
             const auto count = instruction.op == Op::array_literal ? static_cast<std::int32_t>(instruction.operand) : std::get<std::int32_t>(pop());
             if (count < 0) trap(instruction,RuntimeError::array_length);
             auto array = values.array(instruction.type,static_cast<std::size_t>(count));
@@ -697,6 +759,19 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
             stack.emplace_back(array); break;
         }
         case Op::resize_array: {
+            if (type_info(program,instruction.type).rank==2) {
+                const auto columns=std::get<std::int32_t>(pop()), rows=std::get<std::int32_t>(pop());
+                const auto original=std::get<std::shared_ptr<Aggregate>>(pop());
+                const auto target=std::get<std::shared_ptr<Cell>>(pop());
+                auto result=values.matrix(instruction.type,rows,columns);
+                std::size_t copied=0;
+                for (std::size_t r=0;r<std::min(result->rows,original->rows);++r)
+                    for (std::size_t c=0;c<std::min(result->columns,original->columns);++c) {
+                        if ((copied++&255U)==0 && options.cancelled && options.cancelled()) trap(instruction,RuntimeError::cancelled);
+                        values.write(result->items[r*result->columns+c],original->items[r*original->columns+c]->value);
+                    }
+                values.write(target,result); break;
+            }
             const auto count = std::get<std::int32_t>(pop()); auto target = std::get<std::shared_ptr<Cell>>(pop());
             if (count < 0) trap(instruction,RuntimeError::array_length);
             const auto original = std::get<std::shared_ptr<Aggregate>>(target->value);

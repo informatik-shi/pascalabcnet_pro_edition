@@ -56,6 +56,73 @@ void runtime_error(std::string_view source, std::string_view code) {
     error([&] { (void)run(source); }, code,source);
 }
 
+void rectangular_arrays() {
+    result("uses Arrays; begin var m:=new integer[1,2]; Arrays.FillByValue(m,3); var c:=PABCSystem.Copy(m); Writeln(PABCSystem.High(c),' ',c[0,1]); var a:=Arr(3,1,2); Arrays.Sort(a); Arrays.SortDescending(a); foreach var x in a do Write(x); end.","0 3\n321");
+    compile_error("uses Arrays; begin var l:=new List<integer>; Arrays.Sort(l); end.","E_TYPE");
+    result("uses Arrays; begin var m:=new integer[2,2]; m[0,0]:=1; m[0,1]:=20; m[1,0]:=-3; m[1,1]:=4; WriteMatrix(m,3); m.Write('|'); m.Writeln('/'); end.","  1  20 \n -3   4 \n1|20|\n-3|4|\n1/20/\n-3/4/\n\n");
+    result("uses Arrays; begin var m:=new real[1,2]; m[0,0]:=1.5; m[0,1]:=2.25; WriteMatrix(m); Arrays.WriteMatrix(m,6,1); var a:=new real[1,1]; a[0,0]:=1.5; WriteMatrix(a,-6,-2); end.","1.50 2.25 \n   1.5    2.2 \n1.50   \n");
+    result("uses Arrays; begin var m:=new string[1,2]; m[0,0]:=nil; m[0,1]:='Я'; WriteMatrix(m,4); var a:=new integer[3,0]; WriteMatrix(a,-1); a.Writeln; end."," nil    Я \n\n\n\n\n\n\n\n");
+    result("begin Writeln('[',FormatValue(7,3),'] [',FormatValue(-7,1),'] [',FormatValue('🌍',4),']'); Writeln(FormatValue(MaxUInt64,2),' ',FormatValue(true,0)); Writeln(FormatValue(2.5,0,0),' ',FormatValue(3.5,0,0),' [',FormatValue(1.5,-6,-2),']'); end.","[  7] [-7] [  🌍]\n18446744073709551615 True\n2 4 [1.50  ]\n");
+    result("uses Arrays; var m:array[,] of integer; var trace:string; function Width:integer; begin trace:=trace+'W'; SetLength(m,0,0); Result:=0; end; begin m:=new integer[1,2]; m[0,1]:=2; var old:=m; WriteMatrix(m,Width()); Writeln(trace,' ',m.Length,' ',old.Length); end.","0 2 \nW 0 2\n");
+    result("uses Arrays; begin var m:=new real[0,2]; WriteMatrix(m,0,-2147483648); end.","");
+    runtime_error("uses Arrays; begin var m:array[,] of integer; WriteMatrix(m); end.","E_NIL");
+    runtime_error("uses Arrays; begin WriteMatrix(new integer[1,1],-1); end.","E_RANGE");
+    runtime_error("begin FormatValue(1,-1); end.","E_RANGE");
+    runtime_error("begin FormatValue(1.5,0,-2147483648); end.","E_OVERFLOW");
+    runtime_error("begin FormatValue(1.5,0,2147483647); end.","E_LIMIT");
+    compile_error("begin WriteMatrix(new integer[1,2]); end.","E_NAME");
+    compile_error("uses Arrays; begin WriteMatrix(new integer[1,2],0,2); end.","E_TYPE");
+    compile_error("uses Arrays; begin WriteMatrix(Arr(1,2)); end.","E_TYPE");
+    abc::ExecutionOptions limits; std::size_t polls=0; limits.cancelled=[&]{return ++polls>20;};
+    error([&]{(void)run("uses Arrays; begin WriteMatrix(new integer[20000,0]); end.","",limits);},"E_CANCELLED");
+    auto invalid_output=abc::compile("uses Arrays; begin WriteMatrix(new integer[1,2]); end.");
+    for (auto& instruction:invalid_output.code) if (instruction.op==abc::Op::write_matrix) instruction.operand=1;
+    error([&]{abc::verify(invalid_output);},"E_BYTECODE");
+    result("uses Arrays; begin SetRandomSeed(1); var a:=CreateRandomIntegerMatrix(2,3); foreach var x in a do Write(x,'|'); Writeln(' ',a.RowCount,' ',a.ColCount()); SetRandomSeed(1); var b:=Arrays.CreateRandomRealMatrix(1,2,5,7); Writeln(Round(b[0,0],2),' ',Round(b[0,1],2)); end.","25|11|47|77|66|43| 2 3\n0.5 0.22\n");
+    result("uses Arrays; begin var a:=new integer[1,3]; SetRandomSeed(1); FillByRandom(a); foreach var x in a do Write(x,'|'); SetRandomSeed(1); a.FillRandom(10,12); Writeln(' ',a[0,0],' ',a[0,1],' ',a[0,2]); end.","25|11|47| 10 10 11\n");
+    result("begin SetRandomSeed(1); var a:=MatrRandom(1,3); foreach var x in a do Write(x,'|'); Writeln; SetRandomSeed(1); var b:=PABCSystem.MatrRandomInteger(1,2,10,12); Writeln(b[0,0],' ',b[0,1]); end.","25|11|47|\n10 10\n");
+    result("begin SetRandomSeed(1); var a:=MatrRandomReal(1,2,0,1); Writeln(a[0,0],' ',a[0,1]); var b:=MatrRandom; var c:=MatrRandomInteger(1); Writeln(RowCount(b),' ',ColCount(b),' ',c.RowCount,' ',c.ColCount); end.","0.25 0.11\n5 5 1 5\n");
+    result("begin SetRandomSeed(1); var a:=MatrRandomReal(1,1,5); Writeln(a[0,0]); var b:=new real[1,2]; SetRandomSeed(1); b.FillRandom(5.0,7.0); Writeln(Round(b[0,0],2),' ',Round(b[0,1],2)); end.","6.24\n5.5 5.22\n");
+    result("begin SetRandomSeed(1); var a:=MatrRandom(0,2,0,MaxInt); var b:=MatrRandomReal(1,0,0,1,16); Writeln(a.Length,' ',b.ColCount,' ',Random(100)); end.","0 0 24\n");
+    result("begin var a:=new integer[1,2]; a[0,1]:=7; var b:=a.Copy; b[0,1]:=9; Writeln(a[0,1],' ',b.High,' ',b.ColCount); var c:=Arr(3,1,2); c.Sort; c.SortDescending(); foreach var x in c do Write(x); end.","7 0 2\n321");
+    runtime_error("begin var m:=MatrRandom(-1,2); end.","E_RANGE");
+    runtime_error("begin var m:=MatrRandom(1,1,0,MaxInt); end.","E_OVERFLOW");
+    runtime_error("begin var m:=MatrRandomReal(1,1,0,1,16); end.","E_RANGE");
+    compile_error("begin CreateRandomIntegerMatrix(1,2); end.","E_NAME");
+    compile_error("uses Arrays; begin CreateRandomIntegerMatrix(1); end.","E_TYPE");
+    compile_error("begin MatrRandom(1,2,3,4,5); end.","E_TYPE");
+    result("begin var m:=new integer[2,3]; m[0,1]:=7; m[1,2]:=9; Writeln(m.Length,' ',m.Rank,' ',m.GetLength(0),' ',m.GetLength(1)); Writeln(m.GetLowerBound(0),' ',m.GetUpperBound(0),' ',m.GetUpperBound(1),' ',High(m)); foreach var x in m do Write(x,'|'); end.","6 2 2 3\n0 1 2 1\n0|7|0|0|0|9|");
+    result("type Mat=array[,] of integer; begin var m:Mat; Writeln(Length(m),' ',Length(m,99),' ',High(m),' ',m=nil); SetLength(m,2,3); m[1,2]:=8; var old:=m; SetLength(m,3,2); Writeln(m.GetLength(0),' ',m.GetLength(1),' ',m[1,1],' ',old[1,2]); end.","0 0 -1 True\n3 2 0 8\n");
+    result("begin var m:=new integer[2,2]; m[0,0]:=1; m[0,1]:=2; m[1,0]:=3; m[1,1]:=4; SetLength(m,3,3); foreach var x in m do Write(x); Writeln; SetLength(m,1,2); foreach var x in m do Write(x); end.","120340000\n12");
+    result("begin var m:=new integer[1,1]; m[0,0]:=7; var old:=m; SetLength(m,1,1); Writeln(m=old,' ',m[0,0]); m[0,0]:=9; Writeln(old[0,0]); end.","False 7\n7\n");
+    result("begin var a:=new integer[0,5]; var b:=new integer[3,0]; Writeln(a.Length,' ',a.GetUpperBound(0),' ',a.GetUpperBound(1)); Writeln(b.Length,' ',b.GetUpperBound(0),' ',b.GetUpperBound(1)); foreach var x in b do Write('bad'); end.","0 -1 4\n0 2 -1\n");
+    result("type Mat=array[,] of integer; function Make:Mat; begin Result:=new integer[1,2]; Result[0,1]:=8; end; procedure Grow(var m:Mat); begin SetLength(m,2,3); end; begin var m:=Make; Grow(m); Writeln(m[0,1],' ',m.GetLength(1)); end.","8 3\n");
+    result("type R=record x:integer; a:array of integer; end; begin var m:=new R[1,2]; m[0,0].x:=4; m[0,0].a:=Arr(7); var c:=Copy(m); c[0,0].x:=9; c[0,0].a[0]:=8; Writeln(m[0,0].x,' ',m[0,0].a[0],' ',c.Rank,' ',c.GetLength(1)); end.","4 8 2 2\n");
+    result("begin var m:=new integer[2,2]; FillByValue(m,7); foreach var x in m do Write(x); var c:=Copy(m); c[0,0]:=8; Writeln(' ',m[0,0],' ',c[0,0]); end.","7777 7 8\n");
+    result("begin var a:=new real[1,2]; a[0,1]:=1.5; var b:=new boolean[2,1]; b[1,0]:=true; Writeln(a[0,0],' ',a[0,1],' ',b[1,0]); var c:=new char[1,2]; c[0,0]:='Я'; Writeln(c[0,0],' ',Ord(c[0,1])); end.","0 1.5 True\nЯ 0\n");
+    result("begin var a:=new integer[2]; Writeln(a.Rank,' ',a.GetLength(0),' ',a.GetUpperBound(0),' ',a.GetLowerBound(0)); Writeln(PABCSystem.Length(a,0)); end.","1 2 1 0\n2\n");
+    result("type Mat=array[,] of integer; var m:Mat; var trace:string; function I:integer; begin trace:=trace+'I'; Result:=1; end; function J:integer; begin trace:=trace+'J'; Result:=0; end; begin m:=new integer[2,2]; m[I(),J()]:=7; Writeln(trace,' ',m[1,0]); end.","IJ 7\n");
+    result("function R:integer; begin Write('R'); Result:=2; end; function C:integer; begin Write('C'); Result:=3; end; begin var m:=new integer[R(),C()]; Writeln(m.Length); end.","RC6\n");
+    result("type Mat=array[,] of integer; var m:Mat; function Rows:integer; begin m:=new integer[1,1]; m[0,0]:=99; Result:=2; end; begin m:=new integer[1,1]; m[0,0]:=7; SetLength(m,Rows(),2); Writeln(m[0,0],' ',m.GetLength(0)); end.","7 2\n");
+    result("type Mat=array[,] of integer; var a:array of Mat; var trace:string; function Index:integer; begin trace:=trace+'I'; Result:=0; end; begin a:=new Mat[1]; a[0]:=new integer[1,1]; a[0][0,0]:=7; SetLength(a[Index()],2,2); Writeln(trace,' ',a[0][0,0]); end.","II 7\n");
+    result("begin var m:=new integer[2,2]; var old:=m; foreach var x in m do begin SetLength(m,1,1); Write(x); end; Writeln(' ',old.Length,' ',m.Length); end.","0000 4 1\n");
+    for (const auto source:{"begin var a:array[,] of integer; Writeln(a.Length); end.","begin var a:array of integer; Writeln(a.Length); end.","begin var a:array[,] of integer; Writeln(a.Rank); end.","begin var a:array[,] of integer; Writeln(a.GetLength(0)); end.","begin var a:array[,] of integer; a[0,0]:=1; end."}) runtime_error(source,"E_NIL");
+    for (const auto source:{"begin var a:=new integer[1,2]; Writeln(a[0,2]); end.","begin var a:=new integer[1,2]; a[-1,0]:=1; end.","begin var a:=new integer[3,0]; a[0,0]:=1; end.","begin var a:=new integer[1,2]; Writeln(a.GetLength(2)); end.","begin var a:=new integer[2]; Writeln(a.GetUpperBound(-1)); end."}) runtime_error(source,"E_BOUNDS");
+    for (const auto source:{"begin var n:integer:=-1; var a:=new integer[n,2]; end.","begin var a:=new integer[1,1]; var n:integer:=-1; SetLength(a,n,2); end."}) runtime_error(source,"E_RANGE");
+    runtime_error("begin var a:=new integer[2147483647,2147483647]; end.","E_LIMIT");
+    for (const auto source:{"begin var a:=new integer[2,2]; Writeln(a[0]); end.","begin var a:=new integer[2]; Writeln(a[0,0]); end.","begin var a:=new integer[2,2]; SetLength(a,2); end.","begin var a:=new integer[2]; SetLength(a,2,3); end.","begin var a:=new integer[1,2]; Sort(a); end.","begin var a:=new integer[1,2]; Reverse(a); end.","begin var a:=new integer[1,2]; var b:array of integer:=a; end.","begin var a:=new integer[1,2]; Writeln(a.GetLength(1.5)); end."}) compile_error(source,"E_TYPE");
+    compile_error("begin var a:array[,,] of integer; end.","E_UNSUPPORTED");
+    compile_error("begin var a:=new integer[1,2,3]; end.","E_UNSUPPORTED");
+    auto program=abc::compile("begin var a:=new integer[1,2]; Writeln(a[0,1]); end.");
+    program.types[0].rank=3; error([&]{abc::verify(program);},"E_BYTECODE");
+    program=abc::compile("begin var a:=new integer[1,2]; Writeln(a[0,1]); end.");
+    for (auto& instruction:program.code) if (instruction.op==abc::Op::get_index) instruction.operand=1;
+    error([&]{abc::verify(program);},"E_BYTECODE");
+    program=abc::compile("begin var a:=new integer[1,2]; Writeln(a.Rank); end.");
+    for (auto& instruction:program.code) if (instruction.op==abc::Op::array_query) instruction.operand=999;
+    error([&]{abc::verify(program);},"E_BYTECODE");
+}
+
 void console_unicode_output() {
     result("begin foreach var c in '🌍' do Write(c); end.","🌍");
     result("begin Write(#55356); Write(#57101); end.","🌍");
@@ -1857,6 +1924,7 @@ int main() {
     console_input();
     console_functions();
     console_unicode_output();
+    rectangular_arrays();
     sequence_mutations();
     arithmetic();
     verifier();

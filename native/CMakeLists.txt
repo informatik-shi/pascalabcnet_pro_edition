@@ -14,6 +14,7 @@ add_library(abc_core
     src/random.cpp
     src/console_input.cpp
     src/console_output.cpp
+    src/formatting.cpp
     src/files.cpp
     src/file_moves.cpp
     src/file_operations.cpp
@@ -146,6 +147,9 @@ if(BUILD_TESTING)
     add_test(NAME unicode_output_compatibility COMMAND ${CMAKE_COMMAND}
         "-DABC_RUNNER=$<TARGET_FILE:abc>" "-DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
         -DABC_FIXTURE_NAME=unicode-output-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")
+    add_test(NAME matrix_compatibility COMMAND ${CMAKE_COMMAND}
+        "-DABC_RUNNER=$<TARGET_FILE:abc>" "-DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
+        -DABC_FIXTURE_NAME=matrix-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")
     add_test(NAME random_compatibility COMMAND ${CMAKE_COMMAND}
         "-DABC_RUNNER=$<TARGET_FILE:abc>" "-DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
         -DABC_FIXTURE_NAME=random-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")

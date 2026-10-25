@@ -75,6 +75,7 @@ struct Aggregate {
     std::vector<std::shared_ptr<Cell>> items;
     bool nil = false;
     std::size_t count = 0; // Logical size of DynArray and SimpleSet; items holds capacity.
+    std::size_t rows = 0, columns = 0; // Shape of a rectangular rank-two array.
     std::uint64_t version = 0; // List enumerators detect successful writes and structural changes.
     // Allocate deque storage only for constructed stacks and queues.
     std::unique_ptr<std::deque<std::shared_ptr<Cell>>> ends;
@@ -98,8 +99,10 @@ enum class Op {
     read_lines, write_lines, array_copy, array_high, sequence_sort, sequence_fill, mutate_string, increment, read_value,
     endpoint_call, buffer_call, association_call, linked_call, file_print, file_newline, file_read, file_skip_line, file_output,
     iteration_version, iteration_check, set_character, random_array, fill_random_array, sequence_mutate, swap_values, write_array,
-    bit_not, bit_and, bit_or, bit_xor, shift_left, shift_right, read_console, read_array, console_output
+    bit_not, bit_and, bit_or, bit_xor, shift_left, shift_right, read_console, read_array, console_output, array_query, write_matrix
 };
+
+enum class ArrayQuery { length, upper_bound, lower_bound, rank, length_or_zero };
 
 enum class SequenceMutation { reverse, reverse_range, shuffle, shuffle_result, swap_indices };
 inline bool mutation_indices(SequenceMutation method) { return method==SequenceMutation::reverse_range || method==SequenceMutation::swap_indices; }
@@ -171,6 +174,7 @@ struct TypeInfo {
     Type element = Type::invalid;
     std::vector<Local> fields;
     Type key = Type::invalid;
+    unsigned rank = 1;
 };
 enum class AssociationMethod { get, set, to_string, print, println };
 inline std::vector<Type> association_parameters(const TypeInfo& info, AssociationMethod method) {

@@ -134,6 +134,7 @@ struct SyntaxType {
     std::shared_ptr<SyntaxType> element;
     std::vector<std::pair<Token, std::shared_ptr<SyntaxType>>> fields;
     std::shared_ptr<SyntaxType> key;
+    unsigned rank = 1;
 };
 struct SyntaxExpr {
     SyntaxExprKind kind;
@@ -250,7 +251,16 @@ private:
     std::shared_ptr<SyntaxType> type_syntax() {
         DepthGuard guard(depth_, current_.location);
         auto result = std::make_shared<SyntaxType>(); result->token = current_;
-        if (accept("array")) { result->kind = "array"; expect("of"); result->element = type_syntax(); }
+        if (accept("array")) {
+            result->kind = "array";
+            if (accept("[")) {
+                if (!accept(",")) throw Error("E_UNSUPPORTED",current_.location,"Fixed-bound arrays are not implemented");
+                result->rank=2;
+                if (is(",")) throw Error("E_UNSUPPORTED",current_.location,"Array ranks above two are not implemented");
+                expect("]");
+            }
+            expect("of"); result->element = type_syntax();
+        }
         else if (accept("record")) {
             result->kind = "record";
             while (!is("end")) {
@@ -466,7 +476,14 @@ private:
         if (accept("new")) {
             const auto token = current_; auto type = type_syntax();
             auto result = make_expression(SyntaxExprKind::construction, token); result->constructed = type;
-            if (accept("[")) { result->array_construction = true; result->arguments.push_back(expression()); expect("]"); }
+            if (accept("[")) {
+                result->array_construction=true;
+                do {
+                    if (result->arguments.size()>=2) throw Error("E_UNSUPPORTED",current_.location,"Array ranks above two are not implemented");
+                    result->arguments.push_back(expression());
+                } while (accept(","));
+                expect("]");
+            }
             else if (accept("(")) {
                 if (!is(")")) do {
                     if (result->arguments.size() >= 3) fail("Constructor argument limit exceeded");
@@ -485,9 +502,14 @@ private:
     std::unique_ptr<SyntaxExpr> postfix(std::unique_ptr<SyntaxExpr> result) {
         for (;;) {
             if (accept("[")) {
-                auto index = expression(); expect("]");
+                auto index = expression();
                 const auto token = result->token;
                 result = make_expression(SyntaxExprKind::index, token, std::move(result), std::move(index));
+                while (accept(",")) {
+                    if (!result->arguments.empty()) throw Error("E_UNSUPPORTED",current_.location,"Array ranks above two are not implemented");
+                    result->arguments.push_back(expression());
+                }
+                expect("]");
             } else if (accept(".")) {
                 // These standard Text methods also have statement keyword spellings.
                 const auto field = is("write") || is("writeln") || is("readln") ? consume() : name();
@@ -591,15 +613,15 @@ public:
     }
 
 private:
-    Type sequence_type(CompoundKind kind, Type element) {
+    Type sequence_type(CompoundKind kind, Type element, unsigned rank = 1) {
         for (std::size_t i = 0; i < module_.types.size(); ++i)
-            if (module_.types[i].kind == kind && module_.types[i].element == element) return static_cast<Type>(64+i);
+            if (module_.types[i].kind == kind && module_.types[i].element == element && module_.types[i].rank==rank) return static_cast<Type>(64+i);
         if (module_.types.size() >= 1024) throw Error("E_LIMIT",{},"Type limit exceeded");
         const auto name = kind == CompoundKind::array ? "array" : kind == CompoundKind::list ? "list"
             : kind == CompoundKind::stack ? "stack" : kind == CompoundKind::queue ? "queue"
             : kind == CompoundKind::dynarray ? "dynarray" : kind == CompoundKind::linked_node ? "linkedlistnode"
             : kind == CompoundKind::single_node ? "singlenode" : "simpleset";
-        module_.types.push_back({name,kind,element,{}});
+        module_.types.push_back({name,kind,element,{},Type::invalid,rank});
         return static_cast<Type>(63+module_.types.size());
     }
     const TypeInfo& info(Type type, SourceLocation location) const {
@@ -618,7 +640,7 @@ private:
     Type resolve_type(const SyntaxType& syntax) {
         if (auto found=resolved_types_.find(&syntax); found!=resolved_types_.end()) return found->second;
         if (syntax.kind == "array" || (syntax.kind == "list" && syntax.element))
-            return sequence_type(syntax.kind == "array" ? CompoundKind::array : CompoundKind::list,resolve_type(*syntax.element));
+            return sequence_type(syntax.kind == "array" ? CompoundKind::array : CompoundKind::list,resolve_type(*syntax.element),syntax.rank);
         if (syntax.kind == "assocarray" && syntax.key && syntax.element) {
             if (!collections_imported_) throw Error("E_UNSUPPORTED",syntax.token.location,"AssocArray requires uses Collections");
             const auto key = resolve_type(*syntax.key), element = resolve_type(*syntax.element);
@@ -712,8 +734,8 @@ private:
         case SyntaxExprKind::construction: {
             auto type = resolve_type(*source.constructed);
             if (source.array_construction) {
-                result->kind = hir::ExprKind::array_new; result->type = sequence_type(CompoundKind::array,type);
-                result->arguments.push_back(convert(expression(*source.arguments[0]),Type::integer));
+                result->kind = hir::ExprKind::array_new; result->type = sequence_type(CompoundKind::array,type,static_cast<unsigned>(source.arguments.size()));
+                for (const auto& argument:source.arguments) result->arguments.push_back(convert(expression(*argument),Type::integer));
             } else {
                 if (type==Type::text_file) {
                     if (!source.arguments.empty()) throw Error("E_TYPE",result->location,"Text constructor takes no arguments");
@@ -749,6 +771,8 @@ private:
             }
             if (!result->left) result->left = expression(*source.left);
             const auto receiver_type = result->left->type;
+            const auto rank=compound(receiver_type) && info(receiver_type,result->location).kind==CompoundKind::array ? info(receiver_type,result->location).rank : 1U;
+            if (source.arguments.size()+1!=rank) throw Error("E_TYPE",result->location,"Wrong number of array indices");
             if (receiver_type==Type::string) {
                 result->right=convert(expression(*source.right),Type::integer);
                 result->type=Type::character; result->kind=hir::ExprKind::index; break;
@@ -761,6 +785,7 @@ private:
                 result->arguments.push_back(convert(expression(*source.right),key)); break;
             }
             result->right = convert(expression(*source.right),Type::integer);
+            for (const auto& argument:source.arguments) result->arguments.push_back(convert(expression(*argument),Type::integer));
             const auto& type = info(receiver_type,result->location);
             if (type.kind == CompoundKind::dynarray) {
                 result->kind = hir::ExprKind::buffer_call; result->type = type.element;
@@ -783,9 +808,38 @@ private:
                 if (bind_random_array(*result,source.token.text,source.left->token.text)) break;
                 if (bind_sequence_mutation(*result,source.token.text,source.left->token.text)) break;
                 if (bind_array_output(*result,source.token.text,source.left->token.text)) break;
+                if (bind_array_length(*result,source.token.text,source.left->token.text)) break;
+                if (bind_sequence_library(*result,source.token.text,source.left->token.text)) break;
                 bind_builtin(*result,source.token.text,source.left->token.text); break;
             }
             result->left = expression(*source.left); const auto receiver = result->left->type;
+            if (compound(receiver) && info(receiver,result->location).kind==CompoundKind::array
+                && (source.token.text=="rowcount" || source.token.text=="colcount")) {
+                if (info(receiver,result->location).rank!=2 || !source.arguments.empty()) throw Error("E_TYPE",result->location,"RowCount/ColCount require a matrix and no arguments");
+                result->kind=hir::ExprKind::array_query; result->type=Type::integer; result->local=static_cast<std::size_t>(ArrayQuery::length);
+                result->right=std::make_unique<hir::Expr>(); result->right->kind=hir::ExprKind::literal; result->right->type=Type::integer;
+                result->right->value=std::int32_t{source.token.text=="rowcount" ? 0 : 1}; result->right->location=result->location; break;
+            }
+            if (compound(receiver) && info(receiver,result->location).kind==CompoundKind::array
+                && (source.token.text=="copy" || source.token.text=="high" || source.token.text=="sort" || source.token.text=="sortdescending")) {
+                const bool sort=source.token.text=="sort" || source.token.text=="sortdescending";
+                const auto& type=info(receiver,result->location);
+                if (!source.arguments.empty() || (sort && (type.rank!=1 || !scalar(type.element)))) throw Error("E_TYPE",result->location,"Wrong array operation arguments");
+                result->kind=source.token.text=="copy" ? hir::ExprKind::array_copy : source.token.text=="high" ? hir::ExprKind::array_high : hir::ExprKind::sequence_sort;
+                result->type=source.token.text=="copy" ? receiver : source.token.text=="high" ? Type::integer : Type::unit;
+                result->local=source.token.text=="sortdescending" ? 1U : 0U; break;
+            }
+            if (compound(receiver) && info(receiver,result->location).kind==CompoundKind::array
+                && (source.token.text=="getlength" || source.token.text=="getupperbound" || source.token.text=="getlowerbound" || source.token.text=="rank")) {
+                const bool rank=source.token.text=="rank";
+                if (source.arguments.size()!=(rank ? 0U : 1U) || (rank && source.kind==SyntaxExprKind::member_call))
+                    throw Error("E_TYPE",result->location,"Wrong array query arguments");
+                result->kind=hir::ExprKind::array_query; result->type=Type::integer;
+                result->local=static_cast<std::size_t>(rank ? ArrayQuery::rank : source.token.text=="getupperbound" ? ArrayQuery::upper_bound
+                    : source.token.text=="getlowerbound" ? ArrayQuery::lower_bound : ArrayQuery::length);
+                if (!rank) result->right=convert(expression(*source.arguments[0]),Type::integer);
+                break;
+            }
             if (compound(receiver) && info(receiver,result->location).kind==CompoundKind::array && imported_units_.contains("arrays")
                 && (source.token.text=="write" || source.token.text=="writeln")) {
                 result->arguments.push_back(std::move(result->left));
@@ -944,8 +998,8 @@ private:
             }
             if (type.kind != CompoundKind::record) {
                 if ((source.token.text == "length" && type.kind == CompoundKind::array) || (source.token.text == "count" && type.kind == CompoundKind::list)) {
-                    if (!source.arguments.empty()) throw Error("E_TYPE",result->location,"Property takes no arguments");
-                    result->kind = hir::ExprKind::length; result->type = Type::integer; break;
+                    if (!source.arguments.empty() || source.kind==SyntaxExprKind::member_call) throw Error("E_TYPE",result->location,"Property takes no arguments");
+                    result->kind = hir::ExprKind::length; result->type = Type::integer; result->local=1; break;
                 }
                 if (type.kind != CompoundKind::list) throw Error("E_NAME",result->location,"Unknown array member");
                 const auto element = type.element;
@@ -1000,7 +1054,7 @@ private:
                 result->kind = hir::ExprKind::literal;
                 result->value = *value;
                 result->type = value_type(*value);
-            } else if (source.token.text=="arrrandom" || source.token.text=="arrrandominteger" || source.token.text=="arrrandomreal") {
+            } else if (source.token.text=="arrrandom" || source.token.text=="arrrandominteger" || source.token.text=="arrrandomreal" || source.token.text=="matrrandom" || source.token.text=="matrrandominteger" || source.token.text=="matrrandomreal") {
                 SyntaxExpr call{SyntaxExprKind::call,source.token,{},{},1,{},{}};
                 return expression(call);
             } else if (std::any_of(stdlib::signatures().begin(),stdlib::signatures().end(),[&](const stdlib::Signature& signature) {
@@ -1032,6 +1086,7 @@ private:
             if (bind_random_array(*result,source.token.text)) break;
             if (bind_sequence_mutation(*result,source.token.text)) break;
             if (bind_array_output(*result,source.token.text)) break;
+            if (bind_array_length(*result,source.token.text)) break;
             if (source.token.text == "arr") {
                 if (result->arguments.empty()) throw Error("E_TYPE",result->location,"Cannot infer empty Arr element type");
                 auto element = Type::nil;
@@ -1067,29 +1122,10 @@ private:
                 if (result->arguments.size()!=2) throw Error("E_TYPE",result->location,"WriteAllLines requires a path and string array");
                 result->arguments[0]=convert(std::move(result->arguments[0]),Type::string);
                 const auto& type=info(result->arguments[1]->type,result->location);
-                if (type.kind!=CompoundKind::array || type.element!=Type::string) throw Error("E_TYPE",result->location,"WriteAllLines requires a string array");
+                if (type.kind!=CompoundKind::array || type.rank!=1 || type.element!=Type::string) throw Error("E_TYPE",result->location,"WriteAllLines requires a string array");
                 result->kind=hir::ExprKind::write_lines; result->type=Type::unit; break;
             }
-            if (!result->arguments.empty() && compound(result->arguments[0]->type)) {
-                const auto sequence=result->arguments[0]->type; const auto& type=info(sequence,result->location); const auto& name=source.token.text;
-                if (endpoint_collection(type.kind) && (name=="copy" || name=="high" || name=="sort" || name=="sortdescending" || name=="fillbyvalue"))
-                    throw Error("E_TYPE",result->location,"Operation requires an array or list");
-                if (indexed_sequence(type.kind) && ((name=="copy" && type.kind==CompoundKind::array) || name=="high" || name=="sort" || name=="sortdescending" || name=="fillbyvalue")) {
-                    const auto count=name=="fillbyvalue" ? 2U : 1U;
-                    if (result->arguments.size()!=count) throw Error("E_TYPE",result->location,"Wrong sequence argument count");
-                    result->left=std::move(result->arguments[0]);
-                    if (name=="copy") { result->kind=hir::ExprKind::array_copy; result->type=sequence; }
-                    else if (name=="high") { result->kind=hir::ExprKind::array_high; result->type=Type::integer; }
-                    else if (name=="fillbyvalue") {
-                        result->kind=hir::ExprKind::sequence_fill; result->type=Type::unit;
-                        result->right=convert(std::move(result->arguments[1]),type.element);
-                    } else {
-                        if (!scalar(type.element)) throw Error("E_TYPE",result->location,"Sort requires scalar elements");
-                        result->kind=hir::ExprKind::sequence_sort; result->type=Type::unit; result->local=name=="sortdescending" ? 1 : 0;
-                    }
-                    result->arguments.clear(); break;
-                }
-            }
+            if (bind_sequence_library(*result,source.token.text)) break;
             bind_builtin(*result,source.token.text);
             break;
         }
@@ -1178,13 +1214,64 @@ private:
         }
         return result;
     }
+    bool bind_sequence_library(hir::Expr& result, std::string_view name, std::string_view unit = {}) {
+        const bool sort=name=="sort" || name=="sortdescending", fill=name=="fillbyvalue";
+        if ((!sort && !fill && name!="copy" && name!="high") || result.arguments.empty() || !compound(result.arguments[0]->type)) return false;
+        if (!unit.empty() && !(unit=="pabcsystem" && !fill) && !(unit=="arrays" && (sort || fill))) return false;
+        const auto sequence=result.arguments[0]->type; const auto& type=info(sequence,result.location);
+        if (!indexed_sequence(type.kind) || (name=="copy" && type.kind!=CompoundKind::array) || (unit=="arrays" && type.kind!=CompoundKind::array))
+            throw Error("E_TYPE",result.location,"Operation requires an array or list");
+        if (result.arguments.size()!=(fill ? 2U : 1U) || (sort && (type.rank!=1 || !scalar(type.element))))
+            throw Error("E_TYPE",result.location,"Wrong sequence arguments");
+        result.left=std::move(result.arguments[0]);
+        if (name=="copy") { result.kind=hir::ExprKind::array_copy; result.type=sequence; }
+        else if (name=="high") { result.kind=hir::ExprKind::array_high; result.type=Type::integer; }
+        else if (fill) {
+            result.kind=hir::ExprKind::sequence_fill; result.type=Type::unit; result.right=convert(std::move(result.arguments[1]),type.element);
+        } else { result.kind=hir::ExprKind::sequence_sort; result.type=Type::unit; result.local=name=="sortdescending" ? 1U : 0U; }
+        result.arguments.clear(); return true;
+    }
+    bool bind_array_length(hir::Expr& result, std::string_view name, std::string_view unit = {}) {
+        const bool rows=name=="rowcount" || name=="colcount";
+        if ((name!="length" && !rows) || (!unit.empty() && unit!="pabcsystem") || result.arguments.empty() || !compound(result.arguments[0]->type)) return false;
+        const auto& type=info(result.arguments[0]->type,result.location);
+        if (rows) {
+            if (result.arguments.size()!=1 || type.kind!=CompoundKind::array || type.rank!=2) throw Error("E_TYPE",result.location,"RowCount/ColCount require a matrix");
+            result.left=std::move(result.arguments[0]); result.kind=hir::ExprKind::array_query; result.type=Type::integer; result.local=static_cast<std::size_t>(ArrayQuery::length);
+            result.right=std::make_unique<hir::Expr>(); result.right->kind=hir::ExprKind::literal; result.right->type=Type::integer;
+            result.right->value=std::int32_t{name=="rowcount" ? 0 : 1}; result.right->location=result.location;
+            result.arguments.clear(); return true;
+        }
+        if (!indexed_sequence(type.kind) || (result.arguments.size()!=1 && (result.arguments.size()!=2 || type.kind!=CompoundKind::array)))
+            throw Error("E_TYPE",result.location,"Length requires an array/list and an optional array dimension");
+        result.left=std::move(result.arguments[0]); result.type=Type::integer;
+        if (result.arguments.size()==1) { result.kind=hir::ExprKind::length; result.local=0; }
+        else {
+            result.kind=hir::ExprKind::array_query; result.local=static_cast<std::size_t>(ArrayQuery::length_or_zero);
+            result.right=convert(std::move(result.arguments[1]),Type::integer);
+        }
+        result.arguments.clear(); return true;
+    }
     bool bind_array_output(hir::Expr& result, std::string_view name, std::string_view unit = {}, bool member = false) {
-        if ((member ? name!="write" && name!="writeln" : name!="writearray" && name!="writelnarray" && name!="readarray")
+        if ((member ? name!="write" && name!="writeln" : name!="writearray" && name!="writelnarray" && name!="readarray" && name!="writematrix")
             || (unit.empty() ? !imported_units_.contains("arrays") : unit!="arrays")) return false;
+        if (name=="writematrix") {
+            if (result.arguments.empty() || result.arguments.size()>3) throw Error("E_TYPE",result.location,"WriteMatrix requires a matrix, optional width and real precision");
+            auto args=std::move(result.arguments); result.arguments.clear(); result.left=std::move(args[0]);
+            const auto& type=info(result.left->type,result.location);
+            if (type.kind!=CompoundKind::array || type.rank!=2 || (type.element!=Type::real && args.size()>2)) throw Error("E_TYPE",result.location,"WriteMatrix requires a rectangular matrix");
+            if (!scalar(type.element)) throw Error("E_UNSUPPORTED",result.location,"Matrix output currently requires scalar elements");
+            const auto literal=[&](std::int32_t value) {
+                auto node=std::make_unique<hir::Expr>(); node->kind=hir::ExprKind::literal; node->type=Type::integer; node->value=value; node->location=result.location; return node;
+            };
+            result.arguments.push_back(args.size()>1 ? convert(std::move(args[1]),Type::integer) : literal(0));
+            if (type.element==Type::real) result.arguments.push_back(args.size()>2 ? convert(std::move(args[2]),Type::integer) : literal(2));
+            result.kind=hir::ExprKind::write_matrix; result.type=Type::unit; result.local=type.element==Type::real ? 1U : 0U; return true;
+        }
         if (result.arguments.size()!=1 && result.arguments.size()!=2) throw Error("E_TYPE",result.location,"Array output requires an array and optional delimiter");
         result.left=std::move(result.arguments[0]);
         const auto& type=info(result.left->type,result.location);
-        if (type.kind!=CompoundKind::array) throw Error("E_TYPE",result.location,"Array output requires an array");
+        if (type.kind!=CompoundKind::array || (type.rank!=1 && !member)) throw Error("E_TYPE",result.location,"Array IO requires a one-dimensional array");
         if (name=="readarray") {
             if (result.arguments.size()!=1 || (type.element!=Type::integer && type.element!=Type::real && type.element!=Type::string))
                 throw Error("E_TYPE",result.location,"ReadArray requires an integer, real or string array");
@@ -1215,6 +1302,7 @@ private:
             if (name!="reverse" || !lvalue(*result.arguments[0])) throw Error("E_TYPE",result.location,"Reverse requires a writable string");
         } else if (!compound(receiver) || !indexed_sequence(info(receiver,result.location).kind))
             throw Error("E_TYPE",result.location,"Reverse/Shuffle requires an array or List<T>");
+        else if (info(receiver,result.location).rank!=1) throw Error("E_TYPE",result.location,"Reverse/Shuffle requires a one-dimensional array");
         result.local=static_cast<std::size_t>(name=="reverse" ? count==1 ? SequenceMutation::reverse : SequenceMutation::reverse_range
             : name=="swap" ? SequenceMutation::swap_indices : member ? SequenceMutation::shuffle_result : SequenceMutation::shuffle);
         for (std::size_t i=1;i<count;++i) result.arguments[i]=convert(std::move(result.arguments[i]),Type::integer);
@@ -1224,13 +1312,16 @@ private:
         return true;
     }
     bool bind_random_array(hir::Expr& result, std::string_view name, std::string_view unit = {}) {
-        const bool arrays=name=="fillbyrandom" || name=="createrandomintegerarray" || name=="createrandomrealarray";
-        const bool system=name=="arrrandom" || name=="arrrandominteger" || name=="arrrandomreal" || name=="fillrandom";
+        const bool matrix_factory=name=="createrandomintegermatrix" || name=="createrandomrealmatrix" || name=="matrrandom" || name=="matrrandominteger" || name=="matrrandomreal";
+        const bool arrays=name=="fillbyrandom" || name=="createrandomintegerarray" || name=="createrandomrealarray" || name=="createrandomintegermatrix" || name=="createrandomrealmatrix";
+        const bool system=name=="arrrandom" || name=="arrrandominteger" || name=="arrrandomreal" || name=="fillrandom" || name=="matrrandom" || name=="matrrandominteger" || name=="matrrandomreal";
         if ((!arrays && !system) || (!unit.empty() && unit!=(arrays ? "arrays" : "pabcsystem"))
             || (arrays && unit.empty() && !imported_units_.contains("arrays"))) return false;
-        auto args=std::move(result.arguments); const auto count=args.size();
+        auto args=std::move(result.arguments); result.arguments.clear(); const auto count=args.size();
         const bool fill=name=="fillbyrandom" || name=="fillrandom";
-        const auto fail=[&](){throw Error("E_TYPE",result.location,"Wrong random array arguments for '"+std::string(name)+"'");};
+        const bool rounded=name=="arrrandomreal" || name=="matrrandomreal";
+        unsigned rank=matrix_factory ? 2U : 1U;
+        const auto fail=[&](){throw Error("E_TYPE",result.location,"Wrong random array/matrix arguments for '"+std::string(name)+"'");};
         const auto literal=[&](Value value) {
             auto node=std::make_unique<hir::Expr>(); node->kind=hir::ExprKind::literal;
             node->type=value_type(value); node->location=result.location; node->value=std::move(value); return node;
@@ -1238,30 +1329,33 @@ private:
         Type element;
         if (fill) {
             if ((name=="fillbyrandom" && count!=1 && count!=3) || (name=="fillrandom" && count!=3)) fail();
-            result.left=std::move(args[0]);
-            const auto& type=info(result.left->type,result.location);
+            result.left=std::move(args[0]); const auto& type=info(result.left->type,result.location);
             if (type.kind!=CompoundKind::array || (type.element!=Type::integer && type.element!=Type::real)) fail();
-            element=type.element;
-        } else element=name=="arrrandomreal" || name=="createrandomrealarray" ? Type::real : Type::integer;
-        const bool rounded=name=="arrrandomreal";
+            element=type.element; rank=type.rank;
+        } else element=rounded || name=="createrandomrealarray" || name=="createrandomrealmatrix" ? Type::real : Type::integer;
         const auto method=element==Type::integer ? RandomArrayMethod::integer
             : rounded ? RandomArrayMethod::rounded_real : arrays ? RandomArrayMethod::scaled_real : RandomArrayMethod::ranged_real;
         if (!fill) {
-            if ((arrays && count!=1 && count!=3) || (name=="arrrandom" && count>3)
-                || (name=="arrrandominteger" && count!=0 && count!=1 && count!=3) || (rounded && count>4)) fail();
-            result.arguments.push_back(count ? convert(std::move(args[0]),Type::integer) : literal(std::int32_t{10}));
+            if (rank==2) {
+                if ((arrays && count!=2 && count!=4) || (!arrays && count>(rounded ? 5U : 4U))) fail();
+                for (unsigned i=0;i<2;++i) result.arguments.push_back(count>i ? convert(std::move(args[i]),Type::integer) : literal(std::int32_t{5}));
+            } else {
+                if ((arrays && count!=1 && count!=3) || (name=="arrrandom" && count>3)
+                    || (name=="arrrandominteger" && count!=0 && count!=1 && count!=3) || (rounded && count>4)) fail();
+                result.arguments.push_back(count ? convert(std::move(args[0]),Type::integer) : literal(std::int32_t{10}));
+            }
         }
-        const auto scalar=element==Type::integer ? Type::integer : Type::real;
-        const bool explicit_bounds=rounded ? count>=3 : count==3 || (name=="arrrandom" && count==2);
-        auto low=explicit_bounds ? convert(std::move(args[1]),scalar) : literal(element==Type::integer ? Value{std::int32_t{0}} : Value{0.0});
-        auto high=explicit_bounds && count>=3 ? convert(std::move(args[2]),scalar)
-            : literal(element==Type::integer ? Value{std::int32_t{arrays ? 99 : 100}} : Value{10.0});
-        result.arguments.push_back(std::move(low)); result.arguments.push_back(std::move(high));
-        if (rounded) result.arguments.push_back(count==4 ? convert(std::move(args[3]),Type::integer)
-            : count==2 ? convert(std::move(args[1]),Type::integer) : literal(std::int32_t{2}));
+        const auto bounds=fill ? 1U : rank;
+        const bool low_given=fill ? count==3 : rank==2 ? count>2 : rounded ? count>=3 : count==3 || (name=="arrrandom" && count==2);
+        const bool high_given=fill ? count==3 : rank==2 ? count>3 : low_given && count>=3;
+        result.arguments.push_back(low_given ? convert(std::move(args[bounds]),element) : literal(element==Type::integer ? Value{std::int32_t{0}} : Value{0.0}));
+        result.arguments.push_back(high_given ? convert(std::move(args[bounds+1]),element)
+            : literal(element==Type::integer ? Value{std::int32_t{arrays && rank==1 ? 99 : 100}} : Value{10.0}));
+        if (rounded) result.arguments.push_back(rank==2 ? count==5 ? convert(std::move(args[4]),Type::integer) : literal(std::int32_t{2})
+            : count==4 ? convert(std::move(args[3]),Type::integer) : count==2 ? convert(std::move(args[1]),Type::integer) : literal(std::int32_t{2}));
         result.local=static_cast<std::size_t>(method);
         result.kind=fill ? hir::ExprKind::fill_random_array : hir::ExprKind::random_array;
-        result.type=fill ? Type::unit : sequence_type(CompoundKind::array,element);
+        result.type=fill ? Type::unit : sequence_type(CompoundKind::array,element,rank);
         return true;
     }
     void bind_builtin(hir::Expr& result, std::string_view name, std::string_view unit = {}) {
@@ -1366,14 +1460,18 @@ private:
             const auto& name = source.names.front().text;
             const bool resize = name == "setlength", insert = name == "insert";
             const std::size_t count = resize ? 2 : 3, reference = insert ? 1 : 0;
-            if (source.arguments.size() != count)
+            if ((!resize && source.arguments.size()!=count) || (resize && (source.arguments.size()<2 || source.arguments.size()>3)))
                 throw Error("E_TYPE", result.location, "Wrong argument count for '" + name + "'");
             auto target = expression(*source.arguments[reference]);
             if (!lvalue(*target)) throw Error("E_TYPE",target->location,"var argument must be assignable");
             if (resize && compound(target->type) && info(target->type,result.location).kind == CompoundKind::array) {
+                if (source.arguments.size()!=info(target->type,result.location).rank+1) throw Error("E_TYPE",result.location,"SetLength dimensions must match the array rank");
                 result.kind = hir::StmtKind::resize_array; result.target = std::move(target);
-                result.expression = convert(expression(*source.arguments[1]),Type::integer); break;
+                result.expression = convert(expression(*source.arguments[1]),Type::integer);
+                for (std::size_t i=2;i<source.arguments.size();++i) result.arguments.push_back(convert(expression(*source.arguments[i]),Type::integer));
+                break;
             }
+            if (source.arguments.size()!=count) throw Error("E_TYPE",result.location,"Wrong string mutation argument count");
             if (target->type != Type::string) throw Error("E_TYPE",target->location,"String var argument must have type string");
             result.kind = hir::StmtKind::string_mutation;
             const auto function = resize ? stdlib::Function::resize_string

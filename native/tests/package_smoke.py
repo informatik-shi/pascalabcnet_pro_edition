@@ -98,6 +98,7 @@ def main():
                 ("array-output.pas", "Числа: 10, 20, 30\nИмена: Анна / Борис / Вера\nПустой: []\n"),
                 ("bitwise.pas", "AND: 8\nOR: 14\nXOR: 6\nБеззнаковый сдвиг: 1\nЗнаковый сдвиг: -4\nИнверсия byte: 255\nЛогический XOR: True\n"),
                 ("unicode-output.pas", "По символам UTF-16: 🌍\nОтдельные Write: 🌍\nМассив: 🌍\n"),
+                ("matrices.pas", "Матрица:\n  25   11   47 \n  77   66   43 \nРазмер копии: 3x2\nИсходный элемент: 25\n"),
                 ("structures.pas", "Точка: 3 4\nФакториал 10: 3628800\n1\n2\n5\n8\nИмен: 2\nПервое имя: Анна\n"),
                 ("files.pas", "Привет из C++ интерпретатора!\nПрочитано строк: 2\nВторая строка\n"),
                 ("collections.pas", "Стек: 30 20 10 \nОчередь: Анна Борис Вера \nПустая очередь: True\n"),
@@ -155,6 +156,8 @@ def main():
                 ("var u:=MaxUInt64;\n Inc(u);", "E_OVERFLOW", "Integer overflow", "Переполнение целого числа"),
                 ("Randomize(1);\n Random(-1);", "E_RANGE", "Random bounds are invalid", "Некорректные границы генератора случайных чисел"),
                 ("var a:=Arr(1,2);\n Reverse(a,1,2);", "E_BOUNDS", "Index is outside sequence bounds", "Индекс находится за границами строки, массива или списка"),
+                ("var m:=new integer[1,2];\n m[1,0]:=1;", "E_BOUNDS", "Index is outside sequence bounds", "Индекс находится за границами строки, массива или списка"),
+                ("var n:=1;\n FormatValue(n,-1);", "E_RANGE", "Field width cannot be negative", "Ширина поля не может быть отрицательной"),
                 ("var n:=MaxInt64;\n LCM(n,2);", "E_OVERFLOW", "Integer overflow", "Переполнение целого числа"),
                 ("var c:='Я';\n Writeln(c.ToDigit);", "E_FORMAT", "Character is not a decimal digit from 0 to 9", "Символ не является десятичной цифрой от 0 до 9"),
                 ("var s:='ab';\n s[0]:='X';", "E_BOUNDS", "Index is outside sequence bounds", "Индекс находится за границами строки, массива или списка"),
@@ -377,6 +380,7 @@ def main():
             results[-1]["shared_console_and_readarray"] = "passed"
             results[-1]["typed_console_functions_and_prompts"] = "passed"
             results[-1]["streaming_unicode_output"] = "passed"
+            results[-1]["rectangular_matrices_and_formatting"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 
