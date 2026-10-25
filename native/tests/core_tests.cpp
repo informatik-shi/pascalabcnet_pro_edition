@@ -56,6 +56,52 @@ void runtime_error(std::string_view source, std::string_view code) {
     error([&] { (void)run(source); }, code,source);
 }
 
+void console_unicode_output() {
+    result("begin foreach var c in '🌍' do Write(c); end.","🌍");
+    result("begin Write(#55356); Write(#57101); end.","🌍");
+    result("begin Writeln(#55356,#57101); end.","🌍\n");
+    result("begin Write(#55356); Write(''); Write(#57101); end.","🌍");
+    result("begin Write(#57101); end.","�");
+    result("begin Write(#55356); end.","�");
+    result("begin Write(#55356); Exit; Write(#57101); end.","�");
+    result("begin Write(#55356); Write(#55356); Write(#57101); end.","�🌍");
+    result("begin Write(#55356); Write(1); Write(#57101); end.","�1�");
+    result("begin var s:='🌍'; Write(Copy(s,1,1)); Write(Copy(s,2,1)); end.","🌍");
+    result("uses Arrays; begin WritelnArray(Arr(#55356,#57101),''); WritelnArray(Arr(#55356,#57101)); end.","🌍\n� �\n");
+    result("uses Collections; begin var q:=new Queue<char>; q.Enqueue(#57101); Write(#55356); q.Print; end.","🌍 ");
+    result("uses Collections; begin var l:=new LinkedList<char>; l.AddLast(#57101); Write(#55356); l.Print; end.","🌍 ");
+    result("begin Write(#55356); var n:=ReadInteger(#57101); Writeln(n); end.","🌍 7\n","7\n");
+    result("begin Write(#0); end.",std::string(1,'\0'));
+    abc::ExecutionOptions options; options.output_limit=4;
+    require(run("begin Write(#55356); Write(#57101); end.","",options)=="🌍","UTF-8 output limit counts paired surrogate bytes once");
+    options.output_limit=3;
+    error([&]{(void)run("begin Write(#55356); Write(#57101); end.","",options);},"E_LIMIT");
+    options.output_limit=2;
+    error([&]{(void)run("begin Write(#55356); end.","",options);},"E_LIMIT");
+    std::istringstream input; std::ostringstream output;
+    error([&]{abc::execute(abc::compile("begin Write(#55356); Writeln(1 div 0); end."),input,output);},"E_DIV_ZERO");
+    require(output.str()=="�","Pending console surrogate is flushed without replacing the execution error");
+    struct BrokenBuffer:std::streambuf {
+        std::streamsize xsputn(const char*,std::streamsize) override {return 0;}
+        int sync() override {return -1;}
+    } buffer;
+    std::ostream broken(&buffer); broken.exceptions(std::ios::badbit|std::ios::failbit);
+    error([&]{abc::execute(abc::compile("begin Writeln('x'); end."),input,broken);},"E_OUTPUT");
+    std::istringstream final_token("7"); final_token.exceptions(std::ios::badbit|std::ios::failbit|std::ios::eofbit);
+    std::ostringstream token_output;
+    abc::execute(abc::compile("begin Writeln(ReadInteger); end."),final_token,token_output);
+    require(token_output.str()=="7\n","A final token survives EOF exceptions enabled by the C++ host");
+    std::istringstream ended; ended.exceptions(std::ios::badbit|std::ios::failbit|std::ios::eofbit);
+    std::ostringstream eof_output;
+    abc::execute(abc::compile("begin Writeln(Ord(ReadChar)); end."),ended,eof_output);
+    require(eof_output.str()=="65535\n","EOF character survives host stream exception flags");
+    struct BrokenInput:std::streambuf {
+        int_type underflow() override {throw std::ios_base::failure("broken input");}
+    } input_buffer;
+    std::istream failed(&input_buffer); failed.exceptions(std::ios::badbit);
+    error([&]{abc::execute(abc::compile("begin ReadInteger; end."),failed,eof_output);},"E_INPUT");
+}
+
 void console_functions() {
     result("begin var a:=ReadInteger; var b:=ReadInt64(); var c:=ReadReal; var d:=ReadBoolean; Writeln(a,' ',b,' ',c,' ',d); Writeln('[',ReadString,']'); Writeln(ReadlnString()); end.","12 2147483648 1.25 True\n[ tail]\nnext\n","12 2147483648 1.25 TRUE tail\nnext\n");
     result("begin Writeln(ReadlnInteger,' ',ReadlnInt64(),' ',ReadlnReal,' ',ReadlnBoolean); end.","12 2147483648 1.5 False\n","12 ignored\n2147483648 ignored\n1.5 ignored\nFalse ignored\n");
@@ -1810,6 +1856,7 @@ int main() {
     bitwise_operations();
     console_input();
     console_functions();
+    console_unicode_output();
     sequence_mutations();
     arithmetic();
     verifier();

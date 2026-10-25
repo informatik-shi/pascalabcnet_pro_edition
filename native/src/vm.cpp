@@ -9,6 +9,7 @@
 #include "integer_values.hpp"
 #include "random.hpp"
 #include "console_input.hpp"
+#include "console_output.hpp"
 
 #include <charconv>
 #include <algorithm>
@@ -112,7 +113,7 @@ std::string format(const Value& value, const Instruction& instruction) {
     if (result.ec != std::errc{}) trap(instruction, RuntimeError::number_format);
     return {buffer, result.ptr};
 }
-std::u16string file_text(const Value& value, const Instruction& instruction) {
+std::u16string scalar_text(const Value& value, const Instruction& instruction) {
     if (std::holds_alternative<NilString>(value)) return u"nil";
     if (const auto* ch=std::get_if<char16_t>(&value)) return std::u16string(1,*ch);
     return value_type(value)==Type::string ? string_text(value) : from_utf8(format(value,instruction));
@@ -156,19 +157,14 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
     std::vector<Frame> frames{{&program.code,nullptr,globals,0,0}};
     std::vector<Value> stack;
     std::uint64_t steps = 0;
-    std::size_t output_bytes = 0;
-    auto write = [&](std::string_view text, const Instruction& instruction) {
-        if (text.size() > options.output_limit - output_bytes)
-            trap(instruction, RuntimeError::output_limit);
-        output.write(text.data(), static_cast<std::streamsize>(text.size()));
-        output.flush();
-        if (!output) trap(instruction, RuntimeError::output_stream);
-        output_bytes += text.size();
+    ConsoleOutput console_output(output,options);
+    auto write = [&](std::u16string_view text, const Instruction& instruction) {
+        console_output.write(text,instruction.location);
     };
     auto pop = [&]() { auto value = std::move(stack.back()); stack.pop_back(); return value; };
     stdlib::Context services{files,random,console,[&](std::u16string_view text,SourceLocation location) {
         Instruction instruction; instruction.location=location;
-        write(to_utf8(text,true),instruction);
+        write(text,instruction);
     }};
     while (!frames.empty()) {
         auto& frame = frames.back(); auto& locals = frame.locals;
@@ -179,8 +175,8 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
         case Op::console_output: {
             std::vector<Value> arguments(instruction.operand/2);
             for (auto i=arguments.size();i>0;--i) arguments[i-1]=pop();
-            for (const auto& value:arguments) write(format(value,instruction),instruction);
-            if (instruction.operand&1U) write("\n",instruction);
+            for (const auto& value:arguments) write(scalar_text(value,instruction),instruction);
+            if (instruction.operand&1U) write(u"\n",instruction);
             break;
         }
         case Op::read_console: {
@@ -244,10 +240,10 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
             if (sequence->nil && (instruction.operand&2U)) trap(instruction,RuntimeError::nil_reference);
             for (std::size_t i=0;i<sequence->items.size();++i) {
                 if ((i&255U)==0 && options.cancelled && options.cancelled()) trap(instruction,RuntimeError::cancelled);
-                if (i) write(format(delimiter,instruction),instruction);
-                write(format(sequence->items[i]->value,instruction),instruction);
+                if (i) write(scalar_text(delimiter,instruction),instruction);
+                write(scalar_text(sequence->items[i]->value,instruction),instruction);
             }
-            if (instruction.operand&1U) write("\n",instruction);
+            if (instruction.operand&1U) write(u"\n",instruction);
             break;
         }
         case Op::swap_values: {
@@ -402,7 +398,7 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
                     text.clear(); append_collection_text(text,node->items[0]->value,instruction);
                 }
                 if (method==LinkedMethod::to_string) stack.emplace_back(std::move(text));
-                else { write(to_utf8(text,true),instruction); if (method==LinkedMethod::println) write("\n",instruction); }
+                else { write(text,instruction); if (method==LinkedMethod::println) write(u"\n",instruction); }
                 break;
             }
             case LinkedMethod::construct: break;
@@ -445,7 +441,7 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
                     text += u'\n';
                 }
                 if (method == AssociationMethod::to_string) stack.emplace_back(std::move(text));
-                else write(to_utf8(text,true),instruction); // Println also adds no extra newline.
+                else write(text,instruction); // Println also adds no extra newline.
             }
             break;
         }
@@ -503,7 +499,7 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
                 std::u16string text;
                 for (std::size_t i=0;i<target->count;++i) append_collection_text(text,target->items[i]->value,instruction);
                 if (method == BufferMethod::to_string) stack.emplace_back(std::move(text));
-                else { write(to_utf8(text,true),instruction); if (method == BufferMethod::println) write("\n",instruction); }
+                else { write(text,instruction); if (method == BufferMethod::println) write(u"\n",instruction); }
                 break;
             }
             case BufferMethod::construct: break;
@@ -537,9 +533,9 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
                 else for (const auto& item : items) append(item);
                 if (method == EndpointMethod::to_string) stack.emplace_back(std::move(text));
                 else {
-                    write(to_utf8(text,true),instruction);
+                    write(text,instruction);
                     // Collections.Stack.Print also writes a newline in the original unit.
-                    if (lifo || method == EndpointMethod::println) write("\n",instruction);
+                    if (lifo || method == EndpointMethod::println) write(u"\n",instruction);
                 }
             }
             break;
@@ -547,7 +543,7 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
         case Op::read_value: stack.push_back(console.read(instruction.type,instruction.location)); break;
         case Op::file_print: {
             const auto value=pop(); auto& file=text_file(stack.back(),instruction.location);
-            text_write(file,file_text(value,instruction),instruction.location); break;
+            text_write(file,scalar_text(value,instruction),instruction.location); break;
         }
         case Op::file_output: {
             std::vector<Value> arguments(instruction.operand/4);
@@ -558,7 +554,7 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
             // Empty Write and Print do not require an assigned or open file.
             if (arguments.empty() && (method==TextOutput::write || method==TextOutput::print)) break;
             for (std::size_t n=0;n<arguments.size();++n) {
-                text_write(file,file_text(arguments[n],instruction),instruction.location);
+                text_write(file,scalar_text(arguments[n],instruction),instruction.location);
                 if (method==TextOutput::print || (method==TextOutput::println && n+1<arguments.size()))
                     text_write(file,u" ",instruction.location);
             }
@@ -864,12 +860,13 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
         }
         case Op::jump: frame.pc = instruction.operand; break;
         case Op::jump_false: if (!std::get<bool>(pop())) frame.pc = instruction.operand; break;
-        case Op::print: write(format(pop(), instruction), instruction); break;
-        case Op::newline: write("\n", instruction); break;
+        case Op::print: write(scalar_text(pop(), instruction), instruction); break;
+        case Op::newline: write(u"\n", instruction); break;
         case Op::read_line: values.write((program.locals[instruction.operand].global ? globals : locals)[instruction.operand],console.read(instruction.type,instruction.location)); console.skip_line(instruction.location); break;
-        case Op::halt: return;
+        case Op::halt: console_output.finish(); return;
         }
     }
+    console_output.finish();
 }
 
 } // namespace abc

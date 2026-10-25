@@ -13,11 +13,15 @@ bool ConsoleInput::ensure(SourceLocation location) {
     if (ended_) return false;
     std::string bytes;
     char c;
-    while (input_.get(c)) {
-        if ((bytes.size()&255U)==0) check(location);
-        if (c=='\n') { bytes+=c; break; }
-        if (bytes.size()==1'048'576) throw runtime_error(RuntimeError::input_limit,location);
-        bytes+=c;
+    try {
+        while (input_.get(c)) {
+            if ((bytes.size()&255U)==0) check(location);
+            if (c=='\n') { bytes+=c; break; }
+            if (bytes.size()==1'048'576) throw runtime_error(RuntimeError::input_limit,location);
+            bytes+=c;
+        }
+    } catch (const std::ios_base::failure&) {
+        if (input_.bad() || !input_.eof()) throw runtime_error(RuntimeError::input_stream,location);
     }
     if (input_.bad()) throw runtime_error(RuntimeError::input_stream,location);
     ended_=input_.eof();
