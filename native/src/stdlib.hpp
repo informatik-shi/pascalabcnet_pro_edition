@@ -40,4 +40,5 @@ std::span<const Signature> signatures();
 std::optional<Value> constant(std::string_view name);
 Value invoke(std::size_t id, std::span<const Value> arguments, SourceLocation location, Context& context);
 std::optional<Value> invoke_text(Function function, std::span<const Value> arguments, SourceLocation location);
+std::optional<Value> try_parse_number(Type type, const Value& source, SourceLocation location);
 } // namespace abc::stdlib

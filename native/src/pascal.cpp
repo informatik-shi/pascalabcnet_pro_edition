@@ -532,7 +532,7 @@ private:
                 result->kind = result->kind == SyntaxExprKind::name ? SyntaxExprKind::call : SyntaxExprKind::member_call;
                 if (!is(")")) do {
                     const auto& name=result->token.text;
-                    auto argument = (name=="print" || name=="println" || (result->kind==SyntaxExprKind::member_call && (name=="write" || name=="writeln")))
+                    auto argument = (name=="print" || name=="println" || name=="str" || (result->kind==SyntaxExprKind::member_call && (name=="write" || name=="writeln")))
                         ? output_argument() : expression();
                     result->depth = std::max(result->depth, argument->depth + 1);
                     if (result->depth > 256 || result->arguments.size() >= 16) fail("Function call limit exceeded");
@@ -839,6 +839,7 @@ private:
                 for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
                 if (bind_print(*result,source.token.text,source.left->token.text)) break;
                 if (bind_try_read(*result,source.token.text,source.left->token.text)) break;
+                if (bind_number_conversion(*result,source.token.text,source.left->token.text)) break;
                 if (bind_random_array(*result,source.token.text,source.left->token.text)) break;
                 if (bind_sequence_mutation(*result,source.token.text,source.left->token.text)) break;
                 if (bind_array_output(*result,source.token.text,source.left->token.text)) break;
@@ -848,6 +849,11 @@ private:
                 bind_builtin(*result,source.token.text,source.left->token.text); break;
             }
             result->left = expression(*source.left); const auto receiver = result->left->type;
+            if (receiver==Type::string && (source.token.text=="trytointeger" || source.token.text=="trytoreal")) {
+                result->arguments.push_back(std::move(result->left));
+                for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
+                (void)bind_number_conversion(*result,source.token.text=="trytointeger" ? "trystrtoint" : "trystrtoreal"); break;
+            }
             if (compound(receiver) && info(receiver,result->location).kind==CompoundKind::array
                 && (source.token.text=="rowcount" || source.token.text=="colcount")) {
                 if (info(receiver,result->location).rank!=2 || !source.arguments.empty()) throw Error("E_TYPE",result->location,"RowCount/ColCount require a matrix and no arguments");
@@ -1135,6 +1141,7 @@ private:
             }
             if (bind_print(*result,source.token.text)) break;
             if (bind_try_read(*result,source.token.text)) break;
+            if (bind_number_conversion(*result,source.token.text)) break;
             if (bind_random_array(*result,source.token.text)) break;
             if (bind_sequence_mutation(*result,source.token.text)) break;
             if (bind_array_output(*result,source.token.text)) break;
@@ -1304,6 +1311,31 @@ private:
             result.right=convert(std::move(result.arguments[1]),Type::integer);
         }
         result.arguments.clear(); return true;
+    }
+    bool bind_number_conversion(hir::Expr& result, std::string_view name, std::string_view unit = {}) {
+        const bool str=name=="str", val=name=="val";
+        if ((!str && !val && name!="trystrtoint" && name!="trystrtoint64" && name!="trystrtoreal" && name!="trystrtofloat")
+            || (!unit.empty() && unit!="pabcsystem")) return false;
+        if (result.arguments.size()!=(val ? 3U : 2U)) throw Error("E_TYPE",result.location,"Wrong string conversion argument count");
+        auto source=std::move(result.arguments[0]), target=std::move(result.arguments[1]);
+        if (!lvalue(*target)) throw Error("E_TYPE",result.location,"String conversion requires a writable destination");
+        if (str) {
+            if (target->type!=Type::string) throw Error("E_TYPE",result.location,"Str destination must have string type");
+            if (source->type==Type::character || source->type==Type::nil) source=convert(std::move(source),Type::string);
+            if (small_integer(source->type)) source=convert(std::move(source),Type::integer);
+            if (!numeric(source->type) && source->type!=Type::string) throw Error("E_TYPE",result.location,"Str requires a number or string");
+        } else {
+            source=convert(std::move(source),Type::string);
+            const auto expected=name=="trystrtoint" ? Type::integer : name=="trystrtoint64" ? Type::int64 : Type::real;
+            if (!numeric(target->type) || (!val && target->type!=expected)) throw Error("E_TYPE",result.location,"Wrong numeric conversion destination type");
+        }
+        if (val) {
+            auto& code=result.arguments[2];
+            if (!lvalue(*code) || code->type!=Type::integer) throw Error("E_TYPE",result.location,"Val error destination must be a writable integer");
+            auto error=std::move(code); result.arguments.clear(); result.arguments.push_back(std::move(error));
+        } else result.arguments.clear();
+        result.kind=hir::ExprKind::number_conversion; result.local=str ? 0U : val ? 2U : 1U;
+        result.left=std::move(source); result.right=std::move(target); result.type=str || val ? Type::unit : Type::boolean; return true;
     }
     bool bind_try_read(hir::Expr& result, std::string_view name, std::string_view unit = {}) {
         if (name!="tryread" || (!unit.empty() && unit!="pabcsystem")) return false;

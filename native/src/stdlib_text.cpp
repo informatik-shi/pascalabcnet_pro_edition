@@ -1,6 +1,7 @@
 #include "stdlib.hpp"
 #include "diagnostics.hpp"
 #include "number.hpp"
+#include "integer_values.hpp"
 
 #include <algorithm>
 #include <charconv>
@@ -49,7 +50,7 @@ template<class T> Value parse_integer(std::u16string_view text, SourceLocation l
     return static_cast<T>(negative ? -static_cast<T>(magnitude) : static_cast<T>(magnitude));
 }
 
-double parse_decimal(std::u16string_view source, std::u16string_view separator, char16_t group, SourceLocation location) {
+double parse_decimal(std::u16string_view source, std::u16string_view separator, char16_t group, SourceLocation location, bool allow_group=true) {
     if (separator.empty()) throw runtime_error(RuntimeError::decimal_separator, location);
     const auto text = number_text(source, false);
     std::string normalized;
@@ -69,7 +70,7 @@ double parse_decimal(std::u16string_view source, std::u16string_view separator, 
             normalized += 'e'; ++position; exponent = true;
             if (position < text.size() && (text[position] == u'+' || text[position] == u'-'))
                 normalized += static_cast<char>(text[position++]);
-        } else if (!exponent && !decimal && digit && c == group) {
+        } else if (allow_group && !exponent && !decimal && digit && c == group) {
             // Global nfi uses '.', while NumberFormat(separator) uses ','.
             ++position;
         } else throw runtime_error(RuntimeError::number_text, location, "real");
@@ -137,6 +138,40 @@ std::u16string format_number(const Value& value, SourceLocation location) {
     return std::u16string(text.begin(), text.end());
 }
 } // namespace
+
+std::optional<Value> try_parse_number(Type type, const Value& source, SourceLocation location) {
+    if (std::holds_alternative<NilString>(source)) {
+        if (type==Type::integer) throw runtime_error(RuntimeError::nil_reference,location);
+        return std::nullopt;
+    }
+    try {
+        const auto& source_text=string_text(source);
+        if (type==Type::integer) return parse_integer<std::int32_t>(source_text,location);
+        if (type==Type::int64) return parse_integer<std::int64_t>(source_text,location);
+        if (type==Type::real) return parse_decimal(source_text,u".",u',',location,false);
+        if (type==Type::uint64 || type==Type::longword) {
+            auto text=number_text(source_text,false);
+            const bool negative=!text.empty() && text.front()==u'-';
+            if (!text.empty() && (text.front()==u'+' || text.front()==u'-')) text.remove_prefix(1);
+            std::uint64_t magnitude=0;
+            if (text.empty()) return std::nullopt;
+            const auto limit=type==Type::uint64 ? UINT64_MAX : static_cast<std::uint64_t>(UINT32_MAX);
+            for (auto c:text) {
+                if (c<u'0' || c>u'9') return std::nullopt;
+                const auto digit=static_cast<unsigned>(c-u'0');
+                if (magnitude>(limit-digit)/10) return std::nullopt;
+                magnitude=magnitude*10+digit;
+            }
+            if (negative && magnitude) return std::nullopt;
+            return type==Type::uint64 ? Value{magnitude} : Value{static_cast<std::uint32_t>(magnitude)};
+        }
+        if (small_integer(type)) return checked_small_integer(type,std::get<std::int64_t>(parse_integer<std::int64_t>(source_text,location)),location);
+        throw runtime_error(RuntimeError::invalid_bytecode,location);
+    } catch (const Error& error) {
+        if (error.code!="E_FORMAT" && error.code!="E_OVERFLOW") throw;
+        return std::nullopt;
+    }
+}
 
 std::optional<Value> invoke_text(Function function, std::span<const Value> arguments, SourceLocation location) {
     switch (function) {

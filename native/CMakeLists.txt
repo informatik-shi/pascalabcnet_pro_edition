@@ -162,6 +162,9 @@ if(BUILD_TESTING)
     add_test(NAME try_read_compatibility COMMAND ${CMAKE_COMMAND}
         "-DABC_RUNNER=$<TARGET_FILE:abc>" "-DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
         -DABC_FIXTURE_NAME=try-read-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")
+    add_test(NAME string_conversion_compatibility COMMAND ${CMAKE_COMMAND}
+        "-DABC_RUNNER=$<TARGET_FILE:abc>" "-DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
+        -DABC_FIXTURE_NAME=string-conversion-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")
     add_test(NAME random_compatibility COMMAND ${CMAKE_COMMAND}
         "-DABC_RUNNER=$<TARGET_FILE:abc>" "-DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
         -DABC_FIXTURE_NAME=random-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")

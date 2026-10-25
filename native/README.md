@@ -828,6 +828,32 @@ FormatValue. В Text.Write/Writeln/Print/Println доступен такой ж�
 Пример: `examples/formatted-output.pas`; отдельный ожидаемый корпус проверяет
 консоль, файлы, вложенные значения и ширину UTF-16.
 
+### Str, Val и проверяемое преобразование строк
+
+Str(значение,var строка) поддерживает реализованные числовые типы и string,
+включая форматированный первый аргумент `Str(число:ширина:точность,строка)`.
+Числа используют тот же формат nfi; переданная nil-строка остаётся nil.
+Val(строка,var число,var код) поддерживает все реализованные целые типы и real:
+код 0 означает успех, код 1 — ошибку формата или диапазона.
+
+TryStrToInt, TryStrToInt64, TryStrToReal/TryStrToFloat возвращают boolean;
+string.TryToInteger и string.TryToReal используют те же операции. При ошибке
+integer сохраняет старое значение, остальные перегрузки записывают ноль.
+Nil для integer вызывает E_NIL; для других реализованных перегрузок даёт
+неуспешное преобразование с нулём. Эти различия перенесены из ParseCore и
+TryParse в PABCSystem. Получатели и источник вычисляются один раз в исходном
+порядке; допускаются поля, элементы массивов/List и совпадающие var-параметры.
+
+Integer учитывает Unicode-пробелы исходного ParseCore, остальные целые —
+ASCII-пробелы и завершающие NUL. Вещественный TryParse использует точку
+и NumberStyles.Float без разделителей групп. Для unsigned допустим `-0`;
+поведение разбора чисел дополнительно сверялось с
+[Number.Parsing в .NET 10](https://raw.githubusercontent.com/dotnet/runtime/v10.0.0/src/libraries/System.Private.CoreLib/src/System/Number.Parsing.cs).
+Сохраняется текущий профиль конечных real: NaN/Infinity не создаются.
+Single, изменяемые параметры культуры и полная сверка версий .NET остаются
+в плане. Новый ожидаемый корпус запускался только нативно.
+Пример: `examples/string-conversions.pas`, корпус: `tests/fixtures/string-conversion-compat.pas`.
+
 ### TryRead
 
 TryRead(var значение[,сообщение]) возвращает boolean для всех реализованных
@@ -1075,7 +1101,7 @@ cmake --build native/build/default --config Release
 ctest --test-dir native/build/default -C Release --output-on-failure
 ```
 
-Проверка от 26 октября 2026 года: MSVC Release — 1548 проверок ядра и 40 тестов
+Проверка от 26 октября 2026 года: MSVC Release — 1586 проверок ядра и 41 тест
 CTest вместе с Qt; Clang 22 без санитайзера также проверен. Дополнительный локальный
 прогон Clang 22/AddressSanitizer на Windows не завершён: обработчик исключений
 аварийно останавливается, в том числе в отдельной минимальной программе с

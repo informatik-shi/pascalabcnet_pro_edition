@@ -175,6 +175,19 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
         if (steps++ >= options.instruction_limit) trap(instruction, RuntimeError::instruction_limit);
         if (options.cancelled && options.cancelled()) trap(instruction, RuntimeError::cancelled);
         switch (instruction.op) {
+        case Op::convert_string: {
+            const auto target=std::get<std::shared_ptr<Cell>>(pop()); const auto source=pop();
+            values.write(target,instruction.type==Type::string ? source : Value{format_field(source,0,std::nullopt,instruction.location)}); break;
+        }
+        case Op::try_parse: case Op::val: {
+            const auto code=instruction.op==Op::val ? std::get<std::shared_ptr<Cell>>(pop()) : std::shared_ptr<Cell>{};
+            const auto target=std::get<std::shared_ptr<Cell>>(pop()); const auto source=pop();
+            const auto parsed=stdlib::try_parse_number(instruction.type,source,instruction.location);
+            if (parsed) values.write(target,*parsed);
+            else if (instruction.type!=Type::integer) values.write(target,values.zero(instruction.type));
+            if (code) values.write(code,std::int32_t{parsed ? 0 : 1}); else stack.emplace_back(parsed.has_value());
+            break;
+        }
         case Op::try_read: {
             const auto message=pop(); const auto target=std::get<std::shared_ptr<Cell>>(pop());
             try {

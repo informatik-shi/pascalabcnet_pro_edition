@@ -111,6 +111,7 @@ def main():
                 ("object-output.pas", "Записи: [(Анна,[5,4]),(Борис,[4,5])]\n(Анна,[5,4]) / (Борис,[4,5])\nМатрица: [[0,0],[0,0]]\n"),
                 ("formatted-output.pas", "Число: [    42]\nДробь: [   3.142]\nМассив: [     [1,2,3]]\n"),
                 ("print-settings.pas", "Обычный: 1 2 3\nС разделителем | [1,2,3] | True\nБез разделителя:123\n"),
+                ("string-conversions.pas", "Форматирование: [   3.142]\nОшибка: 1; прежнее значение: 10\nПрочитано: 42\n"),
                 ("structures.pas", "Точка: 3 4\nФакториал 10: 3628800\n1\n2\n5\n8\nИмен: 2\nПервое имя: Анна\n"),
                 ("files.pas", "Привет из C++ интерпретатора!\nПрочитано строк: 2\nВторая строка\n"),
                 ("collections.pas", "Стек: 30 20 10 \nОчередь: Анна Борис Вера \nПустая очередь: True\n"),
@@ -395,6 +396,7 @@ def main():
             results[-1]["rectangular_matrices_and_formatting"] = "passed"
             results[-1]["structural_object_output"] = "passed"
             results[-1]["try_read_and_preserved_values"] = "passed"
+            results[-1]["str_val_and_try_parse"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 

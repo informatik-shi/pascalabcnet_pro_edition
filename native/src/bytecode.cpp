@@ -57,6 +57,10 @@ private:
     void expression(const hir::Expr& node) {
         if (node.type == Type::invalid) throw Error("E_HIR", node.location, "Unresolved expression type");
         switch (node.kind) {
+        case hir::ExprKind::number_conversion:
+            expression(*node.left); reference(*node.right);
+            for (const auto& argument:node.arguments) reference(*argument);
+            emit(node.local==0 ? Op::convert_string : node.local==1 ? Op::try_parse : Op::val,node.local==0 ? node.left->type : node.right->type,0,node.location); break;
         case hir::ExprKind::try_read:
             reference(*node.left); expression(*node.right); emit(Op::try_read,node.left->type,0,node.location); break;
         case hir::ExprKind::object_text:
@@ -367,6 +371,12 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
     for (const auto& instruction : code) {
         const auto type = instruction.type;
         switch (instruction.op) {
+        case Op::convert_string:
+            if ((!numeric(type) && type!=Type::string) || instruction.operand) invalid(instruction,"Invalid Str conversion");
+            break;
+        case Op::try_parse: case Op::val:
+            if (!numeric(type) || instruction.operand) invalid(instruction,"Invalid number parsing");
+            break;
         case Op::try_read:
             if ((!numeric(type) && type!=Type::boolean) || instruction.operand) invalid(instruction,"Invalid typed TryRead");
             break;
@@ -633,6 +643,12 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
                 const auto type=static_cast<unsigned>(pop());
                 if (!(type&0x40000000U) || !scalar(static_cast<Type>(type&~0x40000000U))) invalid(instruction,"Console input requires scalar references");
             }
+            break;
+        case Op::convert_string: require(reference_type(Type::string)); require(instruction.type); break;
+        case Op::try_parse: case Op::val:
+            if (instruction.op==Op::val) require(reference_type(Type::integer));
+            require(reference_type(instruction.type)); require(Type::string);
+            if (instruction.op==Op::try_parse) stack.push_back(Type::boolean);
             break;
         case Op::try_read: require(Type::string); require(reference_type(instruction.type)); stack.push_back(Type::boolean); break;
         case Op::read_array: require(instruction.type); break;

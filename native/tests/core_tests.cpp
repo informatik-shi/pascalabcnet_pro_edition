@@ -57,6 +57,41 @@ void runtime_error(std::string_view source, std::string_view code) {
     error([&] { (void)run(source); }, code,source);
 }
 
+void string_conversions() {
+    result("begin var n:=7; var r:real:=7; Writeln('bad'.TryToInteger(n),' ',n); Writeln('bad'.TryToReal(r),' ',r); Writeln('42'.TryToInteger(n),' ',n); end.","False 7\nFalse 0\nTrue 42\n");
+    compile_error("begin var s:='42'; for var n:=1 to 2 do s.TryToInteger(n); end.","E_TYPE");
+    result("begin var s:string; Str(MaxUInt64,s); Writeln(s); Str(1.5,s); Writeln(s); Str('Я',s); Writeln(s); Str(nil,s); Writeln(s=nil); Str(1.5:7:2,s); Writeln('[',s,']'); end.","18446744073709551615\n1.5\nЯ\nTrue\n[   1.50]\n");
+    result("begin var s:string; var b:byte:=255; Str(b,s); Writeln(s); PABCSystem.Str(-2147483648,s); Writeln(s); end.","255\n-2147483648\n");
+    result("var a:array of string; function Idx:integer; begin a[0]:='after'; Result:=1; end; begin a:=Arr('before',''); Str(a[0],a[Idx()]); Writeln(a[0],' ',a[1]); end.","after before\n");
+    result("begin var n:=7; var e:=9; Val('bad',n,e); Writeln(n,' ',e); Val('2147483648',n,e); Writeln(n,' ',e); Val(' -2147483648 ',n,e); Writeln(n,' ',e); end.","7 1\n7 1\n-2147483648 0\n");
+    result("begin var n:=7; Val('42',n,n); Writeln(n); Val('bad',n,n); Writeln(n); end.","0\n1\n");
+    result("begin var n:=7; Writeln(TryStrToInt(#8195'42'#160,n),' ',n); Writeln(TryStrToInt('bad',n),' ',n); Writeln(TryStrToInt('2'#0,n),' ',n); end.","True 42\nFalse 42\nFalse 42\n");
+    result("begin var n:int64:=7; Writeln(TryStrToInt64(#160'42',n),' ',n); Writeln(TryStrToInt64(' +42 '#0,n),' ',n); Writeln(TryStrToInt64(nil,n),' ',n); end.","False 0\nTrue 42\nFalse 0\n");
+    result("begin var n:real:=7; Writeln(TryStrToReal('1.5e2',n),' ',n); Writeln(TryStrToFloat('1,234',n),' ',n); Writeln(TryStrToReal(nil,n),' ',n); Writeln(PABCSystem.TryStrToFloat('1e-999',n),' ',n); end.","True 150\nFalse 0\nFalse 0\nTrue 0\n");
+    for (const auto& [type,edge,bad]:{std::array<std::string,3>{"byte","255","256"},{"shortint","-128","-129"},
+        {"smallint","-32768","32768"},{"word","65535","65536"},{"longword","4294967295","4294967296"},
+        {"int64","9223372036854775807","9223372036854775808"},{"uint64","18446744073709551615","18446744073709551616"}})
+        result("begin var n:"+type+"; var e:integer; Val('"+edge+"',n,e); Writeln(n,' ',e); Val('"+bad+"',n,e); Writeln(n,' ',e); end.",edge+" 0\n0 1\n");
+    result("begin var n:uint64; var e:integer; Val('-000',n,e); Writeln(n,' ',e); Val('-1',n,e); Writeln(n,' ',e); Val('42 '#0,n,e); Writeln(n,' ',e); end.","0 0\n0 1\n42 0\n");
+    result("begin var n:real:=7; var e:integer; Val('bad',n,e); Writeln(n,' ',e); Val(' .5 ',n,e); Writeln(n,' ',e); Val(nil,n,e); Writeln(n,' ',e); end.","0 1\n0.5 0\n0 1\n");
+    result("begin var l:=new List<integer>; l.Add(7); foreach var x in l do Writeln(TryStrToInt('bad',l[0]),' ',x); end.","False 7\n");
+    runtime_error("begin var l:=new List<int64>; l.Add(7); foreach var x in l do TryStrToInt64('bad',l[0]); end.","E_MODIFIED");
+    runtime_error("begin var n:integer; TryStrToInt(nil,n); end.","E_NIL");
+    runtime_error("begin var n,e:integer; Val(nil,n,e); end.","E_NIL");
+    for (const auto source:{"begin var s:string; Str(true,s); end.","begin var s:string; Str(Arr(1),s); end.",
+        "begin var s:string; Str(1,1); end.","begin var n:integer; Str(1,n); end.","begin var n:integer; TryStrToInt64('1',n); end.",
+        "begin var n:int64; TryStrToReal('1',n); end.","begin TryStrToInt('1',2); end.","begin var n:boolean; var e:integer; Val('1',n,e); end.",
+        "begin var n:integer; var e:int64; Val('1',n,e); end.","begin var n:integer; Val('1',n,2); end.",
+        "begin for var n:=1 to 2 do TryStrToInt('1',n); end.","begin var n:integer; for var e:=1 to 2 do Val('1',n,e); end."}) compile_error(source,"E_TYPE");
+    for (const auto op:{abc::Op::convert_string,abc::Op::try_parse,abc::Op::val}) {
+        const auto source=op==abc::Op::convert_string ? "begin var s:string; Str(1,s); end." : op==abc::Op::try_parse
+            ? "begin var n:integer; TryStrToInt('1',n); end." : "begin var n,e:integer; Val('1',n,e); end.";
+        auto program=abc::compile(source);
+        for (auto& instruction:program.code) if (instruction.op==op) instruction.operand=1;
+        error([&]{abc::verify(program);},"E_BYTECODE");
+    }
+}
+
 void try_console_read() {
     {
         struct BrokenInput:std::streambuf { int_type underflow() override {throw std::ios_base::failure("input failure");} } buffer;
@@ -2052,6 +2087,7 @@ int main() {
     rectangular_arrays();
     structural_output();
     try_console_read();
+    string_conversions();
     sequence_mutations();
     arithmetic();
     verifier();
