@@ -183,7 +183,7 @@ struct SyntaxRoutine {
 bool reserved(std::string_view text) {
     static const std::set<std::string_view> words{
         "program", "begin", "end", "var", "if", "then", "else", "while", "do", "and", "or", "not",
-        "div", "mod", "true", "false", "uses", "unit", "type", "const", "function", "procedure",
+        "div", "mod", "xor", "shl", "shr", "true", "false", "uses", "unit", "type", "const", "function", "procedure",
         "for", "to", "downto", "repeat", "until", "foreach", "in", "case", "of", "array", "record", "class", "nil",
         "new", "set", "try", "except", "finally", "raise", "break", "continue", "exit", "writeln", "write", "readln", "read"};
     return words.contains(text);
@@ -421,8 +421,8 @@ private:
     }
     static int precedence(std::string_view op) {
         if (op == "=" || op == "<>" || op == "<" || op == "<=" || op == ">" || op == ">=") return 1;
-        if (op == "+" || op == "-" || op == "or") return 2;
-        if (op == "*" || op == "/" || op == "div" || op == "mod" || op == "and") return 3;
+        if (op == "+" || op == "-" || op == "or" || op == "xor") return 2;
+        if (op == "*" || op == "/" || op == "div" || op == "mod" || op == "and" || op=="shl" || op=="shr") return 3;
         return 0;
     }
     std::unique_ptr<SyntaxExpr> expression(int minimum = 1) {
@@ -781,9 +781,16 @@ private:
                 for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
                 if (bind_random_array(*result,source.token.text,source.left->token.text)) break;
                 if (bind_sequence_mutation(*result,source.token.text,source.left->token.text)) break;
+                if (bind_array_output(*result,source.token.text,source.left->token.text)) break;
                 bind_builtin(*result,source.token.text,source.left->token.text); break;
             }
             result->left = expression(*source.left); const auto receiver = result->left->type;
+            if (compound(receiver) && info(receiver,result->location).kind==CompoundKind::array && imported_units_.contains("arrays")
+                && (source.token.text=="write" || source.token.text=="writeln")) {
+                result->arguments.push_back(std::move(result->left));
+                for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
+                (void)bind_array_output(*result,source.token.text,"arrays",true); break;
+            }
             if (compound(receiver) && indexed_sequence(info(receiver,result->location).kind)
                 && (source.token.text=="shuffle" || (source.token.text=="reverse" && info(receiver,result->location).kind==CompoundKind::list)
                     || (source.token.text=="swap" && info(receiver,result->location).kind==CompoundKind::array))) {
@@ -1023,6 +1030,7 @@ private:
             }
             if (bind_random_array(*result,source.token.text)) break;
             if (bind_sequence_mutation(*result,source.token.text)) break;
+            if (bind_array_output(*result,source.token.text)) break;
             if (source.token.text == "arr") {
                 if (result->arguments.empty()) throw Error("E_TYPE",result->location,"Cannot infer empty Arr element type");
                 auto element = Type::nil;
@@ -1090,7 +1098,7 @@ private:
             if (source.token.text=="-" && small_integer(result->left->type)) result->left=convert(std::move(result->left),Type::integer);
             if (source.token.text=="-" && result->left->type==Type::longword) result->left=convert(std::move(result->left),Type::int64);
             result->type = result->left->type;
-            if (source.token.text == "not" ? result->type != Type::boolean : !numeric(result->type))
+            if (source.token.text == "not" ? result->type != Type::boolean && !integer_type(result->type) : !numeric(result->type))
                 throw Error("E_TYPE", source.token.location, "Invalid operand for '" + source.token.text + "'");
             break;
         case SyntaxExprKind::binary: {
@@ -1100,11 +1108,26 @@ private:
             auto left = result->left->type;
             auto right = result->right->type;
             const auto& op = result->operation;
-            if (op == "and" || op == "or") {
-                if (left != Type::boolean || right != Type::boolean)
-                    throw Error("E_TYPE", result->location, "Logical operands must be boolean");
+            if ((op=="and" || op=="or" || op=="xor") && left==Type::boolean && right==Type::boolean) {
                 result->type = Type::boolean;
                 break;
+            }
+            if (op=="shl" || op=="shr") {
+                if (!integer_type(left) || !integer_type(right)) throw Error("E_TYPE",result->location,"Shift operands must be integers");
+                const auto type=small_integer(left) ? Type::integer : left;
+                result->left=convert(std::move(result->left),type); result->right=convert(std::move(result->right),Type::integer);
+                result->type=type; break;
+            }
+            if (op=="and" || op=="or" || op=="xor") {
+                if (!integer_type(left) || !integer_type(right)) throw Error("E_TYPE",result->location,"Bitwise operands must be integers of compatible types");
+                if (left==Type::uint64 && result->right->kind==hir::ExprKind::literal) { result->right=convert(std::move(result->right),left); right=left; }
+                if (right==Type::uint64 && result->left->kind==hir::ExprKind::literal) { result->left=convert(std::move(result->left),right); left=right; }
+                auto type=Type::invalid;
+                for (auto candidate:{Type::byte,Type::shortint,Type::smallint,Type::word,Type::integer,Type::longword,Type::int64,Type::uint64})
+                    if (can_widen(left,candidate) && can_widen(right,candidate)) { type=candidate; break; }
+                if (type==Type::invalid) throw Error("E_TYPE",result->location,"No common integer type for bitwise operation");
+                result->left=convert(std::move(result->left),type); result->right=convert(std::move(result->right),type);
+                result->type=type; break;
             }
             const bool comparison = op == "=" || op == "<>" || op == "<" || op == "<=" || op == ">" || op == ">=";
             if (op=="*" && (((left==Type::string || left==Type::character) && (right==Type::integer || small_integer(right)))
@@ -1153,6 +1176,22 @@ private:
         }
         }
         return result;
+    }
+    bool bind_array_output(hir::Expr& result, std::string_view name, std::string_view unit = {}, bool member = false) {
+        if ((member ? name!="write" && name!="writeln" : name!="writearray" && name!="writelnarray")
+            || (unit.empty() ? !imported_units_.contains("arrays") : unit!="arrays")) return false;
+        if (result.arguments.size()!=1 && result.arguments.size()!=2) throw Error("E_TYPE",result.location,"Array output requires an array and optional delimiter");
+        result.left=std::move(result.arguments[0]);
+        const auto& type=info(result.left->type,result.location);
+        if (type.kind!=CompoundKind::array) throw Error("E_TYPE",result.location,"Array output requires an array");
+        if (!scalar(type.element)) throw Error("E_UNSUPPORTED",result.location,"Array output currently requires scalar elements");
+        if (result.arguments.size()==2) result.right=convert(std::move(result.arguments[1]),Type::string);
+        else {
+            result.right=std::make_unique<hir::Expr>(); result.right->kind=hir::ExprKind::literal;
+            result.right->type=Type::string; result.right->value=std::u16string{u" "}; result.right->location=result.location;
+        }
+        result.arguments.clear(); result.kind=hir::ExprKind::write_array; result.type=Type::unit;
+        result.local=(name=="writelnarray" || name=="writeln" ? 1U : 0U)+(member ? 2U : 0U); return true;
     }
     bool bind_sequence_mutation(hir::Expr& result, std::string_view name, std::string_view unit = {}, bool member = false) {
         if ((name!="reverse" && name!="shuffle" && name!="swap") || (!unit.empty() && unit!="pabcsystem")) return false;

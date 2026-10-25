@@ -53,6 +53,8 @@ private:
     void expression(const hir::Expr& node) {
         if (node.type == Type::invalid) throw Error("E_HIR", node.location, "Unresolved expression type");
         switch (node.kind) {
+        case hir::ExprKind::write_array:
+            expression(*node.left); expression(*node.right); emit(Op::write_array,node.left->type,node.local,node.location); break;
         case hir::ExprKind::swap_values:
             reference(*node.arguments[0]); reference(*node.arguments[1]);
             emit(Op::swap_values,node.arguments[0]->type,0,node.location); break;
@@ -132,12 +134,12 @@ private:
             break;
         case hir::ExprKind::unary:
             expression(*node.left);
-            if (node.operation != "+") emit(node.operation == "not" ? Op::logical_not : Op::negate,
+            if (node.operation != "+") emit(node.operation == "not" ? node.type==Type::boolean ? Op::logical_not : Op::bit_not : Op::negate,
                 node.type, 0, node.location);
             break;
         case hir::ExprKind::binary: {
             expression(*node.left);
-            if (node.operation == "and" || node.operation == "or") {
+            if ((node.operation == "and" || node.operation == "or") && node.type==Type::boolean) {
                 const auto branch = emit(Op::jump_false, Type::invalid, 0, node.location);
                 if (node.operation == "and") expression(*node.right);
                 else constant(true, node.location);
@@ -152,7 +154,8 @@ private:
             static const std::map<std::string, Op> operations{
                 {"+", Op::add}, {"-", Op::subtract}, {"*", Op::multiply}, {"/", Op::divide_real},
                 {"div", Op::divide_int}, {"mod", Op::modulo}, {"=", Op::equal}, {"<>", Op::not_equal},
-                {"<", Op::less}, {"<=", Op::less_equal}, {">", Op::greater}, {">=", Op::greater_equal}};
+                {"<", Op::less}, {"<=", Op::less_equal}, {">", Op::greater}, {">=", Op::greater_equal},
+                {"and",Op::bit_and}, {"or",Op::bit_or}, {"xor",Op::bit_xor}, {"shl",Op::shift_left}, {"shr",Op::shift_right}};
             emit(operations.at(node.operation), node.left->type, 0, node.location);
             break;
         }
@@ -341,6 +344,10 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
     for (const auto& instruction : code) {
         const auto type = instruction.type;
         switch (instruction.op) {
+        case Op::write_array:
+            if (!compound(type) || type_info(program,type).kind!=CompoundKind::array || !scalar(type_info(program,type).element) || instruction.operand>3)
+                invalid(instruction,"Invalid typed array output");
+            break;
         case Op::swap_values:
             if (!valid_value_type(program,type) || instruction.operand) invalid(instruction,"Invalid typed swap"); break;
         case Op::sequence_mutate:
@@ -461,6 +468,14 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             break;
         case Op::logical_not:
             if (type != Type::boolean) invalid(instruction, "Invalid logical type");
+            break;
+        case Op::bit_not: case Op::bit_and: case Op::bit_or: case Op::bit_xor:
+            if ((!integer_type(type) && !(instruction.op==Op::bit_xor && type==Type::boolean)) || instruction.operand)
+                invalid(instruction,"Invalid bitwise type");
+            break;
+        case Op::shift_left: case Op::shift_right:
+            if ((type!=Type::integer && type!=Type::int64 && type!=Type::longword && type!=Type::uint64) || instruction.operand)
+                invalid(instruction,"Invalid shift type");
             break;
         case Op::add:
             if ((!numeric(type) && type != Type::string) || small_integer(type) || type==Type::longword) invalid(instruction, "Invalid addition type");
@@ -586,6 +601,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if (mutation_result(method)) stack.push_back(instruction.type);
             break;
         }
+        case Op::write_array: require(Type::string); require(instruction.type); break;
         case Op::sequence_sort: require(instruction.type); break;
         case Op::sequence_fill: require(type_info(program,instruction.type).element); require(instruction.type); break;
         case Op::make_default: stack.push_back(instruction.type); break;
@@ -640,7 +656,10 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if (!can_widen(pop(), instruction.type)) invalid(instruction, "Invalid conversion");
             stack.push_back(instruction.type);
             break;
-        case Op::negate: case Op::logical_not: require(instruction.type); stack.push_back(instruction.type); break;
+        case Op::negate: case Op::logical_not: case Op::bit_not: require(instruction.type); stack.push_back(instruction.type); break;
+        case Op::shift_left: case Op::shift_right:
+            require(Type::integer); require(instruction.type); stack.push_back(instruction.type); break;
+        case Op::bit_and: case Op::bit_or: case Op::bit_xor:
         case Op::add: case Op::subtract: case Op::multiply:
         case Op::divide_real: case Op::divide_int: case Op::modulo:
             require(instruction.type); require(instruction.type); stack.push_back(instruction.type); break;

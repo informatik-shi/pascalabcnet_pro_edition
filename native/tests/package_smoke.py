@@ -73,6 +73,8 @@ def main():
             for source, expected in [
                 ("reverse-shuffle.pas", "Shuffle: 4 3 5 1 2 \nReverse: 4 1 5 3 2 \nьлаксаП\nSwap: 2 4\n"),
                 ("extended-math.pas", "НОД: 6\nНОК: 36\nГипотенуза: 5\nИнтерполяция: 12.5\nНовая шкала: 150\nУгол: True\n"),
+                ("array-output.pas", "Числа: 10, 20, 30\nИмена: Анна / Борис / Вера\nПустой: []\n"),
+                ("bitwise.pas", "AND: 8\nOR: 14\nXOR: 6\nБеззнаковый сдвиг: 1\nЗнаковый сдвиг: -4\nИнверсия byte: 255\nЛогический XOR: True\n"),
                 ("structures.pas", "Точка: 3 4\nФакториал 10: 3628800\n1\n2\n5\n8\nИмен: 2\nПервое имя: Анна\n"),
                 ("files.pas", "Привет из C++ интерпретатора!\nПрочитано строк: 2\nВторая строка\n"),
                 ("collections.pas", "Стек: 30 20 10 \nОчередь: Анна Борис Вера \nПустая очередь: True\n"),
@@ -348,6 +350,7 @@ def main():
             results[-1]["seeded_random_and_arrays"] = "passed"
             results[-1]["reverse_shuffle_swap"] = "passed"
             results[-1]["extended_math"] = "passed"
+            results[-1]["arrays_output_and_bitwise"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 

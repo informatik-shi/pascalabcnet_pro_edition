@@ -97,7 +97,8 @@ enum class Op {
     call_user, return_user, drop, list_add, list_remove, list_clear, list_contains,
     read_lines, write_lines, array_copy, array_high, sequence_sort, sequence_fill, mutate_string, increment, read_value,
     endpoint_call, buffer_call, association_call, linked_call, file_print, file_newline, file_read, file_skip_line, file_output,
-    iteration_version, iteration_check, set_character, random_array, fill_random_array, sequence_mutate, swap_values
+    iteration_version, iteration_check, set_character, random_array, fill_random_array, sequence_mutate, swap_values, write_array,
+    bit_not, bit_and, bit_or, bit_xor, shift_left, shift_right
 };
 
 enum class SequenceMutation { reverse, reverse_range, shuffle, shuffle_result, swap_indices };

@@ -56,6 +56,58 @@ void runtime_error(std::string_view source, std::string_view code) {
     error([&] { (void)run(source); }, code,source);
 }
 
+void bitwise_operations() {
+    result("begin Writeln(12 and 10,' ',12 or 10,' ',12 xor 10,' ',not 0,' ',not -1); Writeln(-8 shr 1,' ',1 shl 31,' ',1 shl 32,' ',1 shl -1,' ',-8 shr -1); end.","8 14 6 -1 0\n-4 -2147483648 1 -2147483648 -1\n");
+    result("begin var a:int64:=1; Writeln(a shl 63,' ',a shl 64,' ',a shl 65,' ',(-9223372036854775808) shr 63); Writeln(not -9223372036854775808,' ',(not a) shr 1); end.","-9223372036854775808 1 2 -1\n9223372036854775807 -1\n");
+    result("begin var u:longword:=MaxLongWord; var one:longword:=1; var mask:longword:=2147483648; var x:longword:=u and mask; Writeln(x,' ',not u,' ',u shr 31,' ',one shl 31,' ',one shl 32); var y:longword:=u xor u; Writeln(y); end.","2147483648 0 1 2147483648 1\n0\n");
+    result("begin var u:uint64:=MaxUInt64; var one:uint64:=1; Writeln(u shr 63,' ',one shl 63,' ',one shl 64,' ',not u,' ',u and 255,' ',255 and u); Writeln(u xor u,' ',u or one); end.","1 9223372036854775808 1 0 255 255\n0 18446744073709551615\n");
+    result("begin var a:byte:=240; var b:byte:=15; var c:byte:=a or b; var n:byte:=not a; Writeln(c,' ',n,' ',a and b,' ',a xor b,' ',a shl 8); end.","255 15 0 255 61440\n");
+    result("begin var a:shortint:=-128; var b:shortint:=1; var n:shortint:=not a; var c:shortint:=a or b; Writeln(n,' ',c,' ',a shr 1); var s:smallint:=-32768; var t:smallint:=not s; var w:word:=65535; var z:word:=not w; Writeln(t,' ',z,' ',w shl 1); end.","127 -127 -64\n32767 0 131070\n");
+    result("begin var a:byte:=240; var b:word:=3855; var w:word:=a or b; var s:shortint:=-1; var t:smallint:=s and a; Writeln(w,' ',t); end.","4095 240\n");
+    result("begin Writeln(true xor false,' ',true xor true,' ',false xor false); Writeln(1+2 shl 2,' ',8 shr 1+1,' ',1 or 2 and 4,' ',not 1 and 3); end.","True False False\n9 5 1 2\n");
+    result("var trace:string; function A:integer; begin trace:=trace+'A'; Result:=0; end; function B:integer; begin trace:=trace+'B'; Result:=2; end; function F:boolean; begin trace:=trace+'F'; Result:=true; end; begin Writeln(A() and B(),' ',trace); trace:=''; Writeln(true xor F(),' ',trace); trace:=''; Writeln(A() shl B(),' ',trace); end.","0 AB\nFalse F\n0 AB\n");
+    result("begin var a:byte:=7; var b:byte:=not not a; Writeln(b); var shift:word:=32; Writeln(1 shl shift); end.","7\n1\n");
+    for (const auto source:{"begin Writeln(1.0 and 2); end.","begin Writeln(true xor 1); end.","begin Writeln(not 'a'); end.","begin Writeln('a' shl 1); end.","begin var n:int64:=2; Writeln(1 shl n); end.","begin var n:integer:=2; var u:uint64:=3; Writeln(u and n); end.","begin Writeln(1 shr true); end."}) compile_error(source,"E_TYPE");
+    auto program=abc::compile("begin Writeln(1 shl 2); end.");
+    for (auto& instruction:program.code) if (instruction.op==abc::Op::shift_left) instruction.type=abc::Type::byte;
+    error([&]{abc::verify(program);},"E_BYTECODE");
+    program=abc::compile("begin Writeln(1 and 2); end.");
+    for (auto& instruction:program.code) if (instruction.op==abc::Op::bit_and) instruction.type=abc::Type::real;
+    error([&]{abc::verify(program);},"E_BYTECODE");
+    program=abc::compile("begin Writeln(not 1); end.");
+    for (auto& instruction:program.code) if (instruction.op==abc::Op::bit_not) instruction.operand=1;
+    error([&]{abc::verify(program);},"E_BYTECODE");
+}
+
+void array_output() {
+    result("uses Arrays; begin var a:=Arr(1,2,3); WriteArray(a); Writeln('|'); WritelnArray(a,';'); a.Write('/'); Writeln; a.Writeln; end.","1 2 3|\n1;2;3\n1/2/3\n1 2 3\n");
+    result("uses Arrays; begin Arrays.WriteArray(Arr(true,false),','); Writeln; Arrays.WritelnArray(Arr('Я','A'),''); end.","True,False\nЯA\n");
+    result("uses Arrays; begin var a:=new integer[0]; WriteArray(a,'x'); WritelnArray(a,'x'); a.Write; a.Writeln; var b:array of integer:=nil; WriteArray(b); WritelnArray(b); end.","\n\n\n");
+    result("uses Arrays; begin var s:string:=nil; var a:=Arr('abc',s,''); WritelnArray(a,'|'); WritelnArray(Arr(1,2),s); end.","abc|nil|\n1nil2\n");
+    result("uses Arrays; begin var b:byte:=255; var s:shortint:=-128; var w:word:=65535; var u:uint64:=MaxUInt64; WritelnArray(Arr(b,b)); WritelnArray(Arr(s,s)); WritelnArray(Arr(w)); WritelnArray(Arr(u)); WritelnArray(Arr(0.5,1.5)); end.","255 255\n-128 -128\n65535\n18446744073709551615\n0.5 1.5\n");
+    result("uses Arrays; var a:array of integer; var trace:string; function Source:array of integer; begin trace:=trace+'A'; Result:=a; end; function Delim:string; begin trace:=trace+'D'; SetLength(a,0); Result:=','; end; begin a:=Arr(1,2); WritelnArray(Source(),Delim()); Writeln(trace,' ',a.Length); end.","1,2\nAD 0\n");
+    result("uses Arrays; procedure WriteArray(a:array of integer); begin Writeln('own'); end; begin WriteArray(Arr(1)); Arrays.WritelnArray(Arr(2,3),','); end.","own\n2,3\n");
+    runtime_error("uses Arrays; begin var a:array of integer; a.Write; end.","E_NIL");
+    runtime_error("uses Arrays; begin var a:array of integer; a.Writeln; end.","E_NIL");
+    compile_error("begin WriteArray(Arr(1)); end.","E_NAME");
+    compile_error("uses Arrays; begin WritelnArray(1); end.","E_TYPE");
+    compile_error("uses Arrays; begin WritelnArray(Arr(1),2); end.","E_TYPE");
+    compile_error("uses Arrays; begin var l:=new List<integer>; WritelnArray(l); end.","E_TYPE");
+    compile_error("uses Arrays; begin WritelnArray(Arr(1),' ',2); end.","E_TYPE");
+    compile_error("uses Arrays; type R=record x:integer; end; begin var a:=new R[1]; WritelnArray(a); end.","E_UNSUPPORTED");
+    compile_error("uses Arrays; begin var x:=WritelnArray(Arr(1)); end.","E_TYPE");
+    abc::ExecutionOptions options; options.output_limit=4;
+    error([&]{(void)run("uses Arrays; begin WritelnArray(Arr(1,2,3),'|'); end.","",options);},"E_LIMIT");
+    auto program=abc::compile("uses Arrays; begin WritelnArray(Arr(1)); end.");
+    for (auto& instruction:program.code) if (instruction.op==abc::Op::write_array) instruction.operand=4;
+    error([&]{abc::verify(program);},"E_BYTECODE");
+    program=abc::compile("uses Arrays; begin WritelnArray(Arr(1)); end.");
+    for (auto& instruction:program.code) if (instruction.op==abc::Op::write_array) instruction.type=abc::Type::integer;
+    error([&]{abc::verify(program);},"E_BYTECODE");
+    std::size_t polls=0; options.output_limit=1'048'576; options.cancelled=[&]{return ++polls>8;};
+    error([&]{(void)run("uses Arrays; begin WritelnArray(new integer[2000],''); end.","",options);},"E_CANCELLED");
+}
+
 void extended_math() {
     result("begin Writeln(GCD(0,0),' ',GCD(-84,30),' ',GCD(30,-84),' ',GCD(-17,0)); Writeln(LCM(-12,18),' ',LCM(0,0),' ',LCM(17,19)); end.","0 6 6 17\n36 0 323\n");
     result("begin var a:int64:=9223372036854775806; Writeln(GCD(a,6),' ',GCD(MaxInt64,0),' ',LCM(MaxInt64,1)); Writeln(LCM(-9223372036854775808,0),' ',LCM(0,-9223372036854775808)); end.","6 9223372036854775807 9223372036854775807\n0 0\n");
@@ -1680,6 +1732,8 @@ int main() {
     unsigned_integers();
     random_library();
     extended_math();
+    array_output();
+    bitwise_operations();
     sequence_mutations();
     arithmetic();
     verifier();

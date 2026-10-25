@@ -15,6 +15,7 @@
 #include <limits>
 #include <type_traits>
 #include <array>
+#include <bit>
 
 namespace abc {
 namespace {
@@ -231,6 +232,60 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
         if (steps++ >= options.instruction_limit) trap(instruction, RuntimeError::instruction_limit);
         if (options.cancelled && options.cancelled()) trap(instruction, RuntimeError::cancelled);
         switch (instruction.op) {
+        case Op::bit_not: {
+            const auto value=pop();
+            stack.push_back(std::visit([&](const auto& n)->Value {
+                using T=std::decay_t<decltype(n)>;
+                if constexpr (std::is_integral_v<T> && !std::is_same_v<T,bool> && !std::is_same_v<T,char16_t>) {
+                    using U=std::make_unsigned_t<T>;
+                    return std::bit_cast<T>(static_cast<U>(~std::bit_cast<U>(n)));
+                } else trap(instruction,RuntimeError::invalid_bytecode);
+            },value));
+            break;
+        }
+        case Op::bit_and: case Op::bit_or: case Op::bit_xor: {
+            const auto right=pop(), left=pop();
+            stack.push_back(std::visit([&](const auto& a)->Value {
+                using T=std::decay_t<decltype(a)>;
+                if constexpr (std::is_same_v<T,bool>) return a!=std::get<bool>(right);
+                else if constexpr (std::is_integral_v<T> && !std::is_same_v<T,char16_t>) {
+                    using U=std::make_unsigned_t<T>;
+                    const auto x=std::bit_cast<U>(a), y=std::bit_cast<U>(std::get<T>(right));
+                    const auto bits=instruction.op==Op::bit_and ? x&y : instruction.op==Op::bit_or ? x|y : x^y;
+                    return std::bit_cast<T>(static_cast<U>(bits));
+                } else trap(instruction,RuntimeError::invalid_bytecode);
+            },left));
+            break;
+        }
+        case Op::shift_left: case Op::shift_right: {
+            const auto count=std::get<std::int32_t>(pop()); const auto value=pop();
+            stack.push_back(std::visit([&](const auto& n)->Value {
+                using T=std::decay_t<decltype(n)>;
+                if constexpr (std::is_same_v<T,std::int32_t> || std::is_same_v<T,std::int64_t>
+                    || std::is_same_v<T,std::uint32_t> || std::is_same_v<T,std::uint64_t>) {
+                    using U=std::make_unsigned_t<T>;
+                    constexpr unsigned width=sizeof(T)*8U;
+                    const auto shift=static_cast<std::uint32_t>(count)&(width-1U);
+                    const auto bits=std::bit_cast<U>(n);
+                    U result=instruction.op==Op::shift_left ? static_cast<U>(bits<<shift) : static_cast<U>(bits>>shift);
+                    if constexpr (std::is_signed_v<T>)
+                        if (instruction.op==Op::shift_right && n<0 && shift) result|=static_cast<U>(~U{0}<<(width-shift));
+                    return std::bit_cast<T>(result);
+                } else trap(instruction,RuntimeError::invalid_bytecode);
+            },value));
+            break;
+        }
+        case Op::write_array: {
+            const auto delimiter=pop(); const auto sequence=std::get<std::shared_ptr<Aggregate>>(pop());
+            if (sequence->nil && (instruction.operand&2U)) trap(instruction,RuntimeError::nil_reference);
+            for (std::size_t i=0;i<sequence->items.size();++i) {
+                if ((i&255U)==0 && options.cancelled && options.cancelled()) trap(instruction,RuntimeError::cancelled);
+                if (i) write(format(delimiter,instruction),instruction);
+                write(format(sequence->items[i]->value,instruction),instruction);
+            }
+            if (instruction.operand&1U) write("\n",instruction);
+            break;
+        }
         case Op::swap_values: {
             const auto right=std::get<std::shared_ptr<Cell>>(pop()), left=std::get<std::shared_ptr<Cell>>(pop());
             const auto saved=values.copy(left->value);
