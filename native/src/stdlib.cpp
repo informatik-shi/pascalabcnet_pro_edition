@@ -10,6 +10,7 @@
 #include <cmath>
 #include <limits>
 #include <numbers>
+#include <numeric>
 #include <type_traits>
 
 namespace abc::stdlib {
@@ -32,6 +33,13 @@ std::span<const Signature> signatures() {
         add("random",{Type::character,Type::character},Type::character,Function::random_char);
         add("randomreal",{Type::real,Type::real},Type::real,Function::random_rounded);
         add("randomreal",{Type::real,Type::real,Type::integer},Type::real,Function::random_rounded);
+        add("atan2",{Type::real,Type::real},Type::real,Function::atan2);
+        add("hypot",{Type::real,Type::real},Type::real,Function::hypot);
+        add("lerp",{Type::real,Type::real,Type::real},Type::real,Function::lerp);
+        add("remap",std::vector<Type>(5,Type::real),Type::real,Function::remap);
+        add("gcd",{Type::integer,Type::integer},Type::integer,Function::gcd);
+        add("gcd",{Type::int64,Type::int64},Type::int64,Function::gcd);
+        add("lcm",{Type::int64,Type::int64},Type::int64,Function::lcm);
         for (auto type:{Type::byte,Type::shortint,Type::smallint,Type::word}) {
             add("abs",{type},type,Function::abs);
             add("sign",{type},Type::integer,Function::sign);
@@ -286,6 +294,25 @@ Value invoke(std::size_t id, std::span<const Value> arguments, SourceLocation lo
         return checked_real(rounded,location);
     }
     const auto& value = arguments.front();
+    if (function==Function::gcd) {
+        const auto calculate=[&]<class T>(T a,T b)->Value {
+            if (a==std::numeric_limits<T>::min() || b==std::numeric_limits<T>::min())
+                throw runtime_error(RuntimeError::integer_overflow,location);
+            return std::gcd(a,b);
+        };
+        if (signature.result==Type::integer) return calculate(std::get<std::int32_t>(value),std::get<std::int32_t>(arguments[1]));
+        return calculate(std::get<std::int64_t>(value),std::get<std::int64_t>(arguments[1]));
+    }
+    if (function==Function::lcm) {
+        auto a=std::get<std::int64_t>(value), b=std::get<std::int64_t>(arguments[1]);
+        if (!a || !b) return std::int64_t{0};
+        if (a==INT64_MIN || b==INT64_MIN) throw runtime_error(RuntimeError::integer_overflow,location);
+        if (a<0) a=-a;
+        if (b<0) b=-b;
+        const auto quotient=a/std::gcd(a,b);
+        if (quotient>INT64_MAX/b) throw runtime_error(RuntimeError::integer_overflow,location);
+        return quotient*b;
+    }
     if (function==Function::files_read_to_end) return file_operations_read(files,value,location);
     if (function==Function::files_write_string) { file_operations_write(files,value,arguments[1],location); return false; }
     if (function==Function::ordinal) {
@@ -465,6 +492,20 @@ Value invoke(std::size_t id, std::span<const Value> arguments, SourceLocation lo
         throw runtime_error(RuntimeError::math_domain, location);
     double result = 0;
     switch (function) {
+    case Function::atan2: result=std::atan2(x,std::get<double>(arguments[1])); break;
+    case Function::hypot: {
+        const auto a=std::abs(x), b=std::abs(std::get<double>(arguments[1]));
+        const auto high=std::max(a,b), low=std::min(a,b);
+        const auto ratio=high>0 ? low/high : 0;
+        result=high*std::sqrt(1+ratio*ratio); break;
+    }
+    case Function::lerp: result=x+(std::get<double>(arguments[1])-x)*std::get<double>(arguments[2]); break;
+    case Function::remap: {
+        const auto a=std::get<double>(arguments[1]), b=std::get<double>(arguments[2]);
+        if (a==b) throw runtime_error(RuntimeError::division_zero,location);
+        const auto first=std::get<double>(arguments[3]), last=std::get<double>(arguments[4]);
+        result=first+((x-a)/(b-a))*(last-first); break;
+    }
     case Function::sin: result = std::sin(x); break;
     case Function::sinh: result = std::sinh(x); break;
     case Function::cos: result = std::cos(x); break;

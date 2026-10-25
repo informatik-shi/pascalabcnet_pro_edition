@@ -62,8 +62,8 @@ C++ с известными до выполнения типами; мост к 
 
 | Группа | Что перенесено |
 | --- | --- |
-| Числа | `Abs`, `Sqr`, `Sign`, `Min`, `Max` (2–4 аргумента) |
-| Математика | `Sin`, `Sinh`, `Cos`, `Cosh`, `Tan`, `Tanh`, `ArcSin`, `ArcCos`, `ArcTan`, `Exp`, `Ln`, `Log`, `Log2`, `Log10`, `LogN`, `Sqrt`, `Cbrt`, `ISqrt`, `Power` |
+| Числа | `Abs`, `Sqr`, `Sign`, `Min`, `Max` (2–4 аргумента), `GCD`, `LCM` |
+| Математика | `Sin`, `Sinh`, `Cos`, `Cosh`, `Tan`, `Tanh`, `ArcSin`, `ArcCos`, `ArcTan`, `Exp`, `Ln`, `Log`, `Log2`, `Log10`, `LogN`, `Sqrt`, `Cbrt`, `ISqrt`, `Power`, `Atan2`, `Hypot`, `Lerp`, `Remap` |
 | Округление | `Round(x)`, `Round(x,digits)`, `Trunc`, `Int`, `Frac`, `Floor`, `Ceil` |
 | Углы | `DegToRad`, `RadToDeg` |
 | Строки | `Length`, `Copy`, `Pos`, `PosEx`, `LastPos`, `Concat` (две строки), `Trim`, `TrimLeft`, `TrimRight`, `LeftStr`, `RightStr`, `ReverseString`, `CompareStr` |
@@ -748,6 +748,23 @@ Random2/3, ленивые последовательности, пользова
 ожидаемый вывод и известную seeded-последовательность; исходный Pascal-компилятор
 для полного сравнения этого корпуса не запускался. Пример: [случайные массивы](examples/random-arrays.pas).
 
+## Дополнительная математика
+
+`GCD(integer,integer)` возвращает integer, перегрузка int64 — int64.
+Знаки входов игнорируются, GCD(0,0)=0. Любой signed MinValue сообщает
+переполнение, включая пару с нулём. `LCM(int64,int64)` возвращает int64,
+сначала обрабатывает нулевой аргумент, затем проверяет MinValue и
+переполнение произведения после деления на GCD. Поэтому LCM(MinInt64,0)=0,
+но LCM(MinInt64,1) ошибочен. BigInteger-перегрузки остаются в плане.
+
+Добавлены `Atan2(y,x)`, `Hypot(x,y)`, `Lerp(a,b,t)` и `Remap(x,a1,b1,a2,b2)`.
+Hypot использует масштабирование из исходного PABCSystem, избегая
+промежуточного квадрата огромных/малых значений. Lerp и Remap допускают
+экстраполяцию. Сохраняется нативная политика конечных real-результатов:
+Inf/NaN сообщают двуязычную ошибку, Remap с a1=b1 — `E_DIV_ZERO`.
+Пример: `examples/extended-math.pas`; новый корпус ожидаемого вывода
+`tests/fixtures/extended-math-compat.pas` пока не сравнивался с исходным компилятором.
+
 ## Разворот, перемешивание и обмен
 
 Перенесены `Reverse(a)` и `Reverse(a,index,count)` для массивов и `List<T>`,
@@ -840,7 +857,7 @@ cmake --build native/build/default --config Release
 ctest --test-dir native/build/default -C Release --output-on-failure
 ```
 
-Проверка от 25 октября 2026 года: MSVC Release — 1218 проверок ядра и 29 тестов
+Проверка от 25 октября 2026 года: MSVC Release — 1246 проверок ядра и 30 тестов
 CTest вместе с Qt; Clang 22 без санитайзера также проверен. Дополнительный локальный
 прогон Clang 22/AddressSanitizer на Windows не завершён: обработчик исключений
 аварийно останавливается, в том числе в отдельной минимальной программе с

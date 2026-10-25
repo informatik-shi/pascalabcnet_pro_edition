@@ -56,6 +56,24 @@ void runtime_error(std::string_view source, std::string_view code) {
     error([&] { (void)run(source); }, code,source);
 }
 
+void extended_math() {
+    result("begin Writeln(GCD(0,0),' ',GCD(-84,30),' ',GCD(30,-84),' ',GCD(-17,0)); Writeln(LCM(-12,18),' ',LCM(0,0),' ',LCM(17,19)); end.","0 6 6 17\n36 0 323\n");
+    result("begin var a:int64:=9223372036854775806; Writeln(GCD(a,6),' ',GCD(MaxInt64,0),' ',LCM(MaxInt64,1)); Writeln(LCM(-9223372036854775808,0),' ',LCM(0,-9223372036854775808)); end.","6 9223372036854775807 9223372036854775807\n0 0\n");
+    result("begin var b:byte:=84; var w:word:=30; var u:longword:=4294967295; Writeln(GCD(b,w),' ',GCD(u,15),' ',LCM(b,w)); end.","6 15 420\n");
+    result("begin Writeln(Hypot(3,4),' ',Hypot(-3,-4),' ',Hypot(0,0)); Writeln(Hypot(1e300,1e300)>1e300,' ',Hypot(1e-300,0)>0); end.","5 5 0\nTrue True\n");
+    result("begin Writeln(Atan2(0,1),' ',Abs(Atan2(1,0)-Pi/2)<1e-15,' ',Abs(Atan2(-1,0)+Pi/2)<1e-15,' ',Abs(Atan2(0,-1)-Pi)<1e-15); end.","0 True True True\n");
+    result("begin Writeln(Lerp(10,20,0),' ',Lerp(10,20,0.25),' ',Lerp(10,20,1),' ',Lerp(10,20,2)); Writeln(Remap(5,0,10,100,200),' ',Remap(5,10,0,0,100),' ',Remap(20,0,10,0,1)); end.","10 12.5 20 30\n150 50 2\n");
+    result("begin Writeln(PABCSystem.GCD(84,30),' ',PABCSystem.LCM(6,8),' ',PABCSystem.Hypot(5,12),' ',PABCSystem.Lerp(0,10,0.5),' ',PABCSystem.Remap(1,0,2,10,20)); end.","6 24 13 5 15\n");
+    result("begin Writeln(LCM(3037000499,3037000500)); end.","9223372033963249500\n");
+    for (const auto source:{"begin GCD(-2147483648,0); end.","begin GCD(1,-2147483648); end.","begin GCD(-9223372036854775808,0); end.","begin LCM(-9223372036854775808,1); end.","begin LCM(1,-9223372036854775808); end.","begin LCM(MaxInt64,2); end.","begin LCM(3037000500,3037000501); end."}) runtime_error(source,"E_OVERFLOW");
+    runtime_error("begin Remap(1,2,2,0,1); end.","E_DIV_ZERO");
+    runtime_error("begin Hypot(MaxReal,MaxReal); end.","E_OVERFLOW");
+    runtime_error("begin Lerp(-MaxReal,MaxReal,1.0); end.","E_OVERFLOW");
+    for (const auto source:{"begin GCD(1.0,2.0); end.","begin GCD(MaxUInt64,1); end.","begin LCM(1.0,2); end.","begin var i:integer:=LCM(1,2); end.","begin var a:int64:=2; var i:integer:=GCD(a,2); end.","begin Atan2(1); end.","begin Hypot('abc',2); end.","begin Lerp(0,1,true); end.","begin Remap(1,0,2,10); end."}) compile_error(source,"E_TYPE");
+    try { (void)run("begin\n GCD(-2147483648,0);\nend."); require(false,"Expected bilingual GCD overflow"); }
+    catch (const abc::Error& e) { require(e.code=="E_OVERFLOW" && e.location.line==2 && !e.russian.empty(),"Math overflow preserves location and both languages"); }
+}
+
 void sequence_mutations() {
     result("begin var a:=Arr(1,2,3,4,5); var b:=a; Reverse(a); foreach var x in b do Write(x); Writeln; Reverse(a,1,3); foreach var x in a do Write(x); end.","54321\n52341");
     result("begin var a:=Arr(1,2); Reverse(a,2,0); Reverse(a,0,0); Writeln(a[0],a[1]); var b:=new integer[0]; Reverse(b); Reverse(b,0,0); end.","12\n");
@@ -1661,6 +1679,7 @@ int main() {
     small_integers();
     unsigned_integers();
     random_library();
+    extended_math();
     sequence_mutations();
     arithmetic();
     verifier();
