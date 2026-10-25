@@ -97,8 +97,12 @@ enum class Op {
     call_user, return_user, drop, list_add, list_remove, list_clear, list_contains,
     read_lines, write_lines, array_copy, array_high, sequence_sort, sequence_fill, mutate_string, increment, read_value,
     endpoint_call, buffer_call, association_call, linked_call, file_print, file_newline, file_read, file_skip_line, file_output,
-    iteration_version, iteration_check, set_character, random_array, fill_random_array
+    iteration_version, iteration_check, set_character, random_array, fill_random_array, sequence_mutate, swap_values
 };
+
+enum class SequenceMutation { reverse, reverse_range, shuffle, shuffle_result, swap_indices };
+inline bool mutation_indices(SequenceMutation method) { return method==SequenceMutation::reverse_range || method==SequenceMutation::swap_indices; }
+inline bool mutation_result(SequenceMutation method) { return method==SequenceMutation::shuffle_result || method==SequenceMutation::swap_indices; }
 
 enum class RandomArrayMethod { integer, scaled_real, rounded_real, ranged_real };
 inline Type random_array_element(RandomArrayMethod method) { return method==RandomArrayMethod::integer ? Type::integer : Type::real; }

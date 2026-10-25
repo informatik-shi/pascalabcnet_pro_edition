@@ -780,9 +780,17 @@ private:
                 result->kind=hir::ExprKind::call;
                 for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
                 if (bind_random_array(*result,source.token.text,source.left->token.text)) break;
+                if (bind_sequence_mutation(*result,source.token.text,source.left->token.text)) break;
                 bind_builtin(*result,source.token.text,source.left->token.text); break;
             }
             result->left = expression(*source.left); const auto receiver = result->left->type;
+            if (compound(receiver) && indexed_sequence(info(receiver,result->location).kind)
+                && (source.token.text=="shuffle" || (source.token.text=="reverse" && info(receiver,result->location).kind==CompoundKind::list)
+                    || (source.token.text=="swap" && info(receiver,result->location).kind==CompoundKind::array))) {
+                result->arguments.push_back(std::move(result->left));
+                for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
+                (void)bind_sequence_mutation(*result,source.token.text,{},true); break;
+            }
             if (compound(receiver) && info(receiver,result->location).kind==CompoundKind::array && source.token.text=="fillrandom") {
                 result->arguments.push_back(std::move(result->left));
                 for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
@@ -1014,6 +1022,7 @@ private:
                 break;
             }
             if (bind_random_array(*result,source.token.text)) break;
+            if (bind_sequence_mutation(*result,source.token.text)) break;
             if (source.token.text == "arr") {
                 if (result->arguments.empty()) throw Error("E_TYPE",result->location,"Cannot infer empty Arr element type");
                 auto element = Type::nil;
@@ -1144,6 +1153,30 @@ private:
         }
         }
         return result;
+    }
+    bool bind_sequence_mutation(hir::Expr& result, std::string_view name, std::string_view unit = {}, bool member = false) {
+        if ((name!="reverse" && name!="shuffle" && name!="swap") || (!unit.empty() && unit!="pabcsystem")) return false;
+        const auto count=result.arguments.size();
+        if (name=="swap" && !member) {
+            if (count!=2 || result.arguments[0]->type!=result.arguments[1]->type
+                || !lvalue(*result.arguments[0]) || !lvalue(*result.arguments[1]))
+                throw Error("E_TYPE",result.location,"Swap requires two assignable values of exactly the same type");
+            result.kind=hir::ExprKind::swap_values; result.type=Type::unit; return true;
+        }
+        if ((name=="reverse" && count!=1 && count!=3) || (name=="shuffle" && count!=1) || (name=="swap" && count!=3))
+            throw Error("E_TYPE",result.location,"Wrong sequence mutation argument count");
+        const auto receiver=result.arguments[0]->type;
+        if (receiver==Type::string) {
+            if (name!="reverse" || !lvalue(*result.arguments[0])) throw Error("E_TYPE",result.location,"Reverse requires a writable string");
+        } else if (!compound(receiver) || !indexed_sequence(info(receiver,result.location).kind))
+            throw Error("E_TYPE",result.location,"Reverse/Shuffle requires an array or List<T>");
+        result.local=static_cast<std::size_t>(name=="reverse" ? count==1 ? SequenceMutation::reverse : SequenceMutation::reverse_range
+            : name=="swap" ? SequenceMutation::swap_indices : member ? SequenceMutation::shuffle_result : SequenceMutation::shuffle);
+        for (std::size_t i=1;i<count;++i) result.arguments[i]=convert(std::move(result.arguments[i]),Type::integer);
+        result.left=std::move(result.arguments[0]); result.arguments.erase(result.arguments.begin());
+        result.kind=hir::ExprKind::sequence_mutate;
+        result.type=mutation_result(static_cast<SequenceMutation>(result.local)) ? receiver : Type::unit;
+        return true;
     }
     bool bind_random_array(hir::Expr& result, std::string_view name, std::string_view unit = {}) {
         const bool arrays=name=="fillbyrandom" || name=="createrandomintegerarray" || name=="createrandomrealarray";

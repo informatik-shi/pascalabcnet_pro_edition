@@ -56,6 +56,49 @@ void runtime_error(std::string_view source, std::string_view code) {
     error([&] { (void)run(source); }, code,source);
 }
 
+void sequence_mutations() {
+    result("begin var a:=Arr(1,2,3,4,5); var b:=a; Reverse(a); foreach var x in b do Write(x); Writeln; Reverse(a,1,3); foreach var x in a do Write(x); end.","54321\n52341");
+    result("begin var a:=Arr(1,2); Reverse(a,2,0); Reverse(a,0,0); Writeln(a[0],a[1]); var b:=new integer[0]; Reverse(b); Reverse(b,0,0); end.","12\n");
+    result("begin var s:string:='abcde'; var t:=s; Reverse(s,2,3); Writeln(s,' ',t); Reverse(s); Reverse(s,6,0); Writeln(s); end.","adcbe abcde\nebcda\n");
+    result("begin var s:='a'#0'b'; Reverse(s); Writeln(s[1],' ',Ord(s[2]),' ',s[3]); end.","b 0 a\n");
+    result("begin var s:=#55356#57101; Reverse(s); Writeln(Ord(s[1]),' ',Ord(s[2])); end.","57101 55356\n");
+    result("type R=record s:string; end; begin var r:R; r.s:='abc'; PABCSystem.Reverse(r.s); Writeln(r.s); var a:=Arr('xy','zz'); Reverse(a[0]); Writeln(a[0]); end.","cba\nyx\n");
+    result("begin var l:=new List<integer>; l.Add(1); l.Add(2); l.Add(3); Reverse(l); l.Reverse(1,2); foreach var x in l do Write(x); l.Reverse; foreach var x in l do Write(x); end.","312213");
+    result("begin var a:=Arr(1,2,3,4,5); SetRandomSeed(1); Shuffle(a); foreach var x in a do Write(x); Writeln(' ',Random(100)); end.","43512 65\n");
+    result("begin var a:=Arr(1,2,3,4,5); SetRandomSeed(1); var b:=a.Shuffle; Writeln(a=b); foreach var x in b do Write(x); end.","True\n43512");
+    result("begin var l:=new List<integer>; for var i:=1 to 5 do l.Add(i); SetRandomSeed(1); var b:=l.Shuffle(); Writeln(l=b); foreach var x in l do Write(x); end.","True\n43512");
+    result("begin SetRandomSeed(1); var a:=new integer[0]; Shuffle(a); var l:=new List<integer>; l.Add(7); foreach var x in l do Shuffle(l); Writeln(l[0],' ',Random(100)); end.","7 24\n");
+    result("begin var a:=7; var b:=9; PABCSystem.Swap(a,b); Writeln(a,' ',b); Swap(a,a); Writeln(a); end.","9 7\n9\n");
+    result("begin var a:=Arr(1,2); var b:=Arr(8,9); var old:=a; Swap(a,b); Writeln(a[0],' ',b=old); var same:=a.Swap(0,1); Writeln(same=a,' ',a[0],a[1]); end.","8 True\nTrue 98\n");
+    result("type R=record x:integer; s:string; a:array of integer; end; begin var a:=new R[2]; a[0].x:=1; a[0].s:='one'; a[0].a:=Arr(5); a[1].x:=2; a[1].s:='two'; a[1].a:=Arr(6); Reverse(a); Writeln(a[0].x,' ',a[1].s); a[0].x:=8; Writeln(a[1].x); Swap(a[0],a[1]); Writeln(a[0].x,' ',a[1].s,' ',a[0].a[0]); end.","2 one\n1\n1 two 5\n");
+    result("type R=record x:integer; end; var a:array of R; procedure Test(var x:integer); begin Reverse(a); Writeln(x); end; begin a:=new R[2]; a[0].x:=4; a[1].x:=8; Test(a[0].x); Writeln(a[0].x); end.","8\n8\n");
+    result("var trace:string; function I:integer; begin trace:=trace+'I'; Result:=0; end; function J:integer; begin trace:=trace+'J'; Result:=1; end; begin var a:=Arr(2,4); Swap(a[I()],a[J()]); Writeln(trace,' ',a[0],a[1]); end.","IJ 42\n");
+    result("var a:array of integer; var old:array of integer; function First:integer; begin Result:=0; end; function Last:integer; begin a:=Arr(7,8); Result:=1; end; begin a:=Arr(1,2); old:=a; Swap(a[First()],a[Last()]); Writeln(old[0],' ',a[1]); end.","2 8\n");
+    result("var a:array of integer; function Start:integer; begin SetLength(a,0); Result:=1; end; begin a:=Arr(1,2,3,4); var old:=a; Reverse(a,Start(),2); foreach var x in old do Write(x); Writeln(' ',a.Length); end.","1324 0\n");
+    result("var s:string; function Start:integer; begin s:='xyz'; Result:=1; end; begin s:='abc'; Reverse(s,Start(),2); Writeln(s); end.","yxz\n");
+    result("begin var a:array of integer:=nil; var b:=Arr(4); Swap(a,b); Writeln(a[0],' ',b=nil); end.","4 True\n");
+    for (const auto source:{"begin var a:array of integer; Reverse(a); end.","begin var l:List<integer>; Shuffle(l); end.","begin var s:string:=nil; Reverse(s); end.","begin var a:array of integer; a.Swap(0,0); end."}) runtime_error(source,"E_NIL");
+    for (const auto source:{"begin var a:=Arr(1,2); Reverse(a,-1,0); end.","begin var a:=Arr(1,2); Reverse(a,0,-1); end.","begin var a:=Arr(1,2); Reverse(a,1,2147483647); end.","begin var a:=Arr(1,2); a.Swap(0,2); end."}) runtime_error(source,"E_BOUNDS");
+    for (const auto source:{"begin var s:string:='abc'; Reverse(s,0,0); end.","begin var s:string:='abc'; Reverse(s,2,-1); end.","begin var s:string:='abc'; Reverse(s,-2147483648,0); end."}) runtime_error(source,"E_RANGE");
+    runtime_error("begin var l:=new List<integer>; l.Add(1); foreach var x in l do Reverse(l,1,0); end.","E_MODIFIED");
+    runtime_error("begin var l:=new List<integer>; l.Add(1); foreach var x in l do Swap(l[0],l[0]); end.","E_MODIFIED");
+    runtime_error("begin var l:=new List<integer>; l.Add(1); l.Add(2); foreach var x in l do Shuffle(l); end.","E_MODIFIED");
+    runtime_error("begin var l:=new List<string>; l.Add('ab'); foreach var x in l do Reverse(l[0]); end.","E_MODIFIED");
+    for (const auto source:{"begin Reverse('abc'); end.","begin var a:=1; var b:int64:=2; Swap(a,b); end.","begin var a:=1; Swap(a,2); end.","begin for var i:=1 to 3 do Swap(i,i); end.","begin var s:string:='abc'; foreach var c in s do Reverse(c); end.","begin Shuffle('abc'); end.","begin var a:=Arr(1); Shuffle(a,1); end.","begin var a:=Arr(1); Reverse(a,1.5,0); end.","begin var a:=Arr(1); var b:=Reverse(a); end."}) compile_error(source,"E_TYPE");
+    auto program=abc::compile("begin var a:=Arr(1); Reverse(a); end.");
+    for (auto& instruction:program.code) if (instruction.op==abc::Op::sequence_mutate) instruction.operand=999;
+    error([&]{abc::verify(program);},"E_BYTECODE");
+    program=abc::compile("begin var s:string:='abc'; Reverse(s); end.");
+    for (auto& instruction:program.code) if (instruction.op==abc::Op::sequence_mutate) instruction.operand=static_cast<std::size_t>(abc::SequenceMutation::shuffle);
+    error([&]{abc::verify(program);},"E_BYTECODE");
+    program=abc::compile("begin var a:=1; var b:=2; Swap(a,b); end.");
+    for (auto& instruction:program.code) if (instruction.op==abc::Op::swap_values) instruction.type=abc::Type::int64;
+    error([&]{abc::verify(program);},"E_BYTECODE");
+    abc::ExecutionOptions options; std::size_t polls=0;
+    options.cancelled=[&]{return ++polls>8;};
+    error([&]{(void)run("begin var a:=new integer[2000]; Reverse(a); end.","",options);},"E_CANCELLED");
+}
+
 void language() {
     result("begin end.", "");
     result("program Demo; begin writeln(1 + 2 * 3); end.", "7\n");
@@ -1618,6 +1661,7 @@ int main() {
     small_integers();
     unsigned_integers();
     random_library();
+    sequence_mutations();
     arithmetic();
     verifier();
     bilingual_diagnostics();

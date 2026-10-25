@@ -53,6 +53,13 @@ private:
     void expression(const hir::Expr& node) {
         if (node.type == Type::invalid) throw Error("E_HIR", node.location, "Unresolved expression type");
         switch (node.kind) {
+        case hir::ExprKind::swap_values:
+            reference(*node.arguments[0]); reference(*node.arguments[1]);
+            emit(Op::swap_values,node.arguments[0]->type,0,node.location); break;
+        case hir::ExprKind::sequence_mutate:
+            if (node.left->type==Type::string) reference(*node.left); else expression(*node.left);
+            for (const auto& argument:node.arguments) expression(*argument);
+            emit(Op::sequence_mutate,node.left->type,node.local,node.location); break;
         case hir::ExprKind::literal: constant(node.value, node.location); break;
         case hir::ExprKind::local: local(Op::load,node.local,node.location); break;
         case hir::ExprKind::file_output:
@@ -334,6 +341,15 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
     for (const auto& instruction : code) {
         const auto type = instruction.type;
         switch (instruction.op) {
+        case Op::swap_values:
+            if (!valid_value_type(program,type) || instruction.operand) invalid(instruction,"Invalid typed swap"); break;
+        case Op::sequence_mutate:
+            if (instruction.operand>static_cast<std::size_t>(SequenceMutation::swap_indices)
+                || (type==Type::string ? instruction.operand>static_cast<std::size_t>(SequenceMutation::reverse_range)
+                    : !compound(type) || !indexed_sequence(type_info(program,type).kind))
+                || (instruction.operand==static_cast<std::size_t>(SequenceMutation::swap_indices) && type_info(program,type).kind!=CompoundKind::array))
+                invalid(instruction,"Invalid sequence mutation");
+            break;
         case Op::random_array: case Op::fill_random_array:
             if (!compound(type) || type_info(program,type).kind!=CompoundKind::array
                 || instruction.operand>static_cast<std::size_t>(RandomArrayMethod::ranged_real)
@@ -562,6 +578,14 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         case Op::write_lines: require(instruction.type); require(Type::string); break;
         case Op::array_copy: require(instruction.type); stack.push_back(instruction.type); break;
         case Op::array_high: require(instruction.type); stack.push_back(Type::integer); break;
+        case Op::swap_values: require(reference_type(instruction.type)); require(reference_type(instruction.type)); break;
+        case Op::sequence_mutate: {
+            const auto method=static_cast<SequenceMutation>(instruction.operand);
+            if (mutation_indices(method)) { require(Type::integer); require(Type::integer); }
+            require(instruction.type==Type::string ? reference_type(Type::string) : instruction.type);
+            if (mutation_result(method)) stack.push_back(instruction.type);
+            break;
+        }
         case Op::sequence_sort: require(instruction.type); break;
         case Op::sequence_fill: require(type_info(program,instruction.type).element); require(instruction.type); break;
         case Op::make_default: stack.push_back(instruction.type); break;

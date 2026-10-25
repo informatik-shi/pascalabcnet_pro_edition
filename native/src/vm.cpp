@@ -231,6 +231,62 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
         if (steps++ >= options.instruction_limit) trap(instruction, RuntimeError::instruction_limit);
         if (options.cancelled && options.cancelled()) trap(instruction, RuntimeError::cancelled);
         switch (instruction.op) {
+        case Op::swap_values: {
+            const auto right=std::get<std::shared_ptr<Cell>>(pop()), left=std::get<std::shared_ptr<Cell>>(pop());
+            const auto saved=values.copy(left->value);
+            values.write(left,right->value); values.write(right,saved); break;
+        }
+        case Op::sequence_mutate: {
+            const auto method=static_cast<SequenceMutation>(instruction.operand);
+            const auto second=mutation_indices(method) ? std::int64_t(std::get<std::int32_t>(pop())) : 0;
+            const auto first=mutation_indices(method) ? std::int64_t(std::get<std::int32_t>(pop())) : 0;
+            const auto receiver=pop();
+            std::shared_ptr<Cell> text_cell;
+            std::shared_ptr<Aggregate> sequence;
+            std::size_t size;
+            if (instruction.type==Type::string) {
+                text_cell=std::get<std::shared_ptr<Cell>>(receiver);
+                if (std::holds_alternative<NilString>(text_cell->value)) trap(instruction,RuntimeError::nil_reference);
+                size=string_text(text_cell->value).size();
+            } else {
+                sequence=std::get<std::shared_ptr<Aggregate>>(receiver);
+                if (sequence->nil) trap(instruction,RuntimeError::nil_reference);
+                size=sequence->items.size();
+            }
+            std::size_t start=0, count=size;
+            if (method==SequenceMutation::reverse_range) {
+                const auto index=first-(instruction.type==Type::string ? 1 : 0);
+                if (index<0 || second<0 || static_cast<std::uint64_t>(index)>size || static_cast<std::uint64_t>(second)>size-static_cast<std::size_t>(index))
+                    trap(instruction,instruction.type==Type::string ? RuntimeError::string_slice : RuntimeError::index_bounds);
+                start=static_cast<std::size_t>(index); count=static_cast<std::size_t>(second);
+            }
+            auto exchange=[&](std::size_t a,std::size_t b) {
+                const auto saved=values.copy(sequence->items[a]->value);
+                values.write(sequence->items[a],sequence->items[b]->value); values.write(sequence->items[b],saved);
+            };
+            if (method==SequenceMutation::swap_indices) {
+                if (first<0 || second<0 || static_cast<std::uint64_t>(first)>=size || static_cast<std::uint64_t>(second)>=size)
+                    trap(instruction,RuntimeError::index_bounds);
+                exchange(static_cast<std::size_t>(first),static_cast<std::size_t>(second));
+            } else if (method==SequenceMutation::shuffle || method==SequenceMutation::shuffle_result) {
+                for (auto i=size;i>1;--i) {
+                    if ((i&255U)==0 && options.cancelled && options.cancelled()) trap(instruction,RuntimeError::cancelled);
+                    exchange(i-1,static_cast<std::size_t>(random.range(0,static_cast<std::int32_t>(i),instruction.location)));
+                }
+            } else if (text_cell) {
+                auto text=string_text(text_cell->value);
+                std::reverse(text.begin()+static_cast<std::ptrdiff_t>(start),text.begin()+static_cast<std::ptrdiff_t>(start+count));
+                values.write(text_cell,text);
+            } else {
+                if (type_info(program,instruction.type).kind==CompoundKind::list) ++sequence->version;
+                for (std::size_t i=0;i<count/2;++i) {
+                    if ((i&255U)==0 && options.cancelled && options.cancelled()) trap(instruction,RuntimeError::cancelled);
+                    exchange(start+i,start+count-i-1);
+                }
+            }
+            if (mutation_result(method)) stack.push_back(receiver);
+            break;
+        }
         case Op::random_array: case Op::fill_random_array: {
             const auto method=static_cast<RandomArrayMethod>(instruction.operand);
             const auto count=random_array_parameters(method).size();
