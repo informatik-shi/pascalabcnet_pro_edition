@@ -57,6 +57,8 @@ private:
     void expression(const hir::Expr& node) {
         if (node.type == Type::invalid) throw Error("E_HIR", node.location, "Unresolved expression type");
         switch (node.kind) {
+        case hir::ExprKind::try_read:
+            reference(*node.left); expression(*node.right); emit(Op::try_read,node.left->type,0,node.location); break;
         case hir::ExprKind::object_text:
             expression(*node.left); if (node.right) expression(*node.right);
             emit(Op::object_text,node.left->type,node.local,node.location); break;
@@ -365,6 +367,9 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
     for (const auto& instruction : code) {
         const auto type = instruction.type;
         switch (instruction.op) {
+        case Op::try_read:
+            if ((!numeric(type) && type!=Type::boolean) || instruction.operand) invalid(instruction,"Invalid typed TryRead");
+            break;
         case Op::print_output:
             if (type!=Type::unit || instruction.operand/4>16 || instruction.operand%4<2) invalid(instruction,"Invalid Print output");
             break;
@@ -629,6 +634,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
                 if (!(type&0x40000000U) || !scalar(static_cast<Type>(type&~0x40000000U))) invalid(instruction,"Console input requires scalar references");
             }
             break;
+        case Op::try_read: require(Type::string); require(reference_type(instruction.type)); stack.push_back(Type::boolean); break;
         case Op::read_array: require(instruction.type); break;
         case Op::read_value: stack.push_back(instruction.type); break;
         case Op::file_print: require(instruction.type); require(Type::text_file); stack.push_back(Type::text_file); break;

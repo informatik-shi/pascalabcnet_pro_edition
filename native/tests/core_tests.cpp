@@ -3,6 +3,7 @@
 #include "../src/random.hpp"
 
 #include <iostream>
+#include <array>
 #include <filesystem>
 #include <fstream>
 #include <chrono>
@@ -54,6 +55,46 @@ void compile_error(std::string_view source, std::string_view code) {
 
 void runtime_error(std::string_view source, std::string_view code) {
     error([&] { (void)run(source); }, code,source);
+}
+
+void try_console_read() {
+    {
+        struct BrokenInput:std::streambuf { int_type underflow() override {throw std::ios_base::failure("input failure");} } buffer;
+        std::istream failed(&buffer); failed.exceptions(std::ios::badbit); std::ostringstream output;
+        abc::execute(abc::compile("begin var n:=5; Writeln(TryRead(n),' ',n); end."),failed,output);
+        require(output.str()=="False 5\n","TryRead catches host input failures and preserves the target");
+        struct BrokenOutput:std::streambuf { std::streamsize xsputn(const char*,std::streamsize) override {return 0;} } output_buffer;
+        std::ostream broken(&output_buffer); broken.exceptions(std::ios::badbit|std::ios::failbit); std::istringstream input("7");
+        abc::execute(abc::compile("begin var n:integer; if TryRead(n,'N') then Writeln(1 div 0); end."),input,broken);
+        require(input.tellg()==std::streampos{0},"A caught prompt write failure does not consume input");
+    }
+    result("begin var n:=41; Writeln(TryRead(n),' ',n); Writeln(TryRead(n),' ',n); Writeln('[',ReadlnString,']'); Writeln(TryRead(n),' ',n); end.","False 41\nTrue 9\n[ tail]\nFalse 9\n","bad 9 tail\n");
+    result("begin var n:real:=2.5; Writeln(TryRead(n),' ',n); Writeln(TryRead(n),' ',n); end.","False 2.5\nTrue 150\n","NaN 1.5e2\n");
+    result("begin var b:boolean:=true; Writeln(TryRead(b),' ',b); Writeln(TryRead(b),' ',b); Writeln(TryRead(b),' ',b); end.","False True\nTrue False\nTrue True\n","1 false TRUE\n");
+    for (const auto& [type,edge,bad]:{std::array<std::string,3>{"byte","255","256"},{"shortint","-128","-129"},
+        {"smallint","-32768","32768"},{"word","65535","65536"},{"integer","2147483647","2147483648"},
+        {"longword","4294967295","4294967296"},{"int64","9223372036854775807","9223372036854775808"},
+        {"uint64","18446744073709551615","18446744073709551616"}})
+        result("begin var n:"+type+"; Writeln(PABCSystem.TryRead(n),' ',n); Writeln(TryRead(n),' ',n); end.","True "+edge+"\nFalse "+edge+"\n",edge+" "+bad);
+    result("begin PrintDelimDefault:='|'; var n:=1; Writeln(TryRead(n,'N'),' ',n); Writeln(TryRead(n,''),' ',n); Writeln(TryRead(n,nil),' ',n); end.","N|True 7\nTrue 8\nnil|False 8\n","7 8 bad");
+    result("var a:array of integer; var calls:integer; function Idx:integer; begin Inc(calls); Result:=0; end; function Msg:string; begin SetLength(a,0); Result:=''; end; begin a:=Arr(1); var old:=a; Writeln(TryRead(a[Idx()],Msg()),' ',a.Length,' ',old[0],' ',calls); end.","True 0 7 1\n","7");
+    result("begin var l:=new List<integer>; l.Add(1); foreach var x in l do Writeln(TryRead(l[0]),' ',x); end.","False 1\n","bad");
+    result("begin var n:=1; Writeln(TryRead(n),' ',n); Writeln(TryRead(n),' ',n); end.","False 1\nTrue 7\n","\xff\n7");
+    runtime_error("begin var a:array of integer; TryRead(a[0],'N'); end.","E_NIL");
+    runtime_error("function Msg:string; begin var n:=1 div 0; Result:=''; end; begin var n:integer; TryRead(n,Msg()); end.","E_DIV_ZERO");
+    error([&]{(void)run("begin var l:=new List<integer>; l.Add(1); foreach var x in l do TryRead(l[0]); end.","7");},"E_MODIFIED");
+    for (const auto source:{"begin TryRead(); end.","begin TryRead(1); end.","begin var s:string; TryRead(s); end.","begin var c:char; TryRead(c); end.",
+        "begin var n:integer; TryRead(n,1); end.","begin var n:integer; TryRead(n,'',2); end.","begin for var n:=1 to 2 do TryRead(n); end."}) compile_error(source,"E_TYPE");
+    auto program=abc::compile("begin var n:integer; TryRead(n); end.");
+    for (auto& instruction:program.code) if (instruction.op==abc::Op::try_read) instruction.type=abc::Type::string;
+    error([&]{abc::verify(program);},"E_BYTECODE");
+    program=abc::compile("begin var n:integer; TryRead(n); end.");
+    for (auto& instruction:program.code) if (instruction.op==abc::Op::try_read) instruction.operand=1;
+    error([&]{abc::verify(program);},"E_BYTECODE");
+    abc::ExecutionOptions options; options.output_limit=1;
+    error([&]{(void)run("begin var n:integer; TryRead(n,'N'); end.","7",options);},"E_LIMIT");
+    options.output_limit=1'048'576; std::size_t polls=0; options.cancelled=[&]{return ++polls>10;};
+    error([&]{(void)run("begin var n:integer; TryRead(n); end.",std::string(1000,'1'),options);},"E_CANCELLED");
 }
 
 void structural_output() {
@@ -2010,6 +2051,7 @@ int main() {
     console_unicode_output();
     rectangular_arrays();
     structural_output();
+    try_console_read();
     sequence_mutations();
     arithmetic();
     verifier();

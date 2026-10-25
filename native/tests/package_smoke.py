@@ -51,6 +51,15 @@ def main():
             if console.returncode or console.stdout != "Два целых: Сумма: 15\nТри числа: 1, 2, 3\n":
                 raise RuntimeError(f"{name} shared console input failed: {console.stdout!r}, {console.stderr!r}")
             console_source = folder / "Консольный ввод.pas"
+            for supplied, expected in [
+                ("7\n", "Введите целое число: Прочитано: 7\n"),
+                ("bad\n", "Введите целое число: Некорректный ввод. Значение: 0\n"),
+            ]:
+                attempted = subprocess.run([runner, "run", str(folder / "examples" / "try-read.pas")],
+                                           input=supplied, text=True, encoding="utf-8", capture_output=True,
+                                           cwd=folder, env=env, timeout=10)
+                if attempted.returncode or attempted.stdout != expected:
+                    raise RuntimeError(f"{name} TryRead failed: {attempted.stdout!r}, {attempted.stderr!r}")
             console = subprocess.run([runner, "run", str(folder / "examples" / "console-functions.pas")],
                                      input="42 tail\nАнна\n", text=True, encoding="utf-8",
                                      capture_output=True, cwd=folder, env=env, timeout=10)
@@ -385,6 +394,7 @@ def main():
             results[-1]["streaming_unicode_output"] = "passed"
             results[-1]["rectangular_matrices_and_formatting"] = "passed"
             results[-1]["structural_object_output"] = "passed"
+            results[-1]["try_read_and_preserved_values"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 

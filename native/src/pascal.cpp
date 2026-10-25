@@ -838,6 +838,7 @@ private:
                 result->kind=hir::ExprKind::call;
                 for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
                 if (bind_print(*result,source.token.text,source.left->token.text)) break;
+                if (bind_try_read(*result,source.token.text,source.left->token.text)) break;
                 if (bind_random_array(*result,source.token.text,source.left->token.text)) break;
                 if (bind_sequence_mutation(*result,source.token.text,source.left->token.text)) break;
                 if (bind_array_output(*result,source.token.text,source.left->token.text)) break;
@@ -1133,6 +1134,7 @@ private:
                 break;
             }
             if (bind_print(*result,source.token.text)) break;
+            if (bind_try_read(*result,source.token.text)) break;
             if (bind_random_array(*result,source.token.text)) break;
             if (bind_sequence_mutation(*result,source.token.text)) break;
             if (bind_array_output(*result,source.token.text)) break;
@@ -1302,6 +1304,19 @@ private:
             result.right=convert(std::move(result.arguments[1]),Type::integer);
         }
         result.arguments.clear(); return true;
+    }
+    bool bind_try_read(hir::Expr& result, std::string_view name, std::string_view unit = {}) {
+        if (name!="tryread" || (!unit.empty() && unit!="pabcsystem")) return false;
+        if (result.arguments.empty() || result.arguments.size()>2) throw Error("E_TYPE",result.location,"TryRead requires a writable number/boolean and optional message");
+        auto& target=result.arguments[0];
+        if (!lvalue(*target) || (!numeric(target->type) && target->type!=Type::boolean)) throw Error("E_TYPE",result.location,"TryRead requires a writable number/boolean");
+        result.left=std::move(target);
+        if (result.arguments.size()==2) result.right=convert(std::move(result.arguments[1]),Type::string);
+        else {
+            result.right=std::make_unique<hir::Expr>(); result.right->kind=hir::ExprKind::literal;
+            result.right->type=Type::string; result.right->value=std::u16string{}; result.right->location=result.location;
+        }
+        result.arguments.clear(); result.kind=hir::ExprKind::try_read; result.type=Type::boolean; return true;
     }
     bool bind_print(hir::Expr& result, std::string_view name, std::string_view unit = {}) {
         if ((name!="print" && name!="println") || (!unit.empty() && unit!="pabcsystem")) return false;

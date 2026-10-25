@@ -175,6 +175,24 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
         if (steps++ >= options.instruction_limit) trap(instruction, RuntimeError::instruction_limit);
         if (options.cancelled && options.cancelled()) trap(instruction, RuntimeError::cancelled);
         switch (instruction.op) {
+        case Op::try_read: {
+            const auto message=pop(); const auto target=std::get<std::shared_ptr<Cell>>(pop());
+            try {
+                if (std::holds_alternative<NilString>(message) || !string_text(message).empty()) {
+                    write(scalar_text(message,instruction),instruction);
+                    const auto& delimiter=delimiter_value();
+                    if (std::holds_alternative<NilString>(delimiter) || !string_text(delimiter).empty())
+                        write(scalar_text(delimiter,instruction),instruction);
+                }
+                values.write(target,console.read(instruction.type,instruction.location));
+                stack.emplace_back(true);
+            } catch (const Error& error) {
+                // Resource limits, cancellation and VM faults remain uncatchable by language helpers.
+                if (error.code!="E_INPUT" && error.code!="E_OUTPUT") throw;
+                stack.emplace_back(false);
+            }
+            break;
+        }
         case Op::object_text: {
             const auto width=instruction.operand ? std::get<std::int32_t>(pop()) : 0;
             const auto value=pop();
