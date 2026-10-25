@@ -57,6 +57,24 @@ void runtime_error(std::string_view source, std::string_view code) {
 }
 
 void structural_output() {
+    result("begin Writeln('[',7:3,'] [',1.5:6:2,'] [','Я':3,'] [',true:6,'] [',nil:4,']'); end.","[  7] [  1.50] [  Я] [  True] [ nil]\n");
+    result("begin Writeln('[','🌍':4,'] [',MaxUInt64:0,'] [',1.5:-6:-2,']'); end.","[  🌍] [18446744073709551615] [1.50  ]\n");
+    result("type R=record x:integer; end; begin var r:R; r.x:=7; Writeln('[',r:5,'] [',Arr(1,2):7,']'); end.","[  (7)] [  [1,2]]\n");
+    result("var trace:string; function V:real; begin trace:=trace+'V'; Result:=1.5; end; function W:integer; begin trace:=trace+'W'; Result:=5; end; function D:integer; begin trace:=trace+'D'; Result:=1; end; begin Writeln(V():W():D(),'|',trace); end.","  1.5|VWD\n");
+    result("function FormatValue(x,w:integer):string; begin Result:='own'; end; begin Writeln(FormatValue(7,3),'|',7:3); end.","own|  7\n");
+    result("var a:array of integer; function Change:integer; begin a[0]:=7; Result:=2; end; begin a:=Arr(1); Writeln(a:0,' ',Change()); end.","[1] 2\n");
+    compile_error("begin Writeln('never',1:0:2); end.","E_TYPE");
+    compile_error("begin Writeln('x':0:2); end.","E_TYPE");
+    compile_error("begin Writeln(1:1.5); end.","E_TYPE");
+    compile_error("begin var n:integer; Read(n:3); end.","E_SYNTAX");
+    compile_error("begin ObjectToString(1:3); end.","E_SYNTAX");
+    runtime_error("begin Writeln(1:-1); end.","E_RANGE");
+    runtime_error("begin Writeln(1.5:0:-2147483648); end.","E_OVERFLOW");
+    {
+        std::istringstream in; std::ostringstream out;
+        error([&]{abc::execute(abc::compile("begin Writeln('must not print',1:-1); end."),in,out);},"E_RANGE");
+        require(out.str().empty(),"Formatted values are evaluated before the enclosing output call");
+    }
     result("type R=record x:integer; end; begin var r:R; r.x:=7; Writeln(r,'|',Arr(1,2),'|',nil); end.","(7)|[1,2]|nil\n");
     result("var a:array of integer; function Change:integer; begin a[0]:=7; Result:=2; end; begin a:=Arr(1); Writeln(a,' ',Change()); end.","[7] 2\n");
     result("type R=record x:integer; end; var r:R; function Change:integer; begin r.x:=7; Result:=2; end; begin r.x:=1; Writeln(r,' ',Change()); end.","(1) 2\n");

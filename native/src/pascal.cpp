@@ -128,7 +128,7 @@ private:
     SourceLocation position_;
 };
 
-enum class SyntaxExprKind { literal, literal_group, name, unary, binary, call, index, field, member_call, construction };
+enum class SyntaxExprKind { literal, literal_group, name, unary, binary, call, index, field, member_call, construction, formatted };
 struct SyntaxType {
     Token token;
     std::string kind;
@@ -385,7 +385,7 @@ private:
             consume();
             if (accept("(")) {
                 if (!is(")")) {
-                    do { result.arguments.push_back(expression()); } while (accept(","));
+                    do { result.arguments.push_back(output_argument()); } while (accept(","));
                 }
                 expect(")");
             }
@@ -500,6 +500,18 @@ private:
             return postfix(make_expression(SyntaxExprKind::name, consume()));
         fail("Expected an expression");
     }
+    std::unique_ptr<SyntaxExpr> output_argument() {
+        auto value=expression();
+        if (!accept(":")) return value;
+        const auto token=value->token;
+        auto result=make_expression(SyntaxExprKind::formatted,token);
+        result->arguments.push_back(std::move(value));
+        result->arguments.push_back(expression());
+        if (accept(":")) result->arguments.push_back(expression());
+        for (const auto& argument:result->arguments) result->depth=std::max(result->depth,argument->depth+1);
+        if (result->depth>256) fail("Formatted expression nesting limit exceeded");
+        return result;
+    }
     std::unique_ptr<SyntaxExpr> postfix(std::unique_ptr<SyntaxExpr> result) {
         for (;;) {
             if (accept("[")) {
@@ -519,7 +531,10 @@ private:
                 if (result->kind != SyntaxExprKind::name && result->kind != SyntaxExprKind::field) fail("Expression is not callable");
                 result->kind = result->kind == SyntaxExprKind::name ? SyntaxExprKind::call : SyntaxExprKind::member_call;
                 if (!is(")")) do {
-                    auto argument = expression(); result->depth = std::max(result->depth, argument->depth + 1);
+                    const auto& name=result->token.text;
+                    auto argument = result->kind==SyntaxExprKind::member_call && (name=="write" || name=="writeln" || name=="print" || name=="println")
+                        ? output_argument() : expression();
+                    result->depth = std::max(result->depth, argument->depth + 1);
                     if (result->depth > 256 || result->arguments.size() >= 16) fail("Function call limit exceeded");
                     result->arguments.push_back(std::move(argument));
                 } while (accept(","));
@@ -1069,6 +1084,14 @@ private:
                 (void)resolve(source.token);
             }
             break;
+        case SyntaxExprKind::formatted: {
+            result->kind=hir::ExprKind::call;
+            for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
+            if (result->arguments.size()==3 && result->arguments[0]->type!=Type::real)
+                throw Error("E_TYPE",result->location,"Precision in a formatted expression requires a real value");
+            if (!bind_object_text(*result,"formatvalue")) bind_builtin(*result,"formatvalue","pabcsystem");
+            break;
+        }
         case SyntaxExprKind::call: {
             if (lookup(source.token) && source.token.text != current_name_) throw Error("E_TYPE", result->location, "Variable is not callable: '" + source.token.text + "'");
             result->kind = hir::ExprKind::call;
