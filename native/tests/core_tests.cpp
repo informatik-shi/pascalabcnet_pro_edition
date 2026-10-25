@@ -57,6 +57,36 @@ void runtime_error(std::string_view source, std::string_view code) {
 }
 
 void structural_output() {
+    result("begin Print(1,2); Println(3,4); Print; Println; Println(); end.","1 2 3 4\n\n\n");
+    result("begin PrintDelimDefault:='|'; Print(1,2); Println(3,4); PrintDelimDefault:=''; Print(5,6); Println(7,8); end.","1|2|3|4\n5678\n");
+    result("begin PrintDelimDefault:=nil; Print(1); Println(2,3); Println(4); end.","1nil2nil3\n4\n");
+    result("procedure Change(var s:string); begin s:='/'; end; begin Change(PrintDelimDefault); Println(1,2); PABCSystem.PrintDelimDefault:=';'; PABCSystem.Print(3,4); PABCSystem.Println; end.","1/2\n3;4;\n");
+    result("procedure Say; begin PrintDelimDefault:='|'; Println(1,2); var n:=7; Writeln(n); end; begin Say; Println(3,4); end.","1|2\n7\n3|4\n");
+    result("var PrintDelimDefault:string:='local'; begin Println(1,2); Writeln(PrintDelimDefault); PABCSystem.PrintDelimDefault:='!'; Println(3,4); end.","1 2\nlocal\n3!4\n");
+    result("procedure Print(x:integer); begin Writeln('own',x); end; begin Print(7); PABCSystem.Print(8); PABCSystem.Println(); end.","own7\n8 \n");
+    result("begin Println(Arr(1,2),new integer[0,3]); Println(1.5:5:1,7:3); end.","[1,2] [[]]\n  1.5   7\n");
+    result("begin PrintDelimDefault:='|'; var n:=ReadInteger('N'); Println(n,n); end.","N|7|7\n","7\n");
+    result("begin PrintDelimDefault:=nil; var n:=ReadInteger(''); Writeln(n); end.","nil7\n","7\n");
+    result("function Change:integer; begin PrintDelimDefault:='|'; Result:=2; end; begin Println(PrintDelimDefault,Change()); end."," |2\n");
+    result("begin PrintDelimDefault:=#57101''; Print(#55356); PrintDelimDefault:=''; Println; end.","🌍\n");
+    result("var x:integer:=ReadInteger('first'); begin PrintDelimDefault:='|'; Println(x,ReadInteger('second')); end.","first second|1|2\n","1\n2\n");
+    runtime_error("begin PrintDelimDefault:=StringOfChar('x',1048576); Print(1); end.","E_LIMIT");
+    compile_error("begin PrintDelimDefault:=1; end.","E_TYPE");
+    compile_error("begin PrintDelimDefault(); end.","E_NAME");
+    compile_error("begin var n:=Println(1); end.","E_TYPE");
+    {
+        const auto program=abc::compile("begin Print(1); end."); std::istringstream in; std::ostringstream a,b;
+        abc::execute(program,in,a); abc::execute(program,in,b);
+        require(a.str()=="1 " && b.str()=="1 ","Print delimiter state is initialized for every execution");
+        auto invalid=program; invalid.print_delimiter=invalid.locals.size();
+        error([&]{abc::verify(invalid);},"E_BYTECODE");
+        invalid=program; invalid.locals[*invalid.print_delimiter].type=abc::Type::integer;
+        error([&]{abc::verify(invalid);},"E_BYTECODE");
+        invalid=program; invalid.locals[*invalid.print_delimiter].global=false;
+        error([&]{abc::verify(invalid);},"E_BYTECODE");
+        invalid=program; for (auto& instruction:invalid.code) if (instruction.op==abc::Op::print_output) instruction.operand=4;
+        error([&]{abc::verify(invalid);},"E_BYTECODE");
+    }
     result("begin Writeln('[',7:3,'] [',1.5:6:2,'] [','Я':3,'] [',true:6,'] [',nil:4,']'); end.","[  7] [  1.50] [  Я] [  True] [ nil]\n");
     result("begin Writeln('[','🌍':4,'] [',MaxUInt64:0,'] [',1.5:-6:-2,']'); end.","[  🌍] [18446744073709551615] [1.50  ]\n");
     result("type R=record x:integer; end; begin var r:R; r.x:=7; Writeln('[',r:5,'] [',Arr(1,2):7,']'); end.","[  (7)] [  [1,2]]\n");

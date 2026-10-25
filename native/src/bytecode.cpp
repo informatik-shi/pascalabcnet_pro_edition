@@ -16,6 +16,7 @@ class Generator {
 public:
     Program generate(hir::Module module) {
         program_.locals = std::move(module.locals); program_.types = std::move(module.types);
+        program_.print_delimiter=module.print_delimiter;
         for (auto& routine : module.routines) program_.routines.push_back(std::move(routine.signature));
         code_ = &program_.code; statement(module.body); emit(Op::halt,Type::invalid,0,module.body.location);
         for (std::size_t i = 0; i < module.routines.size(); ++i) {
@@ -79,10 +80,10 @@ private:
         case hir::ExprKind::literal: constant(node.value, node.location); break;
         case hir::ExprKind::local: local(Op::load,node.local,node.location); break;
         case hir::ExprKind::file_output:
-            expression(*node.left);
+            if (node.left) expression(*node.left);
             for (const auto& argument:node.arguments) expression(*argument);
             // Low two bits select Write/Writeln/Print/Println; remaining bits hold arity.
-            emit(Op::file_output,Type::text_file,node.arguments.size()*4+node.local,node.location); break;
+            emit(node.left ? Op::file_output : Op::print_output,node.left ? Type::text_file : Type::unit,node.arguments.size()*4+node.local,node.location); break;
         case hir::ExprKind::linked_call:
             if (node.left) expression(*node.left);
             for (const auto& argument : node.arguments) expression(*argument);
@@ -364,6 +365,9 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
     for (const auto& instruction : code) {
         const auto type = instruction.type;
         switch (instruction.op) {
+        case Op::print_output:
+            if (type!=Type::unit || instruction.operand/4>16 || instruction.operand%4<2) invalid(instruction,"Invalid Print output");
+            break;
         case Op::object_text:
             if (!object_text_supported(program.types,type) || type==Type::nil || instruction.operand>1) invalid(instruction,"Invalid object formatting");
             break;
@@ -630,10 +634,11 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         case Op::file_print: require(instruction.type); require(Type::text_file); stack.push_back(Type::text_file); break;
         case Op::file_read: require(reference_type(instruction.type)); require(Type::text_file); stack.push_back(Type::text_file); break;
         case Op::file_newline: case Op::file_skip_line: require(Type::text_file); stack.push_back(Type::text_file); break;
-        case Op::file_output:
+        case Op::print_output: case Op::file_output:
             for (std::size_t n=0;n<instruction.operand/4;++n)
                 if (!object_text_supported(program.types,pop())) invalid(instruction,"Unsupported Text output type");
-            require(Type::text_file); break;
+            if (instruction.op==Op::file_output) require(Type::text_file);
+            break;
         case Op::set_character: require(Type::character); require(Type::integer); require(reference_type(Type::string)); break;
         case Op::increment:
             if (instruction.type!=Type::boolean) require(increment_step_type(instruction.type));
@@ -754,6 +759,8 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
 }
 
 void verify(const Program& program) {
+    if (program.print_delimiter && (*program.print_delimiter>=program.locals.size() || !program.locals[*program.print_delimiter].global
+        || program.locals[*program.print_delimiter].type!=Type::string)) throw Error("E_BYTECODE",{},"Invalid PrintDelimDefault global");
     if (program.types.size() > 1024 || program.locals.size() > 4096 || program.routines.size() > 256)
         throw Error("E_BYTECODE",{},"Module metadata limit exceeded");
     std::vector<unsigned> depth(program.types.size());

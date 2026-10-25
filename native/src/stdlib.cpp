@@ -279,7 +279,9 @@ Value invoke(std::size_t id, std::span<const Value> arguments, SourceLocation lo
     if (function>=Function::console_read && function<=Function::console_token) {
         if (!arguments.empty()) {
             context.write_text(std::holds_alternative<NilString>(arguments[0]) ? std::u16string_view{u"nil"} : std::u16string_view{string_text(arguments[0])},location);
-            context.write_text(u" ",location);
+            const auto& delimiter=context.print_delimiter();
+            if (std::holds_alternative<NilString>(delimiter)) context.write_text(u"nil",location);
+            else if (!string_text(delimiter).empty()) context.write_text(string_text(delimiter),location);
         }
         if (function==Function::console_line) return context.console.read_line(location);
         if (function==Function::console_token) return context.console.token(location);

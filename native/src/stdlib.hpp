@@ -33,6 +33,7 @@ struct Context {
     RandomContext& random;
     ConsoleInput& console;
     std::function<void(std::u16string_view,SourceLocation)> write_text;
+    std::function<const Value&()> print_delimiter;
 };
 // One catalog is shared by the type checker, bytecode verifier and VM.
 std::span<const Signature> signatures();

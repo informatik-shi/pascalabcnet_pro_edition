@@ -99,7 +99,7 @@ enum class Op {
     read_lines, write_lines, array_copy, array_high, sequence_sort, sequence_fill, mutate_string, increment, read_value,
     endpoint_call, buffer_call, association_call, linked_call, file_print, file_newline, file_read, file_skip_line, file_output,
     iteration_version, iteration_check, set_character, random_array, fill_random_array, sequence_mutate, swap_values, write_array,
-    bit_not, bit_and, bit_or, bit_xor, shift_left, shift_right, read_console, read_array, console_output, array_query, write_matrix, object_text
+    bit_not, bit_and, bit_or, bit_xor, shift_left, shift_right, read_console, read_array, console_output, array_query, write_matrix, object_text, print_output
 };
 
 enum class ArrayQuery { length, upper_bound, lower_bound, rank, length_or_zero };
@@ -233,6 +233,7 @@ struct Program {
     std::vector<Instruction> code;
     std::vector<TypeInfo> types;
     std::vector<Routine> routines;
+    std::optional<std::size_t> print_delimiter;
 };
 
 // compile never executes user code; no module is returned on any diagnostic.

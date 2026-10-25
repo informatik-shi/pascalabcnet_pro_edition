@@ -532,7 +532,7 @@ private:
                 result->kind = result->kind == SyntaxExprKind::name ? SyntaxExprKind::call : SyntaxExprKind::member_call;
                 if (!is(")")) do {
                     const auto& name=result->token.text;
-                    auto argument = result->kind==SyntaxExprKind::member_call && (name=="write" || name=="writeln" || name=="print" || name=="println")
+                    auto argument = (name=="print" || name=="println" || (result->kind==SyntaxExprKind::member_call && (name=="write" || name=="writeln")))
                         ? output_argument() : expression();
                     result->depth = std::max(result->depth, argument->depth + 1);
                     if (result->depth > 256 || result->arguments.size() >= 16) fail("Function call limit exceeded");
@@ -619,16 +619,29 @@ public:
                 scopes_.back()[current_name_] = routine.signature.result_local;
             }
             routine.body = statement(syntax.body);
-            for (auto n = first; n < module_.locals.size(); ++n) routine.signature.locals.push_back(n);
+            for (auto n = first; n < module_.locals.size(); ++n) if (!module_.locals[n].global) routine.signature.locals.push_back(n);
             scopes_.pop_back(); in_routine_ = false; current_name_.clear();
         }
         module_.body.statements.push_back(statement(source.statements.back()));
+        if (module_.print_delimiter) {
+            hir::Stmt initial; initial.kind=hir::StmtKind::assign; initial.local=*module_.print_delimiter;
+            initial.expression=std::make_unique<hir::Expr>(); initial.expression->kind=hir::ExprKind::literal;
+            initial.expression->type=Type::string; initial.expression->value=std::u16string{u" "};
+            module_.body.statements.insert(module_.body.statements.begin(),std::move(initial));
+        }
         scopes_.pop_back();
         if (module_.locals.size() > 4096) throw Error("E_LIMIT",{},"Local variable limit exceeded");
         return std::move(module_);
     }
 
 private:
+    std::size_t print_delimiter() {
+        if (!module_.print_delimiter) {
+            module_.print_delimiter=module_.locals.size();
+            module_.locals.push_back({"$printdelimdefault",Type::string,true});
+        }
+        return *module_.print_delimiter;
+    }
     Type sequence_type(CompoundKind kind, Type element, unsigned rank = 1) {
         for (std::size_t i = 0; i < module_.types.size(); ++i)
             if (module_.types[i].kind == kind && module_.types[i].element == element && module_.types[i].rank==rank) return static_cast<Type>(64+i);
@@ -815,12 +828,16 @@ private:
         case SyntaxExprKind::member_call: {
             if (source.left->kind==SyntaxExprKind::name && !lookup(source.left->token) && imported_units_.contains(source.left->token.text)) {
                 if (source.kind==SyntaxExprKind::field && source.left->token.text=="pabcsystem") {
+                    if (source.token.text=="printdelimdefault") {
+                        result->kind=hir::ExprKind::local; result->type=Type::string; result->local=print_delimiter(); break;
+                    }
                     if (auto value=stdlib::constant(source.token.text)) {
                         result->kind=hir::ExprKind::literal; result->type=value_type(*value); result->value=std::move(*value); break;
                     }
                 }
                 result->kind=hir::ExprKind::call;
                 for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
+                if (bind_print(*result,source.token.text,source.left->token.text)) break;
                 if (bind_random_array(*result,source.token.text,source.left->token.text)) break;
                 if (bind_sequence_mutation(*result,source.token.text,source.left->token.text)) break;
                 if (bind_array_output(*result,source.token.text,source.left->token.text)) break;
@@ -889,6 +906,7 @@ private:
             if (receiver==Type::text_file) {
                 const auto& name=source.token.text;
                 if (name=="write" || name=="writeln" || name=="print" || name=="println") {
+                    if (name=="print" || name=="println") (void)print_delimiter();
                     result->kind=hir::ExprKind::file_output; result->type=Type::unit;
                     result->local=static_cast<std::size_t>(name=="write" ? TextOutput::write : name=="writeln" ? TextOutput::writeln
                         : name=="print" ? TextOutput::print : TextOutput::println);
@@ -1065,6 +1083,11 @@ private:
                     throw Error("E_TYPE",result->location,"Routine requires arguments; routine values are not supported yet");
                 SyntaxExpr call{SyntaxExprKind::call,source.token,{},{},1,{},{}};
                 return expression(call);
+            } else if (source.token.text=="printdelimdefault") {
+                result->kind=hir::ExprKind::local; result->type=Type::string; result->local=print_delimiter();
+            } else if (source.token.text=="print" || source.token.text=="println") {
+                SyntaxExpr call{SyntaxExprKind::call,source.token,{},{},1,{},{}};
+                return expression(call);
             } else if (collections_imported_ && (source.token.text == "min_cap" || source.token.text == "inc_cap_factor")) {
                 result->kind = hir::ExprKind::literal; result->type = Type::integer;
                 result->value = std::int32_t{source.token.text == "min_cap" ? 4 : 2};
@@ -1109,6 +1132,7 @@ private:
                 }
                 break;
             }
+            if (bind_print(*result,source.token.text)) break;
             if (bind_random_array(*result,source.token.text)) break;
             if (bind_sequence_mutation(*result,source.token.text)) break;
             if (bind_array_output(*result,source.token.text)) break;
@@ -1278,6 +1302,19 @@ private:
             result.right=convert(std::move(result.arguments[1]),Type::integer);
         }
         result.arguments.clear(); return true;
+    }
+    bool bind_print(hir::Expr& result, std::string_view name, std::string_view unit = {}) {
+        if ((name!="print" && name!="println") || (!unit.empty() && unit!="pabcsystem")) return false;
+        (void)print_delimiter();
+        if (!result.arguments.empty() && result.arguments[0]->type==Type::text_file) {
+            result.left=std::move(result.arguments[0]); result.arguments.erase(result.arguments.begin());
+        }
+        for (auto& value:result.arguments) {
+            if (value->type==Type::nil) value=convert(std::move(value),Type::string);
+            if (!object_text_supported(module_.types,value->type)) throw Error("E_TYPE",value->location,"Print for this static type is not implemented");
+        }
+        result.kind=hir::ExprKind::file_output; result.type=Type::unit;
+        result.local=static_cast<std::size_t>(name=="print" ? TextOutput::print : TextOutput::println); return true;
     }
     bool bind_object_text(hir::Expr& result, std::string_view name, std::string_view unit = {}) {
         if ((name!="objecttostring" && name!="formatvalue") || (!unit.empty() && unit!="pabcsystem")) return false;

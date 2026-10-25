@@ -163,10 +163,12 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
         console_output.write(text,instruction.location);
     };
     auto pop = [&]() { auto value = std::move(stack.back()); stack.pop_back(); return value; };
+    const Value default_delimiter=std::u16string{u" "};
+    auto delimiter_value=[&]()->const Value& { return program.print_delimiter ? globals[*program.print_delimiter]->value : default_delimiter; };
     stdlib::Context services{files,random,console,[&](std::u16string_view text,SourceLocation location) {
         Instruction instruction; instruction.location=location;
         write(text,instruction);
-    }};
+    },delimiter_value};
     while (!frames.empty()) {
         auto& frame = frames.back(); auto& locals = frame.locals;
         const auto& instruction = (*frame.code)[frame.pc++]; values.location = instruction.location;
@@ -601,21 +603,28 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
             const auto value=pop(); auto& file=text_file(stack.back(),instruction.location);
             text_write(file,scalar_text(value,instruction),instruction.location); break;
         }
-        case Op::file_output: {
+        case Op::print_output: case Op::file_output: {
             std::vector<Value> arguments(instruction.operand/4);
             for (auto value=arguments.rbegin();value!=arguments.rend();++value) *value=pop();
-            const auto receiver=pop();
+            const bool file_output=instruction.op==Op::file_output;
+            const auto receiver=file_output ? pop() : Value{std::int32_t{0}};
             const auto method=static_cast<TextOutput>(instruction.operand%4);
-            auto& file=text_file(receiver,instruction.location);
+            auto* file=file_output ? &text_file(receiver,instruction.location) : nullptr;
+            const auto emit_text=[&](std::u16string_view text) {
+                if (file) text_write(*file,text,instruction.location); else write(text,instruction);
+            };
             // Empty Write and Print do not require an assigned or open file.
             if (arguments.empty() && (method==TextOutput::write || method==TextOutput::print)) break;
             for (std::size_t n=0;n<arguments.size();++n) {
-                text_write(file,compound(value_type(arguments[n]))
-                    ? object_text(program,arguments[n],value_type(arguments[n]),instruction.location,options) : scalar_text(arguments[n],instruction),instruction.location);
-                if (method==TextOutput::print || (method==TextOutput::println && n+1<arguments.size()))
-                    text_write(file,u" ",instruction.location);
+                emit_text(compound(value_type(arguments[n]))
+                    ? object_text(program,arguments[n],value_type(arguments[n]),instruction.location,options) : scalar_text(arguments[n],instruction));
+                if (method==TextOutput::print || (method==TextOutput::println && n+1<arguments.size())) {
+                    const auto& delimiter=delimiter_value();
+                    if (std::holds_alternative<NilString>(delimiter) || !string_text(delimiter).empty())
+                        emit_text(scalar_text(delimiter,instruction));
+                }
             }
-            if (method==TextOutput::writeln || method==TextOutput::println) text_write(file,file_newline,instruction.location);
+            if (method==TextOutput::writeln || method==TextOutput::println) emit_text(file ? file_newline : u"\n");
             break;
         }
         case Op::file_read: {
