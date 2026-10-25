@@ -7,12 +7,14 @@
 #include "linked.hpp"
 #include "text_file.hpp"
 #include "integer_values.hpp"
+#include "random.hpp"
 
 #include <charconv>
 #include <algorithm>
 #include <cmath>
 #include <limits>
 #include <type_traits>
+#include <array>
 
 namespace abc {
 namespace {
@@ -69,6 +71,24 @@ std::uint64_t unsigned_operation(std::uint64_t a, std::uint64_t b, const Instruc
         return instruction.op==Op::modulo ? a%b : a/b;
     default: trap(instruction,RuntimeError::invalid_bytecode);
     }
+}
+
+std::size_t random_signature(RandomArrayMethod method) {
+    static const auto identifiers=[] {
+        std::array<std::size_t,4> result{}; const auto catalog=stdlib::signatures();
+        for (std::size_t i=0;i<result.size();++i) {
+            const auto mode=static_cast<RandomArrayMethod>(i);
+            const auto name=mode==RandomArrayMethod::rounded_real ? "randomreal" : "random";
+            const auto parameters=mode==RandomArrayMethod::scaled_real ? std::vector<Type>{} : random_array_parameters(mode);
+            const auto found=std::find_if(catalog.begin(),catalog.end(),[&](const auto& signature) {
+                return signature.unit.empty() && signature.name==name && signature.parameters==parameters;
+            });
+            if (found==catalog.end()) throw runtime_error(RuntimeError::invalid_bytecode,{});
+            result[i]=static_cast<std::size_t>(found-catalog.begin());
+        }
+        return result;
+    }();
+    return identifiers[static_cast<std::size_t>(method)];
 }
 
 std::string format(const Value& value, const Instruction& instruction) {
@@ -182,6 +202,7 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
     Values values{program,options.allocation_limit};
     LinkedRuntime linked{values,{}};
     FileContext files;
+    RandomContext random;
     std::vector<std::shared_ptr<Cell>> globals(program.locals.size());
     for (std::size_t i = 0; i < program.locals.size(); ++i) if (program.locals[i].global)
         globals[i] = values.cell(program.locals[i].type,values.zero(program.locals[i].type));
@@ -210,6 +231,37 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
         if (steps++ >= options.instruction_limit) trap(instruction, RuntimeError::instruction_limit);
         if (options.cancelled && options.cancelled()) trap(instruction, RuntimeError::cancelled);
         switch (instruction.op) {
+        case Op::random_array: case Op::fill_random_array: {
+            const auto method=static_cast<RandomArrayMethod>(instruction.operand);
+            const auto count=random_array_parameters(method).size();
+            std::array<Value,3> parameters;
+            for (auto i=count;i>0;--i) parameters[i-1]=pop();
+            std::shared_ptr<Aggregate> target;
+            if (instruction.op==Op::random_array) {
+                const auto length=std::get<std::int32_t>(pop());
+                if (length<0) trap(instruction,RuntimeError::array_length);
+                target=values.array(instruction.type,static_cast<std::size_t>(length));
+            } else {
+                target=std::get<std::shared_ptr<Aggregate>>(pop());
+                if (target->nil) trap(instruction,RuntimeError::nil_reference);
+            }
+            const auto id=random_signature(method);
+            std::size_t sampled=0;
+            for (const auto& cell:target->items) {
+                if ((sampled++&255U)==0 && options.cancelled && options.cancelled()) trap(instruction,RuntimeError::cancelled);
+                Value value;
+                if (method==RandomArrayMethod::scaled_real) {
+                    const auto sample=stdlib::invoke(id,{},instruction.location,files,random);
+                    const auto number=std::get<double>(sample)*(std::get<double>(parameters[1])-std::get<double>(parameters[0]));
+                    if (std::isnan(number)) trap(instruction,RuntimeError::math_domain);
+                    if (!std::isfinite(number)) trap(instruction,RuntimeError::real_overflow);
+                    value=number;
+                } else value=stdlib::invoke(id,std::span<const Value>(parameters.data(),count),instruction.location,files,random);
+                values.write(cell,value);
+            }
+            if (instruction.op==Op::random_array) stack.emplace_back(target);
+            break;
+        }
         case Op::set_character: {
             const auto ch=std::get<char16_t>(pop()); const auto index=std::int64_t(std::get<std::int32_t>(pop()))-1;
             const auto target=std::get<std::shared_ptr<Cell>>(pop());
@@ -470,7 +522,7 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
             std::vector<Value> arguments(signature.parameters.size());
             for (std::size_t i=arguments.size();i>0;--i) arguments[i-1]=pop();
             auto target=std::get<std::shared_ptr<Cell>>(arguments[ref]); arguments[ref]=target->value;
-            const auto result=stdlib::invoke(instruction.operand,arguments,instruction.location,files); values.write(target,result); break;
+            const auto result=stdlib::invoke(instruction.operand,arguments,instruction.location,files,random); values.write(target,result); break;
         }
         case Op::read_lines: {
             const auto path=pop(); const auto text=read_text_file(files,string_text(path),instruction.location);
@@ -626,7 +678,7 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
         case Op::call_builtin: {
             const auto count = stdlib::signatures()[instruction.operand].parameters.size();
             const auto start = stack.size() - count;
-            auto value = stdlib::invoke(instruction.operand, std::span<const Value>(stack).subspan(start), instruction.location,files);
+            auto value = stdlib::invoke(instruction.operand, std::span<const Value>(stack).subspan(start), instruction.location,files,random);
             stack.resize(start);
             if (instruction.type != Type::unit) stack.push_back(std::move(value));
             break;

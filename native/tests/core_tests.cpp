@@ -1,5 +1,6 @@
 #include "abc/core.hpp"
 #include "../src/linked.hpp"
+#include "../src/random.hpp"
 
 #include <iostream>
 #include <filesystem>
@@ -1348,6 +1349,73 @@ void verifier() {
     abc::execute(program, in, out);
     require(out.str() == "42", "Verifier and runtime agree on identity conversion");
 }
+void random_library() {
+    result("begin Randomize(1); Writeln(Random(100),' ',Random(100),' ',Random(100),' ',Random(100),' ',Random(100)); SetRandomSeed(1); Writeln(Random(100)); end.","24 11 46 77 65\n24\n");
+    result("begin Randomize(1); Writeln(Abs(Random-0.24866858415709278)<1e-16); Randomize(0); Writeln(Random(100)); end.","True\n72\n");
+    result("function Take:integer; begin Result:=Random(100); end; begin Randomize(1); Writeln(Take(),' ',Random(100),' ',Take()); PABCSystem.Randomize(1); Writeln(PABCSystem.Random(100)); end.","24 11 46\n24\n");
+    result("begin Randomize(1); Writeln(Random(0),' ',Random(100)); Randomize(1); Writeln(Random(1),' ',Random(100)); Randomize(1); Writeln(Random(2,2),' ',Random(100)); Randomize(1); Writeln(Random('a','a'),' ',Random(100)); end.","0 11\n0 11\n2 11\na 11\n");
+    result("begin Randomize(-1); var a:=Random(100); Randomize(1); Writeln(a=Random(100)); Randomize(-2147483648); var b:=Random(100); Randomize(MaxInt); Writeln(b=Random(100)); end.","True\nTrue\n");
+    result("begin Randomize(1); Writeln(Random(-2147483648,2147483646)); Randomize(1); var a:=Random(3,1); Randomize(1); Writeln(a=Random(1,3)); end.","-534011720\nTrue\n");
+    result("begin Randomize(1); Writeln(Random('Я','А')); Randomize(1); var n:=Ord(Random(#0,#65535)); Writeln(n<=65535); end.","З\nTrue\n");
+    result("begin Randomize(1); var x:=Random(-5.0); Randomize(1); Writeln(x=Random(5.0)); Randomize(1); var y:=Random(5.0,1.0); Randomize(1); Writeln(y=Random(1.0,5.0)); Randomize(1); Writeln(Random(2.0,2.0),' ',Random(100)); end.","True\nTrue\n2 11\n");
+    result("begin Randomize(1); Writeln(RandomReal(0,1),' ',RandomReal(0,1,3)); Randomize(1); Writeln(RandomReal(2.736,2.737)); Randomize(1); Writeln(RandomReal(10,0)); Randomize(1); var x:=RandomReal(2,4,-1); Randomize(1); Writeln(x=Random(2.0,4.0)); end.","0.25 0.111\n2.736\n0\nTrue\n");
+    result("begin Randomize; var valid:=true; for var i:=1 to 200 do begin var n:=Random(-2147483648,2147483646); valid:=valid and (n>=-2147483648) and (n<=2147483646); var x:=Random; valid:=valid and (x>=0) and (x<1); end; Writeln(valid); Randomize(); Writeln(Random(1)); end.","True\n0\n");
+    result("begin Randomize(1); var a:=new integer[3]; for var i:=0 to 2 do a[i]:=Random(100); Writeln(a[0],' ',a[1],' ',a[2]); end.","24 11 46\n");
+    result("uses Arrays; begin Randomize(1); var a:=CreateRandomIntegerArray(3); Writeln(a[0],' ',a[1],' ',a[2]); Randomize(1); var b:=ArrRandomInteger(3); Writeln(b[0],' ',b[1],' ',b[2]); Randomize(1); FillByRandom(b); Writeln(b[0],' ',b[1],' ',b[2]); end.","24 11 46\n25 11 47\n24 11 46\n");
+    result("uses Arrays; begin Randomize(1); var a:=Arrays.CreateRandomIntegerArray(2,10,12); Writeln(a[0],' ',a[1]); Randomize(1); Arrays.FillByRandom(a,12,10); Writeln(a[0],' ',a[1]); end.","10 10\n10 10\n");
+    result("uses Arrays; begin Randomize(1); var a:=CreateRandomRealArray(2,10,20); Randomize(1); var x:=Random*10; var y:=Random*10; Writeln(a[0]=x,' ',a[1]=y,' ',a[0]<10); Randomize(1); FillByRandom(a,20,10); Writeln(a[0]<0); end.","True True True\nTrue\n");
+    result("begin Randomize(1); var a:=ArrRandomReal(2); Writeln(a[0],' ',a[1]); Randomize(1); var b:=ArrRandomReal(2,3); Writeln(b[0],' ',b[1]); Randomize(1); var c:=PABCSystem.ArrRandomReal(2,0,1); Writeln(c[0],' ',c[1]); end.","2.49 1.11\n2.487 1.107\n0.25 0.11\n");
+    result("begin Randomize(1); var a:=ArrRandom(3,1); Writeln(a[0],' ',a[1],' ',a[2]); Writeln(Length(ArrRandom),' ',Length(ArrRandomInteger),' ',Length(ArrRandomReal)); end.","25 12 47\n10 10 10\n");
+    result("begin Randomize(1); var a:=new real[2]; a.FillRandom(10,20); Randomize(1); Writeln(a[0]=Random(10.0,20.0),' ',a[1]=Random(10.0,20.0)); var b:=new integer[2]; Randomize(1); FillRandom(b,0,99); Writeln(b[0],' ',b[1]); end.","True True\n24 11\n");
+    result("uses Arrays; var calls:string; function N:integer; begin calls:=calls+'N'; Result:=2; end; function L:integer; begin calls:=calls+'L'; Result:=0; end; function H:integer; begin calls:=calls+'H'; Result:=99; end; begin Randomize(1); var a:=CreateRandomIntegerArray(N(),L(),H()); Writeln(calls,' ',a[0],' ',a[1]); end.","NLH 24 11\n");
+    result("uses Arrays; var a:array of integer; function Low:integer; begin SetLength(a,0); Result:=0; end; begin a:=new integer[2]; var alias:=a; Randomize(1); FillByRandom(a,Low(),99); Writeln(Length(a),' ',alias[0],' ',alias[1]); end.","0 24 11\n");
+    result("uses Arrays; begin Randomize(1); var a:=CreateRandomIntegerArray(0,0,MaxInt); FillByRandom(a,0,MaxInt); var b:=ArrRandomReal(0,0,1,99); Writeln(Length(a),' ',Length(b),' ',Random(100)); end.","0 0 24\n");
+    for (const auto* source:{"uses Arrays; begin var a:=CreateRandomIntegerArray(-1); end.","begin var a:=ArrRandom(-1); end."}) runtime_error(source,"E_RANGE");
+    runtime_error("uses Arrays; begin var a:array of integer; FillByRandom(a); end.","E_NIL");
+    runtime_error("begin var a:array of real; a.FillRandom(0,1); end.","E_NIL");
+    runtime_error("uses Arrays; begin var a:=CreateRandomIntegerArray(1,0,MaxInt); end.","E_OVERFLOW");
+    compile_error("begin var a:=CreateRandomIntegerArray(3); end.","E_NAME");
+    compile_error("begin var a:=Arr(1); FillByRandom(a); end.","E_NAME");
+    compile_error("uses Arrays; begin var a:=new byte[2]; FillByRandom(a); end.","E_TYPE");
+    compile_error("uses Arrays; begin var a:=new integer[2]; FillByRandom(a,1.5,2.5); end.","E_TYPE");
+    compile_error("begin var a:=ArrRandomInteger(3,2); end.","E_TYPE");
+    compile_error("begin var a:=ArrRandomReal(3,2.5); end.","E_TYPE");
+    for (const auto* source:{"begin var n:integer:=Random; end.","begin var n:=Random(true); end.",
+        "begin Randomize('seed'); end.","begin SetRandomSeed(); end.","begin Writeln(Random('ab','cd')); end.",
+        "begin Writeln(RandomReal(0,1,'two')); end."}) compile_error(source,"E_TYPE");
+    runtime_error("begin Randomize(1); Random(-1); end.","E_RANGE");
+    runtime_error("begin Randomize(1); Random(0,MaxInt); end.","E_OVERFLOW");
+    runtime_error("begin Randomize(1); RandomReal(0,1,16); end.","E_RANGE");
+    runtime_error("begin Randomize(1); Random(-MaxReal,MaxReal); end.","E_OVERFLOW");
+    {
+        abc::RandomContext first,second; first.seed(1); second.seed(1);
+        error([&]{(void)first.range(2,1,{});},"E_RANGE");
+        require(first.unit({})==second.unit({}),"Rejected random bounds do not advance seeded state");
+        first.seed(1); second.seed(1);
+        require(first.range(0,0,{})==0 && first.unit({})!=second.unit({}),"Zero random bound consumes one compatibility sample");
+    }
+    auto program=abc::compile("begin var x:=Random; var n:=Random(10); var c:=Random('a','z'); end.");
+    require(program.locals[0].type==abc::Type::real && program.locals[1].type==abc::Type::integer && program.locals[2].type==abc::Type::character,"Random overload result types are known before execution");
+    for (auto& instruction:program.code) if (instruction.op==abc::Op::call_builtin) { instruction.type=abc::Type::boolean; break; }
+    error([&]{abc::verify(program);},"E_BYTECODE");
+    program=abc::compile("uses Arrays; begin var a:=CreateRandomIntegerArray(3); end.");
+    require(program.types[0].kind==abc::CompoundKind::array && program.types[0].element==abc::Type::integer,"Random array element type is fixed before execution");
+    for (auto& instruction:program.code) if (instruction.op==abc::Op::random_array) instruction.operand=static_cast<std::size_t>(abc::RandomArrayMethod::rounded_real);
+    error([&]{abc::verify(program);},"E_BYTECODE");
+    program=abc::compile("uses Arrays; begin var a:=new real[1]; FillByRandom(a); end.");
+    for (auto& instruction:program.code) if (instruction.op==abc::Op::fill_random_array) instruction.operand=999;
+    error([&]{abc::verify(program);},"E_BYTECODE");
+    abc::ExecutionOptions limit; limit.allocation_limit=5;
+    error([&]{(void)run("begin var a:=ArrRandom(20); end.","",limit);},"E_LIMIT");
+    limit={}; int polled=0; limit.cancelled=[&]{return ++polled>10;};
+    error([&]{(void)run("begin var a:=ArrRandom(2000); end.","",limit);},"E_CANCELLED");
+    try { (void)run("begin\n Randomize(1);\n Random(-1);\nend."); require(false,"Expected random range diagnostic"); }
+    catch (const abc::Error& caught) { require(caught.code=="E_RANGE" && caught.location.line==3 && caught.russian=="Некорректные границы генератора случайных чисел","Random errors carry source position and both languages"); }
+    std::istringstream input; std::ostringstream output;
+    error([&]{abc::execute(abc::compile("begin Writeln('must not run'); var n:integer:=Random; end."),input,output);},"E_TYPE");
+    require(output.str().empty(),"Random overload result types are checked before any output");
+}
+
 void unsigned_integers() {
     result("begin var w:longword; var u:uint64; Writeln(w,' ',u); w:=4294967295; u:=18446744073709551615; Writeln(w,' ',u); end.","0 0\n4294967295 18446744073709551615\n");
     result("begin var w:=longword(4294967295); Writeln(w+1,' ',w-longword(1),' ',w*longword(2),' ',-w,' ',w div longword(2)); end.","4294967296 4294967294 8589934590 -4294967295 2147483647\n");
@@ -1549,6 +1617,7 @@ int main() {
     characters();
     small_integers();
     unsigned_integers();
+    random_library();
     arithmetic();
     verifier();
     bilingual_diagnostics();

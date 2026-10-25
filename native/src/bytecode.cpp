@@ -86,6 +86,11 @@ private:
             emit(node.kind==hir::ExprKind::array_copy ? Op::array_copy : node.kind==hir::ExprKind::array_high ? Op::array_high
                 : node.kind==hir::ExprKind::sequence_sort ? Op::sequence_sort : Op::sequence_fill,node.left->type,node.local,node.location); break;
         case hir::ExprKind::null_literal: throw Error("E_HIR",node.location,"Unresolved nil type");
+        case hir::ExprKind::random_array: case hir::ExprKind::fill_random_array:
+            if (node.left) expression(*node.left);
+            for (const auto& argument:node.arguments) expression(*argument);
+            emit(node.kind==hir::ExprKind::random_array ? Op::random_array : Op::fill_random_array,
+                node.left ? node.left->type : node.type,node.local,node.location); break;
         case hir::ExprKind::default_value: emit(Op::make_default,node.type,node.operation=="new" ? 1 : 0,node.location); break;
         case hir::ExprKind::index:
             expression(*node.left); expression(*node.right); emit(Op::get_index,node.left->type,0,node.location); break;
@@ -329,6 +334,13 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
     for (const auto& instruction : code) {
         const auto type = instruction.type;
         switch (instruction.op) {
+        case Op::random_array: case Op::fill_random_array:
+            if (!compound(type) || type_info(program,type).kind!=CompoundKind::array
+                || instruction.operand>static_cast<std::size_t>(RandomArrayMethod::ranged_real)
+                || type_info(program,type).element!=random_array_element(static_cast<RandomArrayMethod>(instruction.operand))
+                || (instruction.op==Op::fill_random_array && instruction.operand==static_cast<std::size_t>(RandomArrayMethod::rounded_real)))
+                invalid(instruction,"Invalid random array instruction");
+            break;
         case Op::set_character:
             if (type!=Type::string || instruction.operand) invalid(instruction,"Invalid string character assignment"); break;
         case Op::iteration_version: case Op::iteration_check:
@@ -558,6 +570,13 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         case Op::store_global: require(instruction.type); break;
         case Op::store_ref: require(instruction.type); require(reference_type(instruction.type)); break;
         case Op::drop: require(instruction.type); break;
+        case Op::random_array: case Op::fill_random_array: {
+            const auto parameters=random_array_parameters(static_cast<RandomArrayMethod>(instruction.operand));
+            for (auto type=parameters.rbegin();type!=parameters.rend();++type) require(*type);
+            if (instruction.op==Op::random_array) { require(Type::integer); stack.push_back(instruction.type); }
+            else require(instruction.type);
+            break;
+        }
         case Op::array_new: require(Type::integer); stack.push_back(instruction.type); break;
         case Op::array_literal:
             for (std::size_t n = 0; n < instruction.operand; ++n) require(type_info(program,instruction.type).element);

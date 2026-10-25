@@ -11,6 +11,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 add_library(abc_core
     src/stdlib.cpp
+    src/random.cpp
     src/files.cpp
     src/file_moves.cpp
     src/file_operations.cpp
@@ -122,12 +123,16 @@ if(BUILD_TESTING)
     add_test(NAME unsigned_integer_compatibility COMMAND ${CMAKE_COMMAND}
         "-DABC_RUNNER=$<TARGET_FILE:abc>" "-DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
         -DABC_FIXTURE_NAME=unsigned-integers-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")
+    add_test(NAME random_compatibility COMMAND ${CMAKE_COMMAND}
+        "-DABC_RUNNER=$<TARGET_FILE:abc>" "-DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
+        -DABC_FIXTURE_NAME=random-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")
 endif()
 
 install(TARGETS abc RUNTIME DESTINATION bin)
 install(DIRECTORY examples/ DESTINATION examples)
 install(FILES README.md DESTINATION .)
 install(FILES stdlib-status.json DESTINATION .)
+install(FILES licenses/DotNet-Runtime-MIT.txt DESTINATION licenses)
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/../doc/license.txt" DESTINATION licenses RENAME PascalABC.NET.txt)
 
 if(ABC_BUILD_IDE)

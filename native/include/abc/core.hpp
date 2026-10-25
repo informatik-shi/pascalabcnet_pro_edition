@@ -97,8 +97,16 @@ enum class Op {
     call_user, return_user, drop, list_add, list_remove, list_clear, list_contains,
     read_lines, write_lines, array_copy, array_high, sequence_sort, sequence_fill, mutate_string, increment, read_value,
     endpoint_call, buffer_call, association_call, linked_call, file_print, file_newline, file_read, file_skip_line, file_output,
-    iteration_version, iteration_check, set_character
+    iteration_version, iteration_check, set_character, random_array, fill_random_array
 };
+
+enum class RandomArrayMethod { integer, scaled_real, rounded_real, ranged_real };
+inline Type random_array_element(RandomArrayMethod method) { return method==RandomArrayMethod::integer ? Type::integer : Type::real; }
+inline std::vector<Type> random_array_parameters(RandomArrayMethod method) {
+    if (method==RandomArrayMethod::integer) return {Type::integer,Type::integer};
+    if (method==RandomArrayMethod::rounded_real) return {Type::real,Type::real,Type::integer};
+    return {Type::real,Type::real};
+}
 enum class TextOutput { write, writeln, print, println };
 
 struct Instruction {

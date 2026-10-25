@@ -779,9 +779,15 @@ private:
                 }
                 result->kind=hir::ExprKind::call;
                 for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
+                if (bind_random_array(*result,source.token.text,source.left->token.text)) break;
                 bind_builtin(*result,source.token.text,source.left->token.text); break;
             }
             result->left = expression(*source.left); const auto receiver = result->left->type;
+            if (compound(receiver) && info(receiver,result->location).kind==CompoundKind::array && source.token.text=="fillrandom") {
+                result->arguments.push_back(std::move(result->left));
+                for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
+                (void)bind_random_array(*result,"fillrandom"); break;
+            }
             if ((receiver==Type::string && source.token.text=="length") || (receiver==Type::character && source.token.text=="todigit")) {
                 if (!source.arguments.empty() || (receiver==Type::string && source.kind==SyntaxExprKind::member_call))
                     throw Error("E_TYPE",result->location,"Wrong scalar member arguments");
@@ -978,6 +984,9 @@ private:
                 result->kind = hir::ExprKind::literal;
                 result->value = *value;
                 result->type = value_type(*value);
+            } else if (source.token.text=="arrrandom" || source.token.text=="arrrandominteger" || source.token.text=="arrrandomreal") {
+                SyntaxExpr call{SyntaxExprKind::call,source.token,{},{},1,{},{}};
+                return expression(call);
             } else if (std::any_of(stdlib::signatures().begin(),stdlib::signatures().end(),[&](const stdlib::Signature& signature) {
                 return signature.name==source.token.text && signature.parameters.empty();
             })) {
@@ -1004,6 +1013,7 @@ private:
                 }
                 break;
             }
+            if (bind_random_array(*result,source.token.text)) break;
             if (source.token.text == "arr") {
                 if (result->arguments.empty()) throw Error("E_TYPE",result->location,"Cannot infer empty Arr element type");
                 auto element = Type::nil;
@@ -1134,6 +1144,47 @@ private:
         }
         }
         return result;
+    }
+    bool bind_random_array(hir::Expr& result, std::string_view name, std::string_view unit = {}) {
+        const bool arrays=name=="fillbyrandom" || name=="createrandomintegerarray" || name=="createrandomrealarray";
+        const bool system=name=="arrrandom" || name=="arrrandominteger" || name=="arrrandomreal" || name=="fillrandom";
+        if ((!arrays && !system) || (!unit.empty() && unit!=(arrays ? "arrays" : "pabcsystem"))
+            || (arrays && unit.empty() && !imported_units_.contains("arrays"))) return false;
+        auto args=std::move(result.arguments); const auto count=args.size();
+        const bool fill=name=="fillbyrandom" || name=="fillrandom";
+        const auto fail=[&](){throw Error("E_TYPE",result.location,"Wrong random array arguments for '"+std::string(name)+"'");};
+        const auto literal=[&](Value value) {
+            auto node=std::make_unique<hir::Expr>(); node->kind=hir::ExprKind::literal;
+            node->type=value_type(value); node->location=result.location; node->value=std::move(value); return node;
+        };
+        Type element;
+        if (fill) {
+            if ((name=="fillbyrandom" && count!=1 && count!=3) || (name=="fillrandom" && count!=3)) fail();
+            result.left=std::move(args[0]);
+            const auto& type=info(result.left->type,result.location);
+            if (type.kind!=CompoundKind::array || (type.element!=Type::integer && type.element!=Type::real)) fail();
+            element=type.element;
+        } else element=name=="arrrandomreal" || name=="createrandomrealarray" ? Type::real : Type::integer;
+        const bool rounded=name=="arrrandomreal";
+        const auto method=element==Type::integer ? RandomArrayMethod::integer
+            : rounded ? RandomArrayMethod::rounded_real : arrays ? RandomArrayMethod::scaled_real : RandomArrayMethod::ranged_real;
+        if (!fill) {
+            if ((arrays && count!=1 && count!=3) || (name=="arrrandom" && count>3)
+                || (name=="arrrandominteger" && count!=0 && count!=1 && count!=3) || (rounded && count>4)) fail();
+            result.arguments.push_back(count ? convert(std::move(args[0]),Type::integer) : literal(std::int32_t{10}));
+        }
+        const auto scalar=element==Type::integer ? Type::integer : Type::real;
+        const bool explicit_bounds=rounded ? count>=3 : count==3 || (name=="arrrandom" && count==2);
+        auto low=explicit_bounds ? convert(std::move(args[1]),scalar) : literal(element==Type::integer ? Value{std::int32_t{0}} : Value{0.0});
+        auto high=explicit_bounds && count>=3 ? convert(std::move(args[2]),scalar)
+            : literal(element==Type::integer ? Value{std::int32_t{arrays ? 99 : 100}} : Value{10.0});
+        result.arguments.push_back(std::move(low)); result.arguments.push_back(std::move(high));
+        if (rounded) result.arguments.push_back(count==4 ? convert(std::move(args[3]),Type::integer)
+            : count==2 ? convert(std::move(args[1]),Type::integer) : literal(std::int32_t{2}));
+        result.local=static_cast<std::size_t>(method);
+        result.kind=fill ? hir::ExprKind::fill_random_array : hir::ExprKind::random_array;
+        result.type=fill ? Type::unit : sequence_type(CompoundKind::array,element);
+        return true;
     }
     void bind_builtin(hir::Expr& result, std::string_view name, std::string_view unit = {}) {
         if ((unit.empty() || unit=="pabcsystem") && (name=="min" || name=="max") && result.arguments.size()>=2 && result.arguments.size()<=4

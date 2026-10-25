@@ -4,6 +4,10 @@ namespace abc {
 Error runtime_error(RuntimeError id, SourceLocation location, std::string_view context) {
     const char *code, *english, *russian;
     switch (id) {
+    case RuntimeError::random_range:
+        code = "E_RANGE"; english = "Random bounds are invalid"; russian = "Некорректные границы генератора случайных чисел"; break;
+    case RuntimeError::random_source:
+        code = "E_RANDOM"; english = "Cannot initialize random source"; russian = "Не удалось инициализировать генератор случайных чисел"; break;
     case RuntimeError::character_digit:
         code = "E_FORMAT"; english = "Character is not a decimal digit from 0 to 9"; russian = "Символ не является десятичной цифрой от 0 до 9"; break;
     case RuntimeError::integer_overflow:

@@ -1,0 +1,32 @@
+uses Arrays;
+function Next:integer;
+begin Result:=Random(100); end;
+begin
+  Randomize(1);
+  Writeln(Next,' ',Next,' ',Next,' ',Next,' ',Next);
+  SetRandomSeed(1);
+  Writeln(Random(-2147483648,2147483646));
+  Randomize(1);
+  Writeln(Random(0),' ',Random(100));
+  Randomize(1);
+  Writeln(Random('Я','А'));
+  Randomize(1);
+  Writeln(RandomReal(0,1),' ',RandomReal(0,1,3));
+  Randomize(1);
+  Writeln(RandomReal(2.736,2.737));
+  Randomize(1);
+  var a:=Arrays.CreateRandomIntegerArray(3);
+  foreach var value in a do Write(value,'|'); Writeln;
+  Randomize(1);
+  var b:=ArrRandomInteger(3);
+  foreach var value in b do Write(value,'|'); Writeln;
+  Randomize(1);
+  FillByRandom(a,10,12);
+  foreach var value in a do Write(value,'|'); Writeln;
+  Randomize(1);
+  var c:=CreateRandomRealArray(1,10,20);
+  Randomize(1);
+  Writeln(c[0]=Random()*10);
+  var empty:=CreateRandomIntegerArray(0,0,MaxInt);
+  Writeln(Length(empty));
+end.

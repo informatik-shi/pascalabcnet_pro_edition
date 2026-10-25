@@ -90,6 +90,7 @@ def main():
                 ("file-operations.pas", "Прочитано:\nПервая строка\nВторая строка\nФайл удалён: True\n"),
                 ("small-integers.pas", "Значения: 255 -128 -32768\nСумма с расширением: 256\nКвадрат: 65025\nГраница byte: 254|255|\nМассив smallint: 1 -2\n"),
                 ("unsigned-integers.pas", "Граница 32 бит: 4294967295\nС расширением: 4294967296\nГраница 64 бит: 18446744073709551615\nКвадрат word: 4294836225\nПредыдущее: 18446744073709551614\nПереключение: True False\n"),
+                ("random-arrays.pas", "Arrays, 0..99: 24|11|46|\nPABCSystem, 0..100: 25|11|47|\nПосле заполнения: 10|10|11|\nВещественное: 0.25\n"),
             ]:
                 example = subprocess.run([runner, "run", str(folder / "examples" / source)],
                                          text=True, encoding="utf-8", capture_output=True,
@@ -97,6 +98,8 @@ def main():
                 if example.returncode or example.stdout != expected:
                     raise RuntimeError(f"{name} {source} failed: {example.stdout!r}, {example.stderr!r}")
             character = folder / "Ошибки символов.pas"
+            if not (folder / "licenses" / "DotNet-Runtime-MIT.txt").is_file():
+                raise RuntimeError(f"{name} missing random algorithm license notice")
             character.write_text("begin Writeln('must never run'); WriteStringToFile('absent-unit.txt','bad'); end.", encoding="utf-8")
             invalid = subprocess.run([runner, "run", str(character)], text=True, encoding="utf-8",
                                      capture_output=True, cwd=folder, env=env, timeout=10)
@@ -123,6 +126,7 @@ def main():
                 ("var c:=#65535;\n Inc(c);", "E_OVERFLOW", "Integer overflow", "Переполнение целого числа"),
                 ("var b:byte:=255;\n Inc(b);", "E_OVERFLOW", "Integer overflow", "Переполнение целого числа"),
                 ("var u:=MaxUInt64;\n Inc(u);", "E_OVERFLOW", "Integer overflow", "Переполнение целого числа"),
+                ("Randomize(1);\n Random(-1);", "E_RANGE", "Random bounds are invalid", "Некорректные границы генератора случайных чисел"),
                 ("var c:='Я';\n Writeln(c.ToDigit);", "E_FORMAT", "Character is not a decimal digit from 0 to 9", "Символ не является десятичной цифрой от 0 до 9"),
                 ("var s:='ab';\n s[0]:='X';", "E_BOUNDS", "Index is outside sequence bounds", "Индекс находится за границами строки, массива или списка"),
             ]:
@@ -337,6 +341,7 @@ def main():
             results[-1]["unit_import_before_output"] = "passed"
             results[-1]["small_integer_types"] = "passed"
             results[-1]["wide_unsigned_and_boolean_ordinals"] = "passed"
+            results[-1]["seeded_random_and_arrays"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 

@@ -4,6 +4,7 @@
 #include "text_file.hpp"
 #include "file_operations.hpp"
 #include "integer_values.hpp"
+#include "random.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -20,6 +21,17 @@ std::span<const Signature> signatures() {
         };
         add("readfiletoend",{Type::string},Type::string,Function::files_read_to_end,"filesoperations");
         add("writestringtofile",{Type::string,Type::string},Type::unit,Function::files_write_string,"filesoperations");
+        add("randomize",{},Type::unit,Function::random_reset);
+        add("randomize",{Type::integer},Type::unit,Function::random_reset);
+        add("setrandomseed",{Type::integer},Type::unit,Function::random_reset);
+        add("random",{},Type::real,Function::random_real);
+        add("random",{Type::integer},Type::integer,Function::random_integer);
+        add("random",{Type::integer,Type::integer},Type::integer,Function::random_integer);
+        add("random",{Type::real},Type::real,Function::random_real);
+        add("random",{Type::real,Type::real},Type::real,Function::random_real);
+        add("random",{Type::character,Type::character},Type::character,Function::random_char);
+        add("randomreal",{Type::real,Type::real},Type::real,Function::random_rounded);
+        add("randomreal",{Type::real,Type::real,Type::integer},Type::real,Function::random_rounded);
         for (auto type:{Type::byte,Type::shortint,Type::smallint,Type::word}) {
             add("abs",{type},type,Function::abs);
             add("sign",{type},Type::integer,Function::sign);
@@ -226,12 +238,53 @@ double round_even(double value) {
         ? lower + 1.0 : lower;
     return rounded == 0 ? std::copysign(0.0, value) : rounded;
 }
+double round_digits(double value, std::int32_t digits, SourceLocation location) {
+    if (digits<0 || digits>15) throw runtime_error(RuntimeError::round_digits,location);
+    static constexpr double scales[] = {1,10,100,1000,10000,100000,1000000,10000000,
+        100000000,1000000000,10000000000,100000000000,1000000000000,10000000000000,
+        100000000000000,1000000000000000};
+    return std::abs(value)<1e16 ? round_even(value*scales[digits])/scales[digits] : value;
+}
 } // namespace
 
-Value invoke(std::size_t id, std::span<const Value> arguments, SourceLocation location, FileContext& files) {
+Value invoke(std::size_t id, std::span<const Value> arguments, SourceLocation location, FileContext& files, RandomContext& random) {
     const auto& signature = signatures()[id]; // Verified before execution.
     const auto function = signature.function;
     if (function == Function::get_dir) return files.directory(location);
+    if (function==Function::random_reset) {
+        if (arguments.empty()) random.randomize(location);
+        else random.seed(std::get<std::int32_t>(arguments[0]));
+        return false;
+    }
+    if (function==Function::random_integer || function==Function::random_char) {
+        if (arguments.size()==1) return random.range(0,std::get<std::int32_t>(arguments[0]),location);
+        auto first=function==Function::random_char ? std::int32_t(std::get<char16_t>(arguments[0])) : std::get<std::int32_t>(arguments[0]);
+        auto last=function==Function::random_char ? std::int32_t(std::get<char16_t>(arguments[1])) : std::get<std::int32_t>(arguments[1]);
+        if (first>last) std::swap(first,last);
+        // PABCSystem uses an inclusive right bound by calling Next(first,last+1).
+        if (last==INT32_MAX) throw runtime_error(RuntimeError::integer_overflow,location);
+        const auto value=random.range(first,last+1,location);
+        return function==Function::random_char ? Value{static_cast<char16_t>(value)} : Value{value};
+    }
+    if (function==Function::random_real || function==Function::random_rounded) {
+        if (arguments.empty()) return random.unit(location);
+        if (arguments.size()==1) return checked_real(random.unit(location)*std::abs(std::get<double>(arguments[0])),location);
+        const auto original_first=std::get<double>(arguments[0]), original_last=std::get<double>(arguments[1]);
+        const auto first=std::min(original_first,original_last), last=std::max(original_first,original_last);
+        const auto digits=arguments.size()==3 ? std::get<std::int32_t>(arguments[2]) : 2;
+        const auto step=function==Function::random_rounded && digits>=0 ? 1/std::pow(10.0,digits) : 0.0;
+        const auto weighted=random.unit(location)*(last-first);
+        const auto sampled=checked_real(first+weighted,location);
+        if (function==Function::random_real || digits<0) return sampled;
+        auto rounded=round_digits(sampled,digits,location);
+        // Keep the source clamp order, including its behavior for reversed bounds.
+        if (rounded<original_first) {
+            rounded+=step; if (rounded>original_last) rounded=original_last;
+        } else if (rounded>original_last) {
+            rounded-=step; if (rounded<original_first) rounded=original_first;
+        }
+        return checked_real(rounded,location);
+    }
     const auto& value = arguments.front();
     if (function==Function::files_read_to_end) return file_operations_read(files,value,location);
     if (function==Function::files_write_string) { file_operations_write(files,value,arguments[1],location); return false; }
@@ -436,11 +489,7 @@ Value invoke(std::size_t id, std::span<const Value> arguments, SourceLocation lo
         if (arguments.size() == 1) return checked_integer(round_even(x), location);
         else {
             const auto digits = std::get<std::int32_t>(arguments[1]);
-            if (digits < 0 || digits > 15) throw runtime_error(RuntimeError::round_digits, location);
-            static constexpr double scales[] = {1, 10, 100, 1000, 10000, 100000, 1000000, 10000000,
-                100000000, 1000000000, 10000000000, 100000000000, 1000000000000, 10000000000000,
-                100000000000000, 1000000000000000};
-            result = std::abs(x) < 1e16 ? round_even(x * scales[digits]) / scales[digits] : x;
+            result = round_digits(x,digits,location);
             break;
         }
     case Function::trunc: return checked_integer(std::trunc(x), location);
