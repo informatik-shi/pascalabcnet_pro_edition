@@ -56,6 +56,41 @@ void runtime_error(std::string_view source, std::string_view code) {
     error([&] { (void)run(source); }, code,source);
 }
 
+void structural_output() {
+    result("type R=record x:integer; end; begin var r:R; r.x:=7; Writeln(r,'|',Arr(1,2),'|',nil); end.","(7)|[1,2]|nil\n");
+    result("var a:array of integer; function Change:integer; begin a[0]:=7; Result:=2; end; begin a:=Arr(1); Writeln(a,' ',Change()); end.","[7] 2\n");
+    result("type R=record x:integer; end; var r:R; function Change:integer; begin r.x:=7; Result:=2; end; begin r.x:=1; Writeln(r,' ',Change()); end.","(1) 2\n");
+    compile_error("uses Collections; begin Writeln('never'); Writeln(new Stack<integer>); end.","E_TYPE");
+    result("begin Writeln(ObjectToString(7),'|',ObjectToString(true),'|',ObjectToString(nil),'|',PABCSystem.ObjectToString('🌍')); end.","7|True|nil|🌍\n");
+    result("type R=record x:integer; s:string; a:array of integer; end; begin var r:R; r.x:=4; r.s:='Я'; r.a:=Arr(1,2); Writeln(ObjectToString(r)); Writeln('[',FormatValue(r,16),']'); end.","(4,Я,[1,2])\n[     (4,Я,[1,2])]\n");
+    result("type E=record end; type R=record e:E; b:boolean; end; begin var r:R; Writeln(ObjectToString(r)); end.","((),False)\n");
+    result("begin var a:array of integer; var l:List<integer>; Writeln(ObjectToString(a),'|',ObjectToString(l),'|',ObjectToString(new integer[0])); Writeln(FormatValue(nil,5)); end.","nil|nil|[]\n  nil\n");
+    result("begin var m:=new integer[2,2]; m[0,1]:=7; Writeln(ObjectToString(m)); Writeln(ObjectToString(new integer[0,5]),'|',ObjectToString(new integer[3,0])); end.","[[0,7],[0,0]]\n[[]]|[[]]\n");
+    result("begin var a:=Arr(Arr(1,2),Arr(3)); Writeln(ObjectToString(a)); var l:=new List<string>; l.Add(nil); l.Add('x'); Writeln(ObjectToString(l),' ',l.Count()); end.","[[1,2],[3]]\n[nil,x] 2\n");
+    result("uses Arrays; type R=record x:integer; end; begin var a:=new R[2]; a[0].x:=7; WritelnArray(a,'|'); var m:=new R[1,2]; m[0,1].x:=8; WriteMatrix(m,4); m.Write('/'); end.","(7)|(0)\n (0)  (8) \n(0)/(8)/\n");
+    result("uses Arrays; begin WritelnArray(Arr(Arr(1,2),Arr(3)),'|'); end.","[1,2]|[3]\n");
+    result("begin Writeln(PABCSystem.FormatValue(Arr(1,2),7)); end.","  [1,2]\n");
+    for (const auto count:{99,100,101,102}) {
+        const auto expected=[&](int n,bool trim) { std::string text="["; for (int i=0;i<n;++i) { if (i) text+=','; text+='0'; } if (trim) text+=",..."; return text+"]\n"; };
+        result("begin Writeln(ObjectToString(new integer["+std::to_string(count)+"])); end.",expected(count>100 ? 99 : count,count>100));
+        result("begin var l:=new List<integer>; for var i:=1 to "+std::to_string(count)+" do l.Add(0); Writeln(ObjectToString(l)); end.",expected(count>101 ? 100 : count,count>101));
+    }
+    result("begin var a:=new integer[101,1]; var s:=ObjectToString(a); Writeln(s.Length,' ',s[s.Length-3],s[s.Length-2],s[s.Length-1]); end.","401 ...\n");
+    runtime_error("begin FormatValue(Arr(1),-1); end.","E_RANGE");
+    runtime_error("begin FormatValue(Arr(1),2147483647); end.","E_LIMIT");
+    runtime_error("begin ObjectToString(Arr(StringOfChar('x',600000),StringOfChar('y',600000))); end.","E_LIMIT");
+    compile_error("begin ObjectToString(1,2); end.","E_TYPE");
+    compile_error("begin FormatValue(Arr(1),0,2); end.","E_TYPE");
+    compile_error("uses Collections; begin var s:=new Stack<integer>; ObjectToString(s); end.","E_UNSUPPORTED");
+    compile_error("type R=record f:Text; end; begin var r:R; ObjectToString(r); end.","E_UNSUPPORTED");
+    auto program=abc::compile("begin Writeln(ObjectToString(Arr(1))); end.");
+    for (auto& instruction:program.code) if (instruction.op==abc::Op::object_text) instruction.operand=2;
+    error([&]{abc::verify(program);},"E_BYTECODE");
+    program=abc::compile("begin Writeln(ObjectToString(Arr(1))); end.");
+    for (auto& instruction:program.code) if (instruction.op==abc::Op::object_text) instruction.type=abc::Type::text_file;
+    error([&]{abc::verify(program);},"E_BYTECODE");
+}
+
 void rectangular_arrays() {
     result("uses Arrays; begin var m:=new integer[1,2]; Arrays.FillByValue(m,3); var c:=PABCSystem.Copy(m); Writeln(PABCSystem.High(c),' ',c[0,1]); var a:=Arr(3,1,2); Arrays.Sort(a); Arrays.SortDescending(a); foreach var x in a do Write(x); end.","0 3\n321");
     compile_error("uses Arrays; begin var l:=new List<integer>; Arrays.Sort(l); end.","E_TYPE");
@@ -281,7 +316,7 @@ void array_output() {
     compile_error("uses Arrays; begin WritelnArray(Arr(1),2); end.","E_TYPE");
     compile_error("uses Arrays; begin var l:=new List<integer>; WritelnArray(l); end.","E_TYPE");
     compile_error("uses Arrays; begin WritelnArray(Arr(1),' ',2); end.","E_TYPE");
-    compile_error("uses Arrays; type R=record x:integer; end; begin var a:=new R[1]; WritelnArray(a); end.","E_UNSUPPORTED");
+    result("uses Arrays; type R=record x:integer; end; begin var a:=new R[1]; WritelnArray(a); end.","(0)\n");
     compile_error("uses Arrays; begin var x:=WritelnArray(Arr(1)); end.","E_TYPE");
     abc::ExecutionOptions options; options.output_limit=4;
     error([&]{(void)run("uses Arrays; begin WritelnArray(Arr(1,2,3),'|'); end.","",options);},"E_LIMIT");
@@ -868,7 +903,7 @@ void aggregate_semantics() {
     runtime_error("begin var a:=Arr(1); writeln(a[1]); end.", "E_BOUNDS");
     runtime_error("begin var a:=new integer[1048577]; end.", "E_LIMIT");
     compile_error("begin var a:=nil; end.", "E_TYPE");
-    compile_error("begin writeln(nil); end.", "E_TYPE");
+    result("begin writeln(nil); end.", "nil\n");
     compile_error("procedure P; begin end; begin var x:=P(); end.", "E_TYPE");
     compile_error("procedure P; begin Exit(1); end; begin end.", "E_TYPE");
     auto program=abc::compile("procedure P(var x:integer); begin x:=2; end; begin var x:=1; P(x); end.");
@@ -1196,7 +1231,8 @@ void text_files() {
     result("var f,g:Text; function Change:integer; begin f:=g; Result:=2; end; begin f:=OpenWrite("+file+"); g:=OpenWrite("+other+"); var saved:=f; f.Println(1,Change); saved.Close; g.Close; Writeln(ReadAllLines("+file+")[0],' [',ReadAllText("+other+"),']'); end.","1 2 []\n");
     result("type Holder=record f:Text; end; begin var h:Holder; h.f:=OpenRead("+file+"); var a:=new Text[1]; a[0]:=h.f; Writeln(a[0].ReadInteger,' ',h.f.ReadlnInteger); a[0].Close; end.","1 2\n");
     result("begin var f:=OpenWrite("+file+"); var s:string:=nil; f.Write(1,2,3,4,5,6,7,8,9,0,1,2,3,4,5,6); f.Print(s,'',true,1.5); f.Close; Writeln(ReadAllText("+file+")); end.","1234567890123456nil  True 1.5 \n");
-    for (const auto* source:{"begin var f:Text; f.Writeln(Arr(1)); end.","begin var f:Text; f.Print(f); end.",
+    runtime_error("begin var f:Text; f.Writeln(Arr(1)); end.","E_IO");
+    for (const auto* source:{"begin var f:Text; f.Print(f); end.",
         "begin var f:Text; var n:integer:=f.Write(1); end.","begin var f:Text; f.Readln(1); end.",
         "begin var f:Text; f.Reset('x'); end.","begin var f:Text; f.Name:='bad'; end.",
         "begin var f:Text; Writeln(f.FullName(1)); end.","begin var f:Text; f.ReadWord(1); end.",
@@ -1925,6 +1961,7 @@ int main() {
     console_functions();
     console_unicode_output();
     rectangular_arrays();
+    structural_output();
     sequence_mutations();
     arithmetic();
     verifier();

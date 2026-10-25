@@ -2,6 +2,7 @@
 #include "number.hpp"
 #include "stdlib.hpp"
 #include "integer_values.hpp"
+#include "formatting.hpp"
 
 
 #include <algorithm>
@@ -810,6 +811,7 @@ private:
                 if (bind_array_output(*result,source.token.text,source.left->token.text)) break;
                 if (bind_array_length(*result,source.token.text,source.left->token.text)) break;
                 if (bind_sequence_library(*result,source.token.text,source.left->token.text)) break;
+                if (bind_object_text(*result,source.token.text,source.left->token.text)) break;
                 bind_builtin(*result,source.token.text,source.left->token.text); break;
             }
             result->left = expression(*source.left); const auto receiver = result->left->type;
@@ -877,7 +879,8 @@ private:
                         : name=="print" ? TextOutput::print : TextOutput::println);
                     for (const auto& argument:source.arguments) {
                         auto value=expression(*argument);
-                        if (!scalar(value->type)) throw Error("E_TYPE",value->location,"Text output requires scalar values");
+                        if (value->type==Type::nil) value=convert(std::move(value),Type::string);
+                        if (!object_text_supported(module_.types,value->type)) throw Error("E_TYPE",value->location,"Text output for this static type is not implemented");
                         result->arguments.push_back(std::move(value));
                     }
                     break;
@@ -998,7 +1001,7 @@ private:
             }
             if (type.kind != CompoundKind::record) {
                 if ((source.token.text == "length" && type.kind == CompoundKind::array) || (source.token.text == "count" && type.kind == CompoundKind::list)) {
-                    if (!source.arguments.empty() || source.kind==SyntaxExprKind::member_call) throw Error("E_TYPE",result->location,"Property takes no arguments");
+                    if (!source.arguments.empty() || (type.kind==CompoundKind::array && source.kind==SyntaxExprKind::member_call)) throw Error("E_TYPE",result->location,"Property takes no arguments");
                     result->kind = hir::ExprKind::length; result->type = Type::integer; result->local=1; break;
                 }
                 if (type.kind != CompoundKind::list) throw Error("E_NAME",result->location,"Unknown array member");
@@ -1087,6 +1090,7 @@ private:
             if (bind_sequence_mutation(*result,source.token.text)) break;
             if (bind_array_output(*result,source.token.text)) break;
             if (bind_array_length(*result,source.token.text)) break;
+            if (bind_object_text(*result,source.token.text)) break;
             if (source.token.text == "arr") {
                 if (result->arguments.empty()) throw Error("E_TYPE",result->location,"Cannot infer empty Arr element type");
                 auto element = Type::nil;
@@ -1252,6 +1256,19 @@ private:
         }
         result.arguments.clear(); return true;
     }
+    bool bind_object_text(hir::Expr& result, std::string_view name, std::string_view unit = {}) {
+        if ((name!="objecttostring" && name!="formatvalue") || (!unit.empty() && unit!="pabcsystem")) return false;
+        const bool width=name=="formatvalue";
+        if (width && !result.arguments.empty() && scalar(result.arguments[0]->type)) return false;
+        if (result.arguments.size()!=(width ? 2U : 1U)) throw Error("E_TYPE",result.location,"Wrong object formatting argument count");
+        auto value=std::move(result.arguments[0]);
+        if (value->type==Type::nil) value=convert(std::move(value),Type::string);
+        if (!object_text_supported(module_.types,value->type)) throw Error("E_UNSUPPORTED",result.location,"Formatting for this static type is not implemented");
+        result.left=std::move(value);
+        if (width) result.right=convert(std::move(result.arguments[1]),Type::integer);
+        result.arguments.clear(); result.kind=hir::ExprKind::object_text; result.type=Type::string; result.local=width ? 1U : 0U;
+        return true;
+    }
     bool bind_array_output(hir::Expr& result, std::string_view name, std::string_view unit = {}, bool member = false) {
         if ((member ? name!="write" && name!="writeln" : name!="writearray" && name!="writelnarray" && name!="readarray" && name!="writematrix")
             || (unit.empty() ? !imported_units_.contains("arrays") : unit!="arrays")) return false;
@@ -1260,7 +1277,7 @@ private:
             auto args=std::move(result.arguments); result.arguments.clear(); result.left=std::move(args[0]);
             const auto& type=info(result.left->type,result.location);
             if (type.kind!=CompoundKind::array || type.rank!=2 || (type.element!=Type::real && args.size()>2)) throw Error("E_TYPE",result.location,"WriteMatrix requires a rectangular matrix");
-            if (!scalar(type.element)) throw Error("E_UNSUPPORTED",result.location,"Matrix output currently requires scalar elements");
+            if (!object_text_supported(module_.types,type.element)) throw Error("E_UNSUPPORTED",result.location,"Matrix element formatting is not implemented");
             const auto literal=[&](std::int32_t value) {
                 auto node=std::make_unique<hir::Expr>(); node->kind=hir::ExprKind::literal; node->type=Type::integer; node->value=value; node->location=result.location; return node;
             };
@@ -1277,7 +1294,7 @@ private:
                 throw Error("E_TYPE",result.location,"ReadArray requires an integer, real or string array");
             result.arguments.clear(); result.kind=hir::ExprKind::read_array; result.type=Type::unit; return true;
         }
-        if (!scalar(type.element)) throw Error("E_UNSUPPORTED",result.location,"Array output currently requires scalar elements");
+        if (!object_text_supported(module_.types,type.element)) throw Error("E_UNSUPPORTED",result.location,"Array element formatting is not implemented");
         if (result.arguments.size()==2) result.right=convert(std::move(result.arguments[1]),Type::string);
         else {
             result.right=std::make_unique<hir::Expr>(); result.right->kind=hir::ExprKind::literal;
@@ -1636,7 +1653,8 @@ private:
             for (const auto& argument : source.arguments) {
                 auto value = expression(*argument);
                 if (argument==source.arguments.front() && value->type==Type::text_file) { result.target=std::move(value); continue; }
-                if (!scalar(value->type)) throw Error("E_TYPE",value->location,"Write requires scalar values");
+                if (value->type==Type::nil) value=convert(std::move(value),Type::string);
+                if (!object_text_supported(module_.types,value->type)) throw Error("E_TYPE",value->location,"Write for this static type is not implemented");
                 result.arguments.push_back(std::move(value));
             }
             break;

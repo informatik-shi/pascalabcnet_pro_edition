@@ -173,6 +173,12 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
         if (steps++ >= options.instruction_limit) trap(instruction, RuntimeError::instruction_limit);
         if (options.cancelled && options.cancelled()) trap(instruction, RuntimeError::cancelled);
         switch (instruction.op) {
+        case Op::object_text: {
+            const auto width=instruction.operand ? std::get<std::int32_t>(pop()) : 0;
+            const auto value=pop();
+            stack.emplace_back(pad_field(object_text(program,value,instruction.type,instruction.location,options),width,instruction.location));
+            break;
+        }
         case Op::write_matrix: {
             const auto digits=instruction.operand ? std::optional<std::int32_t>{std::get<std::int32_t>(pop())} : std::nullopt;
             const auto width=std::get<std::int32_t>(pop()); const auto matrix=std::get<std::shared_ptr<Aggregate>>(pop());
@@ -181,7 +187,9 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
                 if ((r&255U)==0 && options.cancelled && options.cancelled()) trap(instruction,RuntimeError::cancelled);
                 for (std::size_t c=0;c<matrix->columns;++c) {
                     if ((c&255U)==0 && options.cancelled && options.cancelled()) trap(instruction,RuntimeError::cancelled);
-                    write(format_field(matrix->items[r*matrix->columns+c]->value,width,digits,instruction.location),instruction);
+                    const auto& value=matrix->items[r*matrix->columns+c]->value;
+                    write(digits ? format_field(value,width,digits,instruction.location)
+                        : pad_field(object_text(program,value,type_info(program,instruction.type).element,instruction.location,options),width,instruction.location),instruction);
                     write(u" ",instruction);
                 }
                 write(u"\n",instruction);
@@ -206,7 +214,8 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
         case Op::console_output: {
             std::vector<Value> arguments(instruction.operand/2);
             for (auto i=arguments.size();i>0;--i) arguments[i-1]=pop();
-            for (const auto& value:arguments) write(scalar_text(value,instruction),instruction);
+            for (const auto& value:arguments) write(compound(value_type(value))
+                ? object_text(program,value,value_type(value),instruction.location,options) : scalar_text(value,instruction),instruction);
             if (instruction.operand&1U) write(u"\n",instruction);
             break;
         }
@@ -274,7 +283,7 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
                     if ((r&255U)==0 && options.cancelled && options.cancelled()) trap(instruction,RuntimeError::cancelled);
                     for (std::size_t c=0;c<sequence->columns;++c) {
                         if ((c&255U)==0 && options.cancelled && options.cancelled()) trap(instruction,RuntimeError::cancelled);
-                        write(scalar_text(sequence->items[r*sequence->columns+c]->value,instruction),instruction);
+                        write(object_text(program,sequence->items[r*sequence->columns+c]->value,type_info(program,instruction.type).element,instruction.location,options),instruction);
                         write(scalar_text(delimiter,instruction),instruction);
                     }
                     write(u"\n",instruction);
@@ -285,7 +294,7 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
             for (std::size_t i=0;i<sequence->items.size();++i) {
                 if ((i&255U)==0 && options.cancelled && options.cancelled()) trap(instruction,RuntimeError::cancelled);
                 if (i) write(scalar_text(delimiter,instruction),instruction);
-                write(scalar_text(sequence->items[i]->value,instruction),instruction);
+                write(object_text(program,sequence->items[i]->value,type_info(program,instruction.type).element,instruction.location,options),instruction);
             }
             if (instruction.operand&1U) write(u"\n",instruction);
             break;
@@ -601,7 +610,8 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
             // Empty Write and Print do not require an assigned or open file.
             if (arguments.empty() && (method==TextOutput::write || method==TextOutput::print)) break;
             for (std::size_t n=0;n<arguments.size();++n) {
-                text_write(file,scalar_text(arguments[n],instruction),instruction.location);
+                text_write(file,compound(value_type(arguments[n]))
+                    ? object_text(program,arguments[n],value_type(arguments[n]),instruction.location,options) : scalar_text(arguments[n],instruction),instruction.location);
                 if (method==TextOutput::print || (method==TextOutput::println && n+1<arguments.size()))
                     text_write(file,u" ",instruction.location);
             }

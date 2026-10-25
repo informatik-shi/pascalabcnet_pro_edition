@@ -1,6 +1,7 @@
 #include "hir.hpp"
 #include "stdlib.hpp"
 #include "runtime_values.hpp"
+#include "formatting.hpp"
 
 #include <deque>
 #include <algorithm>
@@ -55,6 +56,9 @@ private:
     void expression(const hir::Expr& node) {
         if (node.type == Type::invalid) throw Error("E_HIR", node.location, "Unresolved expression type");
         switch (node.kind) {
+        case hir::ExprKind::object_text:
+            expression(*node.left); if (node.right) expression(*node.right);
+            emit(Op::object_text,node.left->type,node.local,node.location); break;
         case hir::ExprKind::write_matrix:
             expression(*node.left); for (const auto& argument:node.arguments) expression(*argument);
             emit(Op::write_matrix,node.left->type,node.local,node.location); break;
@@ -360,9 +364,12 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
     for (const auto& instruction : code) {
         const auto type = instruction.type;
         switch (instruction.op) {
+        case Op::object_text:
+            if (!object_text_supported(program.types,type) || type==Type::nil || instruction.operand>1) invalid(instruction,"Invalid object formatting");
+            break;
         case Op::write_matrix:
             if (!compound(type) || type_info(program,type).kind!=CompoundKind::array || type_info(program,type).rank!=2
-                || !scalar(type_info(program,type).element) || instruction.operand>1
+                || !object_text_supported(program.types,type_info(program,type).element) || instruction.operand>1
                 || (instruction.operand==1)!=(type_info(program,type).element==Type::real)) invalid(instruction,"Invalid matrix output");
             break;
         case Op::array_query:
@@ -379,7 +386,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
                 invalid(instruction,"Invalid array input");
             break;
         case Op::write_array:
-            if (!compound(type) || type_info(program,type).kind!=CompoundKind::array || (type_info(program,type).rank!=1 && !(instruction.operand&2U)) || !scalar(type_info(program,type).element) || instruction.operand>3)
+            if (!compound(type) || type_info(program,type).kind!=CompoundKind::array || (type_info(program,type).rank!=1 && !(instruction.operand&2U)) || !object_text_supported(program.types,type_info(program,type).element) || instruction.operand>3)
                 invalid(instruction,"Invalid typed array output");
             break;
         case Op::swap_values:
@@ -610,7 +617,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             break;
         }
         case Op::console_output:
-            for (std::size_t i=0;i<instruction.operand/2;++i) if (!scalar(pop())) invalid(instruction,"Console output requires scalar values");
+            for (std::size_t i=0;i<instruction.operand/2;++i) if (!object_text_supported(program.types,pop())) invalid(instruction,"Unsupported console output type");
             break;
         case Op::read_console:
             for (std::size_t i=0;i<instruction.operand/2;++i) {
@@ -625,7 +632,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         case Op::file_newline: case Op::file_skip_line: require(Type::text_file); stack.push_back(Type::text_file); break;
         case Op::file_output:
             for (std::size_t n=0;n<instruction.operand/4;++n)
-                if (!scalar(pop())) invalid(instruction,"Text output requires scalar arguments");
+                if (!object_text_supported(program.types,pop())) invalid(instruction,"Unsupported Text output type");
             require(Type::text_file); break;
         case Op::set_character: require(Type::character); require(Type::integer); require(reference_type(Type::string)); break;
         case Op::increment:
@@ -650,6 +657,9 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if (mutation_result(method)) stack.push_back(instruction.type);
             break;
         }
+        case Op::object_text:
+            if (instruction.operand) require(Type::integer);
+            require(instruction.type); stack.push_back(Type::string); break;
         case Op::write_matrix:
             if (instruction.operand) require(Type::integer);
             require(Type::integer); require(instruction.type); break;
