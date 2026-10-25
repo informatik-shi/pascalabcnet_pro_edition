@@ -173,6 +173,44 @@ std::optional<Value> try_parse_number(Type type, const Value& source, SourceLoca
     }
 }
 
+std::pair<std::u16string,std::int32_t> read_string_word(const Value& source, std::int32_t position,
+    SourceLocation location, const ExecutionOptions& options, bool skip_only) {
+    if (std::holds_alternative<NilString>(source)) throw runtime_error(RuntimeError::nil_reference,location);
+    const auto& text=string_text(source);
+    if (position<1 || (!skip_only && static_cast<std::size_t>(position)>text.size()+1)) throw runtime_error(RuntimeError::index_bounds,location);
+    auto index=static_cast<std::size_t>(position-1);
+    const auto check=[&] { if ((index&255U)==0 && options.cancelled && options.cancelled()) throw runtime_error(RuntimeError::cancelled,location); };
+    while (index<text.size() && unicode_space(text[index])) { check(); ++index; }
+    const auto start=index;
+    if (!skip_only) while (index<text.size() && !unicode_space(text[index])) { check(); ++index; }
+    return {skip_only ? std::u16string{} : text.substr(start,index-start),static_cast<std::int32_t>(index+1)};
+}
+std::pair<std::int32_t,std::int32_t> read_string_integer(const Value& source, std::int32_t position,
+    SourceLocation location, const ExecutionOptions& options) {
+    if (std::holds_alternative<NilString>(source)) throw runtime_error(RuntimeError::nil_reference,location);
+    const auto& text=string_text(source);
+    if (position<1) throw runtime_error(RuntimeError::index_bounds,location);
+    auto index=static_cast<std::size_t>(position-1);
+    while (index<text.size() && unicode_space(text[index])) {
+        if ((index&255U)==0 && options.cancelled && options.cancelled()) throw runtime_error(RuntimeError::cancelled,location);
+        ++index;
+    }
+    bool negative=false;
+    if (index<text.size() && (text[index]==u'+' || text[index]==u'-')) { negative=text[index]==u'-'; ++index; }
+    if (index>=text.size() || text[index]<u'0' || text[index]>u'9') throw runtime_error(RuntimeError::number_text,location,"integer");
+    std::uint32_t magnitude=0; const std::uint32_t limit=negative ? 2'147'483'648U : 2'147'483'647U;
+    while (index<text.size() && text[index]>=u'0' && text[index]<=u'9') {
+        if ((index&255U)==0 && options.cancelled && options.cancelled()) throw runtime_error(RuntimeError::cancelled,location);
+        const auto digit=static_cast<unsigned>(text[index]-u'0');
+        if (magnitude>(limit-digit)/10) throw runtime_error(RuntimeError::number_range,location,"integer");
+        magnitude=magnitude*10+digit; ++index;
+        // ParseCoreFrom stops immediately after recognizing the special Int32 minimum.
+        if (negative && magnitude==2'147'483'648U) break;
+    }
+    const auto value=magnitude==2'147'483'648U ? INT32_MIN : negative ? -static_cast<std::int32_t>(magnitude) : static_cast<std::int32_t>(magnitude);
+    return {value,static_cast<std::int32_t>(index+1)};
+}
+
 std::optional<Value> invoke_text(Function function, std::span<const Value> arguments, SourceLocation location) {
     switch (function) {
     case Function::string_length:

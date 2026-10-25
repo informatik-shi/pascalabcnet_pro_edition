@@ -840,6 +840,7 @@ private:
                 if (bind_print(*result,source.token.text,source.left->token.text)) break;
                 if (bind_try_read(*result,source.token.text,source.left->token.text)) break;
                 if (bind_number_conversion(*result,source.token.text,source.left->token.text)) break;
+                if (bind_string_read(*result,source.token.text,source.left->token.text)) break;
                 if (bind_random_array(*result,source.token.text,source.left->token.text)) break;
                 if (bind_sequence_mutation(*result,source.token.text,source.left->token.text)) break;
                 if (bind_array_output(*result,source.token.text,source.left->token.text)) break;
@@ -1142,6 +1143,7 @@ private:
             if (bind_print(*result,source.token.text)) break;
             if (bind_try_read(*result,source.token.text)) break;
             if (bind_number_conversion(*result,source.token.text)) break;
+            if (bind_string_read(*result,source.token.text)) break;
             if (bind_random_array(*result,source.token.text)) break;
             if (bind_sequence_mutation(*result,source.token.text)) break;
             if (bind_array_output(*result,source.token.text)) break;
@@ -1311,6 +1313,24 @@ private:
             result.right=convert(std::move(result.arguments[1]),Type::integer);
         }
         result.arguments.clear(); return true;
+    }
+    bool bind_string_read(hir::Expr& result, std::string_view name, std::string_view unit = {}) {
+        if (!unit.empty() && unit!="pabcsystem") return false;
+        std::optional<StringRead> method;
+        for (const auto& [key,value]:{std::pair<std::string_view,StringRead>{"readintegerfromstring",StringRead::integer},
+            {"readrealfromstring",StringRead::real},{"readwordfromstring",StringRead::word},{"stringisempty",StringRead::is_empty},
+            {"tryreadintegerfromstring",StringRead::try_integer},{"tryreadrealfromstring",StringRead::try_real}}) if (key==name) method=value;
+        if (!method) return false;
+        if (result.arguments.size()!=(string_read_try(*method) ? 3U : 2U)) throw Error("E_TYPE",result.location,"Wrong string reading argument count");
+        auto source=convert(std::move(result.arguments[0]),Type::string), cursor=std::move(result.arguments[1]);
+        if (!lvalue(*cursor) || cursor->type!=Type::integer) throw Error("E_TYPE",result.location,"String cursor must be a writable integer");
+        if (string_read_try(*method)) {
+            auto output=std::move(result.arguments[2]);
+            if (!lvalue(*output) || output->type!=string_read_number(*method)) throw Error("E_TYPE",result.location,"Wrong string reading result type");
+            result.arguments.clear(); result.arguments.push_back(std::move(output));
+        } else result.arguments.clear();
+        result.left=std::move(source); result.right=std::move(cursor); result.local=static_cast<std::size_t>(*method);
+        result.kind=hir::ExprKind::string_read; result.type=string_read_result(*method); return true;
     }
     bool bind_number_conversion(hir::Expr& result, std::string_view name, std::string_view unit = {}) {
         const bool str=name=="str", val=name=="val";

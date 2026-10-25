@@ -57,6 +57,10 @@ private:
     void expression(const hir::Expr& node) {
         if (node.type == Type::invalid) throw Error("E_HIR", node.location, "Unresolved expression type");
         switch (node.kind) {
+        case hir::ExprKind::string_read:
+            expression(*node.left); reference(*node.right);
+            for (const auto& argument:node.arguments) reference(*argument);
+            emit(Op::string_read,node.type,node.local,node.location); break;
         case hir::ExprKind::number_conversion:
             expression(*node.left); reference(*node.right);
             for (const auto& argument:node.arguments) reference(*argument);
@@ -371,6 +375,10 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
     for (const auto& instruction : code) {
         const auto type = instruction.type;
         switch (instruction.op) {
+        case Op::string_read:
+            if (instruction.operand>static_cast<std::size_t>(StringRead::try_real)
+                || type!=string_read_result(static_cast<StringRead>(instruction.operand))) invalid(instruction,"Invalid string reading");
+            break;
         case Op::convert_string:
             if ((!numeric(type) && type!=Type::string) || instruction.operand) invalid(instruction,"Invalid Str conversion");
             break;
@@ -644,6 +652,11 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
                 if (!(type&0x40000000U) || !scalar(static_cast<Type>(type&~0x40000000U))) invalid(instruction,"Console input requires scalar references");
             }
             break;
+        case Op::string_read: {
+            const auto method=static_cast<StringRead>(instruction.operand);
+            if (string_read_try(method)) require(reference_type(string_read_number(method)));
+            require(reference_type(Type::integer)); require(Type::string); stack.push_back(instruction.type); break;
+        }
         case Op::convert_string: require(reference_type(Type::string)); require(instruction.type); break;
         case Op::try_parse: case Op::val:
             if (instruction.op==Op::val) require(reference_type(Type::integer));

@@ -57,6 +57,43 @@ void runtime_error(std::string_view source, std::string_view code) {
     error([&] { (void)run(source); }, code,source);
 }
 
+void string_cursor_input() {
+    result("begin var p:=1; Writeln(ReadIntegerFromString('  -42,7',p),' ',p); Writeln('[',ReadWordFromString('  -42,7',p),'] ',p); end.","-42 6\n[,7] 8\n");
+    result("begin var p:=1; Writeln(PABCSystem.ReadIntegerFromString('12abc',p),' ',p); Writeln(ReadWordFromString('12abc',p),' ',p); end.","12 3\nabc 6\n");
+    result("begin var p:=1; var s:='-21474836480'; Writeln(ReadIntegerFromString(s,p),' ',p); Writeln(ReadIntegerFromString(s,p),' ',p); end.","-2147483648 12\n0 13\n");
+    result("begin var p:=1; var s:='1.5 tail'; Writeln(ReadRealFromString(s,p),' ',p); Writeln(StringIsEmpty(s,p),' ',p); Writeln(ReadWordFromString(s,p),' ',p); Writeln(StringIsEmpty(s,p),' ',p); end.","1.5 4\nFalse 5\ntail 9\nTrue 9\n");
+    result("begin var p:=1; var s:=#8195'🌍 x'; Writeln(ReadWordFromString(s,p),' ',p); Writeln(StringIsEmpty(s,p),' ',p); Writeln(ReadWordFromString(s,p),' ',p); Writeln(StringIsEmpty(s,p),' ',p); end.","🌍 4\nFalse 5\nx 6\nTrue 6\n");
+    result("begin var p:=1; Writeln('[',ReadWordFromString('',p),'] ',p); p:=2147483647; Writeln(StringIsEmpty('',p),' ',p); end.","[] 1\nTrue 2147483647\n");
+    result("begin var p:=1; var n:=41; Writeln(TryReadIntegerFromString('bad 7',p,n),' ',p,' ',n); p:=5; Writeln(TryReadIntegerFromString('bad 7',p,n),' ',p,' ',n); end.","False 1 41\nTrue 6 7\n");
+    result("begin var p:=1; var n:real:=7; Writeln(TryReadRealFromString('bad 1.5',p,n),' ',p,' ',n); p:=5; Writeln(TryReadRealFromString('bad 1.5',p,n),' ',p,' ',n); end.","False 1 0\nTrue 8 1.5\n");
+    result("begin var p:=1; var n:=7; Writeln(TryReadIntegerFromString('-21474836480',p,n),' ',p,' ',n); Writeln(TryReadIntegerFromString('',p,n),' ',p,' ',n); end.","False 1 7\nFalse 1 7\n");
+    result("begin var p:=1; Writeln(TryReadIntegerFromString('42',p,p),' ',p); p:=1; Writeln(TryReadIntegerFromString('bad',p,p),' ',p); end.","True 42\nFalse 1\n");
+    result("begin var l:=new List<integer>; l.Add(2); foreach var x in l do Writeln(StringIsEmpty('a',l[0]),' ',x); end.","True 2\n");
+    result("begin var p:=1; var l:=new List<integer>; l.Add(7); foreach var x in l do Writeln(TryReadIntegerFromString('bad',p,l[0]),' ',x,' ',p); end.","False 7 1\n");
+    runtime_error("begin var l:=new List<integer>; l.Add(1); var n:integer; foreach var x in l do TryReadIntegerFromString('bad',l[0],n); end.","E_MODIFIED");
+    runtime_error("begin var p:=1; var l:=new List<real>; l.Add(7); foreach var x in l do TryReadRealFromString('bad',p,l[0]); end.","E_MODIFIED");
+    runtime_error("begin var p:=1; ReadIntegerFromString('2147483648',p); end.","E_OVERFLOW");
+    runtime_error("begin var p:=1; ReadIntegerFromString('x',p); end.","E_FORMAT");
+    runtime_error("begin var p:=100; ReadIntegerFromString('x',p); end.","E_FORMAT");
+    runtime_error("begin var p:=100; ReadWordFromString('x',p); end.","E_BOUNDS");
+    runtime_error("begin var p:=0; StringIsEmpty('',p); end.","E_BOUNDS");
+    runtime_error("begin var p:=0; ReadIntegerFromString('',p); end.","E_BOUNDS");
+    runtime_error("begin var p:=1; ReadRealFromString('x',p); end.","E_FORMAT");
+    for (const auto* name:{"ReadWordFromString","ReadIntegerFromString","ReadRealFromString","StringIsEmpty"})
+        runtime_error(std::string("begin var p:=1; ")+name+"(nil,p); end.","E_NIL");
+    for (const auto source:{"begin ReadWordFromString('x',1); end.","begin var p:int64; ReadWordFromString('x',p); end.",
+        "begin var p:integer; var n:real; TryReadIntegerFromString('1',p,n); end.","begin var p,n:integer; TryReadRealFromString('1',p,n); end.",
+        "begin var p:integer; TryReadIntegerFromString('1',p,2); end.","begin for var p:=1 to 2 do ReadIntegerFromString('1',p); end."}) compile_error(source,"E_TYPE");
+    auto program=abc::compile("begin var p:=1; Writeln(ReadIntegerFromString('1',p)); end.");
+    for (auto& instruction:program.code) if (instruction.op==abc::Op::string_read) instruction.operand=99;
+    error([&]{abc::verify(program);},"E_BYTECODE");
+    program=abc::compile("begin var p:=1; Writeln(ReadIntegerFromString('1',p)); end.");
+    for (auto& instruction:program.code) if (instruction.op==abc::Op::string_read) instruction.type=abc::Type::real;
+    error([&]{abc::verify(program);},"E_BYTECODE");
+    abc::ExecutionOptions options; std::size_t polls=0; options.cancelled=[&]{return ++polls>20;};
+    error([&]{(void)run("begin var p:=1; ReadIntegerFromString(StringOfChar(' ',10000)+'1',p); end.","",options);},"E_CANCELLED");
+}
+
 void string_conversions() {
     result("begin var n:=7; var r:real:=7; Writeln('bad'.TryToInteger(n),' ',n); Writeln('bad'.TryToReal(r),' ',r); Writeln('42'.TryToInteger(n),' ',n); end.","False 7\nFalse 0\nTrue 42\n");
     compile_error("begin var s:='42'; for var n:=1 to 2 do s.TryToInteger(n); end.","E_TYPE");
@@ -2088,6 +2125,7 @@ int main() {
     structural_output();
     try_console_read();
     string_conversions();
+    string_cursor_input();
     sequence_mutations();
     arithmetic();
     verifier();

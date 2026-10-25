@@ -99,8 +99,15 @@ enum class Op {
     read_lines, write_lines, array_copy, array_high, sequence_sort, sequence_fill, mutate_string, increment, read_value,
     endpoint_call, buffer_call, association_call, linked_call, file_print, file_newline, file_read, file_skip_line, file_output,
     iteration_version, iteration_check, set_character, random_array, fill_random_array, sequence_mutate, swap_values, write_array,
-    bit_not, bit_and, bit_or, bit_xor, shift_left, shift_right, read_console, read_array, console_output, array_query, write_matrix, object_text, print_output, try_read, convert_string, try_parse, val
+    bit_not, bit_and, bit_or, bit_xor, shift_left, shift_right, read_console, read_array, console_output, array_query, write_matrix, object_text, print_output, try_read, convert_string, try_parse, val, string_read
 };
+
+enum class StringRead { integer, real, word, is_empty, try_integer, try_real };
+inline bool string_read_try(StringRead method) { return method==StringRead::try_integer || method==StringRead::try_real; }
+inline Type string_read_number(StringRead method) { return method==StringRead::try_real ? Type::real : Type::integer; }
+inline Type string_read_result(StringRead method) {
+    return method==StringRead::integer ? Type::integer : method==StringRead::real ? Type::real : method==StringRead::word ? Type::string : Type::boolean;
+}
 
 enum class ArrayQuery { length, upper_bound, lower_bound, rank, length_or_zero };
 
