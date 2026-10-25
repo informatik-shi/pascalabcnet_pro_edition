@@ -45,6 +45,23 @@ def main():
                 if gui.returncode:
                     raise RuntimeError(f"Qt bilingual error GUI failed: {gui.returncode}, {gui.stderr!r}")
             runner = str(folder / "bin" / "abc.exe")
+            console = subprocess.run([runner, "run", str(folder / "examples" / "console-input.pas")],
+                                     input="7 8 tail\n1 2 3 rest\n", text=True, encoding="utf-8",
+                                     capture_output=True, cwd=folder, env=env, timeout=10)
+            if console.returncode or console.stdout != "Два целых: Сумма: 15\nТри числа: 1, 2, 3\n":
+                raise RuntimeError(f"{name} shared console input failed: {console.stdout!r}, {console.stderr!r}")
+            console_source = folder / "Консольный ввод.pas"
+            console_source.write_text("begin var c:char; Readln(c); Writeln(Ord(c)); end.", encoding="utf-8")
+            console = subprocess.run([runner, "run", str(console_source)], input=b"\r\n",
+                                     capture_output=True, cwd=folder, env=env, timeout=10)
+            if console.returncode or console.stdout != b"13\n":
+                raise RuntimeError(f"{name} CRLF input was changed by the host runtime: {console.stdout!r}, {console.stderr!r}")
+            console_source.write_text("begin\n var n:integer;\n Read(n);\nend.", encoding="utf-8")
+            console = subprocess.run([runner, "run", str(console_source)], input="bad\n", text=True, encoding="utf-8",
+                                     capture_output=True, cwd=folder, env=env, timeout=10)
+            if (console.returncode != 1 or "E_INPUT" not in console.stderr or f"{console_source}:3:" not in console.stderr
+                    or "EN:" not in console.stderr or "RU:" not in console.stderr):
+                raise RuntimeError(f"{name} bilingual console error failed: {console.stderr!r}")
             example = subprocess.run([runner, "run", str(folder / "examples" / "sum.pas")],
                                      input="10\n", text=True, encoding="utf-8", capture_output=True,
                                      cwd=folder, env=env, timeout=10)
@@ -351,6 +368,7 @@ def main():
             results[-1]["reverse_shuffle_swap"] = "passed"
             results[-1]["extended_math"] = "passed"
             results[-1]["arrays_output_and_bitwise"] = "passed"
+            results[-1]["shared_console_and_readarray"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 

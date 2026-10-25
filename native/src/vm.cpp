@@ -8,6 +8,7 @@
 #include "text_file.hpp"
 #include "integer_values.hpp"
 #include "random.hpp"
+#include "console_input.hpp"
 
 #include <charconv>
 #include <algorithm>
@@ -131,68 +132,6 @@ void append_collection_text(std::u16string& text, const Value& value, const Inst
     text += part; text += u' ';
 }
 
-Value read_line(std::istream& input, const Instruction& instruction) {
-    constexpr std::size_t maximum_line = 1'048'576;
-    std::string line;
-    bool received = false;
-    char c;
-    while (input.get(c)) {
-        received = true;
-        if (c == '\n') break;
-        if (line.size() == maximum_line) trap(instruction, RuntimeError::input_limit);
-        line += c;
-    }
-    if (input.bad()) trap(instruction, RuntimeError::input_stream);
-    if (!received) trap(instruction, RuntimeError::input_end);
-    if (!line.empty() && line.back() == '\r') line.pop_back();
-    if (instruction.type == Type::string || instruction.type==Type::character) {
-        try {
-            auto text=from_utf8(line);
-            if (instruction.type==Type::string) return text;
-            if (text.empty()) trap(instruction,RuntimeError::input_empty);
-            return text.front();
-        }
-        catch (const std::invalid_argument&) { trap(instruction, RuntimeError::input_encoding); }
-    }
-    const auto first = line.find_first_not_of(" \t");
-    const auto last = line.find_last_not_of(" \t");
-    if (first == std::string::npos) trap(instruction, RuntimeError::input_empty);
-    auto text = std::string_view(line).substr(first, last - first + 1);
-    if (instruction.type == Type::boolean) {
-        std::string normalized(text);
-        for (auto& ch : normalized) if (ch >= 'A' && ch <= 'Z') ch = static_cast<char>(ch + 32);
-        if (normalized == "true") return true;
-        if (normalized == "false") return false;
-        trap(instruction, RuntimeError::input_boolean);
-    }
-    if (text.starts_with('+')) text.remove_prefix(1);
-    const auto parse = [&]<class T>() -> Value {
-        if constexpr (std::is_floating_point_v<T>) {
-            double value = 0;
-            if (!parse_real(text, value)) trap(instruction, RuntimeError::input_real);
-            return value;
-        } else {
-            T value{};
-            const auto result = std::from_chars(text.data(), text.data() + text.size(), value);
-            if (result.ec != std::errc{} || result.ptr != text.data() + text.size())
-                trap(instruction, RuntimeError::input_range, type_name(instruction.type));
-            return value;
-        }
-    };
-    switch (instruction.type) {
-    case Type::integer: return parse.operator()<std::int32_t>();
-    case Type::word: return parse.operator()<std::uint16_t>();
-    case Type::byte: return parse.operator()<std::uint8_t>();
-    case Type::shortint: return parse.operator()<std::int8_t>();
-    case Type::smallint: return parse.operator()<std::int16_t>();
-    case Type::longword: return parse.operator()<std::uint32_t>();
-    case Type::uint64: return parse.operator()<std::uint64_t>();
-    case Type::int64: return parse.operator()<std::int64_t>();
-    case Type::real: return parse.operator()<double>();
-    default: trap(instruction, RuntimeError::invalid_bytecode);
-    }
-}
-
 } // namespace
 
 void execute(const Program& program, std::istream& input, std::ostream& output, const ExecutionOptions& options) {
@@ -204,6 +143,7 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
     LinkedRuntime linked{values,{}};
     FileContext files;
     RandomContext random;
+    ConsoleInput console(input,options);
     std::vector<std::shared_ptr<Cell>> globals(program.locals.size());
     for (std::size_t i = 0; i < program.locals.size(); ++i) if (program.locals[i].global)
         globals[i] = values.cell(program.locals[i].type,values.zero(program.locals[i].type));
@@ -232,6 +172,19 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
         if (steps++ >= options.instruction_limit) trap(instruction, RuntimeError::instruction_limit);
         if (options.cancelled && options.cancelled()) trap(instruction, RuntimeError::cancelled);
         switch (instruction.op) {
+        case Op::read_console: {
+            std::vector<std::shared_ptr<Cell>> targets(instruction.operand/2);
+            for (auto i=targets.size();i>0;--i) targets[i-1]=std::get<std::shared_ptr<Cell>>(pop());
+            for (const auto& target:targets) values.write(target,console.read(target->type,instruction.location));
+            if (instruction.operand&1U) console.skip_line(instruction.location);
+            break;
+        }
+        case Op::read_array: {
+            const auto target=std::get<std::shared_ptr<Aggregate>>(pop());
+            if (target->nil) trap(instruction,RuntimeError::nil_reference);
+            for (const auto& cell:target->items) values.write(cell,console.read(cell->type,instruction.location));
+            console.skip_line(instruction.location); break;
+        }
         case Op::bit_not: {
             const auto value=pop();
             stack.push_back(std::visit([&](const auto& n)->Value {
@@ -580,7 +533,7 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
             }
             break;
         }
-        case Op::read_value: stack.push_back(read_line(input,instruction)); break;
+        case Op::read_value: stack.push_back(console.read(instruction.type,instruction.location)); break;
         case Op::file_print: {
             const auto value=pop(); auto& file=text_file(stack.back(),instruction.location);
             text_write(file,file_text(value,instruction),instruction.location); break;
@@ -902,7 +855,7 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
         case Op::jump_false: if (!std::get<bool>(pop())) frame.pc = instruction.operand; break;
         case Op::print: write(format(pop(), instruction), instruction); break;
         case Op::newline: write("\n", instruction); break;
-        case Op::read_line: (program.locals[instruction.operand].global ? globals : locals)[instruction.operand]->value = read_line(input, instruction); break;
+        case Op::read_line: values.write((program.locals[instruction.operand].global ? globals : locals)[instruction.operand],console.read(instruction.type,instruction.location)); console.skip_line(instruction.location); break;
         case Op::halt: return;
         }
     }

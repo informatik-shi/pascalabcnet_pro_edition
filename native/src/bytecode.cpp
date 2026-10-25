@@ -53,6 +53,8 @@ private:
     void expression(const hir::Expr& node) {
         if (node.type == Type::invalid) throw Error("E_HIR", node.location, "Unresolved expression type");
         switch (node.kind) {
+        case hir::ExprKind::read_array:
+            expression(*node.left); emit(Op::read_array,node.left->type,0,node.location); break;
         case hir::ExprKind::write_array:
             expression(*node.left); expression(*node.right); emit(Op::write_array,node.left->type,node.local,node.location); break;
         case hir::ExprKind::swap_values:
@@ -210,7 +212,7 @@ private:
             if (node.target) emit(Op::drop,Type::text_file,0,node.location);
             break;
         case hir::StmtKind::read:
-            if (node.target->type==Type::text_file) {
+            if (node.target && node.target->type==Type::text_file) {
                 expression(*node.target);
                 for (const auto& target:node.arguments) {
                     reference(*target); emit(Op::file_read,target->type,0,target->location);
@@ -218,8 +220,8 @@ private:
                 if (node.newline) emit(Op::file_skip_line,Type::text_file,0,node.location);
                 emit(Op::drop,Type::text_file,0,node.location); break;
             }
-            reference(*node.target); emit(Op::read_value,node.target->type,0,node.location);
-            emit(Op::store_ref,node.target->type,0,node.location); break;
+            for (const auto& target:node.arguments) reference(*target);
+            emit(Op::read_console,Type::unit,node.arguments.size()*2+(node.newline ? 1U : 0U),node.location); break;
         case hir::StmtKind::increment:
             reference(*node.target); if (node.expression) expression(*node.expression);
             emit(Op::increment,node.target->type,node.newline ? 1 : 0,node.location); break;
@@ -344,6 +346,13 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
     for (const auto& instruction : code) {
         const auto type = instruction.type;
         switch (instruction.op) {
+        case Op::read_console:
+            if (type!=Type::unit || !instruction.operand || instruction.operand/2>16) invalid(instruction,"Invalid console input"); break;
+        case Op::read_array:
+            if (!compound(type) || type_info(program,type).kind!=CompoundKind::array || instruction.operand
+                || (type_info(program,type).element!=Type::integer && type_info(program,type).element!=Type::real && type_info(program,type).element!=Type::string))
+                invalid(instruction,"Invalid array input");
+            break;
         case Op::write_array:
             if (!compound(type) || type_info(program,type).kind!=CompoundKind::array || !scalar(type_info(program,type).element) || instruction.operand>3)
                 invalid(instruction,"Invalid typed array output");
@@ -395,7 +404,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
                 invalid(instruction,"Collection text output requires scalar elements");
             break;
         case Op::read_value:
-            if (!valid_type(type)) invalid(instruction,"Invalid read type"); break;
+            if (!valid_type(type) || instruction.operand) invalid(instruction,"Invalid read type"); break;
         case Op::file_print: case Op::file_read:
             if (!scalar(type) || instruction.operand) invalid(instruction,"Invalid typed file IO"); break;
         case Op::file_newline: case Op::file_skip_line:
@@ -570,6 +579,13 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if (result != Type::unit) stack.push_back(result);
             break;
         }
+        case Op::read_console:
+            for (std::size_t i=0;i<instruction.operand/2;++i) {
+                const auto type=static_cast<unsigned>(pop());
+                if (!(type&0x40000000U) || !scalar(static_cast<Type>(type&~0x40000000U))) invalid(instruction,"Console input requires scalar references");
+            }
+            break;
+        case Op::read_array: require(instruction.type); break;
         case Op::read_value: stack.push_back(instruction.type); break;
         case Op::file_print: require(instruction.type); require(Type::text_file); stack.push_back(Type::text_file); break;
         case Op::file_read: require(reference_type(instruction.type)); require(Type::text_file); stack.push_back(Type::text_file); break;

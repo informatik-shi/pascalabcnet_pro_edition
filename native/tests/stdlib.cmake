@@ -1,7 +1,11 @@
 if(NOT DEFINED ABC_FIXTURE_NAME)
     set(ABC_FIXTURE_NAME stdlib-compat)
 endif()
-execute_process(COMMAND "${ABC_RUNNER}" run "${ABC_FIXTURE_DIR}/${ABC_FIXTURE_NAME}.pas"
+set(input_option)
+if(EXISTS "${ABC_FIXTURE_DIR}/${ABC_FIXTURE_NAME}.in")
+    list(APPEND input_option INPUT_FILE "${ABC_FIXTURE_DIR}/${ABC_FIXTURE_NAME}.in")
+endif()
+execute_process(COMMAND "${ABC_RUNNER}" run "${ABC_FIXTURE_DIR}/${ABC_FIXTURE_NAME}.pas" ${input_option}
     RESULT_VARIABLE status OUTPUT_VARIABLE actual ERROR_VARIABLE diagnostic ENCODING UTF-8 TIMEOUT 10)
 if(NOT status EQUAL 0)
     message(FATAL_ERROR "Standard library program failed: ${status}\n${diagnostic}")

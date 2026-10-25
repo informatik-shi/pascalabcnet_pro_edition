@@ -29,7 +29,7 @@ ABC Native — Qt — экспериментальная версия
 Распакуйте архив целиком и запустите Launch.cmd.
 Ночная тема включена по умолчанию.
 F8 — проверить программу. F9 — запустить.
-Когда программа ждёт Readln, введите значение в строке под консолью и нажмите Enter.
+Когда программа ждёт Read/Readln, введите значение в строке под консолью и нажмите Enter.
 Кнопка «Остановить» завершает выполняемую программу.
 Ошибки выполнения показываются на английском (EN) и русском (RU),
 с кодом ошибки, строкой и столбцом исходника.
@@ -41,7 +41,7 @@ DynArray<T>, SimpleSet<T>, AssocArray<K,V>, LinkedList<T>, LinkedListNode<T>, Si
 Для классов Collections добавьте uses Collections; Для ReadFileToEnd/WriteStringToFile — uses FilesOperations;
 Примеры: examples/structures.pas, examples/files.pas, examples/collections.pas, examples/buffers.pas,
 examples/associations.pas, examples/linked-lists.pas, examples/single-nodes.pas, examples/standard-library.pas,
-examples/text-numbers.pas, examples/string-editing.pas, examples/nil-strings.pas, examples/directories.pas, examples/renames.pas, examples/text-files.pas, examples/text-methods.pas, examples/text-file-changes.pas, examples/loops.pas, examples/foreach.pas, examples/characters.pas, examples/file-operations.pas, examples/small-integers.pas, examples/unsigned-integers.pas, examples/random-arrays.pas, examples/reverse-shuffle.pas, examples/extended-math.pas, examples/array-output.pas, examples/bitwise.pas.
+examples/text-numbers.pas, examples/string-editing.pas, examples/nil-strings.pas, examples/directories.pas, examples/renames.pas, examples/text-files.pas, examples/text-methods.pas, examples/text-file-changes.pas, examples/loops.pas, examples/foreach.pas, examples/characters.pas, examples/file-operations.pas, examples/small-integers.pas, examples/unsigned-integers.pas, examples/random-arrays.pas, examples/reverse-shuffle.pas, examples/extended-math.pas, examples/array-output.pas, examples/bitwise.pas, examples/console-input.pas.
 Text/TextFile: Assign, Reset, Rewrite, Append, Read/Readln, Write/Writeln, Eof, Flush и Close.
 Методы Text: ReadWord, ReadToEnd, Name/FullName, Write/Writeln, Print/Println, Erase/Rename и чтение значений.
 Добавлены создание, удаление и переименование файлов и каталогов, работа с текущей папкой программы.

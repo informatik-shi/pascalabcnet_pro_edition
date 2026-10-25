@@ -59,6 +59,7 @@ int cli(const std::vector<std::string>& arguments) {
 int wmain(int argc, wchar_t** argv) {
     // Preserve explicit CRLF inside strings instead of the CRT producing CRCRLF.
     _setmode(_fileno(stdout),_O_BINARY);
+    _setmode(_fileno(stdin),_O_BINARY); // ConsoleInput decodes UTF-8 and retains CR/LF itself.
     std::vector<std::string> arguments;
     for (int i = 0; i < argc; ++i) {
         std::u16string value;

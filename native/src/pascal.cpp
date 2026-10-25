@@ -381,12 +381,13 @@ private:
         } else if (is("readln") || is("read")) {
             result.kind = SyntaxStmtKind::read;
             consume();
-            expect("(");
-            if (!is(")")) do {
-                if (result.arguments.size()>=17) fail("Too many Read arguments");
-                result.arguments.push_back(expression());
-            } while (accept(","));
-            expect(")");
+            if (accept("(")) {
+                if (!is(")")) do {
+                    if (result.arguments.size()>=17) fail("Too many Read arguments");
+                    result.arguments.push_back(expression());
+                } while (accept(","));
+                expect(")");
+            }
         } else if (current_.kind == TokenKind::name && !reserved(current_.text)) {
             const auto target = name();
             result.names.push_back(target);
@@ -1178,12 +1179,17 @@ private:
         return result;
     }
     bool bind_array_output(hir::Expr& result, std::string_view name, std::string_view unit = {}, bool member = false) {
-        if ((member ? name!="write" && name!="writeln" : name!="writearray" && name!="writelnarray")
+        if ((member ? name!="write" && name!="writeln" : name!="writearray" && name!="writelnarray" && name!="readarray")
             || (unit.empty() ? !imported_units_.contains("arrays") : unit!="arrays")) return false;
         if (result.arguments.size()!=1 && result.arguments.size()!=2) throw Error("E_TYPE",result.location,"Array output requires an array and optional delimiter");
         result.left=std::move(result.arguments[0]);
         const auto& type=info(result.left->type,result.location);
         if (type.kind!=CompoundKind::array) throw Error("E_TYPE",result.location,"Array output requires an array");
+        if (name=="readarray") {
+            if (result.arguments.size()!=1 || (type.element!=Type::integer && type.element!=Type::real && type.element!=Type::string))
+                throw Error("E_TYPE",result.location,"ReadArray requires an integer, real or string array");
+            result.arguments.clear(); result.kind=hir::ExprKind::read_array; result.type=Type::unit; return true;
+        }
         if (!scalar(type.element)) throw Error("E_UNSUPPORTED",result.location,"Array output currently requires scalar elements");
         if (result.arguments.size()==2) result.right=convert(std::move(result.arguments[1]),Type::string);
         else {
@@ -1537,10 +1543,15 @@ private:
             }
             break;
         case SyntaxStmtKind::read: {
-            if (source.arguments.empty()) throw Error("E_TYPE",result.location,"Read requires a file or variable");
-            result.kind = hir::StmtKind::read; result.target=expression(*source.arguments[0]);
+            result.kind = hir::StmtKind::read;
             result.newline=source.token.text=="readln";
-            if (result.target->type==Type::text_file) {
+            if (source.arguments.empty()) {
+                if (!result.newline) throw Error("E_TYPE",result.location,"Read requires a file or variable");
+                break;
+            }
+            auto first=expression(*source.arguments[0]);
+            if (first->type==Type::text_file) {
+                result.target=std::move(first);
                 for (std::size_t i=1;i<source.arguments.size();++i) {
                     auto target=expression(*source.arguments[i]);
                     if (!lvalue(*target) || !scalar(target->type)) throw Error("E_TYPE",target->location,"File Read requires scalar variables");
@@ -1548,9 +1559,12 @@ private:
                 }
                 break;
             }
-            if (!result.newline) throw Error("E_UNSUPPORTED",result.location,"Console Read is not implemented; use Readln or Read with a Text file");
-            if (source.arguments.size()!=1 || !lvalue(*result.target) || !scalar(result.target->type))
-                throw Error("E_TYPE",result.location,"Readln requires a scalar variable");
+            if (source.arguments.size()>16) throw Error("E_TYPE",result.location,"Console Read accepts at most sixteen variables");
+            for (std::size_t i=0;i<source.arguments.size();++i) {
+                auto target=i==0 ? std::move(first) : expression(*source.arguments[i]);
+                if (!lvalue(*target) || !scalar(target->type)) throw Error("E_TYPE",target->location,"Console Read requires writable scalar variables");
+                result.arguments.push_back(std::move(target));
+            }
             break;
         }
         case SyntaxStmtKind::conditional:

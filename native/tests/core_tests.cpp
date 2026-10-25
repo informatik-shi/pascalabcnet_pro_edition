@@ -56,6 +56,51 @@ void runtime_error(std::string_view source, std::string_view code) {
     error([&] { (void)run(source); }, code,source);
 }
 
+void console_input() {
+    result("begin var a,b:integer; var x:real; var flag:boolean; Read(a,b,x,flag); Writeln(a,' ',b,' ',x,' ',flag); var s:string; Read(s); Writeln('[',s,']'); Readln; Readln(s); Writeln(s); end.","12 -3 1.5 True\n[ rest]\nnext\n","12 -3 1.5 TRUE rest\nnext\n");
+    result("begin var a,b:integer; Readln(a,b); Writeln(a,' ',b); var s:string; Readln(s); Writeln(s); end.","1 2\nnext\n"," 1 2 ignored\nnext\n");
+    result("begin var n:integer; Readln(n); Writeln(n); end.","42\n","\n  \t\n42 tail\n");
+    result("begin var s:string; Read(s); Writeln('[',s,']'); Read(s); Writeln('[',s,']'); Readln(); Readln(s); Writeln(s); end.","[  first line]\n[]\nnext\n","  first line\r\nnext\r\n");
+    result("begin Readln; Readln(); var n:integer; Readln(n); Writeln(n); end.","7\n","skip\nignore\n7\n");
+    result("begin Readln; Readln(); var c:char; Read(c); var s:string; Read(s); Writeln(Ord(c),' ',s.Length,' ',Ord(s[1])); end.","65535 1 65535\n");
+    result("begin var c,d:char; Read(c,d); Writeln(Ord(c),' ',Ord(d)); Readln; Readln(c); Writeln(Ord(c)); end.","55356 57101\n10\n","🌍\n\n");
+    result("begin var c:char; Readln(c); Writeln(Ord(c)); var s:string; Readln(s); Writeln(s); end.","13\nnext\n","\r\nnext\n");
+    result("begin var a:byte; var b:shortint; var c:smallint; var d:word; var e:longword; var f:uint64; var g:int64; Readln(a,b,c,d,e,f,g); Writeln(a,' ',b,' ',c,' ',d,' ',e,' ',f,' ',g); end.","255 -128 -32768 65535 4294967295 18446744073709551615 -9223372036854775808\n","255 -128 -32768 65535 4294967295 18446744073709551615 -9223372036854775808\n");
+    result("var a:array of integer; function Index:integer; begin Writeln(a[0]); Result:=1; end; begin a:=Arr(0,0); Read(a[0],a[Index()]); Writeln(a[0],' ',a[1]); end.","0\n9 8\n","9 8\n");
+    result("type R=record n:integer; end; begin var r:R; var a:=Arr(0); Readln(r.n,a[0]); Writeln(r.n,' ',a[0]); end.","8 9\n","8 9 tail\n");
+    result("uses Arrays; begin var a:=new integer[3]; ReadArray(a); a.Writeln(','); var s:string; Readln(s); Writeln(s); end.","1,2,3\nnext\n","1 2\n3 tail\nnext\n");
+    result("uses Arrays; begin var a:=new real[3]; Arrays.ReadArray(a); a.Writeln(','); end.","1.5,-2,30\n","1.5 -2 3e1\n");
+    result("uses Arrays; begin var a:=new string[3]; ReadArray(a); WritelnArray(a,'|'); var s:string; Readln(s); Writeln(s); end.","one two||\nnext\n","one two\nnext\n");
+    result("uses Arrays; begin var a:=new integer[0]; ReadArray(a); var n:integer; Readln(n); Writeln(n); end.","5\n","skip\n5\n");
+    result("uses Arrays; begin var n:integer; Read(n); var a:=new integer[2]; ReadArray(a); Writeln(n,' ',a[0],' ',a[1]); end.","7 8 9\n","7 8 9 tail\n");
+    result("uses Arrays; var a:array of integer; function Source:array of integer; begin Writeln('array'); Result:=a; end; begin a:=new integer[2]; ReadArray(Source()); a.Writeln; end.","array\n1 2\n","1 2\n");
+    error([&]{(void)run("begin var l:=new List<integer>; l.Add(1); foreach var x in l do Read(l[0]); end.","9\n");},"E_MODIFIED");
+    runtime_error("uses Arrays; begin var a:array of integer; ReadArray(a); end.","E_NIL");
+    error([&]{(void)run("uses Arrays; begin var a:=new integer[2]; ReadArray(a); end.","1\n");},"E_INPUT");
+    for (const auto input:{"256\n","-1\n","1.5\n","bad\n"}) error([&]{(void)run("begin var b:byte; Read(b); end.",input);},"E_INPUT");
+    for (const auto source:{"begin Read(); end.","begin var n:integer; Read(n,1); end.","begin var a:=Arr(1); Read(a); end.","begin for var i:=1 to 2 do Read(i); end.","begin foreach var c in 'ab' do Readln(c); end.","uses Arrays; begin var a:=new byte[2]; ReadArray(a); end.","uses Arrays; begin ReadArray(Arr(1),2); end."}) compile_error(source,"E_TYPE");
+    compile_error("begin var a:=Arr(1); ReadArray(a); end.","E_NAME");
+    std::istringstream input("9 8\n"); std::ostringstream output;
+    auto program=abc::compile("begin var a:=Arr(0); var b:array of integer; Read(a[0],b[0]); end.");
+    error([&]{abc::execute(program,input,output);},"E_NIL");
+    require(input.peek()=='9',"Console var arguments are captured before any input is consumed");
+    program=abc::compile("begin var n:integer; Readln(n); end.");
+    for (auto& instruction:program.code) if (instruction.op==abc::Op::read_console) instruction.operand=0;
+    error([&]{abc::verify(program);},"E_BYTECODE");
+    program=abc::compile("begin var n:integer; Read(n); end.");
+    for (auto& instruction:program.code) if (instruction.op==abc::Op::ref_local) instruction.op=abc::Op::load;
+    error([&]{abc::verify(program);},"E_BYTECODE");
+    program=abc::compile("uses Arrays; begin ReadArray(new integer[1]); end.");
+    for (auto& instruction:program.code) if (instruction.op==abc::Op::read_array) instruction.operand=1;
+    error([&]{abc::verify(program);},"E_BYTECODE");
+    result("begin var a:integer; Readln(a,a,a,a,a,a,a,a,a,a,a,a,a,a,a,a); Writeln(a); end.","16\n","1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16\n");
+    compile_error("begin var a:integer; Read(a,a,a,a,a,a,a,a,a,a,a,a,a,a,a,a,a); end.","E_TYPE");
+    error([&]{(void)run("begin var s:string; Read(s); end.",std::string(1'048'577,'x'));},"E_LIMIT");
+    error([&]{(void)run("begin var c:char; Read(c); end.","\xff\n");},"E_INPUT");
+    abc::ExecutionOptions options; std::size_t polls=0; options.cancelled=[&]{return ++polls>8;};
+    error([&]{(void)run("begin var n:integer; Read(n); end.",std::string(2048,' ')+'1'+"\n",options);},"E_CANCELLED");
+}
+
 void bitwise_operations() {
     result("begin Writeln(12 and 10,' ',12 or 10,' ',12 xor 10,' ',not 0,' ',not -1); Writeln(-8 shr 1,' ',1 shl 31,' ',1 shl 32,' ',1 shl -1,' ',-8 shr -1); end.","8 14 6 -1 0\n-4 -2147483648 1 -2147483648 -1\n");
     result("begin var a:int64:=1; Writeln(a shl 63,' ',a shl 64,' ',a shl 65,' ',(-9223372036854775808) shr 63); Writeln(not -9223372036854775808,' ',(not a) shr 1); end.","-9223372036854775808 1 2 -1\n9223372036854775807 -1\n");
@@ -1734,6 +1779,7 @@ int main() {
     extended_math();
     array_output();
     bitwise_operations();
+    console_input();
     sequence_mutations();
     arithmetic();
     verifier();
