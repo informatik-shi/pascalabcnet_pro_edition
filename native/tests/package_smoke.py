@@ -116,6 +116,7 @@ def main():
                 ("string-members.pas", "Целое: 12\nДробь: 3.5\nСлово: слово\nПо умолчанию: 7\nС запятой: 1.5\n"),
                 ("string-arrays.pas", "Слова: [Анна,Борис,Вера]\nЦелые: [10,-3,7]\nДроби: [1.5,2.25]\nСтрок: 3\n"),
                 ("school-bases.pas", "Двоичная: 101010\nШестнадцатеричная: FF\nИз HEX: 255\nБайты: 00000001 00000010\nКорень: 9\nСинус 30: 0.5\n"),
+                ("school-primes.pas", "7: True\n9: False\nБольшое простое: True\nБольшое составное: False\n"),
                 ("structures.pas", "Точка: 3 4\nФакториал 10: 3628800\n1\n2\n5\n8\nИмен: 2\nПервое имя: Анна\n"),
                 ("files.pas", "Привет из C++ интерпретатора!\nПрочитано строк: 2\nВторая строка\n"),
                 ("collections.pas", "Стек: 30 20 10 \nОчередь: Анна Борис Вера \nПустая очередь: True\n"),
@@ -423,6 +424,7 @@ def main():
             results[-1]["string_array_conversions"] = "passed"
             results[-1]["school_bases_and_math"] = "passed"
             results[-1]["bilingual_school_errors_and_unit_scope"] = "passed"
+            results[-1]["school_prime_integer_and_int64"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 

@@ -3,13 +3,81 @@
 #include <algorithm>
 #include <cmath>
 #include <numbers>
+#include <array>
 
 namespace abc::stdlib {
+namespace {
+bool small_prime(std::int32_t value, SourceLocation location, const ExecutionOptions& options) {
+    if (value<2) return false;
+    if (!(value&1)) return value==2;
+    const auto number=static_cast<std::uint32_t>(value);
+    for (std::uint32_t divisor=3,steps=0;divisor<=number/divisor;divisor+=2,++steps) {
+        if ((steps&255U)==0 && options.cancelled && options.cancelled()) throw runtime_error(RuntimeError::cancelled,location);
+        if (number%divisor==0) return false;
+    }
+    return true;
+}
+class Modular63 {
+    std::uint64_t modulus, steps=0;
+    SourceLocation location;
+    const ExecutionOptions& options;
+public:
+    Modular63(std::uint64_t n, SourceLocation l, const ExecutionOptions& o):modulus(n),location(l),options(o) {}
+    std::uint64_t multiply(std::uint64_t a, std::uint64_t b) {
+        std::uint64_t result=0;
+        while (b) {
+            if ((steps++&255U)==0 && options.cancelled && options.cancelled()) throw runtime_error(RuntimeError::cancelled,location);
+            // Every residue is below 2^63, so both sums fit uint64 on every target.
+            if (b&1U) result=(result+a)%modulus;
+            b>>=1;
+            if (b) a=(a+a)%modulus;
+        }
+        return result;
+    }
+    std::uint64_t power(std::uint64_t a, std::uint64_t exponent) {
+        std::uint64_t result=1;
+        while (exponent) {
+            if (exponent&1U) result=multiply(result,a);
+            exponent>>=1;
+            if (exponent) a=multiply(a,a);
+        }
+        return result;
+    }
+};
+bool large_prime(std::uint64_t number, SourceLocation location, const ExecutionOptions& options) {
+    constexpr std::array<unsigned,12> bases{2,3,5,7,11,13,17,19,23,29,31,37};
+    for (auto base:bases) if (number%base==0) return false;
+    auto odd=number-1; unsigned twos=0;
+    while (!(odd&1U)) { odd>>=1; ++twos; }
+    Modular63 arithmetic(number,location,options);
+    // Sorenson/Webster, Theorem 1.1: the first twelve prime bases cover int64.
+    // https://arxiv.org/abs/1509.00864
+    for (auto base:bases) {
+        auto residue=arithmetic.power(base,odd);
+        if (residue==1 || residue==number-1) continue;
+        bool passed=false;
+        for (unsigned i=1;i<twos;++i) {
+            residue=arithmetic.multiply(residue,residue);
+            if (residue==number-1) { passed=true; break; }
+            if (residue==1) break;
+        }
+        if (!passed) return false;
+    }
+    return true;
+}
+}
 Value invoke_school(Function function, std::span<const Value> arguments, SourceLocation location, const ExecutionOptions& options) {
     constexpr std::u16string_view alphabet=u"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
     const auto check=[&](std::size_t index) {
         if ((index&255U)==0 && options.cancelled && options.cancelled()) throw runtime_error(RuntimeError::cancelled,location);
     };
+    if (function==Function::school_is_prime) {
+        const auto number=std::holds_alternative<std::int32_t>(arguments[0]) ? std::int64_t(std::get<std::int32_t>(arguments[0])) : std::get<std::int64_t>(arguments[0]);
+        // The original BPSW entry delegates every n <= MaxInt to integer(n).
+        if (number<INT32_MIN) throw runtime_error(RuntimeError::integer_overflow,location);
+        return number<=INT32_MAX ? small_prime(static_cast<std::int32_t>(number),location,options)
+            : large_prime(static_cast<std::uint64_t>(number),location,options);
+    }
     if (function>=Function::school_sin_degrees && function<=Function::school_tan_degrees) {
         const auto radians=std::get<double>(arguments[0])*std::numbers::pi/180.0;
         if (!std::isfinite(radians)) throw runtime_error(RuntimeError::real_overflow,location);

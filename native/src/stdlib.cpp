@@ -30,6 +30,7 @@ std::span<const Signature> signatures() {
         add("dec",{Type::string,Type::integer},Type::int64,Function::school_dec,"school");
         add("tobase",{Type::int64,Type::integer},Type::string,Function::school_to_base,"school");
         add("perfectsquare",{Type::int64},Type::int64,Function::school_perfect_square,"school");
+        for (auto type:{Type::integer,Type::int64}) add("isprime",{type},Type::boolean,Function::school_is_prime,"school");
         for (unsigned count=1;count<=3;++count) {
             std::vector<Type> parameters{Type::int64}; if (count>1) parameters.push_back(Type::integer); if (count>2) parameters.push_back(Type::string);
             add("binformat",std::move(parameters),Type::string,Function::school_bin_format,"school");

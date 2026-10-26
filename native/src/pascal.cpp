@@ -851,7 +851,7 @@ private:
                 bind_builtin(*result,source.token.text,source.left->token.text); break;
             }
             result->left = expression(*source.left); const auto receiver = result->left->type;
-            if (imported_units_.contains("school") && integer_type(receiver) && (source.token.text=="tobase" || source.token.text=="perfectsquare")) {
+            if (imported_units_.contains("school") && integer_type(receiver) && (source.token.text=="tobase" || source.token.text=="perfectsquare" || source.token.text=="isprime")) {
                 result->arguments.push_back(std::move(result->left));
                 for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
                 result->kind=hir::ExprKind::call; bind_builtin(*result,source.token.text,"school"); break;

@@ -58,6 +58,41 @@ void runtime_error(std::string_view source, std::string_view code) {
 }
 
 void school_library() {
+    const auto reference=[](std::uint64_t n) {
+        if (n<2) return false;
+        if (!(n&1U)) return n==2;
+        for (std::uint64_t d=3;d<=n/d;d+=2) if (n%d==0) return false;
+        return true;
+    };
+    for (const auto& [first,last]:{std::pair<std::uint64_t,std::uint64_t>{0,5000},{2147483648ULL,2147484648ULL}}) {
+        std::vector<bool> sieve;
+        if (first==0) {
+            sieve.resize(static_cast<std::size_t>(last)+1,true); sieve[0]=sieve[1]=false;
+            for (std::uint64_t d=2;d<=last/d;++d) if (sieve[static_cast<std::size_t>(d)])
+                for (auto multiple=d*d;multiple<=last;multiple+=d) sieve[static_cast<std::size_t>(multiple)]=false;
+        }
+        std::string expected;
+        for (auto n=first;n<=last;++n) if (first==0 ? sieve[static_cast<std::size_t>(n)] : reference(n)) expected+=std::to_string(n)+',';
+        result("uses School; begin for var n:int64:="+std::to_string(first)+" to "+std::to_string(last)+" do if IsPrime(n) then Write(n,','); end.",expected);
+    }
+    {
+        std::uint64_t p=3037000499ULL; while (!reference(p)) --p;
+        auto q=p-2; while (!reference(q)) --q;
+        // The high prime is independently listed at t5k.org/curios/page.php?number_id=10747.
+        result("uses School; begin Writeln(IsPrime(9223372036854775783),' ',IsPrime("+std::to_string(p*q)+")); end.","True False\n");
+    }
+    result("uses School; begin Writeln(IsPrime(-7),' ',IsPrime(0),' ',IsPrime(1),' ',IsPrime(2),' ',IsPrime(7),' ',IsPrime(9)); var b:byte:=7; Writeln(b.IsPrime,' ',(81).IsPrime); end.","False False False True True False\nTrue False\n");
+    result("uses School; begin Writeln(IsPrime(2147483647),' ',School.IsPrime(4294967297),' ',IsPrime(2305843009213693951),' ',IsPrime(MaxInt64),' ',IsPrime(3825123056546413051)); Writeln(IsPrime(4611686014132420609)); end.","True False True False False\nFalse\n");
+    result("uses School; begin SetRandomSeed(1); IsPrime(2305843009213693951); Writeln(Random(100)); end.","24\n");
+    result("uses School; function IsPrime(n:integer):boolean; begin Result:=false; end; begin Writeln(IsPrime(7),' ',School.IsPrime(7),' ',(7).IsPrime); end.","False True True\n");
+    runtime_error("uses School; begin var n:int64:=-2147483649; IsPrime(n); end.","E_OVERFLOW");
+    compile_error("begin Writeln(IsPrime(7)); end.","E_NAME");
+    compile_error("uses School; begin IsPrime(7.0); end.","E_TYPE");
+    compile_error("uses School; begin var n:uint64:=7; IsPrime(n); end.","E_TYPE");
+    {
+        abc::ExecutionOptions options; std::size_t polls=0; options.cancelled=[&]{return ++polls>15;};
+        error([&]{(void)run("uses School; begin IsPrime(2305843009213693951); end.","",options);},"E_CANCELLED");
+    }
     result("uses School; begin Writeln(Bin(0),' ',Bin(-10),' ',Oct(511),' ',Hex(255)); Writeln(School.Dec('ff',16),' ',School.Dec('',2),' ',Dec('1010',2)); Writeln(ToBase(-8,2),' ',ToBase(0,36),' ',ToBase(35,36),' ',ToBase(MaxInt64,16)); end.","0 1010 777 FF\n255 0 10\n0 0 Z 7FFFFFFFFFFFFFFF\n");
     result("uses School; begin Writeln((255).ToBase(16),' ',(81).PerfectSquare); School.Dec('ff',16); Dec('ff',16); Dec('F',16); var n:=7; Dec(n); Writeln(n); end.","FF 9\n6\n");
     result("uses School; begin Writeln(BinFormat(0),'|',BinFormat(1,2),'|',BinFormat(-5,-1)); Writeln(BinFormat(256,0,':')); Writeln(BinFormat(1,2,nil)); end.","00000000|00000000 00000001|00000101\n00000001:00000000\n0000000000000001\n");
