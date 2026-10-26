@@ -169,7 +169,7 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
     stdlib::Context services{files,random,console,[&](std::u16string_view text,SourceLocation location) {
         Instruction instruction; instruction.location=location;
         write(text,instruction);
-    },delimiter_value};
+    },delimiter_value,options};
     while (!frames.empty()) {
         auto& frame = frames.back(); auto& locals = frame.locals;
         const auto& instruction = (*frame.code)[frame.pc++]; values.location = instruction.location;

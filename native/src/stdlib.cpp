@@ -7,6 +7,7 @@
 #include "random.hpp"
 #include "console_input.hpp"
 #include "formatting.hpp"
+#include "school.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -24,6 +25,17 @@ std::span<const Signature> signatures() {
         };
         add("readfiletoend",{Type::string},Type::string,Function::files_read_to_end,"filesoperations");
         add("writestringtofile",{Type::string,Type::string},Type::unit,Function::files_write_string,"filesoperations");
+        for (const auto& [name,function]:{std::pair<std::string_view,Function>{"bin",Function::school_bin},{"oct",Function::school_oct},{"hex",Function::school_hex}})
+            add(name,{Type::int64},Type::string,function,"school");
+        add("dec",{Type::string,Type::integer},Type::int64,Function::school_dec,"school");
+        add("tobase",{Type::int64,Type::integer},Type::string,Function::school_to_base,"school");
+        add("perfectsquare",{Type::int64},Type::int64,Function::school_perfect_square,"school");
+        for (unsigned count=1;count<=3;++count) {
+            std::vector<Type> parameters{Type::int64}; if (count>1) parameters.push_back(Type::integer); if (count>2) parameters.push_back(Type::string);
+            add("binformat",std::move(parameters),Type::string,Function::school_bin_format,"school");
+        }
+        for (const auto& [name,function]:{std::pair<std::string_view,Function>{"sindegrees",Function::school_sin_degrees},{"cosdegrees",Function::school_cos_degrees},{"tandegrees",Function::school_tan_degrees}})
+            add(name,{Type::real},Type::real,function,"school");
         add("randomize",{},Type::unit,Function::random_reset);
         add("randomize",{Type::integer},Type::unit,Function::random_reset);
         add("setrandomseed",{Type::integer},Type::unit,Function::random_reset);
@@ -332,6 +344,7 @@ Value invoke(std::size_t id, std::span<const Value> arguments, SourceLocation lo
         return checked_real(rounded,location);
     }
     const auto& value = arguments.front();
+    if (function>=Function::school_bin && function<=Function::school_tan_degrees) return invoke_school(function,arguments,location,context.options);
     if (function==Function::format_value) return format_field(value,std::get<std::int32_t>(arguments[1]),arguments.size()==3 ? std::optional<std::int32_t>{std::get<std::int32_t>(arguments[2])} : std::nullopt,location);
     if (function==Function::gcd) {
         const auto calculate=[&]<class T>(T a,T b)->Value {

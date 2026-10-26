@@ -210,7 +210,7 @@ public:
             do {
                 const auto module = name();
                 if (module.text != "pabcsystem" && module.text != "arrays" && module.text != "collections"
-                    && module.text != "filesoperations" && module.text != "events" && module.text != "pointrect")
+                    && module.text != "filesoperations" && module.text != "events" && module.text != "pointrect" && module.text != "school")
                     throw Error("E_UNSUPPORTED", module.location, "Unit is not ported yet: '" + module.text + "'");
                 if (module.text == "collections") root.collections_imported = true;
                 root.imported_units.insert(module.text);
@@ -851,6 +851,11 @@ private:
                 bind_builtin(*result,source.token.text,source.left->token.text); break;
             }
             result->left = expression(*source.left); const auto receiver = result->left->type;
+            if (imported_units_.contains("school") && integer_type(receiver) && (source.token.text=="tobase" || source.token.text=="perfectsquare")) {
+                result->arguments.push_back(std::move(result->left));
+                for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
+                result->kind=hir::ExprKind::call; bind_builtin(*result,source.token.text,"school"); break;
+            }
             if (receiver==Type::string && (source.token.text=="towords" || source.token.text=="tolines" || source.token.text=="tointegers" || source.token.text=="toreals")) {
                 result->arguments.push_back(std::move(result->left));
                 for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
@@ -1690,6 +1695,12 @@ private:
             if (lookup(source.names.front())) throw Error("E_TYPE",result.location,"Variable is not callable");
             result.kind=hir::StmtKind::increment; result.target=expression(*source.target);
             const auto type=result.target->type;
+            if (source.names.front().text=="dec" && imported_units_.contains("school") && source.expression
+                && (type==Type::string || type==Type::nil || (type==Type::character && result.target->kind==hir::ExprKind::literal))) {
+                auto call=std::make_unique<hir::Expr>(); call->kind=hir::ExprKind::call; call->location=result.location;
+                call->arguments.push_back(std::move(result.target)); call->arguments.push_back(expression(*source.expression));
+                bind_builtin(*call,"dec","school"); result.kind=hir::StmtKind::call; result.expression=std::move(call); break;
+            }
             if (!lvalue(*result.target) || !ordinal(type)) throw Error("E_TYPE",result.location,"Inc/Dec requires an ordinal variable");
             result.newline=source.names.front().text=="dec";
             if (type==Type::boolean) {

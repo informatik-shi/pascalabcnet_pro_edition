@@ -17,6 +17,7 @@ enum class Function {
     files_read_to_end, files_write_string,
     random_reset, random_integer, random_real, random_char, random_rounded,
     console_read, console_readln, console_line, console_token, format_value,
+    school_bin, school_oct, school_hex, school_dec, school_to_base, school_bin_format, school_perfect_square, school_sin_degrees, school_cos_degrees, school_tan_degrees,
     text_assign, text_reset, text_rewrite, text_append, text_close, text_flush,
     text_eof, text_eoln, text_seek_eof, text_seek_eoln, text_open_read, text_open_write, text_open_append,
     text_read, text_read_line, text_read_word, text_skip_line, text_name, text_full_name, text_read_end, text_erase, text_rename
@@ -34,6 +35,7 @@ struct Context {
     ConsoleInput& console;
     std::function<void(std::u16string_view,SourceLocation)> write_text;
     std::function<const Value&()> print_delimiter;
+    const ExecutionOptions& options;
 };
 // One catalog is shared by the type checker, bytecode verifier and VM.
 std::span<const Signature> signatures();

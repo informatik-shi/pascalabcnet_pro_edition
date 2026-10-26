@@ -115,6 +115,7 @@ def main():
                 ("string-cursor.pas", "Целое: 12\nДробь: 3.5\nСлово: слово\nКонец: True\n"),
                 ("string-members.pas", "Целое: 12\nДробь: 3.5\nСлово: слово\nПо умолчанию: 7\nС запятой: 1.5\n"),
                 ("string-arrays.pas", "Слова: [Анна,Борис,Вера]\nЦелые: [10,-3,7]\nДроби: [1.5,2.25]\nСтрок: 3\n"),
+                ("school-bases.pas", "Двоичная: 101010\nШестнадцатеричная: FF\nИз HEX: 255\nБайты: 00000001 00000010\nКорень: 9\nСинус 30: 0.5\n"),
                 ("structures.pas", "Точка: 3 4\nФакториал 10: 3628800\n1\n2\n5\n8\nИмен: 2\nПервое имя: Анна\n"),
                 ("files.pas", "Привет из C++ интерпретатора!\nПрочитано строк: 2\nВторая строка\n"),
                 ("collections.pas", "Стек: 30 20 10 \nОчередь: Анна Борис Вера \nПустая очередь: True\n"),
@@ -142,6 +143,23 @@ def main():
                 if example.returncode or example.stdout != expected:
                     raise RuntimeError(f"{name} {source} failed: {example.stdout!r}, {example.stderr!r}")
             character = folder / "Ошибки символов.pas"
+            school_error = folder / "Ошибки School.pas"
+            for expression, code, english, russian in [
+                ("School.Dec('2',2)", "E_FORMAT", "Invalid digit in base notation", "Недопустимая цифра в записи числа"),
+                ("School.ToBase(1,1)", "E_RANGE", "Base must be between 2 and 36", "Основание системы счисления должно быть от 2 до 36"),
+            ]:
+                school_error.write_text(f"uses School;\nbegin\n {expression};\nend.", encoding="utf-8")
+                invalid = subprocess.run([runner, "run", str(school_error)], text=True, encoding="utf-8",
+                                         capture_output=True, cwd=folder, env=env, timeout=10)
+                if (invalid.returncode != 1 or invalid.stdout or code not in invalid.stderr
+                        or f"EN: {english}" not in invalid.stderr or f"RU: {russian}" not in invalid.stderr
+                        or f"{school_error}:3:" not in invalid.stderr):
+                    raise RuntimeError(f"{name} bilingual School diagnostic failed: {invalid.stderr!r}")
+            school_error.write_text("begin Writeln('must never run'); Bin(7); end.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(school_error)], text=True, encoding="utf-8",
+                                     capture_output=True, cwd=folder, env=env, timeout=10)
+            if invalid.returncode != 1 or invalid.stdout or "E_NAME" not in invalid.stderr:
+                raise RuntimeError(f"{name} School unit import was not checked before execution")
             if not (folder / "licenses" / "DotNet-Runtime-MIT.txt").is_file():
                 raise RuntimeError(f"{name} missing random algorithm license notice")
             character.write_text("begin Writeln('must never run'); WriteStringToFile('absent-unit.txt','bad'); end.", encoding="utf-8")
@@ -403,6 +421,8 @@ def main():
             results[-1]["string_cursor_input"] = "passed"
             results[-1]["string_numeric_members"] = "passed"
             results[-1]["string_array_conversions"] = "passed"
+            results[-1]["school_bases_and_math"] = "passed"
+            results[-1]["bilingual_school_errors_and_unit_scope"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 

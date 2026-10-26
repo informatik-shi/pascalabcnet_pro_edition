@@ -4,6 +4,10 @@ namespace abc {
 Error runtime_error(RuntimeError id, SourceLocation location, std::string_view context) {
     const char *code, *english, *russian;
     switch (id) {
+    case RuntimeError::school_base:
+        code="E_RANGE"; english="Base must be between 2 and 36"; russian="Основание системы счисления должно быть от 2 до 36"; break;
+    case RuntimeError::school_digit:
+        code="E_FORMAT"; english="Invalid digit in base notation"; russian="Недопустимая цифра в записи числа"; break;
     case RuntimeError::field_width:
         code="E_RANGE"; english="Field width cannot be negative"; russian="Ширина поля не может быть отрицательной"; break;
     case RuntimeError::random_range:

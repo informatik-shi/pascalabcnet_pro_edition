@@ -57,6 +57,36 @@ void runtime_error(std::string_view source, std::string_view code) {
     error([&] { (void)run(source); }, code,source);
 }
 
+void school_library() {
+    result("uses School; begin Writeln(Bin(0),' ',Bin(-10),' ',Oct(511),' ',Hex(255)); Writeln(School.Dec('ff',16),' ',School.Dec('',2),' ',Dec('1010',2)); Writeln(ToBase(-8,2),' ',ToBase(0,36),' ',ToBase(35,36),' ',ToBase(MaxInt64,16)); end.","0 1010 777 FF\n255 0 10\n0 0 Z 7FFFFFFFFFFFFFFF\n");
+    result("uses School; begin Writeln((255).ToBase(16),' ',(81).PerfectSquare); School.Dec('ff',16); Dec('ff',16); Dec('F',16); var n:=7; Dec(n); Writeln(n); end.","FF 9\n6\n");
+    result("uses School; begin Writeln(BinFormat(0),'|',BinFormat(1,2),'|',BinFormat(-5,-1)); Writeln(BinFormat(256,0,':')); Writeln(BinFormat(1,2,nil)); end.","00000000|00000000 00000001|00000101\n00000001:00000000\n0000000000000001\n");
+    result("uses School; begin Writeln(BinFormat(-9223372036854775808,0,'')); Writeln(BinFormat(MaxInt64,0,'')); PrintDelimDefault:='|'; Writeln(BinFormat(256)); end.","1000000000000000000000000000000000000000000000000000000000000000\n0111111111111111111111111111111111111111111111111111111111111111\n00000001 00000000\n");
+    result("uses School; begin Writeln(PerfectSquare(-4),' ',PerfectSquare(0),' ',PerfectSquare(1),' ',PerfectSquare(81),' ',PerfectSquare(82),' ',PerfectSquare(MaxInt64)); Writeln(PerfectSquare(9223372030926249001)); end.","-1 0 1 9 -1 -1\n3037000499\n");
+    result("uses School; begin Writeln(Abs(SinDegrees(30)-0.5)<1e-12,' ',Abs(CosDegrees(60)-0.5)<1e-12,' ',Abs(TanDegrees(45)-1)<1e-12); Writeln(School.SinDegrees(0),' ',School.CosDegrees(0)); end.","True True True\n0 1\n");
+    result("uses School; function Bin(n:integer):string; begin Result:='own'; end; begin Writeln(Bin(7),' ',School.Bin(7)); end.","own 111\n");
+    runtime_error("uses School; begin School.Dec(nil,1); end.","E_RANGE");
+    runtime_error("uses School; begin School.Dec(nil,16); end.","E_NIL");
+    runtime_error("uses School; begin School.Dec('2',2); end.","E_FORMAT");
+    runtime_error("uses School; begin School.Dec(' 1',10); end.","E_FORMAT");
+    runtime_error("uses School; begin School.Dec('9223372036854775808Z',10); end.","E_FORMAT");
+    runtime_error("uses School; begin School.Dec('9223372036854775808',10); end.","E_OVERFLOW");
+    runtime_error("uses School; begin ToBase(-7,1); end.","E_RANGE");
+    runtime_error("uses School; begin Bin(-9223372036854775808); end.","E_OVERFLOW");
+    runtime_error("uses School; begin BinFormat(1,2147483647); end.","E_LIMIT");
+    runtime_error("uses School; begin BinFormat(1,2,StringOfChar('x',1048576)); end.","E_LIMIT");
+    runtime_error("uses School; begin SinDegrees(1e308); end.","E_OVERFLOW");
+    compile_error("begin Writeln(Bin(7)); end.","E_NAME");
+    compile_error("begin Writeln((81).PerfectSquare); end.","E_TYPE");
+    compile_error("uses School; begin Bin(1.5); end.","E_TYPE");
+    compile_error("uses School; begin var u:uint64:=1; ToBase(u,2); end.","E_TYPE");
+    compile_error("uses School; begin BinFormat(1,' '); end.","E_TYPE");
+    abc::ExecutionOptions options; std::size_t polls=0; options.cancelled=[&]{return ++polls>30;};
+    error([&]{(void)run("uses School; begin School.Dec(StringOfChar('0',10000)+'1',2); end.","",options);},"E_CANCELLED");
+    polls=0;
+    error([&]{(void)run("uses School; begin BinFormat(1,10000,''); end.","",options);},"E_CANCELLED");
+}
+
 void string_arrays() {
     result("begin Writeln(' a  b '.ToWords); Writeln(ToWords('a,b;c',',',';')); Writeln('a,b;c'.ToWords(',;')); end.","[a,b]\n[a,b,c]\n[a,b,c]\n");
     result("begin var s:='a'#9'b'#8195'c'; Writeln(s.ToWords.Length); Writeln(s.ToWords('')); var d:array of char; Writeln(s.ToWords(d)); d:=Arr(#9,#8195); Writeln(PABCSystem.ToWords(s,d)); end.","1\n[a,b,c]\n[a,b,c]\n[a,b,c]\n");
@@ -2184,6 +2214,7 @@ int main() {
     string_conversions();
     string_cursor_input();
     string_arrays();
+    school_library();
     sequence_mutations();
     arithmetic();
     verifier();
