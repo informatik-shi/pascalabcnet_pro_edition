@@ -139,6 +139,8 @@ std::u16string format_number(const Value& value, SourceLocation location) {
 }
 } // namespace
 
+bool unicode_whitespace(char16_t character) { return unicode_space(character); }
+
 std::optional<Value> try_parse_number(Type type, const Value& source, SourceLocation location) {
     if (std::holds_alternative<NilString>(source)) {
         if (type==Type::integer) throw runtime_error(RuntimeError::nil_reference,location);

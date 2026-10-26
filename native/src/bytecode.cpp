@@ -57,6 +57,9 @@ private:
     void expression(const hir::Expr& node) {
         if (node.type == Type::invalid) throw Error("E_HIR", node.location, "Unresolved expression type");
         switch (node.kind) {
+        case hir::ExprKind::string_array:
+            expression(*node.left); if (node.right) expression(*node.right);
+            emit(Op::string_array,node.type,node.local,node.location); break;
         case hir::ExprKind::string_read:
             expression(*node.left); reference(*node.right);
             for (const auto& argument:node.arguments) reference(*argument);
@@ -375,6 +378,11 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
     for (const auto& instruction : code) {
         const auto type = instruction.type;
         switch (instruction.op) {
+        case Op::string_array:
+            if (instruction.operand>static_cast<std::size_t>(StringArray::reals_separator) || !compound(type)
+                || type_info(program,type).kind!=CompoundKind::array || type_info(program,type).rank!=1
+                || type_info(program,type).element!=string_array_element(static_cast<StringArray>(instruction.operand))) invalid(instruction,"Invalid string array conversion");
+            break;
         case Op::string_read:
             if (instruction.operand>static_cast<std::size_t>(StringRead::member_word)
                 || type!=string_read_result(static_cast<StringRead>(instruction.operand))) invalid(instruction,"Invalid string reading");
@@ -652,6 +660,15 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
                 if (!(type&0x40000000U) || !scalar(static_cast<Type>(type&~0x40000000U))) invalid(instruction,"Console input requires scalar references");
             }
             break;
+        case Op::string_array: {
+            const auto method=static_cast<StringArray>(instruction.operand);
+            if (method==StringArray::words_array) {
+                const auto type=pop();
+                if (!compound(type) || type_info(program,type).kind!=CompoundKind::array || type_info(program,type).rank!=1 || type_info(program,type).element!=Type::character)
+                    invalid(instruction,"ToWords requires a statically typed char array");
+            } else if (string_array_parameter(method)) require(method==StringArray::integers_count ? Type::integer : Type::string);
+            require(Type::string); stack.push_back(instruction.type); break;
+        }
         case Op::string_read: {
             const auto method=static_cast<StringRead>(instruction.operand);
             if (string_read_try(method)) require(reference_type(string_read_number(method)));

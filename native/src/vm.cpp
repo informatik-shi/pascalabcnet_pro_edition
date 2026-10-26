@@ -11,6 +11,7 @@
 #include "console_input.hpp"
 #include "console_output.hpp"
 #include "formatting.hpp"
+#include "string_arrays.hpp"
 
 #include <charconv>
 #include <algorithm>
@@ -175,6 +176,11 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
         if (steps++ >= options.instruction_limit) trap(instruction, RuntimeError::instruction_limit);
         if (options.cancelled && options.cancelled()) trap(instruction, RuntimeError::cancelled);
         switch (instruction.op) {
+        case Op::string_array: {
+            const auto method=static_cast<StringArray>(instruction.operand);
+            const auto parameter=string_array_parameter(method) ? pop() : Value{std::int32_t{0}};
+            const auto source=pop(); stack.emplace_back(make_string_array(values,instruction.type,method,source,parameter,options)); break;
+        }
         case Op::string_read: {
             const auto original=static_cast<StringRead>(instruction.operand); const auto method=string_read_base(original);
             const bool member=string_read_member(original);

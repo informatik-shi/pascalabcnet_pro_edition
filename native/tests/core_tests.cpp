@@ -57,6 +57,42 @@ void runtime_error(std::string_view source, std::string_view code) {
     error([&] { (void)run(source); }, code,source);
 }
 
+void string_arrays() {
+    result("begin Writeln(' a  b '.ToWords); Writeln(ToWords('a,b;c',',',';')); Writeln('a,b;c'.ToWords(',;')); end.","[a,b]\n[a,b,c]\n[a,b,c]\n");
+    result("begin var s:='a'#9'b'#8195'c'; Writeln(s.ToWords.Length); Writeln(s.ToWords('')); var d:array of char; Writeln(s.ToWords(d)); d:=Arr(#9,#8195); Writeln(PABCSystem.ToWords(s,d)); end.","1\n[a,b,c]\n[a,b,c]\n[a,b,c]\n");
+    result("begin Writeln('a,b;c'.ToWords(Arr(',',';'))); Writeln(''.ToWords.Length); var d:=new char[0]; Writeln(' a  b '.ToWords(d)); end.","[a,b,c]\n0\n[a,b]\n");
+    result("begin var s:='a'#13#10#10'b'#13; var a:=s.ToLines; Writeln(a.Length); foreach var x in a do Writeln('[',x,']'); var b:=''.ToLines; Writeln(b.Length,' [',b[0],']'); end.","4\n[a]\n[]\n[b]\n[]\n1 []\n");
+    result("begin var a:='a'#8232'b'; Writeln(a.ToLines.Length,' ',a.ToLines[0].Length); end.","1 3\n");
+    result("begin Writeln(' 12 -3'#9'7 '.ToIntegers); Writeln(ToIntegers('12abc',1)); Writeln('1 2 tail'.ToIntegers(2)); Writeln(''.ToIntegers.Length); end.","[12,-3,7]\n[12]\n[1,2]\n0\n");
+    result("begin Writeln('-21474836480'.ToIntegers); Writeln('1.5 -2e1'#9'0.25'.ToReals); Writeln(ToReals('1,5 2,25',',')); Writeln(' '#9#10#13.ToReals.Length); end.","[-2147483648,0]\n[1.5,-20,0.25]\n[1.5,2.25]\n0\n");
+    result("begin var s:string:=nil; Writeln(s.ToIntegers(0)); end.","[]\n");
+    result("var trace:string; function S:string; begin trace:=trace+'S'; Result:='a,b'; end; function D:string; begin trace:=trace+'D'; Result:=','; end; begin Writeln(S().ToWords(D()),' ',trace); end.","[a,b] SD\n");
+    for (const auto* name:{"ToWords","ToLines","ToIntegers","ToReals"})
+        runtime_error(std::string("begin var s:string:=nil; s.")+name+"; end.","E_NIL");
+    runtime_error("begin var s:='a b'; var d:string:=nil; s.ToWords(d); end.","E_NIL");
+    runtime_error("begin var s:='12abc'; s.ToIntegers; end.","E_FORMAT");
+    runtime_error("begin var s:='   '; s.ToIntegers; end.","E_FORMAT");
+    runtime_error("begin var s:='12'; s.ToIntegers(2); end.","E_FORMAT");
+    runtime_error("begin var s:string:=nil; s.ToIntegers(-1); end.","E_RANGE");
+    runtime_error("begin var s:string:=nil; s.ToIntegers(2147483647); end.","E_LIMIT");
+    runtime_error("begin var s:string:=''; s.ToReals(''); end.","E_RANGE");
+    runtime_error("begin var s:string:=nil; s.ToReals(''); end.","E_RANGE");
+    runtime_error("begin var s:='1'#11'2'; s.ToReals; end.","E_FORMAT");
+    for (const auto source:{"begin var s:='a b'; s.ToWords(nil); end.","begin var s:='a b'; s.ToWords(Arr(1,2)); end.",
+        "begin var s:='a b'; s.ToWords(new char[1,2]); end.","begin var s:='a b'; s.ToWords(',;','/'); end.",
+        "begin var s:='a b'; s.ToLines(1); end.","begin var s:='1 2'; s.ToIntegers(2.0); end.","begin var s:='1 2'; s.ToReals(2); end."}) compile_error(source,"E_TYPE");
+    auto program=abc::compile("begin var a:='a b'.ToWords; end.");
+    for (auto& instruction:program.code) if (instruction.op==abc::Op::string_array) instruction.operand=99;
+    error([&]{abc::verify(program);},"E_BYTECODE");
+    program=abc::compile("begin var a:='a b'.ToWords; end.");
+    for (auto& instruction:program.code) if (instruction.op==abc::Op::string_array) instruction.operand=static_cast<std::size_t>(abc::StringArray::words_array);
+    error([&]{abc::verify(program);},"E_BYTECODE");
+    abc::ExecutionOptions options; options.allocation_limit=5;
+    error([&]{(void)run("begin var a:='a b c d e f'.ToWords; end.","",options);},"E_LIMIT");
+    options.allocation_limit=1'048'576; std::size_t polls=0; options.cancelled=[&]{return ++polls>30;};
+    error([&]{(void)run("begin var a:=StringOfChar(' ',10000).ToWords; end.","",options);},"E_CANCELLED");
+}
+
 void string_cursor_input() {
     result("begin Writeln('bad'.ToInteger(7),' ','42'.ToInteger(7),' ',ToInteger('bad',8)); Writeln('bad'.ToReal(7.5),' ','1.5'.ToReal(7),' ',ToReal('bad',8)); var s:string:=nil; Writeln(s.ToReal(9)); end.","7 42 8\n7.5 1.5 8\n9\n");
     result("var calls:integer; function F:integer; begin Inc(calls); Result:=7; end; begin Writeln('42'.ToInteger(F()),' ',calls); end.","42 1\n");
@@ -2147,6 +2183,7 @@ int main() {
     try_console_read();
     string_conversions();
     string_cursor_input();
+    string_arrays();
     sequence_mutations();
     arithmetic();
     verifier();

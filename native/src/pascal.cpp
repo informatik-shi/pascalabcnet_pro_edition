@@ -841,6 +841,7 @@ private:
                 if (bind_try_read(*result,source.token.text,source.left->token.text)) break;
                 if (bind_number_conversion(*result,source.token.text,source.left->token.text)) break;
                 if (bind_string_read(*result,source.token.text,source.left->token.text)) break;
+                if (bind_string_array(*result,source.token.text,source.left->token.text)) break;
                 if (bind_random_array(*result,source.token.text,source.left->token.text)) break;
                 if (bind_sequence_mutation(*result,source.token.text,source.left->token.text)) break;
                 if (bind_array_output(*result,source.token.text,source.left->token.text)) break;
@@ -850,6 +851,11 @@ private:
                 bind_builtin(*result,source.token.text,source.left->token.text); break;
             }
             result->left = expression(*source.left); const auto receiver = result->left->type;
+            if (receiver==Type::string && (source.token.text=="towords" || source.token.text=="tolines" || source.token.text=="tointegers" || source.token.text=="toreals")) {
+                result->arguments.push_back(std::move(result->left));
+                for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
+                (void)bind_string_array(*result,source.token.text); break;
+            }
             if (receiver==Type::string && (source.token.text=="readinteger" || source.token.text=="readreal" || source.token.text=="readword"
                 || source.token.text=="tointeger" || source.token.text=="toreal" || source.token.text=="isinteger" || source.token.text=="isreal")) {
                 result->arguments.push_back(std::move(result->left));
@@ -1153,6 +1159,7 @@ private:
             if (bind_try_read(*result,source.token.text)) break;
             if (bind_number_conversion(*result,source.token.text)) break;
             if (bind_string_read(*result,source.token.text)) break;
+            if (bind_string_array(*result,source.token.text)) break;
             if (bind_random_array(*result,source.token.text)) break;
             if (bind_sequence_mutation(*result,source.token.text)) break;
             if (bind_array_output(*result,source.token.text)) break;
@@ -1322,6 +1329,40 @@ private:
             result.right=convert(std::move(result.arguments[1]),Type::integer);
         }
         result.arguments.clear(); return true;
+    }
+    bool bind_string_array(hir::Expr& result, std::string_view name, std::string_view unit = {}) {
+        if ((name!="towords" && name!="tolines" && name!="tointegers" && name!="toreals") || (!unit.empty() && unit!="pabcsystem")) return false;
+        if (result.arguments.empty()) throw Error("E_TYPE",result.location,"String array conversion requires a string");
+        auto args=std::move(result.arguments); result.arguments.clear(); result.left=convert(std::move(args[0]),Type::string);
+        StringArray method;
+        if (name=="towords") {
+            method=StringArray::words;
+            if (args.size()==1) {
+                result.right=std::make_unique<hir::Expr>(); result.right->kind=hir::ExprKind::literal;
+                result.right->type=Type::string; result.right->value=std::u16string{u" "}; result.right->location=result.location;
+            } else if (args.size()==2 && args[1]->type==Type::string) result.right=std::move(args[1]);
+            else if (args.size()==2 && compound(args[1]->type)) {
+                const auto& type=info(args[1]->type,result.location);
+                if (type.kind!=CompoundKind::array || type.rank!=1 || type.element!=Type::character) throw Error("E_TYPE",result.location,"ToWords delimiter requires a string or char array");
+                result.right=std::move(args[1]); method=StringArray::words_array;
+            } else {
+                if (args.size()==2 && args[1]->type==Type::nil) throw Error("E_TYPE",result.location,"ToWords nil delimiter requires an explicit string or char-array type");
+                result.right=std::make_unique<hir::Expr>(); result.right->kind=hir::ExprKind::array_literal;
+                result.right->type=sequence_type(CompoundKind::array,Type::character); result.right->location=result.location;
+                for (std::size_t i=1;i<args.size();++i) result.right->arguments.push_back(convert(std::move(args[i]),Type::character));
+                method=StringArray::words_array;
+            }
+        } else {
+            if (args.size()>2 || (name=="tolines" && args.size()!=1)) throw Error("E_TYPE",result.location,"Wrong string array conversion argument count");
+            method=name=="tolines" ? StringArray::lines : name=="tointegers" ? StringArray::integers : StringArray::reals;
+            if (args.size()==2) {
+                const bool count=name=="tointegers";
+                result.right=convert(std::move(args[1]),count ? Type::integer : Type::string);
+                method=count ? StringArray::integers_count : StringArray::reals_separator;
+            }
+        }
+        result.local=static_cast<std::size_t>(method); result.type=sequence_type(CompoundKind::array,string_array_element(method));
+        result.kind=hir::ExprKind::string_array; return true;
     }
     bool bind_string_read(hir::Expr& result, std::string_view name, std::string_view unit = {}, bool member = false) {
         if (!unit.empty() && unit!="pabcsystem") return false;

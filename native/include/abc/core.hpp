@@ -99,8 +99,17 @@ enum class Op {
     read_lines, write_lines, array_copy, array_high, sequence_sort, sequence_fill, mutate_string, increment, read_value,
     endpoint_call, buffer_call, association_call, linked_call, file_print, file_newline, file_read, file_skip_line, file_output,
     iteration_version, iteration_check, set_character, random_array, fill_random_array, sequence_mutate, swap_values, write_array,
-    bit_not, bit_and, bit_or, bit_xor, shift_left, shift_right, read_console, read_array, console_output, array_query, write_matrix, object_text, print_output, try_read, convert_string, try_parse, val, string_read
+    bit_not, bit_and, bit_or, bit_xor, shift_left, shift_right, read_console, read_array, console_output, array_query, write_matrix, object_text, print_output, try_read, convert_string, try_parse, val, string_read, string_array
 };
+
+enum class StringArray { words, words_array, lines, integers, integers_count, reals, reals_separator };
+inline bool string_array_parameter(StringArray method) {
+    return method==StringArray::words || method==StringArray::words_array || method==StringArray::integers_count || method==StringArray::reals_separator;
+}
+inline Type string_array_element(StringArray method) {
+    return method==StringArray::words || method==StringArray::words_array || method==StringArray::lines ? Type::string
+        : method==StringArray::integers || method==StringArray::integers_count ? Type::integer : Type::real;
+}
 
 enum class StringRead { integer, real, word, is_empty, try_integer, try_real, member_integer, member_real, member_word };
 inline bool string_read_try(StringRead method) { return method==StringRead::try_integer || method==StringRead::try_real; }

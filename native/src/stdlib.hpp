@@ -41,6 +41,7 @@ std::optional<Value> constant(std::string_view name);
 Value invoke(std::size_t id, std::span<const Value> arguments, SourceLocation location, Context& context);
 std::optional<Value> invoke_text(Function function, std::span<const Value> arguments, SourceLocation location);
 std::optional<Value> try_parse_number(Type type, const Value& source, SourceLocation location);
+bool unicode_whitespace(char16_t character);
 std::pair<std::u16string,std::int32_t> read_string_word(const Value& source, std::int32_t position,
     SourceLocation location, const ExecutionOptions& options, bool skip_only=false);
 std::pair<std::int32_t,std::int32_t> read_string_integer(const Value& source, std::int32_t position,
