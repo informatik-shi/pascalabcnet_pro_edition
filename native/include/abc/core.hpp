@@ -99,8 +99,17 @@ enum class Op {
     read_lines, write_lines, array_copy, array_high, sequence_sort, sequence_fill, mutate_string, increment, read_value,
     endpoint_call, buffer_call, association_call, linked_call, file_print, file_newline, file_read, file_skip_line, file_output,
     iteration_version, iteration_check, set_character, random_array, fill_random_array, sequence_mutate, swap_values, write_array,
-    bit_not, bit_and, bit_or, bit_xor, shift_left, shift_right, read_console, read_array, console_output, array_query, write_matrix, object_text, print_output, try_read, convert_string, try_parse, val, string_read, string_array
+    bit_not, bit_and, bit_or, bit_xor, shift_left, shift_right, read_console, read_array, console_output, array_query, write_matrix, object_text, print_output, try_read, convert_string, try_parse, val, string_read, string_array, school_list
 };
+
+enum class SchoolList { digits, digits_to_int64, primes, primes_range, first_primes };
+inline std::vector<Type> school_list_parameters(SchoolList method, Type list) {
+    if (method==SchoolList::digits) return {Type::int64,Type::integer};
+    if (method==SchoolList::digits_to_int64) return {list,Type::integer};
+    if (method==SchoolList::primes_range) return {Type::integer,Type::integer};
+    return {Type::integer};
+}
+inline Type school_list_result(SchoolList method, Type list) { return method==SchoolList::digits_to_int64 ? Type::int64 : list; }
 
 enum class StringArray { words, words_array, lines, integers, integers_count, reals, reals_separator };
 inline bool string_array_parameter(StringArray method) {

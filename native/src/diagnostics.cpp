@@ -4,6 +4,8 @@ namespace abc {
 Error runtime_error(RuntimeError id, SourceLocation location, std::string_view context) {
     const char *code, *english, *russian;
     switch (id) {
+    case RuntimeError::school_expanded_digit:
+        code="E_RANGE"; english="A digit must be less than the base"; russian="Цифра должна быть меньше основания системы счисления"; break;
     case RuntimeError::school_base:
         code="E_RANGE"; english="Base must be between 2 and 36"; russian="Основание системы счисления должно быть от 2 до 36"; break;
     case RuntimeError::school_digit:

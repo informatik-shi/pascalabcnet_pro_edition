@@ -345,7 +345,7 @@ Value invoke(std::size_t id, std::span<const Value> arguments, SourceLocation lo
         return checked_real(rounded,location);
     }
     const auto& value = arguments.front();
-    if (function>=Function::school_bin && function<=Function::school_tan_degrees) return invoke_school(function,arguments,location,context.options);
+    if (function>=Function::school_bin && function<=Function::school_tan_degrees) return invoke_school(function,arguments,location,context.options,context.school);
     if (function==Function::format_value) return format_field(value,std::get<std::int32_t>(arguments[1]),arguments.size()==3 ? std::optional<std::int32_t>{std::get<std::int32_t>(arguments[2])} : std::nullopt,location);
     if (function==Function::gcd) {
         const auto calculate=[&]<class T>(T a,T b)->Value {

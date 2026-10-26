@@ -58,12 +58,63 @@ void runtime_error(std::string_view source, std::string_view code) {
 }
 
 void school_library() {
+    result("uses School; begin Writeln(Digits(0),' ',Digits(-7),' ',Digits(-9223372036854775808)); Writeln(Digits(255,16),' ',School.Digits(7,2),' ',(35).Digits(36)); Writeln(Digits(123,1),' ',Digits(123,MaxInt)); end.","[0] [] []\n[15,15] [1,1,1] [35]\n[] [123]\n");
+    result("uses School; begin var d:List<integer>:=Digits(12345); d[0]:=9; Writeln(d,' ',d.DigitsToInt64); var e:=new List<integer>; Writeln(e.DigitsToInt64(-2147483648)); e.Add(-1); e.Add(2); Writeln(DigitsToInt64(e)); end.","[9,2,3,4,5] 92345\n0\n-8\n");
+    result("uses School; begin var d:=new List<integer>; d.Add(-2); d.Add(-1); Writeln(d.DigitsToInt64(0),' ',d.DigitsToInt64(1)); d[0]:=-3; d[1]:=-4; Writeln(d.DigitsToInt64(-2)); Writeln(DigitsToInt64(Digits(123456789012345678))); end.","-1 -3\n2\n123456789012345678\n");
+    result("uses School; var d:List<integer>; function Base:integer; begin d[0]:=3; Result:=10; end; begin d:=Digits(12); Writeln(DigitsToInt64(d,Base)); end.","32\n");
+    result("uses School; function Digits(n:integer):integer; begin Result:=7; end; begin Writeln(Digits(12),' ',School.Digits(12),' ',(12).Digits); end.","7 [1,2] [1,2]\n");
+    result("uses School; begin Writeln(Primes(-10),' ',Primes(0),' ',Primes(1),' ',Primes(2)); Writeln(Primes(20),' ',Primes(20,2)); Writeln(Primes(-100,1),' ',Primes(-100,3)); Writeln(Primes(2147483600,MaxInt)); end.","[] [] [] [2]\n[2,3,5,7,11,13,17,19] [2,3,5,7,11,13,17,19]\n[] [2,3]\n[2147483629,2147483647]\n");
+    result("uses School; begin Writeln(FirstPrimes(-1),' ',FirstPrimes(0),' ',School.FirstPrimes(5)); var a:=FirstPrimes(4794); Writeln(a.Count,' ',a[4793]); a[0]:=17; Writeln(FirstPrimes(3)); var b:=FirstPrimes(4794); Writeln(a=b,' ',a.Count,' ',b.Count,' ',b[4794]); b.Clear; Writeln(FirstPrimes(0)); end.","[] [] [2,3,5,7,11]\n4794 46351\n[17,3,5]\nTrue 4795 4795 46351\n[]\n");
+    result("uses School; begin var a:=FirstPrimes(3); a[0]:=99; Writeln(FirstPrimes(3)); var b:=FirstPrimes(10000); Writeln(b.Count,' ',b[b.Count-1]); end.","[2,3,5]\n10000 104729\n");
+    result("uses School; begin var a:=FirstPrimes(4794); a[0]:=17; Writeln(IsPrime(4),' ',IsPrime(int64(9))); a.Clear; Writeln(IsPrime(4)); end.","True True\nTrue\n");
+    runtime_error("uses School; begin var a:=FirstPrimes(4794); a[0]:=0; IsPrime(4); end.","E_DIV_ZERO");
+    runtime_error("uses School; begin var a:=Digits(123); foreach var n in a do a[0]:=9; end.","E_MODIFIED");
+    runtime_error("uses School; begin var d:List<integer>:=nil; DigitsToInt64(d,1); end.","E_NIL");
+    runtime_error("uses School; begin var d:=Digits(255,16); DigitsToInt64(d); end.","E_RANGE");
+    runtime_error("uses School; begin DigitsToInt64(Digits(MaxInt64)); end.","E_OVERFLOW");
+    runtime_error("uses School; begin FirstPrimes(-2); end.","E_BOUNDS");
+    runtime_error("uses School; begin Primes(MaxInt); end.","E_LIMIT");
+    runtime_error("uses School; begin var a:=FirstPrimes(4794); a.Clear; Primes(10,20); end.","E_BOUNDS");
+    runtime_error("uses School; begin var a:=FirstPrimes(4794); foreach var n in a do FirstPrimes(4794); end.","E_MODIFIED");
+    for (const auto source:{"begin Digits(12); end.","begin Primes(20); end.","begin FirstPrimes(3); end."}) compile_error(source,"E_NAME");
+    for (const auto source:{"uses School; begin Digits(1.5); end.","uses School; begin DigitsToInt64(Arr(1,2)); end.",
+        "uses School; begin var d:=new List<int64>; DigitsToInt64(d); end.","uses School; begin Primes(20.0); end.",
+        "uses School; begin FirstPrimes(1,2); end.","uses School; begin var n:uint64:=1; n.Digits; end."}) compile_error(source,"E_TYPE");
+    {
+        auto program=abc::compile("uses School; begin var d:=Digits(12); end.");
+        for (auto& instruction:program.code) if (instruction.op==abc::Op::school_list) instruction.operand=99;
+        error([&]{abc::verify(program);},"E_BYTECODE");
+        program=abc::compile("uses School; begin var d:=Digits(12); end.");
+        for (auto& instruction:program.code) if (instruction.op==abc::Op::school_list) instruction.operand=static_cast<std::size_t>(abc::SchoolList::primes);
+        error([&]{abc::verify(program);},"E_BYTECODE");
+        program=abc::compile("uses School; begin var d:=Digits(12); end.");
+        program.types[0].element=abc::Type::real;
+        error([&]{abc::verify(program);},"E_BYTECODE");
+        abc::ExecutionOptions options; options.allocation_limit=20;
+        error([&]{(void)run("uses School; begin Primes(100); end.","",options);},"E_LIMIT");
+        options.allocation_limit=1'048'576; std::size_t polls=0; options.cancelled=[&]{return ++polls>1000;};
+        error([&]{(void)run("uses School; begin FirstPrimes(10000); end.","",options);},"E_CANCELLED");
+        options.cancelled={}; options.instruction_limit=1'000'000;
+        error([&]{(void)run("uses School; begin var a:=FirstPrimes(4794); a[0]:=1; FirstPrimes(4794); end.","",options);},"E_LIMIT");
+    }
     const auto reference=[](std::uint64_t n) {
         if (n<2) return false;
         if (!(n&1U)) return n==2;
         for (std::uint64_t d=3;d<=n/d;d+=2) if (n%d==0) return false;
         return true;
     };
+    for (const auto& [first,last]:{std::pair<std::int32_t,std::int32_t>{-5,50},{46300,46600},{92600,92800},{INT32_MAX-300,INT32_MAX}}) {
+        std::string expected;
+        for (std::int64_t n=std::max(first,2);n<=last;++n) if (reference(static_cast<std::uint64_t>(n))) expected+=std::to_string(n)+",";
+        result("uses School; begin foreach var n in Primes("+std::to_string(first)+","+std::to_string(last)+") do Write(n,','); end.",expected);
+    }
+    {
+        const auto program=abc::compile("uses School; begin var a:=FirstPrimes(4794); Writeln(a.Count); a.Clear; end.");
+        for (int execution=0;execution<2;++execution) {
+            std::istringstream input; std::ostringstream output; abc::execute(program,input,output);
+            require(output.str()=="4794\n","School cache is owned by an execution");
+        }
+    }
     for (const auto& [first,last]:{std::pair<std::uint64_t,std::uint64_t>{0,5000},{2147483648ULL,2147484648ULL}}) {
         std::vector<bool> sieve;
         if (first==0) {

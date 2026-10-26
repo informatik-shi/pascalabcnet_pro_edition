@@ -12,6 +12,7 @@
 #include "console_output.hpp"
 #include "formatting.hpp"
 #include "string_arrays.hpp"
+#include "school.hpp"
 
 #include <charconv>
 #include <algorithm>
@@ -146,6 +147,7 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
     LinkedRuntime linked{values,{}};
     FileContext files;
     RandomContext random;
+    SchoolContext school;
     ConsoleInput console(input,options);
     std::vector<std::shared_ptr<Cell>> globals(program.locals.size());
     for (std::size_t i = 0; i < program.locals.size(); ++i) if (program.locals[i].global)
@@ -169,13 +171,20 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
     stdlib::Context services{files,random,console,[&](std::u16string_view text,SourceLocation location) {
         Instruction instruction; instruction.location=location;
         write(text,instruction);
-    },delimiter_value,options};
+    },delimiter_value,options,school};
     while (!frames.empty()) {
         auto& frame = frames.back(); auto& locals = frame.locals;
         const auto& instruction = (*frame.code)[frame.pc++]; values.location = instruction.location;
         if (steps++ >= options.instruction_limit) trap(instruction, RuntimeError::instruction_limit);
         if (options.cancelled && options.cancelled()) trap(instruction, RuntimeError::cancelled);
         switch (instruction.op) {
+        case Op::school_list: {
+            const auto method=static_cast<SchoolList>(instruction.operand);
+            const auto count=school_list_parameters(method,instruction.type).size();
+            std::array<Value,2> arguments;
+            for (std::size_t i=count;i>0;--i) arguments[i-1]=pop();
+            stack.push_back(invoke_school_list(values,school,method,instruction.type,std::span<const Value>(arguments.data(),count),options)); break;
+        }
         case Op::string_array: {
             const auto method=static_cast<StringArray>(instruction.operand);
             const auto parameter=string_array_parameter(method) ? pop() : Value{std::int32_t{0}};

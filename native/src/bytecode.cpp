@@ -57,6 +57,9 @@ private:
     void expression(const hir::Expr& node) {
         if (node.type == Type::invalid) throw Error("E_HIR", node.location, "Unresolved expression type");
         switch (node.kind) {
+        case hir::ExprKind::school_list:
+            for (const auto& argument:node.arguments) expression(*argument);
+            emit(Op::school_list,node.type==Type::int64 ? node.arguments[0]->type : node.type,node.local,node.location); break;
         case hir::ExprKind::string_array:
             expression(*node.left); if (node.right) expression(*node.right);
             emit(Op::string_array,node.type,node.local,node.location); break;
@@ -378,6 +381,11 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
     for (const auto& instruction : code) {
         const auto type = instruction.type;
         switch (instruction.op) {
+        case Op::school_list:
+            if (instruction.operand>static_cast<std::size_t>(SchoolList::first_primes) || !compound(type)
+                || type_info(program,type).kind!=CompoundKind::list || type_info(program,type).rank!=1 || type_info(program,type).element!=Type::integer)
+                invalid(instruction,"Invalid School list operation");
+            break;
         case Op::string_array:
             if (instruction.operand>static_cast<std::size_t>(StringArray::reals_separator) || !compound(type)
                 || type_info(program,type).kind!=CompoundKind::array || type_info(program,type).rank!=1
@@ -660,6 +668,12 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
                 if (!(type&0x40000000U) || !scalar(static_cast<Type>(type&~0x40000000U))) invalid(instruction,"Console input requires scalar references");
             }
             break;
+        case Op::school_list: {
+            const auto method=static_cast<SchoolList>(instruction.operand);
+            const auto parameters=school_list_parameters(method,instruction.type);
+            for (auto parameter=parameters.rbegin();parameter!=parameters.rend();++parameter) require(*parameter);
+            stack.push_back(school_list_result(method,instruction.type)); break;
+        }
         case Op::string_array: {
             const auto method=static_cast<StringArray>(instruction.operand);
             if (method==StringArray::words_array) {

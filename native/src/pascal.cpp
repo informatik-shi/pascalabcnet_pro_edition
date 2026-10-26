@@ -842,6 +842,7 @@ private:
                 if (bind_number_conversion(*result,source.token.text,source.left->token.text)) break;
                 if (bind_string_read(*result,source.token.text,source.left->token.text)) break;
                 if (bind_string_array(*result,source.token.text,source.left->token.text)) break;
+                if (bind_school_list(*result,source.token.text,source.left->token.text)) break;
                 if (bind_random_array(*result,source.token.text,source.left->token.text)) break;
                 if (bind_sequence_mutation(*result,source.token.text,source.left->token.text)) break;
                 if (bind_array_output(*result,source.token.text,source.left->token.text)) break;
@@ -851,6 +852,11 @@ private:
                 bind_builtin(*result,source.token.text,source.left->token.text); break;
             }
             result->left = expression(*source.left); const auto receiver = result->left->type;
+            if (imported_units_.contains("school") && (source.token.text=="digits" || source.token.text=="digitstoint64")) {
+                result->arguments.push_back(std::move(result->left));
+                for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
+                (void)bind_school_list(*result,source.token.text,"school"); break;
+            }
             if (imported_units_.contains("school") && integer_type(receiver) && (source.token.text=="tobase" || source.token.text=="perfectsquare" || source.token.text=="isprime")) {
                 result->arguments.push_back(std::move(result->left));
                 for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
@@ -1165,6 +1171,7 @@ private:
             if (bind_number_conversion(*result,source.token.text)) break;
             if (bind_string_read(*result,source.token.text)) break;
             if (bind_string_array(*result,source.token.text)) break;
+            if (bind_school_list(*result,source.token.text)) break;
             if (bind_random_array(*result,source.token.text)) break;
             if (bind_sequence_mutation(*result,source.token.text)) break;
             if (bind_array_output(*result,source.token.text)) break;
@@ -1334,6 +1341,23 @@ private:
             result.right=convert(std::move(result.arguments[1]),Type::integer);
         }
         result.arguments.clear(); return true;
+    }
+    bool bind_school_list(hir::Expr& result, std::string_view name, std::string_view unit = {}) {
+        if (name!="digits" && name!="digitstoint64" && name!="primes" && name!="firstprimes") return false;
+        if ((!unit.empty() && unit!="school") || !imported_units_.contains("school")) return false;
+        const bool digits=name=="digits" || name=="digitstoint64";
+        if (result.arguments.empty() || result.arguments.size()>2 || (name=="firstprimes" && result.arguments.size()!=1))
+            throw Error("E_TYPE",result.location,"Wrong School list argument count");
+        if (digits && result.arguments.size()==1) {
+            auto base=std::make_unique<hir::Expr>(); base->kind=hir::ExprKind::literal; base->type=Type::integer;
+            base->value=std::int32_t{10}; base->location=result.location; result.arguments.push_back(std::move(base));
+        }
+        const auto method=name=="digits" ? SchoolList::digits : name=="digitstoint64" ? SchoolList::digits_to_int64
+            : name=="firstprimes" ? SchoolList::first_primes : result.arguments.size()==2 ? SchoolList::primes_range : SchoolList::primes;
+        const auto list=sequence_type(CompoundKind::list,Type::integer);
+        const auto parameters=school_list_parameters(method,list);
+        for (std::size_t i=0;i<parameters.size();++i) result.arguments[i]=convert(std::move(result.arguments[i]),parameters[i]);
+        result.kind=hir::ExprKind::school_list; result.local=static_cast<std::size_t>(method); result.type=school_list_result(method,list); return true;
     }
     bool bind_string_array(hir::Expr& result, std::string_view name, std::string_view unit = {}) {
         if ((name!="towords" && name!="tolines" && name!="tointegers" && name!="toreals") || (!unit.empty() && unit!="pabcsystem")) return false;

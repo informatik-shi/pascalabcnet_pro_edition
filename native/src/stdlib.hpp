@@ -2,7 +2,7 @@
 #include "abc/core.hpp"
 #include <span>
 
-namespace abc { class FileContext; class RandomContext; class ConsoleInput; }
+namespace abc { class FileContext; class RandomContext; class ConsoleInput; struct SchoolContext; }
 namespace abc::stdlib {
 enum class Function {
     abs, sqr, sign, minimum, maximum, sin, sinh, cos, cosh, tan, tanh,
@@ -36,6 +36,7 @@ struct Context {
     std::function<void(std::u16string_view,SourceLocation)> write_text;
     std::function<const Value&()> print_delimiter;
     const ExecutionOptions& options;
+    SchoolContext& school;
 };
 // One catalog is shared by the type checker, bytecode verifier and VM.
 std::span<const Signature> signatures();

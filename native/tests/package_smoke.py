@@ -117,6 +117,7 @@ def main():
                 ("string-arrays.pas", "Слова: [Анна,Борис,Вера]\nЦелые: [10,-3,7]\nДроби: [1.5,2.25]\nСтрок: 3\n"),
                 ("school-bases.pas", "Двоичная: 101010\nШестнадцатеричная: FF\nИз HEX: 255\nБайты: 00000001 00000010\nКорень: 9\nСинус 30: 0.5\n"),
                 ("school-primes.pas", "7: True\n9: False\nБольшое простое: True\nБольшое составное: False\n"),
+                ("school-lists.pas", "Цифры: [2,0,2,6]\nОбратно: 2026\nПростые до 30: [2,3,5,7,11,13,17,19,23,29]\nПервые 5: [2,3,5,7,11]\n"),
                 ("structures.pas", "Точка: 3 4\nФакториал 10: 3628800\n1\n2\n5\n8\nИмен: 2\nПервое имя: Анна\n"),
                 ("files.pas", "Привет из C++ интерпретатора!\nПрочитано строк: 2\nВторая строка\n"),
                 ("collections.pas", "Стек: 30 20 10 \nОчередь: Анна Борис Вера \nПустая очередь: True\n"),
@@ -148,6 +149,7 @@ def main():
             for expression, code, english, russian in [
                 ("School.Dec('2',2)", "E_FORMAT", "Invalid digit in base notation", "Недопустимая цифра в записи числа"),
                 ("School.ToBase(1,1)", "E_RANGE", "Base must be between 2 and 36", "Основание системы счисления должно быть от 2 до 36"),
+                ("DigitsToInt64(Digits(15,16),10)", "E_RANGE", "A digit must be less than the base", "Цифра должна быть меньше основания системы счисления"),
             ]:
                 school_error.write_text(f"uses School;\nbegin\n {expression};\nend.", encoding="utf-8")
                 invalid = subprocess.run([runner, "run", str(school_error)], text=True, encoding="utf-8",
@@ -425,6 +427,7 @@ def main():
             results[-1]["school_bases_and_math"] = "passed"
             results[-1]["bilingual_school_errors_and_unit_scope"] = "passed"
             results[-1]["school_prime_integer_and_int64"] = "passed"
+            results[-1]["school_digits_and_prime_lists"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 
