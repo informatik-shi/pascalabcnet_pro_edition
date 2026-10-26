@@ -850,6 +850,29 @@ ReadIntegerFromString использует исходное особое зав�
 Алгоритм сопоставлен с PABCSystem.pas; новый корпус проверен нативно,
 без запуска исходного компилятора.
 
+### Числовые методы string
+
+String.ReadInteger/ReadReal/ReadWord используют var-курсор integer от нуля.
+Они выполняют проверяемый сдвиг курсора на единицу, вызывают общий разбор
+и присваивают итоговую позицию после успешного чтения. Ошибка сохраняет
+исходный курсор метода. Увеличение MaxInt даёт E_OVERFLOW. Успешный ReadWord
+в конце строки также выполняет присваивание курсора.
+Доступны функциональные вызовы ReadInteger/ReadReal/ReadWord(string,var cursor).
+
+ToInteger и ToReal возвращают число, IsInteger и IsReal — результат проверки.
+Допустимы вызовы с точкой, с пустыми скобками и функциональная запись.
+ToInteger(string,integer default) и ToReal(string,real default) возвращают
+значение по умолчанию при ошибке преобразования; этот аргумент вычисляется
+и при корректном вводе. ToReal также принимает строковый десятичный разделитель.
+Перегрузка выбирается по известным типам аргументов.
+
+Nil для ToInteger/IsInteger и ToInteger с default вызывает E_NIL.
+Обычный ToReal(nil) даёт E_NIL; IsReal(nil) возвращает False,
+а ToReal(nil,числовой default) возвращает переданный default.
+Сохраняется профиль конечных real; перегрузки NumberFormatInfo и BigInteger
+остаются в плане. Новые сценарии проверяются нативными ожидаемыми корпусами.
+Пример: `examples/string-members.pas`, корпус: `tests/fixtures/string-members-compat.pas`.
+
 ### Str, Val и проверяемое преобразование строк
 
 Str(значение,var строка) поддерживает реализованные числовые типы и string,
@@ -1123,7 +1146,7 @@ cmake --build native/build/default --config Release
 ctest --test-dir native/build/default -C Release --output-on-failure
 ```
 
-Проверка от 26 октября 2026 года: MSVC Release — 1620 проверок ядра и 42 теста
+Проверка от 26 октября 2026 года: MSVC Release — 1644 проверки ядра и 43 теста
 CTest вместе с Qt; Clang 22 без санитайзера также проверен. Дополнительный локальный
 прогон Clang 22/AddressSanitizer на Windows не завершён: обработчик исключений
 аварийно останавливается, в том числе в отдельной минимальной программе с

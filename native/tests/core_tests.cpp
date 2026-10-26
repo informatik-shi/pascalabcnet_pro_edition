@@ -58,6 +58,27 @@ void runtime_error(std::string_view source, std::string_view code) {
 }
 
 void string_cursor_input() {
+    result("begin Writeln('bad'.ToInteger(7),' ','42'.ToInteger(7),' ',ToInteger('bad',8)); Writeln('bad'.ToReal(7.5),' ','1.5'.ToReal(7),' ',ToReal('bad',8)); var s:string:=nil; Writeln(s.ToReal(9)); end.","7 42 8\n7.5 1.5 8\n9\n");
+    result("var calls:integer; function F:integer; begin Inc(calls); Result:=7; end; begin Writeln('42'.ToInteger(F()),' ',calls); end.","42 1\n");
+    runtime_error("begin var s:string:=nil; s.ToInteger(7); end.","E_NIL");
+    result("begin var s:='12 3.5 word'; var p:=0; Writeln(s.ReadInteger(p),' ',p); Writeln(s.ReadReal(p),' ',p); Writeln(s.ReadWord(p),' ',p); end.","12 2\n3.5 6\nword 11\n");
+    result("begin var s:='12abc'; var p:=0; Writeln(ReadInteger(s,p),' ',p); Writeln(PABCSystem.ReadWord(s,p),' ',p); end.","12 2\nabc 5\n");
+    result("begin Writeln('42'.ToInteger,' ',ToInteger('7'),' ',PABCSystem.ToInteger('8')); Writeln('1.5'.ToReal,' ','1,5'.ToReal(','),' ',ToReal('1,234.5','.')); end.","42 7 8\n1.5 1.5 1234.5\n");
+    result("begin Writeln('42'.IsInteger,' ','bad'.IsInteger(),' ','1.5'.IsReal,' ','1,5'.IsReal()); var s:string:=nil; Writeln(s.IsReal,' ',StrToReal(s)); end.","True False True False\nFalse 0\n");
+    result("function ToInteger(s:string):integer; begin Result:=99; end; begin Writeln(ToInteger('7'),' ','42'.ToInteger,' ',PABCSystem.ToInteger('7')); end.","99 42 7\n");
+    result("begin var s:=#8195'🌍 x'; var p:=0; Writeln(s.ReadWord(p),' ',p); Writeln(s.ReadWord(p),' ',p); end.","🌍 3\nx 5\n");
+    runtime_error("begin var s:string:=nil; s.ToReal; end.","E_NIL");
+    runtime_error("begin var s:string:=nil; s.IsInteger; end.","E_NIL");
+    runtime_error("begin ToReal('bad'); end.","E_FORMAT");
+    runtime_error("begin var s:='bad'; var p:=0; s.ReadReal(p); end.","E_FORMAT");
+    runtime_error("begin var s:='12'; var p:=-1; s.ReadInteger(p); end.","E_BOUNDS");
+    runtime_error("begin var s:='12'; var p:=2147483647; s.ReadInteger(p); end.","E_OVERFLOW");
+    runtime_error("begin var s:='12'; var p:=3; s.ReadWord(p); end.","E_BOUNDS");
+    runtime_error("begin var s:=''; var l:=new List<integer>; l.Add(0); foreach var x in l do s.ReadWord(l[0]); end.","E_MODIFIED");
+    result("begin var s:=''; var p:=0; Writeln('[',s.ReadWord(p),'] ',p); end.","[] 0\n");
+    for (const auto source:{"begin var s:='12'; var p:int64; s.ReadInteger(p); end.","begin var s:='12'; s.ReadWord(0); end.",
+        "begin var s:='12'; for var p:=0 to 1 do s.ReadInteger(p); end.","begin Writeln('12'.IsInteger(1)); end.",
+        "begin Writeln('1.5'.ToReal(true)); end.","begin Writeln('12'.ToInteger(true)); end."}) compile_error(source,"E_TYPE");
     result("begin var p:=1; Writeln(ReadIntegerFromString('  -42,7',p),' ',p); Writeln('[',ReadWordFromString('  -42,7',p),'] ',p); end.","-42 6\n[,7] 8\n");
     result("begin var p:=1; Writeln(PABCSystem.ReadIntegerFromString('12abc',p),' ',p); Writeln(ReadWordFromString('12abc',p),' ',p); end.","12 3\nabc 6\n");
     result("begin var p:=1; var s:='-21474836480'; Writeln(ReadIntegerFromString(s,p),' ',p); Writeln(ReadIntegerFromString(s,p),' ',p); end.","-2147483648 12\n0 13\n");

@@ -176,21 +176,29 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
         if (options.cancelled && options.cancelled()) trap(instruction, RuntimeError::cancelled);
         switch (instruction.op) {
         case Op::string_read: {
-            const auto method=static_cast<StringRead>(instruction.operand);
+            const auto original=static_cast<StringRead>(instruction.operand); const auto method=string_read_base(original);
+            const bool member=string_read_member(original);
             const auto result=string_read_try(method) ? std::get<std::shared_ptr<Cell>>(pop()) : std::shared_ptr<Cell>{};
             const auto cursor=std::get<std::shared_ptr<Cell>>(pop()); const auto source=pop();
             const auto start=std::get<std::int32_t>(cursor->value);
+            if (member && start==INT32_MAX) trap(instruction,RuntimeError::integer_overflow);
+            const auto initial=member ? start+1 : start;
             if (method==StringRead::integer) {
-                const auto [number,position]=stdlib::read_string_integer(source,start,instruction.location,options);
-                values.write(cursor,position); stack.emplace_back(number); break;
+                const auto [number,position]=stdlib::read_string_integer(source,initial,instruction.location,options);
+                values.write(cursor,member ? position-1 : position); stack.emplace_back(number); break;
             }
-            auto [word,position]=stdlib::read_string_word(source,start,instruction.location,options,method==StringRead::is_empty);
-            if (position!=start) values.write(cursor,position);
+            auto [word,position]=stdlib::read_string_word(source,initial,instruction.location,options,method==StringRead::is_empty);
+            if (!member && position!=start) values.write(cursor,position);
             if (method==StringRead::is_empty) { stack.emplace_back(static_cast<std::size_t>(position)>string_text(source).size()); break; }
-            if (method==StringRead::word) { stack.emplace_back(std::move(word)); break; }
+            if (method==StringRead::word) {
+                if (member) values.write(cursor,position-1);
+                stack.emplace_back(std::move(word)); break;
+            }
             if (method==StringRead::real) {
                 const std::array<Value,1> arguments{std::move(word)};
-                stack.emplace_back(*stdlib::invoke_text(stdlib::Function::str_to_real,arguments,instruction.location)); break;
+                const auto number=*stdlib::invoke_text(stdlib::Function::str_to_real,arguments,instruction.location);
+                if (member) values.write(cursor,position-1);
+                stack.emplace_back(number); break;
             }
             const auto parsed=stdlib::try_parse_number(string_read_number(method),Value{std::move(word)},instruction.location);
             if (parsed) values.write(result,*parsed); else if (method==StringRead::try_real) values.write(result,0.0);

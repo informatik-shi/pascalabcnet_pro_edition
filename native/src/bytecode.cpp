@@ -376,7 +376,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         const auto type = instruction.type;
         switch (instruction.op) {
         case Op::string_read:
-            if (instruction.operand>static_cast<std::size_t>(StringRead::try_real)
+            if (instruction.operand>static_cast<std::size_t>(StringRead::member_word)
                 || type!=string_read_result(static_cast<StringRead>(instruction.operand))) invalid(instruction,"Invalid string reading");
             break;
         case Op::convert_string:

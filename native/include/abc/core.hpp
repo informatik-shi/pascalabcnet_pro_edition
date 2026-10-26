@@ -102,10 +102,15 @@ enum class Op {
     bit_not, bit_and, bit_or, bit_xor, shift_left, shift_right, read_console, read_array, console_output, array_query, write_matrix, object_text, print_output, try_read, convert_string, try_parse, val, string_read
 };
 
-enum class StringRead { integer, real, word, is_empty, try_integer, try_real };
+enum class StringRead { integer, real, word, is_empty, try_integer, try_real, member_integer, member_real, member_word };
 inline bool string_read_try(StringRead method) { return method==StringRead::try_integer || method==StringRead::try_real; }
+inline bool string_read_member(StringRead method) { return method>=StringRead::member_integer; }
+inline StringRead string_read_base(StringRead method) {
+    return method==StringRead::member_integer ? StringRead::integer : method==StringRead::member_real ? StringRead::real : method==StringRead::member_word ? StringRead::word : method;
+}
 inline Type string_read_number(StringRead method) { return method==StringRead::try_real ? Type::real : Type::integer; }
 inline Type string_read_result(StringRead method) {
+    method=string_read_base(method);
     return method==StringRead::integer ? Type::integer : method==StringRead::real ? Type::real : method==StringRead::word ? Type::string : Type::boolean;
 }
 

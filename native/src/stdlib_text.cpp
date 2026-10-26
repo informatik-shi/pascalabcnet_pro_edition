@@ -276,9 +276,18 @@ std::optional<Value> invoke_text(Function function, std::span<const Value> argum
     case Function::str_to_int64:
         if (std::holds_alternative<NilString>(arguments[0])) return std::int64_t{0};
         return parse_integer<std::int64_t>(string_text(arguments[0]), location);
-    case Function::str_to_real: {
+    case Function::to_integer_default: case Function::to_real_default: {
+        const auto parsed=try_parse_number(function==Function::to_integer_default ? Type::integer : Type::real,arguments[0],location);
+        return parsed ? *parsed : arguments[1];
+    }
+    case Function::is_integer: case Function::is_real:
+        return try_parse_number(function==Function::is_integer ? Type::integer : Type::real,arguments[0],location).has_value();
+    case Function::parse_real: case Function::str_to_real: {
         if (arguments.size()==2 && string_text(arguments[1]).empty()) throw runtime_error(RuntimeError::decimal_separator,location);
-        if (std::holds_alternative<NilString>(arguments[0])) return 0.0;
+        if (std::holds_alternative<NilString>(arguments[0])) {
+            if (function==Function::parse_real) throw runtime_error(RuntimeError::nil_reference,location);
+            return 0.0;
+        }
         return parse_decimal(string_text(arguments[0]), arguments.size() == 2
             ? std::u16string_view(string_text(arguments[1])) : u".", arguments.size() == 2 ? u',' : u'.', location);
     }

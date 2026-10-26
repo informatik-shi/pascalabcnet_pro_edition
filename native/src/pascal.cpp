@@ -850,6 +850,15 @@ private:
                 bind_builtin(*result,source.token.text,source.left->token.text); break;
             }
             result->left = expression(*source.left); const auto receiver = result->left->type;
+            if (receiver==Type::string && (source.token.text=="readinteger" || source.token.text=="readreal" || source.token.text=="readword"
+                || source.token.text=="tointeger" || source.token.text=="toreal" || source.token.text=="isinteger" || source.token.text=="isreal")) {
+                result->arguments.push_back(std::move(result->left));
+                for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
+                if (!bind_string_read(*result,source.token.text,{},true)) {
+                    result->kind=hir::ExprKind::call; bind_builtin(*result,source.token.text,"pabcsystem");
+                }
+                break;
+            }
             if (receiver==Type::string && (source.token.text=="trytointeger" || source.token.text=="trytoreal")) {
                 result->arguments.push_back(std::move(result->left));
                 for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
@@ -1314,9 +1323,14 @@ private:
         }
         result.arguments.clear(); return true;
     }
-    bool bind_string_read(hir::Expr& result, std::string_view name, std::string_view unit = {}) {
+    bool bind_string_read(hir::Expr& result, std::string_view name, std::string_view unit = {}, bool member = false) {
         if (!unit.empty() && unit!="pabcsystem") return false;
         std::optional<StringRead> method;
+        if (member || result.arguments.size()==2) {
+            if (name=="readinteger") method=StringRead::member_integer;
+            else if (name=="readreal") method=StringRead::member_real;
+            else if (name=="readword") method=StringRead::member_word;
+        }
         for (const auto& [key,value]:{std::pair<std::string_view,StringRead>{"readintegerfromstring",StringRead::integer},
             {"readrealfromstring",StringRead::real},{"readwordfromstring",StringRead::word},{"stringisempty",StringRead::is_empty},
             {"tryreadintegerfromstring",StringRead::try_integer},{"tryreadrealfromstring",StringRead::try_real}}) if (key==name) method=value;

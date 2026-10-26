@@ -143,6 +143,13 @@ std::span<const Signature> signatures() {
         add("inttostr", {Type::integer}, Type::string, Function::int_to_str);
         add("inttostr", {Type::int64}, Type::string, Function::int_to_str);
         add("strtoint", {Type::string}, Type::integer, Function::str_to_int);
+        add("tointeger", {Type::string}, Type::integer, Function::str_to_int);
+        add("tointeger", {Type::string,Type::integer}, Type::integer, Function::to_integer_default);
+        add("toreal", {Type::string}, Type::real, Function::parse_real);
+        add("toreal", {Type::string,Type::string}, Type::real, Function::parse_real);
+        add("toreal", {Type::string,Type::real}, Type::real, Function::to_real_default);
+        add("isinteger", {Type::string}, Type::boolean, Function::is_integer);
+        add("isreal", {Type::string}, Type::boolean, Function::is_real);
         add("strtoint64", {Type::string}, Type::int64, Function::str_to_int64);
         for (auto name : {"strtoreal", "strtofloat"}) {
             add(name, {Type::string}, Type::real, Function::str_to_real);
