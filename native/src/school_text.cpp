@@ -1,5 +1,6 @@
 #include "school.hpp"
 #include "runtime_values.hpp"
+#include "regex.hpp"
 #include <array>
 
 namespace abc {
@@ -66,6 +67,21 @@ void school_replace_last(Values& values, const std::shared_ptr<Cell>& receiver, 
     auto remaining=text; remaining.erase(*last,pattern.size()); values.write(receiver,remaining);
     const std::array<Value,3> insert{target,receiver->value,static_cast<std::int32_t>(*last+1)};
     values.write(receiver,*stdlib::invoke_text(stdlib::Function::insert_string,insert,values.location));
+}
+void school_swap_substr(Values& values,const std::shared_ptr<Cell>& receiver,const Value& first,const Value& second,const ExecutionOptions& options) {
+    if (std::holds_alternative<NilString>(receiver->value) || std::holds_alternative<NilString>(first)) throw runtime_error(RuntimeError::nil_reference,values.location);
+    const auto& text=string_text(receiver->value); const auto& left=string_text(first); TextWork work{options,values.location};
+    const auto contains=[&](std::u16string_view pattern) {
+        if (pattern.empty()) return true;
+        bool found=false; matches(pattern,text,true,work,[&](std::size_t) { found=true; }); return found;
+    };
+    if (!contains(left)) return;
+    if (std::holds_alternative<NilString>(second)) throw runtime_error(RuntimeError::nil_reference,values.location);
+    const auto& right=string_text(second);
+    if (!contains(right)) return;
+    if (left==right) throw runtime_error(RuntimeError::duplicate_swap_key,values.location);
+    auto result=regex_swap(values,text,left,right,options,work.work);
+    values.write(receiver,std::move(result));
 }
 
 void school_table_print(const std::shared_ptr<Aggregate>& table,std::int32_t filter,const Value& names,SourceLocation location,stdlib::Context& context) {

@@ -1,6 +1,8 @@
 #include "abc/core.hpp"
 #include "../src/linked.hpp"
 #include "../src/random.hpp"
+#include "../src/school.hpp"
+#include "../src/runtime_values.hpp"
 
 #include <iostream>
 #include <array>
@@ -92,6 +94,89 @@ void big_integer_library() {
     error([&]{(void)run("begin var a:=1bi shl 1000; Writeln(a*a); end.","",options);},"E_LIMIT");
     options={}; std::size_t polls=0; options.cancelled=[&]{return ++polls>20;};
     error([&]{(void)run("begin BigInteger.Parse(StringOfChar('0',10000)+'1'); end.","",options);},"E_CANCELLED");
+}
+
+void school_swap_substrings() {
+    result("uses School; begin var s:string:='cat dog cat'; SwapSubstr(s,'cat','dog'); Writeln(s); School.SwapSubstr(s,'cat','dog'); Writeln(s); s.SwapSubstr('cat','dog'); Writeln(s); end.","dog cat dog\ncat dog cat\ndog cat dog\n");
+    result("uses School; begin var s:string:='aaa aa'; SwapSubstr(s,'aa','a'); Writeln(s); s:='aaa aa'; SwapSubstr(s,'a','aa'); Writeln(s); end.","aaa a\naaaaaa aaaa\n");
+    result("uses School; begin var s:string:='a'; SwapSubstr(s,'','a'); Writeln(s); s:='a'; SwapSubstr(s,'a',''); Writeln(s); s:=''; SwapSubstr(s,'','x'); Writeln(s.Length); end.","aaa\na\n0\n");
+    result("uses School; begin var s:string:='Яя Я'; SwapSubstr(s,'Я','я'); Writeln(s); s:='a'#0'b'; SwapSubstr(s,#0,'b'); Writeln(Ord(s[2]),' ',Ord(s[3])); s:=#55356#57101; SwapSubstr(s,#55356,#57101); Writeln(Ord(s[1]),' ',Ord(s[2])); end.","яЯ я\n98 0\n57101 55356\n");
+    result("uses School; begin var s:string:='abc'; SwapSubstr(s,'missing',nil); SwapSubstr(s,'missing','missing'); Writeln(s); SwapSubstr(s,'a','missing'); Writeln(s); s:='a.b z'; SwapSubstr(s,'a.b','z'); Writeln(s); end.","abc\nabc\nz a.b\n");
+    result("uses School; var a:array of string; function Index:integer; begin Write('I'); Result:=0; end; function First:string; begin Write('F'); a[0]:='ab'; Result:='a'; end; function Second:string; begin Write('S'); Result:='b'; end; begin a:=Arr('old'); SwapSubstr(a[Index],First,Second); Writeln('|',a[0]); end.","IFS|ba\n");
+    result("uses School; function Side:string; begin Write('S'); Result:='b'; end; begin var s:string:='abc'; SwapSubstr(s,'missing',Side); Writeln(s); end.","Sabc\n");
+    result("uses School; begin var a:=new List<string>; a.Add('abc'); foreach var s in a do a[0].SwapSubstr('missing','a'); Writeln(a); end.","[abc]\n");
+    result("uses School; begin var s:string:='a^ b^'; SwapSubstr(s,'a^','b^'); Writeln(s); for var i:=1 to 500 do SwapSubstr(s,'a^','b^'); Writeln(s); end.","a^ b^\na^ b^\n");
+    runtime_error("uses School; begin var s:string:='a'; SwapSubstr(s,'a','a'); end.","E_KEY");
+    runtime_error("uses School; begin var s:string:=''; SwapSubstr(s,'',''); end.","E_KEY");
+    runtime_error("uses School; begin var s:string:='a.b acb z'; SwapSubstr(s,'a.b','z'); end.","E_KEY");
+    runtime_error("uses School; begin var s:string:='[x'; SwapSubstr(s,'[','x'); end.","E_REGEX");
+    for (const auto source:{"uses School; begin var s:string:=nil; SwapSubstr(s,'a','b'); end.",
+        "uses School; begin var s:string:='ab'; SwapSubstr(s,nil,'b'); end.",
+        "uses School; begin var s:string:='ab'; SwapSubstr(s,'a',nil); end."}) runtime_error(source,"E_NIL");
+    runtime_error("uses School; begin var a:=new List<string>; a.Add('ab'); foreach var s in a do SwapSubstr(a[0],'a','b'); end.","E_MODIFIED");
+    runtime_error("uses School; begin var a:=new List<string>; a.Add('a^ b^'); foreach var s in a do SwapSubstr(a[0],'a^','b^'); end.","E_MODIFIED");
+    for (const auto source:{"uses School; begin SwapSubstr('ab','a','b'); end.",
+        "uses School; begin Writeln(('ab').SwapSubstr('a','b')); end.","uses School; begin var s:string:='ab'; s.SwapSubstr('a'); end.",
+        "uses School; begin var s:string:='ab'; SwapSubstr(s,'a',True); end.",
+        "uses School; begin foreach var s in Arr('ab') do s.SwapSubstr('a','b'); end."}) compile_error(source,"E_TYPE");
+    compile_error("begin var s:string:='ab'; SwapSubstr(s,'a','b'); end.","E_NAME");
+    auto invalid=abc::compile("uses School; begin var s:string:='ab'; SwapSubstr(s,'a','b'); end.");
+    for (auto& instruction:invalid.code) if (instruction.op==abc::Op::swap_substrings) instruction.operand=1;
+    error([&]{abc::verify(invalid);},"E_BYTECODE");
+    invalid=abc::compile("uses School; begin var s:string:='ab'; SwapSubstr(s,'a','b'); end.");
+    for (auto& instruction:invalid.code) if (instruction.op==abc::Op::swap_substrings) instruction.type=abc::Type::integer;
+    error([&]{abc::verify(invalid);},"E_BYTECODE");
+    abc::ExecutionOptions options; options.allocation_limit=100;
+    error([&]{(void)run("uses School; begin var s:string:='ab'; SwapSubstr(s,'a','b'); end.","",options);},"E_LIMIT");
+    options={}; options.instruction_limit=2000;
+    error([&]{(void)run("uses School; begin var s:string:='(a+)+$ '+StringOfChar('a',100)+'! Z'; SwapSubstr(s,'(a+)+$','Z'); end.","",options);},"E_LIMIT");
+    options={}; std::size_t polls=0; options.cancelled=[&]{return ++polls>12;};
+    error([&]{(void)run("uses School; begin var s:string:='(a+)+$ '+StringOfChar('a',100)+'! Z'; SwapSubstr(s,'(a+)+$','Z'); end.","",options);},"E_CANCELLED");
+    try { (void)run("uses School; begin\nvar s:string:='[x';\nSwapSubstr(s,'[','x'); end."); require(false,"Expected regex error"); }
+    catch (const abc::Error& caught) { require(caught.code=="E_REGEX" && caught.location.line==3 && std::string_view(caught.what())=="Invalid regular expression" && caught.russian=="Некорректное регулярное выражение","Regex diagnostic retains location and both languages"); }
+    abc::Program empty; abc::Values values{empty,1'048'576};
+    auto receiver=values.cell(abc::Type::string,std::u16string{u"a.b acb z"});
+    error([&]{abc::school_swap_substr(values,receiver,std::u16string{u"a.b"},std::u16string{u"z"},{});},"E_KEY");
+    require(abc::string_text(receiver->value)==u"a.b acb z","SwapSubstr writes only after all matches succeed");
+    receiver->value=std::u16string{u"[x"};
+    error([&]{abc::school_swap_substr(values,receiver,std::u16string{u"["},std::u16string{u"x"},{});},"E_REGEX");
+    require(abc::string_text(receiver->value)==u"[x","Regex compilation failure leaves the receiver unchanged");
+    receiver->value=std::u16string{u"ab"};
+    const auto remaining=values.remaining;
+    for (unsigned i=0;i<1000;++i) abc::school_swap_substr(values,receiver,std::u16string{u"a"},std::u16string{u"b"},{});
+    require(abc::string_text(receiver->value)==u"ab" && values.remaining==remaining,"Regex temporary buffers do not cumulatively consume the value budget");
+    receiver->value=std::u16string(10'000,u'a');
+    error([&]{abc::school_swap_substr(values,receiver,std::u16string{},std::u16string(10'000,u'a'),{});},"E_LIMIT");
+    std::vector<std::string> texts{""};
+    for (unsigned length=1;length<=4;++length) for (unsigned bits=0;bits<(1U<<length);++bits) {
+        std::string text;
+        for (unsigned i=0;i<length;++i) text+=((bits>>i)&1U) ? 'b' : 'a';
+        texts.push_back(std::move(text));
+    }
+    const std::vector<std::string> keys{"","a","b","aa","ab","ba","bb"};
+    const auto array=[](const std::vector<std::string>& items) {
+        std::string source="Arr(";
+        for (const auto& item:items) { if (source!="Arr(") source+=","; source+="'"+item+"'+''"; }
+        return source+")";
+    };
+    std::string expected;
+    for (const auto& text:texts) for (const auto& first:keys) for (const auto& second:keys) {
+        if (first==second) continue;
+        if (text.find(first)==std::string::npos || text.find(second)==std::string::npos) { expected+=text+'\n'; continue; }
+        std::string swapped;
+        for (std::size_t i=0;i<=text.size();) {
+            const auto tail=std::string_view(text).substr(i);
+            const auto* key=tail.starts_with(first) ? &first : tail.starts_with(second) ? &second : nullptr;
+            if (key) {
+                swapped+=(key==&first ? second : first);
+                if (!key->empty()) { i+=key->size(); continue; }
+            }
+            if (i==text.size()) break;
+            swapped+=text[i++];
+        }
+        expected+=swapped+'\n';
+    }
+    result("uses School; begin var texts:="+array(texts)+"; var keys:="+array(keys)+"; foreach var text in texts do foreach var first in keys do foreach var second in keys do if first<>second then begin var s:string:=text; SwapSubstr(s,first,second); Writeln(s); end; end.",expected);
 }
 
 void school_minmax_library() {
@@ -2856,6 +2941,7 @@ int main() {
     school_minmax_library();
     big_integer_library();
     school_text_library();
+    school_swap_substrings();
     school_factor_library();
     sequence_mutations();
     arithmetic();

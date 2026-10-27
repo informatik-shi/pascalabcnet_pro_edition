@@ -4,6 +4,12 @@ namespace abc {
 Error runtime_error(RuntimeError id, SourceLocation location, std::string_view context) {
     const char *code, *english, *russian;
     switch (id) {
+    case RuntimeError::regex_syntax:
+        code="E_REGEX"; english="Invalid regular expression"; russian="Некорректное регулярное выражение"; break;
+    case RuntimeError::duplicate_swap_key:
+        code="E_KEY"; english="Duplicate swap key"; russian="Повторяющийся ключ замены"; break;
+    case RuntimeError::missing_swap_key:
+        code="E_KEY"; english="Matched text is not a swap key"; russian="Совпавший текст не является ключом замены"; break;
     case RuntimeError::school_ip_address:
         code="E_FORMAT"; english="Invalid IPv4 address"; russian="Некорректная запись адреса IPv4"; break;
     case RuntimeError::school_ip_suffix:

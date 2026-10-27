@@ -9,6 +9,7 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 add_subdirectory(third_party/libtommath)
+add_subdirectory(third_party/pcre2)
 
 add_library(abc_core
     src/big_integer.cpp
@@ -26,6 +27,7 @@ add_library(abc_core
     src/string_arrays.cpp
     src/school.cpp
     src/school_text.cpp
+    src/regex.cpp
     src/school_ip.cpp
     src/sequences.cpp
     src/diagnostics.cpp
@@ -34,7 +36,7 @@ add_library(abc_core
     src/bytecode.cpp
     src/vm.cpp)
 target_include_directories(abc_core PUBLIC include)
-target_link_libraries(abc_core PRIVATE abc_math)
+target_link_libraries(abc_core PRIVATE abc_math abc_regex)
 include(CheckCXXSourceCompiles)
 check_cxx_source_compiles("#include <charconv>
 int main() { const char text[] = \"1.5\"; double value; return std::from_chars(text, text + 3, value).ec == std::errc{} ? 0 : 1; }"
@@ -54,6 +56,7 @@ if(ABC_SANITIZERS)
     endif()
     target_compile_options(abc_core PUBLIC -fsanitize=address,undefined -fno-omit-frame-pointer)
     target_compile_options(abc_math PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
+    target_compile_options(abc_regex PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
     target_link_options(abc_core PUBLIC -fsanitize=address,undefined)
 endif()
 
@@ -241,6 +244,9 @@ if(BUILD_TESTING)
     add_test(NAME random_compatibility COMMAND ${CMAKE_COMMAND}
         "-DABC_RUNNER=$<TARGET_FILE:abc>" "-DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
         -DABC_FIXTURE_NAME=random-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")
+    add_test(NAME school_swap_compatibility COMMAND ${CMAKE_COMMAND}
+        -DABC_RUNNER=$<TARGET_FILE:abc> -DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures
+        -DABC_FIXTURE_NAME=school-swap-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")
 endif()
 
 install(TARGETS abc RUNTIME DESTINATION bin)
@@ -250,6 +256,7 @@ install(FILES stdlib-status.json DESTINATION .)
 install(FILES licenses/DotNet-Runtime-MIT.txt DESTINATION licenses)
 install(FILES licenses/Unicode-License.txt DESTINATION licenses)
 install(FILES licenses/LibTomMath-Unlicense.txt DESTINATION licenses)
+install(FILES licenses/PCRE2-LICENCE.md DESTINATION licenses)
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/../doc/license.txt" DESTINATION licenses RENAME PascalABC.NET.txt)
 
 if(ABC_BUILD_IDE)

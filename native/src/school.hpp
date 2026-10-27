@@ -9,6 +9,7 @@ Value invoke_school_list(Values& values, SchoolContext& context, SchoolList meth
 Value school_replace_many(const Value& text, const std::shared_ptr<Aggregate>& source, const std::shared_ptr<Aggregate>& target,
     SourceLocation location, const ExecutionOptions& options);
 void school_replace_last(Values& values, const std::shared_ptr<Cell>& receiver, const Value& source, const Value& target, const ExecutionOptions& options);
+void school_swap_substr(Values& values, const std::shared_ptr<Cell>& receiver, const Value& first, const Value& second, const ExecutionOptions& options);
 Value school_fold(Values& values,const std::shared_ptr<Aggregate>& array,SchoolFold method,const ExecutionOptions& options);
 std::int64_t school_pair(std::int64_t a, std::int64_t b, bool lcm, SourceLocation location);
 std::pair<std::int64_t,std::int64_t> school_pair_values(std::int64_t a,std::int64_t b,SourceLocation location);

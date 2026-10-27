@@ -1,0 +1,2 @@
+# Preserve the pinned upstream files byte for byte, including their whitespace.
+* -text -whitespace

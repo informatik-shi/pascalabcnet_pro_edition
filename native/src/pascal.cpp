@@ -1023,7 +1023,7 @@ private:
             }
             result->left = expression(*source.left); const auto receiver = result->left->type;
             if (imported_units_.contains("school") && ((receiver==Type::boolean && source.token.text=="imp")
-                || (receiver==Type::string && (source.token.text=="replacemany" || source.token.text=="translate")))) {
+                || (receiver==Type::string && (source.token.text=="replacemany" || source.token.text=="translate" || source.token.text=="swapsubstr")))) {
                 result->arguments.push_back(std::move(result->left));
                 for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
                 if (!bind_school_text(*result,source.token.text,"school")) { result->kind=hir::ExprKind::call; bind_builtin(*result,source.token.text,"school"); }
@@ -1757,14 +1757,14 @@ private:
     }
     bool bind_school_text(hir::Expr& result, std::string_view name, std::string_view unit = {}) {
         if ((!unit.empty() && unit!="school") || !imported_units_.contains("school")) return false;
-        const bool last=name=="replacelast";
-        if (!last && (name!="replacemany" || result.arguments.size()!=3
+        const bool last=name=="replacelast",swap=name=="swapsubstr";
+        if (!last && !swap && (name!="replacemany" || result.arguments.size()!=3
             || (!compound(result.arguments[1]->type) && !compound(result.arguments[2]->type)))) return false;
         if (result.arguments.size()!=3) throw Error("E_TYPE",result.location,"Replacement requires three arguments");
-        if (last) {
-            if (result.arguments[0]->type!=Type::string || !lvalue(*result.arguments[0])) throw Error("E_TYPE",result.location,"ReplaceLast requires a writable string");
+        if (last || swap) {
+            if (result.arguments[0]->type!=Type::string || !lvalue(*result.arguments[0])) throw Error("E_TYPE",result.location,"Replacement requires a writable string");
             for (std::size_t i=1;i<3;++i) result.arguments[i]=convert(std::move(result.arguments[i]),Type::string);
-            result.kind=hir::ExprKind::replace_last; result.type=Type::unit;
+            result.kind=swap ? hir::ExprKind::swap_substrings : hir::ExprKind::replace_last; result.type=Type::unit;
         } else {
             result.arguments[0]=convert(std::move(result.arguments[0]),Type::string);
             for (std::size_t i=1;i<3;++i) {

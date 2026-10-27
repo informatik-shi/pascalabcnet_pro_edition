@@ -114,9 +114,9 @@ private:
             emit(node.kind==hir::ExprKind::tuple_literal ? Op::tuple_literal : Op::school_pair,node.type,0,node.location); break;
         case hir::ExprKind::school_fold:
             expression(*node.left); emit(Op::school_fold,node.left->type,node.local,node.location); break;
-        case hir::ExprKind::replace_last:
+        case hir::ExprKind::replace_last: case hir::ExprKind::swap_substrings:
             reference(*node.arguments[0]); expression(*node.arguments[1]); expression(*node.arguments[2]);
-            emit(Op::replace_last,Type::string,0,node.location); break;
+            emit(node.kind==hir::ExprKind::replace_last ? Op::replace_last : Op::swap_substrings,Type::string,0,node.location); break;
         case hir::ExprKind::replace_many:
             for (const auto& argument:node.arguments) expression(*argument);
             emit(Op::replace_many,node.arguments[1]->type,static_cast<std::size_t>(node.arguments[2]->type),node.location); break;
@@ -500,7 +500,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if (instruction.operand>static_cast<std::size_t>(SchoolFold::lcm) || !compound(type) || type_info(program,type).kind!=CompoundKind::array
                 || type_info(program,type).rank!=1 || (type_info(program,type).element!=Type::int64 && type_info(program,type).element!=Type::big_integer)) invalid(instruction,"Invalid School GCD/LCM fold");
             break;
-        case Op::replace_last:
+        case Op::replace_last: case Op::swap_substrings:
             if (type!=Type::string || instruction.operand) invalid(instruction,"Invalid ReplaceLast");
             break;
         case Op::replace_many: {
@@ -828,7 +828,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             for (auto field=type_info(program,instruction.type).fields.rbegin();field!=type_info(program,instruction.type).fields.rend();++field) require(field->type);
             stack.push_back(instruction.type); break;
         case Op::school_fold: require(instruction.type); stack.push_back(type_info(program,instruction.type).element); break;
-        case Op::replace_last: require(Type::string); require(Type::string); require(reference_type(Type::string)); break;
+        case Op::replace_last: case Op::swap_substrings: require(Type::string); require(Type::string); require(reference_type(Type::string)); break;
         case Op::replace_many: require(static_cast<Type>(instruction.operand)); require(instruction.type); require(Type::string); stack.push_back(Type::string); break;
         case Op::school_list: {
             const auto method=static_cast<SchoolList>(instruction.operand);

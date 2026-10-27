@@ -238,6 +238,10 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
             const auto target=pop(),source=pop(); const auto receiver=std::get<std::shared_ptr<Cell>>(pop());
             school_replace_last(values,receiver,source,target,options); break;
         }
+        case Op::swap_substrings: {
+            const auto second=pop(),first=pop(); const auto receiver=std::get<std::shared_ptr<Cell>>(pop());
+            school_swap_substr(values,receiver,first,second,options); break;
+        }
         case Op::replace_many: {
             const auto target=std::get<std::shared_ptr<Aggregate>>(pop()),source=std::get<std::shared_ptr<Aggregate>>(pop());
             const auto text=pop(); stack.push_back(school_replace_many(text,source,target,instruction.location,options)); break;
