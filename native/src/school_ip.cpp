@@ -106,7 +106,59 @@ std::u16string school_ip_text(const Program& program,const std::shared_ptr<Aggre
     result+=line(u"Адрес последнего хоста (Hostmax)    | ",8)+newline;
     return result;
 }
-Value invoke_school_ip(Values& values,Type owner,SchoolIPMethod method,Type generated,std::span<const Value> arguments,const ExecutionOptions& options) {
+std::shared_ptr<Aggregate> school_sequence_begin(Values& values,const std::shared_ptr<Aggregate>& sequence) {
+    check(sequence,values.location);
+    if (!sequence->sequence) throw runtime_error(RuntimeError::invalid_bytecode,values.location);
+    if (!values.remaining) throw runtime_error(RuntimeError::allocation_limit,values.location);
+    --values.remaining;
+    auto result=std::make_shared<Aggregate>(); result->type=sequence->type;
+    result->sequence=std::make_unique<SequenceState>(*sequence->sequence);
+    auto& state=*result->sequence; state.started=true; state.first=state.count=0;
+    check(state.source,values.location);
+    const auto hosts=std::get<std::int32_t>(state.source->items[3]->value);
+    if (hosts<=0) return result;
+    if (state.provider==SequenceProvider::school_ip_hosts) { state.first=1; state.count=static_cast<std::uint32_t>(hosts); }
+    else {
+        state.first=number(child(state.source,5),values.location);
+        const auto finish=number(child(state.source,6),values.location);
+        if (state.first<=finish) state.count=finish-state.first+1;
+    }
+    return result;
+}
+std::uint64_t school_sequence_length(const std::shared_ptr<Aggregate>& sequence,SourceLocation location) {
+    check(sequence,location);
+    if (!sequence->sequence || !sequence->sequence->started) throw runtime_error(RuntimeError::invalid_bytecode,location);
+    return sequence->sequence->count;
+}
+Value school_sequence_at(Values& values,const std::shared_ptr<Aggregate>& sequence,std::int64_t index) {
+    const auto count=school_sequence_length(sequence,values.location);
+    if (index<0 || static_cast<std::uint64_t>(index)>=count) throw runtime_error(RuntimeError::index_bounds,values.location);
+    const auto& state=*sequence->sequence;
+    if (state.provider==SequenceProvider::school_ip_binary) return binary(static_cast<std::uint32_t>(state.first+static_cast<std::uint64_t>(index)));
+    const auto n=std::uint64_t(number(child(state.source,5),values.location))+state.first+static_cast<std::uint64_t>(index);
+    if (n>UINT32_MAX) throw runtime_error(RuntimeError::integer_overflow,values.location);
+    return address(values,type_info(values.program,sequence->type).element,static_cast<std::uint32_t>(n));
+}
+Value school_sequence_collect(Values& values,const std::shared_ptr<Aggregate>& sequence,Type array,const ExecutionOptions& options) {
+    const auto iterator=school_sequence_begin(values,sequence); const auto count=school_sequence_length(iterator,values.location);
+    const bool materialize=array!=Type::invalid;
+    const auto element=type_info(values.program,sequence->type).element;
+    std::shared_ptr<Aggregate> result;
+    if (materialize) {
+        const auto cost=compound(element) && type_info(values.program,element).kind==CompoundKind::school_address ? 4U : 1U;
+        if (count>values.remaining/cost) throw runtime_error(RuntimeError::allocation_limit,values.location);
+        result=values.array(array,0);
+    }
+    for (std::uint64_t i=0;i<count;++i) {
+        if (i>=options.instruction_limit) throw runtime_error(RuntimeError::instruction_limit,values.location);
+        if ((i&255U)==0 && options.cancelled && options.cancelled()) throw runtime_error(RuntimeError::cancelled,values.location);
+        auto value=school_sequence_at(values,iterator,static_cast<std::int64_t>(i));
+        if (materialize) result->items.push_back(values.cell(element,std::move(value)));
+        else if (i>=INT32_MAX) throw runtime_error(RuntimeError::integer_overflow,values.location);
+    }
+    return materialize ? Value{result} : Value{static_cast<std::int32_t>(count)};
+}
+Value invoke_school_ip(Values& values,Type owner,SchoolIPMethod method,Type generated,std::span<const Value> arguments,const ExecutionOptions&) {
     const auto location=values.location;
     if (method==SchoolIPMethod::address_empty || method==SchoolIPMethod::ip_empty) return empty(values,owner);
     if (method==SchoolIPMethod::address_text) return address(values,owner,arguments[0]);
@@ -144,22 +196,11 @@ Value invoke_school_ip(Values& values,Type owner,SchoolIPMethod method,Type gene
         return format(string_text(arguments[1]),location);
     }
     if (school_ip_generator(method)) {
-        const auto hosts=std::get<std::int32_t>(receiver->items[3]->value);
-        auto result=values.array(generated,0); if (hosts<=0) return result;
-        const auto start=number(child(receiver,5),location);
-        const auto finish=method==SchoolIPMethod::ip_generate_binary ? number(child(receiver,6),location) : std::uint64_t(start)+hosts;
-        const auto first=std::uint64_t(start)+(method==SchoolIPMethod::ip_generate ? 1U : 0U);
-        if (finish>UINT32_MAX) throw runtime_error(RuntimeError::integer_overflow,location);
-        if (first>finish) return result;
-        const auto count=finish-first+1; const auto cost=method==SchoolIPMethod::ip_generate ? 4U : 1U;
-        if (count>values.remaining/cost) throw runtime_error(RuntimeError::allocation_limit,location);
-        const auto element=type_info(values.program,generated).element;
-        for (std::uint64_t i=0;i<count;++i) {
-            if (i>=options.instruction_limit) throw runtime_error(RuntimeError::instruction_limit,location);
-            if ((i&255U)==0 && options.cancelled && options.cancelled()) throw runtime_error(RuntimeError::cancelled,location);
-            const auto n=static_cast<std::uint32_t>(first+i);
-            result->items.push_back(values.cell(element,method==SchoolIPMethod::ip_generate ? Value{address(values,element,n)} : Value{binary(n)}));
-        }
+        if (!values.remaining) throw runtime_error(RuntimeError::allocation_limit,location);
+        --values.remaining;
+        auto result=std::make_shared<Aggregate>(); result->type=generated; result->sequence=std::make_unique<SequenceState>();
+        result->sequence->source=receiver;
+        result->sequence->provider=method==SchoolIPMethod::ip_generate ? SequenceProvider::school_ip_hosts : SequenceProvider::school_ip_binary;
         return result;
     }
     const auto a=number(receiver,location);

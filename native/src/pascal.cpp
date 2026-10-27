@@ -295,6 +295,9 @@ private:
             }
             expect("of"); result->element = type_syntax();
         }
+        else if (accept("sequence")) {
+            result->kind="sequence"; expect("of"); result->element=type_syntax();
+        }
         else if (accept("record")) {
             result->kind = "record";
             while (!is("end")) {
@@ -719,7 +722,7 @@ private:
         const auto name = kind == CompoundKind::array ? "array" : kind == CompoundKind::list ? "list"
             : kind == CompoundKind::stack ? "stack" : kind == CompoundKind::queue ? "queue"
             : kind == CompoundKind::dynarray ? "dynarray" : kind == CompoundKind::linked_node ? "linkedlistnode"
-            : kind == CompoundKind::single_node ? "singlenode" : "simpleset";
+            : kind == CompoundKind::single_node ? "singlenode" : kind==CompoundKind::sequence ? "sequence" : "simpleset";
         module_.types.push_back({name,kind,element,{},Type::invalid,rank});
         return static_cast<Type>(63+module_.types.size());
     }
@@ -754,6 +757,7 @@ private:
             if (!imported_units_.contains("school")) throw Error("E_UNSUPPORTED",syntax.token.location,"IPv4 classes require uses School");
             return school_ip_type(syntax.kind=="addr32" ? CompoundKind::school_address : CompoundKind::school_ip);
         }
+        if (syntax.kind=="sequence" && syntax.element) return sequence_type(CompoundKind::sequence,resolve_type(*syntax.element));
         if (syntax.kind == "array" || (syntax.kind == "list" && syntax.element))
             return sequence_type(syntax.kind == "array" ? CompoundKind::array : CompoundKind::list,resolve_type(*syntax.element),syntax.rank);
         if (syntax.kind == "assocarray" && syntax.key && syntax.element) {
@@ -879,6 +883,7 @@ private:
                     result->kind=hir::ExprKind::default_value; result->type=type; result->operation="new"; break;
                 }
                 if (!compound(type)) throw Error("E_TYPE",result->location,"new requires an array length, record or collection type");
+                if (info(type,result->location).kind==CompoundKind::sequence) throw Error("E_TYPE",result->location,"Sequences require a typed producer");
                 if (school_ip_kind(info(type,result->location).kind)) {
                     for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
                     bind_school_ip_constructor(*result,type); break;
@@ -1166,6 +1171,13 @@ private:
                 break;
             }
             const auto& type = info(receiver,result->location);
+            if (type.kind==CompoundKind::sequence) {
+                if ((source.token.text!="toarray" && source.token.text!="count" && source.token.text!="length") || !source.arguments.empty())
+                    throw Error("E_TYPE",result->location,"Sequence supports parameterless Count and ToArray");
+                if (source.token.text=="length" && source.kind==SyntaxExprKind::member_call) throw Error("E_TYPE",result->location,"Length is not callable");
+                result->kind=hir::ExprKind::sequence_call; result->local=source.token.text=="toarray" ? 1U : 0U;
+                result->type=result->local ? sequence_type(CompoundKind::array,type.element) : Type::integer; break;
+            }
             if (school_ip_kind(type.kind)) {
                 const auto name=source.token.text; SchoolIPMethod method; bool property=true;
                 if (type.kind==CompoundKind::school_address) {
@@ -1639,7 +1651,7 @@ private:
         if (parameters.size()!=result.arguments.size()) throw Error("E_TYPE",result.location,"Wrong IPv4 method argument count");
         for (std::size_t i=0;i<parameters.size();++i) result.arguments[i]=convert(std::move(result.arguments[i]),parameters[i]);
         Type generated=Type::invalid;
-        if (school_ip_generator(method)) generated=sequence_type(CompoundKind::array,method==SchoolIPMethod::ip_generate ? info(owner,result.location).fields[0].type : Type::string);
+        if (school_ip_generator(method)) generated=sequence_type(CompoundKind::sequence,method==SchoolIPMethod::ip_generate ? info(owner,result.location).fields[0].type : Type::string);
         result.type=school_ip_result(owner,info(owner,result.location),method,generated);
         result.kind=hir::ExprKind::school_ip; result.operation_type=owner;
         result.local=static_cast<std::size_t>(method)+(school_ip_generator(method) ? static_cast<std::size_t>(generated)<<8 : 0);
@@ -2178,7 +2190,8 @@ private:
         case SyntaxStmtKind::foreach_loop: {
             result.kind=hir::StmtKind::foreach_loop; result.expression=expression(*source.expression);
             const auto sequence=result.expression->type;
-            if (sequence!=Type::string && (!compound(sequence) || !indexed_sequence(info(sequence,result.location).kind)))
+            const bool lazy=compound(sequence) && info(sequence,result.location).kind==CompoundKind::sequence;
+            if (sequence!=Type::string && (!compound(sequence) || (!indexed_sequence(info(sequence,result.location).kind) && !lazy)))
                 throw Error("E_UNSUPPORTED",result.location,"Foreach requires a string, array or List<T>");
             const auto element=sequence==Type::string ? Type::character : info(sequence,result.location).element;
             scopes_.emplace_back(); const auto& name=source.names.front();
@@ -2199,7 +2212,7 @@ private:
             auto temporary=[&](Type type) {
                 const auto local=module_.locals.size(); module_.locals.push_back({"$foreach_"+std::to_string(local),type,!in_routine_}); return local;
             };
-            result.sequence_local=temporary(sequence); result.index_local=temporary(Type::integer); result.version_local=temporary(Type::int64);
+            result.sequence_local=temporary(sequence); result.index_local=temporary(lazy ? Type::int64 : Type::integer); result.version_local=temporary(Type::int64);
             result.target=std::make_unique<hir::Expr>(); result.target->kind=hir::ExprKind::local;
             result.target->local=control; result.target->type=type; result.target->location=name.location;
             for_controls_.insert(control); ++loop_depth_;

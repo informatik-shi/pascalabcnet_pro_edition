@@ -58,6 +58,8 @@ private:
     void expression(const hir::Expr& node) {
         if (node.type == Type::invalid) throw Error("E_HIR", node.location, "Unresolved expression type");
         switch (node.kind) {
+        case hir::ExprKind::sequence_call:
+            expression(*node.left); emit(node.local ? Op::sequence_array : Op::sequence_count,node.left->type,node.local ? static_cast<std::size_t>(node.type) : 0,node.location); break;
         case hir::ExprKind::school_ip:
             for (const auto& argument:node.arguments) expression(*argument);
             emit(Op::school_ip,node.operation_type,node.local,node.location); break;
@@ -350,16 +352,19 @@ private:
         }
         case hir::StmtKind::foreach_loop: {
             const auto sequence=node.expression->type;
+            const bool lazy=compound(sequence) && type_info(program_,sequence).kind==CompoundKind::sequence;
+            const auto index_type=lazy ? Type::int64 : Type::integer;
             const auto element=sequence==Type::string ? Type::character : type_info(program_,sequence).element;
-            expression(*node.expression); local(Op::store,node.sequence_local,node.location);
+            expression(*node.expression); if (lazy) emit(Op::sequence_begin,sequence,0,node.location);
+            local(Op::store,node.sequence_local,node.location);
             local(Op::load,node.sequence_local,node.location); emit(Op::iteration_version,sequence,0,node.location);
             local(Op::store,node.version_local,node.location);
-            constant(std::int32_t{0},node.location); local(Op::store,node.index_local,node.location);
+            constant(lazy ? Value{std::int64_t{0}} : Value{std::int32_t{0}},node.location); local(Op::store,node.index_local,node.location);
             const auto start=code_->size();
             local(Op::load,node.sequence_local,node.location); local(Op::load,node.version_local,node.location);
             emit(Op::iteration_check,sequence,0,node.location);
             local(Op::load,node.index_local,node.location); local(Op::load,node.sequence_local,node.location);
-            emit(Op::length,sequence,0,node.location); emit(Op::less,Type::integer,0,node.location);
+            emit(Op::length,sequence,0,node.location); emit(Op::less,index_type,0,node.location);
             const auto done=emit(Op::jump_false,Type::invalid,0,node.location);
             local(Op::load,node.sequence_local,node.location); local(Op::load,node.index_local,node.location);
             emit(Op::get_index,sequence,sequence==Type::string || type_info(program_,sequence).rank==2 ? 1 : 0,node.location);
@@ -367,8 +372,8 @@ private:
             local(Op::store,node.target->local,node.location);
             loops_.emplace_back(); statement(*node.body);
             const auto advance=code_->size();
-            local(Op::load,node.index_local,node.location); constant(std::int32_t{1},node.location);
-            emit(Op::add,Type::integer,0,node.location); local(Op::store,node.index_local,node.location);
+            local(Op::load,node.index_local,node.location); constant(lazy ? Value{std::int64_t{1}} : Value{std::int32_t{1}},node.location);
+            emit(Op::add,index_type,0,node.location); local(Op::store,node.index_local,node.location);
             emit(Op::jump,Type::invalid,start,node.location);
             (*code_)[done].operand=code_->size(); finish_loop(advance); break;
         }
@@ -440,6 +445,14 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
     for (const auto& instruction : code) {
         const auto type = instruction.type;
         switch (instruction.op) {
+        case Op::sequence_begin: case Op::sequence_count: case Op::sequence_array:
+            if (!compound(type) || type_info(program,type).kind!=CompoundKind::sequence) invalid(instruction,"Sequence instruction requires a statically typed sequence");
+            if (instruction.op==Op::sequence_array) {
+                if (instruction.operand<64 || instruction.operand>=64+program.types.size()) invalid(instruction,"Invalid sequence array result");
+                const auto& result=type_info(program,static_cast<Type>(instruction.operand));
+                if (result.kind!=CompoundKind::array || result.rank!=1 || result.element!=type_info(program,type).element) invalid(instruction,"Sequence array element type mismatch");
+            } else if (instruction.operand) invalid(instruction,"Invalid sequence flags");
+            break;
         case Op::school_ip: {
             const auto method=static_cast<SchoolIPMethod>(instruction.operand&255U);
             if (!compound(type) || !school_ip_allowed(type_info(program,type).kind,method)) invalid(instruction,"Invalid IPv4 method owner or operation");
@@ -447,7 +460,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
                 const auto result=instruction.operand>>8;
                 if (result<64 || result>=64+program.types.size()) invalid(instruction,"Invalid IPv4 generator result type");
                 const auto& array=type_info(program,static_cast<Type>(result));
-                if (array.kind!=CompoundKind::array || array.rank!=1 || array.element!=(method==SchoolIPMethod::ip_generate ? type_info(program,type).fields[0].type : Type::string))
+                if (array.kind!=CompoundKind::sequence || array.rank!=1 || array.element!=(method==SchoolIPMethod::ip_generate ? type_info(program,type).fields[0].type : Type::string))
                     invalid(instruction,"Invalid IPv4 generator element type");
             } else if (instruction.operand>>8) invalid(instruction,"Invalid IPv4 method flags");
             break;
@@ -555,7 +568,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         case Op::set_character:
             if (type!=Type::string || instruction.operand) invalid(instruction,"Invalid string character assignment"); break;
         case Op::iteration_version: case Op::iteration_check:
-            if ((type!=Type::string && (!compound(type) || !indexed_sequence(type_info(program,type).kind))) || instruction.operand)
+            if ((type!=Type::string && (!compound(type) || (!indexed_sequence(type_info(program,type).kind) && type_info(program,type).kind!=CompoundKind::sequence))) || instruction.operand)
                 invalid(instruction,"Invalid foreach sequence instruction");
             break;
         case Op::linked_call:
@@ -608,7 +621,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if (instruction.op==Op::sequence_sort && (!scalar(type_info(program,type).element) || type_info(program,type).rank!=1 || instruction.operand>1)) invalid(instruction,"Invalid sort"); break;
         case Op::make_default: case Op::store_ref: case Op::drop:
             if (!valid_value_type(program,type) || (instruction.op==Op::make_default && instruction.operand>1)) invalid(instruction,"Invalid value type");
-            if (instruction.op==Op::make_default && instruction.operand && compound(type) && (node_kind(type_info(program,type).kind) || type_info(program,type).kind==CompoundKind::tuple || school_ip_kind(type_info(program,type).kind)))
+            if (instruction.op==Op::make_default && instruction.operand && compound(type) && (node_kind(type_info(program,type).kind) || type_info(program,type).kind==CompoundKind::tuple || type_info(program,type).kind==CompoundKind::sequence || school_ip_kind(type_info(program,type).kind)))
                 invalid(instruction,"Nodes and tuples require the typed constructor");
             break;
         case Op::call_user:
@@ -620,6 +633,10 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
                 || (instruction.op==Op::array_literal ? instruction.operand>4096 || type_info(program,type).rank!=1 : instruction.operand!=0)) invalid(instruction,"Invalid array instruction");
             break;
         case Op::get_index: case Op::ref_index: case Op::length:
+            if (compound(type) && type_info(program,type).kind==CompoundKind::sequence) {
+                if (instruction.op==Op::ref_index || instruction.operand) invalid(instruction,"Invalid or writable lazy sequence access");
+                break;
+            }
             if (type==Type::string) {
                 if (instruction.op==Op::ref_index || instruction.operand>(instruction.op==Op::get_index ? 1U : 0U)) invalid(instruction,"Invalid string sequence instruction");
                 break;
@@ -730,6 +747,9 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         };
         switch (instruction.op) {
         case Op::iteration_version: require(instruction.type); stack.push_back(Type::int64); break;
+        case Op::sequence_begin: require(instruction.type); stack.push_back(instruction.type); break;
+        case Op::sequence_count: require(instruction.type); stack.push_back(Type::integer); break;
+        case Op::sequence_array: require(instruction.type); stack.push_back(static_cast<Type>(instruction.operand)); break;
         case Op::iteration_check: require(Type::int64); require(instruction.type); break;
         case Op::linked_call: {
             const auto method = static_cast<LinkedMethod>(instruction.operand);
@@ -895,7 +915,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if (type_info(program,instruction.type).rank==2) require(instruction.type);
             require(reference_type(instruction.type)); break;
         case Op::get_index: case Op::ref_index:
-            require(Type::integer);
+            require(compound(instruction.type) && type_info(program,instruction.type).kind==CompoundKind::sequence ? Type::int64 : Type::integer);
             if (instruction.type!=Type::string && type_info(program,instruction.type).rank==2 && !instruction.operand) require(Type::integer);
             require(instruction.type);
             if (instruction.type==Type::string) { stack.push_back(Type::character); break; }
@@ -903,7 +923,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         case Op::get_field: case Op::ref_field:
             require(instruction.op == Op::get_field ? instruction.type : reference_type(instruction.type));
             stack.push_back(instruction.op == Op::get_field ? type_info(program,instruction.type).fields[instruction.operand].type : reference_type(type_info(program,instruction.type).fields[instruction.operand].type)); break;
-        case Op::length: require(instruction.type); stack.push_back(Type::integer); break;
+        case Op::length: require(instruction.type); stack.push_back(compound(instruction.type) && type_info(program,instruction.type).kind==CompoundKind::sequence ? Type::int64 : Type::integer); break;
         case Op::call_user:
             for (auto parameter = program.routines[instruction.operand].parameters.rbegin(); parameter != program.routines[instruction.operand].parameters.rend(); ++parameter)
                 require(parameter->by_reference ? reference_type(parameter->type) : parameter->type);
@@ -968,7 +988,10 @@ void verify(const Program& program) {
             if (!valid_value_type(program,t) || (compound(t) && static_cast<unsigned>(t)-64 >= i)) throw Error("E_BYTECODE",{},"Invalid or cyclic type dependency");
             if (compound(t)) level = std::max(level,depth[static_cast<unsigned>(t)-64]+1);
         };
-        if (school_ip_kind(type.kind)) {
+        if (type.kind==CompoundKind::sequence) {
+            if (type.key!=Type::invalid || !type.fields.empty() || type.name!="sequence") throw Error("E_BYTECODE",{},"Invalid sequence type metadata");
+            prior(type.element);
+        } else if (school_ip_kind(type.kind)) {
             const bool address=type.kind==CompoundKind::school_address;
             const auto size=address ? school_address_fields.size() : school_ip_fields.size();
             if (type.fields.size()!=size || type.element!=Type::invalid || type.key!=Type::invalid || type.name!=(address ? "addr32" : "calcip"))

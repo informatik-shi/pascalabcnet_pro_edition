@@ -514,6 +514,25 @@ void school_library() {
     error([&]{(void)run("uses School; begin BinFormat(1,10000,''); end.","",options);},"E_CANCELLED");
 }
 
+void lazy_ip_sequences() {
+    result("uses School; begin var c:=new CalcIP('128.0.0.1',2); var s:sequence of Addr32:=c.GenAddr; foreach var a in s do begin Writeln(a.Value); break; end; end.","128.0.0.1\n");
+    result("uses School; begin var c:=new CalcIP('10.0.0.1',30); c.Network.Value:='0.0.0.0'; c.Broadcast.Value:='255.255.255.255'; var n:=0; foreach var s in c.GenAddrBin do begin Writeln(s); Inc(n); if n=2 then break; end; end.","00000000000000000000000000000000\n00000000000000000000000000000001\n");
+    result("uses School; function Make:sequence of Addr32; begin var c:=new CalcIP('10.0.0.1',30); Result:=c.GenAddr; end; procedure First(s:sequence of Addr32); begin foreach var x in s do begin Writeln(x.Value); break; end; end; begin var s:=Make; First(s); Writeln(s.Count(),' ',s.ToArray[1].Value); end.","10.0.0.1\n2 10.0.0.2\n");
+    result("uses School; begin var c:=new CalcIP('10.0.0.1',30); var s:=c.GenAddr; c.Network.Value:='10.0.0.10'; foreach var a in s do begin Writeln(a.Value); c.Network.Value:='10.0.0.20'; end; foreach var a in s do begin Writeln(a.Value); break; end; end.","10.0.0.11\n10.0.0.22\n10.0.0.21\n");
+    result("uses School; begin var c:=new CalcIP('10.0.0.1',30); var s:=c.GenAddr; foreach var a in s do foreach var b in s do Writeln(a.Value,' ',b.Value); Writeln(s.ToArray[0]=s.ToArray[0]); end.","10.0.0.1 10.0.0.1\n10.0.0.1 10.0.0.2\n10.0.0.2 10.0.0.1\n10.0.0.2 10.0.0.2\nFalse\n");
+    result("uses School; begin var c:=new CalcIP('10.0.0.1',30); var s:=c.GenAddrBin; var n:=0; foreach var bits in s do begin Writeln(bits); c.Network.Value:='10.0.0.10'; c.Broadcast.Value:='10.0.0.11'; Inc(n); end; Writeln(n); foreach var bits in s do begin Writeln(bits); break; end; end.","00001010000000000000000000000000\n00001010000000000000000000000001\n00001010000000000000000000000010\n00001010000000000000000000000011\n4\n00001010000000000000000000001010\n");
+    result("begin var s:sequence of integer; Writeln(s=nil); end.","True\n");
+    for (const auto source:{"begin var s:sequence of integer; foreach var x in s do Writeln(x); end.","begin var s:sequence of integer; s.Count; end.","begin var s:sequence of integer; s.ToArray; end."}) runtime_error(source,"E_NIL");
+    runtime_error("uses School; begin var c:=new CalcIP('10.0.0.1',30); var s:=c.GenAddr; c.Network.Value:='255.255.255.255'; s.Count; end.","E_OVERFLOW");
+    for (const auto source:{"uses School; begin var c:=new CalcIP('10.0.0.1',30); var s:sequence of string:=c.GenAddr; end.","uses School; begin var c:=new CalcIP('10.0.0.1',30); var a:array of Addr32:=c.GenAddr; end.","begin var s:sequence of integer; s[0]:=1; end.","begin var s:sequence of integer; Writeln(s[0]); end.","begin var s:=new sequence of integer; end."}) compile_error(source,"E_TYPE");
+    auto invalid=abc::compile("uses School; begin var c:=new CalcIP('10.0.0.1',30); foreach var a in c.GenAddr do Writeln(a.Value); end.");
+    for (auto& instruction:invalid.code) if (instruction.op==abc::Op::get_index) instruction.op=abc::Op::ref_index;
+    error([&]{abc::verify(invalid);},"E_BYTECODE");
+    invalid=abc::compile("uses School; begin var c:=new CalcIP('10.0.0.1',30); c.GenAddr.ToArray; end.");
+    for (auto& instruction:invalid.code) if (instruction.op==abc::Op::sequence_array) instruction.operand=64;
+    error([&]{abc::verify(invalid);},"E_BYTECODE");
+}
+
 void school_ip_classes() {
     std::string expected;
     std::uint32_t state=123456789;
@@ -542,7 +561,7 @@ void school_ip_classes() {
     runtime_error("uses School; begin var c:=new CalcIP('10.0.0.1',1); end.","E_OVERFLOW");
     runtime_error("uses School; begin var a:=new Addr32; Writeln(a.ToString); end.","E_BOUNDS");
     runtime_error("uses School; begin var a:=new Addr32(24); a.AddrFormat('short'); end.","E_BOUNDS");
-    runtime_error("uses School; begin var c:=new CalcIP('10.0.0.1',2); c.GenAddr; end.","E_LIMIT");
+    runtime_error("uses School; begin var c:=new CalcIP('10.0.0.1',2); c.GenAddr.ToArray; end.","E_LIMIT");
     for (const auto source:{"uses School; begin var a:=new Addr32(24); a.Value2:='x'; end.","uses School; begin var c:=new CalcIP; c.Hosts:=7; end.","uses School; begin var a:=new Addr32(24); a.Value(); end.","uses School; begin var a:=new Addr32(True); end.","uses School; begin var a:=new Addr32(24); Read(a.Value); end.","uses School; begin var a:=new Addr32(24); var b:=1+a; end."}) compile_error(source,"E_TYPE");
     compile_error("begin var a:Addr32; end.","E_UNSUPPORTED");
     compile_error("uses School; begin var a:=new Addr32; a.addr10:=7; end.","E_NAME");
@@ -567,9 +586,9 @@ void school_ip_classes() {
     std::istringstream input; std::ostringstream output;
     error([&]{abc::execute(program,input,output);},"E_NIL"); require(output.str()=="T","Addr32 setter evaluates its value before the nil receiver call fails");
     abc::ExecutionOptions options; options.instruction_limit=50;
-    error([&]{(void)run("uses School; begin var c:=new CalcIP('10.0.0.1',18); c.GenAddr; end.","",options);},"E_LIMIT");
+    error([&]{(void)run("uses School; begin var c:=new CalcIP('10.0.0.1',18); c.GenAddr.ToArray; end.","",options);},"E_LIMIT");
     options={}; std::size_t polls=0; options.cancelled=[&]{return ++polls>30;};
-    error([&]{(void)run("uses School; begin var c:=new CalcIP('10.0.0.1',18); c.GenAddrBin; end.","",options);},"E_CANCELLED");
+    error([&]{(void)run("uses School; begin var c:=new CalcIP('10.0.0.1',18); c.GenAddrBin.ToArray; end.","",options);},"E_CANCELLED");
 }
 
 void string_value_methods() {
@@ -2807,6 +2826,7 @@ int main() {
     school_truth_tables();
     string_value_methods();
     school_ip_classes();
+    lazy_ip_sequences();
     school_big_integer_library();
     school_fold_library();
     unicode_identifiers_and_school_aliases();

@@ -187,6 +187,12 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
         if (steps++ >= options.instruction_limit) trap(instruction, RuntimeError::instruction_limit);
         if (options.cancelled && options.cancelled()) trap(instruction, RuntimeError::cancelled);
         switch (instruction.op) {
+        case Op::sequence_begin:
+            stack.emplace_back(school_sequence_begin(values,std::get<std::shared_ptr<Aggregate>>(pop()))); break;
+        case Op::sequence_count: case Op::sequence_array: {
+            const auto sequence=std::get<std::shared_ptr<Aggregate>>(pop());
+            stack.push_back(school_sequence_collect(values,sequence,instruction.op==Op::sequence_array ? static_cast<Type>(instruction.operand) : Type::invalid,options)); break;
+        }
         case Op::school_ip: {
             const auto method=static_cast<SchoolIPMethod>(instruction.operand&255U);
             const auto count=school_ip_parameters(instruction.type,method).size(); std::array<Value,2> arguments;
@@ -871,6 +877,10 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
         }
         case Op::drop: (void)pop(); break;
         case Op::get_index: case Op::ref_index: {
+            if (compound(instruction.type) && type_info(program,instruction.type).kind==CompoundKind::sequence) {
+                const auto index=std::get<std::int64_t>(pop()); const auto sequence=std::get<std::shared_ptr<Aggregate>>(pop());
+                stack.push_back(school_sequence_at(values,sequence,index)); break;
+            }
             const auto last=std::int64_t(std::get<std::int32_t>(pop()));
             const bool matrix=instruction.type!=Type::string && type_info(program,instruction.type).rank==2 && !instruction.operand;
             const auto first=matrix ? std::int64_t(std::get<std::int32_t>(pop())) : last;
@@ -905,6 +915,9 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
         }
         case Op::length: {
             const auto value=pop();
+            if (compound(instruction.type) && type_info(program,instruction.type).kind==CompoundKind::sequence) {
+                stack.emplace_back(static_cast<std::int64_t>(school_sequence_length(std::get<std::shared_ptr<Aggregate>>(value),instruction.location))); break;
+            }
             if (instruction.type==Type::string) { stack.emplace_back(static_cast<std::int32_t>(string_text(value).size())); break; }
             auto array = std::get<std::shared_ptr<Aggregate>>(value);
             if (array->nil && (instruction.operand || type_info(program,instruction.type).kind==CompoundKind::list)) trap(instruction,RuntimeError::nil_reference);
