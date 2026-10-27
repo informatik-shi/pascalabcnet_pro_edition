@@ -535,7 +535,7 @@ private:
                     auto argument = (name=="print" || name=="println" || name=="str" || (result->kind==SyntaxExprKind::member_call && (name=="write" || name=="writeln")))
                         ? output_argument() : expression();
                     result->depth = std::max(result->depth, argument->depth + 1);
-                    const auto limit=result->kind==SyntaxExprKind::call && name=="arr" ? 4096U : 16U;
+                    const auto limit=(result->kind==SyntaxExprKind::call && name=="arr") || name=="gcd" || name=="lcm" ? 4096U : 16U;
                     if (result->depth > 256 || result->arguments.size() >= limit) fail("Function call limit exceeded");
                     result->arguments.push_back(std::move(argument));
                 } while (accept(","));
@@ -842,6 +842,7 @@ private:
                 if (bind_try_read(*result,source.token.text,source.left->token.text)) break;
                 if (bind_number_conversion(*result,source.token.text,source.left->token.text)) break;
                 if (bind_school_text(*result,source.token.text,source.left->token.text)) break;
+                if (bind_school_fold(*result,source.token.text,source.left->token.text)) break;
                 if (bind_string_read(*result,source.token.text,source.left->token.text)) break;
                 if (bind_string_array(*result,source.token.text,source.left->token.text)) break;
                 if (bind_school_list(*result,source.token.text,source.left->token.text)) break;
@@ -1182,6 +1183,7 @@ private:
             if (bind_try_read(*result,source.token.text)) break;
             if (bind_number_conversion(*result,source.token.text)) break;
             if (bind_school_text(*result,source.token.text)) break;
+            if (bind_school_fold(*result,source.token.text)) break;
             if (bind_string_read(*result,source.token.text)) break;
             if (bind_string_array(*result,source.token.text)) break;
             if (bind_school_list(*result,source.token.text)) break;
@@ -1380,6 +1382,20 @@ private:
         for (std::size_t i=0;i<parameters.size();++i) result.arguments[i]=convert(std::move(result.arguments[i]),parameters[i]);
         result.kind=hir::ExprKind::school_list; result.local=static_cast<std::size_t>(method); result.operation_type=list;
         result.type=school_list_result(method,list); return true;
+    }
+    bool bind_school_fold(hir::Expr& result, std::string_view name, std::string_view unit = {}) {
+        if ((name!="gcd" && name!="lcm") || (!unit.empty() && unit!="school") || !imported_units_.contains("school")) return false;
+        // Existing fixed PABCSystem overloads take precedence over params for a pair.
+        if (unit.empty() && result.arguments.size()==2) return false;
+        const auto array=sequence_type(CompoundKind::array,Type::int64);
+        if (result.arguments.size()==1 && (compound(result.arguments[0]->type) || result.arguments[0]->type==Type::nil))
+            result.left=convert(std::move(result.arguments[0]),array);
+        else {
+            result.left=std::make_unique<hir::Expr>(); result.left->kind=hir::ExprKind::array_literal; result.left->type=array; result.left->location=result.location;
+            for (auto& argument:result.arguments) result.left->arguments.push_back(convert(std::move(argument),Type::int64));
+        }
+        result.arguments.clear(); result.kind=hir::ExprKind::school_fold; result.type=Type::int64;
+        result.local=static_cast<std::size_t>(name=="gcd" ? SchoolFold::gcd : SchoolFold::lcm); return true;
     }
     bool bind_school_text(hir::Expr& result, std::string_view name, std::string_view unit = {}) {
         if ((!unit.empty() && unit!="school") || !imported_units_.contains("school")) return false;

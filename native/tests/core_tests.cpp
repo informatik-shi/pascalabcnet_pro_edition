@@ -57,6 +57,40 @@ void runtime_error(std::string_view source, std::string_view code) {
     error([&] { (void)run(source); }, code,source);
 }
 
+void school_fold_library() {
+    result("uses School; begin var a:=Arr(int64(18),30,42); var g:int64:=GCD(a); Writeln(g,' ',LCM(a),' ',GCD(18,30,42)); Writeln(School.GCD(18,30),' ',School.LCM(4,6),' ',PABCSystem.GCD(18,30)); end.","6 630 6\n6 12 6\n");
+    result("uses School; begin var narrow:integer:=GCD(18,30); var wide:int64:=School.GCD(18,30); Writeln(narrow,' ',wide); Writeln(GCD(-7),' ',LCM(-7),' ',School.GCD(-9223372036854775808),' ',School.LCM(-9223372036854775808)); end.","6 6\n-7 -7 -9223372036854775808 -9223372036854775808\n");
+    result("uses School; begin Writeln(School.LCM(-4,6),' ',School.LCM(4,-6),' ',School.LCM(-4,-6),' ',LCM(2,3,4)); Writeln(School.GCD(-4,-6),' ',GCD(0,0),' ',LCM(0,0),' ',LCM(int64(0),-9223372036854775808)); end.","-12 12 -12 12\n2 0 0 0\n");
+    result("uses School; function GCD(n:integer):integer; begin Result:=7; end; begin Writeln(GCD(12),' ',School.GCD(12),' ',PABCSystem.GCD(12,18)); end.","7 12 6\n");
+    result("uses School; function N(x:integer):int64; begin Write(x); Result:=x; end; begin Writeln('|',GCD(N(2),N(4),N(6))); end.","246|2\n");
+    result("uses School; begin SetRandomSeed(1); GCD(2,4,6); LCM(2,3,4); Writeln(Random(100)); end.","24\n");
+    for (const auto source:{"uses School; begin GCD(); end.","uses School; begin LCM(); end.",
+        "uses School; begin School.GCD(nil); end.","uses School; begin var a:array of int64; LCM(a); end.",
+        "uses School; begin GCD(new int64[0]); end."}) runtime_error(source,"E_RANGE");
+    runtime_error("uses School; begin School.LCM(0,0); end.","E_DIV_ZERO");
+    for (const auto source:{"uses School; begin School.LCM(MaxInt64,MaxInt64); end.",
+        "uses School; begin School.LCM(0,-9223372036854775808); end.",
+        "uses School; begin School.GCD(-9223372036854775808,0); end."}) runtime_error(source,"E_OVERFLOW");
+    result("uses School; begin Writeln(LCM(MaxInt64,MaxInt64)); end.","9223372036854775807\n");
+    for (const auto source:{"uses School; begin GCD(Arr(2,4)); end.","uses School; begin LCM(new List<int64>); end.",
+        "uses School; begin GCD(1.5); end.","uses School; begin var u:uint64:=1; GCD(u); end.",
+        "uses School; begin var n:integer:=School.GCD(2,4); end.","begin GCD(2,4,6); end."}) compile_error(source,"E_TYPE");
+    auto program=abc::compile("uses School; begin GCD(2,4,6); end.");
+    for (auto& instruction:program.code) if (instruction.op==abc::Op::school_fold) instruction.operand=2;
+    error([&]{abc::verify(program);},"E_BYTECODE");
+    program=abc::compile("uses School; begin GCD(2,4,6); end.");
+    program.types[0].element=abc::Type::integer;
+    error([&]{abc::verify(program);},"E_BYTECODE");
+    abc::ExecutionOptions options; options.instruction_limit=100;
+    error([&]{(void)run("uses School; begin GCD(new int64[10000]); end.","",options);},"E_LIMIT");
+    options={}; std::size_t polls=0; options.cancelled=[&]{return ++polls>20;};
+    error([&]{(void)run("uses School; begin GCD(new int64[10000]); end.","",options);},"E_CANCELLED");
+    std::string many="School.GCD(1";
+    for (unsigned i=1;i<4096;++i) many+=",1";
+    result("uses School; begin Writeln("+many+")); end.","1\n");
+    compile_error("uses School; begin "+many+",1); end.","E_SYNTAX");
+}
+
 void school_text_library() {
     std::vector<std::string> texts{""}; std::size_t start=0;
     for (unsigned length=1;length<=4;++length) {
@@ -2443,6 +2477,7 @@ int main() {
     string_cursor_input();
     string_arrays();
     school_library();
+    school_fold_library();
     school_text_library();
     school_factor_library();
     sequence_mutations();

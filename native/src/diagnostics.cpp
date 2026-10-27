@@ -4,6 +4,8 @@ namespace abc {
 Error runtime_error(RuntimeError id, SourceLocation location, std::string_view context) {
     const char *code, *english, *russian;
     switch (id) {
+    case RuntimeError::school_empty_arguments:
+        code="E_RANGE"; english="Argument list cannot be empty"; russian="Список аргументов не может быть пустым"; break;
     case RuntimeError::empty_substring:
         code="E_RANGE"; english="Replacement source cannot be empty"; russian="Заменяемая подстрока не может быть пустой"; break;
     case RuntimeError::school_factorization:

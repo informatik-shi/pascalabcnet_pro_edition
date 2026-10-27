@@ -57,6 +57,8 @@ private:
     void expression(const hir::Expr& node) {
         if (node.type == Type::invalid) throw Error("E_HIR", node.location, "Unresolved expression type");
         switch (node.kind) {
+        case hir::ExprKind::school_fold:
+            expression(*node.left); emit(Op::school_fold,node.left->type,node.local,node.location); break;
         case hir::ExprKind::replace_last:
             reference(*node.arguments[0]); expression(*node.arguments[1]); expression(*node.arguments[2]);
             emit(Op::replace_last,Type::string,0,node.location); break;
@@ -387,6 +389,10 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
     for (const auto& instruction : code) {
         const auto type = instruction.type;
         switch (instruction.op) {
+        case Op::school_fold:
+            if (instruction.operand>static_cast<std::size_t>(SchoolFold::lcm) || !compound(type) || type_info(program,type).kind!=CompoundKind::array
+                || type_info(program,type).rank!=1 || type_info(program,type).element!=Type::int64) invalid(instruction,"Invalid School GCD/LCM fold");
+            break;
         case Op::replace_last:
             if (type!=Type::string || instruction.operand) invalid(instruction,"Invalid ReplaceLast");
             break;
@@ -690,6 +696,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
                 if (!(type&0x40000000U) || !scalar(static_cast<Type>(type&~0x40000000U))) invalid(instruction,"Console input requires scalar references");
             }
             break;
+        case Op::school_fold: require(instruction.type); stack.push_back(Type::int64); break;
         case Op::replace_last: require(Type::string); require(Type::string); require(reference_type(Type::string)); break;
         case Op::replace_many: require(static_cast<Type>(instruction.operand)); require(instruction.type); require(Type::string); stack.push_back(Type::string); break;
         case Op::school_list: {

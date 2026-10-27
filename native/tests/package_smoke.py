@@ -146,9 +146,14 @@ def main():
                                          cwd=folder, env=env, timeout=10)
                 if example.returncode or example.stdout != expected:
                     raise RuntimeError(f"{name} {source} failed: {example.stdout!r}, {example.stderr!r}")
+            example = subprocess.run([runner, "run", str(folder / "examples" / "school-folds.pas")], text=True, encoding="utf-8",
+                                     capture_output=True, cwd=folder, env=env, timeout=10)
+            if example.returncode or example.stdout != "НОД массива: 6\nНОК массива: 630\nНОД нескольких чисел: 6\nНОК нескольких чисел: 60\n":
+                raise RuntimeError(f"{name} school-folds.pas failed: {example.stdout!r}, {example.stderr!r}")
             character = folder / "Ошибки символов.pas"
             school_error = folder / "Ошибки School.pas"
             for expression, code, english, russian in [
+                ("School.GCD()", "E_RANGE", "Argument list cannot be empty", "Список аргументов не может быть пустым"),
                 ("School.Dec('2',2)", "E_FORMAT", "Invalid digit in base notation", "Недопустимая цифра в записи числа"),
                 ("School.ToBase(1,1)", "E_RANGE", "Base must be between 2 and 36", "Основание системы счисления должно быть от 2 до 36"),
                 ("DigitsToInt64(Digits(15,16),10)", "E_RANGE", "A digit must be less than the base", "Цифра должна быть меньше основания системы счисления"),

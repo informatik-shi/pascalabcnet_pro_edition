@@ -504,4 +504,28 @@ Value invoke_school_list(Values& values, SchoolContext& context, SchoolList meth
     }
     return result;
 }
+std::int64_t school_fold(const std::shared_ptr<Aggregate>& array, SchoolFold method, SourceLocation location, const ExecutionOptions& options) {
+    const auto count=array->nil ? std::size_t{0} : array->items.size();
+    if (!count) throw runtime_error(RuntimeError::school_empty_arguments,location);
+    const auto number=[&](std::size_t index) { return std::get<std::int64_t>(array->items[index]->value); };
+    if (count==1) return number(0);
+    const auto gcd=[&](std::int64_t a,std::int64_t b) {
+        if (a==INT64_MIN || b==INT64_MIN) throw runtime_error(RuntimeError::integer_overflow,location);
+        return std::gcd(a,b);
+    };
+    const auto combine=[&](std::int64_t a,std::int64_t b) {
+        if (method==SchoolFold::gcd) return gcd(a,b);
+        // Preserve multiplication-before-GCD and the sign of the source formula.
+        const auto product=school_multiply(a,b,location);
+        return school_divide(product,gcd(a,b),location);
+    };
+    auto result=combine(number(0),number(1));
+    // The original starts at one, so it processes the second element again.
+    for (std::size_t i=1;i<count;++i) {
+        if (i>=options.instruction_limit) throw runtime_error(RuntimeError::instruction_limit,location);
+        if ((i&255U)==0 && options.cancelled && options.cancelled()) throw runtime_error(RuntimeError::cancelled,location);
+        result=combine(result,number(i));
+    }
+    return result;
+}
 } // namespace abc
