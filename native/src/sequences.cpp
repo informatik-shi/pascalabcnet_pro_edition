@@ -46,9 +46,10 @@ Value sequence_at(Values& values,const std::shared_ptr<Aggregate>& sequence,std:
     if (collection_sequence(state.provider)) return values.copy(state.source->items[static_cast<std::size_t>(index)]->value);
     return school_ip_sequence_value(values,type_info(values.program,sequence->type).element,state,index);
 }
-Value sequence_collect(Values& values,const std::shared_ptr<Aggregate>& sequence,Type array,const ExecutionOptions& options) {
+Value sequence_collect(Values& values,const std::shared_ptr<Aggregate>& sequence,Type collection,const ExecutionOptions& options) {
     const auto iterator=sequence_begin(values,sequence); const auto count=sequence_length(iterator,values.location);
-    const bool materialize=array!=Type::invalid;
+    const bool materialize=collection!=Type::invalid;
+    const bool list=materialize && type_info(values.program,collection).kind==CompoundKind::list;
     if (!materialize && collection_sequence(iterator->sequence->provider)) {
         if (count>INT32_MAX) throw runtime_error(RuntimeError::integer_overflow,values.location);
         return static_cast<std::int32_t>(count);
@@ -58,13 +59,17 @@ Value sequence_collect(Values& values,const std::shared_ptr<Aggregate>& sequence
     if (materialize) {
         const auto cost=iterator->sequence->provider==SequenceProvider::school_ip_hosts ? 4U : 1U;
         if (count>values.remaining/cost) throw runtime_error(RuntimeError::allocation_limit,values.location);
-        result=values.array(array,0);
+        result=values.array(collection,0);
     }
     for (std::uint64_t i=0;i<count;++i) {
         if (i>=options.instruction_limit) throw runtime_error(RuntimeError::instruction_limit,values.location);
         if ((i&255U)==0 && options.cancelled && options.cancelled()) throw runtime_error(RuntimeError::cancelled,values.location);
         auto value=sequence_at(values,iterator,static_cast<std::int64_t>(i));
-        if (materialize) result->items.push_back(values.cell(element,std::move(value)));
+        if (materialize) {
+            auto item=values.cell(element,std::move(value));
+            if (list) values.own_list_cell(item,result);
+            result->items.push_back(std::move(item));
+        }
         else if (i>=INT32_MAX) throw runtime_error(RuntimeError::integer_overflow,values.location);
     }
     sequence_check(iterator,values.location);

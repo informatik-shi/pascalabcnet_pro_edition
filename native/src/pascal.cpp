@@ -1192,12 +1192,17 @@ private:
                 break;
             }
             const auto& type = info(receiver,result->location);
+            if (indexed_sequence(type.kind) && (source.token.text=="toarray" || source.token.text=="tolist")) {
+                result->arguments.push_back(std::move(result->left));
+                for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
+                (void)bind_sequence_conversion(*result,source.token.text,"pabcsystem"); break;
+            }
             if (type.kind==CompoundKind::sequence) {
-                if ((source.token.text!="toarray" && source.token.text!="count" && source.token.text!="length") || !source.arguments.empty())
-                    throw Error("E_TYPE",result->location,"Sequence supports parameterless Count and ToArray");
+                if ((source.token.text!="toarray" && source.token.text!="tolist" && source.token.text!="count" && source.token.text!="length") || !source.arguments.empty())
+                    throw Error("E_TYPE",result->location,"Sequence supports parameterless Count, ToArray and ToList");
                 if (source.token.text=="length" && source.kind==SyntaxExprKind::member_call) throw Error("E_TYPE",result->location,"Length is not callable");
-                result->kind=hir::ExprKind::sequence_call; result->local=source.token.text=="toarray" ? 1U : 0U;
-                result->type=result->local ? sequence_type(CompoundKind::array,type.element) : Type::integer; break;
+                result->kind=hir::ExprKind::sequence_call; result->local=source.token.text=="tolist" ? 2U : source.token.text=="toarray" ? 1U : 0U;
+                result->type=result->local ? sequence_type(result->local==2 ? CompoundKind::list : CompoundKind::array,type.element) : Type::integer; break;
             }
             if (school_ip_kind(type.kind)) {
                 const auto name=source.token.text; SchoolIPMethod method; bool property=true;
@@ -1671,16 +1676,16 @@ private:
         return true;
     }
     bool bind_sequence_conversion(hir::Expr& result,std::string_view name,std::string_view unit={}) {
-        if ((name!="count" && name!="toarray") || (!unit.empty() && unit!="pabcsystem")) return false;
-        if (result.arguments.size()!=1) throw Error("E_TYPE",result.location,"Count/ToArray requires one sequence");
+        if ((name!="count" && name!="toarray" && name!="tolist") || (!unit.empty() && unit!="pabcsystem")) return false;
+        if (result.arguments.size()!=1) throw Error("E_TYPE",result.location,"Sequence conversion requires one sequence");
         const auto source=result.arguments[0]->type;
         if (!compound(source)) throw Error("E_TYPE",result.location,"Count/ToArray requires a typed sequence, array or List");
         const auto source_info=info(source,result.location);
         if (source_info.kind!=CompoundKind::sequence && !indexed_sequence(source_info.kind)) throw Error("E_TYPE",result.location,"Count/ToArray requires a typed sequence, array or List");
         auto argument=std::move(result.arguments[0]); result.arguments.clear();
         if (source_info.kind!=CompoundKind::sequence) argument=convert(std::move(argument),sequence_type(CompoundKind::sequence,source_info.element));
-        result.left=std::move(argument); result.kind=hir::ExprKind::sequence_call; result.local=name=="toarray" ? 1U : 0U;
-        result.type=result.local ? sequence_type(CompoundKind::array,source_info.element) : Type::integer; return true;
+        result.left=std::move(argument); result.kind=hir::ExprKind::sequence_call; result.local=name=="tolist" ? 2U : name=="toarray" ? 1U : 0U;
+        result.type=result.local ? sequence_type(result.local==2 ? CompoundKind::list : CompoundKind::array,source_info.element) : Type::integer; return true;
     }
     void bind_school_ip(hir::Expr& result,Type owner,SchoolIPMethod method) {
         const auto parameters=school_ip_parameters(owner,method);

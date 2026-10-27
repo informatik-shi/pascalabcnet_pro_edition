@@ -194,9 +194,9 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
         }
         case Op::sequence_begin:
             stack.emplace_back(sequence_begin(values,std::get<std::shared_ptr<Aggregate>>(pop()))); break;
-        case Op::sequence_count: case Op::sequence_array: {
+        case Op::sequence_count: case Op::sequence_array: case Op::sequence_list: {
             const auto sequence=std::get<std::shared_ptr<Aggregate>>(pop());
-            stack.push_back(sequence_collect(values,sequence,instruction.op==Op::sequence_array ? static_cast<Type>(instruction.operand) : Type::invalid,options)); break;
+            stack.push_back(sequence_collect(values,sequence,instruction.op==Op::sequence_count ? Type::invalid : static_cast<Type>(instruction.operand),options)); break;
         }
         case Op::school_ip: {
             const auto method=static_cast<SchoolIPMethod>(instruction.operand&255U);

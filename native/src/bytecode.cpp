@@ -61,7 +61,7 @@ private:
         case hir::ExprKind::sequence_wrap:
             expression(*node.left); emit(Op::sequence_wrap,node.left->type,static_cast<std::size_t>(node.type),node.location); break;
         case hir::ExprKind::sequence_call:
-            expression(*node.left); emit(node.local ? Op::sequence_array : Op::sequence_count,node.left->type,node.local ? static_cast<std::size_t>(node.type) : 0,node.location); break;
+            expression(*node.left); emit(node.local==2 ? Op::sequence_list : node.local ? Op::sequence_array : Op::sequence_count,node.left->type,node.local ? static_cast<std::size_t>(node.type) : 0,node.location); break;
         case hir::ExprKind::school_ip:
             for (const auto& argument:node.arguments) expression(*argument);
             emit(Op::school_ip,node.operation_type,node.local,node.location); break;
@@ -458,12 +458,13 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if (target.kind!=CompoundKind::sequence || target.element!=type_info(program,type).element) invalid(instruction,"Invalid sequence view element type");
             break;
         }
-        case Op::sequence_begin: case Op::sequence_count: case Op::sequence_array:
+        case Op::sequence_begin: case Op::sequence_count: case Op::sequence_array: case Op::sequence_list:
             if (!compound(type) || type_info(program,type).kind!=CompoundKind::sequence) invalid(instruction,"Sequence instruction requires a statically typed sequence");
-            if (instruction.op==Op::sequence_array) {
+            if (instruction.op==Op::sequence_array || instruction.op==Op::sequence_list) {
                 if (instruction.operand<64 || instruction.operand>=64+program.types.size()) invalid(instruction,"Invalid sequence array result");
                 const auto& result=type_info(program,static_cast<Type>(instruction.operand));
-                if (result.kind!=CompoundKind::array || result.rank!=1 || result.element!=type_info(program,type).element) invalid(instruction,"Sequence array element type mismatch");
+                const auto kind=instruction.op==Op::sequence_list ? CompoundKind::list : CompoundKind::array;
+                if (result.kind!=kind || result.rank!=1 || result.element!=type_info(program,type).element) invalid(instruction,"Sequence collection element type mismatch");
             } else if (instruction.operand) invalid(instruction,"Invalid sequence flags");
             break;
         case Op::school_ip: {
@@ -763,7 +764,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         case Op::sequence_begin: require(instruction.type); stack.push_back(instruction.type); break;
         case Op::sequence_wrap: require(instruction.type); stack.push_back(static_cast<Type>(instruction.operand)); break;
         case Op::sequence_count: require(instruction.type); stack.push_back(Type::integer); break;
-        case Op::sequence_array: require(instruction.type); stack.push_back(static_cast<Type>(instruction.operand)); break;
+        case Op::sequence_array: case Op::sequence_list: require(instruction.type); stack.push_back(static_cast<Type>(instruction.operand)); break;
         case Op::iteration_check: require(Type::int64); require(instruction.type); break;
         case Op::linked_call: {
             const auto method = static_cast<LinkedMethod>(instruction.operand);

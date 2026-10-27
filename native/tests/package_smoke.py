@@ -124,6 +124,7 @@ def main():
                 ("school-text.pas", "Последовательная замена: cc\nПосимвольный перевод: bc\nПоследнее вхождение: раз-два-три\nПодстроки: кот пёс\nЧисла int64: [2147483648,-7]\nИмпликация: False\n"),
                 ("school-swap.pas", "Обмен: пёс кот пёс\nОбратно: кот пёс кот\nПустые совпадения: aaa\n"),
                 ("regex-search.pas", "Есть число: True\nПервое число: 123\nБез числа: []\nПроверка: True\n"),
+                ("sequence-lists.pas", "Массив: [1,2]\nСписок: [9,2,3]\nКопия: [9,2,3]\nПосле изменения: [9,8,3]\n"),
                 ("russian-identifiers.pas", "Ответ: 42\nНОД: 6\nНОК: 90\n"),
                 ("big-integers.pas", "100! = 93326215443944152681699238856266700490715968264381621468592963895217599993229915608941463976156518286253697920827223758251185210916864000000000000000000000000\nЦелый корень квадрата: 123456789012345678901234567890\nНОД: 6\nСдвиги: 16\n"),
                 ("big-integer-files.pas", "Из файла: 246913578024691357802469135780\n"),
@@ -173,6 +174,7 @@ def main():
                 ("var s:string:='[x'; SwapSubstr(s,'[','x')", "E_REGEX", "Invalid regular expression", "Некорректное регулярное выражение"),
                 ("Writeln(IsMatch('abc','['))", "E_REGEX", "Invalid regular expression", "Некорректное регулярное выражение"),
                 ("Writeln(MatchValue('abc','['))", "E_REGEX", "Invalid regular expression", "Некорректное регулярное выражение"),
+                ("var s:sequence of integer:=nil; s.ToList()", "E_NIL", "Cannot access a nil reference", "Нельзя обратиться к пустой ссылке nil"),
                 ("var s:string:='a'; SwapSubstr(s,'a','a')", "E_KEY", "Duplicate swap key", "Повторяющийся ключ замены"),
                 ("var s:string:='a.b acb z'; SwapSubstr(s,'a.b','z')", "E_KEY", "Matched text is not a swap key", "Совпавший текст не является ключом замены"),
                 ("var a:=new Addr32('256.0.0.1')", "E_FORMAT", "Invalid IPv4 address", "Некорректная запись адреса IPv4"),
@@ -500,6 +502,7 @@ def main():
             results[-1]["array_list_sequence_views"] = "passed"
             results[-1]["school_swap_substrings_and_bilingual_regex_errors"] = "passed"
             results[-1]["regex_is_match_and_first_value"] = "passed"
+            results[-1]["sequence_to_list_record_copy_and_ownership"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 

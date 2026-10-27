@@ -3,6 +3,7 @@
 #include "../src/random.hpp"
 #include "../src/school.hpp"
 #include "../src/runtime_values.hpp"
+#include "../src/sequences.hpp"
 
 #include <iostream>
 #include <array>
@@ -201,6 +202,49 @@ void regex_search_library() {
     auto invalid=abc::compile("begin Writeln(IsMatch('ab','a')); end.");
     for (auto& instruction:invalid.code) if (instruction.op==abc::Op::call_builtin) instruction.type=abc::Type::string;
     error([&]{abc::verify(invalid);},"E_BYTECODE");
+}
+
+void sequence_to_list_library() {
+    result("begin var a:=Arr(1,2); var l:List<integer>:=ToList(a); l[0]:=9; l.Add(3); Writeln(a,' ',l,' ',l.ToArray()); var b:=l.ToList; l[1]:=8; Writeln(b,' ',l); Writeln(PABCSystem.ToList(new integer[0]).Count); end.","[1,2] [9,2,3] [9,2,3]\n[9,2,3] [9,8,3]\n0\n");
+    result("begin var a:=Arr(2bi,1bi shl 80); var s:sequence of BigInteger:=a; var l:=s.ToList(); Writeln(l,' ',l.Contains(2bi)); l.Clear; Writeln(s.ToArray()); end.","[2,1208925819614629174706176] True\n[2,1208925819614629174706176]\n");
+    result("type R=record n:integer; a:array of integer; end; begin var r:R; r.n:=1; r.a:=Arr(7); var a:=Arr(r); var l:=a.ToList(); l[0].n:=9; l[0].a[0]:=8; Writeln(a[0].n,' ',l[0].n,' ',a[0].a[0]); end.","1 9 8\n");
+    result("begin var a:=new List<integer>; a.Add(1); foreach var x in a do begin var b:=a.ToList(); b[0]:=8; b.Add(9); Writeln(b); end; Writeln(a); end.","[8,9]\n[1]\n");
+    result("begin var a:=Arr(1,2); var s:sequence of integer:=a; a[1]:=7; Writeln(s.ToList); var l:=Arr('ab','cd').ToList; Writeln(l); end.","[1,7]\n[ab,cd]\n");
+    result("uses School; begin var ip:=new CalcIP('10.0.0.1',30); var s:=ip.GenAddr; var a:=s.ToList; Writeln(a[0].Value,' ',a[1].Value); a[0].Value:='1.2.3.4'; Writeln(s.ToList()[0].Value); end.","10.0.0.1 10.0.0.2\n10.0.0.1\n");
+    result("function ToList(a:array of integer):integer; begin Result:=7; end; begin var a:=Arr(1,2); Writeln(ToList(a),' ',PABCSystem.ToList(a)); end.","7 [1,2]\n");
+    for (const auto source:{"begin var a:array of integer; ToList(a); end.","begin var a:List<integer>:=nil; a.ToList(); end.",
+        "begin var a:sequence of integer:=nil; a.ToList(); end."}) runtime_error(source,"E_NIL");
+    runtime_error("begin var a:=Arr(1,2).ToList(); foreach var x in a do a[0]:=9; end.","E_MODIFIED");
+    runtime_error("type R=record n:integer; end; begin var r:R; var a:=Arr(r).ToList(); foreach var x in a do a[0].n:=9; end.","E_MODIFIED");
+    for (const auto source:{"begin ToList(nil); end.","begin ToList(1); end.","begin ToList(Arr(1),2); end.",
+        "begin var a:List<real>:=Arr(1).ToList(); end.","begin var a:=new integer[1,2]; a.ToList(); end.",
+        "begin var a:=Arr(1); a.ToList(1); end."}) compile_error(source,"E_TYPE");
+    abc::ExecutionOptions options; options.allocation_limit=8;
+    error([&]{(void)run("begin var a:=Arr(1,2,3,4); Writeln(a.ToList()); end.","",options);},"E_LIMIT");
+    options={}; options.instruction_limit=40;
+    error([&]{(void)run("uses School; begin var ip:=new CalcIP('10.0.0.1',16); ip.GenAddr.ToList(); end.","",options);},"E_LIMIT");
+    options={}; std::size_t polls=0; options.cancelled=[&]{return ++polls>4;};
+    error([&]{(void)run("uses School; begin var ip:=new CalcIP('10.0.0.1',16); ip.GenAddr.ToList(); end.","",options);},"E_CANCELLED");
+    auto invalid=abc::compile("begin var a:=Arr(1).ToList; Writeln(a.ToArray()); end.");
+    std::size_t array=0;
+    for (const auto& instruction:invalid.code) if (instruction.op==abc::Op::sequence_array) array=instruction.operand;
+    for (auto& instruction:invalid.code) if (instruction.op==abc::Op::sequence_list) instruction.operand=array;
+    error([&]{abc::verify(invalid);},"E_BYTECODE");
+    invalid=abc::compile("begin Writeln(Arr(1).ToList()); end.");
+    for (auto& instruction:invalid.code) if (instruction.op==abc::Op::sequence_list) instruction.operand=0;
+    error([&]{abc::verify(invalid);},"E_BYTECODE");
+    const auto types=abc::compile("begin var a:=new integer[0]; var s:sequence of integer:=a; var l:=s.ToList(); end.");
+    const auto find=[&](abc::CompoundKind kind) {
+        for (std::size_t i=0;i<types.types.size();++i) if (types.types[i].kind==kind) return static_cast<abc::Type>(64+i);
+        throw std::runtime_error("Missing materialization test type");
+    };
+    abc::Values values{types,1'048'576};
+    const auto source_array=values.array(find(abc::CompoundKind::array),1024);
+    const auto view=abc::sequence_create(values,find(abc::CompoundKind::sequence),source_array,abc::SequenceProvider::array);
+    options={}; options.instruction_limit=20;
+    error([&]{(void)abc::sequence_collect(values,view,find(abc::CompoundKind::list),options);},"E_LIMIT");
+    options={}; options.cancelled=[]{return true;};
+    error([&]{(void)abc::sequence_collect(values,view,find(abc::CompoundKind::list),options);},"E_CANCELLED");
 }
 
 void school_minmax_library() {
@@ -2967,6 +3011,7 @@ int main() {
     school_text_library();
     school_swap_substrings();
     regex_search_library();
+    sequence_to_list_library();
     school_factor_library();
     sequence_mutations();
     arithmetic();
