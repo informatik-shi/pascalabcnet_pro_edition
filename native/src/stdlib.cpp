@@ -213,6 +213,15 @@ std::span<const Signature> signatures() {
         add("$setlength", {Type::string, Type::integer}, Type::string, Function::resize_string);
         add("$insert", {Type::string, Type::string, Type::integer}, Type::string, Function::insert_string);
         add("$delete", {Type::string, Type::integer, Type::integer}, Type::string, Function::delete_string);
+        for (auto [name,function]:{std::pair{"$string_padleft",Function::string_pad_left},{"$string_padright",Function::string_pad_right}}) {
+            add(name,{Type::string,Type::integer},Type::string,function);
+            add(name,{Type::string,Type::integer,Type::character},Type::string,function);
+        }
+        for (auto [name,function]:{std::pair{"$string_substring",Function::string_substring},{"$string_remove",Function::string_remove_at}}) {
+            add(name,{Type::string,Type::integer},Type::string,function);
+            add(name,{Type::string,Type::integer,Type::integer},Type::string,function);
+        }
+        add("$string_insert",{Type::string,Type::integer,Type::string},Type::string,Function::string_insert_at);
         add("readalltext", {Type::string}, Type::string, Function::read_all_text);
         add("writealltext", {Type::string, Type::string}, Type::unit, Function::write_all_text);
         add("fileexists", {Type::string}, Type::boolean, Function::file_exists);

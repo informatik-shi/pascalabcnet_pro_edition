@@ -1129,6 +1129,21 @@ TrueTablePrint(boolean-матрица[,filter[,names]]) выводит гото�
 
 ### Массивы из строки
 
+Строковые методы PadLeft/PadRight(width[,char]), Substring(start[,count]),
+Insert(start,string) и Remove(start[,count]) реализованы на C++.
+Они возвращают значение, сохраняя получателя; индексы этих методов нулевые,
+в отличие от s[1] и Pascal Copy/Insert/Delete. Ширина меньше текущей длины
+не обрезает строку; отрицательная ширина даёт E_RANGE. Диапазоны проверяются
+до копирования, неверный индекс/длина дают E_BOUNDS. Nil-получатель и nil-строка
+вставки дают E_NIL; пустая строка вставки разрешена. Размеры и индексы измеряются
+в UTF-16, включая отдельные суррогаты. Сохраняется порядок вычисления получателя
+и всех аргументов до проверки nil. Размер результата ограничен 1048576 кодовыми
+единицами. Контракт сверён с
+[System.String](https://raw.githubusercontent.com/dotnet/runtime/v10.0.0/src/libraries/System.Private.CoreLib/src/System/String.Manipulation.cs).
+Пример: `examples/string-methods.pas`, корпус:
+`tests/fixtures/string-value-method-compat.pas`; проверка с исходным компилятором
+для нового корпуса пока не выполнялась.
+
 ToWords возвращает array of string без пустых элементов. По умолчанию
 разделителем служит пробел; поддержаны строка символов-разделителей, char-параметры
 и array of char. Пустой набор разделителей или nil-массив char использует

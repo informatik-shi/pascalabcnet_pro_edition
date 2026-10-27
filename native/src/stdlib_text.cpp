@@ -217,6 +217,34 @@ std::pair<std::int32_t,std::int32_t> read_string_integer(const Value& source, st
 
 std::optional<Value> invoke_text(Function function, std::span<const Value> arguments, SourceLocation location) {
     switch (function) {
+    case Function::string_pad_left: case Function::string_pad_right:
+    case Function::string_substring: case Function::string_insert_at: case Function::string_remove_at: {
+        if (std::holds_alternative<NilString>(arguments[0])) throw runtime_error(RuntimeError::nil_reference,location);
+        const auto& text=string_text(arguments[0]); const auto position=std::get<std::int32_t>(arguments[1]);
+        if (function==Function::string_pad_left || function==Function::string_pad_right) {
+            if (position<0) throw runtime_error(RuntimeError::field_width,location);
+            const auto width=static_cast<std::size_t>(position);
+            if (width<=text.size()) return text;
+            if (width>1'048'576) throw runtime_error(RuntimeError::string_limit,location);
+            const auto padding=arguments.size()==3 ? std::get<char16_t>(arguments[2]) : u' ';
+            auto result=std::u16string(width-text.size(),padding);
+            if (function==Function::string_pad_left) result+=text; else result.insert(0,text);
+            return result;
+        }
+        if (function==Function::string_insert_at && std::holds_alternative<NilString>(arguments[2]))
+            throw runtime_error(RuntimeError::nil_reference,location);
+        if (position<0 || static_cast<std::size_t>(position)>text.size()) throw runtime_error(RuntimeError::index_bounds,location);
+        const auto start=static_cast<std::size_t>(position);
+        if (function==Function::string_insert_at) {
+            const auto& inserted=string_text(arguments[2]);
+            if (inserted.size()>1'048'576-text.size()) throw runtime_error(RuntimeError::string_limit,location);
+            auto result=text; result.insert(start,inserted); return result;
+        }
+        const auto count=arguments.size()==3 ? std::get<std::int32_t>(arguments[2]) : static_cast<std::int32_t>(text.size()-start);
+        if (count<0 || static_cast<std::size_t>(count)>text.size()-start) throw runtime_error(RuntimeError::index_bounds,location);
+        if (function==Function::string_substring) return text.substr(start,static_cast<std::size_t>(count));
+        auto result=text; result.erase(start,static_cast<std::size_t>(count)); return result;
+    }
     case Function::string_length:
         if (std::holds_alternative<NilString>(arguments[0])) throw runtime_error(RuntimeError::nil_reference,location);
         return static_cast<std::int32_t>(string_text(arguments[0]).size());

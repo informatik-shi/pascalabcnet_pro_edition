@@ -1019,6 +1019,12 @@ private:
                 for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
                 result->kind=hir::ExprKind::call; bind_builtin(*result,"tobiginteger","pabcsystem"); break;
             }
+            if (receiver==Type::string && (source.token.text=="padleft" || source.token.text=="padright" || source.token.text=="substring"
+                || source.token.text=="insert" || source.token.text=="remove")) {
+                result->arguments.push_back(std::move(result->left));
+                for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
+                result->kind=hir::ExprKind::call; bind_builtin(*result,"$string_"+source.token.text,"pabcsystem"); break;
+            }
             if (receiver==Type::string && (source.token.text=="towords" || source.token.text=="tolines" || source.token.text=="tointegers" || source.token.text=="toreals"
                 || (imported_units_.contains("school") && source.token.text=="toints64"))) {
                 result->arguments.push_back(std::move(result->left));

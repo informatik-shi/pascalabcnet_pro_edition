@@ -11,7 +11,7 @@ enum class Function {
     length, copy, pos, last_pos, concat,
     trim, trim_left, trim_right, left_str, right_str, reverse_string, compare_str,
     int_to_str, str_to_int, str_to_int64, str_to_real, parse_real, is_integer, is_real, to_integer_default, to_real_default, float_to_str,
-    resize_string, insert_string, delete_string, read_all_text, write_all_text, file_exists,
+    resize_string, insert_string, delete_string, string_pad_left, string_pad_right, string_substring, string_insert_at, string_remove_at, read_all_text, write_all_text, file_exists,
     get_dir, change_dir, make_dir, remove_dir, create_dir, try_remove_dir, delete_file, set_current_dir, change_extension,
     rename_file, rename_directory, ordinal, character, integer_cast, successor, predecessor, string_of_char, repeat_string, to_digit, string_length,
     character_lower, character_upper, character_letter, character_digit, character_is_lower, character_is_upper, character_code, string_lower, string_upper,

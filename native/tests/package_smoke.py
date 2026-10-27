@@ -127,6 +127,7 @@ def main():
                 ("tuples.pas", "ответ: 42\nНОД и НОК: (6,90)\nНОД: 6; НОК: 90\n"),
                 ("school-minmax.pas", "Минимум: -7\nМаксимум: 42\nПара: (-7,42)\n"),
                 ("truth-tables.pas", "Исключающее ИЛИ:\n a b F\n -----\n 0 0 0\n 0 1 1\n 1 0 1\n 1 1 0\nТри переменные, только истинные строки:\n x y z F\n -------\n 1 1 1 1\n"),
+                ("string-methods.pas", "Имя: Анна....\nНомер: 00042\nПодстрока: cde\nУдаление: ab\nВставка: aXbcde\nИсходная строка: abcde\n"),
                 ("unicode-characters.pas", "Нижний регистр: привет, ёжик! 𐐨\nВерхний регистр: ПРИВЕТ, ЁЖИК! 𐐀\nБуква: True; код: 1071\nАрабская цифра: True\n"),
                 ("structures.pas", "Точка: 3 4\nФакториал 10: 3628800\n1\n2\n5\n8\nИмен: 2\nПервое имя: Анна\n"),
                 ("files.pas", "Привет из C++ интерпретатора!\nПрочитано строк: 2\nВторая строка\n"),
@@ -235,6 +236,8 @@ def main():
                 ("var n:=1bi;\n Writeln(n shl 65536);", "E_LIMIT", "BigInteger size limit exceeded", "Превышен допустимый размер BigInteger"),
                 ("var c:='Я';\n Writeln(c.ToDigit);", "E_FORMAT", "Character is not a decimal digit from 0 to 9", "Символ не является десятичной цифрой от 0 до 9"),
                 ("var s:='ab';\n s[0]:='X';", "E_BOUNDS", "Index is outside sequence bounds", "Индекс находится за границами строки, массива или списка"),
+                ("var s:='ab';\n s.Substring(3);", "E_BOUNDS", "Index is outside sequence bounds", "Индекс находится за границами строки, массива или списка"),
+                ("var s:string:=nil;\n s.PadLeft(3);", "E_NIL", "Cannot access a nil reference", "Нельзя обратиться к пустой ссылке nil"),
             ]:
                 character.write_text(f"begin\n {source}\nend.", encoding="utf-8")
                 invalid = subprocess.run([runner, "run", str(character)], text=True, encoding="utf-8",
@@ -475,6 +478,7 @@ def main():
             results[-1]["biginteger_language_arithmetic_and_io"] = "passed"
             results[-1]["school_biginteger_overloads"] = "passed"
             results[-1]["school_typed_truth_tables_and_printing"] = "passed"
+            results[-1]["string_padding_substring_insert_remove"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 

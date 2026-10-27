@@ -513,6 +513,20 @@ void school_library() {
     error([&]{(void)run("uses School; begin BinFormat(1,10000,''); end.","",options);},"E_CANCELLED");
 }
 
+void string_value_methods() {
+    result("begin var s:='ab'; Writeln('[',s.PadLeft(5),'] [',s.PadRight(5,'0'),'] [',s.PadLeft(0),']'); Writeln(s,' ',s.PadLeft(4,'X').PadRight(6,'Y')); Writeln(''.PadLeft(3,'z')); end.","[   ab] [ab000] [ab]\nab XXabYY\nzzz\n");
+    result("begin var s:='abcde'; Writeln(s.Substring(2),' ',s.Substring(1,3),'|',s.Substring(5),'|',s.Substring(5,0)); Writeln(s.Remove(2),' ',s.Remove(1,3),'|',s.Remove(5,0)); Writeln(s.Insert(0,'X'),' ',s.Insert(5,'Y'),' ',s.Insert(2,'')); Writeln(s); end.","cde bcd||\nab ae|abcde\nXabcde abcdeY abcde\nabcde\n");
+    result("begin var s:='Я🌍'; Writeln(s.Length,' ',s.PadLeft(4,'0'),' ',s.Substring(1,2)); Writeln(Ord(s.Substring(1,1)[1]),' ',Ord(s.Substring(2)[1])); Writeln(Ord(''.PadRight(2,#0)[2])); end.","3 0Я🌍 🌍\n55356 57101\n0\n");
+    result("begin var a:=new List<string>; a.Add('ab'); foreach var s in a do Writeln(a[0].Remove(0,0)); Writeln(a); var t:=('ab',7); Writeln(t.Item1.Insert(1,'X')); end.","ab\n[ab]\naXb\n");
+    result("var s:string; function Receiver:string; begin Write('R'); Result:=s; end; function Position:integer; begin Write('P'); s:='changed'; Result:=1; end; function Text:string; begin Write('T'); Result:='X'; end; begin s:='ab'; Writeln(Receiver.Insert(Position,Text),' ',s); end.","RPTaXb changed\n");
+    for (const auto source:{"begin var s:string:=nil; s.PadLeft(-1); end.","begin var s:string:=nil; s.Substring(-1); end.","begin var s:='ab'; s.Insert(-1,nil); end."}) runtime_error(source,"E_NIL");
+    runtime_error("begin var s:='ab'; s.PadRight(-1); end.","E_RANGE");
+    runtime_error("begin var s:='ab'; s.PadLeft(2147483647); end.","E_LIMIT");
+    runtime_error("begin var s:='ab'; s.Insert(0,StringOfChar('x',1048576)); end.","E_LIMIT");
+    for (const auto source:{"begin var s:='ab'; s.Substring(-1); end.","begin var s:='ab'; s.Substring(3,0); end.","begin var s:='ab'; s.Substring(1,2147483647); end.","begin var s:='ab'; s.Remove(0,-1); end.","begin var s:='ab'; s.Remove(3,0); end.","begin var s:='ab'; s.Insert(3,''); end."}) runtime_error(source,"E_BOUNDS");
+    for (const auto source:{"begin var s:='ab'; s.PadLeft(3,'xx'); end.","begin var s:='ab'; s.Substring(1.5); end.","begin var s:='ab'; s.Insert(0,7); end.","begin var s:='ab'; s.Remove(); end.","begin PadLeft('ab',3); end."}) compile_error(source,source==std::string_view{"begin PadLeft('ab',3); end."} ? "E_NAME" : "E_TYPE");
+}
+
 void school_truth_tables() {
     result("uses School; function F(a,b:boolean):boolean; begin Result:=a xor b; end; begin var t:=TrueTable(F); Writeln(t.RowCount,' ',t.ColCount); TrueTablePrint(t); end.","4 3\n a b F\n -----\n 0 0 0\n 0 1 1\n 1 0 1\n 1 1 0\n");
     for (unsigned arity=2;arity<=5;++arity) {
@@ -2732,6 +2746,7 @@ int main() {
     school_library();
     school_truth_table_print();
     school_truth_tables();
+    string_value_methods();
     school_big_integer_library();
     school_fold_library();
     unicode_identifiers_and_school_aliases();
