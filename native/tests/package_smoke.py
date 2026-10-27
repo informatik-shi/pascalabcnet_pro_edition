@@ -128,6 +128,7 @@ def main():
                 ("school-minmax.pas", "Минимум: -7\nМаксимум: 42\nПара: (-7,42)\n"),
                 ("truth-tables.pas", "Исключающее ИЛИ:\n a b F\n -----\n 0 0 0\n 0 1 1\n 1 0 1\n 1 1 0\nТри переменные, только истинные строки:\n x y z F\n -------\n 1 1 1 1\n"),
                 ("string-methods.pas", "Имя: Анна....\nНомер: 00042\nПодстрока: cde\nУдаление: ab\nВставка: aXbcde\nИсходная строка: abcde\n"),
+                ("school-ip.pas", "Адрес: 192.168.1.129\nЧисло: 3232235905\nБиты: 11000000.10101000.00000001.10000001\nМаска: 255.255.255.0\nСеть: 192.168.1.0\nBroadcast: 192.168.1.255\nХостов: 254\nДиапазон: 192.168.1.1 - 192.168.1.254\nХост: 10.0.0.1\nХост: 10.0.0.2\n"),
                 ("unicode-characters.pas", "Нижний регистр: привет, ёжик! 𐐨\nВерхний регистр: ПРИВЕТ, ЁЖИК! 𐐀\nБуква: True; код: 1071\nАрабская цифра: True\n"),
                 ("structures.pas", "Точка: 3 4\nФакториал 10: 3628800\n1\n2\n5\n8\nИмен: 2\nПервое имя: Анна\n"),
                 ("files.pas", "Привет из C++ интерпретатора!\nПрочитано строк: 2\nВторая строка\n"),
@@ -163,6 +164,9 @@ def main():
             school_error = folder / "Ошибки School.pas"
             for expression, code, english, russian in [
                 ("School.НОК(0,0)", "E_DIV_ZERO", "Division by zero", "Деление на ноль"),
+                ("var a:=new Addr32('256.0.0.1')", "E_FORMAT", "Invalid IPv4 address", "Некорректная запись адреса IPv4"),
+                ("var c:=new CalcIP('10.0.0.1',32)", "E_RANGE", "IPv4 mask suffix must be between 1 and 31", "Суффикс маски IPv4 должен быть от 1 до 31"),
+                ("var c:=new CalcIP('10.0.0.1','255.0.255.0')", "E_FORMAT", "Invalid contiguous IPv4 netmask", "Некорректная непрерывная маска сети IPv4"),
                 ("TrueTablePrint(nil)", "E_NIL", "Cannot access a nil reference", "Нельзя обратиться к пустой ссылке nil"),
                 ("School.НОДНОК(0,0)", "E_DIV_ZERO", "Division by zero", "Деление на ноль"),
                 ("var t:(integer,integer); Writeln(t.Item1)", "E_NIL", "Cannot access a nil reference", "Нельзя обратиться к пустой ссылке nil"),
@@ -479,6 +483,7 @@ def main():
             results[-1]["school_biginteger_overloads"] = "passed"
             results[-1]["school_typed_truth_tables_and_printing"] = "passed"
             results[-1]["string_padding_substring_insert_remove"] = "passed"
+            results[-1]["school_ipv4_classes_and_generators"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 

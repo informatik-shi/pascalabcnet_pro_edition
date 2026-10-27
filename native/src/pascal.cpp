@@ -5,6 +5,7 @@
 #include "formatting.hpp"
 #include "unicode.hpp"
 #include "big_integer_runtime.hpp"
+#include "school_ip.hpp"
 
 
 #include <algorithm>
@@ -722,6 +723,17 @@ private:
         module_.types.push_back({name,kind,element,{},Type::invalid,rank});
         return static_cast<Type>(63+module_.types.size());
     }
+    Type school_ip_type(CompoundKind kind) {
+        for (std::size_t i=0;i<module_.types.size();++i) if (module_.types[i].kind==kind) return static_cast<Type>(64+i);
+        const auto address=kind==CompoundKind::school_ip ? school_ip_type(CompoundKind::school_address) : Type::invalid;
+        if (module_.types.size()>=1024) throw Error("E_LIMIT",{},"Type limit exceeded");
+        TypeInfo type{kind==CompoundKind::school_address ? "addr32" : "calcip",kind,Type::invalid,{}};
+        if (kind==CompoundKind::school_address) {
+            for (std::size_t i=0;i<school_address_fields.size();++i) type.fields.push_back({std::string(school_address_fields[i]),i==2 ? Type::longword : Type::string,false});
+        } else for (std::size_t i=0;i<school_ip_fields.size();++i)
+            type.fields.push_back({std::string(school_ip_fields[i]),i==2 ? Type::byte : i==3 ? Type::integer : address,false});
+        module_.types.push_back(std::move(type)); return static_cast<Type>(63+module_.types.size());
+    }
     const TypeInfo& info(Type type, SourceLocation location) const {
         if (!compound(type)) throw Error("E_TYPE",location,"Compound type required");
         return module_.types.at(static_cast<unsigned>(type)-64);
@@ -737,6 +749,11 @@ private:
     }
     Type resolve_type(const SyntaxType& syntax) {
         if (auto found=resolved_types_.find(&syntax); found!=resolved_types_.end()) return found->second;
+        if (syntax.kind=="addr32" || syntax.kind=="calcip") {
+            if (auto found=aliases_.find(syntax.kind); found!=aliases_.end()) return found->second;
+            if (!imported_units_.contains("school")) throw Error("E_UNSUPPORTED",syntax.token.location,"IPv4 classes require uses School");
+            return school_ip_type(syntax.kind=="addr32" ? CompoundKind::school_address : CompoundKind::school_ip);
+        }
         if (syntax.kind == "array" || (syntax.kind == "list" && syntax.element))
             return sequence_type(syntax.kind == "array" ? CompoundKind::array : CompoundKind::list,resolve_type(*syntax.element),syntax.rank);
         if (syntax.kind == "assocarray" && syntax.key && syntax.element) {
@@ -862,6 +879,10 @@ private:
                     result->kind=hir::ExprKind::default_value; result->type=type; result->operation="new"; break;
                 }
                 if (!compound(type)) throw Error("E_TYPE",result->location,"new requires an array length, record or collection type");
+                if (school_ip_kind(info(type,result->location).kind)) {
+                    for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
+                    bind_school_ip_constructor(*result,type); break;
+                }
                 if (info(type,result->location).kind==CompoundKind::tuple) {
                     const auto fields=info(type,result->location).fields;
                     if (source.arguments.size()!=fields.size()) throw Error("E_TYPE",result->location,"Tuple constructor arity mismatch");
@@ -1145,6 +1166,29 @@ private:
                 break;
             }
             const auto& type = info(receiver,result->location);
+            if (school_ip_kind(type.kind)) {
+                const auto name=source.token.text; SchoolIPMethod method; bool property=true;
+                if (type.kind==CompoundKind::school_address) {
+                    if (name=="value") method=SchoolIPMethod::address_value;
+                    else if (name=="value2") method=SchoolIPMethod::address_binary;
+                    else if (name=="value10") method=SchoolIPMethod::address_number;
+                    else if (name=="addrformat") { method=SchoolIPMethod::address_format; property=false; }
+                    else if (name=="tostring") { method=SchoolIPMethod::address_string; property=false; }
+                    else throw Error("E_NAME",result->location,"Unknown Addr32 member '"+name+"'");
+                } else {
+                    static const std::array<std::string_view,9> properties{"address","netmask","bitmask","hosts","wildcard","network","broadcast","hostmin","hostmax"};
+                    const auto found=std::find(properties.begin(),properties.end(),name);
+                    if (found!=properties.end()) method=static_cast<SchoolIPMethod>(static_cast<std::size_t>(SchoolIPMethod::ip_address)+static_cast<std::size_t>(found-properties.begin()));
+                    else if (name=="tostring") { method=SchoolIPMethod::ip_string; property=false; }
+                    else if (name=="genaddr") { method=SchoolIPMethod::ip_generate; property=false; }
+                    else if (name=="genaddrbin") { method=SchoolIPMethod::ip_generate_binary; property=false; }
+                    else throw Error("E_NAME",result->location,"Unknown CalcIP member '"+name+"'");
+                }
+                if (property && source.kind==SyntaxExprKind::member_call) throw Error("E_TYPE",result->location,"IPv4 property is not callable");
+                result->arguments.push_back(std::move(result->left));
+                for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
+                bind_school_ip(*result,receiver,method); break;
+            }
             if (type.kind == CompoundKind::linked_list || node_kind(type.kind)) {
                 const auto& name = source.token.text; const auto kind = type.kind;
                 LinkedMethod method; bool property = false;
@@ -1340,6 +1384,9 @@ private:
                 break;
             }
             if (bind_print(*result,source.token.text)) break;
+            if (imported_units_.contains("school") && (source.token.text=="addr32" || source.token.text=="calcip")) {
+                bind_school_ip_constructor(*result,school_ip_type(source.token.text=="addr32" ? CompoundKind::school_address : CompoundKind::school_ip)); break;
+            }
             if (bind_try_read(*result,source.token.text)) break;
             if (bind_number_conversion(*result,source.token.text)) break;
             if (bind_school_text(*result,source.token.text)) break;
@@ -1399,6 +1446,10 @@ private:
         case SyntaxExprKind::unary:
             result->kind = hir::ExprKind::unary;
             result->left = expression(*source.left);
+            if (source.token.text=="not" && compound(result->left->type) && info(result->left->type,result->location).kind==CompoundKind::school_address) {
+                const auto owner=result->left->type; result->arguments.push_back(std::move(result->left));
+                bind_school_ip(*result,owner,SchoolIPMethod::address_not); break;
+            }
             if (source.token.text=="-" && small_integer(result->left->type)) result->left=convert(std::move(result->left),Type::integer);
             if (source.token.text=="-" && result->left->type==Type::longword) result->left=convert(std::move(result->left),Type::int64);
             result->type = result->left->type;
@@ -1412,6 +1463,12 @@ private:
             auto left = result->left->type;
             auto right = result->right->type;
             const auto& op = result->operation;
+            const auto address_type=[&](Type type) { return compound(type) && info(type,result->location).kind==CompoundKind::school_address; };
+            if ((op=="and" || op=="or" || op=="+") && (address_type(left) || address_type(right))) {
+                const auto owner=address_type(left) ? left : right;
+                result->arguments.push_back(std::move(result->left)); result->arguments.push_back(std::move(result->right));
+                bind_school_ip(*result,owner,op=="+" ? SchoolIPMethod::address_add : op=="and" ? SchoolIPMethod::address_and : SchoolIPMethod::address_or); break;
+            }
             if (op=="/" && (left==Type::big_integer || right==Type::big_integer)) {
                 if (left==Type::big_integer && right==Type::big_integer) { result->operation="div"; result->type=Type::big_integer; break; }
                 if (!numeric(left) || !numeric(right)) throw Error("E_TYPE",result->location,"Invalid BigInteger division operands");
@@ -1576,6 +1633,25 @@ private:
         for (const auto& argument:result.arguments) elements.push_back(argument->type);
         result.type=tuple_type(elements,result.location); result.kind=pair ? hir::ExprKind::school_pair : hir::ExprKind::tuple_literal;
         return true;
+    }
+    void bind_school_ip(hir::Expr& result,Type owner,SchoolIPMethod method) {
+        const auto parameters=school_ip_parameters(owner,method);
+        if (parameters.size()!=result.arguments.size()) throw Error("E_TYPE",result.location,"Wrong IPv4 method argument count");
+        for (std::size_t i=0;i<parameters.size();++i) result.arguments[i]=convert(std::move(result.arguments[i]),parameters[i]);
+        Type generated=Type::invalid;
+        if (school_ip_generator(method)) generated=sequence_type(CompoundKind::array,method==SchoolIPMethod::ip_generate ? info(owner,result.location).fields[0].type : Type::string);
+        result.type=school_ip_result(owner,info(owner,result.location),method,generated);
+        result.kind=hir::ExprKind::school_ip; result.operation_type=owner;
+        result.local=static_cast<std::size_t>(method)+(school_ip_generator(method) ? static_cast<std::size_t>(generated)<<8 : 0);
+    }
+    void bind_school_ip_constructor(hir::Expr& result,Type owner) {
+        const bool address=info(owner,result.location).kind==CompoundKind::school_address;
+        if (result.arguments.empty()) { bind_school_ip(result,owner,address ? SchoolIPMethod::address_empty : SchoolIPMethod::ip_empty); return; }
+        if (result.arguments.size()!=(address ? 1U : 2U)) throw Error("E_TYPE",result.location,"Wrong IPv4 constructor argument count");
+        const auto type=result.arguments[address ? 0 : 1]->type;
+        const bool text=type==Type::string || type==Type::nil || type==Type::character;
+        bind_school_ip(result,owner,address ? (text ? SchoolIPMethod::address_text : SchoolIPMethod::address_suffix)
+            : text ? SchoolIPMethod::ip_text : SchoolIPMethod::ip_suffix);
     }
     bool bind_school_table(hir::Expr& result,const SyntaxExpr& source,std::string_view unit={}) {
         if (source.token.text!="truetable" || (!unit.empty() && unit!="school")) return false;
@@ -2052,6 +2128,11 @@ private:
         case SyntaxStmtKind::assignment:
             result.kind = hir::StmtKind::assign;
             result.target = expression(*source.target);
+            if (result.target->kind==hir::ExprKind::school_ip && result.target->local==static_cast<std::size_t>(SchoolIPMethod::address_value)) {
+                auto setter=std::move(result.target); const auto owner=setter->operation_type;
+                setter->arguments.push_back(expression(*source.expression)); bind_school_ip(*setter,owner,SchoolIPMethod::address_set);
+                result.kind=hir::StmtKind::call; result.expression=std::move(setter); break;
+            }
             if (result.target->kind==hir::ExprKind::index && result.target->left->type==Type::string) {
                 if (!lvalue(*result.target->left)) throw Error("E_TYPE",result.location,"String character assignment requires a writable string");
                 result.expression=convert(expression(*source.expression),Type::character); break;

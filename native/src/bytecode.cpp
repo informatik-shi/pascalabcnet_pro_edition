@@ -2,6 +2,7 @@
 #include "stdlib.hpp"
 #include "runtime_values.hpp"
 #include "formatting.hpp"
+#include "school_ip.hpp"
 
 #include <deque>
 #include <algorithm>
@@ -57,6 +58,9 @@ private:
     void expression(const hir::Expr& node) {
         if (node.type == Type::invalid) throw Error("E_HIR", node.location, "Unresolved expression type");
         switch (node.kind) {
+        case hir::ExprKind::school_ip:
+            for (const auto& argument:node.arguments) expression(*argument);
+            emit(Op::school_ip,node.operation_type,node.local,node.location); break;
         case hir::ExprKind::school_minmax:
             expression(*node.left); emit(Op::school_minmax,node.left->type,static_cast<std::size_t>(node.type),node.location); break;
         case hir::ExprKind::school_table_print:
@@ -436,6 +440,18 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
     for (const auto& instruction : code) {
         const auto type = instruction.type;
         switch (instruction.op) {
+        case Op::school_ip: {
+            const auto method=static_cast<SchoolIPMethod>(instruction.operand&255U);
+            if (!compound(type) || !school_ip_allowed(type_info(program,type).kind,method)) invalid(instruction,"Invalid IPv4 method owner or operation");
+            if (school_ip_generator(method)) {
+                const auto result=instruction.operand>>8;
+                if (result<64 || result>=64+program.types.size()) invalid(instruction,"Invalid IPv4 generator result type");
+                const auto& array=type_info(program,static_cast<Type>(result));
+                if (array.kind!=CompoundKind::array || array.rank!=1 || array.element!=(method==SchoolIPMethod::ip_generate ? type_info(program,type).fields[0].type : Type::string))
+                    invalid(instruction,"Invalid IPv4 generator element type");
+            } else if (instruction.operand>>8) invalid(instruction,"Invalid IPv4 method flags");
+            break;
+        }
         case Op::school_minmax: {
             if (!compound(type) || !indexed_sequence(type_info(program,type).kind) || type_info(program,type).rank!=1
                 || instruction.operand<64 || instruction.operand>=64+program.types.size()) invalid(instruction,"Invalid School MinMax input");
@@ -592,7 +608,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if (instruction.op==Op::sequence_sort && (!scalar(type_info(program,type).element) || type_info(program,type).rank!=1 || instruction.operand>1)) invalid(instruction,"Invalid sort"); break;
         case Op::make_default: case Op::store_ref: case Op::drop:
             if (!valid_value_type(program,type) || (instruction.op==Op::make_default && instruction.operand>1)) invalid(instruction,"Invalid value type");
-            if (instruction.op==Op::make_default && instruction.operand && compound(type) && (node_kind(type_info(program,type).kind) || type_info(program,type).kind==CompoundKind::tuple))
+            if (instruction.op==Op::make_default && instruction.operand && compound(type) && (node_kind(type_info(program,type).kind) || type_info(program,type).kind==CompoundKind::tuple || school_ip_kind(type_info(program,type).kind)))
                 invalid(instruction,"Nodes and tuples require the typed constructor");
             break;
         case Op::call_user:
@@ -763,6 +779,14 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
                 if (!(type&0x40000000U) || !scalar(static_cast<Type>(type&~0x40000000U))) invalid(instruction,"Console input requires scalar references");
             }
             break;
+        case Op::school_ip: {
+            const auto method=static_cast<SchoolIPMethod>(instruction.operand&255U);
+            const auto parameters=school_ip_parameters(instruction.type,method);
+            for (auto parameter=parameters.rbegin();parameter!=parameters.rend();++parameter) require(*parameter);
+            const auto result=school_ip_result(instruction.type,type_info(program,instruction.type),method,static_cast<Type>(instruction.operand>>8));
+            if (result!=Type::unit) stack.push_back(result);
+            break;
+        }
         case Op::school_minmax: require(instruction.type); stack.push_back(static_cast<Type>(instruction.operand)); break;
         case Op::school_table_print: require(Type::string); require(Type::integer); require(instruction.type); break;
         case Op::school_table_new: require(Type::integer); stack.push_back(instruction.type); break;
@@ -944,7 +968,20 @@ void verify(const Program& program) {
             if (!valid_value_type(program,t) || (compound(t) && static_cast<unsigned>(t)-64 >= i)) throw Error("E_BYTECODE",{},"Invalid or cyclic type dependency");
             if (compound(t)) level = std::max(level,depth[static_cast<unsigned>(t)-64]+1);
         };
-        if (type.kind == CompoundKind::record || type.kind==CompoundKind::tuple) {
+        if (school_ip_kind(type.kind)) {
+            const bool address=type.kind==CompoundKind::school_address;
+            const auto size=address ? school_address_fields.size() : school_ip_fields.size();
+            if (type.fields.size()!=size || type.element!=Type::invalid || type.key!=Type::invalid || type.name!=(address ? "addr32" : "calcip"))
+                throw Error("E_BYTECODE",{},"Invalid IPv4 class metadata");
+            for (std::size_t field=0;field<size;++field) {
+                const auto name=address ? school_address_fields[field] : school_ip_fields[field];
+                const auto expected=address ? (field==2 ? Type::longword : Type::string) : field==2 ? Type::byte : field==3 ? Type::integer : type.fields[0].type;
+                if (type.fields[field].global || type.fields[field].name!=name || type.fields[field].type!=expected) throw Error("E_BYTECODE",{},"Invalid private IPv4 field");
+                prior(expected);
+            }
+            if (!address && (!compound(type.fields[0].type) || type_info(program,type.fields[0].type).kind!=CompoundKind::school_address))
+                throw Error("E_BYTECODE",{},"CalcIP requires Addr32 fields");
+        } else if (type.kind == CompoundKind::record || type.kind==CompoundKind::tuple) {
             if (type.fields.size() > 256) throw Error("E_BYTECODE",{},"Too many record fields");
             if (type.kind==CompoundKind::tuple) {
                 if (type.fields.size()<2 || type.fields.size()>7 || type.element!=Type::invalid || type.key!=Type::invalid)

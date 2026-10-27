@@ -13,6 +13,7 @@
 #include "formatting.hpp"
 #include "string_arrays.hpp"
 #include "school.hpp"
+#include "school_ip.hpp"
 #include "big_integer_runtime.hpp"
 
 #include <charconv>
@@ -186,6 +187,15 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
         if (steps++ >= options.instruction_limit) trap(instruction, RuntimeError::instruction_limit);
         if (options.cancelled && options.cancelled()) trap(instruction, RuntimeError::cancelled);
         switch (instruction.op) {
+        case Op::school_ip: {
+            const auto method=static_cast<SchoolIPMethod>(instruction.operand&255U);
+            const auto count=school_ip_parameters(instruction.type,method).size(); std::array<Value,2> arguments;
+            for (auto i=count;i>0;--i) arguments[i-1]=pop();
+            const auto generated=school_ip_generator(method) ? static_cast<Type>(instruction.operand>>8) : Type::invalid;
+            auto result=invoke_school_ip(values,instruction.type,method,generated,std::span<const Value>(arguments.data(),count),options);
+            if (school_ip_result(instruction.type,type_info(program,instruction.type),method,generated)!=Type::unit) stack.push_back(std::move(result));
+            break;
+        }
         case Op::school_minmax: {
             const auto sequence=std::get<std::shared_ptr<Aggregate>>(pop());
             stack.emplace_back(school_minmax(values,sequence,static_cast<Type>(instruction.operand),options)); break;

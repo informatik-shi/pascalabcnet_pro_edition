@@ -4,6 +4,12 @@ namespace abc {
 Error runtime_error(RuntimeError id, SourceLocation location, std::string_view context) {
     const char *code, *english, *russian;
     switch (id) {
+    case RuntimeError::school_ip_address:
+        code="E_FORMAT"; english="Invalid IPv4 address"; russian="Некорректная запись адреса IPv4"; break;
+    case RuntimeError::school_ip_suffix:
+        code="E_RANGE"; english="IPv4 mask suffix must be between 1 and 31"; russian="Суффикс маски IPv4 должен быть от 1 до 31"; break;
+    case RuntimeError::school_ip_mask:
+        code="E_FORMAT"; english="Invalid contiguous IPv4 netmask"; russian="Некорректная непрерывная маска сети IPv4"; break;
     case RuntimeError::school_table_variables:
         code="E_RANGE"; english="Truth-table variable count must be between 0 and 30"; russian="Число переменных таблицы истинности должно быть от 0 до 30"; break;
     case RuntimeError::big_integer_limit:

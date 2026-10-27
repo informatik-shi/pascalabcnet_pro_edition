@@ -28,7 +28,7 @@ if ($LASTEXITCODE -ne 0) { throw 'BigInteger C++ compilation failed' }
 & $backend
 if ($LASTEXITCODE -ne 0) { throw 'BigInteger backend tests failed' }
 if (!$BackendOnly) {
-    $core = @('big_integer','big_integer_runtime','stdlib','random','console_input','console_output','formatting','files','file_moves','file_operations','text_file','stdlib_text','string_arrays','school','school_text','diagnostics','types','pascal','bytecode','vm') | ForEach-Object { Join-Path $nativeRoot "src/$_.cpp" }
+    $core = @('big_integer','big_integer_runtime','stdlib','random','console_input','console_output','formatting','files','file_moves','file_operations','text_file','stdlib_text','string_arrays','school','school_text','school_ip','diagnostics','types','pascal','bytecode','vm') | ForEach-Object { Join-Path $nativeRoot "src/$_.cpp" }
     $tests = Join-Path $buildRoot 'core-tests.exe'
     & $cxx -std=c++20 -Wall -Wextra -Wpedantic -O2 -DABC_HAS_FLOAT_FROM_CHARS=1 @defines "-I$mathRoot" "-I$nativeRoot/include" @core (Join-Path $nativeRoot 'tests/core_tests.cpp') $library -ladvapi32 -o $tests
     if ($LASTEXITCODE -ne 0) { throw 'Core C++ compilation failed' }
