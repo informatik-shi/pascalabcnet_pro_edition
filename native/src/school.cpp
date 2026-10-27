@@ -507,15 +507,47 @@ Value invoke_school_list(Values& values, SchoolContext& context, SchoolList meth
     }
     return result;
 }
-std::int64_t school_pair(std::int64_t a, std::int64_t b, bool lcm, SourceLocation location) {
-    const auto first=a,second=b;
+namespace {
+std::int64_t school_signed_gcd(std::int64_t a,std::int64_t b,SourceLocation location) {
     while (b) {
         if (a==INT64_MIN && b== -1) throw runtime_error(RuntimeError::integer_overflow,location);
         const auto remainder=a%b; a=b; b=remainder;
     }
-    const auto result=lcm ? school_multiply(school_divide(first,a,location),second,location) : a;
+    return a;
+}
+std::int64_t school_absolute(std::int64_t result,SourceLocation location) {
     if (result==INT64_MIN) throw runtime_error(RuntimeError::integer_overflow,location);
     return result<0 ? -result : result;
+}
+}
+std::int64_t school_pair(std::int64_t a, std::int64_t b, bool lcm, SourceLocation location) {
+    const auto gcd=school_signed_gcd(a,b,location);
+    return school_absolute(lcm ? school_multiply(school_divide(a,gcd,location),b,location) : gcd,location);
+}
+std::pair<std::int64_t,std::int64_t> school_pair_values(std::int64_t a,std::int64_t b,SourceLocation location) {
+    const auto gcd=school_signed_gcd(a,b,location);
+    return {gcd,school_absolute(school_multiply(school_divide(a,gcd,location),b,location),location)};
+}
+std::shared_ptr<Aggregate> school_minmax(Values& values,const std::shared_ptr<Aggregate>& sequence,Type tuple,const ExecutionOptions& options) {
+    if (sequence->nil) throw runtime_error(RuntimeError::nil_reference,values.location);
+    const auto& info=type_info(values.program,sequence->type); const auto version=sequence->version;
+    const auto calculate=[&]<class T>() {
+        auto low=std::numeric_limits<T>::max(),high=std::numeric_limits<T>::lowest();
+        for (std::size_t i=0;i<sequence->items.size();++i) {
+            if (i>=options.instruction_limit) throw runtime_error(RuntimeError::instruction_limit,values.location);
+            if ((i&255U)==0 && options.cancelled && options.cancelled()) throw runtime_error(RuntimeError::cancelled,values.location);
+            if (info.kind==CompoundKind::list && sequence->version!=version) throw runtime_error(RuntimeError::collection_changed,values.location);
+            const auto number=std::get<T>(sequence->items[i]->value);
+            if (number<low) low=number;
+            if (number>high) high=number;
+        }
+        auto result=std::make_shared<Aggregate>(); result->type=tuple;
+        result->items.push_back(values.cell(info.element,low)); result->items.push_back(values.cell(info.element,high));
+        return result;
+    };
+    if (info.element==Type::integer) return calculate.template operator()<std::int32_t>();
+    if (info.element==Type::int64) return calculate.template operator()<std::int64_t>();
+    return calculate.template operator()<double>();
 }
 std::int64_t school_fold(const std::shared_ptr<Aggregate>& array, SchoolFold method, SourceLocation location, const ExecutionOptions& options) {
     const auto count=array->nil ? std::size_t{0} : array->items.size();

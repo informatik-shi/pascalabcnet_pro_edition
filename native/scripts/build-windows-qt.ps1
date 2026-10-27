@@ -49,6 +49,7 @@ Text/TextFile: Assign, Reset, Rewrite, Append, Read/Readln, Write/Writeln, Eof, 
 Совместимость с PascalABC.NET частичная.
 Русские имена и НОД/НОК: examples/russian-identifiers.pas. Массивные GCD/LCM: examples/school-folds.pas.
 Регистр и категории Unicode: examples/unicode-characters.pas. Правила регистра фиксированы таблицами Unicode 15.1.
+Кортежи и НОДНОК: examples/tuples.pas. Минимум и максимум: examples/school-minmax.pas.
 Установка .NET, Python или Qt для запуска этого пакета не требуется.
 "@
 Set-Content -LiteralPath (Join-Path $packageDir 'START-HERE.txt') -Value $startText -Encoding utf8

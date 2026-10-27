@@ -57,6 +57,11 @@ private:
     void expression(const hir::Expr& node) {
         if (node.type == Type::invalid) throw Error("E_HIR", node.location, "Unresolved expression type");
         switch (node.kind) {
+        case hir::ExprKind::school_minmax:
+            expression(*node.left); emit(Op::school_minmax,node.left->type,static_cast<std::size_t>(node.type),node.location); break;
+        case hir::ExprKind::tuple_literal: case hir::ExprKind::school_pair:
+            for (const auto& argument:node.arguments) expression(*argument);
+            emit(node.kind==hir::ExprKind::tuple_literal ? Op::tuple_literal : Op::school_pair,node.type,0,node.location); break;
         case hir::ExprKind::school_fold:
             expression(*node.left); emit(Op::school_fold,node.left->type,node.local,node.location); break;
         case hir::ExprKind::replace_last:
@@ -389,6 +394,20 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
     for (const auto& instruction : code) {
         const auto type = instruction.type;
         switch (instruction.op) {
+        case Op::school_minmax: {
+            if (!compound(type) || !indexed_sequence(type_info(program,type).kind) || type_info(program,type).rank!=1
+                || instruction.operand<64 || instruction.operand>=64+program.types.size()) invalid(instruction,"Invalid School MinMax input");
+            const auto element=type_info(program,type).element; const auto& tuple=type_info(program,static_cast<Type>(instruction.operand));
+            if ((element!=Type::integer && element!=Type::int64 && element!=Type::real) || tuple.kind!=CompoundKind::tuple || tuple.fields.size()!=2
+                || tuple.fields[0].type!=element || tuple.fields[1].type!=element) invalid(instruction,"Invalid School MinMax result");
+            break;
+        }
+        case Op::tuple_literal: case Op::school_pair: {
+            if (!compound(type) || type_info(program,type).kind!=CompoundKind::tuple || instruction.operand) invalid(instruction,"Invalid tuple construction");
+            const auto& fields=type_info(program,type).fields;
+            if (instruction.op==Op::school_pair && (fields.size()!=2 || fields[0].type!=Type::int64 || fields[1].type!=Type::int64)) invalid(instruction,"Invalid НОДНОК result type");
+            break;
+        }
         case Op::school_fold:
             if (instruction.operand>static_cast<std::size_t>(SchoolFold::lcm) || !compound(type) || type_info(program,type).kind!=CompoundKind::array
                 || type_info(program,type).rank!=1 || type_info(program,type).element!=Type::int64) invalid(instruction,"Invalid School GCD/LCM fold");
@@ -527,8 +546,8 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if (instruction.op==Op::sequence_sort && (!scalar(type_info(program,type).element) || type_info(program,type).rank!=1 || instruction.operand>1)) invalid(instruction,"Invalid sort"); break;
         case Op::make_default: case Op::store_ref: case Op::drop:
             if (!valid_value_type(program,type) || (instruction.op==Op::make_default && instruction.operand>1)) invalid(instruction,"Invalid value type");
-            if (instruction.op==Op::make_default && instruction.operand && compound(type) && node_kind(type_info(program,type).kind))
-                invalid(instruction,"Linked nodes require the typed constructor");
+            if (instruction.op==Op::make_default && instruction.operand && compound(type) && (node_kind(type_info(program,type).kind) || type_info(program,type).kind==CompoundKind::tuple))
+                invalid(instruction,"Nodes and tuples require the typed constructor");
             break;
         case Op::call_user:
             if (instruction.operand >= program.routines.size() || type != program.routines[instruction.operand].result) invalid(instruction,"Invalid user call"); break;
@@ -548,7 +567,9 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
                 invalid(instruction,"Invalid sequence access mode");
             break;
         case Op::get_field: case Op::ref_field:
-            if (!compound(type) || type_info(program,type).kind != CompoundKind::record || instruction.operand >= type_info(program,type).fields.size()) invalid(instruction,"Invalid record access"); break;
+            if (!compound(type) || (type_info(program,type).kind!=CompoundKind::record && !(instruction.op==Op::get_field && type_info(program,type).kind==CompoundKind::tuple))
+                || instruction.operand>=type_info(program,type).fields.size()) invalid(instruction,"Invalid or writable tuple/record access");
+            break;
         case Op::list_add: case Op::list_remove: case Op::list_clear: case Op::list_contains:
             if (!compound(type) || type_info(program,type).kind != CompoundKind::list) invalid(instruction,"Invalid list instruction"); break;
         case Op::call_builtin:
@@ -696,6 +717,10 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
                 if (!(type&0x40000000U) || !scalar(static_cast<Type>(type&~0x40000000U))) invalid(instruction,"Console input requires scalar references");
             }
             break;
+        case Op::school_minmax: require(instruction.type); stack.push_back(static_cast<Type>(instruction.operand)); break;
+        case Op::tuple_literal: case Op::school_pair:
+            for (auto field=type_info(program,instruction.type).fields.rbegin();field!=type_info(program,instruction.type).fields.rend();++field) require(field->type);
+            stack.push_back(instruction.type); break;
         case Op::school_fold: require(instruction.type); stack.push_back(Type::int64); break;
         case Op::replace_last: require(Type::string); require(Type::string); require(reference_type(Type::string)); break;
         case Op::replace_many: require(static_cast<Type>(instruction.operand)); require(instruction.type); require(Type::string); stack.push_back(Type::string); break;
@@ -871,8 +896,14 @@ void verify(const Program& program) {
             if (!valid_value_type(program,t) || (compound(t) && static_cast<unsigned>(t)-64 >= i)) throw Error("E_BYTECODE",{},"Invalid or cyclic type dependency");
             if (compound(t)) level = std::max(level,depth[static_cast<unsigned>(t)-64]+1);
         };
-        if (type.kind == CompoundKind::record) {
+        if (type.kind == CompoundKind::record || type.kind==CompoundKind::tuple) {
             if (type.fields.size() > 256) throw Error("E_BYTECODE",{},"Too many record fields");
+            if (type.kind==CompoundKind::tuple) {
+                if (type.fields.size()<2 || type.fields.size()>7 || type.element!=Type::invalid || type.key!=Type::invalid)
+                    throw Error("E_BYTECODE",{},"Invalid tuple shape");
+                for (std::size_t n=0;n<type.fields.size();++n) if (type.fields[n].global || type.fields[n].name!="item"+std::to_string(n+1))
+                    throw Error("E_BYTECODE",{},"Invalid tuple field metadata");
+            }
             for (const auto& field : type.fields) prior(field.type);
         } else if (type.kind == CompoundKind::association) { prior(type.key); prior(type.element); }
         else if (type.kind == CompoundKind::linked_list) {

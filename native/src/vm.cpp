@@ -178,6 +178,20 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
         if (steps++ >= options.instruction_limit) trap(instruction, RuntimeError::instruction_limit);
         if (options.cancelled && options.cancelled()) trap(instruction, RuntimeError::cancelled);
         switch (instruction.op) {
+        case Op::school_minmax: {
+            const auto sequence=std::get<std::shared_ptr<Aggregate>>(pop());
+            stack.emplace_back(school_minmax(values,sequence,static_cast<Type>(instruction.operand),options)); break;
+        }
+        case Op::tuple_literal: case Op::school_pair: {
+            const auto& fields=type_info(program,instruction.type).fields;
+            auto tuple=std::make_shared<Aggregate>(); tuple->type=instruction.type; tuple->items.resize(fields.size());
+            if (instruction.op==Op::school_pair) {
+                const auto b=std::get<std::int64_t>(pop()),a=std::get<std::int64_t>(pop());
+                const auto [gcd,lcm]=school_pair_values(a,b,instruction.location);
+                tuple->items[0]=values.cell(Type::int64,gcd); tuple->items[1]=values.cell(Type::int64,lcm);
+            } else for (auto i=fields.size();i>0;--i) tuple->items[i-1]=values.cell(fields[i-1].type,values.copy(pop()));
+            stack.emplace_back(std::move(tuple)); break;
+        }
         case Op::school_fold: {
             const auto array=std::get<std::shared_ptr<Aggregate>>(pop());
             stack.emplace_back(school_fold(array,static_cast<SchoolFold>(instruction.operand),instruction.location,options)); break;
@@ -840,7 +854,9 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
             break;
         }
         case Op::get_field: {
-            auto record = std::get<std::shared_ptr<Aggregate>>(pop()); stack.push_back(values.copy(record->items[instruction.operand]->value)); break;
+            auto record = std::get<std::shared_ptr<Aggregate>>(pop());
+            if (record->nil) trap(instruction,RuntimeError::nil_reference);
+            stack.push_back(values.copy(record->items[instruction.operand]->value)); break;
         }
         case Op::ref_field: {
             auto record = std::get<std::shared_ptr<Aggregate>>(std::get<std::shared_ptr<Cell>>(pop())->value);

@@ -14,7 +14,7 @@ bool supports(const std::vector<TypeInfo>& types, Type type, unsigned depth) {
     const auto index=static_cast<std::size_t>(type)-static_cast<std::size_t>(Type::first_compound);
     if (index>=types.size()) return false;
     const auto& info=types[index];
-    if (info.kind==CompoundKind::record) {
+    if (info.kind==CompoundKind::record || info.kind==CompoundKind::tuple) {
         for (const auto& field:info.fields) if (!supports(types,field.type,depth+1)) return false;
         return true;
     }
@@ -38,7 +38,7 @@ class ObjectWriter {
         if (std::find(path.begin(),path.end(),object.get())!=path.end()) { append(u"(...)"); return; }
         path.push_back(object.get());
         const auto& info=program.types[static_cast<std::size_t>(type)-static_cast<std::size_t>(Type::first_compound)];
-        if (info.kind==CompoundKind::record) {
+        if (info.kind==CompoundKind::record || info.kind==CompoundKind::tuple) {
             append(u"(");
             for (std::size_t i=0;i<info.fields.size();++i) {
                 if (i) append(u",");

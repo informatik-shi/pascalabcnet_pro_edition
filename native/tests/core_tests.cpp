@@ -57,6 +57,77 @@ void runtime_error(std::string_view source, std::string_view code) {
     error([&] { (void)run(source); }, code,source);
 }
 
+void school_minmax_library() {
+    result("uses School; begin Writeln(MinMax(Arr(4,-7,9,2)),' ',School.MinMax(Arr(int64(-9223372036854775808),MaxInt64))); var a:=new List<real>; a.Add(1.5); a.Add(-2.25); Writeln(a.MinMax); Writeln(MinMax(new integer[0]),' ',MinMax(new int64[0])); var r:=MinMax(new real[0]); Writeln(r.Item1>1e308,' ',r.Item2< -1e308); end.","(-7,9) (-9223372036854775808,9223372036854775807)\n(-2.25,1.5)\n(2147483647,-2147483648) (9223372036854775807,-9223372036854775808)\nTrue True\n");
+    result("uses School; function MinMax(a:array of integer):integer; begin Result:=7; end; begin var a:=Arr(4,2,8); Writeln(MinMax(a),' ',School.MinMax(a),' ',a.MinMax()); end.","7 (2,8) (2,8)\n");
+    result("uses School; begin SetRandomSeed(1); MinMax(Arr(3,1,2)); Writeln(Random(100)); end.","24\n");
+    std::string literal="Arr("; std::int32_t low=INT32_MAX,high=INT32_MIN; std::uint32_t state=17;
+    for (unsigned i=0;i<1000;++i) {
+        state=1664525U*state+1013904223U; const auto number=static_cast<std::int32_t>(state%200001)-100000;
+        if (number<low) low=number;
+        if (number>high) high=number;
+        if (i) literal+=",";
+        literal+=std::to_string(number);
+    }
+    literal+=")";
+    result("uses School; begin Writeln(MinMax("+literal+")); end.","("+std::to_string(low)+","+std::to_string(high)+")\n");
+    runtime_error("uses School; begin var a:array of integer; MinMax(a); end.","E_NIL");
+    runtime_error("uses School; begin var a:List<int64>:=nil; MinMax(a); end.","E_NIL");
+    for (const auto source:{"uses School; begin MinMax(new byte[0]); end.","uses School; begin MinMax(new integer[1,2]); end.",
+        "uses School; begin MinMax(Arr('ab')); end.","uses School; begin MinMax(nil); end.",
+        "uses School; begin MinMax(Arr(1),Arr(2)); end.","uses School; begin var a:=Arr(1); a.MinMax(1); end.",
+        "uses School; begin var t:(integer,integer):=MinMax(Arr(int64(1))); end."}) compile_error(source,"E_TYPE");
+    compile_error("begin MinMax(Arr(1)); end.","E_NAME");
+    auto program=abc::compile("uses School; begin MinMax(Arr(1,2)); end.");
+    for (auto& instruction:program.code) if (instruction.op==abc::Op::school_minmax) instruction.operand=64;
+    error([&]{abc::verify(program);},"E_BYTECODE");
+    program=abc::compile("uses School; begin MinMax(Arr(1,2)); end.");
+    program.types.back().fields[1].type=abc::Type::int64;
+    error([&]{abc::verify(program);},"E_BYTECODE");
+    abc::ExecutionOptions options; options.instruction_limit=100;
+    error([&]{(void)run("uses School; begin MinMax(new integer[10000]); end.","",options);},"E_LIMIT");
+    options={}; std::size_t polls=0; options.cancelled=[&]{return ++polls>20;};
+    error([&]{(void)run("uses School; begin MinMax(new integer[10000]); end.","",options);},"E_CANCELLED");
+    options={}; options.allocation_limit=1;
+    error([&]{(void)run("uses School; begin MinMax(new integer[0]); end.","",options);},"E_LIMIT");
+}
+
+void tuple_library() {
+    result("uses School; type Pair=(int64,string); function Data:Pair; begin Result:=(42,'answer'); end; begin var p:=Data; Writeln(p,' ',p[0],' ',p.Item2); Writeln(Rec(1,'ab',True)); Writeln(НОДНОК(-18,30),' ',School.НОДНОК(-9223372036854775808,0)); end.","(42,answer) 42 answer\n(1,ab,True)\n(-6,90) (-9223372036854775808,0)\n");
+    result("begin var a:(integer,integer); var b:(integer,integer):=nil; Writeln(a=nil,' ',a=b,' ',a=(0,0)); a:=(1,2); b:=a; a:=(3,4); Writeln(a,' ',b,' ',b=(1,2),' ',b<>(1,3)); end.","True True False\n(3,4) (1,2) True True\n");
+    result("type R=record x:integer; a:array of integer; end; begin var r:R; r.x:=1; r.a:=Arr(2); var t:=(r,True); r.x:=9; r.a[0]:=7; Writeln(t); var c:=t.Item1; c.x:=3; Writeln(t.Item1.x,' ',c.x); t.Item1.a[0]:=8; Writeln(r.a[0]); end.","((1,[7]),True)\n1 3\n8\n");
+    result("begin var a:=new List<(integer,string)>; a.Add((1,'ab')); Writeln(a.Contains((1,'ab')),' ',a.Contains((2,'ab')),' ',a); var t:=((1,2),Arr(3)); var u:=((1,2),t.Item2); Writeln(t=u); end.","True False [(1,ab)]\nTrue\n");
+    result("type T=(integer,integer,integer,integer,integer,integer,integer); begin var t:=new T(1,2,3,4,5,6,7); Writeln(t,' ',t[6]); var a:=new (integer,integer)[2]; Writeln(a); a[0]:=(1,2); Writeln(a); end.","(1,2,3,4,5,6,7) 7\n[nil,nil]\n[(1,2),nil]\n");
+    result("function N(x:integer):integer; begin Write(x); Result:=x; end; begin var t:=(N(1),N(2),N(3)); Writeln('|',t); end.","123|(1,2,3)\n");
+    result("type T=(integer,integer); procedure Change(var t:T); begin t:=(3,4); end; begin var t:=(1,2); var u:=t; Change(t); Writeln(t,' ',u); end.","(3,4) (1,2)\n");
+    result("function Rec(a,b:integer):integer; begin Result:=7; end; begin Writeln(Rec(1,2),' ',PABCSystem.Rec(1,2)); end.","7 (1,2)\n");
+    for (const auto source:{"begin var t:=(1,2); t.Item1:=3; end.","begin var t:=(1,2); t[0]:=3; end.",
+        "begin var t:=(1,2); Inc(t.Item1); end.","type T=(integer,integer); begin var t:=new T; end.",
+        "begin var t:=(1,2); var i:=0; Writeln(t[i]); end.","begin var t:=(nil,1); end.",
+        "begin var t:(int64,int64); var p:=(1,2); t:=p; end.","uses School; begin НОДНОК(1.5,2); end.",
+        "uses School; begin var t:(integer,integer):=НОДНОК(2,4); end."}) compile_error(source,"E_TYPE");
+    compile_error("begin var t:=(1,2); Writeln(t[2]); end.","E_RANGE");
+    compile_error("begin var t:=(1,2,3,4,5,6,7,8); end.","E_UNSUPPORTED");
+    compile_error("begin НОДНОК(2,4); end.","E_NAME");
+    runtime_error("begin var t:(integer,string); Writeln(t.Item1); end.","E_NIL");
+    runtime_error("uses School; begin НОДНОК(0,0); end.","E_DIV_ZERO");
+    runtime_error("uses School; begin НОДНОК(-9223372036854775808,-1); end.","E_OVERFLOW");
+    auto program=abc::compile("begin var t:=(1,2); Writeln(t.Item1); end.");
+    for (auto& instruction:program.code) if (instruction.op==abc::Op::get_field) instruction.op=abc::Op::ref_field;
+    error([&]{abc::verify(program);},"E_BYTECODE");
+    program=abc::compile("begin var t:=(1,2); end.");
+    program.types[0].fields[0].name="wrong";
+    error([&]{abc::verify(program);},"E_BYTECODE");
+    program=abc::compile("begin var t:=(1,2); end.");
+    for (auto& instruction:program.code) if (instruction.op==abc::Op::tuple_literal) instruction.op=abc::Op::school_pair;
+    error([&]{abc::verify(program);},"E_BYTECODE");
+    program=abc::compile("begin var t:=(1,2); end.");
+    program.code.push_back({abc::Op::make_default,static_cast<abc::Type>(64),1,{}});
+    error([&]{abc::verify(program);},"E_BYTECODE");
+    abc::ExecutionOptions options; options.allocation_limit=1;
+    error([&]{(void)run("begin Writeln((1,2)); end.","",options);},"E_LIMIT");
+}
+
 void unicode_character_library() {
     result("begin Writeln(LowerCase('Ё'),' ',UpperCase('я'),' ',UpCase('ς'),' ',LowCase('Ä')); Writeln('Ж'.ToLower,' ','ж'.ToUpper(),' ','Я'.Code); Writeln(Code(#65535)); end.","ё Я Σ ä\nж Ж 1071\n65535\n");
     result("begin Writeln('Я'.IsLetter,' ','字'.IsLetter,' ','ª'.IsLetter,' ','Ⅳ'.IsLetter,' ',#55296.IsLetter); Writeln('١'.IsDigit,' ','９'.IsDigit,' ','²'.IsDigit,' ','0'.IsDigit); Writeln('ß'.IsLower,' ','ǅ'.IsUpper,' ','Σ'.IsUpper,' ','中'.IsLower); end.","True True True False False\nTrue True False True\nTrue False True False\n");
@@ -2537,6 +2608,8 @@ int main() {
     school_fold_library();
     unicode_identifiers_and_school_aliases();
     unicode_character_library();
+    tuple_library();
+    school_minmax_library();
     school_text_library();
     school_factor_library();
     sequence_mutations();

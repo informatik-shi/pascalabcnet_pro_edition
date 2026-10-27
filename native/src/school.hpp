@@ -11,6 +11,8 @@ Value school_replace_many(const Value& text, const std::shared_ptr<Aggregate>& s
 void school_replace_last(Values& values, const std::shared_ptr<Cell>& receiver, const Value& source, const Value& target, const ExecutionOptions& options);
 std::int64_t school_fold(const std::shared_ptr<Aggregate>& array, SchoolFold method, SourceLocation location, const ExecutionOptions& options);
 std::int64_t school_pair(std::int64_t a, std::int64_t b, bool lcm, SourceLocation location);
+std::pair<std::int64_t,std::int64_t> school_pair_values(std::int64_t a,std::int64_t b,SourceLocation location);
+std::shared_ptr<Aggregate> school_minmax(Values& values,const std::shared_ptr<Aggregate>& sequence,Type tuple,const ExecutionOptions& options);
 }
 
 namespace abc::stdlib {

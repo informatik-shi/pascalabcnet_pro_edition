@@ -149,7 +149,7 @@ private:
     SourceLocation position_;
 };
 
-enum class SyntaxExprKind { literal, literal_group, name, unary, binary, call, index, field, member_call, construction, formatted };
+enum class SyntaxExprKind { literal, literal_group, name, unary, binary, call, index, field, member_call, construction, formatted, tuple };
 struct SyntaxType {
     Token token;
     std::string kind;
@@ -273,7 +273,16 @@ private:
     std::shared_ptr<SyntaxType> type_syntax() {
         DepthGuard guard(depth_, current_.location);
         auto result = std::make_shared<SyntaxType>(); result->token = current_;
-        if (accept("array")) {
+        if (accept("(")) {
+            result->kind="tuple";
+            do {
+                if (result->fields.size()>=7) throw Error("E_UNSUPPORTED",result->token.location,"Tuple arities above seven require nested Rest tuples");
+                auto element=type_syntax();
+                result->fields.emplace_back(Token{TokenKind::name,"item"+std::to_string(result->fields.size()+1),result->token.location},std::move(element));
+            } while (accept(","));
+            expect(")");
+            if (result->fields.size()<2) fail("A tuple type needs at least two elements");
+        } else if (accept("array")) {
             result->kind = "array";
             if (accept("[")) {
                 if (!accept(",")) throw Error("E_UNSUPPORTED",current_.location,"Fixed-bound arrays are not implemented");
@@ -481,7 +490,22 @@ private:
             }
             return make_expression(SyntaxExprKind::unary, op, prefix());
         }
-        if (accept("(")) { auto result = expression(); expect(")"); return postfix(std::move(result)); }
+        if (is("(")) {
+            const auto token=consume(); auto result=expression();
+            if (accept(",")) {
+                auto tuple=make_expression(SyntaxExprKind::tuple,token); tuple->depth=result->depth+1;
+                if (tuple->depth>256) fail("Tuple nesting limit exceeded");
+                tuple->arguments.push_back(std::move(result));
+                do {
+                    if (tuple->arguments.size()>=7) throw Error("E_UNSUPPORTED",token.location,"Tuple arities above seven require nested Rest tuples");
+                    auto element=expression(); tuple->depth=std::max(tuple->depth,element->depth+1);
+                    if (tuple->depth>256) fail("Tuple nesting limit exceeded");
+                    tuple->arguments.push_back(std::move(element));
+                } while (accept(","));
+                result=std::move(tuple);
+            }
+            expect(")"); return postfix(std::move(result));
+        }
         if (current_.kind==TokenKind::text || current_.kind==TokenKind::character_code) {
             auto result=make_expression(SyntaxExprKind::literal,consume());
             if (current_.kind==TokenKind::text || current_.kind==TokenKind::character_code) {
@@ -508,7 +532,7 @@ private:
             }
             else if (accept("(")) {
                 if (!is(")")) do {
-                    if (result->arguments.size() >= 3) fail("Constructor argument limit exceeded");
+                    if (result->arguments.size() >= 7) fail("Constructor argument limit exceeded");
                     auto argument = expression(); result->depth = std::max(result->depth,argument->depth+1);
                     if (result->depth > 256) fail("Constructor nesting limit exceeded");
                     result->arguments.push_back(std::move(argument));
@@ -664,6 +688,22 @@ private:
         }
         return *module_.print_delimiter;
     }
+    Type tuple_type(const std::vector<Type>& elements,SourceLocation location) {
+        if (elements.size()<2 || elements.size()>7) throw Error("E_TYPE",location,"Tuple requires two to seven statically typed elements");
+        for (auto element:elements) if (element==Type::nil || element==Type::unit || element==Type::invalid)
+            throw Error("E_TYPE",location,"Tuple element needs a known value type");
+        for (std::size_t i=0;i<module_.types.size();++i) {
+            const auto& candidate=module_.types[i];
+            if (candidate.kind!=CompoundKind::tuple || candidate.fields.size()!=elements.size()) continue;
+            bool same=true;
+            for (std::size_t n=0;n<elements.size();++n) if (candidate.fields[n].type!=elements[n]) { same=false; break; }
+            if (same) return static_cast<Type>(64+i);
+        }
+        if (module_.types.size()>=1024) throw Error("E_LIMIT",location,"Type limit exceeded");
+        TypeInfo tuple{"tuple",CompoundKind::tuple,Type::invalid,{}};
+        for (std::size_t i=0;i<elements.size();++i) tuple.fields.push_back({"item"+std::to_string(i+1),elements[i],false});
+        module_.types.push_back(std::move(tuple)); return static_cast<Type>(63+module_.types.size());
+    }
     Type sequence_type(CompoundKind kind, Type element, unsigned rank = 1) {
         for (std::size_t i = 0; i < module_.types.size(); ++i)
             if (module_.types[i].kind == kind && module_.types[i].element == element && module_.types[i].rank==rank) return static_cast<Type>(64+i);
@@ -718,6 +758,11 @@ private:
                 : syntax.kind == "dynarray" ? CompoundKind::dynarray : CompoundKind::simple_set;
             return sequence_type(kind,resolve_type(*syntax.element));
         }
+        if (syntax.kind=="tuple") {
+            std::vector<Type> elements;
+            for (const auto& field:syntax.fields) elements.push_back(resolve_type(*field.second));
+            return tuple_type(elements,syntax.token.location);
+        }
         if (syntax.kind == "record") {
             TypeInfo record{syntax.token.text,CompoundKind::record,Type::invalid,{}};
             for (const auto& [name,type] : syntax.fields) {
@@ -734,8 +779,8 @@ private:
     }
     bool lvalue(const hir::Expr& expression) const {
         if (expression.kind==hir::ExprKind::index && expression.left->type==Type::string) return false;
-        if (expression.kind==hir::ExprKind::index && expression.left->kind==hir::ExprKind::local
-            && for_controls_.contains(expression.left->local) && compound(expression.left->type)
+        if (expression.kind==hir::ExprKind::field && compound(expression.left->type) && info(expression.left->type,expression.location).kind==CompoundKind::tuple) return false;
+        if (expression.kind==hir::ExprKind::index && compound(expression.left->type)
             && indexed_sequence(info(expression.left->type,expression.location).kind)) return true;
         return (expression.kind == hir::ExprKind::local && !for_controls_.contains(expression.local))
             || ((expression.kind == hir::ExprKind::index || expression.kind == hir::ExprKind::field) && lvalue(*expression.left));
@@ -751,6 +796,12 @@ private:
         throw Error("E_NAME", token.location, "Unknown name '" + token.text + "'");
     }
     std::unique_ptr<hir::Expr> convert(std::unique_ptr<hir::Expr> expression, Type type) {
+        if (expression->type!=type && expression->kind==hir::ExprKind::tuple_literal && compound(type) && info(type,expression->location).kind==CompoundKind::tuple) {
+            const auto fields=info(type,expression->location).fields;
+            if (fields.size()!=expression->arguments.size()) throw Error("E_TYPE",expression->location,"Tuple arity mismatch");
+            for (std::size_t i=0;i<fields.size();++i) expression->arguments[i]=convert(std::move(expression->arguments[i]),fields[i].type);
+            expression->type=type; return expression;
+        }
         if (integer_type(type) && integer_type(expression->type) && expression->kind==hir::ExprKind::literal && !can_widen(expression->type,type)) {
             try {
                 if (small_integer(type)) expression->value=checked_small_integer(type,integral_number(expression->value,expression->location,type_name(type)),expression->location);
@@ -782,6 +833,11 @@ private:
         result->location = source.token.location;
         result->operation = source.token.text;
         switch (source.kind) {
+        case SyntaxExprKind::tuple: {
+            result->kind=hir::ExprKind::tuple_literal; std::vector<Type> elements;
+            for (const auto& argument:source.arguments) { auto element=expression(*argument); elements.push_back(element->type); result->arguments.push_back(std::move(element)); }
+            result->type=tuple_type(elements,result->location); break;
+        }
         case SyntaxExprKind::construction: {
             auto type = resolve_type(*source.constructed);
             if (source.array_construction) {
@@ -793,6 +849,13 @@ private:
                     result->kind=hir::ExprKind::default_value; result->type=type; result->operation="new"; break;
                 }
                 if (!compound(type)) throw Error("E_TYPE",result->location,"new requires an array length, record or collection type");
+                if (info(type,result->location).kind==CompoundKind::tuple) {
+                    const auto fields=info(type,result->location).fields;
+                    if (source.arguments.size()!=fields.size()) throw Error("E_TYPE",result->location,"Tuple constructor arity mismatch");
+                    result->kind=hir::ExprKind::tuple_literal; result->type=type;
+                    for (std::size_t i=0;i<fields.size();++i) result->arguments.push_back(convert(expression(*source.arguments[i]),fields[i].type));
+                    break;
+                }
                 if (node_kind(info(type,result->location).kind)) {
                     const auto parameters = linked_parameters(type,info(type,result->location),LinkedMethod::construct);
                     if (source.arguments.size() != parameters.size()) throw Error("E_TYPE",result->location,"Wrong node constructor argument count");
@@ -835,6 +898,15 @@ private:
                 result->local = static_cast<std::size_t>(AssociationMethod::get);
                 result->arguments.push_back(convert(expression(*source.right),key)); break;
             }
+            if (compound(receiver_type) && info(receiver_type,result->location).kind==CompoundKind::tuple) {
+                auto index=expression(*source.right);
+                if (!source.arguments.empty() || index->kind!=hir::ExprKind::literal || index->type!=Type::integer)
+                    throw Error("E_TYPE",result->location,"Tuple index must be a constant integer");
+                const auto n=std::get<std::int32_t>(index->value);
+                const auto& fields=info(receiver_type,result->location).fields;
+                if (n<0 || static_cast<std::size_t>(n)>=fields.size()) throw Error("E_RANGE",result->location,"Tuple index is outside its arity");
+                result->kind=hir::ExprKind::field; result->local=static_cast<std::size_t>(n); result->type=fields[n].type; break;
+            }
             result->right = convert(expression(*source.right),Type::integer);
             for (const auto& argument:source.arguments) result->arguments.push_back(convert(expression(*argument),Type::integer));
             const auto& type = info(receiver_type,result->location);
@@ -864,6 +936,7 @@ private:
                 if (bind_number_conversion(*result,source.token.text,source.left->token.text)) break;
                 if (bind_school_text(*result,source.token.text,source.left->token.text)) break;
                 if (bind_school_fold(*result,source.token.text,source.left->token.text)) break;
+                if (bind_tuple(*result,source.token.text,source.left->token.text)) break;
                 if (bind_string_read(*result,source.token.text,source.left->token.text)) break;
                 if (bind_string_array(*result,source.token.text,source.left->token.text)) break;
                 if (bind_school_list(*result,source.token.text,source.left->token.text)) break;
@@ -889,6 +962,11 @@ private:
                 result->arguments.push_back(std::move(result->left));
                 for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
                 (void)bind_school_list(*result,source.token.text,"school"); break;
+            }
+            if (imported_units_.contains("school") && compound(receiver) && source.token.text=="minmax") {
+                result->arguments.push_back(std::move(result->left));
+                for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
+                (void)bind_tuple(*result,source.token.text,"school"); break;
             }
             if (imported_units_.contains("school") && integer_type(receiver) && (source.token.text=="tobase" || source.token.text=="perfectsquare" || source.token.text=="isprime")) {
                 result->arguments.push_back(std::move(result->left));
@@ -1108,7 +1186,7 @@ private:
                 if (count) result->arguments.push_back(convert(expression(*source.arguments[0]),element));
                 break;
             }
-            if (type.kind != CompoundKind::record) {
+            if (type.kind != CompoundKind::record && type.kind!=CompoundKind::tuple) {
                 if ((source.token.text == "length" && type.kind == CompoundKind::array) || (source.token.text == "count" && type.kind == CompoundKind::list)) {
                     if (!source.arguments.empty() || (type.kind==CompoundKind::array && source.kind==SyntaxExprKind::member_call)) throw Error("E_TYPE",result->location,"Property takes no arguments");
                     result->kind = hir::ExprKind::length; result->type = Type::integer; result->local=1; break;
@@ -1213,6 +1291,7 @@ private:
             if (bind_number_conversion(*result,source.token.text)) break;
             if (bind_school_text(*result,source.token.text)) break;
             if (bind_school_fold(*result,source.token.text)) break;
+            if (bind_tuple(*result,source.token.text)) break;
             if (bind_string_read(*result,source.token.text)) break;
             if (bind_string_array(*result,source.token.text)) break;
             if (bind_school_list(*result,source.token.text)) break;
@@ -1411,6 +1490,27 @@ private:
         for (std::size_t i=0;i<parameters.size();++i) result.arguments[i]=convert(std::move(result.arguments[i]),parameters[i]);
         result.kind=hir::ExprKind::school_list; result.local=static_cast<std::size_t>(method); result.operation_type=list;
         result.type=school_list_result(method,list); return true;
+    }
+    bool bind_tuple(hir::Expr& result,std::string_view name,std::string_view unit={}) {
+        if (name=="minmax" && imported_units_.contains("school") && (unit.empty() || unit=="school")) {
+            if (result.arguments.size()!=1 || !compound(result.arguments[0]->type)) throw Error("E_TYPE",result.location,"MinMax requires a typed numeric sequence");
+            const auto& sequence=info(result.arguments[0]->type,result.location);
+            const auto element=sequence.element;
+            if (!indexed_sequence(sequence.kind) || sequence.rank!=1 || (element!=Type::integer && element!=Type::int64 && element!=Type::real))
+                throw Error("E_TYPE",result.location,"MinMax requires an integer, int64 or real array/List");
+            result.left=std::move(result.arguments[0]); result.arguments.clear();
+            result.type=tuple_type({element,element},result.location); result.kind=hir::ExprKind::school_minmax; return true;
+        }
+        const bool pair=name=="ноднок" && imported_units_.contains("school") && (unit.empty() || unit=="school");
+        if (!pair && (name!="rec" || (!unit.empty() && unit!="pabcsystem"))) return false;
+        if (pair) {
+            if (result.arguments.size()!=2) throw Error("E_TYPE",result.location,"НОДНОК requires two integers");
+            for (auto& argument:result.arguments) argument=convert(std::move(argument),Type::int64);
+        }
+        std::vector<Type> elements;
+        for (const auto& argument:result.arguments) elements.push_back(argument->type);
+        result.type=tuple_type(elements,result.location); result.kind=pair ? hir::ExprKind::school_pair : hir::ExprKind::tuple_literal;
+        return true;
     }
     bool bind_school_fold(hir::Expr& result, std::string_view name, std::string_view unit = {}) {
         if ((name!="gcd" && name!="lcm") || (!unit.empty() && unit!="school") || !imported_units_.contains("school")) return false;

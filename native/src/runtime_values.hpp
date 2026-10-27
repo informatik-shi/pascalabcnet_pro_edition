@@ -77,7 +77,9 @@ struct Values {
     bool equal(const Value& left, const Value& right) const {
         if (const auto* a = std::get_if<std::shared_ptr<Aggregate>>(&left)) {
             const auto& b = std::get<std::shared_ptr<Aggregate>>(right);
-            if (type_info(program,(*a)->type).kind != CompoundKind::record) return ((*a)->nil && b->nil) || *a == b;
+            const auto kind=type_info(program,(*a)->type).kind;
+            if (kind!=CompoundKind::record && kind!=CompoundKind::tuple) return ((*a)->nil && b->nil) || *a == b;
+            if ((*a)->nil || b->nil) return (*a)->nil && b->nil;
             for (std::size_t i = 0; i < (*a)->items.size(); ++i)
                 if (!equal((*a)->items[i]->value,b->items[i]->value)) return false;
             return true;

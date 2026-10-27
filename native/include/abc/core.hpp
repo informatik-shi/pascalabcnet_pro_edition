@@ -99,7 +99,7 @@ enum class Op {
     read_lines, write_lines, array_copy, array_high, sequence_sort, sequence_fill, mutate_string, increment, read_value,
     endpoint_call, buffer_call, association_call, linked_call, file_print, file_newline, file_read, file_skip_line, file_output,
     iteration_version, iteration_check, set_character, random_array, fill_random_array, sequence_mutate, swap_values, write_array,
-    bit_not, bit_and, bit_or, bit_xor, shift_left, shift_right, read_console, read_array, console_output, array_query, write_matrix, object_text, print_output, try_read, convert_string, try_parse, val, string_read, string_array, school_list, replace_last, replace_many, school_fold
+    bit_not, bit_and, bit_or, bit_xor, shift_left, shift_right, read_console, read_array, console_output, array_query, write_matrix, object_text, print_output, try_read, convert_string, try_parse, val, string_read, string_array, school_list, replace_last, replace_many, school_fold, tuple_literal, school_pair, school_minmax
 };
 
 enum class SchoolFold { gcd, lcm };
@@ -168,7 +168,7 @@ struct Local {
     bool global = true;
 };
 
-enum class CompoundKind { array, record, list, stack, queue, dynarray, simple_set, association, linked_node, linked_list, single_node };
+enum class CompoundKind { array, record, list, stack, queue, dynarray, simple_set, association, linked_node, linked_list, single_node, tuple };
 inline bool node_kind(CompoundKind kind) { return kind == CompoundKind::linked_node || kind == CompoundKind::single_node; }
 inline bool indexed_sequence(CompoundKind kind) { return kind == CompoundKind::array || kind == CompoundKind::list; }
 inline bool endpoint_collection(CompoundKind kind) { return kind == CompoundKind::stack || kind == CompoundKind::queue; }

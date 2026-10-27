@@ -121,6 +121,8 @@ def main():
                 ("school-factors.pas", "Множители 360: [2,2,2,3,3,5]\nПростые делители: [2,3,5]\nДелители 12: [1,2,3,4,6,12]\nЧисло делителей 360: 24\nБольшое число: [71,839,1471,6857]\n"),
                 ("school-text.pas", "Последовательная замена: cc\nПосимвольный перевод: bc\nПоследнее вхождение: раз-два-три\nПодстроки: кот пёс\nЧисла int64: [2147483648,-7]\nИмпликация: False\n"),
                 ("russian-identifiers.pas", "Ответ: 42\nНОД: 6\nНОК: 90\n"),
+                ("tuples.pas", "ответ: 42\nНОД и НОК: (6,90)\nНОД: 6; НОК: 90\n"),
+                ("school-minmax.pas", "Минимум: -7\nМаксимум: 42\nПара: (-7,42)\n"),
                 ("unicode-characters.pas", "Нижний регистр: привет, ёжик! 𐐨\nВерхний регистр: ПРИВЕТ, ЁЖИК! 𐐀\nБуква: True; код: 1071\nАрабская цифра: True\n"),
                 ("structures.pas", "Точка: 3 4\nФакториал 10: 3628800\n1\n2\n5\n8\nИмен: 2\nПервое имя: Анна\n"),
                 ("files.pas", "Привет из C++ интерпретатора!\nПрочитано строк: 2\nВторая строка\n"),
@@ -156,6 +158,8 @@ def main():
             school_error = folder / "Ошибки School.pas"
             for expression, code, english, russian in [
                 ("School.НОК(0,0)", "E_DIV_ZERO", "Division by zero", "Деление на ноль"),
+                ("School.НОДНОК(0,0)", "E_DIV_ZERO", "Division by zero", "Деление на ноль"),
+                ("var t:(integer,integer); Writeln(t.Item1)", "E_NIL", "Cannot access a nil reference", "Нельзя обратиться к пустой ссылке nil"),
                 ("School.GCD()", "E_RANGE", "Argument list cannot be empty", "Список аргументов не может быть пустым"),
                 ("School.Dec('2',2)", "E_FORMAT", "Invalid digit in base notation", "Недопустимая цифра в записи числа"),
                 ("School.ToBase(1,1)", "E_RANGE", "Base must be between 2 and 36", "Основание системы счисления должно быть от 2 до 36"),
@@ -447,6 +451,8 @@ def main():
             results[-1]["school_int64_folds"] = "passed"
             results[-1]["unicode_identifiers_and_school_aliases"] = "passed"
             results[-1]["unicode_character_case_and_categories"] = "passed"
+            results[-1]["typed_immutable_tuples_and_school_pairs"] = "passed"
+            results[-1]["school_minmax_arrays_and_lists"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 
