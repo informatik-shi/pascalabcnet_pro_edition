@@ -79,6 +79,8 @@ bool large_prime(std::uint64_t number, SourceLocation location, const ExecutionO
 }
 }
 Value invoke_school(Function function, std::span<const Value> arguments, SourceLocation location, const ExecutionOptions& options, SchoolContext& school) {
+    if (function==Function::school_imp) return !std::get<bool>(arguments[0]) || std::get<bool>(arguments[1]);
+    if (function==Function::school_replace_many || function==Function::school_translate) return invoke_school_text(function,arguments,location,options);
     constexpr std::u16string_view alphabet=u"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
     const auto check=[&](std::size_t index) {
         if ((index&255U)==0 && options.cancelled && options.cancelled()) throw runtime_error(RuntimeError::cancelled,location);

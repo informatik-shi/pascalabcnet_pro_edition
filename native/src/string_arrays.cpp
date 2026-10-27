@@ -50,7 +50,7 @@ std::shared_ptr<Aggregate> make_string_array(Values& values, Type type, StringAr
         if (!delimiters->nil) for (std::size_t i=0;i<delimiters->items.size();++i) {
             check(i); separators.set(std::get<char16_t>(delimiters->items[i]->value));
         }
-    } else if (method==StringArray::reals || method==StringArray::reals_separator) {
+    } else if (method==StringArray::reals || method==StringArray::reals_separator || method==StringArray::integers64) {
         for (auto c:std::u16string_view{u" \t\r\n"}) separators.set(c);
     }
     const auto part=[&](std::size_t start,std::size_t end) {
@@ -60,6 +60,9 @@ std::shared_ptr<Aggregate> make_string_array(Values& values, Type type, StringAr
             const std::array<Value,2> arguments{std::move(word),parameter};
             add(*stdlib::invoke_text(stdlib::Function::str_to_real,
                 std::span<const Value>(arguments.data(),method==StringArray::reals_separator ? 2U : 1U),location));
+        } else if (element==Type::int64) {
+            const std::array<Value,1> arguments{std::move(word)};
+            add(*stdlib::invoke_text(stdlib::Function::str_to_int64,arguments,location));
         } else add(std::move(word));
     };
     std::size_t start=0,index=0;

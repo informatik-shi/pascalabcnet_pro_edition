@@ -57,6 +57,12 @@ private:
     void expression(const hir::Expr& node) {
         if (node.type == Type::invalid) throw Error("E_HIR", node.location, "Unresolved expression type");
         switch (node.kind) {
+        case hir::ExprKind::replace_last:
+            reference(*node.arguments[0]); expression(*node.arguments[1]); expression(*node.arguments[2]);
+            emit(Op::replace_last,Type::string,0,node.location); break;
+        case hir::ExprKind::replace_many:
+            for (const auto& argument:node.arguments) expression(*argument);
+            emit(Op::replace_many,node.arguments[1]->type,static_cast<std::size_t>(node.arguments[2]->type),node.location); break;
         case hir::ExprKind::school_list:
             for (const auto& argument:node.arguments) expression(*argument);
             emit(Op::school_list,node.operation_type,node.local,node.location); break;
@@ -381,6 +387,16 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
     for (const auto& instruction : code) {
         const auto type = instruction.type;
         switch (instruction.op) {
+        case Op::replace_last:
+            if (type!=Type::string || instruction.operand) invalid(instruction,"Invalid ReplaceLast");
+            break;
+        case Op::replace_many: {
+            const auto valid=[&](Type container) {
+                return compound(container) && indexed_sequence(type_info(program,container).kind) && type_info(program,container).rank==1 && type_info(program,container).element==Type::string;
+            };
+            if (instruction.operand<64 || instruction.operand>=64+program.types.size() || !valid(type) || !valid(static_cast<Type>(instruction.operand))) invalid(instruction,"Invalid ReplaceMany string collections");
+            break;
+        }
         case Op::school_list:
             if (instruction.operand>static_cast<std::size_t>(SchoolList::divisors_count) || !compound(type)
                 || type_info(program,type).kind!=CompoundKind::list || type_info(program,type).rank!=1
@@ -388,7 +404,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
                 invalid(instruction,"Invalid School list operation");
             break;
         case Op::string_array:
-            if (instruction.operand>static_cast<std::size_t>(StringArray::reals_separator) || !compound(type)
+            if (instruction.operand>static_cast<std::size_t>(StringArray::integers64) || !compound(type)
                 || type_info(program,type).kind!=CompoundKind::array || type_info(program,type).rank!=1
                 || type_info(program,type).element!=string_array_element(static_cast<StringArray>(instruction.operand))) invalid(instruction,"Invalid string array conversion");
             break;
@@ -593,9 +609,14 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
     }
 
     using Stack = std::vector<Type>;
+    std::vector<bool> entries(code.size()); entries[0]=true;
+    for (const auto& instruction:code)
+        if (instruction.op==Op::jump || instruction.op==Op::jump_false) entries[instruction.operand]=true;
     std::vector<std::optional<Stack>> states(code.size());
     std::deque<std::size_t> pending{0};
     states[0] = Stack{};
+    std::optional<std::size_t> linear_pc;
+    Stack linear_stack;
     std::size_t state_items = 0;
     auto merge = [&](std::size_t target, const Stack& stack, const Instruction& instruction) {
         if (target >= states.size()) invalid(instruction, "Execution falls off module");
@@ -606,11 +627,11 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         }
         else if (*states[target] != stack) invalid(instruction, "Incompatible stack types at branch merge");
     };
-    while (!pending.empty()) {
-        const auto pc = pending.front();
-        pending.pop_front();
+    while (linear_pc || !pending.empty()) {
+        std::size_t pc; Stack stack;
+        if (linear_pc) { pc=*linear_pc; linear_pc.reset(); stack=std::move(linear_stack); }
+        else { pc=pending.front(); pending.pop_front(); stack=*states[pc]; }
         const auto& instruction = code[pc];
-        auto stack = *states[pc];
         auto pop = [&]() {
             if (stack.empty()) invalid(instruction, "Operand stack underflow");
             const auto type = stack.back(); stack.pop_back(); return type;
@@ -669,6 +690,8 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
                 if (!(type&0x40000000U) || !scalar(static_cast<Type>(type&~0x40000000U))) invalid(instruction,"Console input requires scalar references");
             }
             break;
+        case Op::replace_last: require(Type::string); require(Type::string); require(reference_type(Type::string)); break;
+        case Op::replace_many: require(static_cast<Type>(instruction.operand)); require(instruction.type); require(Type::string); stack.push_back(Type::string); break;
         case Op::school_list: {
             const auto method=static_cast<SchoolList>(instruction.operand);
             const auto parameters=school_list_parameters(method,instruction.type,type_info(program,instruction.type).element);
@@ -821,7 +844,10 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         if (stack.size() > 4096) invalid(instruction, "Operand stack limit exceeded");
         if (instruction.op == Op::jump || instruction.op == Op::jump_false)
             merge(instruction.operand, stack, instruction);
-        if (instruction.op != Op::jump) merge(pc + 1, stack, instruction);
+        if (instruction.op != Op::jump) {
+            if (pc+1<code.size() && !entries[pc+1]) { linear_pc=pc+1; linear_stack=std::move(stack); }
+            else merge(pc+1,stack,instruction);
+        }
     }
 }
 

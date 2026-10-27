@@ -4,6 +4,8 @@ namespace abc {
 Error runtime_error(RuntimeError id, SourceLocation location, std::string_view context) {
     const char *code, *english, *russian;
     switch (id) {
+    case RuntimeError::empty_substring:
+        code="E_RANGE"; english="Replacement source cannot be empty"; russian="Заменяемая подстрока не может быть пустой"; break;
     case RuntimeError::school_factorization:
         code="E_FACTOR"; english="Prime factorization failed"; russian="Ошибка разложения на простые множители"; break;
     case RuntimeError::school_expanded_digit:

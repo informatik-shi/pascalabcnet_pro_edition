@@ -57,6 +57,86 @@ void runtime_error(std::string_view source, std::string_view code) {
     error([&] { (void)run(source); }, code,source);
 }
 
+void school_text_library() {
+    std::vector<std::string> texts{""}; std::size_t start=0;
+    for (unsigned length=1;length<=4;++length) {
+        const auto end=texts.size();
+        for (auto i=start;i<end;++i) for (char c:std::string_view{"abc"}) texts.push_back(texts[i]+c);
+        start=end;
+    }
+    const std::vector<std::string> mappings(texts.begin(),texts.begin()+13);
+    const auto array=[](const std::vector<std::string>& words) {
+        std::string result="Arr(";
+        for (std::size_t i=0;i<words.size();++i) { if (i) result+=","; result+="'"+words[i]+"'"; }
+        return result+")";
+    };
+    std::string expected;
+    for (const auto& text:texts) for (const auto& source:mappings) for (const auto& target:mappings) {
+        auto sequential=text,last=text; std::string translated;
+        for (std::size_t i=0;i<source.size();++i) {
+            std::string next;
+            for (char c:sequential) if (c!=source[i]) next+=c; else if (i<target.size()) next+=target[i];
+            sequential=std::move(next);
+        }
+        for (char c:text) { const auto i=source.find(c); if (i==std::string::npos) translated+=c; else if (i<target.size()) translated+=target[i]; }
+        if (!source.empty()) { const auto i=last.rfind(source); if (i!=std::string::npos) last.replace(i,source.size(),target); }
+        expected+=sequential+"|"+translated+"|"+last+"\n";
+    }
+    result("uses School; begin var texts:="+array(texts)+"; var sources:="+array(mappings)+"; var targets:="+array(mappings)+"; foreach var text in texts do foreach var source in sources do foreach var target in targets do begin var last:=text; ReplaceLast(last,source,target); Writeln(ReplaceMany(text,source,target),'|',Translate(text,source,target),'|',last); end; end.",expected);
+    result("uses School; begin Writeln(ReplaceMany('абба','аб','ба'),' ',Translate('абба','аб','ба')); var s:='ааа'; School.ReplaceLast(s,'аа','X'); Writeln(s); Writeln('aaa'.ReplaceMany(Arr('aa'),Arr('X'+''))); end.","аааа бааб\nаX\nXa\n");
+    result("uses School; begin var a:=new List<string>; a.Add('ab'); a.Add('X'); Writeln(ReplaceMany('abab',a,Arr('X'+'','Y'))); Writeln('abcabc'.ReplaceMany(Arr('ab','c'),Arr('X'+''))); Writeln(ReplaceMany('aa',Arr('a'+''),Arr('ba'))); end.","YY\nXX\nbaba\n");
+    result("uses School; begin var sources:=new List<string>; sources.Add('ab'); var targets:=new List<string>; targets.Add(nil); Writeln(ReplaceMany('ababC',sources,targets)); Writeln(ReplaceMany('abc',new string[0],targets)); end.","C\nabc\n");
+    result("uses School; begin var s:string:=ReplaceMany(nil,'',''); Writeln(s=nil,' ',Length(s)); Writeln(Translate('',nil,nil)='',' ',Translate('abc','x',nil)); Writeln(Translate('ab','aa','Z'),' ',Translate('ab','ab','X')); end.","False 0\nTrue abc\nZb X\n");
+    result("uses School; begin var s:string:=nil; ReplaceLast(s,nil,nil); Writeln(s=nil); s:='abc'; ReplaceLast(s,'x','y'); Writeln(s); ReplaceLast(s,s,'X'); Writeln(s); end.","True\nabc\nX\n");
+    result("uses School; var a:array of string; function Index:integer; begin Write('I'); Result:=0; end; function Source:string; begin Write('S'); a[0]:='bbb'; Result:='bb'; end; function Target:string; begin Write('T'); Result:='X'; end; begin a:=Arr('aaa'); ReplaceLast(a[Index],Source,Target); Writeln('|',a[0]); end.","IST|bX\n");
+    result("uses School; begin var a:=new List<string>; a.Add('abc'); foreach var s in a do ReplaceLast(a[0],'zz','X'); Writeln(a); end.","[abc]\n");
+    result("uses School; begin Writeln(School.ToInts64('2147483648 -9223372036854775808 9223372036854775807')); Writeln(' 1'#9'2'#10'3'#13'4 '.ToInts64); Writeln(ToInts64(''),' ',ToInts64('  '),' ',ToInts64(#11'42'#11)); end.","[2147483648,-9223372036854775808,9223372036854775807]\n[1,2,3,4]\n[] [] [42]\n");
+    result("uses School; function B:boolean; begin Write('B'); Result:=False; end; begin Writeln(Imp(False,False),' ',False.Imp(True),' ',True.Imp(False),' ',School.Imp(True,True)); Writeln(False.Imp(B)); end.","True True False True\nBTrue\n");
+    result("uses School; function Translate(s,a,b:string):string; begin Result:='own'; end; begin Writeln(Translate('ab','ab','bc'),' ',School.Translate('ab','ab','bc'),' ','ab'.Translate('ab','bc')); end.","own bc bc\n");
+    for (const auto source:{"uses School; begin ReplaceMany('',nil,''); end.","uses School; begin ReplaceMany('','',nil); end.",
+        "uses School; begin Translate(nil,'',''); end.","uses School; begin Translate('a',nil,''); end.","uses School; begin Translate('a','a',nil); end.",
+        "uses School; begin var s:string:=nil; ReplaceLast(s,'a','b'); end.","uses School; begin ToInts64(nil); end.",
+        "uses School; begin var a:array of string:=nil; ReplaceMany('',new string[0],a); end.",
+        "uses School; begin var a:=new List<string>; a.Add(nil); ReplaceMany('',a,Arr('X'+'')); end.",
+        "uses School; begin ReplaceMany('',Arr('a'+''),nil); end."}) runtime_error(source,"E_NIL");
+    runtime_error("uses School; begin ReplaceMany('',Arr(''),Arr('X'+'')); end.","E_RANGE");
+    runtime_error("uses School; begin ToInts64('9223372036854775808'); end.","E_OVERFLOW");
+    runtime_error("uses School; begin ToInts64('1'#160'2'); end.","E_FORMAT");
+    runtime_error("uses School; begin var a:=new List<string>; a.Add('abc'); foreach var s in a do ReplaceLast(a[0],'a','a'); end.","E_MODIFIED");
+    runtime_error("uses School; begin ReplaceMany('aa',Arr('a'+''),Arr(StringOfChar('X',1048576))); end.","E_LIMIT");
+    runtime_error("uses School; begin var s:='ab'; ReplaceLast(s,'a',StringOfChar('X',1048576)); end.","E_LIMIT");
+    for (const auto source:{"begin ReplaceMany('a','b','c'); end.","begin Translate('a','b','c'); end.","begin var s:='a'; ReplaceLast(s,'a','b'); end.","begin ToInts64('1'); end.","begin Imp(True,False); end."}) compile_error(source,"E_NAME");
+    for (const auto source:{"uses School; begin ReplaceLast('abc','a','b'); end.","uses School; begin foreach var s in Arr('aa') do ReplaceLast(s,'a','b'); end.",
+        "uses School; begin ReplaceMany('a',Arr(1),Arr('b')); end.","uses School; begin ReplaceMany('a',Arr('a'),'b'); end.",
+        "uses School; begin ToInts64('1',2); end.","uses School; begin var a:array of integer:=ToInts64('1'); end.","uses School; begin Imp(1,2); end."}) compile_error(source,"E_TYPE");
+    auto program=abc::compile("uses School; begin var s:='abc'; ReplaceLast(s,'a','b'); end.");
+    for (auto& instruction:program.code) if (instruction.op==abc::Op::replace_last) instruction.operand=1;
+    error([&]{abc::verify(program);},"E_BYTECODE");
+    program=abc::compile("uses School; begin ReplaceMany('abc',Arr('a'+''),Arr('b'+'')); end.");
+    for (auto& instruction:program.code) if (instruction.op==abc::Op::replace_many) instruction.operand=static_cast<std::size_t>(abc::Type::string);
+    error([&]{abc::verify(program);},"E_BYTECODE");
+    program=abc::compile("uses School; begin ToInts64('1'); end.");
+    program.types[0].element=abc::Type::integer;
+    error([&]{abc::verify(program);},"E_BYTECODE");
+    abc::ExecutionOptions options; options.allocation_limit=5;
+    error([&]{(void)run("uses School; begin ToInts64('1 2 3 4 5 6'); end.","",options);},"E_LIMIT");
+    options={}; options.instruction_limit=50'000;
+    require(run("uses School; begin Writeln(Length(ReplaceMany(StringOfChar('a',10000)+'b',Arr(StringOfChar('a',5000)+'c'),Arr('X'+'')))); end.","",options)=="10001\n","Substring replacement scans repetitive text within linear work budget");
+    options={}; std::size_t polls=0; options.cancelled=[&]{return ++polls>20;};
+    error([&]{(void)run("uses School; begin Translate(StringOfChar('a',10000),'a','b'); end.","",options);},"E_CANCELLED");
+    std::string wide_array="Arr(0";
+    for (unsigned i=1;i<4096;++i) wide_array+=",0";
+    result("begin Writeln(Length("+wide_array+"))); end.","4096\n");
+    result("begin var flag:=True; while flag do begin Writeln(Length("+wide_array+"))); flag:=False; end; end.","4096\n");
+    compile_error("begin "+wide_array+",0); end.","E_SYNTAX");
+    abc::Program invalid_merge;
+    invalid_merge.constants={true,std::int32_t{0},0.0};
+    invalid_merge.code={{abc::Op::push,abc::Type::boolean,0,{}},{abc::Op::jump_false,abc::Type::boolean,4,{}},
+        {abc::Op::push,abc::Type::integer,1,{}},{abc::Op::jump,abc::Type::invalid,5,{}},{abc::Op::push,abc::Type::real,2,{}},
+        {abc::Op::drop,abc::Type::integer,0,{}},{abc::Op::halt,abc::Type::invalid,0,{}}};
+    error([&]{abc::verify(invalid_merge);},"E_BYTECODE");
+}
+
 void school_factor_library() {
     const auto list=[](const std::vector<std::int64_t>& numbers) {
         std::string text="[";
@@ -2363,6 +2443,7 @@ int main() {
     string_cursor_input();
     string_arrays();
     school_library();
+    school_text_library();
     school_factor_library();
     sequence_mutations();
     arithmetic();

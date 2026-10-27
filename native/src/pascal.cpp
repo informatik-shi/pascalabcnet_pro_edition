@@ -535,7 +535,8 @@ private:
                     auto argument = (name=="print" || name=="println" || name=="str" || (result->kind==SyntaxExprKind::member_call && (name=="write" || name=="writeln")))
                         ? output_argument() : expression();
                     result->depth = std::max(result->depth, argument->depth + 1);
-                    if (result->depth > 256 || result->arguments.size() >= 16) fail("Function call limit exceeded");
+                    const auto limit=result->kind==SyntaxExprKind::call && name=="arr" ? 4096U : 16U;
+                    if (result->depth > 256 || result->arguments.size() >= limit) fail("Function call limit exceeded");
                     result->arguments.push_back(std::move(argument));
                 } while (accept(","));
                 expect(")");
@@ -840,6 +841,7 @@ private:
                 if (bind_print(*result,source.token.text,source.left->token.text)) break;
                 if (bind_try_read(*result,source.token.text,source.left->token.text)) break;
                 if (bind_number_conversion(*result,source.token.text,source.left->token.text)) break;
+                if (bind_school_text(*result,source.token.text,source.left->token.text)) break;
                 if (bind_string_read(*result,source.token.text,source.left->token.text)) break;
                 if (bind_string_array(*result,source.token.text,source.left->token.text)) break;
                 if (bind_school_list(*result,source.token.text,source.left->token.text)) break;
@@ -852,6 +854,13 @@ private:
                 bind_builtin(*result,source.token.text,source.left->token.text); break;
             }
             result->left = expression(*source.left); const auto receiver = result->left->type;
+            if (imported_units_.contains("school") && ((receiver==Type::boolean && source.token.text=="imp")
+                || (receiver==Type::string && (source.token.text=="replacemany" || source.token.text=="translate")))) {
+                result->arguments.push_back(std::move(result->left));
+                for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
+                if (!bind_school_text(*result,source.token.text,"school")) { result->kind=hir::ExprKind::call; bind_builtin(*result,source.token.text,"school"); }
+                break;
+            }
             if (imported_units_.contains("school") && (source.token.text=="digits" || source.token.text=="digitstoint64"
                 || source.token.text=="factorize" || source.token.text=="primefactors" || source.token.text=="primefactorscount"
                 || source.token.text=="primedivisors" || source.token.text=="primedivisorscount" || source.token.text=="divisors" || source.token.text=="divizors" || source.token.text=="divisorscount")) {
@@ -864,7 +873,8 @@ private:
                 for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
                 result->kind=hir::ExprKind::call; bind_builtin(*result,source.token.text,"school"); break;
             }
-            if (receiver==Type::string && (source.token.text=="towords" || source.token.text=="tolines" || source.token.text=="tointegers" || source.token.text=="toreals")) {
+            if (receiver==Type::string && (source.token.text=="towords" || source.token.text=="tolines" || source.token.text=="tointegers" || source.token.text=="toreals"
+                || (imported_units_.contains("school") && source.token.text=="toints64"))) {
                 result->arguments.push_back(std::move(result->left));
                 for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
                 (void)bind_string_array(*result,source.token.text); break;
@@ -1171,6 +1181,7 @@ private:
             if (bind_print(*result,source.token.text)) break;
             if (bind_try_read(*result,source.token.text)) break;
             if (bind_number_conversion(*result,source.token.text)) break;
+            if (bind_school_text(*result,source.token.text)) break;
             if (bind_string_read(*result,source.token.text)) break;
             if (bind_string_array(*result,source.token.text)) break;
             if (bind_school_list(*result,source.token.text)) break;
@@ -1370,8 +1381,32 @@ private:
         result.kind=hir::ExprKind::school_list; result.local=static_cast<std::size_t>(method); result.operation_type=list;
         result.type=school_list_result(method,list); return true;
     }
+    bool bind_school_text(hir::Expr& result, std::string_view name, std::string_view unit = {}) {
+        if ((!unit.empty() && unit!="school") || !imported_units_.contains("school")) return false;
+        const bool last=name=="replacelast";
+        if (!last && (name!="replacemany" || result.arguments.size()!=3
+            || (!compound(result.arguments[1]->type) && !compound(result.arguments[2]->type)))) return false;
+        if (result.arguments.size()!=3) throw Error("E_TYPE",result.location,"Replacement requires three arguments");
+        if (last) {
+            if (result.arguments[0]->type!=Type::string || !lvalue(*result.arguments[0])) throw Error("E_TYPE",result.location,"ReplaceLast requires a writable string");
+            for (std::size_t i=1;i<3;++i) result.arguments[i]=convert(std::move(result.arguments[i]),Type::string);
+            result.kind=hir::ExprKind::replace_last; result.type=Type::unit;
+        } else {
+            result.arguments[0]=convert(std::move(result.arguments[0]),Type::string);
+            for (std::size_t i=1;i<3;++i) {
+                auto& argument=result.arguments[i];
+                if (argument->type==Type::nil) argument=convert(std::move(argument),sequence_type(CompoundKind::list,Type::string));
+                const auto& type=info(argument->type,result.location);
+                if (!indexed_sequence(type.kind) || type.rank!=1 || type.element!=Type::string) throw Error("E_TYPE",result.location,"ReplaceMany requires string arrays or lists");
+            }
+            result.kind=hir::ExprKind::replace_many; result.type=Type::string;
+        }
+        return true;
+    }
     bool bind_string_array(hir::Expr& result, std::string_view name, std::string_view unit = {}) {
-        if ((name!="towords" && name!="tolines" && name!="tointegers" && name!="toreals") || (!unit.empty() && unit!="pabcsystem")) return false;
+        const bool school=name=="toints64";
+        if ((school && !imported_units_.contains("school")) || (!school && name!="towords" && name!="tolines" && name!="tointegers" && name!="toreals")
+            || (!unit.empty() && unit!=(school ? "school" : "pabcsystem"))) return false;
         if (result.arguments.empty()) throw Error("E_TYPE",result.location,"String array conversion requires a string");
         auto args=std::move(result.arguments); result.arguments.clear(); result.left=convert(std::move(args[0]),Type::string);
         StringArray method;
@@ -1393,8 +1428,8 @@ private:
                 method=StringArray::words_array;
             }
         } else {
-            if (args.size()>2 || (name=="tolines" && args.size()!=1)) throw Error("E_TYPE",result.location,"Wrong string array conversion argument count");
-            method=name=="tolines" ? StringArray::lines : name=="tointegers" ? StringArray::integers : StringArray::reals;
+            if (args.size()>2 || ((name=="tolines" || school) && args.size()!=1)) throw Error("E_TYPE",result.location,"Wrong string array conversion argument count");
+            method=school ? StringArray::integers64 : name=="tolines" ? StringArray::lines : name=="tointegers" ? StringArray::integers : StringArray::reals;
             if (args.size()==2) {
                 const bool count=name=="tointegers";
                 result.right=convert(std::move(args[1]),count ? Type::integer : Type::string);
