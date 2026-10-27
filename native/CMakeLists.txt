@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(ABCNative VERSION 0.1.0 LANGUAGES CXX)
+project(ABCNative VERSION 0.1.0 LANGUAGES C CXX)
 
 option(ABC_BUILD_IDE "Build the Qt desktop editor" OFF)
 option(ABC_BUILD_TK "Build the Tcl/Tk comparison editor" OFF)
@@ -8,8 +8,10 @@ option(ABC_SANITIZERS "Enable address and undefined behavior sanitizers" OFF)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+add_subdirectory(third_party/libtommath)
 
 add_library(abc_core
+    src/big_integer.cpp
     src/stdlib.cpp
     src/random.cpp
     src/console_input.cpp
@@ -29,6 +31,7 @@ add_library(abc_core
     src/bytecode.cpp
     src/vm.cpp)
 target_include_directories(abc_core PUBLIC include)
+target_link_libraries(abc_core PRIVATE abc_math)
 include(CheckCXXSourceCompiles)
 check_cxx_source_compiles("#include <charconv>
 int main() { const char text[] = \"1.5\"; double value; return std::from_chars(text, text + 3, value).ec == std::errc{} ? 0 : 1; }"
@@ -47,6 +50,7 @@ if(ABC_SANITIZERS)
         message(FATAL_ERROR "ABC_SANITIZERS requires GCC or Clang on Unix")
     endif()
     target_compile_options(abc_core PUBLIC -fsanitize=address,undefined -fno-omit-frame-pointer)
+    target_compile_options(abc_math PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
     target_link_options(abc_core PUBLIC -fsanitize=address,undefined)
 endif()
 
@@ -60,7 +64,10 @@ if(BUILD_TESTING)
     if(MSVC)
         target_compile_options(abc_tests PRIVATE /utf-8)
     endif()
+    add_executable(abc_big_integer_tests tests/big_integer_tests.cpp)
+    target_link_libraries(abc_big_integer_tests PRIVATE abc_core)
     add_test(NAME core COMMAND abc_tests)
+    add_test(NAME big_integer_backend COMMAND abc_big_integer_tests)
     add_test(NAME cli_check COMMAND abc check "${CMAKE_CURRENT_SOURCE_DIR}/examples/sum.pas")
     add_test(NAME cli_run COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/examples/hello.pas")
     set_tests_properties(cli_run PROPERTIES PASS_REGULAR_EXPRESSION "ABC Native")
@@ -218,6 +225,7 @@ install(FILES README.md DESTINATION .)
 install(FILES stdlib-status.json DESTINATION .)
 install(FILES licenses/DotNet-Runtime-MIT.txt DESTINATION licenses)
 install(FILES licenses/Unicode-License.txt DESTINATION licenses)
+install(FILES licenses/LibTomMath-Unlicense.txt DESTINATION licenses)
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/../doc/license.txt" DESTINATION licenses RENAME PascalABC.NET.txt)
 
 if(ABC_BUILD_IDE)
