@@ -18,6 +18,7 @@ std::string_view type_name(Type type) {
     case Type::smallint: return "smallint";
     case Type::longword: return "longword";
     case Type::uint64: return "uint64";
+    case Type::big_integer: return "BigInteger";
     case Type::text_file: return "Text";
     case Type::unit: return "procedure";
     default: return compound(type) ? "compound type" : "<invalid>";
@@ -28,16 +29,18 @@ std::optional<Type> find_type(std::string_view name) {
     for (auto type : {Type::integer, Type::int64, Type::real, Type::boolean, Type::string, Type::character, Type::word, Type::byte, Type::shortint, Type::smallint, Type::longword, Type::uint64})
         if (name == type_name(type)) return type;
     if (name == "double") return Type::real;
+    if (name == "biginteger") return Type::big_integer;
     if (name == "text" || name == "textfile") return Type::text_file;
     return std::nullopt;
 }
 
 bool numeric(Type type) {
-    return integer_type(type) || type == Type::real;
+    return integer_type(type) || type==Type::big_integer || type == Type::real;
 }
 
 bool can_widen(Type from, Type to) {
     return from == to || (from == Type::character && to == Type::string)
+        || ((integer_type(from) || from==Type::character) && to==Type::big_integer)
         || (wide_unsigned(from) && to==Type::real)
         || (from==Type::longword && (to==Type::int64 || to==Type::uint64))
         || ((from==Type::byte || from==Type::word) && wide_unsigned(to))
@@ -49,6 +52,7 @@ bool can_widen(Type from, Type to) {
 }
 
 Type value_type(const Value& value) {
+    if (std::holds_alternative<BigInteger>(value)) return Type::big_integer;
     if (std::holds_alternative<char16_t>(value)) return Type::character;
     if (std::holds_alternative<std::uint16_t>(value)) return Type::word;
     if (std::holds_alternative<std::uint8_t>(value)) return Type::byte;

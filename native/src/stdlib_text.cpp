@@ -2,6 +2,7 @@
 #include "diagnostics.hpp"
 #include "number.hpp"
 #include "integer_values.hpp"
+#include "big_integer_runtime.hpp"
 
 #include <algorithm>
 #include <charconv>
@@ -148,6 +149,7 @@ std::optional<Value> try_parse_number(Type type, const Value& source, SourceLoca
     }
     try {
         const auto& source_text=string_text(source);
+        if (type==Type::big_integer) return parse_big(source_text,location);
         if (type==Type::integer) return parse_integer<std::int32_t>(source_text,location);
         if (type==Type::int64) return parse_integer<std::int64_t>(source_text,location);
         if (type==Type::real) return parse_decimal(source_text,u".",u',',location,false);

@@ -83,6 +83,7 @@ std::string BigInteger::text(unsigned base) const {
 }
 std::size_t BigInteger::bits() const { return rep_ ? static_cast<std::size_t>(mp_count_bits(&rep_->number)) : 0; }
 bool BigInteger::negative() const { return rep_ && rep_->number.sign==MP_NEG; }
+bool BigInteger::odd() const { return rep_ && (rep_->number.dp[0]&1U)!=0; }
 std::uint64_t BigInteger::to_unsigned() const {
     if (negative() || bits()>64) throw std::overflow_error("BigInteger cannot fit uint64");
     return mp_get_mag_u64(&rep().number);

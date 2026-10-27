@@ -1,4 +1,5 @@
 #include "console_input.hpp"
+#include "big_integer_runtime.hpp"
 #include "diagnostics.hpp"
 #include "number.hpp"
 #include <charconv>
@@ -96,6 +97,12 @@ Value ConsoleInput::read(Type type, SourceLocation location) {
         }
     };
     switch (type) {
+    case Type::big_integer:
+        try { return parse_big(from_utf8(bytes),location,&options_); }
+        catch (const Error& error) {
+            if (error.code!="E_FORMAT") throw;
+            throw runtime_error(RuntimeError::input_range,location,"BigInteger");
+        }
     case Type::integer: return parse.operator()<std::int32_t>();
     case Type::int64: return parse.operator()<std::int64_t>();
     case Type::real: return parse.operator()<double>();

@@ -13,6 +13,7 @@
 #include "formatting.hpp"
 #include "string_arrays.hpp"
 #include "school.hpp"
+#include "big_integer_runtime.hpp"
 
 #include <charconv>
 #include <algorithm>
@@ -98,6 +99,7 @@ std::size_t random_signature(RandomArrayMethod method) {
 }
 
 std::string format(const Value& value, const Instruction& instruction) {
+    if (const auto* big=std::get_if<BigInteger>(&value)) return checked_big(instruction.location,[&]{return big->text();});
     if (std::holds_alternative<NilString>(value)) return "nil";
     if (const auto* text = std::get_if<std::u16string>(&value)) return to_utf8(*text, true);
     if (const auto* ch=std::get_if<char16_t>(&value)) return to_utf8(std::u16string(1,*ch),true);
@@ -166,6 +168,12 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
         console_output.write(text,instruction.location);
     };
     auto pop = [&]() { auto value = std::move(stack.back()); stack.pop_back(); return value; };
+    auto account_number=[&](const Value& result,std::span<const Value> inputs={}) {
+        const auto* big=std::get_if<BigInteger>(&result);
+        if (!big) return;
+        for (const auto& input:inputs) if (const auto* source=std::get_if<BigInteger>(&input); source && big->shares_storage(*source)) return;
+        values.number(result);
+    };
     const Value default_delimiter=std::u16string{u" "};
     auto delimiter_value=[&]()->const Value& { return program.print_delimiter ? globals[*program.print_delimiter]->value : default_delimiter; };
     stdlib::Context services{files,random,console,[&](std::u16string_view text,SourceLocation location) {
@@ -254,7 +262,7 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
             const auto code=instruction.op==Op::val ? std::get<std::shared_ptr<Cell>>(pop()) : std::shared_ptr<Cell>{};
             const auto target=std::get<std::shared_ptr<Cell>>(pop()); const auto source=pop();
             const auto parsed=stdlib::try_parse_number(instruction.type,source,instruction.location);
-            if (parsed) values.write(target,*parsed);
+            if (parsed) { account_number(*parsed); values.write(target,*parsed); }
             else if (instruction.type!=Type::integer) values.write(target,values.zero(instruction.type));
             if (code) values.write(code,std::int32_t{parsed ? 0 : 1}); else stack.emplace_back(parsed.has_value());
             break;
@@ -268,7 +276,7 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
                     if (std::holds_alternative<NilString>(delimiter) || !string_text(delimiter).empty())
                         write(scalar_text(delimiter,instruction),instruction);
                 }
-                values.write(target,console.read(instruction.type,instruction.location));
+                const auto value=console.read(instruction.type,instruction.location); account_number(value); values.write(target,value);
                 stack.emplace_back(true);
             } catch (const Error& error) {
                 // Resource limits, cancellation and VM faults remain uncatchable by language helpers.
@@ -326,18 +334,22 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
         case Op::read_console: {
             std::vector<std::shared_ptr<Cell>> targets(instruction.operand/2);
             for (auto i=targets.size();i>0;--i) targets[i-1]=std::get<std::shared_ptr<Cell>>(pop());
-            for (const auto& target:targets) values.write(target,console.read(target->type,instruction.location));
+            for (const auto& target:targets) { const auto value=console.read(target->type,instruction.location); account_number(value); values.write(target,value); }
             if (instruction.operand&1U) console.skip_line(instruction.location);
             break;
         }
         case Op::read_array: {
             const auto target=std::get<std::shared_ptr<Aggregate>>(pop());
             if (target->nil) trap(instruction,RuntimeError::nil_reference);
-            for (const auto& cell:target->items) values.write(cell,console.read(cell->type,instruction.location));
+            for (const auto& cell:target->items) { const auto value=console.read(cell->type,instruction.location); account_number(value); values.write(cell,value); }
             console.skip_line(instruction.location); break;
         }
         case Op::bit_not: {
             const auto value=pop();
+            if (instruction.type==Type::big_integer) {
+                Value result=big_unary(instruction.op,std::get<BigInteger>(value),instruction.location,options);
+                account_number(result,std::span<const Value>(&value,1)); stack.push_back(std::move(result)); break;
+            }
             stack.push_back(std::visit([&](const auto& n)->Value {
                 using T=std::decay_t<decltype(n)>;
                 if constexpr (std::is_integral_v<T> && !std::is_same_v<T,bool> && !std::is_same_v<T,char16_t>) {
@@ -349,6 +361,10 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
         }
         case Op::bit_and: case Op::bit_or: case Op::bit_xor: {
             const auto right=pop(), left=pop();
+            if (instruction.type==Type::big_integer) {
+                Value result=big_binary(instruction.op,std::get<BigInteger>(left),std::get<BigInteger>(right),instruction.location,options);
+                const std::array<Value,2> inputs{left,right}; account_number(result,inputs); stack.push_back(std::move(result)); break;
+            }
             stack.push_back(std::visit([&](const auto& a)->Value {
                 using T=std::decay_t<decltype(a)>;
                 if constexpr (std::is_same_v<T,bool>) return a!=std::get<bool>(right);
@@ -363,6 +379,10 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
         }
         case Op::shift_left: case Op::shift_right: {
             const auto count=std::get<std::int32_t>(pop()); const auto value=pop();
+            if (instruction.type==Type::big_integer) {
+                Value result=big_shift(instruction.op,std::get<BigInteger>(value),count,instruction.location,options);
+                account_number(result,std::span<const Value>(&value,1)); stack.push_back(std::move(result)); break;
+            }
             stack.push_back(std::visit([&](const auto& n)->Value {
                 using T=std::decay_t<decltype(n)>;
                 if constexpr (std::is_same_v<T,std::int32_t> || std::is_same_v<T,std::int64_t>
@@ -700,7 +720,9 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
             }
             break;
         }
-        case Op::read_value: stack.push_back(console.read(instruction.type,instruction.location)); break;
+        case Op::read_value: {
+            auto value=console.read(instruction.type,instruction.location); account_number(value); stack.push_back(std::move(value)); break;
+        }
         case Op::file_print: {
             const auto value=pop(); auto& file=text_file(stack.back(),instruction.location);
             text_write(file,scalar_text(value,instruction),instruction.location); break;
@@ -731,7 +753,7 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
         }
         case Op::file_read: {
             const auto target=std::get<std::shared_ptr<Cell>>(pop());
-            values.write(target,text_read(text_file(stack.back(),instruction.location),instruction.type,instruction.location)); break;
+            const auto value=text_read(text_file(stack.back(),instruction.location),instruction.type,instruction.location); account_number(value); values.write(target,value); break;
         }
         case Op::file_newline:
             text_write(text_file(stack.back(),instruction.location),file_newline,instruction.location); break;
@@ -948,6 +970,7 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
             const auto count = stdlib::signatures()[instruction.operand].parameters.size();
             const auto start = stack.size() - count;
             auto value = stdlib::invoke(instruction.operand, std::span<const Value>(stack).subspan(start), instruction.location,services);
+            account_number(value,std::span<const Value>(stack).subspan(start));
             stack.resize(start);
             if (instruction.type != Type::unit) stack.push_back(std::move(value));
             break;
@@ -957,7 +980,9 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
         case Op::store: values.write(locals[instruction.operand],pop()); break;
         case Op::convert: {
             const auto value = pop();
-            if (value_type(value) == instruction.type) stack.push_back(value);
+            if (instruction.type==Type::big_integer && value_type(value)!=instruction.type) {
+                auto result=big_cast(value,instruction.type,instruction.location); account_number(result,std::span<const Value>(&value,1)); stack.push_back(std::move(result));
+            } else if (value_type(value) == instruction.type) stack.push_back(value);
             else if (instruction.type==Type::string) stack.emplace_back(std::u16string(1,std::get<char16_t>(value)));
             else if (wide_unsigned(instruction.type)) stack.push_back(checked_unsigned_integer(instruction.type,value,instruction.location));
             else if (wide_unsigned(value_type(value))) {
@@ -981,7 +1006,10 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
         }
         case Op::negate: {
             auto value = pop();
-            if (instruction.type == Type::integer) {
+            if (instruction.type==Type::big_integer) {
+                Value result=big_unary(instruction.op,std::get<BigInteger>(value),instruction.location,options);
+                account_number(result,std::span<const Value>(&value,1)); stack.push_back(std::move(result));
+            } else if (instruction.type == Type::integer) {
                 const auto n = std::get<std::int32_t>(value);
                 if (n == std::numeric_limits<std::int32_t>::min()) trap(instruction, RuntimeError::integer_overflow);
                 stack.emplace_back(-n);
@@ -1000,7 +1028,10 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
         case Op::add: case Op::subtract: case Op::multiply:
         case Op::divide_real: case Op::divide_int: case Op::modulo: {
             auto right = pop(), left = pop();
-            if (instruction.type == Type::integer) stack.emplace_back(integer_operation(
+            if (instruction.type==Type::big_integer) {
+                Value result=big_binary(instruction.op,std::get<BigInteger>(left),std::get<BigInteger>(right),instruction.location,options);
+                const std::array<Value,2> inputs{left,right}; account_number(result,inputs); stack.push_back(std::move(result));
+            } else if (instruction.type == Type::integer) stack.emplace_back(integer_operation(
                 std::get<std::int32_t>(left), std::get<std::int32_t>(right), instruction));
             else if (instruction.type == Type::int64) stack.emplace_back(integer_operation(
                 std::get<std::int64_t>(left), std::get<std::int64_t>(right), instruction));
@@ -1060,7 +1091,10 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
         case Op::jump_false: if (!std::get<bool>(pop())) frame.pc = instruction.operand; break;
         case Op::print: write(scalar_text(pop(), instruction), instruction); break;
         case Op::newline: write(u"\n", instruction); break;
-        case Op::read_line: values.write((program.locals[instruction.operand].global ? globals : locals)[instruction.operand],console.read(instruction.type,instruction.location)); console.skip_line(instruction.location); break;
+        case Op::read_line: {
+            const auto value=console.read(instruction.type,instruction.location); account_number(value);
+            values.write((program.locals[instruction.operand].global ? globals : locals)[instruction.operand],value); console.skip_line(instruction.location); break;
+        }
         case Op::halt: console_output.finish(); return;
         }
     }

@@ -1,4 +1,5 @@
 #pragma once
+#include "abc/big_integer.hpp"
 
 #include <cstdint>
 #include <cstddef>
@@ -36,13 +37,13 @@ public:
 // English remains available through what(); runtime diagnostics also carry Russian.
 std::string format_diagnostic(const Error& error, std::string_view filename);
 
-enum class Type { integer, int64, real, boolean, string, invalid, unit, nil, text_file, character, word, byte, shortint, smallint, longword, uint64, first_compound = 64 };
+enum class Type { integer, int64, real, boolean, string, invalid, unit, nil, text_file, character, word, byte, shortint, smallint, longword, uint64, big_integer, first_compound = 64 };
 inline bool small_integer(Type t) { return t==Type::word || t==Type::byte || t==Type::shortint || t==Type::smallint; }
 inline bool wide_unsigned(Type t) { return t==Type::longword || t==Type::uint64; }
 inline bool integer_type(Type t) { return t==Type::integer || t==Type::int64 || small_integer(t) || wide_unsigned(t); }
 inline bool ordinal(Type t) { return integer_type(t) || t==Type::character || t==Type::boolean; }
 inline Type increment_step_type(Type t) { return t==Type::boolean ? Type::unit : t==Type::int64 || t==Type::uint64 ? Type::int64 : Type::integer; }
-inline bool scalar(Type t) { return integer_type(t) || t==Type::real || t==Type::boolean || t==Type::string || t==Type::character; }
+inline bool scalar(Type t) { return integer_type(t) || t==Type::big_integer || t==Type::real || t==Type::boolean || t==Type::string || t==Type::character; }
 inline std::pair<std::int64_t,std::int64_t> small_integer_bounds(Type t) {
     switch (t) {
     case Type::byte: return {0,255};
@@ -68,7 +69,7 @@ struct LinkedLinks { std::weak_ptr<Aggregate> prev, next; };
 struct NilString { auto operator<=>(const NilString&) const = default; };
 using Value = std::variant<std::int32_t, std::int64_t, double, bool, std::u16string,
     std::shared_ptr<Aggregate>, std::shared_ptr<Cell>, NilString, std::shared_ptr<TextFile>, char16_t, std::uint16_t,
-    std::uint8_t, std::int8_t, std::int16_t, std::uint32_t, std::uint64_t>;
+    std::uint8_t, std::int8_t, std::int16_t, std::uint32_t, std::uint64_t, BigInteger>;
 struct Cell { Type type; Value value; std::weak_ptr<Aggregate> list_owner{}; };
 struct Aggregate {
     Type type;

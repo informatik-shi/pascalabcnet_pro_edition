@@ -4,6 +4,10 @@ namespace abc {
 Error runtime_error(RuntimeError id, SourceLocation location, std::string_view context) {
     const char *code, *english, *russian;
     switch (id) {
+    case RuntimeError::big_integer_limit:
+        code="E_LIMIT"; english="BigInteger size limit exceeded"; russian="Превышен допустимый размер BigInteger"; break;
+    case RuntimeError::power_exponent:
+        code="E_RANGE"; english="Exponent cannot be negative"; russian="Показатель степени не может быть отрицательным"; break;
     case RuntimeError::school_empty_arguments:
         code="E_RANGE"; english="Argument list cannot be empty"; russian="Список аргументов не может быть пустым"; break;
     case RuntimeError::empty_substring:

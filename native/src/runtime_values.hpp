@@ -17,6 +17,13 @@ struct Values {
     const Program& program;
     std::size_t remaining;
     SourceLocation location{};
+    void number(const Value& value) {
+        if (const auto* big=std::get_if<BigInteger>(&value)) {
+            const auto size=(big->bits()+31)/32;
+            if (size>remaining) throw runtime_error(RuntimeError::allocation_limit,location);
+            remaining-=size;
+        }
+    }
     std::shared_ptr<Cell> cell(Type type, Value value) {
         if (!remaining) throw runtime_error(RuntimeError::allocation_limit, location);
         --remaining;
@@ -35,6 +42,7 @@ struct Values {
         case Type::smallint: return std::int16_t{0};
         case Type::longword: return std::uint32_t{0};
         case Type::uint64: return std::uint64_t{0};
+        case Type::big_integer: return BigInteger{};
         case Type::string: return generic ? Value{NilString{}} : Value{std::u16string{}};
         case Type::text_file: return generic ? Value{std::shared_ptr<TextFile>{}} : Value{std::make_shared<TextFile>()};
         default: {

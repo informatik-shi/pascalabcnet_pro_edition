@@ -15,6 +15,7 @@ enum class Function {
     get_dir, change_dir, make_dir, remove_dir, create_dir, try_remove_dir, delete_file, set_current_dir, change_extension,
     rename_file, rename_directory, ordinal, character, integer_cast, successor, predecessor, string_of_char, repeat_string, to_digit, string_length,
     character_lower, character_upper, character_letter, character_digit, character_is_lower, character_is_upper, character_code, string_lower, string_upper,
+    big_cast, big_parse, big_real_divide, big_zero, big_one, big_even,
     files_read_to_end, files_write_string,
     random_reset, random_integer, random_real, random_char, random_rounded,
     console_read, console_readln, console_line, console_token, format_value,

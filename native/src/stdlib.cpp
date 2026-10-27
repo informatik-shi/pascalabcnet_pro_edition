@@ -9,6 +9,7 @@
 #include "formatting.hpp"
 #include "school.hpp"
 #include "unicode.hpp"
+#include "big_integer_runtime.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -24,6 +25,22 @@ std::span<const Signature> signatures() {
         auto add = [&](std::string_view name, std::vector<Type> parameters, Type result, Function function, std::string_view unit = {}) {
             entries.push_back({name, std::move(parameters), result, function,unit});
         };
+        for (auto source:{Type::integer,Type::int64,Type::real,Type::word,Type::byte,Type::shortint,Type::smallint,Type::longword,Type::uint64,Type::character,Type::big_integer}) {
+            add("biginteger",{source},Type::big_integer,Function::big_cast);
+            for (auto name:{"real","double"}) add(name,{source},Type::real,Function::big_cast);
+        }
+        for (auto target:{Type::integer,Type::int64,Type::word,Type::byte,Type::shortint,Type::smallint,Type::longword,Type::uint64,Type::character})
+            add(target==Type::character ? "char" : type_name(target),{Type::big_integer},target,Function::big_cast);
+        add("tobiginteger",{Type::string},Type::big_integer,Function::big_parse);
+        add("$big_real_divide",{Type::big_integer,Type::real},Type::real,Function::big_real_divide);
+        add("$big_real_divide",{Type::real,Type::big_integer},Type::real,Function::big_real_divide);
+        add("$big_zero",{Type::big_integer},Type::boolean,Function::big_zero);
+        add("$big_one",{Type::big_integer},Type::boolean,Function::big_one);
+        add("$big_even",{Type::big_integer},Type::boolean,Function::big_even);
+        add("isqrt",{Type::big_integer},Type::big_integer,Function::isqrt);
+        add("power",{Type::big_integer,Type::integer},Type::big_integer,Function::power);
+        add("gcd",{Type::big_integer,Type::big_integer},Type::big_integer,Function::gcd);
+        add("lcm",{Type::big_integer,Type::big_integer},Type::big_integer,Function::lcm);
         add("readfiletoend",{Type::string},Type::string,Function::files_read_to_end,"filesoperations");
         add("writestringtofile",{Type::string,Type::string},Type::unit,Function::files_write_string,"filesoperations");
         for (const auto& [name,function]:{std::pair<std::string_view,Function>{"bin",Function::school_bin},{"oct",Function::school_oct},{"hex",Function::school_hex}})
@@ -48,7 +65,7 @@ std::span<const Signature> signatures() {
         add("setrandomseed",{Type::integer},Type::unit,Function::random_reset);
         struct ConsoleEntry { std::string_view read, readln; Type type; };
         for (auto [read,readln,type]:{ConsoleEntry{"readinteger","readlninteger",Type::integer},
-            {"readint64","readlnint64",Type::int64},{"readreal","readlnreal",Type::real},
+            {"readint64","readlnint64",Type::int64},{"readbiginteger","readlnbiginteger",Type::big_integer},{"readreal","readlnreal",Type::real},
             {"readboolean","readlnboolean",Type::boolean},{"readchar","readlnchar",Type::character},
             {"readstring","readlnstring",Type::string}}) {
             for (auto prompt:{false,true}) {
@@ -58,7 +75,7 @@ std::span<const Signature> signatures() {
             }
         }
         add("readlexem",{},Type::string,Function::console_token);
-        for (auto type:{Type::integer,Type::int64,Type::real,Type::boolean,Type::character,Type::string,Type::byte,Type::shortint,Type::smallint,Type::word,Type::longword,Type::uint64})
+        for (auto type:{Type::integer,Type::int64,Type::real,Type::boolean,Type::character,Type::string,Type::byte,Type::shortint,Type::smallint,Type::word,Type::longword,Type::uint64,Type::big_integer})
             add("formatvalue",{type,Type::integer},Type::string,Function::format_value);
         add("formatvalue",{Type::real,Type::integer,Type::integer},Type::string,Function::format_value);
         add("random",{},Type::real,Function::random_real);
@@ -93,7 +110,7 @@ std::span<const Signature> signatures() {
                 add("max",std::vector<Type>(count,type),type,Function::maximum);
             }
         }
-        for (auto type : {Type::integer, Type::int64, Type::real}) {
+        for (auto type : {Type::integer, Type::int64, Type::real, Type::big_integer}) {
             add("abs", {type}, type, Function::abs);
             add("sqr", {type}, type == Type::integer ? Type::int64 : type, Function::sqr);
             add("sign", {type}, Type::integer, Function::sign);
@@ -217,9 +234,9 @@ std::span<const Signature> signatures() {
             {"seekeof",Function::text_seek_eof},{"seekeoln",Function::text_seek_eoln}}) add(name,{Type::text_file},Type::boolean,function);
         for (auto [name,function]:{std::pair{"openread",Function::text_open_read},{"openwrite",Function::text_open_write},
             {"openappend",Function::text_open_append}}) add(name,{Type::string},Type::text_file,function);
-        for (auto [name,type]:{std::pair{"readinteger",Type::integer},{"readint64",Type::int64},{"readreal",Type::real},{"readboolean",Type::boolean},{"readchar",Type::character}})
+        for (auto [name,type]:{std::pair{"readinteger",Type::integer},{"readint64",Type::int64},{"readbiginteger",Type::big_integer},{"readreal",Type::real},{"readboolean",Type::boolean},{"readchar",Type::character}})
             add(name,{Type::text_file},type,Function::text_read);
-        for (auto [name,type]:{std::pair{"readlninteger",Type::integer},{"readlnint64",Type::int64},{"readlnreal",Type::real},
+        for (auto [name,type]:{std::pair{"readlninteger",Type::integer},{"readlnint64",Type::int64},{"readlnbiginteger",Type::big_integer},{"readlnreal",Type::real},
             {"readlnboolean",Type::boolean},{"readlnchar",Type::character},{"readstring",Type::string},{"readlnstring",Type::string}}) add(name,{Type::text_file},type,Function::text_read_line);
         add("readlexem",{Type::text_file},Type::string,Function::text_read_word);
         add("erase",{Type::text_file},Type::unit,Function::text_erase);
@@ -362,6 +379,45 @@ Value invoke(std::size_t id, std::span<const Value> arguments, SourceLocation lo
         return checked_real(rounded,location);
     }
     const auto& value = arguments.front();
+    if (function==Function::big_cast) return big_cast(value,signature.result,location);
+    if (function==Function::big_parse) {
+        if (std::holds_alternative<NilString>(value)) throw runtime_error(RuntimeError::nil_reference,location);
+        return parse_big(string_text(value),location,&context.options);
+    }
+    if (function==Function::big_real_divide) {
+        const auto a=std::get<double>(big_cast(arguments[0],Type::real,location));
+        const auto b=std::get<double>(big_cast(arguments[1],Type::real,location));
+        if (!b) throw runtime_error(RuntimeError::division_zero,location);
+        return checked_real(a/b,location);
+    }
+    if (const auto* big=std::get_if<BigInteger>(&value)) {
+        if (function==Function::big_zero) return big->zero();
+        if (function==Function::big_one) return big->bits()==1 && !big->negative();
+        if (function==Function::big_even) return !big->odd();
+        if (function==Function::sign) return std::int32_t(big->zero() ? 0 : big->negative() ? -1 : 1);
+        if (function==Function::abs) return checked_big(location,[&]{return big->absolute();});
+        if (function==Function::sqr) return big_binary(Op::multiply,*big,*big,location,context.options);
+        if (function==Function::isqrt) {
+            if (big->negative()) throw runtime_error(RuntimeError::math_domain,location);
+            big_work((big->bits()/28+1)*(big->bits()/28+1),location,context.options);
+            return checked_big(location,[&]{return big->square_root();});
+        }
+        if (function==Function::power) {
+            const auto exponent=std::get<std::int32_t>(arguments[1]);
+            if (exponent<0) throw runtime_error(RuntimeError::power_exponent,location);
+            big_work(big->bits()/28+1,location,context.options);
+            return checked_big(location,[&]{return big->power(static_cast<std::uint32_t>(exponent));});
+        }
+        if (function==Function::gcd || function==Function::lcm) {
+            const auto& b=std::get<BigInteger>(arguments[1]);
+            big_work((big->bits()/28+1)*(b.bits()/28+1),location,context.options);
+            return checked_big(location,[&] {
+                if (function==Function::gcd) return big->gcd(b);
+                if (big->zero() || b.zero()) return BigInteger{};
+                return big->divide(big->gcd(b)).first.absolute().multiply(b.absolute());
+            });
+        }
+    }
     if (function>=Function::school_bin && function<=Function::school_tan_degrees) return invoke_school(function,arguments,location,context.options,context.school);
     if (function==Function::string_lower || function==Function::string_upper) {
         if (std::holds_alternative<NilString>(value)) throw runtime_error(RuntimeError::nil_reference,location);

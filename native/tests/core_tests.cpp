@@ -57,6 +57,42 @@ void runtime_error(std::string_view source, std::string_view code) {
     error([&] { (void)run(source); }, code,source);
 }
 
+void big_integer_library() {
+    result("begin var a:BigInteger:=123456789012345678901234567890bi; Writeln(a+10,' ',a*2); Writeln((-11bi) div 2,' ',(-11bi) mod 2,' ',1bi/2,' ',5bi/2bi); Writeln((1bi shl 80) shr 76,' ',(-9bi) shr 1,' ',not 0bi); end.","123456789012345678901234567900 246913578024691357802469135780\n-5 -1 0.5 2\n16 -5 -1\n");
+    result("begin var n:BigInteger:=1; for var i:=2 to 100 do n:=n*i; Writeln(n); var a:=BigInteger.Parse(' +000123 '); Writeln(a,' ',new BigInteger(-1.9),' ',BigInteger.Create(MaxUInt64)); end.","93326215443944152681699238856266700490715968264381621468592963895217599993229915608941463976156518286253697920827223758251185210916864000000000000000000000000\n123 -1 18446744073709551615\n");
+    result("begin Writeln(BigInteger.Zero.IsZero,' ',BigInteger.One.IsOne,' ',BigInteger.MinusOne.Sign,' ',(42bi).IsEven); var a:BigInteger; Writeln(a,' ',new BigInteger()); Writeln(BigInteger.Abs(-7),' ',BigInteger.Pow(2,100),' ',GCD(MaxUInt64,1)); Writeln(LCM(-4bi,6bi),' ',ISqrt(15241578750190521bi),' ',Sqr(123456789bi)); end.","True True -1 True\n0 0\n7 1267650600228229401496703205376 1\n12 123456789 15241578750190521\n");
+    result("begin var a:BigInteger:=17; Writeln(BigInteger.TryParse('bad',a),' ',a); Writeln(BigInteger.TryParse(nil,a),' ',a); Writeln(BigInteger.TryParse('-42',a),' ',a); var s:string; Str(a,s); Writeln(s); var code:integer; Val('x',a,code); Writeln(a,' ',code); Writeln('12345678901234567890'.ToBigInteger); end.","False 0\nFalse 0\nTrue -42\n-42\n0 1\n12345678901234567890\n");
+    result("begin var a:=new List<BigInteger>; a.Add(1bi shl 80); a.Add(-2bi); Writeln(a.Contains(1208925819614629174706176bi),' ',a); var b:=Arr(1bi,MaxUInt64,-7); Sort(b); Writeln(b); Writeln((123bi,'ab')); Writeln(FormatValue(42bi,4)); end.","True [1208925819614629174706176,-2]\n[-7,1,18446744073709551615]\n(123,ab)\n  42\n");
+    result("begin Writeln(int64(-9223372036854775808bi),' ',uint64(18446744073709551615bi),' ',word(65535bi),' ',char(1071bi)); Writeln(real(9007199254740995bi)=9007199254740994.0,' ',real(MaxUInt64)=18446744073709551616.0); var r:real:=Power(2,3); Writeln(r); end.","-9223372036854775808 18446744073709551615 65535 Я\nTrue True\n8\n");
+    result("begin var a:BigInteger:=7; Writeln(TryRead(a),' ',a); Writeln(TryRead(a),' ',a); Writeln(ReadBigInteger); end.","False 7\nTrue 12345678901234567890\n-42\n","bad 12345678901234567890 -42");
+    result("begin var a:BigInteger; Readln(a); Writeln(a); end.","123456789012345678901234567890\n","123456789012345678901234567890\n");
+    result("function R:real; begin Write('R'); Result:=1; end; begin Writeln((4bi)/R); end.","R4\n");
+    const auto program=abc::compile("function R:real; begin Write('R'); Result:=1; end; begin Writeln((1bi shl 2000)/R); end.");
+    std::istringstream input; std::ostringstream output;
+    error([&]{abc::execute(program,input,output);},"E_OVERFLOW");
+    require(output.str()=="R","BigInteger mixed division converts inside the operator after both arguments evaluate");
+    for (const auto source:{"begin var a:integer:=1bi; end.","begin var a:BigInteger:=1.5; end.","begin BigInteger(True); end.",
+        "begin BigInteger('ab'); end.","begin var a:real:=1bi; end.","begin BigInteger.One(); end.",
+        "begin var a:=1bi; a.IsEven(); end.","begin var a:=0; BigInteger.TryParse('1',a); end."}) compile_error(source,"E_TYPE");
+    compile_error("begin var a:=1.5bi; end.","E_SYNTAX");
+    for (const auto source:{"begin integer(2147483648bi); end.","begin uint64(-1bi); end.","begin char(65536bi); end.",
+        "begin real(1bi shl 2000); end."}) runtime_error(source,"E_OVERFLOW");
+    runtime_error("begin Writeln(1bi div 0); end.","E_DIV_ZERO");
+    runtime_error("begin Power(2bi,-1); end.","E_RANGE");
+    runtime_error("begin BigInteger.Parse('17x'); end.","E_FORMAT");
+    runtime_error("begin BigInteger.Parse(nil); end.","E_NIL");
+    runtime_error("begin Writeln(1bi shl 65536); end.","E_LIMIT");
+    auto invalid=abc::compile("begin var a:=1bi+2bi; end.");
+    for (auto& instruction:invalid.code) if (instruction.op==abc::Op::add) instruction.type=abc::Type::int64;
+    error([&]{abc::verify(invalid);},"E_BYTECODE");
+    abc::ExecutionOptions options; options.allocation_limit=1;
+    error([&]{(void)run("begin Writeln(1bi shl 100); end.","",options);},"E_LIMIT");
+    options={}; options.instruction_limit=100;
+    error([&]{(void)run("begin var a:=1bi shl 1000; Writeln(a*a); end.","",options);},"E_LIMIT");
+    options={}; std::size_t polls=0; options.cancelled=[&]{return ++polls>20;};
+    error([&]{(void)run("begin BigInteger.Parse(StringOfChar('0',10000)+'1'); end.","",options);},"E_CANCELLED");
+}
+
 void school_minmax_library() {
     result("uses School; begin Writeln(MinMax(Arr(4,-7,9,2)),' ',School.MinMax(Arr(int64(-9223372036854775808),MaxInt64))); var a:=new List<real>; a.Add(1.5); a.Add(-2.25); Writeln(a.MinMax); Writeln(MinMax(new integer[0]),' ',MinMax(new int64[0])); var r:=MinMax(new real[0]); Writeln(r.Item1>1e308,' ',r.Item2< -1e308); end.","(-7,9) (-9223372036854775808,9223372036854775807)\n(-2.25,1.5)\n(2147483647,-2147483648) (9223372036854775807,-9223372036854775808)\nTrue True\n");
     result("uses School; function MinMax(a:array of integer):integer; begin Result:=7; end; begin var a:=Arr(4,2,8); Writeln(MinMax(a),' ',School.MinMax(a),' ',a.MinMax()); end.","7 (2,8) (2,8)\n");
@@ -981,7 +1017,7 @@ void extended_math() {
     runtime_error("begin Remap(1,2,2,0,1); end.","E_DIV_ZERO");
     runtime_error("begin Hypot(MaxReal,MaxReal); end.","E_OVERFLOW");
     runtime_error("begin Lerp(-MaxReal,MaxReal,1.0); end.","E_OVERFLOW");
-    for (const auto source:{"begin GCD(1.0,2.0); end.","begin GCD(MaxUInt64,1); end.","begin LCM(1.0,2); end.","begin var i:integer:=LCM(1,2); end.","begin var a:int64:=2; var i:integer:=GCD(a,2); end.","begin Atan2(1); end.","begin Hypot('abc',2); end.","begin Lerp(0,1,true); end.","begin Remap(1,0,2,10); end."}) compile_error(source,"E_TYPE");
+    for (const auto source:{"begin GCD(1.0,2.0); end.","begin var a:int64:=GCD(MaxUInt64,1); end.","begin LCM(1.0,2); end.","begin var i:integer:=LCM(1,2); end.","begin var a:int64:=2; var i:integer:=GCD(a,2); end.","begin Atan2(1); end.","begin Hypot('abc',2); end.","begin Lerp(0,1,true); end.","begin Remap(1,0,2,10); end."}) compile_error(source,"E_TYPE");
     try { (void)run("begin\n GCD(-2147483648,0);\nend."); require(false,"Expected bilingual GCD overflow"); }
     catch (const abc::Error& e) { require(e.code=="E_OVERFLOW" && e.location.line==2 && !e.russian.empty(),"Math overflow preserves location and both languages"); }
 }
@@ -2610,6 +2646,7 @@ int main() {
     unicode_character_library();
     tuple_library();
     school_minmax_library();
+    big_integer_library();
     school_text_library();
     school_factor_library();
     sequence_mutations();

@@ -28,7 +28,9 @@ public:
     std::string text(unsigned base=10) const;
     std::size_t bits() const;
     bool negative() const;
+    bool odd() const;
     bool zero() const { return !rep_; }
+    bool shares_storage(const BigInteger& other) const { return rep_==other.rep_; }
     std::int64_t to_signed() const;
     std::uint64_t to_unsigned() const;
     double to_real() const;

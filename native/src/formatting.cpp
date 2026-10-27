@@ -1,6 +1,7 @@
 #include "formatting.hpp"
 #include "diagnostics.hpp"
 #include "stdlib.hpp"
+#include "big_integer_runtime.hpp"
 #include <array>
 #include <charconv>
 #include <type_traits>
@@ -91,7 +92,8 @@ std::u16string format_field(const Value& value, std::int32_t width, std::optiona
         const auto converted=std::to_chars(bytes.data(),bytes.data()+bytes.size(),std::get<double>(value),std::chars_format::fixed,precision);
         if (converted.ec!=std::errc{}) throw runtime_error(RuntimeError::number_format,location);
         text=from_utf8(std::string_view(bytes.data(),static_cast<std::size_t>(converted.ptr-bytes.data())));
-    } else if (const auto* string=std::get_if<std::u16string>(&value)) text=*string;
+    } else if (const auto* big=std::get_if<BigInteger>(&value)) text=checked_big(location,[&]{return from_utf8(big->text());});
+    else if (const auto* string=std::get_if<std::u16string>(&value)) text=*string;
     else if (std::holds_alternative<NilString>(value)) text=u"nil";
     else if (const auto* ch=std::get_if<char16_t>(&value)) text+=*ch;
     else if (const auto* flag=std::get_if<bool>(&value)) text=*flag ? u"True" : u"False";

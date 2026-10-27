@@ -1,4 +1,5 @@
 #include "text_file.hpp"
+#include "big_integer_runtime.hpp"
 #include "files.hpp"
 #include "diagnostics.hpp"
 #include "stdlib.hpp"
@@ -170,6 +171,7 @@ Value text_read(TextFile& file, Type type, SourceLocation location) {
         return file.content[file.cursor++];
     }
     auto token=read_token(file,location);
+    if (type==Type::big_integer) return parse_big(token,location);
     if (type==Type::boolean) {
         for (auto& c:token) if (c>=u'A' && c<=u'Z') c=static_cast<char16_t>(c+32);
         if (token==u"true") return true;

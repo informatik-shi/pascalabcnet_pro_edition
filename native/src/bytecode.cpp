@@ -603,11 +603,11 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if (type != Type::boolean) invalid(instruction, "Invalid logical type");
             break;
         case Op::bit_not: case Op::bit_and: case Op::bit_or: case Op::bit_xor:
-            if ((!integer_type(type) && !(instruction.op==Op::bit_xor && type==Type::boolean)) || instruction.operand)
+            if ((!integer_type(type) && type!=Type::big_integer && !(instruction.op==Op::bit_xor && type==Type::boolean)) || instruction.operand)
                 invalid(instruction,"Invalid bitwise type");
             break;
         case Op::shift_left: case Op::shift_right:
-            if ((type!=Type::integer && type!=Type::int64 && type!=Type::longword && type!=Type::uint64) || instruction.operand)
+            if ((type!=Type::integer && type!=Type::int64 && type!=Type::longword && type!=Type::uint64 && type!=Type::big_integer) || instruction.operand)
                 invalid(instruction,"Invalid shift type");
             break;
         case Op::add:
@@ -620,7 +620,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if (type != Type::real) invalid(instruction, "Real division requires real");
             break;
         case Op::divide_int: case Op::modulo:
-            if (type != Type::integer && type != Type::int64 && type!=Type::uint64) invalid(instruction, "Integer division requires integer");
+            if (type != Type::integer && type != Type::int64 && type!=Type::uint64 && type!=Type::big_integer) invalid(instruction, "Integer division requires integer");
             break;
         case Op::equal: case Op::not_equal:
             if (!valid_value_type(program,type) || type==Type::text_file) invalid(instruction,"Invalid equality type"); break;
