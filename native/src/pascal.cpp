@@ -989,7 +989,7 @@ private:
                 if (!bind_school_text(*result,source.token.text,"school")) { result->kind=hir::ExprKind::call; bind_builtin(*result,source.token.text,"school"); }
                 break;
             }
-            if (imported_units_.contains("school") && (source.token.text=="digits" || source.token.text=="digitstoint64"
+            if (imported_units_.contains("school") && (source.token.text=="digits" || source.token.text=="digitstoint64" || source.token.text=="digitstobiginteger"
                 || source.token.text=="factorize" || source.token.text=="primefactors" || source.token.text=="primefactorscount"
                 || source.token.text=="primedivisors" || source.token.text=="primedivisorscount" || source.token.text=="divisors" || source.token.text=="divizors" || source.token.text=="divisorscount")) {
                 result->arguments.push_back(std::move(result->left));
@@ -1001,7 +1001,8 @@ private:
                 for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
                 (void)bind_tuple(*result,source.token.text,"school"); break;
             }
-            if (imported_units_.contains("school") && integer_type(receiver) && (source.token.text=="tobase" || source.token.text=="perfectsquare" || source.token.text=="isprime")) {
+            if (imported_units_.contains("school") && ((integer_type(receiver) && (source.token.text=="tobase" || source.token.text=="perfectsquare" || source.token.text=="isprime"))
+                || ((receiver==Type::big_integer || receiver==Type::string) && source.token.text=="tobase"))) {
                 result->arguments.push_back(std::move(result->left));
                 for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
                 result->kind=hir::ExprKind::call; bind_builtin(*result,source.token.text,"school"); break;
@@ -1521,16 +1522,17 @@ private:
     bool bind_school_list(hir::Expr& result, std::string_view name, std::string_view unit = {}) {
         const bool factor=name=="factorize" || name=="primefactors" || name=="primefactorscount" || name=="primedivisors" || name=="primedivisorscount"
             || name=="divisors" || name=="divizors" || name=="divisorscount";
-        if (!factor && name!="digits" && name!="digitstoint64" && name!="primes" && name!="firstprimes") return false;
+        if (!factor && name!="digits" && name!="digitstoint64" && name!="digitstobiginteger" && name!="primes" && name!="firstprimes") return false;
         if ((!unit.empty() && unit!="school") || !imported_units_.contains("school")) return false;
-        const bool digits=name=="digits" || name=="digitstoint64";
+        const bool digits=name=="digits" || name=="digitstoint64" || name=="digitstobiginteger";
         if (result.arguments.empty() || result.arguments.size()>2 || ((factor || name=="firstprimes") && result.arguments.size()!=1))
             throw Error("E_TYPE",result.location,"Wrong School list argument count");
         if (digits && result.arguments.size()==1) {
             auto base=std::make_unique<hir::Expr>(); base->kind=hir::ExprKind::literal; base->type=Type::integer;
             base->value=std::int32_t{10}; base->location=result.location; result.arguments.push_back(std::move(base));
         }
-        const auto method=name=="digits" ? SchoolList::digits : name=="digitstoint64" ? SchoolList::digits_to_int64
+        const auto method=name=="digits" ? (result.arguments[0]->type==Type::big_integer || result.arguments[0]->type==Type::uint64 ? SchoolList::digits_big : SchoolList::digits)
+            : name=="digitstoint64" ? SchoolList::digits_to_int64 : name=="digitstobiginteger" ? SchoolList::digits_to_big
             : name=="primefactorscount" ? SchoolList::factors_count : name=="primedivisorscount" ? SchoolList::prime_divisors_count
             : name=="divisorscount" ? SchoolList::divisors_count : name=="divisors" || name=="divizors" ? SchoolList::divisors
             : name=="primedivisors" ? SchoolList::prime_divisors : factor ? SchoolList::factors
@@ -1549,7 +1551,7 @@ private:
             if (result.arguments.size()!=1 || !compound(result.arguments[0]->type)) throw Error("E_TYPE",result.location,"MinMax requires a typed numeric sequence");
             const auto& sequence=info(result.arguments[0]->type,result.location);
             const auto element=sequence.element;
-            if (!indexed_sequence(sequence.kind) || sequence.rank!=1 || (element!=Type::integer && element!=Type::int64 && element!=Type::real))
+            if (!indexed_sequence(sequence.kind) || sequence.rank!=1 || (element!=Type::integer && element!=Type::int64 && element!=Type::real && element!=Type::big_integer))
                 throw Error("E_TYPE",result.location,"MinMax requires an integer, int64 or real array/List");
             result.left=std::move(result.arguments[0]); result.arguments.clear();
             result.type=tuple_type({element,element},result.location); result.kind=hir::ExprKind::school_minmax; return true;
@@ -1569,14 +1571,17 @@ private:
         if ((name!="gcd" && name!="lcm") || (!unit.empty() && unit!="school") || !imported_units_.contains("school")) return false;
         // Existing fixed PABCSystem overloads take precedence over params for a pair.
         if (unit.empty() && result.arguments.size()==2) return false;
-        const auto array=sequence_type(CompoundKind::array,Type::int64);
+        auto element=Type::int64;
+        for (const auto& argument:result.arguments) if (argument->type==Type::big_integer || argument->type==Type::uint64 || argument->type==Type::character
+            || (compound(argument->type) && info(argument->type,result.location).kind==CompoundKind::array && info(argument->type,result.location).element==Type::big_integer)) element=Type::big_integer;
+        const auto array=sequence_type(CompoundKind::array,element);
         if (result.arguments.size()==1 && (compound(result.arguments[0]->type) || result.arguments[0]->type==Type::nil))
             result.left=convert(std::move(result.arguments[0]),array);
         else {
             result.left=std::make_unique<hir::Expr>(); result.left->kind=hir::ExprKind::array_literal; result.left->type=array; result.left->location=result.location;
-            for (auto& argument:result.arguments) result.left->arguments.push_back(convert(std::move(argument),Type::int64));
+            for (auto& argument:result.arguments) result.left->arguments.push_back(convert(std::move(argument),element));
         }
-        result.arguments.clear(); result.kind=hir::ExprKind::school_fold; result.type=Type::int64;
+        result.arguments.clear(); result.kind=hir::ExprKind::school_fold; result.type=element;
         result.local=static_cast<std::size_t>(name=="gcd" ? SchoolFold::gcd : SchoolFold::lcm); return true;
     }
     bool bind_school_text(hir::Expr& result, std::string_view name, std::string_view unit = {}) {

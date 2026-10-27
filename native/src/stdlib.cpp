@@ -46,7 +46,12 @@ std::span<const Signature> signatures() {
         for (const auto& [name,function]:{std::pair<std::string_view,Function>{"bin",Function::school_bin},{"oct",Function::school_oct},{"hex",Function::school_hex}})
             add(name,{Type::int64},Type::string,function,"school");
         add("dec",{Type::string,Type::integer},Type::int64,Function::school_dec,"school");
+        add("decbig",{Type::string,Type::integer},Type::big_integer,Function::school_dec_big,"school");
+        for (const auto& [name,function]:{std::pair<std::string_view,Function>{"bin",Function::school_bin},{"oct",Function::school_oct},{"hex",Function::school_hex}})
+            add(name,{Type::big_integer},Type::string,function,"school");
         add("tobase",{Type::int64,Type::integer},Type::string,Function::school_to_base,"school");
+        add("tobase",{Type::big_integer,Type::integer},Type::string,Function::school_to_base,"school");
+        add("tobase",{Type::string,Type::integer},Type::string,Function::school_to_base,"school");
         add("perfectsquare",{Type::int64},Type::int64,Function::school_perfect_square,"school");
         for (auto type:{Type::integer,Type::int64}) add("isprime",{type},Type::boolean,Function::school_is_prime,"school");
         add("imp",{Type::boolean,Type::boolean},Type::boolean,Function::school_imp,"school");
@@ -54,8 +59,8 @@ std::span<const Signature> signatures() {
         add("нок",{Type::int64,Type::int64},Type::int64,Function::school_lcm_alias,"school");
         add("replacemany",{Type::string,Type::string,Type::string},Type::string,Function::school_replace_many,"school");
         add("translate",{Type::string,Type::string,Type::string},Type::string,Function::school_translate,"school");
-        for (unsigned count=1;count<=3;++count) {
-            std::vector<Type> parameters{Type::int64}; if (count>1) parameters.push_back(Type::integer); if (count>2) parameters.push_back(Type::string);
+        for (auto type:{Type::int64,Type::big_integer}) for (unsigned count=1;count<=3;++count) {
+            std::vector<Type> parameters{type}; if (count>1) parameters.push_back(Type::integer); if (count>2) parameters.push_back(Type::string);
             add("binformat",std::move(parameters),Type::string,Function::school_bin_format,"school");
         }
         for (const auto& [name,function]:{std::pair<std::string_view,Function>{"sindegrees",Function::school_sin_degrees},{"cosdegrees",Function::school_cos_degrees},{"tandegrees",Function::school_tan_degrees}})

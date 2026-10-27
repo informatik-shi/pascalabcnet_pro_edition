@@ -2,11 +2,13 @@
 #include "diagnostics.hpp"
 #include "runtime_values.hpp"
 #include "unicode.hpp"
+#include "big_integer_runtime.hpp"
 #include <algorithm>
 #include <cmath>
 #include <numbers>
 #include <array>
 #include <numeric>
+#include <type_traits>
 
 namespace abc::stdlib {
 namespace {
@@ -102,7 +104,7 @@ Value invoke_school(Function function, std::span<const Value> arguments, SourceL
         if (!std::isfinite(result)) throw runtime_error(RuntimeError::real_overflow,location);
         return result;
     }
-    if (function==Function::school_dec) {
+    if (function==Function::school_dec || function==Function::school_dec_big) {
         const auto base=std::get<std::int32_t>(arguments[1]);
         if (base<2 || base>36) throw runtime_error(RuntimeError::school_base,location);
         if (std::holds_alternative<NilString>(arguments[0])) throw runtime_error(RuntimeError::nil_reference,location);
@@ -117,11 +119,53 @@ Value invoke_school(Function function, std::span<const Value> arguments, SourceL
         for (std::size_t i=0;i<text.size();++i) {
             check(i); if (digit(text[i])>=static_cast<unsigned>(base)) throw runtime_error(RuntimeError::school_digit,location);
         }
+        if (function==Function::school_dec_big) {
+            std::string bytes; bytes.reserve(text.size());
+            for (std::size_t i=0;i<text.size();++i) { check(i); bytes+=static_cast<char>(alphabet[digit(text[i])]); }
+            big_work(text.size(),location,options);
+            return checked_big(location,[&] {
+                // DecBig advances rank_weight after the final digit as well.
+                if (!text.empty()) (void)BigInteger::from_signed(base).power(static_cast<std::uint32_t>(text.size()));
+                return bytes.empty() ? BigInteger{} : BigInteger::parse(bytes,base);
+            });
+        }
         std::int64_t result=0;
         for (std::size_t i=0;i<text.size();++i) {
             check(i); const auto d=digit(text[i]);
             if (result>(INT64_MAX-d)/base) throw runtime_error(RuntimeError::integer_overflow,location);
             result=result*base+d;
+        }
+        return result;
+    }
+    if (std::holds_alternative<BigInteger>(arguments[0]) || (function==Function::school_to_base &&
+        (std::holds_alternative<std::u16string>(arguments[0]) || std::holds_alternative<NilString>(arguments[0])))) {
+        const auto base=function==Function::school_bin || function==Function::school_bin_format ? 2
+            : function==Function::school_oct ? 8 : function==Function::school_hex ? 16 : std::get<std::int32_t>(arguments[1]);
+        if (base<2 || base>36) throw runtime_error(RuntimeError::school_base,location);
+        BigInteger number;
+        if (const auto* big=std::get_if<BigInteger>(&arguments[0])) number=*big;
+        else {
+            if (std::holds_alternative<NilString>(arguments[0])) return std::u16string{};
+            try { number=parse_big(string_text(arguments[0]),location,&options); }
+            catch (const Error& error) { if (error.code=="E_FORMAT") return std::u16string{}; throw; }
+        }
+        if (function==Function::school_to_base && (number.negative() || number.zero())) return std::u16string{u"0"};
+        big_work(number.bits()+1,location,options);
+        const auto bytes=checked_big(location,[&]{return number.absolute().text(base);});
+        if (function!=Function::school_bin_format) return std::u16string(bytes.begin(),bytes.end());
+        const auto natural=std::max<std::size_t>(1,(bytes.size()+7)/8);
+        const auto requested=arguments.size()>1 ? std::get<std::int32_t>(arguments[1]) : 0;
+        const auto count=requested>0 ? std::max(natural,static_cast<std::size_t>(requested)) : natural;
+        const auto separator=arguments.size()>2 ? std::u16string_view(string_text(arguments[2])) : std::u16string_view{u" "};
+        constexpr std::size_t limit=1'048'576;
+        if (count>limit/8 || (count>1 && separator.size()>(limit-count*8)/(count-1))) throw runtime_error(RuntimeError::string_limit,location);
+        std::u16string result; result.reserve(count*8+(count-1)*separator.size());
+        const auto padding=count*8-bytes.size();
+        for (std::size_t i=0;i<count;++i) {
+            check(i); if (i) result+=separator;
+            for (std::size_t bit=0;bit<8;++bit) {
+                const auto position=i*8+bit; result+=position<padding ? u'0' : static_cast<char16_t>(bytes[position-padding]);
+            }
         }
         return result;
     }
@@ -484,6 +528,18 @@ Value invoke_school_list(Values& values, SchoolContext& context, SchoolList meth
     if (method==SchoolList::primes_range) return service.range(std::get<std::int32_t>(arguments[0]),std::get<std::int32_t>(arguments[1]));
     if (method==SchoolList::first_primes) return service.first(std::get<std::int32_t>(arguments[0]));
     const auto base=std::get<std::int32_t>(arguments[1]);
+    if (method==SchoolList::digits_big) {
+        auto result=values.array(list,0); auto n=std::get<BigInteger>(arguments[0]);
+        if (n.negative() || base<2) return result;
+        if (n.zero()) service.add(result,0);
+        const auto divisor=BigInteger::from_signed(base);
+        while (!n.zero()) {
+            service.check(); big_work(n.bits()/28+1,values.location,options);
+            auto divided=checked_big(values.location,[&]{return n.divide(divisor);});
+            service.add(result,static_cast<std::int32_t>(divided.second.to_signed())); n=std::move(divided.first);
+        }
+        std::reverse(result->items.begin(),result->items.end()); return result;
+    }
     if (method==SchoolList::digits) {
         auto result=values.array(list,0); auto n=std::get<std::int64_t>(arguments[0]);
         if (n<0 || base<2) return result;
@@ -496,6 +552,18 @@ Value invoke_school_list(Values& values, SchoolContext& context, SchoolList meth
     for (std::size_t i=0;i<digits->items.size();++i) {
         service.check(i);
         if (std::get<std::int32_t>(digits->items[i]->value)>=base) throw runtime_error(RuntimeError::school_expanded_digit,values.location);
+    }
+    if (method==SchoolList::digits_to_big) {
+        BigInteger result; auto power=BigInteger::from_signed(1),radix=BigInteger::from_signed(base);
+        for (auto i=digits->items.size();i>0;--i) {
+            service.check(i);
+            const auto digit=BigInteger::from_signed(std::get<std::int32_t>(digits->items[i-1]->value));
+            const auto term=big_binary(Op::multiply,digit,power,values.location,options);
+            result=big_binary(Op::add,result,term,values.location,options);
+            power=big_binary(Op::multiply,power,radix,values.location,options);
+            values.number(term); values.number(result); values.number(power);
+        }
+        return result;
     }
     std::int64_t result=0,power=1;
     for (auto i=digits->items.size();i>0;--i) {
@@ -532,12 +600,14 @@ std::shared_ptr<Aggregate> school_minmax(Values& values,const std::shared_ptr<Ag
     if (sequence->nil) throw runtime_error(RuntimeError::nil_reference,values.location);
     const auto& info=type_info(values.program,sequence->type); const auto version=sequence->version;
     const auto calculate=[&]<class T>() {
-        auto low=std::numeric_limits<T>::max(),high=std::numeric_limits<T>::lowest();
+        T low{},high{};
+        if constexpr (!std::is_same_v<T,BigInteger>) { low=std::numeric_limits<T>::max(); high=std::numeric_limits<T>::lowest(); }
         for (std::size_t i=0;i<sequence->items.size();++i) {
             if (i>=options.instruction_limit) throw runtime_error(RuntimeError::instruction_limit,values.location);
             if ((i&255U)==0 && options.cancelled && options.cancelled()) throw runtime_error(RuntimeError::cancelled,values.location);
             if (info.kind==CompoundKind::list && sequence->version!=version) throw runtime_error(RuntimeError::collection_changed,values.location);
             const auto number=std::get<T>(sequence->items[i]->value);
+            if constexpr (std::is_same_v<T,BigInteger>) if (!i) low=high=number;
             if (number<low) low=number;
             if (number>high) high=number;
         }
@@ -547,11 +617,31 @@ std::shared_ptr<Aggregate> school_minmax(Values& values,const std::shared_ptr<Ag
     };
     if (info.element==Type::integer) return calculate.template operator()<std::int32_t>();
     if (info.element==Type::int64) return calculate.template operator()<std::int64_t>();
+    if (info.element==Type::big_integer) return calculate.template operator()<BigInteger>();
     return calculate.template operator()<double>();
 }
-std::int64_t school_fold(const std::shared_ptr<Aggregate>& array, SchoolFold method, SourceLocation location, const ExecutionOptions& options) {
+Value school_fold(Values& values,const std::shared_ptr<Aggregate>& array, SchoolFold method, const ExecutionOptions& options) {
+    const auto location=values.location;
     const auto count=array->nil ? std::size_t{0} : array->items.size();
     if (!count) throw runtime_error(RuntimeError::school_empty_arguments,location);
+    if (type_info(values.program,array->type).element==Type::big_integer) {
+        const auto number=[&](std::size_t i)->const BigInteger& { return std::get<BigInteger>(array->items[i]->value); };
+        if (count==1) return number(0);
+        const auto combine=[&](const BigInteger& a,const BigInteger& b) {
+            big_work((a.bits()/28+1)*(b.bits()/28+1),location,options);
+            const auto product=method==SchoolFold::lcm ? big_binary(Op::multiply,a,b,location,options) : BigInteger{};
+            const auto gcd=checked_big(location,[&]{return a.gcd(b);});
+            if (method==SchoolFold::gcd) { values.number(gcd); return gcd; }
+            values.number(product); values.number(gcd);
+            auto result=big_binary(Op::divide_int,product,gcd,location,options); values.number(result); return result;
+        };
+        auto result=combine(number(0),number(1));
+        for (std::size_t i=1;i<count;++i) {
+            if (i>=options.instruction_limit) throw runtime_error(RuntimeError::instruction_limit,location);
+            result=combine(result,number(i));
+        }
+        return result;
+    }
     const auto number=[&](std::size_t index) { return std::get<std::int64_t>(array->items[index]->value); };
     if (count==1) return number(0);
     const auto gcd=[&](std::int64_t a,std::int64_t b) {

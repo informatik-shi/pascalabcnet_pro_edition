@@ -105,7 +105,7 @@ enum class Op {
 
 enum class SchoolFold { gcd, lcm };
 
-enum class SchoolList { digits, digits_to_int64, primes, primes_range, first_primes, factors, prime_divisors, factors_count, prime_divisors_count, divisors, divisors_count };
+enum class SchoolList { digits, digits_big, digits_to_int64, digits_to_big, primes, primes_range, first_primes, factors, prime_divisors, factors_count, prime_divisors_count, divisors, divisors_count };
 inline bool school_factor_method(SchoolList method) { return method>=SchoolList::factors; }
 inline bool school_list_count(SchoolList method) {
     return method==SchoolList::factors_count || method==SchoolList::prime_divisors_count || method==SchoolList::divisors_count;
@@ -113,11 +113,12 @@ inline bool school_list_count(SchoolList method) {
 inline std::vector<Type> school_list_parameters(SchoolList method, Type list, Type element=Type::integer) {
     if (school_factor_method(method)) return {element};
     if (method==SchoolList::digits) return {Type::int64,Type::integer};
-    if (method==SchoolList::digits_to_int64) return {list,Type::integer};
+    if (method==SchoolList::digits_big) return {Type::big_integer,Type::integer};
+    if (method==SchoolList::digits_to_int64 || method==SchoolList::digits_to_big) return {list,Type::integer};
     if (method==SchoolList::primes_range) return {Type::integer,Type::integer};
     return {Type::integer};
 }
-inline Type school_list_result(SchoolList method, Type list) { return school_list_count(method) ? Type::integer : method==SchoolList::digits_to_int64 ? Type::int64 : list; }
+inline Type school_list_result(SchoolList method, Type list) { return school_list_count(method) ? Type::integer : method==SchoolList::digits_to_int64 ? Type::int64 : method==SchoolList::digits_to_big ? Type::big_integer : list; }
 
 enum class StringArray { words, words_array, lines, integers, integers_count, reals, reals_separator, integers64 };
 inline bool string_array_parameter(StringArray method) {

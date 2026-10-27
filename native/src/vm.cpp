@@ -202,7 +202,7 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
         }
         case Op::school_fold: {
             const auto array=std::get<std::shared_ptr<Aggregate>>(pop());
-            stack.emplace_back(school_fold(array,static_cast<SchoolFold>(instruction.operand),instruction.location,options)); break;
+            stack.push_back(school_fold(values,array,static_cast<SchoolFold>(instruction.operand),options)); break;
         }
         case Op::replace_last: {
             const auto target=pop(),source=pop(); const auto receiver=std::get<std::shared_ptr<Cell>>(pop());

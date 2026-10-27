@@ -237,7 +237,7 @@ void school_fold_library() {
         "uses School; begin School.GCD(-9223372036854775808,0); end."}) runtime_error(source,"E_OVERFLOW");
     result("uses School; begin Writeln(LCM(MaxInt64,MaxInt64)); end.","9223372036854775807\n");
     for (const auto source:{"uses School; begin GCD(Arr(2,4)); end.","uses School; begin LCM(new List<int64>); end.",
-        "uses School; begin GCD(1.5); end.","uses School; begin var u:uint64:=1; GCD(u); end.",
+        "uses School; begin GCD(1.5); end.",
         "uses School; begin var n:integer:=School.GCD(2,4); end.","begin GCD(2,4,6); end."}) compile_error(source,"E_TYPE");
     auto program=abc::compile("uses School; begin GCD(2,4,6); end.");
     for (auto& instruction:program.code) if (instruction.op==abc::Op::school_fold) instruction.operand=2;
@@ -419,7 +419,7 @@ void school_library() {
     for (const auto source:{"begin Digits(12); end.","begin Primes(20); end.","begin FirstPrimes(3); end."}) compile_error(source,"E_NAME");
     for (const auto source:{"uses School; begin Digits(1.5); end.","uses School; begin DigitsToInt64(Arr(1,2)); end.",
         "uses School; begin var d:=new List<int64>; DigitsToInt64(d); end.","uses School; begin Primes(20.0); end.",
-        "uses School; begin FirstPrimes(1,2); end.","uses School; begin var n:uint64:=1; n.Digits; end."}) compile_error(source,"E_TYPE");
+        "uses School; begin FirstPrimes(1,2); end."}) compile_error(source,"E_TYPE");
     {
         auto program=abc::compile("uses School; begin var d:=Digits(12); end.");
         for (auto& instruction:program.code) if (instruction.op==abc::Op::school_list) instruction.operand=99;
@@ -505,12 +505,43 @@ void school_library() {
     compile_error("begin Writeln(Bin(7)); end.","E_NAME");
     compile_error("begin Writeln((81).PerfectSquare); end.","E_TYPE");
     compile_error("uses School; begin Bin(1.5); end.","E_TYPE");
-    compile_error("uses School; begin var u:uint64:=1; ToBase(u,2); end.","E_TYPE");
+    result("uses School; begin var u:uint64:=1; Writeln(ToBase(u,2)); end.","1\n");
     compile_error("uses School; begin BinFormat(1,' '); end.","E_TYPE");
     abc::ExecutionOptions options; std::size_t polls=0; options.cancelled=[&]{return ++polls>30;};
     error([&]{(void)run("uses School; begin School.Dec(StringOfChar('0',10000)+'1',2); end.","",options);},"E_CANCELLED");
     polls=0;
     error([&]{(void)run("uses School; begin BinFormat(1,10000,''); end.","",options);},"E_CANCELLED");
+}
+
+void school_big_integer_library() {
+    result("uses School; begin var u:uint64:=1; Writeln(u.Digits,' ',GCD(u)); end.","[1] 1\n");
+    result("uses School; begin Writeln(Bin(-1024bi),' ',Oct(18446744073709551616bi),' ',Hex(-18446744073709551616bi)); Writeln(ToBase(18446744073709551616bi,16),' ',(-42bi).ToBase(2)); Writeln(ToBase('18446744073709551616',16),'|',ToBase('bad',16),'|',ToBase(nil,2)); end.","10000000000 2000000000000000000000 10000000000000000\n10000000000000000 0\n10000000000000000||\n");
+    result("uses School; begin Writeln(DecBig('FFFFFFFFFFFFFFFFFFFFFFFF',16)); Writeln(DecBig('',2),' ',DecBig('ſ',36),' ',DecBig('ı',36)); Writeln(BinFormat(256bi,3,':')); Writeln(BinFormat(-5bi,-1),'|',BinFormat(0bi,2,nil)); end.","79228162514264337593543950335\n0 28 18\n00000000:00000001:00000000\n00000101|0000000000000000\n");
+    result("uses School; begin var n:=18446744073709551616bi; Writeln(Digits(n),' ',n.Digits(16)); Writeln(n.Digits.DigitsToBigInteger=n); Writeln(Digits(-1bi),' ',Digits(0bi),' ',Digits(12bi,1)); Writeln(Digits(n,2147483647)); end.","[1,8,4,4,6,7,4,4,0,7,3,7,0,9,5,5,1,6,1,6] [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]\nTrue\n[] [0] []\n[4,8,4]\n");
+    result("uses School; begin var a:=new List<integer>; Writeln(DigitsToBigInteger(a,0)); a.Add(-1); a.Add(-2); Writeln(a.DigitsToBigInteger(10)); a.Clear; a.Add(-3); Writeln(a.DigitsToBigInteger(-2)); end.","0\n-12\n-3\n");
+    result("uses School; begin Writeln(School.GCD(Arr(-18bi,30bi,42bi))); Writeln(School.LCM(-4bi,6bi),' ',School.LCM(4bi,-6bi),' ',School.LCM(-4bi,-6bi)); Writeln(School.GCD(Arr(-42bi)),' ',School.LCM(Arr(-42bi))); Writeln(School.LCM(18446744073709551616bi,3bi)); end.","6\n-12 12 -12\n-42 -42\n55340232221128654848\n");
+    result("uses School; begin Writeln(MinMax(Arr(2bi,-7bi,18446744073709551616bi))); var a:=new List<BigInteger>; Writeln(a.MinMax); a.Add(-3bi); a.Add(-1bi); Writeln(a.MinMax); end.","(-7,18446744073709551616)\n(0,0)\n(-3,-1)\n");
+    for (const auto source:{"uses School; begin DecBig('2',2); end.","uses School; begin DecBig('-1',10); end.","uses School; begin DecBig(' 1',10); end."}) runtime_error(source,"E_FORMAT");
+    runtime_error("uses School; begin var a:=new List<integer>; a.Add(2); DigitsToBigInteger(a,2); end.","E_RANGE");
+    runtime_error("uses School; begin ToBase(nil,1); end.","E_RANGE");
+    runtime_error("uses School; begin DecBig(nil,1); end.","E_RANGE");
+    runtime_error("uses School; begin DecBig(nil,2); end.","E_NIL");
+    runtime_error("uses School; begin var a:List<integer>; DigitsToBigInteger(a); end.","E_NIL");
+    runtime_error("uses School; begin School.LCM(0bi,0bi); end.","E_DIV_ZERO");
+    runtime_error("uses School; begin School.GCD(new BigInteger[0]); end.","E_RANGE");
+    runtime_error("uses School; begin BinFormat(1bi,2147483647); end.","E_LIMIT");
+    runtime_error("uses School; begin DecBig(StringOfChar('0',65536),2); end.","E_LIMIT");
+    compile_error("uses School; begin DigitsToBigInteger(Arr(1,2)); end.","E_TYPE");
+    compile_error("uses School; begin var a:integer:=DecBig('12',10); end.","E_TYPE");
+    abc::ExecutionOptions options; std::size_t polls=0; options.cancelled=[&]{return ++polls>30;};
+    error([&]{(void)run("uses School; begin BinFormat(1bi,10000,''); end.","",options);},"E_CANCELLED");
+    options={}; options.allocation_limit=5;
+    error([&]{(void)run("uses School; begin DecBig('FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF',16); end.","",options);},"E_LIMIT");
+    options={}; options.instruction_limit=50;
+    error([&]{(void)run("uses School; begin DecBig(StringOfChar('0',1000),2); end.","",options);},"E_LIMIT");
+    auto invalid=abc::compile("uses School; begin DecBig('10',2).Digits.DigitsToBigInteger; end.");
+    for (auto& instruction:invalid.code) if (instruction.op==abc::Op::school_list) instruction.type=abc::Type::big_integer;
+    error([&]{abc::verify(invalid);},"E_BYTECODE");
 }
 
 void string_arrays() {
@@ -2641,6 +2672,7 @@ int main() {
     string_cursor_input();
     string_arrays();
     school_library();
+    school_big_integer_library();
     school_fold_library();
     unicode_identifiers_and_school_aliases();
     unicode_character_library();

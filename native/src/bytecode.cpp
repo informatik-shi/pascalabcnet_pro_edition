@@ -398,7 +398,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if (!compound(type) || !indexed_sequence(type_info(program,type).kind) || type_info(program,type).rank!=1
                 || instruction.operand<64 || instruction.operand>=64+program.types.size()) invalid(instruction,"Invalid School MinMax input");
             const auto element=type_info(program,type).element; const auto& tuple=type_info(program,static_cast<Type>(instruction.operand));
-            if ((element!=Type::integer && element!=Type::int64 && element!=Type::real) || tuple.kind!=CompoundKind::tuple || tuple.fields.size()!=2
+            if ((element!=Type::integer && element!=Type::int64 && element!=Type::real && element!=Type::big_integer) || tuple.kind!=CompoundKind::tuple || tuple.fields.size()!=2
                 || tuple.fields[0].type!=element || tuple.fields[1].type!=element) invalid(instruction,"Invalid School MinMax result");
             break;
         }
@@ -410,7 +410,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         }
         case Op::school_fold:
             if (instruction.operand>static_cast<std::size_t>(SchoolFold::lcm) || !compound(type) || type_info(program,type).kind!=CompoundKind::array
-                || type_info(program,type).rank!=1 || type_info(program,type).element!=Type::int64) invalid(instruction,"Invalid School GCD/LCM fold");
+                || type_info(program,type).rank!=1 || (type_info(program,type).element!=Type::int64 && type_info(program,type).element!=Type::big_integer)) invalid(instruction,"Invalid School GCD/LCM fold");
             break;
         case Op::replace_last:
             if (type!=Type::string || instruction.operand) invalid(instruction,"Invalid ReplaceLast");
@@ -721,7 +721,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         case Op::tuple_literal: case Op::school_pair:
             for (auto field=type_info(program,instruction.type).fields.rbegin();field!=type_info(program,instruction.type).fields.rend();++field) require(field->type);
             stack.push_back(instruction.type); break;
-        case Op::school_fold: require(instruction.type); stack.push_back(Type::int64); break;
+        case Op::school_fold: require(instruction.type); stack.push_back(type_info(program,instruction.type).element); break;
         case Op::replace_last: require(Type::string); require(Type::string); require(reference_type(Type::string)); break;
         case Op::replace_many: require(static_cast<Type>(instruction.operand)); require(instruction.type); require(Type::string); stack.push_back(Type::string); break;
         case Op::school_list: {

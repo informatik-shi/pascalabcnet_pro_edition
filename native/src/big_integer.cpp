@@ -76,6 +76,22 @@ BigInteger BigInteger::parse(std::string_view text,unsigned base) {
 std::string BigInteger::text(unsigned base) const {
     if (base<2 || base>36) throw std::invalid_argument("Invalid BigInteger radix");
     if (zero()) return "0";
+    if ((base&(base-1))==0) {
+        unsigned width=0; for (auto radix=base;radix>1;radix>>=1) ++width;
+        const auto bit_count=bits(),count=(bit_count+width-1)/width;
+        std::string result; result.reserve(count+(negative() ? 1 : 0));
+        if (negative()) result+='-';
+        constexpr std::string_view alphabet="0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+        for (auto i=count;i>0;--i) {
+            unsigned digit=0;
+            for (unsigned bit=0;bit<width;++bit) {
+                const auto position=(i-1)*width+bit;
+                if (position<bit_count) digit|=((rep_->number.dp[position/MP_DIGIT_BIT]>>(position%MP_DIGIT_BIT))&1U)<<bit;
+            }
+            result+=alphabet[digit];
+        }
+        return result;
+    }
     std::string result(bits()+2,'\0'); std::size_t written=0;
     check(mp_to_radix(&rep().number,result.data(),result.size(),&written,static_cast<int>(base)));
     if (!written || written>result.size()) throw std::logic_error("Invalid BigInteger output size");
