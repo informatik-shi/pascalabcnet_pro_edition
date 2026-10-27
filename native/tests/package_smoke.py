@@ -22,6 +22,8 @@ def main():
             folder = Path(temporary)
             with zipfile.ZipFile(archive) as package:
                 package.extractall(folder)
+            if not (folder / "licenses" / "PCRE2-LICENCE.md").is_file():
+                raise RuntimeError(f"{name} PCRE2 license is missing")
             env = os.environ.copy()
             windows = env.get("SystemRoot", r"C:\Windows")
             env["PATH"] = str(Path(windows) / "System32") + os.pathsep + windows
@@ -121,6 +123,7 @@ def main():
                 ("school-factors.pas", "Множители 360: [2,2,2,3,3,5]\nПростые делители: [2,3,5]\nДелители 12: [1,2,3,4,6,12]\nЧисло делителей 360: 24\nБольшое число: [71,839,1471,6857]\n"),
                 ("school-text.pas", "Последовательная замена: cc\nПосимвольный перевод: bc\nПоследнее вхождение: раз-два-три\nПодстроки: кот пёс\nЧисла int64: [2147483648,-7]\nИмпликация: False\n"),
                 ("school-swap.pas", "Обмен: пёс кот пёс\nОбратно: кот пёс кот\nПустые совпадения: aaa\n"),
+                ("regex-search.pas", "Есть число: True\nПервое число: 123\nБез числа: []\nПроверка: True\n"),
                 ("russian-identifiers.pas", "Ответ: 42\nНОД: 6\nНОК: 90\n"),
                 ("big-integers.pas", "100! = 93326215443944152681699238856266700490715968264381621468592963895217599993229915608941463976156518286253697920827223758251185210916864000000000000000000000000\nЦелый корень квадрата: 123456789012345678901234567890\nНОД: 6\nСдвиги: 16\n"),
                 ("big-integer-files.pas", "Из файла: 246913578024691357802469135780\n"),
@@ -168,6 +171,8 @@ def main():
             for expression, code, english, russian in [
                 ("School.НОК(0,0)", "E_DIV_ZERO", "Division by zero", "Деление на ноль"),
                 ("var s:string:='[x'; SwapSubstr(s,'[','x')", "E_REGEX", "Invalid regular expression", "Некорректное регулярное выражение"),
+                ("Writeln(IsMatch('abc','['))", "E_REGEX", "Invalid regular expression", "Некорректное регулярное выражение"),
+                ("Writeln(MatchValue('abc','['))", "E_REGEX", "Invalid regular expression", "Некорректное регулярное выражение"),
                 ("var s:string:='a'; SwapSubstr(s,'a','a')", "E_KEY", "Duplicate swap key", "Повторяющийся ключ замены"),
                 ("var s:string:='a.b acb z'; SwapSubstr(s,'a.b','z')", "E_KEY", "Matched text is not a swap key", "Совпавший текст не является ключом замены"),
                 ("var a:=new Addr32('256.0.0.1')", "E_FORMAT", "Invalid IPv4 address", "Некорректная запись адреса IPv4"),
@@ -494,6 +499,7 @@ def main():
             results[-1]["lazy_typed_ip_sequences"] = "passed"
             results[-1]["array_list_sequence_views"] = "passed"
             results[-1]["school_swap_substrings_and_bilingual_regex_errors"] = "passed"
+            results[-1]["regex_is_match_and_first_value"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 

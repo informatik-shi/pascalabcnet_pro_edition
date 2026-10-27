@@ -5,4 +5,5 @@ namespace abc {
 struct Values;
 std::u16string regex_swap(Values& values, std::u16string_view text, std::u16string_view first,
     std::u16string_view second, const ExecutionOptions& options, std::uint64_t& work);
+Value regex_search(Values& values, const Value& text, const Value& pattern, bool match_value, const ExecutionOptions& options);
 }

@@ -179,6 +179,30 @@ void school_swap_substrings() {
     result("uses School; begin var texts:="+array(texts)+"; var keys:="+array(keys)+"; foreach var text in texts do foreach var first in keys do foreach var second in keys do if first<>second then begin var s:string:=text; SwapSubstr(s,first,second); Writeln(s); end; end.",expected);
 }
 
+void regex_search_library() {
+    result("begin Writeln(IsMatch('abc123','[0-9]+'),' ',Regex.IsMatch('abc','[0-9]+'),' ',PABCSystem.IsMatch('abc','^a')); Writeln('abc123'.MatchValue('[0-9]+'),' ',MatchValue('abc','x').Length); Writeln('Яя'.IsMatch('^Я'),' ',PABCSystem.MatchValue('a123b456','[0-9]+')); end.","True False True\n123 0\nTrue 123\n");
+    result("begin Writeln(IsMatch('',''),' ',IsMatch('abc',''),' ',MatchValue('abc','').Length); Writeln(MatchValue('aaab','a+'),' ',MatchValue('ab','(a|ab)')); Writeln(IsMatch('Я','\\p{L}'),' ',IsMatch('١','\\d')); end.","True True 0\naaa a\nTrue True\n");
+    result("begin Writeln(IsMatch('A','(?i)a'),' ',IsMatch('a'#13'b','a.b'),' ',IsMatch('a'#10'b','a.b')); Writeln(MatchValue('a'#0'b',#0).Length,' ',Ord(MatchValue(#55356#57101,'.')[1])); end.","True True False\n1 55356\n");
+    result("var order:string; function Text:string; begin order:=order+'T'; Result:='abc123'; end; function Pattern:string; begin order:=order+'P'; Result:='[0-9]+'; end; begin Writeln(Text().MatchValue(Pattern()),' ',order); end.","123 TP\n");
+    result("function IsMatch(s,p:string):boolean; begin Result:=False; end; begin Writeln(IsMatch('a','a'),' ',PABCSystem.IsMatch('a','a'),' ',Regex.IsMatch('a','a')); end.","False True True\n");
+    result("type R=record IsMatch:integer; end; begin var Regex:R; Regex.IsMatch:=7; Writeln(Regex.IsMatch); end.","7\n");
+    for (const auto source:{"begin IsMatch(nil,'a'); end.","begin MatchValue('abc',nil); end.",
+        "begin var s:string:=nil; Writeln(s.IsMatch('a')); end.","begin var s:string:=nil; Writeln(s.MatchValue('a')); end."}) runtime_error(source,"E_NIL");
+    for (const auto source:{"begin IsMatch('abc','['); end.","begin MatchValue('abc','['); end.",
+        "begin IsMatch(nil,'['); end.","begin MatchValue(nil,'['); end.","begin IsMatch('abc','(*UTF)a'); end."}) runtime_error(source,"E_REGEX");
+    for (const auto source:{"begin IsMatch(1,'a'); end.","begin IsMatch('ab'); end.","begin MatchValue('ab','a',0); end.",
+        "begin Writeln('ab'.IsMatch('a',0)); end.","begin Regex.IsMatch('ab','a',0); end."}) compile_error(source,"E_TYPE");
+    abc::ExecutionOptions options; options.allocation_limit=100;
+    error([&]{(void)run("begin IsMatch('a','a'); end.","",options);},"E_LIMIT");
+    options={}; options.instruction_limit=2000;
+    error([&]{(void)run("begin IsMatch(StringOfChar('a',100)+'!','(a+)+$'); end.","",options);},"E_LIMIT");
+    options={}; std::size_t polls=0; options.cancelled=[&]{return ++polls>12;};
+    error([&]{(void)run("begin MatchValue(StringOfChar('a',100)+'!','(a+)+$'); end.","",options);},"E_CANCELLED");
+    auto invalid=abc::compile("begin Writeln(IsMatch('ab','a')); end.");
+    for (auto& instruction:invalid.code) if (instruction.op==abc::Op::call_builtin) instruction.type=abc::Type::string;
+    error([&]{abc::verify(invalid);},"E_BYTECODE");
+}
+
 void school_minmax_library() {
     result("uses School; begin Writeln(MinMax(Arr(4,-7,9,2)),' ',School.MinMax(Arr(int64(-9223372036854775808),MaxInt64))); var a:=new List<real>; a.Add(1.5); a.Add(-2.25); Writeln(a.MinMax); Writeln(MinMax(new integer[0]),' ',MinMax(new int64[0])); var r:=MinMax(new real[0]); Writeln(r.Item1>1e308,' ',r.Item2< -1e308); end.","(-7,9) (-9223372036854775808,9223372036854775807)\n(-2.25,1.5)\n(2147483647,-2147483648) (9223372036854775807,-9223372036854775808)\nTrue True\n");
     result("uses School; function MinMax(a:array of integer):integer; begin Result:=7; end; begin var a:=Arr(4,2,8); Writeln(MinMax(a),' ',School.MinMax(a),' ',a.MinMax()); end.","7 (2,8) (2,8)\n");
@@ -2942,6 +2966,7 @@ int main() {
     big_integer_library();
     school_text_library();
     school_swap_substrings();
+    regex_search_library();
     school_factor_library();
     sequence_mutations();
     arithmetic();

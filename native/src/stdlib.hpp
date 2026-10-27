@@ -2,7 +2,7 @@
 #include "abc/core.hpp"
 #include <span>
 
-namespace abc { class FileContext; class RandomContext; class ConsoleInput; struct SchoolContext; }
+namespace abc { class FileContext; class RandomContext; class ConsoleInput; struct SchoolContext; struct Values; }
 namespace abc::stdlib {
 enum class Function {
     abs, sqr, sign, minimum, maximum, sin, sinh, cos, cosh, tan, tanh,
@@ -22,7 +22,8 @@ enum class Function {
     school_bin, school_oct, school_hex, school_dec, school_dec_big, school_to_base, school_bin_format, school_perfect_square, school_is_prime, school_imp, school_replace_many, school_translate, school_gcd_alias, school_lcm_alias, school_sin_degrees, school_cos_degrees, school_tan_degrees,
     text_assign, text_reset, text_rewrite, text_append, text_close, text_flush,
     text_eof, text_eoln, text_seek_eof, text_seek_eoln, text_open_read, text_open_write, text_open_append,
-    text_read, text_read_line, text_read_word, text_skip_line, text_name, text_full_name, text_read_end, text_erase, text_rename
+    text_read, text_read_line, text_read_word, text_skip_line, text_name, text_full_name, text_read_end, text_erase, text_rename,
+    regex_is_match, regex_match_value
 };
 struct Signature {
     std::string_view name;
@@ -39,6 +40,7 @@ struct Context {
     std::function<const Value&()> print_delimiter;
     const ExecutionOptions& options;
     SchoolContext& school;
+    Values& values;
 };
 // One catalog is shared by the type checker, bytecode verifier and VM.
 std::span<const Signature> signatures();

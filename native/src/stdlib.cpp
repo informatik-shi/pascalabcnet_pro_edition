@@ -10,6 +10,7 @@
 #include "school.hpp"
 #include "unicode.hpp"
 #include "big_integer_runtime.hpp"
+#include "regex.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -32,6 +33,8 @@ std::span<const Signature> signatures() {
         for (auto target:{Type::integer,Type::int64,Type::word,Type::byte,Type::shortint,Type::smallint,Type::longword,Type::uint64,Type::character})
             add(target==Type::character ? "char" : type_name(target),{Type::big_integer},target,Function::big_cast);
         add("tobiginteger",{Type::string},Type::big_integer,Function::big_parse);
+        add("ismatch",{Type::string,Type::string},Type::boolean,Function::regex_is_match);
+        add("matchvalue",{Type::string,Type::string},Type::string,Function::regex_match_value);
         add("$big_real_divide",{Type::big_integer,Type::real},Type::real,Function::big_real_divide);
         add("$big_real_divide",{Type::real,Type::big_integer},Type::real,Function::big_real_divide);
         add("$big_zero",{Type::big_integer},Type::boolean,Function::big_zero);
@@ -344,6 +347,8 @@ Value invoke(std::size_t id, std::span<const Value> arguments, SourceLocation lo
     auto& files=context.files; auto& random=context.random;
     const auto& signature = signatures()[id]; // Verified before execution.
     const auto function = signature.function;
+    if (function==Function::regex_is_match || function==Function::regex_match_value)
+        return regex_search(context.values,arguments[0],arguments[1],function==Function::regex_match_value,context.options);
     if (function>=Function::console_read && function<=Function::console_token) {
         if (!arguments.empty()) {
             context.write_text(std::holds_alternative<NilString>(arguments[0]) ? std::u16string_view{u"nil"} : std::u16string_view{string_text(arguments[0])},location);

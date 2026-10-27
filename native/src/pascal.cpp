@@ -970,6 +970,10 @@ private:
         }
         case SyntaxExprKind::field:
         case SyntaxExprKind::member_call: {
+            if (source.left->kind==SyntaxExprKind::name && !lookup(source.left->token) && source.left->token.text=="regex" && source.token.text=="ismatch") {
+                for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
+                result->kind=hir::ExprKind::call; bind_builtin(*result,"ismatch","pabcsystem"); break;
+            }
             if (source.left->kind==SyntaxExprKind::name && !lookup(source.left->token) && source.left->token.text=="biginteger") {
                 if (source.token.text=="zero" || source.token.text=="one" || source.token.text=="minusone") {
                     if (source.kind!=SyntaxExprKind::field) throw Error("E_TYPE",result->location,"BigInteger property is not callable");
@@ -1022,6 +1026,11 @@ private:
                 bind_builtin(*result,source.token.text,source.left->token.text); break;
             }
             result->left = expression(*source.left); const auto receiver = result->left->type;
+            if (receiver==Type::string && (source.token.text=="ismatch" || source.token.text=="matchvalue")) {
+                result->arguments.push_back(std::move(result->left));
+                for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
+                result->kind=hir::ExprKind::call; bind_builtin(*result,source.token.text,"pabcsystem"); break;
+            }
             if (imported_units_.contains("school") && ((receiver==Type::boolean && source.token.text=="imp")
                 || (receiver==Type::string && (source.token.text=="replacemany" || source.token.text=="translate" || source.token.text=="swapsubstr")))) {
                 result->arguments.push_back(std::move(result->left));
