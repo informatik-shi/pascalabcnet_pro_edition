@@ -58,6 +58,8 @@ private:
     void expression(const hir::Expr& node) {
         if (node.type == Type::invalid) throw Error("E_HIR", node.location, "Unresolved expression type");
         switch (node.kind) {
+        case hir::ExprKind::sequence_wrap:
+            expression(*node.left); emit(Op::sequence_wrap,node.left->type,static_cast<std::size_t>(node.type),node.location); break;
         case hir::ExprKind::sequence_call:
             expression(*node.left); emit(node.local ? Op::sequence_array : Op::sequence_count,node.left->type,node.local ? static_cast<std::size_t>(node.type) : 0,node.location); break;
         case hir::ExprKind::school_ip:
@@ -368,7 +370,11 @@ private:
             const auto done=emit(Op::jump_false,Type::invalid,0,node.location);
             local(Op::load,node.sequence_local,node.location); local(Op::load,node.index_local,node.location);
             emit(Op::get_index,sequence,sequence==Type::string || type_info(program_,sequence).rank==2 ? 1 : 0,node.location);
-            if (element!=node.target->type) emit(Op::convert,node.target->type,0,node.location);
+            if (element!=node.target->type) {
+                if (compound(node.target->type) && type_info(program_,node.target->type).kind==CompoundKind::sequence)
+                    emit(Op::sequence_wrap,element,static_cast<std::size_t>(node.target->type),node.location);
+                else emit(Op::convert,node.target->type,0,node.location);
+            }
             local(Op::store,node.target->local,node.location);
             loops_.emplace_back(); statement(*node.body);
             const auto advance=code_->size();
@@ -445,6 +451,13 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
     for (const auto& instruction : code) {
         const auto type = instruction.type;
         switch (instruction.op) {
+        case Op::sequence_wrap: {
+            if (!compound(type) || !indexed_sequence(type_info(program,type).kind) || type_info(program,type).rank!=1
+                || instruction.operand<64 || instruction.operand>=64+program.types.size()) invalid(instruction,"Invalid sequence view source");
+            const auto& target=type_info(program,static_cast<Type>(instruction.operand));
+            if (target.kind!=CompoundKind::sequence || target.element!=type_info(program,type).element) invalid(instruction,"Invalid sequence view element type");
+            break;
+        }
         case Op::sequence_begin: case Op::sequence_count: case Op::sequence_array:
             if (!compound(type) || type_info(program,type).kind!=CompoundKind::sequence) invalid(instruction,"Sequence instruction requires a statically typed sequence");
             if (instruction.op==Op::sequence_array) {
@@ -466,7 +479,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             break;
         }
         case Op::school_minmax: {
-            if (!compound(type) || !indexed_sequence(type_info(program,type).kind) || type_info(program,type).rank!=1
+            if (!compound(type) || (!indexed_sequence(type_info(program,type).kind) && type_info(program,type).kind!=CompoundKind::sequence) || type_info(program,type).rank!=1
                 || instruction.operand<64 || instruction.operand>=64+program.types.size()) invalid(instruction,"Invalid School MinMax input");
             const auto element=type_info(program,type).element; const auto& tuple=type_info(program,static_cast<Type>(instruction.operand));
             if ((element!=Type::integer && element!=Type::int64 && element!=Type::real && element!=Type::big_integer) || tuple.kind!=CompoundKind::tuple || tuple.fields.size()!=2
@@ -748,6 +761,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         switch (instruction.op) {
         case Op::iteration_version: require(instruction.type); stack.push_back(Type::int64); break;
         case Op::sequence_begin: require(instruction.type); stack.push_back(instruction.type); break;
+        case Op::sequence_wrap: require(instruction.type); stack.push_back(static_cast<Type>(instruction.operand)); break;
         case Op::sequence_count: require(instruction.type); stack.push_back(Type::integer); break;
         case Op::sequence_array: require(instruction.type); stack.push_back(static_cast<Type>(instruction.operand)); break;
         case Op::iteration_check: require(Type::int64); require(instruction.type); break;

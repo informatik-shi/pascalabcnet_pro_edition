@@ -823,7 +823,18 @@ private:
         if (const auto local = lookup(token)) return *local;
         throw Error("E_NAME", token.location, "Unknown name '" + token.text + "'");
     }
+    bool sequence_view(Type from,Type to,SourceLocation location) const {
+        return compound(from) && compound(to) && indexed_sequence(info(from,location).kind) && info(from,location).rank==1
+            && info(to,location).kind==CompoundKind::sequence && info(from,location).element==info(to,location).element;
+    }
     std::unique_ptr<hir::Expr> convert(std::unique_ptr<hir::Expr> expression, Type type) {
+        if (compound(type) && info(type,expression->location).kind==CompoundKind::sequence && compound(expression->type)
+            && indexed_sequence(info(expression->type,expression->location).kind)) {
+            const auto& source=info(expression->type,expression->location);
+            if (source.rank!=1 || source.element!=info(type,expression->location).element) throw Error("E_TYPE",expression->location,"Sequence element type must match the array/List element exactly");
+            auto result=std::make_unique<hir::Expr>(); result->kind=hir::ExprKind::sequence_wrap; result->type=type;
+            result->location=expression->location; result->left=std::move(expression); return result;
+        }
         if (expression->type!=type && expression->kind==hir::ExprKind::tuple_literal && compound(type) && info(type,expression->location).kind==CompoundKind::tuple) {
             const auto fields=info(type,expression->location).fields;
             if (fields.size()!=expression->arguments.size()) throw Error("E_TYPE",expression->location,"Tuple arity mismatch");
@@ -992,6 +1003,7 @@ private:
                 if (bind_school_table(*result,source,source.left->token.text)) break;
                 for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
                 if (bind_print(*result,source.token.text,source.left->token.text)) break;
+                if (bind_sequence_conversion(*result,source.token.text,source.left->token.text)) break;
                 if (bind_try_read(*result,source.token.text,source.left->token.text)) break;
                 if (bind_number_conversion(*result,source.token.text,source.left->token.text)) break;
                 if (bind_school_text(*result,source.token.text,source.left->token.text)) break;
@@ -1396,6 +1408,7 @@ private:
                 break;
             }
             if (bind_print(*result,source.token.text)) break;
+            if (bind_sequence_conversion(*result,source.token.text)) break;
             if (imported_units_.contains("school") && (source.token.text=="addr32" || source.token.text=="calcip")) {
                 bind_school_ip_constructor(*result,school_ip_type(source.token.text=="addr32" ? CompoundKind::school_address : CompoundKind::school_ip)); break;
             }
@@ -1536,6 +1549,8 @@ private:
             if ((op=="=" || op=="<>") && (compound(left) || compound(right))) {
                 if (left==Type::nil) { result->left=convert(std::move(result->left),right); left=right; }
                 if (right==Type::nil) { result->right=convert(std::move(result->right),left); right=left; }
+                if (left!=right && sequence_view(right,left,result->location)) { result->right=convert(std::move(result->right),left); right=left; }
+                if (left!=right && sequence_view(left,right,result->location)) { result->left=convert(std::move(result->left),right); left=right; }
                 if (left!=right) throw Error("E_TYPE",result->location,"Incompatible aggregate comparison");
                 result->type=Type::boolean;
             } else if (numeric(left) && numeric(right)) {
@@ -1630,8 +1645,8 @@ private:
             if (result.arguments.size()!=1 || !compound(result.arguments[0]->type)) throw Error("E_TYPE",result.location,"MinMax requires a typed numeric sequence");
             const auto& sequence=info(result.arguments[0]->type,result.location);
             const auto element=sequence.element;
-            if (!indexed_sequence(sequence.kind) || sequence.rank!=1 || (element!=Type::integer && element!=Type::int64 && element!=Type::real && element!=Type::big_integer))
-                throw Error("E_TYPE",result.location,"MinMax requires an integer, int64, real or BigInteger array/List");
+            if ((!indexed_sequence(sequence.kind) && sequence.kind!=CompoundKind::sequence) || sequence.rank!=1 || (element!=Type::integer && element!=Type::int64 && element!=Type::real && element!=Type::big_integer))
+                throw Error("E_TYPE",result.location,"MinMax requires a numeric array, List or sequence");
             result.left=std::move(result.arguments[0]); result.arguments.clear();
             result.type=tuple_type({element,element},result.location); result.kind=hir::ExprKind::school_minmax; return true;
         }
@@ -1645,6 +1660,18 @@ private:
         for (const auto& argument:result.arguments) elements.push_back(argument->type);
         result.type=tuple_type(elements,result.location); result.kind=pair ? hir::ExprKind::school_pair : hir::ExprKind::tuple_literal;
         return true;
+    }
+    bool bind_sequence_conversion(hir::Expr& result,std::string_view name,std::string_view unit={}) {
+        if ((name!="count" && name!="toarray") || (!unit.empty() && unit!="pabcsystem")) return false;
+        if (result.arguments.size()!=1) throw Error("E_TYPE",result.location,"Count/ToArray requires one sequence");
+        const auto source=result.arguments[0]->type;
+        if (!compound(source)) throw Error("E_TYPE",result.location,"Count/ToArray requires a typed sequence, array or List");
+        const auto source_info=info(source,result.location);
+        if (source_info.kind!=CompoundKind::sequence && !indexed_sequence(source_info.kind)) throw Error("E_TYPE",result.location,"Count/ToArray requires a typed sequence, array or List");
+        auto argument=std::move(result.arguments[0]); result.arguments.clear();
+        if (source_info.kind!=CompoundKind::sequence) argument=convert(std::move(argument),sequence_type(CompoundKind::sequence,source_info.element));
+        result.left=std::move(argument); result.kind=hir::ExprKind::sequence_call; result.local=name=="toarray" ? 1U : 0U;
+        result.type=result.local ? sequence_type(CompoundKind::array,source_info.element) : Type::integer; return true;
     }
     void bind_school_ip(hir::Expr& result,Type owner,SchoolIPMethod method) {
         const auto parameters=school_ip_parameters(owner,method);
@@ -2208,7 +2235,7 @@ private:
                     throw Error("E_UNSUPPORTED",name.location,"Function Result as foreach variable is not supported");
             }
             const auto type=module_.locals[control].type;
-            if (!can_widen(element,type)) throw Error("E_TYPE",name.location,"Foreach element cannot be converted to the iteration variable type");
+            if (!can_widen(element,type) && !sequence_view(element,type,name.location)) throw Error("E_TYPE",name.location,"Foreach element cannot be converted to the iteration variable type");
             auto temporary=[&](Type type) {
                 const auto local=module_.locals.size(); module_.locals.push_back({"$foreach_"+std::to_string(local),type,!in_routine_}); return local;
             };

@@ -514,6 +514,26 @@ void school_library() {
     error([&]{(void)run("uses School; begin BinFormat(1,10000,''); end.","",options);},"E_CANCELLED");
 }
 
+void collection_sequence_views() {
+    result("begin var a:=Arr(1,2); var s:sequence of integer:=a; Writeln(s=a,' ',a=s); var n:array of integer; s:=n; Writeln(s=n); foreach var row:sequence of integer in Arr(Arr(7),Arr(8)) do Writeln(row.ToArray); end.","True True\nTrue\n[7]\n[8]\n");
+    result("begin var a:=Arr(1,2); var s:sequence of integer:=a; a[0]:=9; a:=Arr(3); foreach var x in s do Write(x,' '); Writeln('|',Count(s),' ',PABCSystem.ToArray(s)); end.","9 2 |2 [9,2]\n");
+    result("begin var a:=Arr(1,2); var s:sequence of integer:=a; foreach var x in s do begin Writeln(x); a[1]:=9; end; var b:=s.ToArray; a[0]:=7; Writeln(b); end.","1\n9\n[1,9]\n");
+    result("begin var a:=new List<integer>; a.Add(1); var s:sequence of integer:=a; a.Add(2); Writeln(s.Count,' ',ToArray(a)); foreach var x in s do Write(x); Writeln; end.","2 [1,2]\n12\n");
+    result("begin var a:=Arr(1,2); var s:sequence of integer:=a; var t:sequence of integer:=a; Writeln(s=t); t:=Arr(1,2); Writeln(s=t); var n:array of integer; s:=n; var l:List<integer>; t:=l; Writeln(s=nil,' ',t=nil); end.","True\nFalse\nTrue True\n");
+    result("type R=record x:integer; end; function Change(r:R):integer; begin r.x:=99; Result:=r.x; end; begin var a:=new R[1]; a[0].x:=7; var s:sequence of R:=a; var b:=s.ToArray; b[0].x:=9; foreach var r in s do Writeln(Change(r)); Writeln(a[0].x,' ',b[0].x); end.","99\n7 9\n");
+    result("uses School; begin var s:sequence of BigInteger:=Arr(-2bi,18446744073709551616bi,7bi); Writeln(s.MinMax,' ',MinMax(s)); var l:=new List<integer>; l.Add(7); l.Add(-3); var q:sequence of integer:=l; Writeln(q.MinMax); var e:sequence of BigInteger:=new BigInteger[0]; Writeln(e.MinMax); end.","(-2,18446744073709551616) (-2,18446744073709551616)\n(-3,7)\n(0,0)\n");
+    result("function Count(a:array of integer):integer; begin Result:=7; end; begin Writeln(Count(Arr(1,2)),' ',PABCSystem.Count(Arr(1,2))); end.","7 2\n");
+    for (const auto source:{"begin var l:=new List<integer>; l.Add(1); l.Add(2); var s:sequence of integer:=l; foreach var x in s do l[0]:=9; end.","begin var l:=new List<integer>; l.Add(1); var s:sequence of integer:=l; foreach var x in s do l.Clear; end."}) runtime_error(source,"E_MODIFIED");
+    runtime_error("begin var a:array of integer; var s:sequence of integer:=a; foreach var x in s do Writeln(x); end.","E_NIL");
+    runtime_error("uses School; begin var a:array of integer; var s:sequence of integer:=a; MinMax(s); end.","E_NIL");
+    for (const auto source:{"begin var s:sequence of int64:=Arr(1,2); end.","begin var s:sequence of integer:=new integer[1,2]; end.","begin Count(new integer[1,2]); end.","begin var a:=new List<real>; var s:sequence of integer:=a; end."}) compile_error(source,"E_TYPE");
+    auto invalid=abc::compile("begin var s:sequence of integer:=Arr(1,2); end.");
+    for (auto& instruction:invalid.code) if (instruction.op==abc::Op::sequence_wrap) instruction.operand=0;
+    error([&]{abc::verify(invalid);},"E_BYTECODE");
+    abc::ExecutionOptions options; options.instruction_limit=100; options.allocation_limit=2100;
+    require(run("type R=record x:integer; end; begin var s:sequence of R:=new R[1000]; Writeln(s.Count); end.","",options)=="1000\n","Array sequence Count uses the source collection count without copying record elements");
+}
+
 void lazy_ip_sequences() {
     result("uses School; begin var c:=new CalcIP('128.0.0.1',2); var s:sequence of Addr32:=c.GenAddr; foreach var a in s do begin Writeln(a.Value); break; end; end.","128.0.0.1\n");
     result("uses School; begin var c:=new CalcIP('10.0.0.1',30); c.Network.Value:='0.0.0.0'; c.Broadcast.Value:='255.255.255.255'; var n:=0; foreach var s in c.GenAddrBin do begin Writeln(s); Inc(n); if n=2 then break; end; end.","00000000000000000000000000000000\n00000000000000000000000000000001\n");
@@ -2827,6 +2847,7 @@ int main() {
     string_value_methods();
     school_ip_classes();
     lazy_ip_sequences();
+    collection_sequence_views();
     school_big_integer_library();
     school_fold_library();
     unicode_identifiers_and_school_aliases();

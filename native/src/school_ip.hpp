@@ -46,8 +46,6 @@ inline constexpr std::array<std::string_view,3> school_address_fields{"$address"
 inline constexpr std::array<std::string_view,9> school_ip_fields{"$address","$netmask","$bitmask","$hosts","$wildcard","$network","$broadcast","$hostmin","$hostmax"};
 Value invoke_school_ip(Values& values,Type owner,SchoolIPMethod method,Type generated,std::span<const Value> arguments,const ExecutionOptions& options);
 std::u16string school_ip_text(const Program& program,const std::shared_ptr<Aggregate>& object,SourceLocation location);
-std::shared_ptr<Aggregate> school_sequence_begin(Values& values,const std::shared_ptr<Aggregate>& sequence);
-std::uint64_t school_sequence_length(const std::shared_ptr<Aggregate>& sequence,SourceLocation location);
-Value school_sequence_at(Values& values,const std::shared_ptr<Aggregate>& sequence,std::int64_t index);
-Value school_sequence_collect(Values& values,const std::shared_ptr<Aggregate>& sequence,Type array,const ExecutionOptions& options);
+void school_ip_sequence_start(SequenceState& state,SourceLocation location);
+Value school_ip_sequence_value(Values& values,Type element,const SequenceState& state,std::int64_t index);
 } // namespace abc
