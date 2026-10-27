@@ -126,6 +126,7 @@ def main():
                 ("school-big-integers.pas", "Число: 79228162514264337593543950335\nОснование 16: FFFFFFFFFFFFFFFFFFFFFFFF\nЦифры: [15,15,15,15,15,15,15,15,15,15,15,15,15,15,15,15,15,15,15,15,15,15,15,15]\nОбратное преобразование: 79228162514264337593543950335\nБайты: 00000000:00000001:00000000\nНОК массива: 55340232221128654848\nМинимум и максимум: (-79228162514264337593543950335,79228162514264337593543950335)\n"),
                 ("tuples.pas", "ответ: 42\nНОД и НОК: (6,90)\nНОД: 6; НОК: 90\n"),
                 ("school-minmax.pas", "Минимум: -7\nМаксимум: 42\nПара: (-7,42)\n"),
+                ("truth-tables.pas", "Исключающее ИЛИ:\n a b F\n -----\n 0 0 0\n 0 1 1\n 1 0 1\n 1 1 0\nТри переменные, только истинные строки:\n x y z F\n -------\n 1 1 1 1\n"),
                 ("unicode-characters.pas", "Нижний регистр: привет, ёжик! 𐐨\nВерхний регистр: ПРИВЕТ, ЁЖИК! 𐐀\nБуква: True; код: 1071\nАрабская цифра: True\n"),
                 ("structures.pas", "Точка: 3 4\nФакториал 10: 3628800\n1\n2\n5\n8\nИмен: 2\nПервое имя: Анна\n"),
                 ("files.pas", "Привет из C++ интерпретатора!\nПрочитано строк: 2\nВторая строка\n"),
@@ -161,6 +162,7 @@ def main():
             school_error = folder / "Ошибки School.pas"
             for expression, code, english, russian in [
                 ("School.НОК(0,0)", "E_DIV_ZERO", "Division by zero", "Деление на ноль"),
+                ("TrueTablePrint(nil)", "E_NIL", "Cannot access a nil reference", "Нельзя обратиться к пустой ссылке nil"),
                 ("School.НОДНОК(0,0)", "E_DIV_ZERO", "Division by zero", "Деление на ноль"),
                 ("var t:(integer,integer); Writeln(t.Item1)", "E_NIL", "Cannot access a nil reference", "Нельзя обратиться к пустой ссылке nil"),
                 ("School.GCD()", "E_RANGE", "Argument list cannot be empty", "Список аргументов не может быть пустым"),
@@ -177,6 +179,19 @@ def main():
                         or f"EN: {english}" not in invalid.stderr or f"RU: {russian}" not in invalid.stderr
                         or f"{school_error}:3:" not in invalid.stderr):
                     raise RuntimeError(f"{name} bilingual School diagnostic failed: {invalid.stderr!r}")
+            school_error.write_text("uses School;\nfunction F(a:array of boolean):boolean; begin Result:=True; end;\nbegin\n TrueTable(-1,F);\nend.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(school_error)], text=True, encoding="utf-8",
+                                     capture_output=True, cwd=folder, env=env, timeout=10)
+            if (invalid.returncode != 1 or invalid.stdout or "E_RANGE" not in invalid.stderr
+                    or "EN: Truth-table variable count must be between 0 and 30" not in invalid.stderr
+                    or "RU: Число переменных таблицы истинности должно быть от 0 до 30" not in invalid.stderr
+                    or f"{school_error}:4:" not in invalid.stderr):
+                raise RuntimeError(f"{name} bilingual truth-table count error failed: {invalid.stderr!r}")
+            school_error.write_text("uses School;\nfunction F(a,b:boolean):integer; begin Result:=1; end;\nbegin Writeln('must never run'); TrueTable(F); end.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(school_error)], text=True, encoding="utf-8",
+                                     capture_output=True, cwd=folder, env=env, timeout=10)
+            if invalid.returncode != 1 or invalid.stdout or "E_TYPE" not in invalid.stderr:
+                raise RuntimeError(f"{name} truth-table function types were not checked before output")
             school_error.write_text("begin Writeln('must never run'); Bin(7); end.", encoding="utf-8")
             invalid = subprocess.run([runner, "run", str(school_error)], text=True, encoding="utf-8",
                                      capture_output=True, cwd=folder, env=env, timeout=10)
@@ -458,6 +473,8 @@ def main():
             results[-1]["typed_immutable_tuples_and_school_pairs"] = "passed"
             results[-1]["school_minmax_arrays_and_lists"] = "passed"
             results[-1]["biginteger_language_arithmetic_and_io"] = "passed"
+            results[-1]["school_biginteger_overloads"] = "passed"
+            results[-1]["school_typed_truth_tables_and_printing"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 

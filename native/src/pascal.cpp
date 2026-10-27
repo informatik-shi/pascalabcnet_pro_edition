@@ -963,12 +963,14 @@ private:
                     }
                 }
                 result->kind=hir::ExprKind::call;
+                if (bind_school_table(*result,source,source.left->token.text)) break;
                 for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
                 if (bind_print(*result,source.token.text,source.left->token.text)) break;
                 if (bind_try_read(*result,source.token.text,source.left->token.text)) break;
                 if (bind_number_conversion(*result,source.token.text,source.left->token.text)) break;
                 if (bind_school_text(*result,source.token.text,source.left->token.text)) break;
                 if (bind_school_fold(*result,source.token.text,source.left->token.text)) break;
+                if (bind_school_table_print(*result,source.token.text,source.left->token.text)) break;
                 if (bind_tuple(*result,source.token.text,source.left->token.text)) break;
                 if (bind_string_read(*result,source.token.text,source.left->token.text)) break;
                 if (bind_string_array(*result,source.token.text,source.left->token.text)) break;
@@ -1316,6 +1318,7 @@ private:
         case SyntaxExprKind::call: {
             if (lookup(source.token) && source.token.text != current_name_) throw Error("E_TYPE", result->location, "Variable is not callable: '" + source.token.text + "'");
             result->kind = hir::ExprKind::call;
+            if (!routine_names_.contains(source.token.text) && bind_school_table(*result,source)) break;
             for (const auto& argument : source.arguments) result->arguments.push_back(expression(*argument));
             if (auto routine = routine_names_.find(source.token.text); routine != routine_names_.end()) {
                 const auto& signature = module_.routines[routine->second].signature;
@@ -1335,6 +1338,7 @@ private:
             if (bind_number_conversion(*result,source.token.text)) break;
             if (bind_school_text(*result,source.token.text)) break;
             if (bind_school_fold(*result,source.token.text)) break;
+            if (bind_school_table_print(*result,source.token.text)) break;
             if (bind_tuple(*result,source.token.text)) break;
             if (bind_string_read(*result,source.token.text)) break;
             if (bind_string_array(*result,source.token.text)) break;
@@ -1552,7 +1556,7 @@ private:
             const auto& sequence=info(result.arguments[0]->type,result.location);
             const auto element=sequence.element;
             if (!indexed_sequence(sequence.kind) || sequence.rank!=1 || (element!=Type::integer && element!=Type::int64 && element!=Type::real && element!=Type::big_integer))
-                throw Error("E_TYPE",result.location,"MinMax requires an integer, int64 or real array/List");
+                throw Error("E_TYPE",result.location,"MinMax requires an integer, int64, real or BigInteger array/List");
             result.left=std::move(result.arguments[0]); result.arguments.clear();
             result.type=tuple_type({element,element},result.location); result.kind=hir::ExprKind::school_minmax; return true;
         }
@@ -1566,6 +1570,52 @@ private:
         for (const auto& argument:result.arguments) elements.push_back(argument->type);
         result.type=tuple_type(elements,result.location); result.kind=pair ? hir::ExprKind::school_pair : hir::ExprKind::tuple_literal;
         return true;
+    }
+    bool bind_school_table(hir::Expr& result,const SyntaxExpr& source,std::string_view unit={}) {
+        if (source.token.text!="truetable" || (!unit.empty() && unit!="school")) return false;
+        if (!imported_units_.contains("school")) throw Error("E_NAME",result.location,"TrueTable requires uses School");
+        if (source.arguments.empty() || source.arguments.size()>2) throw Error("E_TYPE",result.location,"TrueTable requires a typed boolean function and optional variable count");
+        const auto& callback=*source.arguments.back();
+        if (callback.kind!=SyntaxExprKind::name || (lookup(callback.token) && callback.token.text!=current_name_) || !routine_names_.contains(callback.token.text))
+            throw Error("E_TYPE",callback.token.location,"TrueTable requires a named user function with known parameter and result types");
+        const auto routine=routine_names_.at(callback.token.text); const auto& signature=module_.routines[routine].signature;
+        if (signature.result!=Type::boolean) throw Error("E_TYPE",callback.token.location,"TrueTable function must return boolean");
+        const bool general=source.arguments.size()==2;
+        const auto array=sequence_type(CompoundKind::array,Type::boolean);
+        if (general) {
+            if (signature.parameters.size()!=1 || signature.parameters[0].by_reference || signature.parameters[0].type!=array)
+                throw Error("E_TYPE",callback.token.location,"TrueTable(n,f) requires a value parameter of array of boolean");
+            result.left=convert(expression(*source.arguments[0]),Type::integer);
+        } else {
+            if (signature.parameters.size()<2 || signature.parameters.size()>5) throw Error("E_TYPE",callback.token.location,"TrueTable(f) requires two to five boolean parameters");
+            for (const auto& parameter:signature.parameters) if (parameter.type!=Type::boolean || parameter.by_reference)
+                throw Error("E_TYPE",callback.token.location,"TrueTable requires value boolean parameters");
+            result.left=std::make_unique<hir::Expr>(); result.left->kind=hir::ExprKind::literal; result.left->type=Type::integer;
+            result.left->value=static_cast<std::int32_t>(signature.parameters.size()); result.left->location=result.location;
+        }
+        result.kind=hir::ExprKind::school_table; result.local=routine; result.type=sequence_type(CompoundKind::array,Type::boolean,2);
+        result.operation_type=general ? array : Type::invalid;
+        const auto temporary=[&](Type type) {
+            const auto index=module_.locals.size(); module_.locals.push_back({"$truetable_"+std::to_string(index),type,!in_routine_}); result.temporaries.push_back(index);
+        };
+        temporary(result.type); temporary(Type::integer); temporary(Type::integer);
+        if (general) { temporary(array); temporary(Type::integer); }
+        return true;
+    }
+    bool bind_school_table_print(hir::Expr& result,std::string_view name,std::string_view unit={}) {
+        if (name!="truetableprint" || (!unit.empty() && unit!="school") || !imported_units_.contains("school")) return false;
+        if (result.arguments.empty() || result.arguments.size()>3) throw Error("E_TYPE",result.location,"TrueTablePrint requires a boolean matrix, optional filter and names");
+        result.left=convert(std::move(result.arguments[0]),sequence_type(CompoundKind::array,Type::boolean,2));
+        result.arguments.erase(result.arguments.begin());
+        if (result.arguments.empty()) {
+            auto filter=std::make_unique<hir::Expr>(); filter->kind=hir::ExprKind::literal; filter->type=Type::integer;
+            filter->value=std::int32_t{2}; filter->location=result.location; result.arguments.push_back(std::move(filter));
+        } else result.arguments[0]=convert(std::move(result.arguments[0]),Type::integer);
+        if (result.arguments.size()==1) {
+            auto names=std::make_unique<hir::Expr>(); names->kind=hir::ExprKind::literal; names->type=Type::string;
+            names->value=std::u16string{u"abcde"}; names->location=result.location; result.arguments.push_back(std::move(names));
+        } else result.arguments[1]=convert(std::move(result.arguments[1]),Type::string);
+        result.kind=hir::ExprKind::school_table_print; result.type=Type::unit; (void)print_delimiter(); return true;
     }
     bool bind_school_fold(hir::Expr& result, std::string_view name, std::string_view unit = {}) {
         if ((name!="gcd" && name!="lcm") || (!unit.empty() && unit!="school") || !imported_units_.contains("school")) return false;

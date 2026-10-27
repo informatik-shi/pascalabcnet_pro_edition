@@ -4,6 +4,8 @@ namespace abc {
 Error runtime_error(RuntimeError id, SourceLocation location, std::string_view context) {
     const char *code, *english, *russian;
     switch (id) {
+    case RuntimeError::school_table_variables:
+        code="E_RANGE"; english="Truth-table variable count must be between 0 and 30"; russian="Число переменных таблицы истинности должно быть от 0 до 30"; break;
     case RuntimeError::big_integer_limit:
         code="E_LIMIT"; english="BigInteger size limit exceeded"; russian="Превышен допустимый размер BigInteger"; break;
     case RuntimeError::power_exponent:

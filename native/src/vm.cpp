@@ -190,6 +190,15 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
             const auto sequence=std::get<std::shared_ptr<Aggregate>>(pop());
             stack.emplace_back(school_minmax(values,sequence,static_cast<Type>(instruction.operand),options)); break;
         }
+        case Op::school_table_new: {
+            const auto count=std::get<std::int32_t>(pop());
+            if (count<0 || count>30) trap(instruction,RuntimeError::school_table_variables);
+            stack.emplace_back(values.matrix(instruction.type,static_cast<std::int32_t>(std::uint32_t{1}<<count),count+1)); break;
+        }
+        case Op::school_table_print: {
+            const auto names=pop(); const auto filter=std::get<std::int32_t>(pop()); const auto table=std::get<std::shared_ptr<Aggregate>>(pop());
+            school_table_print(table,filter,names,instruction.location,services); break;
+        }
         case Op::tuple_literal: case Op::school_pair: {
             const auto& fields=type_info(program,instruction.type).fields;
             auto tuple=std::make_shared<Aggregate>(); tuple->type=instruction.type; tuple->items.resize(fields.size());

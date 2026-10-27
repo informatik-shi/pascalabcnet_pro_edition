@@ -59,6 +59,48 @@ private:
         switch (node.kind) {
         case hir::ExprKind::school_minmax:
             expression(*node.left); emit(Op::school_minmax,node.left->type,static_cast<std::size_t>(node.type),node.location); break;
+        case hir::ExprKind::school_table_print:
+            expression(*node.left); for (const auto& argument:node.arguments) expression(*argument);
+            emit(Op::school_table_print,node.left->type,0,node.location); break;
+        case hir::ExprKind::school_table: {
+            const auto matrix=node.temporaries[0],row=node.temporaries[1],count=node.temporaries[2];
+            const auto load=[&](std::size_t index) { local(Op::load,index,node.location); };
+            const auto store=[&](std::size_t index) { local(Op::store,index,node.location); };
+            const auto number=[&](std::int32_t n) { constant(n,node.location); };
+            const auto operation=[&](Op op,Type type=Type::integer) { emit(op,type,0,node.location); };
+            const auto increment=[&](std::size_t index) { load(index); number(1); operation(Op::add); store(index); };
+            expression(*node.left); store(count); load(count); operation(Op::school_table_new,node.type); store(matrix);
+            number(0); store(row);
+            const auto start=code_->size();
+            load(row); load(matrix); number(0); emit(Op::array_query,node.type,static_cast<std::size_t>(ArrayQuery::length),node.location);
+            operation(Op::less); const auto finish=emit(Op::jump_false,Type::invalid,0,node.location);
+            if (node.operation_type!=Type::invalid) {
+                const auto values=node.temporaries[3],column=node.temporaries[4];
+                load(count); operation(Op::array_new,node.operation_type); store(values); number(0); store(column);
+                const auto begin_column=code_->size(); load(column); load(count); operation(Op::less);
+                const auto end_column=emit(Op::jump_false,Type::invalid,0,node.location);
+                load(values); load(column); operation(Op::ref_index,node.operation_type);
+                load(row); load(count); load(column); operation(Op::subtract); number(1); operation(Op::subtract);
+                operation(Op::shift_right); number(1); operation(Op::bit_and); number(0); operation(Op::not_equal); operation(Op::store_ref,Type::boolean);
+                load(matrix); load(row); load(column); operation(Op::ref_index,node.type);
+                load(values); load(column); operation(Op::get_index,node.operation_type); operation(Op::store_ref,Type::boolean);
+                increment(column); emit(Op::jump,Type::invalid,begin_column,node.location); (*code_)[end_column].operand=code_->size();
+                load(matrix); load(row); load(count); operation(Op::ref_index,node.type); load(values);
+            } else {
+                const auto arity=program_.routines[node.local].parameters.size();
+                for (std::size_t column=0;column<arity;++column) {
+                    load(matrix); load(row); number(static_cast<std::int32_t>(column)); operation(Op::ref_index,node.type);
+                    load(row); number(static_cast<std::int32_t>(arity-column-1)); operation(Op::shift_right);
+                    number(1); operation(Op::bit_and); number(0); operation(Op::not_equal); operation(Op::store_ref,Type::boolean);
+                }
+                load(matrix); load(row); load(count); operation(Op::ref_index,node.type);
+                for (std::size_t column=0;column<arity;++column) {
+                    load(matrix); load(row); number(static_cast<std::int32_t>(column)); operation(Op::get_index,node.type);
+                }
+            }
+            emit(Op::call_user,Type::boolean,node.local,node.location); operation(Op::store_ref,Type::boolean);
+            increment(row); emit(Op::jump,Type::invalid,start,node.location); (*code_)[finish].operand=code_->size(); load(matrix); break;
+        }
         case hir::ExprKind::tuple_literal: case hir::ExprKind::school_pair:
             for (const auto& argument:node.arguments) expression(*argument);
             emit(node.kind==hir::ExprKind::tuple_literal ? Op::tuple_literal : Op::school_pair,node.type,0,node.location); break;
@@ -402,6 +444,10 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
                 || tuple.fields[0].type!=element || tuple.fields[1].type!=element) invalid(instruction,"Invalid School MinMax result");
             break;
         }
+        case Op::school_table_print: case Op::school_table_new:
+            if (!compound(type) || type_info(program,type).kind!=CompoundKind::array || type_info(program,type).rank!=2
+                || type_info(program,type).element!=Type::boolean || instruction.operand) invalid(instruction,"Invalid School truth-table output");
+            break;
         case Op::tuple_literal: case Op::school_pair: {
             if (!compound(type) || type_info(program,type).kind!=CompoundKind::tuple || instruction.operand) invalid(instruction,"Invalid tuple construction");
             const auto& fields=type_info(program,type).fields;
@@ -718,6 +764,8 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             }
             break;
         case Op::school_minmax: require(instruction.type); stack.push_back(static_cast<Type>(instruction.operand)); break;
+        case Op::school_table_print: require(Type::string); require(Type::integer); require(instruction.type); break;
+        case Op::school_table_new: require(Type::integer); stack.push_back(instruction.type); break;
         case Op::tuple_literal: case Op::school_pair:
             for (auto field=type_info(program,instruction.type).fields.rbegin();field!=type_info(program,instruction.type).fields.rend();++field) require(field->type);
             stack.push_back(instruction.type); break;

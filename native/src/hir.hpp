@@ -7,7 +7,7 @@ namespace abc::hir {
 
 enum class ExprKind { literal, local, convert, unary, binary, call, default_value,
     index, field, array_new, array_literal, length, user_call, list_add, list_remove, list_clear, list_contains,
-    read_lines, write_lines, array_copy, array_high, sequence_sort, sequence_fill, null_literal, endpoint_call, buffer_call, association_call, linked_call, file_output, random_array, fill_random_array, sequence_mutate, swap_values, write_array, read_array, array_query, write_matrix, object_text, try_read, number_conversion, string_read, string_array, school_list, replace_last, replace_many, school_fold, tuple_literal, school_pair, school_minmax };
+    read_lines, write_lines, array_copy, array_high, sequence_sort, sequence_fill, null_literal, endpoint_call, buffer_call, association_call, linked_call, file_output, random_array, fill_random_array, sequence_mutate, swap_values, write_array, read_array, array_query, write_matrix, object_text, try_read, number_conversion, string_read, string_array, school_list, replace_last, replace_many, school_fold, tuple_literal, school_pair, school_minmax, school_table_print, school_table };
 struct Expr {
     ExprKind kind;
     Type type;
@@ -18,6 +18,7 @@ struct Expr {
     std::unique_ptr<Expr> left, right;
     std::vector<std::unique_ptr<Expr>> arguments{};
     Type operation_type=Type::invalid;
+    std::vector<std::size_t> temporaries{};
 };
 
 enum class StmtKind { block, assign, print, read, conditional, loop, call, return_stmt, resize_array, increment, string_mutation,

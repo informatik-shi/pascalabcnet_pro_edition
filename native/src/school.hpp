@@ -13,6 +13,7 @@ Value school_fold(Values& values,const std::shared_ptr<Aggregate>& array,SchoolF
 std::int64_t school_pair(std::int64_t a, std::int64_t b, bool lcm, SourceLocation location);
 std::pair<std::int64_t,std::int64_t> school_pair_values(std::int64_t a,std::int64_t b,SourceLocation location);
 std::shared_ptr<Aggregate> school_minmax(Values& values,const std::shared_ptr<Aggregate>& sequence,Type tuple,const ExecutionOptions& options);
+void school_table_print(const std::shared_ptr<Aggregate>& table,std::int32_t filter,const Value& names,SourceLocation location,stdlib::Context& context);
 }
 
 namespace abc::stdlib {

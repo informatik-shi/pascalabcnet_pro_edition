@@ -513,6 +513,64 @@ void school_library() {
     error([&]{(void)run("uses School; begin BinFormat(1,10000,''); end.","",options);},"E_CANCELLED");
 }
 
+void school_truth_tables() {
+    result("uses School; function F(a,b:boolean):boolean; begin Result:=a xor b; end; begin var t:=TrueTable(F); Writeln(t.RowCount,' ',t.ColCount); TrueTablePrint(t); end.","4 3\n a b F\n -----\n 0 0 0\n 0 1 1\n 1 0 1\n 1 1 0\n");
+    for (unsigned arity=2;arity<=5;++arity) {
+        std::string parameters,expression;
+        for (unsigned i=0;i<arity;++i) { if (i) { parameters+=","; expression+=" xor "; } const auto name=std::string(1,static_cast<char>('a'+i)); parameters+=name; expression+=name; }
+        const auto source="uses School; function F("+parameters+":boolean):boolean; begin Result:="+expression+"; end; begin var t:=School.TrueTable(F); foreach var x in t do Write(Ord(x)); end.";
+        std::string expected;
+        for (unsigned row=0;row<(1U<<arity);++row) {
+            unsigned parity=0;
+            for (unsigned column=0;column<arity;++column) { const auto bit=(row>>(arity-column-1))&1U; expected+=char('0'+bit); parity^=bit; }
+            expected+=char('0'+parity);
+        }
+        result(source,expected);
+    }
+    result("uses School; function F(a:array of boolean):boolean; begin Result:=True; foreach var v in a do Result:=Result and v; end; begin TrueTablePrint(TrueTable(3,F),1,'xyz'); TrueTablePrint(TrueTable(0,F)); end."," x y z F\n -------\n 1 1 1 1\n F\n -\n 1\n");
+    result("uses School; var calls:integer; var first:array of boolean; function F(a:array of boolean):boolean; begin Inc(calls); if calls=1 then first:=a; a[0]:=True; Result:=a[1]; end; function Count:integer; begin Write('N'); Result:=2; end; begin var t:=TrueTable(Count,F); Writeln(calls,' ',first,' ',t[0,0],' ',t[1,0],' ',t[1,2]); end.","N4 [True,False] False False True\n");
+    result("uses School; function F(a,b:boolean):boolean; begin Write(Ord(a),Ord(b),'|'); Result:=a; end; function Build:array[,] of boolean; begin Result:=TrueTable(F); end; begin var t:=Build; Writeln(t[3,2]); end.","00|01|10|11|True\n");
+    result("uses School; var level:integer; function F(a,b:boolean):boolean; begin if level=0 then begin Inc(level); var t:=TrueTable(F); Dec(level); Result:=t[3,2]; end else Result:=a and b; end; begin Writeln(TrueTable(F)[0,2]); end.","True\n");
+    for (const auto source:{"uses School; function F(a:integer;b:boolean):boolean; begin Result:=b; end; begin TrueTable(F); end.","uses School; function F(var a:boolean;b:boolean):boolean; begin Result:=a; end; begin TrueTable(F); end.","uses School; function F(a,b:boolean):integer; begin Result:=1; end; begin TrueTable(F); end.","uses School; function F(a:boolean):boolean; begin Result:=a; end; begin TrueTable(F); end.","uses School; function F(a,b:boolean):boolean; begin Result:=a; end; begin TrueTable(2,F); end.","uses School; function F(var a:array of boolean):boolean; begin Result:=True; end; begin TrueTable(2,F); end.","uses School; begin TrueTable(2,True); end."}) compile_error(source,"E_TYPE");
+    compile_error("function F(a,b:boolean):boolean; begin Result:=a; end; begin TrueTable(F); end.","E_NAME");
+    const std::string prefix="uses School; function F(a:array of boolean):boolean; begin Result:=True; end; begin TrueTable(";
+    runtime_error(prefix+"-1,F); end.","E_RANGE"); runtime_error(prefix+"31,F); end.","E_RANGE"); runtime_error(prefix+"30,F); end.","E_LIMIT");
+    auto invalid=abc::compile(prefix+"1,F); end.");
+    for (auto& instruction:invalid.code) if (instruction.op==abc::Op::school_table_new) instruction.operand=1;
+    error([&]{abc::verify(invalid);},"E_BYTECODE");
+    abc::ExecutionOptions options; options.instruction_limit=100;
+    error([&]{(void)run(prefix+"10,F); end.","",options);},"E_LIMIT");
+}
+
+void school_truth_table_print() {
+    const std::string table="var a:=new boolean[4,3]; a[1,1]:=True; a[1,2]:=True; a[2,0]:=True; a[2,2]:=True; a[3,0]:=True; a[3,1]:=True;";
+    result("uses School; begin "+table+" TrueTablePrint(a); end."," a b F\n -----\n 0 0 0\n 0 1 1\n 1 0 1\n 1 1 0\n");
+    result("uses School; begin "+table+" School.TrueTablePrint(a,0,'XYZ'); end."," X Y F\n -----\n 0 0 0\n 1 1 0\n");
+    result("uses School; begin "+table+" TrueTablePrint(a,1,'x'); end."," x   F\n -----\n 0 1 1\n 1 0 1\n");
+    result("uses School; begin TrueTablePrint(new boolean[1,1],-7); TrueTablePrint(new boolean[0,3]); end."," F\n -\n 0\n a b F\n -----\n");
+    result("uses School; begin PrintDelimDefault:='|'; TrueTablePrint(new boolean[0,3],2,'x'); PrintDelimDefault:=nil; TrueTablePrint(new boolean[0,3]); end."," x| |F\n -----\n anilbnilF\n -----\n");
+    result("uses School; begin PrintDelimDefault:=''; TrueTablePrint(new boolean[0,3],2,'🌍x'); end."," 🌍F\n -----\n");
+    result("uses School; var m:array[,] of boolean; function Filter:integer; begin Write('F'); SetLength(m,0,0); Result:=2; end; function Names:string; begin Write('N'); Result:='xy'; end; begin m:=new boolean[1,2]; TrueTablePrint(m,Filter,Names); Writeln(m.Length); end.","FN x F\n ---\n 0 0\n0\n");
+    result("uses School; procedure TrueTablePrint(a:array[,] of boolean); begin Write('own'); end; begin TrueTablePrint(new boolean[0,1]); School.TrueTablePrint(new boolean[0,1]); end.","own F\n -\n");
+    for (const auto source:{"uses School; begin TrueTablePrint(nil); end.","uses School; begin TrueTablePrint(new boolean[0,2],2,nil); end."}) runtime_error(source,"E_NIL");
+    runtime_error("uses School; begin TrueTablePrint(new boolean[0,0]); end.","E_RANGE");
+    runtime_error("uses School; begin TrueTablePrint(new boolean[0,1048578]); end.","E_LIMIT");
+    compile_error("begin TrueTablePrint(new boolean[0,2]); end.","E_NAME");
+    for (const auto source:{"uses School; begin TrueTablePrint(); end.","uses School; begin TrueTablePrint(Arr(False)); end.","uses School; begin TrueTablePrint(new integer[2,3]); end.","uses School; begin TrueTablePrint(new boolean[0,2],True); end.","uses School; begin TrueTablePrint(new boolean[0,2],2,7); end.","uses School; begin var x:=TrueTablePrint(new boolean[0,2]); end."}) compile_error(source,"E_TYPE");
+    auto invalid=abc::compile("uses School; begin TrueTablePrint(new boolean[0,2]); end.");
+    for (auto& instruction:invalid.code) if (instruction.op==abc::Op::school_table_print) instruction.operand=1;
+    error([&]{abc::verify(invalid);},"E_BYTECODE");
+    invalid=abc::compile("uses School; begin TrueTablePrint(new boolean[0,2]); end.");
+    invalid.types[0].element=abc::Type::integer;
+    error([&]{abc::verify(invalid);},"E_BYTECODE");
+    abc::ExecutionOptions options; options.instruction_limit=50;
+    error([&]{(void)run("uses School; begin TrueTablePrint(new boolean[100,2],1); end.","",options);},"E_LIMIT");
+    options={}; options.output_limit=10;
+    error([&]{(void)run("uses School; begin TrueTablePrint(new boolean[0,3]); end.","",options);},"E_LIMIT");
+    options={}; std::size_t polls=0; options.cancelled=[&]{return ++polls>30;};
+    error([&]{(void)run("uses School; begin TrueTablePrint(new boolean[10000,2],1); end.","",options);},"E_CANCELLED");
+}
+
 void school_big_integer_library() {
     result("uses School; begin var u:uint64:=1; Writeln(u.Digits,' ',GCD(u)); end.","[1] 1\n");
     result("uses School; begin Writeln(Bin(-1024bi),' ',Oct(18446744073709551616bi),' ',Hex(-18446744073709551616bi)); Writeln(ToBase(18446744073709551616bi,16),' ',(-42bi).ToBase(2)); Writeln(ToBase('18446744073709551616',16),'|',ToBase('bad',16),'|',ToBase(nil,2)); end.","10000000000 2000000000000000000000 10000000000000000\n10000000000000000 0\n10000000000000000||\n");
@@ -2672,6 +2730,8 @@ int main() {
     string_cursor_input();
     string_arrays();
     school_library();
+    school_truth_table_print();
+    school_truth_tables();
     school_big_integer_library();
     school_fold_library();
     unicode_identifiers_and_school_aliases();

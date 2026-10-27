@@ -68,6 +68,35 @@ void school_replace_last(Values& values, const std::shared_ptr<Cell>& receiver, 
     values.write(receiver,*stdlib::invoke_text(stdlib::Function::insert_string,insert,values.location));
 }
 
+void school_table_print(const std::shared_ptr<Aggregate>& table,std::int32_t filter,const Value& names,SourceLocation location,stdlib::Context& context) {
+    if (table->nil || std::holds_alternative<NilString>(names)) throw runtime_error(RuntimeError::nil_reference,location);
+    if (!table->columns) throw runtime_error(RuntimeError::string_length,location);
+    const auto variables=table->columns-1;
+    if (variables>1'048'576) throw runtime_error(RuntimeError::string_limit,location);
+    TextWork work{context.options,location};
+    auto header=string_text(names).substr(0,variables); header.resize(variables,u' ');
+    const auto write=[&](std::u16string_view text) { context.write_text(text,location); };
+    write(u" ");
+    for (char16_t character:header) {
+        work.check(); write(std::u16string_view(&character,1));
+        const auto& delimiter=context.print_delimiter();
+        write(std::holds_alternative<NilString>(delimiter) ? std::u16string_view{u"nil"} : std::u16string_view{string_text(delimiter)});
+    }
+    write(u"F\n");
+    const auto dashes=2*table->columns-1;
+    if (dashes>1'048'576) throw runtime_error(RuntimeError::string_limit,location);
+    write(std::u16string{u" "}+std::u16string(dashes,u'-')); write(u"\n");
+    for (std::size_t row=0;row<table->rows;++row) {
+        work.check(); const auto start=row*table->columns;
+        const auto value=std::get<bool>(table->items[start+variables]->value);
+        if ((filter==0 && value) || (filter==1 && !value)) continue;
+        for (std::size_t column=0;column<table->columns;++column) {
+            work.check(); write(std::get<bool>(table->items[start+column]->value) ? u" 1" : u" 0");
+        }
+        write(u"\n");
+    }
+}
+
 namespace stdlib {
 Value invoke_school_text(Function function, std::span<const Value> arguments, SourceLocation location, const ExecutionOptions& options) {
     TextWork work{options,location};
