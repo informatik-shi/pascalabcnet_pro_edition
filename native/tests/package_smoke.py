@@ -118,6 +118,7 @@ def main():
                 ("school-bases.pas", "Двоичная: 101010\nШестнадцатеричная: FF\nИз HEX: 255\nБайты: 00000001 00000010\nКорень: 9\nСинус 30: 0.5\n"),
                 ("school-primes.pas", "7: True\n9: False\nБольшое простое: True\nБольшое составное: False\n"),
                 ("school-lists.pas", "Цифры: [2,0,2,6]\nОбратно: 2026\nПростые до 30: [2,3,5,7,11,13,17,19,23,29]\nПервые 5: [2,3,5,7,11]\n"),
+                ("school-factors.pas", "Множители 360: [2,2,2,3,3,5]\nПростые делители: [2,3,5]\nДелители 12: [1,2,3,4,6,12]\nЧисло делителей 360: 24\nБольшое число: [71,839,1471,6857]\n"),
                 ("structures.pas", "Точка: 3 4\nФакториал 10: 3628800\n1\n2\n5\n8\nИмен: 2\nПервое имя: Анна\n"),
                 ("files.pas", "Привет из C++ интерпретатора!\nПрочитано строк: 2\nВторая строка\n"),
                 ("collections.pas", "Стек: 30 20 10 \nОчередь: Анна Борис Вера \nПустая очередь: True\n"),
@@ -150,6 +151,7 @@ def main():
                 ("School.Dec('2',2)", "E_FORMAT", "Invalid digit in base notation", "Недопустимая цифра в записи числа"),
                 ("School.ToBase(1,1)", "E_RANGE", "Base must be between 2 and 36", "Основание системы счисления должно быть от 2 до 36"),
                 ("DigitsToInt64(Digits(15,16),10)", "E_RANGE", "A digit must be less than the base", "Цифра должна быть меньше основания системы счисления"),
+                ("Factorize(4611686022722355201)", "E_FACTOR", "Prime factorization failed", "Ошибка разложения на простые множители"),
             ]:
                 school_error.write_text(f"uses School;\nbegin\n {expression};\nend.", encoding="utf-8")
                 invalid = subprocess.run([runner, "run", str(school_error)], text=True, encoding="utf-8",
@@ -428,6 +430,7 @@ def main():
             results[-1]["bilingual_school_errors_and_unit_scope"] = "passed"
             results[-1]["school_prime_integer_and_int64"] = "passed"
             results[-1]["school_digits_and_prime_lists"] = "passed"
+            results[-1]["school_factors_and_divisors"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 

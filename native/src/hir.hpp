@@ -17,6 +17,7 @@ struct Expr {
     std::string operation;
     std::unique_ptr<Expr> left, right;
     std::vector<std::unique_ptr<Expr>> arguments{};
+    Type operation_type=Type::invalid;
 };
 
 enum class StmtKind { block, assign, print, read, conditional, loop, call, return_stmt, resize_array, increment, string_mutation,

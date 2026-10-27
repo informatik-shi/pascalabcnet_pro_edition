@@ -59,7 +59,7 @@ private:
         switch (node.kind) {
         case hir::ExprKind::school_list:
             for (const auto& argument:node.arguments) expression(*argument);
-            emit(Op::school_list,node.type==Type::int64 ? node.arguments[0]->type : node.type,node.local,node.location); break;
+            emit(Op::school_list,node.operation_type,node.local,node.location); break;
         case hir::ExprKind::string_array:
             expression(*node.left); if (node.right) expression(*node.right);
             emit(Op::string_array,node.type,node.local,node.location); break;
@@ -382,8 +382,9 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         const auto type = instruction.type;
         switch (instruction.op) {
         case Op::school_list:
-            if (instruction.operand>static_cast<std::size_t>(SchoolList::first_primes) || !compound(type)
-                || type_info(program,type).kind!=CompoundKind::list || type_info(program,type).rank!=1 || type_info(program,type).element!=Type::integer)
+            if (instruction.operand>static_cast<std::size_t>(SchoolList::divisors_count) || !compound(type)
+                || type_info(program,type).kind!=CompoundKind::list || type_info(program,type).rank!=1
+                || (type_info(program,type).element!=Type::integer && !(school_factor_method(static_cast<SchoolList>(instruction.operand)) && type_info(program,type).element==Type::int64)))
                 invalid(instruction,"Invalid School list operation");
             break;
         case Op::string_array:
@@ -670,7 +671,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             break;
         case Op::school_list: {
             const auto method=static_cast<SchoolList>(instruction.operand);
-            const auto parameters=school_list_parameters(method,instruction.type);
+            const auto parameters=school_list_parameters(method,instruction.type,type_info(program,instruction.type).element);
             for (auto parameter=parameters.rbegin();parameter!=parameters.rend();++parameter) require(*parameter);
             stack.push_back(school_list_result(method,instruction.type)); break;
         }
@@ -866,6 +867,18 @@ void verify(const Program& program) {
         verify_body(program,routine.code,&routine);
     }
     verify_body(program,program.code,nullptr);
+    std::optional<Type> school_cache_type;
+    const auto check_school_cache=[&](const std::vector<Instruction>& code) {
+        for (const auto& instruction:code) if (instruction.op==Op::school_list) {
+            const auto method=static_cast<SchoolList>(instruction.operand);
+            if (type_info(program,instruction.type).element!=Type::integer
+                || (method!=SchoolList::first_primes && method!=SchoolList::primes_range && !school_factor_method(method))) continue;
+            if (school_cache_type && *school_cache_type!=instruction.type) invalid(instruction,"Conflicting types for the shared School prime cache");
+            school_cache_type=instruction.type;
+        }
+    };
+    check_school_cache(program.code);
+    for (const auto& routine:program.routines) check_school_cache(routine.code);
 }
 
 } // namespace abc

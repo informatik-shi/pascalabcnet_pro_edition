@@ -180,7 +180,7 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
         switch (instruction.op) {
         case Op::school_list: {
             const auto method=static_cast<SchoolList>(instruction.operand);
-            const auto count=school_list_parameters(method,instruction.type).size();
+            const auto count=school_list_parameters(method,instruction.type,type_info(program,instruction.type).element).size();
             std::array<Value,2> arguments;
             for (std::size_t i=count;i>0;--i) arguments[i-1]=pop();
             stack.push_back(invoke_school_list(values,school,method,instruction.type,std::span<const Value>(arguments.data(),count),options)); break;

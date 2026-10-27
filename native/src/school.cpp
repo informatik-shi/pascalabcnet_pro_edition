@@ -5,6 +5,7 @@
 #include <cmath>
 #include <numbers>
 #include <array>
+#include <numeric>
 
 namespace abc::stdlib {
 namespace {
@@ -170,6 +171,23 @@ std::int64_t school_add(std::int64_t a, std::int64_t b, SourceLocation location)
     if ((b>0 && a>INT64_MAX-b) || (b<0 && a<INT64_MIN-b)) throw runtime_error(RuntimeError::integer_overflow,location);
     return a+b;
 }
+std::int64_t school_subtract(std::int64_t a, std::int64_t b, SourceLocation location) {
+    if ((b>0 && a<INT64_MIN+b) || (b<0 && a>INT64_MAX+b)) throw runtime_error(RuntimeError::integer_overflow,location);
+    return a-b;
+}
+std::int64_t school_divide(std::int64_t a, std::int64_t b, SourceLocation location) {
+    if (!b) throw runtime_error(RuntimeError::division_zero,location);
+    if (a==INT64_MIN && b== -1) throw runtime_error(RuntimeError::integer_overflow,location);
+    return a/b;
+}
+std::int64_t school_sqrt(std::int64_t n, SourceLocation location) {
+    if (n<0) throw runtime_error(RuntimeError::math_domain,location);
+    auto root=static_cast<std::uint64_t>(std::sqrt(static_cast<double>(n)));
+    const auto number=static_cast<std::uint64_t>(n);
+    while (root && root>number/root) --root;
+    while (root<3'037'000'499ULL && root+1<=number/(root+1)) ++root;
+    return static_cast<std::int64_t>(root);
+}
 struct SchoolLists {
     Values& values;
     SchoolContext& context;
@@ -270,10 +288,193 @@ struct SchoolLists {
         return primes;
     }
 };
+struct SchoolFactors {
+    SchoolLists& service;
+    bool wide;
+    void append(const std::shared_ptr<Aggregate>& list, std::int64_t n) {
+        const auto element=wide ? Type::int64 : Type::integer;
+        if (!wide && (n<INT32_MIN || n>INT32_MAX)) throw runtime_error(RuntimeError::integer_overflow,service.values.location);
+        auto cell=service.values.cell(element,wide ? Value{n} : Value{static_cast<std::int32_t>(n)});
+        service.values.own_list_cell(cell,list); list->items.push_back(std::move(cell)); ++list->version;
+    }
+    std::int64_t number(const std::shared_ptr<Cell>& cell) const {
+        return wide ? std::get<std::int64_t>(cell->value) : std::int64_t(std::get<std::int32_t>(cell->value));
+    }
+    void sort(const std::shared_ptr<Aggregate>& list) const {
+        std::sort(list->items.begin(),list->items.end(),[&](const auto& a,const auto& b) { return number(a)<number(b); });
+        ++list->version;
+    }
+    std::vector<std::int64_t> factors32(std::int32_t input) {
+        std::vector<std::int64_t> result;
+        if (input<2) return result;
+        const auto primes=wide ? service.context.primes : service.cache();
+        std::int64_t n=input; std::size_t index=0;
+        const auto prime_at=[&](std::size_t i) {
+            if (!primes) return i==0 ? std::int64_t{2} : static_cast<std::int64_t>(i)*2+1;
+            if (i>=primes->items.size()) throw runtime_error(RuntimeError::index_bounds,service.values.location);
+            return std::int64_t(std::get<std::int32_t>(primes->items[i]->value));
+        };
+        auto prime=prime_at(index);
+        while (prime*prime<=n) {
+            service.check();
+            if (!prime) throw runtime_error(RuntimeError::division_zero,service.values.location);
+            if (prime==1 || prime== -1) throw runtime_error(RuntimeError::instruction_limit,service.values.location);
+            while (n%prime==0) { service.check(); result.push_back(prime); n/=prime; }
+            prime=prime_at(++index);
+        }
+        if (result.empty()) result.push_back(input);
+        else if (n>1) result.push_back(n);
+        return result;
+    }
+    bool prime(std::uint64_t n, const SchoolContext& context) {
+        service.check();
+        return n<=INT32_MAX ? stdlib::small_prime(static_cast<std::int32_t>(n),service.values.location,service.options,context)
+            : stdlib::large_prime(n,service.values.location,service.options);
+    }
+    std::int64_t squfof(std::int64_t n) {
+        if (prime(static_cast<std::uint64_t>(n),service.context)) return n;
+        if (n%2==0) return 2;
+        const auto location=service.values.location;
+        const auto mul=[&](std::int64_t a,std::int64_t b) { return school_multiply(a,b,location); };
+        const auto add=[&](std::int64_t a,std::int64_t b) { return school_add(a,b,location); };
+        const auto sub=[&](std::int64_t a,std::int64_t b) { return school_subtract(a,b,location); };
+        const auto div=[&](std::int64_t a,std::int64_t b) { return school_divide(a,b,location); };
+        const auto sqrt=[&](std::int64_t a) { return school_sqrt(a,location); };
+        const auto root=sqrt(n);
+        if (mul(root,root)==n) return root;
+        for (auto multiplier:{1,3,5,7,11,15,21,33,35,55,77,105,165,231,385,1155}) {
+            service.check();
+            if (multiplier>1 && n%multiplier==0) return multiplier;
+            if (n>INT64_MAX/multiplier) break;
+            const auto mn=mul(multiplier,n);
+            auto r=sqrt(mn); const auto rn=r;
+            auto b=r; std::int64_t a=1;
+            const auto h=sub(mul(div(add(rn,b),a),a),b);
+            auto c=div(sub(mn,mul(h,h)),a);
+            const auto limit=mul(4,sqrt(mul(2,r)));
+            for (std::int64_t i=2;i<=limit;++i) {
+                service.check(static_cast<std::uint64_t>(i));
+                std::swap(a,c); auto q=div(add(rn,b),a);
+                const auto t=b; b=sub(mul(q,a),b); c=add(c,mul(q,sub(t,b)));
+                if (i%2) continue;
+                r=sqrt(c);
+                if (mul(r,r)!=c) continue;
+                q=div(sub(rn,b),r); auto v=add(mul(q,r),b);
+                auto w=div(sub(mn,mul(v,v)),r),u=r;
+                for (;;) {
+                    service.check(); std::swap(w,u); r=v; q=div(add(rn,v),u);
+                    v=sub(mul(q,u),v);
+                    if (v==r) break;
+                    w=add(w,mul(q,sub(r,v)));
+                }
+                if (u==INT64_MIN) throw runtime_error(RuntimeError::integer_overflow,location);
+                const auto divisor=std::gcd(n,u<0 ? -u : u);
+                if (divisor!=1) return divisor;
+            }
+        }
+        return -1;
+    }
+    std::uint64_t pollard(std::uint64_t n) {
+        for (auto p:{2U,3U,5U,7U,11U,13U,17U,19U,23U,29U,31U,37U}) if (n%p==0) return p;
+        std::uint64_t low=1,high=3'037'000'500ULL;
+        while (low+1<high) { const auto mid=low+(high-low)/2; if (mid<=n/mid) low=mid; else high=mid; }
+        if (low*low==n) return low;
+        stdlib::Modular63 arithmetic(n,service.values.location,service.options);
+        // Same deterministic polynomial constants and restart bound as School.pas.
+        // Reduce multiplication before addition instead of overflowing Sqr(x).
+        for (auto c:{1U,3U,5U,7U,11U,13U,17U,19U,23U,29U}) {
+            std::uint64_t x=2,y=2;
+            const auto next=[&](std::uint64_t value) { return (arithmetic.multiply(value,value)+c)%n; };
+            for (unsigned step=0;step<500'000;++step) {
+                service.check(step); x=next(x); y=next(next(y));
+                const auto divisor=std::gcd(x>y ? x-y : y-x,n);
+                if (divisor==1) continue;
+                if (divisor==n) break;
+                return divisor;
+            }
+        }
+        throw runtime_error(RuntimeError::school_factorization,service.values.location);
+    }
+    std::vector<std::int64_t> factors64(std::int64_t input, bool count_strategy=false) {
+        if (input<INT32_MIN) throw runtime_error(RuntimeError::integer_overflow,service.values.location);
+        if (input<2) return {};
+        auto n=input;
+        if (prime(static_cast<std::uint64_t>(n),service.context)) return {input};
+        std::vector<std::int64_t> result;
+        while (n>1) {
+            service.check(); auto divisor=squfof(n);
+            if (divisor== -1) divisor=static_cast<std::int64_t>(pollard(static_cast<std::uint64_t>(n)));
+            n/=divisor;
+            if (n==1 || prime(static_cast<std::uint64_t>(divisor),service.context)) result.push_back(divisor);
+            else if (divisor<=INT32_MAX) {
+                const auto factors=count_strategy ? factors32(static_cast<std::int32_t>(divisor)) : factors64(divisor);
+                result.insert(result.end(),factors.begin(),factors.end());
+            } else throw runtime_error(RuntimeError::school_factorization,service.values.location);
+        }
+        std::sort(result.begin(),result.end()); return result;
+    }
+    Value divisors32(std::int32_t input, bool count_only) {
+        auto list=service.values.array(service.type,0);
+        std::int32_t count=1; if (!count_only) append(list,1);
+        std::int64_t n=input; const auto primes=service.cache();
+        const auto extend=[&](std::int32_t old_count, std::int64_t prime) {
+            service.check();
+            if (old_count>INT32_MAX-count) throw runtime_error(RuntimeError::integer_overflow,service.values.location);
+            if (!count_only) {
+                const auto end=list->items.size();
+                for (auto i=end-static_cast<std::size_t>(old_count);i<end;++i) {
+                    service.check(i); append(list,school_multiply(number(list->items[i]),prime,service.values.location));
+                }
+            }
+            count+=old_count;
+        };
+        for (std::size_t i=0;i<primes->items.size();++i) {
+            service.check(i); const auto p=std::int64_t(std::get<std::int32_t>(primes->items[i]->value));
+            if (p*p>n) break;
+            if (!p) throw runtime_error(RuntimeError::division_zero,service.values.location);
+            if (p==1 || p== -1) throw runtime_error(RuntimeError::instruction_limit,service.values.location);
+            const auto old_count=count;
+            while (n%p==0) { extend(old_count,p); n/=p; }
+        }
+        if (n>1) extend(count,n);
+        if (count_only) return count;
+        sort(list); return list;
+    }
+    Value invoke(std::int64_t input, SchoolList method) {
+        if (!wide && (method==SchoolList::divisors || method==SchoolList::divisors_count))
+            return divisors32(static_cast<std::int32_t>(input),method==SchoolList::divisors_count);
+        auto factors=wide ? factors64(input,method==SchoolList::factors_count) : factors32(static_cast<std::int32_t>(input));
+        if (method==SchoolList::prime_divisors || method==SchoolList::prime_divisors_count)
+            factors.erase(std::unique(factors.begin(),factors.end()),factors.end());
+        if (method==SchoolList::factors_count || method==SchoolList::prime_divisors_count) return static_cast<std::int32_t>(factors.size());
+        auto list=service.values.array(service.type,0);
+        if (method!=SchoolList::divisors && method!=SchoolList::divisors_count) {
+            for (const auto factor:factors) { service.check(); append(list,factor); }
+            return list;
+        }
+        append(list,1);
+        for (std::size_t i=0;i<factors.size();) {
+            const auto p=factors[i]; std::size_t exponent=0;
+            while (i<factors.size() && factors[i]==p) { ++i; ++exponent; }
+            const auto current=list->items.size(); std::int64_t power=1;
+            for (std::size_t k=0;k<exponent;++k) {
+                power=school_multiply(power,p,service.values.location);
+                for (std::size_t j=0;j<current;++j) { service.check(j); append(list,school_multiply(number(list->items[j]),power,service.values.location)); }
+            }
+        }
+        if (method==SchoolList::divisors_count) return static_cast<std::int32_t>(list->items.size());
+        sort(list); return list;
+    }
+};
 }
 Value invoke_school_list(Values& values, SchoolContext& context, SchoolList method, Type list,
     std::span<const Value> arguments, const ExecutionOptions& options) {
     SchoolLists service{values,context,list,options};
+    if (school_factor_method(method)) {
+        const bool wide=type_info(values.program,list).element==Type::int64;
+        SchoolFactors factors{service,wide};
+        return factors.invoke(wide ? std::get<std::int64_t>(arguments[0]) : std::int64_t(std::get<std::int32_t>(arguments[0])),method);
+    }
     if (method==SchoolList::primes) return service.primes(std::get<std::int32_t>(arguments[0]));
     if (method==SchoolList::primes_range) return service.range(std::get<std::int32_t>(arguments[0]),std::get<std::int32_t>(arguments[1]));
     if (method==SchoolList::first_primes) return service.first(std::get<std::int32_t>(arguments[0]));

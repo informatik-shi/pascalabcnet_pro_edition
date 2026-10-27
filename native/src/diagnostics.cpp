@@ -4,6 +4,8 @@ namespace abc {
 Error runtime_error(RuntimeError id, SourceLocation location, std::string_view context) {
     const char *code, *english, *russian;
     switch (id) {
+    case RuntimeError::school_factorization:
+        code="E_FACTOR"; english="Prime factorization failed"; russian="Ошибка разложения на простые множители"; break;
     case RuntimeError::school_expanded_digit:
         code="E_RANGE"; english="A digit must be less than the base"; russian="Цифра должна быть меньше основания системы счисления"; break;
     case RuntimeError::school_base:

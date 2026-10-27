@@ -57,6 +57,68 @@ void runtime_error(std::string_view source, std::string_view code) {
     error([&] { (void)run(source); }, code,source);
 }
 
+void school_factor_library() {
+    const auto list=[](const std::vector<std::int64_t>& numbers) {
+        std::string text="[";
+        for (std::size_t i=0;i<numbers.size();++i) { if (i) text+=","; text+=std::to_string(numbers[i]); }
+        return text+"]";
+    };
+    std::string expected;
+    for (std::int64_t n= -2;n<=1000;++n) {
+        std::vector<std::int64_t> factors,unique,divisors;
+        auto remaining=n;
+        for (std::int64_t d=2;remaining>=2 && d<=remaining/d;++d) while (remaining%d==0) { factors.push_back(d); remaining/=d; }
+        if (remaining>=2) factors.push_back(remaining);
+        for (const auto d:factors) if (unique.empty() || unique.back()!=d) unique.push_back(d);
+        if (n<2) divisors.push_back(1);
+        else for (std::int64_t d=1;d<=n;++d) if (n%d==0) divisors.push_back(d);
+        expected+=list(factors)+"|"+list(unique)+"|"+std::to_string(factors.size())+"|"+std::to_string(unique.size())+"|"+list(divisors)+"|"+std::to_string(divisors.size())+"\n";
+    }
+    for (const auto wide:{false,true}) {
+        const std::string argument=wide ? "int64(n)" : "n";
+        result("uses School; begin for var n:=-2 to 1000 do Writeln(PrimeFactors("+argument+"),'|',PrimeDivisors("+argument+"),'|',PrimeFactorsCount("+argument+"),'|',PrimeDivisorsCount("+argument+"),'|',Divisors("+argument+"),'|',DivisorsCount("+argument+")); end.",expected);
+    }
+    result("uses School; begin Writeln(Factorize(360),' ',School.PrimeFactors(360),' ',(360).PrimeDivisors); Writeln((360).PrimeFactorsCount,' ',(360).PrimeDivisorsCount,' ',(360).DivisorsCount); Writeln(Divizors(12),' ',(12).Divizors,' ',int64(12).Divisors); end.","[2,2,2,3,3,5] [2,2,2,3,3,5] [2,3,5]\n6 3 24\n[1,2,3,4,6,12] [1,2,3,4,6,12] [1,2,3,4,6,12]\n");
+    result("uses School; begin var a:List<int64>:=Factorize(longword(4294967295)); var b:List<integer>:=byte(12).Factorize; Writeln(a,' ',b); Writeln(int64(600851475143).Factorize); Writeln(PrimeFactors(MaxInt64),' ',PrimeFactorsCount(MaxInt64),' ',PrimeDivisorsCount(MaxInt64),' ',DivisorsCount(MaxInt64)); end.","[3,5,17,257,65537] [2,2,3]\n[71,839,1471,6857]\n[7,7,73,127,337,92737,649657] 7 6 96\n");
+    result("uses School; begin Writeln(Factorize(4611686014132420609)); Writeln(Factorize(9223372036854775783)); Writeln(Divisors(9223372036854775783)); end.","[2147483647,2147483647]\n[9223372036854775783]\n[1,9223372036854775783]\n");
+    result("uses School; begin Writeln(Factorize(1000000016000000063)); Writeln(DivisorsCount(1000000016000000063)); end.","[1000000007,1000000009]\n4\n");
+    {
+        const auto prime=[](std::int64_t n) { for (std::int64_t d=2;d<=n/d;++d) if (n%d==0) return false; return n>=2; };
+        constexpr std::int64_t p=3037000493,q=3037000453;
+        require(prime(p) && prime(q),"Independent trial division proves both near-limit factors prime");
+        result("uses School; begin Writeln(Factorize("+std::to_string(p*q)+")); end.","[3037000453,3037000493]\n");
+    }
+    result("uses School; begin Writeln(Factorize(-2147483648),' ',Factorize(int64(-2147483648))); Writeln(Divisors(-2147483648),' ',Divisors(int64(-2147483648))); end.","[] []\n[1] [1]\n");
+    result("uses School; begin var a:=FirstPrimes(4794); a[0]:=17; Writeln(Factorize(4),' ',Factorize(int64(4)),' ',Divisors(4)); a.Clear; Writeln(Divisors(12),' ',DivisorsCount(12)); end.","[4] [4] [1,4]\n[1,12] 2\n");
+    result("uses School; function Factorize(n:integer):integer; begin Result:=7; end; begin Writeln(Factorize(12),' ',School.Factorize(12),' ',(12).Factorize); end.","7 [2,2,3] [2,2,3]\n");
+    for (const auto source:{"uses School; begin Factorize(-2147483649); end.","uses School; begin PrimeDivisorsCount(-9223372036854775808); end.","uses School; begin Divisors(-2147483649); end."}) runtime_error(source,"E_OVERFLOW");
+    runtime_error("uses School; begin var a:=FirstPrimes(4794); a.Clear; Factorize(2); end.","E_BOUNDS");
+    runtime_error("uses School; begin var a:=FirstPrimes(4794); a[0]:=0; Factorize(4); end.","E_DIV_ZERO");
+    runtime_error("uses School; begin var a:=FirstPrimes(4794); a[0]:=1; PrimeFactorsCount(4); end.","E_LIMIT");
+    runtime_error("uses School; begin var a:=Factorize(12); foreach var n in a do a[0]:=9; end.","E_MODIFIED");
+    runtime_error("uses School; begin Factorize(4611686022722355201); end.","E_FACTOR");
+    runtime_error("uses School; begin PrimeFactorsCount(4611686022722355201); end.","E_FACTOR");
+    for (const auto source:{"begin Factorize(12); end.","begin PrimeFactors(12); end.","begin Divisors(12); end."}) compile_error(source,"E_NAME");
+    for (const auto source:{"uses School; begin Factorize(1.5); end.","uses School; begin Divisors(1,2); end.",
+        "uses School; begin var n:uint64:=12; Factorize(n); end.","uses School; begin Divizors(int64(12)); end.",
+        "uses School; begin var a:List<integer>:=Factorize(int64(12)); end.","uses School; begin var a:List<int64>:=Factorize(12); end."}) compile_error(source,"E_TYPE");
+    auto program=abc::compile("uses School; begin var a:=Factorize(int64(12)); end.");
+    program.types[0].element=abc::Type::integer;
+    error([&]{abc::verify(program);},"E_BYTECODE");
+    program=abc::compile("uses School; begin FirstPrimes(1); end.");
+    program.types.push_back(program.types[0]);
+    program.code.push_back({abc::Op::school_list,static_cast<abc::Type>(65),static_cast<std::size_t>(abc::SchoolList::first_primes),{}});
+    error([&]{abc::verify(program);},"E_BYTECODE");
+    abc::ExecutionOptions options; options.allocation_limit=30;
+    error([&]{(void)run("uses School; begin Factorize(4611686018427387904); end.","",options);},"E_LIMIT");
+    error([&]{(void)run("uses School; begin DivisorsCount(4611686018427387904); end.","",options);},"E_LIMIT");
+    require(run("uses School; begin Writeln(PrimeFactorsCount(4611686018427387904)); end.","",options)=="62\n","Wide factor count does not allocate a result list");
+    options={}; std::size_t polls=0; options.cancelled=[&]{return ++polls>30;};
+    error([&]{(void)run("uses School; begin Factorize(1000000016000000063); end.","",options);},"E_CANCELLED");
+    options={}; options.instruction_limit=10;
+    error([&]{(void)run("uses School; begin Factorize(4611686018427387904); end.","",options);},"E_LIMIT");
+}
+
 void school_library() {
     result("uses School; begin Writeln(Digits(0),' ',Digits(-7),' ',Digits(-9223372036854775808)); Writeln(Digits(255,16),' ',School.Digits(7,2),' ',(35).Digits(36)); Writeln(Digits(123,1),' ',Digits(123,MaxInt)); end.","[0] [] []\n[15,15] [1,1,1] [35]\n[] [123]\n");
     result("uses School; begin var d:List<integer>:=Digits(12345); d[0]:=9; Writeln(d,' ',d.DigitsToInt64); var e:=new List<integer>; Writeln(e.DigitsToInt64(-2147483648)); e.Add(-1); e.Add(2); Writeln(DigitsToInt64(e)); end.","[9,2,3,4,5] 92345\n0\n-8\n");
@@ -2301,6 +2363,7 @@ int main() {
     string_cursor_input();
     string_arrays();
     school_library();
+    school_factor_library();
     sequence_mutations();
     arithmetic();
     verifier();
