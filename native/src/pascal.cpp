@@ -3,6 +3,7 @@
 #include "stdlib.hpp"
 #include "integer_values.hpp"
 #include "formatting.hpp"
+#include "unicode.hpp"
 
 
 #include <algorithm>
@@ -23,8 +24,7 @@ struct Token {
 };
 
 bool digit(char c) { return c >= '0' && c <= '9'; }
-bool letter(char c) { return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_'; }
-char lower(char c) { return c >= 'A' && c <= 'Z' ? static_cast<char>(c + ('a' - 'A')) : c; }
+bool letter(char32_t c) { return c==U'_' || (c<=0xffff && unicode::is_letter(static_cast<char16_t>(c))); }
 
 class Lexer {
 public:
@@ -38,9 +38,17 @@ public:
         skip();
         const auto start = position_;
         if (peek() == '\0' && position_.offset == source_.size()) return {TokenKind::eof, "", start};
-        if (letter(peek())) {
+        if (letter(point())) {
             std::string name;
-            do { name += lower(take()); } while (letter(peek()) || digit(peek()));
+            do {
+                const auto current=point();
+                const auto width=current<0x80 ? 1U : current<0x800 ? 2U : 3U;
+                for (unsigned i=0;i<width;++i) take();
+                const auto c=unicode::to_lower(static_cast<char16_t>(current));
+                if (c<0x80) name+=static_cast<char>(c);
+                else if (c<0x800) { name+=static_cast<char>(0xc0|(c>>6)); name+=static_cast<char>(0x80|(c&63)); }
+                else { name+=static_cast<char>(0xe0|(c>>12)); name+=static_cast<char>(0x80|((c>>6)&63)); name+=static_cast<char>(0x80|(c&63)); }
+            } while (letter(point()) || digit(peek()));
             return {TokenKind::name, std::move(name), start};
         }
         if (digit(peek())) {
@@ -82,7 +90,7 @@ public:
         if ((symbol == ":" && peek() == '=') || (symbol == "<" && (peek() == '=' || peek() == '>'))
             || (symbol == ">" && peek() == '=')) symbol += take();
         if (std::string_view(";:,.()[]+-*/=<> ").find(symbol.front()) == std::string_view::npos)
-            throw Error("E_SYNTAX", start, "Unsupported character (identifiers currently use ASCII letters)");
+            throw Error("E_SYNTAX", start, "Unsupported character in source");
         return {TokenKind::symbol, std::move(symbol), start};
     }
 
@@ -91,10 +99,23 @@ private:
     char peek(std::size_t ahead = 0) const {
         return position_.offset + ahead < source_.size() ? source_[position_.offset + ahead] : '\0';
     }
+    char32_t point() const {
+        // The constructor has already validated the entire UTF-8 source.
+        const auto first=static_cast<unsigned char>(peek());
+        if (first<0x80) return first;
+        const auto width=first<0xe0 ? 2U : first<0xf0 ? 3U : 4U;
+        char32_t result=first&(width==2 ? 31U : width==3 ? 15U : 7U);
+        for (unsigned i=1;i<width;++i) result=(result<<6)|(static_cast<unsigned char>(peek(i))&63U);
+        return result;
+    }
     char take() {
         const auto c = source_[position_.offset++];
         if (c == '\n') { ++position_.line; position_.column = 1; }
-        else ++position_.column;
+        else {
+            const auto byte=static_cast<unsigned char>(c);
+            // Offsets are bytes; displayed columns count UTF-16 code units.
+            if (byte<0x80 || byte>=0xc0) position_.column+=byte>=0xf0 ? 2 : 1;
+        }
         return c;
     }
     void skip() {
@@ -938,6 +959,14 @@ private:
                 result->arguments.push_back(std::move(result->left));
                 for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
                 (void)bind_random_array(*result,"fillrandom"); break;
+            }
+            if ((receiver==Type::character && (source.token.text=="tolower" || source.token.text=="toupper" || source.token.text=="isletter"
+                || source.token.text=="isdigit" || source.token.text=="islower" || source.token.text=="isupper" || source.token.text=="code"))
+                || (receiver==Type::string && (source.token.text=="tolower" || source.token.text=="toupper"))) {
+                result->arguments.push_back(std::move(result->left));
+                for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
+                const auto name=receiver==Type::string ? (source.token.text=="tolower" ? "$string_lower" : "$string_upper") : source.token.text;
+                result->kind=hir::ExprKind::call; bind_builtin(*result,name,"pabcsystem"); break;
             }
             if ((receiver==Type::string && source.token.text=="length") || (receiver==Type::character && source.token.text=="todigit")) {
                 if (!source.arguments.empty() || (receiver==Type::string && source.kind==SyntaxExprKind::member_call))

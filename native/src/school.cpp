@@ -1,6 +1,7 @@
 #include "school.hpp"
 #include "diagnostics.hpp"
 #include "runtime_values.hpp"
+#include "unicode.hpp"
 #include <algorithm>
 #include <cmath>
 #include <numbers>
@@ -80,6 +81,8 @@ bool large_prime(std::uint64_t number, SourceLocation location, const ExecutionO
 }
 Value invoke_school(Function function, std::span<const Value> arguments, SourceLocation location, const ExecutionOptions& options, SchoolContext& school) {
     if (function==Function::school_imp) return !std::get<bool>(arguments[0]) || std::get<bool>(arguments[1]);
+    if (function==Function::school_gcd_alias || function==Function::school_lcm_alias)
+        return school_pair(std::get<std::int64_t>(arguments[0]),std::get<std::int64_t>(arguments[1]),function==Function::school_lcm_alias,location);
     if (function==Function::school_replace_many || function==Function::school_translate) return invoke_school_text(function,arguments,location,options);
     constexpr std::u16string_view alphabet=u"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
     const auto check=[&](std::size_t index) {
@@ -105,9 +108,9 @@ Value invoke_school(Function function, std::span<const Value> arguments, SourceL
         if (std::holds_alternative<NilString>(arguments[0])) throw runtime_error(RuntimeError::nil_reference,location);
         const auto& text=string_text(arguments[0]);
         const auto digit=[](char16_t c)->unsigned {
+            c=static_cast<char16_t>(unicode::to_upper(c));
             if (c>=u'0' && c<=u'9') return c-u'0';
             if (c>=u'A' && c<=u'Z') return c-u'A'+10;
-            if (c>=u'a' && c<=u'z') return c-u'a'+10;
             return 36;
         };
         // The source validates every character before its BigInteger accumulation.
@@ -503,6 +506,16 @@ Value invoke_school_list(Values& values, SchoolContext& context, SchoolList meth
         power=school_multiply(power,base,values.location);
     }
     return result;
+}
+std::int64_t school_pair(std::int64_t a, std::int64_t b, bool lcm, SourceLocation location) {
+    const auto first=a,second=b;
+    while (b) {
+        if (a==INT64_MIN && b== -1) throw runtime_error(RuntimeError::integer_overflow,location);
+        const auto remainder=a%b; a=b; b=remainder;
+    }
+    const auto result=lcm ? school_multiply(school_divide(first,a,location),second,location) : a;
+    if (result==INT64_MIN) throw runtime_error(RuntimeError::integer_overflow,location);
+    return result<0 ? -result : result;
 }
 std::int64_t school_fold(const std::shared_ptr<Aggregate>& array, SchoolFold method, SourceLocation location, const ExecutionOptions& options) {
     const auto count=array->nil ? std::size_t{0} : array->items.size();

@@ -120,6 +120,8 @@ def main():
                 ("school-lists.pas", "Цифры: [2,0,2,6]\nОбратно: 2026\nПростые до 30: [2,3,5,7,11,13,17,19,23,29]\nПервые 5: [2,3,5,7,11]\n"),
                 ("school-factors.pas", "Множители 360: [2,2,2,3,3,5]\nПростые делители: [2,3,5]\nДелители 12: [1,2,3,4,6,12]\nЧисло делителей 360: 24\nБольшое число: [71,839,1471,6857]\n"),
                 ("school-text.pas", "Последовательная замена: cc\nПосимвольный перевод: bc\nПоследнее вхождение: раз-два-три\nПодстроки: кот пёс\nЧисла int64: [2147483648,-7]\nИмпликация: False\n"),
+                ("russian-identifiers.pas", "Ответ: 42\nНОД: 6\nНОК: 90\n"),
+                ("unicode-characters.pas", "Нижний регистр: привет, ёжик! 𐐨\nВерхний регистр: ПРИВЕТ, ЁЖИК! 𐐀\nБуква: True; код: 1071\nАрабская цифра: True\n"),
                 ("structures.pas", "Точка: 3 4\nФакториал 10: 3628800\n1\n2\n5\n8\nИмен: 2\nПервое имя: Анна\n"),
                 ("files.pas", "Привет из C++ интерпретатора!\nПрочитано строк: 2\nВторая строка\n"),
                 ("collections.pas", "Стек: 30 20 10 \nОчередь: Анна Борис Вера \nПустая очередь: True\n"),
@@ -153,6 +155,7 @@ def main():
             character = folder / "Ошибки символов.pas"
             school_error = folder / "Ошибки School.pas"
             for expression, code, english, russian in [
+                ("School.НОК(0,0)", "E_DIV_ZERO", "Division by zero", "Деление на ноль"),
                 ("School.GCD()", "E_RANGE", "Argument list cannot be empty", "Список аргументов не может быть пустым"),
                 ("School.Dec('2',2)", "E_FORMAT", "Invalid digit in base notation", "Недопустимая цифра в записи числа"),
                 ("School.ToBase(1,1)", "E_RANGE", "Base must be between 2 and 36", "Основание системы счисления должно быть от 2 до 36"),
@@ -172,6 +175,8 @@ def main():
                                      capture_output=True, cwd=folder, env=env, timeout=10)
             if invalid.returncode != 1 or invalid.stdout or "E_NAME" not in invalid.stderr:
                 raise RuntimeError(f"{name} School unit import was not checked before execution")
+            if not (folder / "licenses" / "Unicode-License.txt").is_file():
+                raise RuntimeError(f"{name} missing Unicode table license notice")
             if not (folder / "licenses" / "DotNet-Runtime-MIT.txt").is_file():
                 raise RuntimeError(f"{name} missing random algorithm license notice")
             character.write_text("begin Writeln('must never run'); WriteStringToFile('absent-unit.txt','bad'); end.", encoding="utf-8")
@@ -439,6 +444,9 @@ def main():
             results[-1]["school_digits_and_prime_lists"] = "passed"
             results[-1]["school_factors_and_divisors"] = "passed"
             results[-1]["school_text_and_implication"] = "passed"
+            results[-1]["school_int64_folds"] = "passed"
+            results[-1]["unicode_identifiers_and_school_aliases"] = "passed"
+            results[-1]["unicode_character_case_and_categories"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 

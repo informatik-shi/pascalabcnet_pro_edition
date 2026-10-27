@@ -57,6 +57,63 @@ void runtime_error(std::string_view source, std::string_view code) {
     error([&] { (void)run(source); }, code,source);
 }
 
+void unicode_character_library() {
+    result("begin Writeln(LowerCase('Ё'),' ',UpperCase('я'),' ',UpCase('ς'),' ',LowCase('Ä')); Writeln('Ж'.ToLower,' ','ж'.ToUpper(),' ','Я'.Code); Writeln(Code(#65535)); end.","ё Я Σ ä\nж Ж 1071\n65535\n");
+    result("begin Writeln('Я'.IsLetter,' ','字'.IsLetter,' ','ª'.IsLetter,' ','Ⅳ'.IsLetter,' ',#55296.IsLetter); Writeln('١'.IsDigit,' ','９'.IsDigit,' ','²'.IsDigit,' ','0'.IsDigit); Writeln('ß'.IsLower,' ','ǅ'.IsUpper,' ','Σ'.IsUpper,' ','中'.IsLower); end.","True True True False False\nTrue True False True\nTrue False True False\n");
+    result("begin var s:string:='ЯЁÄΣ𐐀'; Writeln(LowerCase(s),' ',s.ToLower()); s:='яёäς𐐨'; Writeln(UpperCase(s),' ',s.ToUpper); Writeln(Length(UpperCase('ß'+'')),' ',UpperCase('ß'+'')); end.","яёäσ𐐨 яёäσ𐐨\nЯЁÄΣ𐐀 ЯЁÄΣ𐐀\n1 ß\n");
+    result("begin Writeln(Ord(LowerCase(#55296)),' ',Ord(UpperCase(#56320))); var s:=#55296'Я'#56320; var t:=s.ToLower; Writeln(Length(t),' ',Ord(t[1]),' ',t[2],' ',Ord(t[3])); Writeln(LowerCase('')='',' ',UpperCase('')=''); end.","55296 56320\n3 55296 я 56320\nTrue True\n");
+    result("function UpperCase(c:char):char; begin Result:='X'; end; begin Writeln(UpperCase('я'),' ',PABCSystem.UpperCase('я'),' ','я'.ToUpper); end.","X Я Я\n");
+    runtime_error("begin var s:string; s:=nil; LowerCase(s); end.","E_NIL");
+    runtime_error("begin var s:string:=nil; s.ToUpper; end.","E_NIL");
+    runtime_error("begin var c:='١'; c.ToDigit; end.","E_FORMAT");
+    for (const auto source:{"begin IsLetter('ab'); end.","begin IsDigit(1); end.","begin var c:char:=LowerCase('ab'); end.",
+        "begin var s:='ab'; s.ToUpper(1); end.","begin var c:='я'; c.IsUpper(1); end."}) compile_error(source,"E_TYPE");
+    std::string expected;
+    for (char c='A';c<='Z';++c) expected+=char(c+32);
+    result("begin for var c:='A' to 'Z' do Write(c.ToLower); end.",expected);
+    abc::ExecutionOptions options; options.instruction_limit=100;
+    error([&]{(void)run("begin LowerCase(StringOfChar('A',10000)); end.","",options);},"E_LIMIT");
+    options={}; std::size_t polls=0; options.cancelled=[&]{return ++polls>20;};
+    std::string supplementary="x"; for (unsigned i=0;i<10000;++i) supplementary+="𐐨";
+    error([&]{(void)run("begin UpperCase('"+supplementary+"'); end.","",options);},"E_CANCELLED");
+}
+
+void unicode_identifiers_and_school_aliases() {
+    result("program Проверка; type Запись=record Поле:integer; end; var ДАННЫЕ:Запись; function Удвоить(Число:integer):integer; begin Result:=число*2; end; begin данные.поле:=21; Writeln(УДВОИТЬ(Данные.ПОЛЕ)); end.","42\n");
+    result("begin var ЁЖ:=7; var Äpfel:=3; var ΔΕΛΤΑ:=5; var 数字2:=9; Writeln(ёж,' ',äPFEL,' ',δελτα,' ',数字2); end.","7 3 5 9\n");
+    result("uses School; begin Writeln(НОД(18,30),' ',нок(18,30),' ',School.НоД(-18,30),' ',School.НоК(-18,30)); Writeln(НОД(-9223372036854775808,2),' ',НОК(0,-9223372036854775808)); end.","6 90 6 90\n2 0\n");
+    result("uses School; function НОД(a,b:integer):integer; begin Result:=7; end; begin Writeln(НОД(18,30),' ',School.НОД(18,30)); end.","7 6\n");
+    result("uses School; begin Writeln(School.Dec('ſ',36),' ',School.Dec('ı',36),' ',School.Dec('ſı',36)); end.","28 18 1026\n");
+    std::string expected;
+    for (int a= -12;a<=12;++a) for (int b= -12;b<=12;++b) {
+        auto left=a,right=b;
+        while (right) { const auto rem=left%right; left=right; right=rem; }
+        const auto gcd=left<0 ? -left : left;
+        expected+=std::to_string(gcd)+" "+std::to_string(gcd ? (a<0 ? -a : a)/gcd*(b<0 ? -b : b) : 0)+"\n";
+    }
+    result("uses School; begin for var a:=-12 to 12 do for var b:=-12 to 12 do if (a<>0) or (b<>0) then Writeln(НОД(a,b),' ',НОК(a,b)) else Writeln(НОД(a,b),' ',0); end.",expected);
+    compile_error("begin var СЧЁТ:=1; var счёт:=2; end.","E_DUPLICATE");
+    compile_error("type Р=record Ё:integer; ё:integer; end; begin end.","E_DUPLICATE");
+    compile_error("begin var á:=1; end.","E_SYNTAX");
+    compile_error("begin var 𐐀:=1; end.","E_SYNTAX");
+    compile_error("begin var a١:=1; end.","E_SYNTAX");
+    compile_error("begin НОД(2,4); end.","E_NAME");
+    compile_error("uses School; begin НОК(1.5,2); end.","E_TYPE");
+    compile_error("uses School; begin var n:integer:=НОД(2,4); end.","E_TYPE");
+    runtime_error("uses School; begin НОК(0,0); end.","E_DIV_ZERO");
+    for (const auto source:{"uses School; begin НОД(-9223372036854775808,0); end.",
+        "uses School; begin НОД(-9223372036854775808,-1); end.",
+        "uses School; begin НОК(-9223372036854775808,2); end.","uses School; begin НОК(MaxInt64,2); end."}) runtime_error(source,"E_OVERFLOW");
+    for (const auto& source:{std::string{"begin var ноль:=0; Writeln(1 div ноль); end."},std::string{"begin Writeln('я🌍'); неизвестное; end."}}) {
+        const auto offset=source.find(source.find("div")!=std::string::npos ? "div" : "неизвестное");
+        try { (void)run(source); require(false,"Expected a located Unicode diagnostic"); }
+        catch (const abc::Error& caught) {
+            require(caught.location.offset==offset && caught.location.column==abc::from_utf8(source.substr(0,offset)).size()+1,
+                "Diagnostics retain byte offsets and count UTF-16 columns after Cyrillic and supplementary text");
+        }
+    }
+}
+
 void school_fold_library() {
     result("uses School; begin var a:=Arr(int64(18),30,42); var g:int64:=GCD(a); Writeln(g,' ',LCM(a),' ',GCD(18,30,42)); Writeln(School.GCD(18,30),' ',School.LCM(4,6),' ',PABCSystem.GCD(18,30)); end.","6 630 6\n6 12 6\n");
     result("uses School; begin var narrow:integer:=GCD(18,30); var wide:int64:=School.GCD(18,30); Writeln(narrow,' ',wide); Writeln(GCD(-7),' ',LCM(-7),' ',School.GCD(-9223372036854775808),' ',School.LCM(-9223372036854775808)); end.","6 6\n-7 -7 -9223372036854775808 -9223372036854775808\n");
@@ -2478,6 +2535,8 @@ int main() {
     string_arrays();
     school_library();
     school_fold_library();
+    unicode_identifiers_and_school_aliases();
+    unicode_character_library();
     school_text_library();
     school_factor_library();
     sequence_mutations();

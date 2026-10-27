@@ -47,6 +47,8 @@ Text/TextFile: Assign, Reset, Rewrite, Append, Read/Readln, Write/Writeln, Eof, 
 Добавлены создание, удаление и переименование файлов и каталогов, работа с текущей папкой программы.
 Строковый nil отличается от пустой строки; стандартные строковые операции учитывают это различие.
 Совместимость с PascalABC.NET частичная.
+Русские имена и НОД/НОК: examples/russian-identifiers.pas. Массивные GCD/LCM: examples/school-folds.pas.
+Регистр и категории Unicode: examples/unicode-characters.pas. Правила регистра фиксированы таблицами Unicode 15.1.
 Установка .NET, Python или Qt для запуска этого пакета не требуется.
 "@
 Set-Content -LiteralPath (Join-Path $packageDir 'START-HERE.txt') -Value $startText -Encoding utf8

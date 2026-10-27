@@ -8,6 +8,7 @@
 #include "console_input.hpp"
 #include "formatting.hpp"
 #include "school.hpp"
+#include "unicode.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -32,6 +33,8 @@ std::span<const Signature> signatures() {
         add("perfectsquare",{Type::int64},Type::int64,Function::school_perfect_square,"school");
         for (auto type:{Type::integer,Type::int64}) add("isprime",{type},Type::boolean,Function::school_is_prime,"school");
         add("imp",{Type::boolean,Type::boolean},Type::boolean,Function::school_imp,"school");
+        add("нод",{Type::int64,Type::int64},Type::int64,Function::school_gcd_alias,"school");
+        add("нок",{Type::int64,Type::int64},Type::int64,Function::school_lcm_alias,"school");
         add("replacemany",{Type::string,Type::string,Type::string},Type::string,Function::school_replace_many,"school");
         add("translate",{Type::string,Type::string,Type::string},Type::string,Function::school_translate,"school");
         for (unsigned count=1;count<=3;++count) {
@@ -122,6 +125,17 @@ std::span<const Signature> signatures() {
         add("$repeat",{Type::string,Type::integer},Type::string,Function::repeat_string);
         add("$repeat",{Type::integer,Type::string},Type::string,Function::repeat_string);
         add("todigit",{Type::character},Type::integer,Function::to_digit);
+        for (const auto name:{"lowercase","lowcase","tolower"}) add(name,{Type::character},Type::character,Function::character_lower);
+        for (const auto name:{"uppercase","upcase","toupper"}) add(name,{Type::character},Type::character,Function::character_upper);
+        add("lowercase",{Type::string},Type::string,Function::string_lower);
+        add("uppercase",{Type::string},Type::string,Function::string_upper);
+        add("$string_lower",{Type::string},Type::string,Function::string_lower);
+        add("$string_upper",{Type::string},Type::string,Function::string_upper);
+        add("isletter",{Type::character},Type::boolean,Function::character_letter);
+        add("isdigit",{Type::character},Type::boolean,Function::character_digit);
+        add("islower",{Type::character},Type::boolean,Function::character_is_lower);
+        add("isupper",{Type::character},Type::boolean,Function::character_is_upper);
+        add("code",{Type::character},Type::integer,Function::character_code);
         add("$string_length",{Type::string},Type::integer,Function::string_length);
         for (auto name:{"chr","chrunicode","char"}) {
             add(name,{Type::word},Type::character,Function::character);
@@ -349,6 +363,32 @@ Value invoke(std::size_t id, std::span<const Value> arguments, SourceLocation lo
     }
     const auto& value = arguments.front();
     if (function>=Function::school_bin && function<=Function::school_tan_degrees) return invoke_school(function,arguments,location,context.options,context.school);
+    if (function==Function::string_lower || function==Function::string_upper) {
+        if (std::holds_alternative<NilString>(value)) throw runtime_error(RuntimeError::nil_reference,location);
+        const auto& text=string_text(value); std::u16string result; result.reserve(text.size()); std::size_t work=0;
+        for (std::size_t i=0;i<text.size();++i) {
+            if ((work&255U)==0 && context.options.cancelled && context.options.cancelled()) throw runtime_error(RuntimeError::cancelled,location);
+            if (work++>=context.options.instruction_limit) throw runtime_error(RuntimeError::instruction_limit,location);
+            char32_t point=text[i];
+            if (point>=0xd800 && point<=0xdbff && i+1<text.size() && text[i+1]>=0xdc00 && text[i+1]<=0xdfff)
+                point=0x10000+((point-0xd800)<<10)+(text[++i]-0xdc00);
+            point=function==Function::string_lower ? unicode::to_lower(point) : unicode::to_upper(point);
+            if (result.size()+(point>0xffff ? 2 : 1)>1'048'576) throw runtime_error(RuntimeError::string_limit,location);
+            if (point<=0xffff) result+=static_cast<char16_t>(point);
+            else { point-=0x10000; result+=static_cast<char16_t>(0xd800+(point>>10)); result+=static_cast<char16_t>(0xdc00+(point&1023)); }
+        }
+        return result;
+    }
+    if (function>=Function::character_lower && function<=Function::character_code) {
+        const auto c=std::get<char16_t>(value);
+        if (function==Function::character_code) return std::int32_t(c);
+        if (function==Function::character_letter) return unicode::is_letter(c);
+        if (function==Function::character_digit) return bool(unicode::category_bits(c)&4U);
+        if (function==Function::character_is_lower) return bool(unicode::category_bits(c)&2U);
+        if (function==Function::character_is_upper) return bool(unicode::category_bits(c)&1U);
+        const auto point=function==Function::character_lower ? unicode::to_lower(c) : unicode::to_upper(c);
+        return point<=0xffff ? static_cast<char16_t>(point) : c;
+    }
     if (function==Function::format_value) return format_field(value,std::get<std::int32_t>(arguments[1]),arguments.size()==3 ? std::optional<std::int32_t>{std::get<std::int32_t>(arguments[2])} : std::nullopt,location);
     if (function==Function::gcd) {
         const auto calculate=[&]<class T>(T a,T b)->Value {
