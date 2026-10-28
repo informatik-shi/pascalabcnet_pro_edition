@@ -1689,13 +1689,22 @@ private:
         result.kind=hir::ExprKind::array_literal; result.type=sequence_type(CompoundKind::array,element);
     }
     bool bind_sequence_factory(hir::Expr& result,std::string_view name,std::string_view unit={}) {
-        if ((name!="seq" && name!="seqfill" && name!="range") || (!unit.empty() && unit!="pabcsystem")) return false;
+        if ((name!="seq" && name!="seqfill" && name!="range" && name!="partitionpoints" && name!="linspace") || (!unit.empty() && unit!="pabcsystem")) return false;
+        if (name=="partitionpoints" || name=="linspace") {
+            if (result.arguments.size()!=3) throw Error("E_TYPE",result.location,"PartitionPoints/Linspace require two real bounds and an integer count");
+            result.arguments[0]=convert(std::move(result.arguments[0]),Type::real);
+            result.arguments[1]=convert(std::move(result.arguments[1]),Type::real);
+            result.arguments[2]=convert(std::move(result.arguments[2]),Type::integer);
+            result.kind=hir::ExprKind::sequence_partition; result.local=name=="linspace";
+            result.type=sequence_type(CompoundKind::sequence,Type::real); return true;
+        }
         if (name=="range") {
             if (result.arguments.size()!=2 && result.arguments.size()!=3) throw Error("E_TYPE",result.location,"Range requires two integer or character bounds and an optional integer step");
-            const auto element=result.arguments[0]->type==Type::character && result.arguments[1]->type==Type::character ? Type::character : Type::integer;
+            const bool big=std::any_of(result.arguments.begin(),result.arguments.end(),[](const auto& argument){return argument->type==Type::big_integer;});
+            const auto element=big ? Type::big_integer : result.arguments[0]->type==Type::character && result.arguments[1]->type==Type::character ? Type::character : Type::integer;
             result.left=convert(std::move(result.arguments[0]),element); result.right=convert(std::move(result.arguments[1]),element);
             if (result.arguments.size()==3) {
-                auto step=convert(std::move(result.arguments[2]),Type::integer);
+                auto step=convert(std::move(result.arguments[2]),big ? Type::big_integer : Type::integer);
                 result.arguments.clear(); result.arguments.push_back(std::move(step));
             } else result.arguments.clear();
             result.kind=hir::ExprKind::sequence_range; result.type=sequence_type(CompoundKind::sequence,element); return true;

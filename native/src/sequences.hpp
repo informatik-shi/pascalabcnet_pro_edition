@@ -6,13 +6,16 @@ struct Values;
 std::shared_ptr<Aggregate> sequence_create(Values& values,Type type,const std::shared_ptr<Aggregate>& source,SequenceProvider provider);
 std::shared_ptr<Aggregate> sequence_begin(Values& values,const std::shared_ptr<Aggregate>& sequence);
 void sequence_check(const std::shared_ptr<Aggregate>& sequence,SourceLocation location);
-bool sequence_resume(const std::shared_ptr<Aggregate>& sequence,std::uint64_t index,SourceLocation location);
+bool sequence_resume(Values& values,const std::shared_ptr<Aggregate>& sequence,std::uint64_t index,const ExecutionOptions& options);
+std::optional<std::uint64_t> sequence_known_length(const std::shared_ptr<Aggregate>& sequence,SourceLocation location);
 std::uint64_t sequence_length(const std::shared_ptr<Aggregate>& sequence,SourceLocation location);
-Value sequence_at(Values& values,const std::shared_ptr<Aggregate>& sequence,std::int64_t index);
+Value sequence_at(Values& values,const std::shared_ptr<Aggregate>& sequence,std::int64_t index,const ExecutionOptions& options);
 Value sequence_collect(Values& values,const std::shared_ptr<Aggregate>& sequence,Type collection,const ExecutionOptions& options);
 Value sequence_query(Values& values,const std::shared_ptr<Aggregate>& sequence,SequenceQuery method,const Value& argument,const ExecutionOptions& options);
 std::shared_ptr<Aggregate> sequence_snapshot(Values& values,Type type,const std::shared_ptr<Aggregate>& array,const ExecutionOptions& options);
 std::shared_ptr<Aggregate> sequence_repeat(Values& values,Type type,std::int32_t count,const Value& value);
 std::shared_ptr<Aggregate> sequence_range(Values& values,Type type,const Value& first,const Value& last);
 std::shared_ptr<Aggregate> sequence_range_step(Values& values,Type type,const Value& first,const Value& last,std::int32_t step);
+std::shared_ptr<Aggregate> sequence_range_big(Values& values,Type type,const BigInteger& first,const BigInteger& last,const BigInteger& step);
+std::shared_ptr<Aggregate> sequence_partition(Values& values,Type type,double first,double last,std::int32_t intervals);
 } // namespace abc

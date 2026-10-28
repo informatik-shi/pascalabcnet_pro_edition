@@ -197,14 +197,31 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
             stack.emplace_back(sequence_repeat(values,instruction.type,count,value)); break;
         }
         case Op::sequence_range: {
-            const auto step=instruction.operand ? std::get<std::int32_t>(pop()) : 1;
-            const auto last=pop(),first=pop();
-            stack.emplace_back(instruction.operand ? sequence_range_step(values,instruction.type,first,last,step) : sequence_range(values,instruction.type,first,last)); break;
+            if (type_info(program,instruction.type).element==Type::big_integer) {
+                const auto step=instruction.operand ? std::get<BigInteger>(pop()) : checked_big(instruction.location,[]{return BigInteger::from_signed(1);});
+                if (!instruction.operand) values.number(step);
+                const auto last=std::get<BigInteger>(pop()),first=std::get<BigInteger>(pop());
+                stack.emplace_back(sequence_range_big(values,instruction.type,first,last,step));
+            } else {
+                const auto step=instruction.operand ? std::get<std::int32_t>(pop()) : 1;
+                const auto last=pop(),first=pop();
+                stack.emplace_back(instruction.operand ? sequence_range_step(values,instruction.type,first,last,step) : sequence_range(values,instruction.type,first,last));
+            }
+            break;
+        }
+        case Op::sequence_partition: {
+            auto intervals=std::get<std::int32_t>(pop());
+            if (instruction.operand) {
+                if (intervals==INT32_MIN) trap(instruction,RuntimeError::integer_overflow);
+                --intervals;
+            }
+            const auto last=std::get<double>(pop()),first=std::get<double>(pop());
+            stack.emplace_back(sequence_partition(values,instruction.type,first,last,intervals)); break;
         }
         case Op::sequence_resume: {
             const auto index=std::get<std::int64_t>(pop()); const auto sequence=std::get<std::shared_ptr<Aggregate>>(pop());
             if (index<0) trap(instruction,RuntimeError::invalid_bytecode);
-            stack.emplace_back(sequence_resume(sequence,static_cast<std::uint64_t>(index),instruction.location)); break;
+            stack.emplace_back(sequence_resume(values,sequence,static_cast<std::uint64_t>(index),options)); break;
         }
         case Op::sequence_wrap: {
             const auto source=std::get<std::shared_ptr<Aggregate>>(pop());
@@ -913,7 +930,7 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
         case Op::get_index: case Op::ref_index: {
             if (compound(instruction.type) && type_info(program,instruction.type).kind==CompoundKind::sequence) {
                 const auto index=std::get<std::int64_t>(pop()); const auto sequence=std::get<std::shared_ptr<Aggregate>>(pop());
-                stack.push_back(sequence_at(values,sequence,index)); break;
+                stack.push_back(sequence_at(values,sequence,index,options)); break;
             }
             const auto last=std::int64_t(std::get<std::int32_t>(pop()));
             const bool matrix=instruction.type!=Type::string && type_info(program,instruction.type).rank==2 && !instruction.operand;

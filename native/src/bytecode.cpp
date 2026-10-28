@@ -68,6 +68,9 @@ private:
             expression(*node.left); expression(*node.right);
             for (const auto& argument:node.arguments) expression(*argument);
             emit(Op::sequence_range,node.type,node.arguments.size(),node.location); break;
+        case hir::ExprKind::sequence_partition:
+            for (const auto& argument:node.arguments) expression(*argument);
+            emit(Op::sequence_partition,node.type,node.local,node.location); break;
         case hir::ExprKind::sequence_call:
             expression(*node.left); emit(node.local==2 ? Op::sequence_list : node.local ? Op::sequence_array : Op::sequence_count,node.left->type,node.local ? static_cast<std::size_t>(node.type) : 0,node.location); break;
         case hir::ExprKind::sequence_query:
@@ -477,9 +480,12 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         case Op::sequence_repeat:
             if (!compound(type) || type_info(program,type).kind!=CompoundKind::sequence || instruction.operand) invalid(instruction,"Invalid SeqFill metadata");
             break;
+        case Op::sequence_partition:
+            if (!compound(type) || type_info(program,type).kind!=CompoundKind::sequence || type_info(program,type).element!=Type::real || instruction.operand>1) invalid(instruction,"Invalid partition generator metadata");
+            break;
         case Op::sequence_range:
             if (!compound(type) || type_info(program,type).kind!=CompoundKind::sequence || instruction.operand>1
-                || (type_info(program,type).element!=Type::integer && type_info(program,type).element!=Type::character)) invalid(instruction,"Invalid Range metadata");
+                || (type_info(program,type).element!=Type::integer && type_info(program,type).element!=Type::character && type_info(program,type).element!=Type::big_integer)) invalid(instruction,"Invalid Range metadata");
             break;
         case Op::sequence_query:
             if (!compound(type) || type_info(program,type).kind!=CompoundKind::sequence
@@ -791,8 +797,9 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         case Op::sequence_begin: require(instruction.type); stack.push_back(instruction.type); break;
         case Op::sequence_snapshot: case Op::sequence_wrap: require(instruction.type); stack.push_back(static_cast<Type>(instruction.operand)); break;
         case Op::sequence_repeat: require(type_info(program,instruction.type).element); require(Type::integer); stack.push_back(instruction.type); break;
+        case Op::sequence_partition: require(Type::integer); require(Type::real); require(Type::real); stack.push_back(instruction.type); break;
         case Op::sequence_range:
-            if (instruction.operand) require(Type::integer);
+            if (instruction.operand) require(type_info(program,instruction.type).element==Type::big_integer ? Type::big_integer : Type::integer);
             require(type_info(program,instruction.type).element); require(type_info(program,instruction.type).element); stack.push_back(instruction.type); break;
         case Op::sequence_resume: require(Type::int64); require(instruction.type); stack.push_back(Type::boolean); break;
         case Op::sequence_count: require(instruction.type); stack.push_back(Type::integer); break;

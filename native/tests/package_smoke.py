@@ -126,6 +126,8 @@ def main():
                 ("regex-search.pas", "Есть число: True\nПервое число: 123\nБез числа: []\nПроверка: True\n"),
                 ("sequence-lists.pas", "Массив: [1,2]\nСписок: [9,2,3]\nКопия: [9,2,3]\nПосле изменения: [9,8,3]\n"),
                 ("sequence-factories.pas", "Снимок: [1,2]\nИсходный массив: [9,2]\nПовторения: [да,да,да]\nПервый большого повтора: 7\nДиапазон: [2,3,4,5]\nСимволы: abc\n"),
+                ("partition-points.pas", "Разбиение на 4 части: [0,0.25,0.5,0.75,1]\nПять точек: [0,0.25,0.5,0.75,1]\nОбратный порядок: [1,0.75,0.5,0.25,0]\nПервый большого разбиения: 0\n"),
+                ("big-integer-ranges.pas", "Большие числа: [1000000000000000000000000000000,1000000000000000000000000000002,1000000000000000000000000000004,1000000000000000000000000000006]\nОбратный порядок: [7,5,3,1]\nПервый огромного диапазона: 0\nРанний выход: 0\n"),
                 ("stepped-ranges.pas", "Вверх: [1,4,7,10]\nВниз: [10,7,4,1]\nСимволы: авдж\nНачало большого диапазона: -2147483648\nПоследнее значение перед break: 2147483647\n"),
                 ("sequence-queries.pas", "Непустая: True\nПервый: 4\nПоследний: 9\nПо индексу 1: 7\nСодержит 7: True\nПустая: False\nПо умолчанию: 0\nЕдинственный: 42\nПустой SingleOrDefault: 0\n"),
                 ("russian-identifiers.pas", "Ответ: 42\nНОД: 6\nНОК: 90\n"),
@@ -187,6 +189,11 @@ def main():
                 ("var a:array of integer; Seq(a)", "E_NIL", "Cannot access a nil reference", "Нельзя обратиться к пустой ссылке nil"),
                 ("Range(not(MaxInt),MaxInt)", "E_OVERFLOW", "Integer overflow", "Переполнение целого числа"),
                 ("Range(1,2,0).Any", "E_RANGE", "Sequence step cannot be zero", "Шаг последовательности не может быть равен нулю"),
+                ("PartitionPoints(0,1,0).Any", "E_RANGE", "Partition count must be positive", "Число частей разбиения должно быть положительным"),
+                ("Linspace(0,1,1).Any", "E_RANGE", "Partition count must be positive", "Число частей разбиения должно быть положительным"),
+                ("Linspace(0,1,not(MaxInt))", "E_OVERFLOW", "Integer overflow", "Переполнение целого числа"),
+                ("Range(1bi,2bi,0bi).Any", "E_RANGE", "Sequence step cannot be zero", "Шаг последовательности не может быть равен нулю"),
+                ("var p:=1bi shl 65535; Range(p,p,p).Last", "E_LIMIT", "BigInteger size limit exceeded", "Превышен допустимый размер BigInteger"),
                 ("Range(MaxInt,MaxInt,1).Count", "E_OVERFLOW", "Integer overflow", "Переполнение целого числа"),
                 ("var s:string:='a'; SwapSubstr(s,'a','a')", "E_KEY", "Duplicate swap key", "Повторяющийся ключ замены"),
                 ("var s:string:='a.b acb z'; SwapSubstr(s,'a.b','z')", "E_KEY", "Matched text is not a swap key", "Совпавший текст не является ключом замены"),
@@ -520,6 +527,8 @@ def main():
             results[-1]["typed_single_queries_and_multiple_diagnostics"] = "passed"
             results[-1]["typed_seq_snapshot_and_lazy_seqfill"] = "passed"
             results[-1]["lazy_integer_character_range"] = "passed"
+            results[-1]["arbitrary_span_biginteger_range"] = "passed"
+            results[-1]["partition_points_and_linspace"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 
