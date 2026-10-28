@@ -386,7 +386,7 @@ void sequence_ranges_library() {
     result("function Range(a,b:integer):integer; begin Result:=99; end; begin Writeln(Range(1,2),' ',PABCSystem.Range(1,2).ToArray); end.","99 [1,2]\n");
     for (const auto source:{"begin Range(0,MaxInt); end.","begin Range(not(MaxInt),0); end.","begin Range(not(MaxInt),MaxInt); end."}) runtime_error(source,"E_OVERFLOW");
     runtime_error("begin Range(1,2).ElementAt(2); end.","E_BOUNDS");
-    for (const auto source:{"begin Range(1,3,1); end.","begin Range(1bi,2bi); end.","begin Range(1.0,2.0); end.",
+    for (const auto source:{"begin Range(1,3,1.0); end.","begin Range(1bi,2bi); end.","begin Range(1.0,2.0); end.",
         "begin Range('ab','cd'); end.","begin Range(1); end.","begin Range(nil,nil); end.",
         "begin var s:sequence of real:=Range(1,2); end."}) compile_error(source,"E_TYPE");
     abc::ExecutionOptions options; options.allocation_limit=20; options.instruction_limit=200;
@@ -395,13 +395,63 @@ void sequence_ranges_library() {
     options={}; options.instruction_limit=100;
     error([&]{(void)run("begin Count(Range(1,1000)); end.","",options);},"E_LIMIT");
     auto invalid=abc::compile("begin var s:=Range(1,2); end.");
-    for (auto& instruction:invalid.code) if (instruction.op==abc::Op::sequence_range) instruction.operand=1;
+    for (auto& instruction:invalid.code) if (instruction.op==abc::Op::sequence_range) instruction.operand=2;
     error([&]{abc::verify(invalid);},"E_BYTECODE");
     invalid=abc::compile("begin var s:=Range(1,2); var r:=SeqFill(2,1.5); end.");
     abc::Type reals=abc::Type::invalid;
     for (std::size_t i=0;i<invalid.types.size();++i) if (invalid.types[i].kind==abc::CompoundKind::sequence && invalid.types[i].element==abc::Type::real) reals=static_cast<abc::Type>(64+i);
     for (auto& instruction:invalid.code) if (instruction.op==abc::Op::sequence_range) instruction.type=reals;
     error([&]{abc::verify(invalid);},"E_BYTECODE");
+}
+
+void stepped_ranges_library() {
+    result("begin Writeln(Range(1,8,3).ToArray,' ',Range(8,1,-3).ToList); Writeln(PABCSystem.Range(byte(1),word(5),smallint(2)).ToArray); Writeln(Range(1,5,-1).Any,' ',Range(5,1,1).Count); end.","[1,4,7] [8,5,2]\n[1,3,5]\nFalse 0\n");
+    result("begin Writeln(Range('а','ж',2).ToArray,' ',Range('z','t',-2).ToList); Writeln(Ord(Range(#65535,#0,-65535).Last),' ',Range('a','z',MaxInt).First); end.","[а,в,д,ж] [z,x,v,t]\n0 a\n");
+    result("begin Writeln(Range(not(MaxInt),0,MaxInt).ToArray); Writeln(Range(MaxInt,0,not(MaxInt)).ToArray); Writeln(Range(7,7,1).Single,' ',Range(7,7,-1).Single); end.","[-2147483648,-1]\n[2147483647]\n7 7\n");
+    result("function A:integer; begin Write('A'); Result:=1; end; function B:integer; begin Write('B'); Result:=6; end; function S:integer; begin Write('S'); Result:=2; end; begin Writeln(Range(A,B,S).ToArray); end.","ABS[1,3,5]\n");
+    result("begin var s:=Range(1,3,2); foreach var x in s do foreach var y in s do Write(x,y,';'); Writeln; Writeln(s.ToArray,' ',s.ToArray); end.","11;13;31;33;\n[1,3] [1,3]\n");
+    result("begin var s:=Range(1,2,0); Writeln('created'); Writeln(s.ElementAtOrDefault(-1)); end.","created\n0\n");
+    result("begin var s:=Range(MaxInt,MaxInt,1); Writeln(s.First,' ',s.Any,' ',s.Contains(MaxInt),' ',s.ElementAt(0)); foreach var x in s do begin Writeln(x); break; end; end.","2147483647 True True 2147483647\n2147483647\n");
+    result("begin foreach var x in Range(not(MaxInt),not(MaxInt),-1) do begin Writeln(x); break; end; foreach var x in Range('a','a',MaxInt) do begin Writeln(x); break; end; end.","-2147483648\na\n");
+    result("begin var n:=0; foreach var x in Range(5,0,-2) do begin if x=3 then continue; n:=n+x; end; Writeln(n); end.","6\n");
+    result("uses School; begin Writeln(Range(-5,5,3).MinMax); end.","(-5,4)\n");
+    for (const auto suffix:{"Any","First","FirstOrDefault","Last","Single","SingleOrDefault","Count","ToArray","ToList","Contains(1)","ElementAt(0)"})
+        runtime_error("begin Range(1,2,0)."+std::string(suffix)+"; end.","E_RANGE");
+    runtime_error("begin foreach var x in Range(2,1,0) do Writeln(x); end.","E_RANGE");
+    runtime_error("uses School; begin Range(1,2,0).MinMax; end.","E_RANGE");
+    for (const auto suffix:{"Last","LastOrDefault","Single","SingleOrDefault","Count","ToArray","ToList","Contains(0)","ElementAt(1)","ElementAtOrDefault(1)"})
+        runtime_error("begin Range(MaxInt,MaxInt,1)."+std::string(suffix)+"; end.","E_OVERFLOW");
+    runtime_error("uses School; begin Range(MaxInt,MaxInt,1).MinMax; end.","E_OVERFLOW");
+    runtime_error("begin Range('a','a',MaxInt).Last; end.","E_OVERFLOW");
+    runtime_error("begin Range(not(MaxInt),not(MaxInt),-1).Count; end.","E_OVERFLOW");
+    runtime_error("begin Range(MaxInt,not(MaxInt),not(MaxInt)).ToArray; end.","E_OVERFLOW");
+    runtime_error("begin Range(MaxInt-1,MaxInt,1).Single; end.","E_MANY");
+    for (const auto source:{"begin Range(1,3,True); end.","begin Range(1,3,int64(1)); end.","begin Range(1,3,1,1); end.","begin Range('ab','cd',1); end.","begin Range(1bi,3bi,1bi); end."}) compile_error(source,"E_TYPE");
+    for (const auto source:{"begin foreach var x in Range(MaxInt,MaxInt,1) do Write(x); end.","begin foreach var x in Range(MaxInt,MaxInt,1) do begin Write(x); continue; end; end."}) {
+        auto p=abc::compile(source); std::istringstream in; std::ostringstream out;
+        error([&]{abc::execute(p,in,out);},"E_OVERFLOW");
+        require(out.str()=="2147483647","Final Range value is observable before overflow on resume");
+    }
+    abc::ExecutionOptions options; options.allocation_limit=20; options.instruction_limit=200;
+    require(run("begin var s:=Range(not(MaxInt),MaxInt,1); Writeln(s.First,' ',s.Any); foreach var x in s do begin Writeln(x); break; end; end.","",options)=="-2147483648 True\n-2147483648\n","Full-width stepped Range keeps a constant allocation budget and a 64-bit length");
+    error([&]{(void)run("begin Range(not(MaxInt),MaxInt,1).ToArray; end.","",options);},"E_LIMIT");
+    options={}; options.instruction_limit=100;
+    error([&]{(void)run("begin Range(1,1000,1).Last; end.","",options);},"E_LIMIT");
+    try { (void)run("begin\nvar s:=Range(1,2,0);\ns.Any;\nend."); require(false,"Expected zero-step diagnostic"); }
+    catch (const abc::Error& caught) { require(caught.code=="E_RANGE" && caught.location.line==3 && std::string_view(caught.what())=="Sequence step cannot be zero" && caught.russian=="Шаг последовательности не может быть равен нулю","Range zero-step error is deferred to enumeration with both languages"); }
+    auto invalid=abc::compile("begin foreach var x in Range(1,2,1) do Writeln(x); end.");
+    for (auto& instruction:invalid.code) if (instruction.op==abc::Op::sequence_resume) instruction.operand=1;
+    error([&]{abc::verify(invalid);},"E_BYTECODE");
+    invalid=abc::compile("begin var s:=Range(1,2,1); end.");
+    for (auto& instruction:invalid.code) if (instruction.op==abc::Op::sequence_range) instruction.operand=0;
+    error([&]{abc::verify(invalid);},"E_BYTECODE");
+    // Independent small-domain corpus: integer arithmetic gives exact expected values.
+    for (int a=-3;a<=3;++a) for (int b=-3;b<=3;++b) for (int step:{-3,-1,1,3}) {
+        std::string expected="["; bool comma=false;
+        for (int x=a;step>0 ? x<=b : x>=b;x+=step) { if (comma) expected+=","; comma=true; expected+=std::to_string(x); }
+        expected+="]\n";
+        result("begin Writeln(Range("+std::to_string(a)+","+std::to_string(b)+","+std::to_string(step)+").ToArray); end.",expected);
+    }
 }
 
 void school_minmax_library() {
@@ -3173,6 +3223,7 @@ int main() {
     sequence_single_library();
     sequence_factories_library();
     sequence_ranges_library();
+    stepped_ranges_library();
     school_factor_library();
     sequence_mutations();
     arithmetic();

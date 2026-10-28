@@ -136,6 +136,8 @@ Error runtime_error(RuntimeError id, SourceLocation location, std::string_view c
         code = "E_EMPTY"; english = "Sequence contains no elements"; russian = "Последовательность не содержит элементов"; break;
     case RuntimeError::sequence_multiple:
         code = "E_MANY"; english = "Sequence contains more than one element"; russian = "Последовательность содержит более одного элемента"; break;
+    case RuntimeError::sequence_step_zero:
+        code = "E_RANGE"; english = "Sequence step cannot be zero"; russian = "Шаг последовательности не может быть равен нулю"; break;
     case RuntimeError::sequence_count_range:
         code = "E_RANGE"; english = "Sequence count cannot be negative"; russian = "Число элементов последовательности не может быть отрицательным"; break;
     case RuntimeError::queue_empty:

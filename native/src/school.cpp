@@ -603,6 +603,7 @@ std::shared_ptr<Aggregate> school_minmax(Values& values,const std::shared_ptr<Ag
     const bool lazy=info.kind==CompoundKind::sequence;
     const auto iterator=lazy ? sequence_begin(values,sequence) : sequence;
     const auto count=lazy ? sequence_length(iterator,values.location) : sequence->items.size();
+    if (lazy) (void)sequence_resume(iterator,0,values.location);
     const auto calculate=[&]<class T>() {
         T low{},high{};
         if constexpr (!std::is_same_v<T,BigInteger>) { low=std::numeric_limits<T>::max(); high=std::numeric_limits<T>::lowest(); }
@@ -615,7 +616,7 @@ std::shared_ptr<Aggregate> school_minmax(Values& values,const std::shared_ptr<Ag
             if (number<low) low=number;
             if (number>high) high=number;
         }
-        if (lazy) sequence_check(iterator,values.location);
+        if (lazy) (void)sequence_resume(iterator,count,values.location);
         auto result=std::make_shared<Aggregate>(); result->type=tuple;
         result->items.push_back(values.cell(info.element,low)); result->items.push_back(values.cell(info.element,high));
         return result;

@@ -3,7 +3,7 @@
 
 namespace abc {
 enum class RuntimeError {
-    integer_overflow, division_zero, invalid_bytecode, number_format, big_integer_limit, power_exponent, school_table_variables, school_ip_address, school_ip_suffix, school_ip_mask, regex_syntax, duplicate_swap_key, missing_swap_key, sequence_empty, sequence_multiple, sequence_count_range,
+    integer_overflow, division_zero, invalid_bytecode, number_format, big_integer_limit, power_exponent, school_table_variables, school_ip_address, school_ip_suffix, school_ip_mask, regex_syntax, duplicate_swap_key, missing_swap_key, sequence_empty, sequence_multiple, sequence_count_range, sequence_step_zero,
     input_limit, input_stream, input_end, input_encoding, input_empty,
     input_boolean, input_real, input_range, output_limit, output_stream,
     instruction_limit, cancelled, string_limit, real_overflow, math_domain, round_digits, string_index,

@@ -197,8 +197,14 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
             stack.emplace_back(sequence_repeat(values,instruction.type,count,value)); break;
         }
         case Op::sequence_range: {
+            const auto step=instruction.operand ? std::get<std::int32_t>(pop()) : 1;
             const auto last=pop(),first=pop();
-            stack.emplace_back(sequence_range(values,instruction.type,first,last)); break;
+            stack.emplace_back(instruction.operand ? sequence_range_step(values,instruction.type,first,last,step) : sequence_range(values,instruction.type,first,last)); break;
+        }
+        case Op::sequence_resume: {
+            const auto index=std::get<std::int64_t>(pop()); const auto sequence=std::get<std::shared_ptr<Aggregate>>(pop());
+            if (index<0) trap(instruction,RuntimeError::invalid_bytecode);
+            stack.emplace_back(sequence_resume(sequence,static_cast<std::uint64_t>(index),instruction.location)); break;
         }
         case Op::sequence_wrap: {
             const auto source=std::get<std::shared_ptr<Aggregate>>(pop());

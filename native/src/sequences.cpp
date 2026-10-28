@@ -30,7 +30,7 @@ std::shared_ptr<Aggregate> sequence_begin(Values& values,const std::shared_ptr<A
     auto result=std::make_shared<Aggregate>(); result->type=sequence->type;
     result->sequence=std::make_unique<SequenceState>(*sequence->sequence);
     auto& state=*result->sequence; state.started=true; state.first=0;
-    if (state.provider==SequenceProvider::repeat || state.provider==SequenceProvider::range) {
+    if (state.provider==SequenceProvider::repeat || state.provider==SequenceProvider::range || state.provider==SequenceProvider::stepped_range) {
         if (!state.seed || state.seed->type!=type_info(values.program,sequence->type).element)
             throw runtime_error(RuntimeError::invalid_bytecode,values.location);
         return result;
@@ -45,20 +45,33 @@ void sequence_check(const std::shared_ptr<Aggregate>& sequence,SourceLocation lo
     const auto& state=cursor(sequence,location);
     if (state.provider==SequenceProvider::list && state.version!=state.source->version) throw runtime_error(RuntimeError::collection_changed,location);
 }
+bool sequence_resume(const std::shared_ptr<Aggregate>& sequence,std::uint64_t index,SourceLocation location) {
+    sequence_check(sequence,location); const auto& state=*sequence->sequence;
+    if (state.provider==SequenceProvider::stepped_range) {
+        if (!state.step) throw runtime_error(RuntimeError::sequence_step_zero,location);
+        // The source increments after yield. Early-return queries and break must
+        // not execute this final checked increment; completing enumeration must.
+        if (index>=state.count && state.exhaustion_overflow) throw runtime_error(RuntimeError::integer_overflow,location);
+    }
+    return index<state.count;
+}
 std::uint64_t sequence_length(const std::shared_ptr<Aggregate>& sequence,SourceLocation location) { return cursor(sequence,location).count; }
 Value sequence_at(Values& values,const std::shared_ptr<Aggregate>& sequence,std::int64_t index) {
     sequence_check(sequence,values.location); const auto& state=*sequence->sequence;
-    if (index<0 || static_cast<std::uint64_t>(index)>=state.count) throw runtime_error(RuntimeError::index_bounds,values.location);
+    if (index<0 || !sequence_resume(sequence,static_cast<std::uint64_t>(index),values.location)) throw runtime_error(RuntimeError::index_bounds,values.location);
     if (collection_sequence(state.provider)) return values.copy(state.source->items[static_cast<std::size_t>(index)]->value);
     if (state.provider==SequenceProvider::repeat) return values.copy(state.seed->value);
-    if (state.provider==SequenceProvider::range) {
-        if (state.seed->type==Type::character) return static_cast<char16_t>(std::get<char16_t>(state.seed->value)+index);
-        return static_cast<std::int32_t>(std::int64_t(std::get<std::int32_t>(state.seed->value))+index);
+    if (state.provider==SequenceProvider::range || state.provider==SequenceProvider::stepped_range) {
+        const auto first=state.seed->type==Type::character ? std::int64_t(std::get<char16_t>(state.seed->value)) : std::int64_t(std::get<std::int32_t>(state.seed->value));
+        const auto number=first+index*state.step;
+        if (state.seed->type==Type::character) return static_cast<char16_t>(number);
+        return static_cast<std::int32_t>(number);
     }
     return school_ip_sequence_value(values,type_info(values.program,sequence->type).element,state,index);
 }
 Value sequence_collect(Values& values,const std::shared_ptr<Aggregate>& sequence,Type collection,const ExecutionOptions& options) {
     const auto iterator=sequence_begin(values,sequence); const auto count=sequence_length(iterator,values.location);
+    (void)sequence_resume(iterator,0,values.location);
     const bool materialize=collection!=Type::invalid;
     const bool list=materialize && type_info(values.program,collection).kind==CompoundKind::list;
     if (!materialize && collection_sequence(iterator->sequence->provider)) {
@@ -83,7 +96,7 @@ Value sequence_collect(Values& values,const std::shared_ptr<Aggregate>& sequence
         }
         else if (i>=INT32_MAX) throw runtime_error(RuntimeError::integer_overflow,values.location);
     }
-    sequence_check(iterator,values.location);
+    (void)sequence_resume(iterator,count,values.location);
     return materialize ? Value{result} : Value{static_cast<std::int32_t>(count)};
 }
 Value sequence_query(Values& values,const std::shared_ptr<Aggregate>& sequence,SequenceQuery method,const Value& argument,const ExecutionOptions& options) {
@@ -100,6 +113,7 @@ Value sequence_query(Values& values,const std::shared_ptr<Aggregate>& sequence,S
     const auto index=indexed ? std::get<std::int32_t>(argument) : 0;
     if (indexed && index<0) return absent();
     const auto iterator=sequence_begin(values,sequence); const auto count=sequence_length(iterator,values.location);
+    (void)sequence_resume(iterator,0,values.location);
     if (!count) {
         if (method==SequenceQuery::any || method==SequenceQuery::contains) return false;
         return absent();
@@ -133,7 +147,7 @@ Value sequence_query(Values& values,const std::shared_ptr<Aggregate>& sequence,S
         }
         else if (method==SequenceQuery::last || method==SequenceQuery::last_default) last=std::move(value);
     }
-    sequence_check(iterator,values.location);
+    (void)sequence_resume(iterator,count,values.location);
     if (method==SequenceQuery::contains) return false;
     if (method==SequenceQuery::last || method==SequenceQuery::last_default || single) return last;
     return absent();
@@ -167,6 +181,19 @@ std::shared_ptr<Aggregate> sequence_range(Values& values,Type type,const Value& 
     auto result=sequence_repeat(values,type,static_cast<std::int32_t>(count),first);
     result->sequence->provider=SequenceProvider::range;
     if (!characters && !count) values.empty_integer_range=result;
+    return result;
+}
+std::shared_ptr<Aggregate> sequence_range_step(Values& values,Type type,const Value& first,const Value& last,std::int32_t step) {
+    const bool characters=type_info(values.program,type).element==Type::character;
+    const auto a=characters ? std::int64_t(std::get<char16_t>(first)) : std::int64_t(std::get<std::int32_t>(first));
+    const auto b=characters ? std::int64_t(std::get<char16_t>(last)) : std::int64_t(std::get<std::int32_t>(last));
+    std::uint64_t count=0;
+    if (step>0 && a<=b) count=static_cast<std::uint64_t>((b-a)/step)+1;
+    if (step<0 && a>=b) count=static_cast<std::uint64_t>((a-b)/-std::int64_t(step))+1;
+    auto result=sequence_repeat(values,type,0,first); auto& state=*result->sequence;
+    state.provider=SequenceProvider::stepped_range; state.step=step; state.count=count;
+    const auto next=a+static_cast<std::int64_t>(count)*step;
+    state.exhaustion_overflow=count && (next<INT32_MIN || next>INT32_MAX);
     return result;
 }
 } // namespace abc

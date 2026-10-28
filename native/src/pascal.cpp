@@ -1691,10 +1691,14 @@ private:
     bool bind_sequence_factory(hir::Expr& result,std::string_view name,std::string_view unit={}) {
         if ((name!="seq" && name!="seqfill" && name!="range") || (!unit.empty() && unit!="pabcsystem")) return false;
         if (name=="range") {
-            if (result.arguments.size()!=2) throw Error("E_TYPE",result.location,"Range currently requires two integer or character bounds");
+            if (result.arguments.size()!=2 && result.arguments.size()!=3) throw Error("E_TYPE",result.location,"Range requires two integer or character bounds and an optional integer step");
             const auto element=result.arguments[0]->type==Type::character && result.arguments[1]->type==Type::character ? Type::character : Type::integer;
             result.left=convert(std::move(result.arguments[0]),element); result.right=convert(std::move(result.arguments[1]),element);
-            result.arguments.clear(); result.kind=hir::ExprKind::sequence_range; result.type=sequence_type(CompoundKind::sequence,element); return true;
+            if (result.arguments.size()==3) {
+                auto step=convert(std::move(result.arguments[2]),Type::integer);
+                result.arguments.clear(); result.arguments.push_back(std::move(step));
+            } else result.arguments.clear();
+            result.kind=hir::ExprKind::sequence_range; result.type=sequence_type(CompoundKind::sequence,element); return true;
         }
         if (name=="seqfill") {
             if (result.arguments.size()!=2) throw Error("E_TYPE",result.location,"SeqFill requires a count and a typed value");

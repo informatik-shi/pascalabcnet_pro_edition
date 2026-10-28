@@ -6,6 +6,7 @@ struct Values;
 std::shared_ptr<Aggregate> sequence_create(Values& values,Type type,const std::shared_ptr<Aggregate>& source,SequenceProvider provider);
 std::shared_ptr<Aggregate> sequence_begin(Values& values,const std::shared_ptr<Aggregate>& sequence);
 void sequence_check(const std::shared_ptr<Aggregate>& sequence,SourceLocation location);
+bool sequence_resume(const std::shared_ptr<Aggregate>& sequence,std::uint64_t index,SourceLocation location);
 std::uint64_t sequence_length(const std::shared_ptr<Aggregate>& sequence,SourceLocation location);
 Value sequence_at(Values& values,const std::shared_ptr<Aggregate>& sequence,std::int64_t index);
 Value sequence_collect(Values& values,const std::shared_ptr<Aggregate>& sequence,Type collection,const ExecutionOptions& options);
@@ -13,4 +14,5 @@ Value sequence_query(Values& values,const std::shared_ptr<Aggregate>& sequence,S
 std::shared_ptr<Aggregate> sequence_snapshot(Values& values,Type type,const std::shared_ptr<Aggregate>& array,const ExecutionOptions& options);
 std::shared_ptr<Aggregate> sequence_repeat(Values& values,Type type,std::int32_t count,const Value& value);
 std::shared_ptr<Aggregate> sequence_range(Values& values,Type type,const Value& first,const Value& last);
+std::shared_ptr<Aggregate> sequence_range_step(Values& values,Type type,const Value& first,const Value& last,std::int32_t step);
 } // namespace abc

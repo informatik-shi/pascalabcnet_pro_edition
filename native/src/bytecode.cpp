@@ -65,7 +65,9 @@ private:
         case hir::ExprKind::sequence_repeat:
             expression(*node.left); expression(*node.right); emit(Op::sequence_repeat,node.type,0,node.location); break;
         case hir::ExprKind::sequence_range:
-            expression(*node.left); expression(*node.right); emit(Op::sequence_range,node.type,0,node.location); break;
+            expression(*node.left); expression(*node.right);
+            for (const auto& argument:node.arguments) expression(*argument);
+            emit(Op::sequence_range,node.type,node.arguments.size(),node.location); break;
         case hir::ExprKind::sequence_call:
             expression(*node.left); emit(node.local==2 ? Op::sequence_list : node.local ? Op::sequence_array : Op::sequence_count,node.left->type,node.local ? static_cast<std::size_t>(node.type) : 0,node.location); break;
         case hir::ExprKind::sequence_query:
@@ -372,10 +374,14 @@ private:
             local(Op::store,node.version_local,node.location);
             constant(lazy ? Value{std::int64_t{0}} : Value{std::int32_t{0}},node.location); local(Op::store,node.index_local,node.location);
             const auto start=code_->size();
-            local(Op::load,node.sequence_local,node.location); local(Op::load,node.version_local,node.location);
-            emit(Op::iteration_check,sequence,0,node.location);
-            local(Op::load,node.index_local,node.location); local(Op::load,node.sequence_local,node.location);
-            emit(Op::length,sequence,0,node.location); emit(Op::less,index_type,0,node.location);
+            local(Op::load,node.sequence_local,node.location);
+            if (lazy) {
+                local(Op::load,node.index_local,node.location); emit(Op::sequence_resume,sequence,0,node.location);
+            } else {
+                local(Op::load,node.version_local,node.location); emit(Op::iteration_check,sequence,0,node.location);
+                local(Op::load,node.index_local,node.location); local(Op::load,node.sequence_local,node.location);
+                emit(Op::length,sequence,0,node.location); emit(Op::less,index_type,0,node.location);
+            }
             const auto done=emit(Op::jump_false,Type::invalid,0,node.location);
             local(Op::load,node.sequence_local,node.location); local(Op::load,node.index_local,node.location);
             emit(Op::get_index,sequence,sequence==Type::string || type_info(program_,sequence).rank==2 ? 1 : 0,node.location);
@@ -472,14 +478,14 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if (!compound(type) || type_info(program,type).kind!=CompoundKind::sequence || instruction.operand) invalid(instruction,"Invalid SeqFill metadata");
             break;
         case Op::sequence_range:
-            if (!compound(type) || type_info(program,type).kind!=CompoundKind::sequence || instruction.operand
+            if (!compound(type) || type_info(program,type).kind!=CompoundKind::sequence || instruction.operand>1
                 || (type_info(program,type).element!=Type::integer && type_info(program,type).element!=Type::character)) invalid(instruction,"Invalid Range metadata");
             break;
         case Op::sequence_query:
             if (!compound(type) || type_info(program,type).kind!=CompoundKind::sequence
                 || instruction.operand>static_cast<std::size_t>(SequenceQuery::single_default)) invalid(instruction,"Invalid sequence query metadata");
             break;
-        case Op::sequence_begin: case Op::sequence_count: case Op::sequence_array: case Op::sequence_list:
+        case Op::sequence_resume: case Op::sequence_begin: case Op::sequence_count: case Op::sequence_array: case Op::sequence_list:
             if (!compound(type) || type_info(program,type).kind!=CompoundKind::sequence) invalid(instruction,"Sequence instruction requires a statically typed sequence");
             if (instruction.op==Op::sequence_array || instruction.op==Op::sequence_list) {
                 if (instruction.operand<64 || instruction.operand>=64+program.types.size()) invalid(instruction,"Invalid sequence array result");
@@ -785,7 +791,10 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         case Op::sequence_begin: require(instruction.type); stack.push_back(instruction.type); break;
         case Op::sequence_snapshot: case Op::sequence_wrap: require(instruction.type); stack.push_back(static_cast<Type>(instruction.operand)); break;
         case Op::sequence_repeat: require(type_info(program,instruction.type).element); require(Type::integer); stack.push_back(instruction.type); break;
-        case Op::sequence_range: require(type_info(program,instruction.type).element); require(type_info(program,instruction.type).element); stack.push_back(instruction.type); break;
+        case Op::sequence_range:
+            if (instruction.operand) require(Type::integer);
+            require(type_info(program,instruction.type).element); require(type_info(program,instruction.type).element); stack.push_back(instruction.type); break;
+        case Op::sequence_resume: require(Type::int64); require(instruction.type); stack.push_back(Type::boolean); break;
         case Op::sequence_count: require(instruction.type); stack.push_back(Type::integer); break;
         case Op::sequence_query: {
             const auto method=static_cast<SequenceQuery>(instruction.operand); const auto element=type_info(program,instruction.type).element;
