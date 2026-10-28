@@ -188,6 +188,18 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
         if (steps++ >= options.instruction_limit) trap(instruction, RuntimeError::instruction_limit);
         if (options.cancelled && options.cancelled()) trap(instruction, RuntimeError::cancelled);
         switch (instruction.op) {
+        case Op::sequence_snapshot: {
+            const auto array=std::get<std::shared_ptr<Aggregate>>(pop());
+            stack.emplace_back(sequence_snapshot(values,static_cast<Type>(instruction.operand),array,options)); break;
+        }
+        case Op::sequence_repeat: {
+            const auto value=pop(); const auto count=std::get<std::int32_t>(pop());
+            stack.emplace_back(sequence_repeat(values,instruction.type,count,value)); break;
+        }
+        case Op::sequence_range: {
+            const auto last=pop(),first=pop();
+            stack.emplace_back(sequence_range(values,instruction.type,first,last)); break;
+        }
         case Op::sequence_wrap: {
             const auto source=std::get<std::shared_ptr<Aggregate>>(pop());
             stack.emplace_back(sequence_create(values,static_cast<Type>(instruction.operand),source,type_info(program,instruction.type).kind==CompoundKind::array ? SequenceProvider::array : SequenceProvider::list)); break;

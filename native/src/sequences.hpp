@@ -10,4 +10,7 @@ std::uint64_t sequence_length(const std::shared_ptr<Aggregate>& sequence,SourceL
 Value sequence_at(Values& values,const std::shared_ptr<Aggregate>& sequence,std::int64_t index);
 Value sequence_collect(Values& values,const std::shared_ptr<Aggregate>& sequence,Type collection,const ExecutionOptions& options);
 Value sequence_query(Values& values,const std::shared_ptr<Aggregate>& sequence,SequenceQuery method,const Value& argument,const ExecutionOptions& options);
+std::shared_ptr<Aggregate> sequence_snapshot(Values& values,Type type,const std::shared_ptr<Aggregate>& array,const ExecutionOptions& options);
+std::shared_ptr<Aggregate> sequence_repeat(Values& values,Type type,std::int32_t count,const Value& value);
+std::shared_ptr<Aggregate> sequence_range(Values& values,Type type,const Value& first,const Value& last);
 } // namespace abc

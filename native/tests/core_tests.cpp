@@ -321,6 +321,89 @@ void sequence_single_library() {
     catch (const abc::Error& caught) { require(caught.code=="E_MANY" && caught.location.line==3 && std::string_view(caught.what())=="Sequence contains more than one element" && caught.russian=="Последовательность содержит более одного элемента","Single diagnostic retains location and both languages"); }
 }
 
+void sequence_factories_library() {
+    result("begin var a:=Arr(1,2); var s:=Seq(a); var view:sequence of integer:=a; a[0]:=9; Writeln(s.ToArray,' ',view.ToArray); Writeln(PABCSystem.Seq(3,4,5).ToList); Writeln(Seq(new integer[0]).Any); end.","[1,2] [9,2]\n[3,4,5]\nFalse\n");
+    result("begin Writeln(Seq(byte(1),integer(2),int64(3)).ToArray); var a:=Arr(1); var b:=Arr(2); var nested:=Seq(a,b); a[0]:=7; Writeln(nested.ToArray); Writeln(Seq((1,'ab'),(2,'cd')).First.Item2); var s:string:=nil; Writeln(Seq(s,'ab').First=nil); end.","[1,2,3]\n[[7],[2]]\nab\nTrue\n");
+    result("type R=record x:integer; a:array of integer; end; begin var r:R; r.x:=1; r.a:=Arr(7); var a:=Arr(r); var s:=Seq(a); a[0].x:=9; var copy:=s.First; copy.x:=4; copy.a[0]:=8; Writeln(s.First.x,' ',a[0].x,' ',s.First.a[0]); end.","1 9 8\n");
+    result("begin Writeln(SeqFill(3,7).ToArray,' ',PABCSystem.SeqFill(0,7).Any); var s:=SeqFill(2,'ab'); foreach var x in s do Write(x); Writeln; foreach var x in s do Write(x); Writeln; end.","[7,7,7] False\nabab\nabab\n");
+    result("type R=record x:integer; a:array of integer; end; begin var r:R; r.x:=1; r.a:=Arr(7); var s:=SeqFill(2,r); r.x:=9; var copy:=s.First; copy.x:=8; copy.a[0]:=4; Writeln(s.First.x,' ',s.Last.x,' ',s.Last.a[0]); var a:=s.ToArray; a[0].x:=5; Writeln(a[1].x,' ',s.First.x); end.","1 1 4\n1 1\n");
+    result("begin var a:=Arr(1); var s:=SeqFill(2,a); a[0]:=7; Writeln(s.First=s.Last,' ',s.ToArray); var text:string:=nil; Writeln(SeqFill(1,text).Single=nil,' ',SeqFill(0,'ab').FirstOrDefault=nil); Writeln(SeqFill(2,1bi shl 80).ToArray); end.","True [[7],[7]]\nTrue True\n[1208925819614629174706176,1208925819614629174706176]\n");
+    result("uses School; begin var a:=new Addr32('10.0.0.1'); var s:=SeqFill(2,a); a.Value:='10.0.0.7'; Writeln(s.First=s.Last,' ',s.First.Value); end.","True 10.0.0.7\n");
+    result("begin var matrix:=new integer[1,1]; var s:=Seq(matrix); matrix[0,0]:=7; Writeln(s.First[0,0]); var l:=new List<integer>; l.Add(1); Writeln(Seq(l).First=l); end.","7\nTrue\n");
+    result("function CountValue:integer; begin Write('N'); Result:=2; end; function ElementValue:integer; begin Write('V'); Result:=7; end; begin Writeln(SeqFill(CountValue,ElementValue).ToArray); end.","NV[7,7]\n");
+    result("function Seq(n:integer):integer; begin Result:=99; end; begin Writeln(Seq(1),' ',PABCSystem.Seq(1).First); end.","99 1\n");
+    for (const auto source:{"begin Seq(); end.","begin Seq(nil); end.","begin SeqFill(1,nil); end.",
+        "begin SeqFill(1.5,7); end.","begin SeqFill(1); end.","begin Seq(1,True); end.",
+        "begin var a:sequence of real:=Seq(1,2); end."}) compile_error(source,"E_TYPE");
+    runtime_error("begin var a:array of integer; Seq(a); end.","E_NIL");
+    runtime_error("begin SeqFill(-1,7); end.","E_RANGE");
+    const auto negative=abc::compile("function ElementValue:integer; begin Write('V'); Result:=7; end; begin SeqFill(-1,ElementValue); end.");
+    std::istringstream input; std::ostringstream output;
+    error([&]{abc::execute(negative,input,output);},"E_RANGE");
+    require(output.str()=="V","SeqFill evaluates its element argument before validating a negative count");
+    abc::ExecutionOptions options; options.allocation_limit=20; options.instruction_limit=200;
+    require(run("begin var s:=SeqFill(MaxInt,7); Writeln(s.First,' ',s.Any); foreach var x in s do begin Writeln(x); break; end; end.","",options)=="7 True\n7\n","SeqFill retains a single value for a huge lazy sequence");
+    error([&]{(void)run("begin SeqFill(MaxInt,7).ToArray; end.","",options);},"E_LIMIT");
+    options={}; options.instruction_limit=100;
+    error([&]{(void)run("begin Count(SeqFill(1000,7)); end.","",options);},"E_LIMIT");
+    std::string large="begin var s:=PABCSystem.Seq(";
+    for (unsigned i=0;i<256;++i) { if (i) large+=","; large+=std::to_string(i); }
+    large+="); Writeln(s.Count,' ',s.Last); end."; result(large,"256 255\n");
+    auto invalid=abc::compile("begin var s:=Seq(1,2); end.");
+    for (auto& instruction:invalid.code) if (instruction.op==abc::Op::sequence_snapshot) instruction.operand=0;
+    error([&]{abc::verify(invalid);},"E_BYTECODE");
+    invalid=abc::compile("begin var l:=new List<integer>; var s:sequence of integer:=l; end.");
+    for (auto& instruction:invalid.code) if (instruction.op==abc::Op::sequence_wrap) instruction.op=abc::Op::sequence_snapshot;
+    error([&]{abc::verify(invalid);},"E_BYTECODE");
+    invalid=abc::compile("begin var s:=SeqFill(2,7); end.");
+    for (auto& instruction:invalid.code) if (instruction.op==abc::Op::sequence_repeat) instruction.operand=1;
+    error([&]{abc::verify(invalid);},"E_BYTECODE");
+    invalid=abc::compile("begin var s:=SeqFill(2,7); end.");
+    invalid.constants[0]=std::int64_t{2}; invalid.code[0].type=abc::Type::int64;
+    error([&]{abc::verify(invalid);},"E_BYTECODE");
+    const auto program=abc::compile("begin var a:=new integer[0]; var s:=Seq(a); end.");
+    const auto find=[&](abc::CompoundKind kind) {
+        for (std::size_t i=0;i<program.types.size();++i) if (program.types[i].kind==kind) return static_cast<abc::Type>(64+i);
+        throw std::runtime_error("Missing factory test type");
+    };
+    abc::Values values{program,1'048'576}; const auto array=values.array(find(abc::CompoundKind::array),1024);
+    options={}; options.instruction_limit=10;
+    error([&]{(void)abc::sequence_snapshot(values,find(abc::CompoundKind::sequence),array,options);},"E_LIMIT");
+    options={}; options.cancelled=[]{return true;};
+    error([&]{(void)abc::sequence_snapshot(values,find(abc::CompoundKind::sequence),array,options);},"E_CANCELLED");
+    values.remaining=2;
+    error([&]{(void)abc::sequence_snapshot(values,find(abc::CompoundKind::sequence),array,{});},"E_LIMIT");
+    try { (void)run("begin\nSeqFill(-1,7);\nend."); require(false,"Expected sequence count diagnostic"); }
+    catch (const abc::Error& caught) { require(caught.code=="E_RANGE" && caught.location.line==2 && std::string_view(caught.what())=="Sequence count cannot be negative" && caught.russian=="Число элементов последовательности не может быть отрицательным","SeqFill count error retains source position and both languages"); }
+}
+
+void sequence_ranges_library() {
+    result("begin Writeln(Range(1,4).ToArray,' ',PABCSystem.Range(byte(2),word(3)).ToList); Writeln(Range(3,1).Any,' ',Range(2,2).Single); foreach var c in Range('а','в') do Write(c); Writeln; Writeln(Range('a','c').Contains('b')); end.","[1,2,3,4] [2,3]\nFalse 2\nабв\nTrue\n");
+    result("begin Writeln(Range(not(MaxInt),not(MaxInt)+1).ToArray,' ',Range(MaxInt,MaxInt).Single); Writeln(Ord(Range(#65534,#65535).Last),' ',Range('z','a').Count); Writeln(Range(3,1)=Range(9,2),' ',Range(1,2)=Range(1,2)); end.","[-2147483648,-2147483647] 2147483647\n65535 0\nTrue False\n");
+    result("function FirstBound:integer; begin Write('A'); Result:=3; end; function LastBound:integer; begin Write('B'); Result:=5; end; begin Writeln(Range(FirstBound,LastBound).ToArray); end.","AB[3,4,5]\n");
+    result("begin var s:=Range(1,2); foreach var x in s do foreach var y in s do Write(x,y,';'); Writeln; var a:=s.ToArray; a[0]:=9; Writeln(s.First,' ',s.Last); end.","11;12;21;22;\n1 2\n");
+    result("uses School; begin Writeln(Range(-3,4).MinMax); end.","(-3,4)\n");
+    result("function Range(a,b:integer):integer; begin Result:=99; end; begin Writeln(Range(1,2),' ',PABCSystem.Range(1,2).ToArray); end.","99 [1,2]\n");
+    for (const auto source:{"begin Range(0,MaxInt); end.","begin Range(not(MaxInt),0); end.","begin Range(not(MaxInt),MaxInt); end."}) runtime_error(source,"E_OVERFLOW");
+    runtime_error("begin Range(1,2).ElementAt(2); end.","E_BOUNDS");
+    for (const auto source:{"begin Range(1,3,1); end.","begin Range(1bi,2bi); end.","begin Range(1.0,2.0); end.",
+        "begin Range('ab','cd'); end.","begin Range(1); end.","begin Range(nil,nil); end.",
+        "begin var s:sequence of real:=Range(1,2); end."}) compile_error(source,"E_TYPE");
+    abc::ExecutionOptions options; options.allocation_limit=20; options.instruction_limit=200;
+    require(run("begin var s:=Range(1,MaxInt); Writeln(s.First,' ',s.Any); foreach var x in s do begin Writeln(x); break; end; end.","",options)=="1 True\n1\n","Large Range is lazy and supports early termination with a constant allocation budget");
+    error([&]{(void)run("begin Range(1,MaxInt).ToArray; end.","",options);},"E_LIMIT");
+    options={}; options.instruction_limit=100;
+    error([&]{(void)run("begin Count(Range(1,1000)); end.","",options);},"E_LIMIT");
+    auto invalid=abc::compile("begin var s:=Range(1,2); end.");
+    for (auto& instruction:invalid.code) if (instruction.op==abc::Op::sequence_range) instruction.operand=1;
+    error([&]{abc::verify(invalid);},"E_BYTECODE");
+    invalid=abc::compile("begin var s:=Range(1,2); var r:=SeqFill(2,1.5); end.");
+    abc::Type reals=abc::Type::invalid;
+    for (std::size_t i=0;i<invalid.types.size();++i) if (invalid.types[i].kind==abc::CompoundKind::sequence && invalid.types[i].element==abc::Type::real) reals=static_cast<abc::Type>(64+i);
+    for (auto& instruction:invalid.code) if (instruction.op==abc::Op::sequence_range) instruction.type=reals;
+    error([&]{abc::verify(invalid);},"E_BYTECODE");
+}
+
 void school_minmax_library() {
     result("uses School; begin Writeln(MinMax(Arr(4,-7,9,2)),' ',School.MinMax(Arr(int64(-9223372036854775808),MaxInt64))); var a:=new List<real>; a.Add(1.5); a.Add(-2.25); Writeln(a.MinMax); Writeln(MinMax(new integer[0]),' ',MinMax(new int64[0])); var r:=MinMax(new real[0]); Writeln(r.Item1>1e308,' ',r.Item2< -1e308); end.","(-7,9) (-9223372036854775808,9223372036854775807)\n(-2.25,1.5)\n(2147483647,-2147483648) (9223372036854775807,-9223372036854775808)\nTrue True\n");
     result("uses School; function MinMax(a:array of integer):integer; begin Result:=7; end; begin var a:=Arr(4,2,8); Writeln(MinMax(a),' ',School.MinMax(a),' ',a.MinMax()); end.","7 (2,8) (2,8)\n");
@@ -3088,6 +3171,8 @@ int main() {
     sequence_to_list_library();
     sequence_queries_library();
     sequence_single_library();
+    sequence_factories_library();
+    sequence_ranges_library();
     school_factor_library();
     sequence_mutations();
     arithmetic();

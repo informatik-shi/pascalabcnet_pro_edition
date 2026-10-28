@@ -586,7 +586,7 @@ private:
                     auto argument = (name=="print" || name=="println" || name=="str" || (result->kind==SyntaxExprKind::member_call && (name=="write" || name=="writeln")))
                         ? output_argument() : expression();
                     result->depth = std::max(result->depth, argument->depth + 1);
-                    const auto limit=(result->kind==SyntaxExprKind::call && name=="arr") || name=="gcd" || name=="lcm" ? 4096U : 16U;
+                    const auto limit=(result->kind==SyntaxExprKind::call && name=="arr") || name=="seq" || name=="gcd" || name=="lcm" ? 4096U : 16U;
                     if (result->depth > 256 || result->arguments.size() >= limit) fail("Function call limit exceeded");
                     result->arguments.push_back(std::move(argument));
                 } while (accept(","));
@@ -1008,6 +1008,7 @@ private:
                 for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
                 if (bind_print(*result,source.token.text,source.left->token.text)) break;
                 if (bind_sequence_conversion(*result,source.token.text,source.left->token.text)) break;
+                if (bind_sequence_factory(*result,source.token.text,source.left->token.text)) break;
                 if (bind_sequence_query(*result,source.token.text,source.left->token.text)) break;
                 if (bind_try_read(*result,source.token.text,source.left->token.text)) break;
                 if (bind_number_conversion(*result,source.token.text,source.left->token.text)) break;
@@ -1430,6 +1431,7 @@ private:
             }
             if (bind_print(*result,source.token.text)) break;
             if (bind_sequence_conversion(*result,source.token.text)) break;
+            if (bind_sequence_factory(*result,source.token.text)) break;
             if (bind_sequence_query(*result,source.token.text)) break;
             if (imported_units_.contains("school") && (source.token.text=="addr32" || source.token.text=="calcip")) {
                 bind_school_ip_constructor(*result,school_ip_type(source.token.text=="addr32" ? CompoundKind::school_address : CompoundKind::school_ip)); break;
@@ -1449,26 +1451,7 @@ private:
             if (bind_array_length(*result,source.token.text)) break;
             if (bind_object_text(*result,source.token.text)) break;
             if (source.token.text == "arr") {
-                if (result->arguments.empty()) throw Error("E_TYPE",result->location,"Cannot infer empty Arr element type");
-                auto element = Type::nil;
-                for (const auto& argument : result->arguments) if (argument->type != Type::nil) { element=argument->type; break; }
-                if (element == Type::unit || element == Type::nil) throw Error("E_TYPE",result->location,"Procedure has no value");
-                for (const auto& argument : result->arguments) {
-                    if (argument->type == Type::nil) continue;
-                    if ((element==Type::uint64 && integer_type(argument->type)) || (argument->type==Type::uint64 && integer_type(element))) {
-                        element=Type::uint64; continue;
-                    }
-                    if (can_widen(element,argument->type)) element = argument->type;
-                    else if (!can_widen(argument->type,element)) {
-                        bool joined=false;
-                        if (numeric(element) && numeric(argument->type))
-                            for (auto type:{Type::byte,Type::shortint,Type::smallint,Type::word,Type::integer,Type::int64,Type::longword,Type::uint64,Type::real})
-                                if (can_widen(element,type) && can_widen(argument->type,type)) { element=type; joined=true; break; }
-                        if (!joined) throw Error("E_TYPE",result->location,"Incompatible array elements");
-                    }
-                }
-                for (auto& argument : result->arguments) argument = convert(std::move(argument),element);
-                result->kind = hir::ExprKind::array_literal; result->type = sequence_type(CompoundKind::array,element); break;
+                bind_array_literal(*result); break;
             }
             if (source.token.text == "length" && result->arguments.size() == 1 && compound(result->arguments[0]->type)) {
                 if (!indexed_sequence(info(result->arguments[0]->type,result->location).kind)) throw Error("E_TYPE",result->location,"Length requires an array or list");
@@ -1682,6 +1665,53 @@ private:
         for (const auto& argument:result.arguments) elements.push_back(argument->type);
         result.type=tuple_type(elements,result.location); result.kind=pair ? hir::ExprKind::school_pair : hir::ExprKind::tuple_literal;
         return true;
+    }
+    void bind_array_literal(hir::Expr& result) {
+        if (result.arguments.empty()) throw Error("E_TYPE",result.location,"Cannot infer empty Arr element type");
+        auto element=Type::nil;
+        for (const auto& argument:result.arguments) if (argument->type!=Type::nil) { element=argument->type; break; }
+        if (element==Type::unit || element==Type::nil) throw Error("E_TYPE",result.location,"Procedure has no value");
+        for (const auto& argument:result.arguments) {
+            if (argument->type==Type::nil) continue;
+            if ((element==Type::uint64 && integer_type(argument->type)) || (argument->type==Type::uint64 && integer_type(element))) {
+                element=Type::uint64; continue;
+            }
+            if (can_widen(element,argument->type)) element=argument->type;
+            else if (!can_widen(argument->type,element)) {
+                bool joined=false;
+                if (numeric(element) && numeric(argument->type))
+                    for (auto type:{Type::byte,Type::shortint,Type::smallint,Type::word,Type::integer,Type::int64,Type::longword,Type::uint64,Type::real})
+                        if (can_widen(element,type) && can_widen(argument->type,type)) { element=type; joined=true; break; }
+                if (!joined) throw Error("E_TYPE",result.location,"Incompatible array elements");
+            }
+        }
+        for (auto& argument:result.arguments) argument=convert(std::move(argument),element);
+        result.kind=hir::ExprKind::array_literal; result.type=sequence_type(CompoundKind::array,element);
+    }
+    bool bind_sequence_factory(hir::Expr& result,std::string_view name,std::string_view unit={}) {
+        if ((name!="seq" && name!="seqfill" && name!="range") || (!unit.empty() && unit!="pabcsystem")) return false;
+        if (name=="range") {
+            if (result.arguments.size()!=2) throw Error("E_TYPE",result.location,"Range currently requires two integer or character bounds");
+            const auto element=result.arguments[0]->type==Type::character && result.arguments[1]->type==Type::character ? Type::character : Type::integer;
+            result.left=convert(std::move(result.arguments[0]),element); result.right=convert(std::move(result.arguments[1]),element);
+            result.arguments.clear(); result.kind=hir::ExprKind::sequence_range; result.type=sequence_type(CompoundKind::sequence,element); return true;
+        }
+        if (name=="seqfill") {
+            if (result.arguments.size()!=2) throw Error("E_TYPE",result.location,"SeqFill requires a count and a typed value");
+            const auto element=result.arguments[1]->type;
+            if (element==Type::nil || element==Type::unit) throw Error("E_TYPE",result.location,"Cannot infer SeqFill element type");
+            result.left=convert(std::move(result.arguments[0]),Type::integer); result.right=std::move(result.arguments[1]);
+            result.arguments.clear(); result.kind=hir::ExprKind::sequence_repeat; result.type=sequence_type(CompoundKind::sequence,element); return true;
+        }
+        if (result.arguments.size()==1 && compound(result.arguments[0]->type)
+            && info(result.arguments[0]->type,result.location).kind==CompoundKind::array && info(result.arguments[0]->type,result.location).rank==1) {
+            result.left=std::move(result.arguments[0]); result.arguments.clear();
+        } else {
+            auto array=std::make_unique<hir::Expr>(); array->location=result.location; array->arguments=std::move(result.arguments);
+            bind_array_literal(*array); result.left=std::move(array);
+        }
+        result.kind=hir::ExprKind::sequence_snapshot;
+        result.type=sequence_type(CompoundKind::sequence,info(result.left->type,result.location).element); return true;
     }
     bool bind_sequence_conversion(hir::Expr& result,std::string_view name,std::string_view unit={}) {
         if ((name!="count" && name!="toarray" && name!="tolist") || (!unit.empty() && unit!="pabcsystem")) return false;

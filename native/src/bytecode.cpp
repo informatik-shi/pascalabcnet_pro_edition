@@ -60,6 +60,12 @@ private:
         switch (node.kind) {
         case hir::ExprKind::sequence_wrap:
             expression(*node.left); emit(Op::sequence_wrap,node.left->type,static_cast<std::size_t>(node.type),node.location); break;
+        case hir::ExprKind::sequence_snapshot:
+            expression(*node.left); emit(Op::sequence_snapshot,node.left->type,static_cast<std::size_t>(node.type),node.location); break;
+        case hir::ExprKind::sequence_repeat:
+            expression(*node.left); expression(*node.right); emit(Op::sequence_repeat,node.type,0,node.location); break;
+        case hir::ExprKind::sequence_range:
+            expression(*node.left); expression(*node.right); emit(Op::sequence_range,node.type,0,node.location); break;
         case hir::ExprKind::sequence_call:
             expression(*node.left); emit(node.local==2 ? Op::sequence_list : node.local ? Op::sequence_array : Op::sequence_count,node.left->type,node.local ? static_cast<std::size_t>(node.type) : 0,node.location); break;
         case hir::ExprKind::sequence_query:
@@ -454,13 +460,21 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
     for (const auto& instruction : code) {
         const auto type = instruction.type;
         switch (instruction.op) {
-        case Op::sequence_wrap: {
+        case Op::sequence_snapshot: case Op::sequence_wrap: {
             if (!compound(type) || !indexed_sequence(type_info(program,type).kind) || type_info(program,type).rank!=1
                 || instruction.operand<64 || instruction.operand>=64+program.types.size()) invalid(instruction,"Invalid sequence view source");
             const auto& target=type_info(program,static_cast<Type>(instruction.operand));
             if (target.kind!=CompoundKind::sequence || target.element!=type_info(program,type).element) invalid(instruction,"Invalid sequence view element type");
+            if (instruction.op==Op::sequence_snapshot && type_info(program,type).kind!=CompoundKind::array) invalid(instruction,"Seq snapshot requires an array");
             break;
         }
+        case Op::sequence_repeat:
+            if (!compound(type) || type_info(program,type).kind!=CompoundKind::sequence || instruction.operand) invalid(instruction,"Invalid SeqFill metadata");
+            break;
+        case Op::sequence_range:
+            if (!compound(type) || type_info(program,type).kind!=CompoundKind::sequence || instruction.operand
+                || (type_info(program,type).element!=Type::integer && type_info(program,type).element!=Type::character)) invalid(instruction,"Invalid Range metadata");
+            break;
         case Op::sequence_query:
             if (!compound(type) || type_info(program,type).kind!=CompoundKind::sequence
                 || instruction.operand>static_cast<std::size_t>(SequenceQuery::single_default)) invalid(instruction,"Invalid sequence query metadata");
@@ -769,7 +783,9 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         switch (instruction.op) {
         case Op::iteration_version: require(instruction.type); stack.push_back(Type::int64); break;
         case Op::sequence_begin: require(instruction.type); stack.push_back(instruction.type); break;
-        case Op::sequence_wrap: require(instruction.type); stack.push_back(static_cast<Type>(instruction.operand)); break;
+        case Op::sequence_snapshot: case Op::sequence_wrap: require(instruction.type); stack.push_back(static_cast<Type>(instruction.operand)); break;
+        case Op::sequence_repeat: require(type_info(program,instruction.type).element); require(Type::integer); stack.push_back(instruction.type); break;
+        case Op::sequence_range: require(type_info(program,instruction.type).element); require(type_info(program,instruction.type).element); stack.push_back(instruction.type); break;
         case Op::sequence_count: require(instruction.type); stack.push_back(Type::integer); break;
         case Op::sequence_query: {
             const auto method=static_cast<SequenceQuery>(instruction.operand); const auto element=type_info(program,instruction.type).element;
