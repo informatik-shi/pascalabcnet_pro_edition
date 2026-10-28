@@ -197,7 +197,10 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
             stack.emplace_back(sequence_repeat(values,instruction.type,count,value)); break;
         }
         case Op::sequence_range: {
-            if (type_info(program,instruction.type).element==Type::big_integer) {
+            if (type_info(program,instruction.type).element==Type::real) {
+                const auto step=std::get<double>(pop()),last=std::get<double>(pop()),first=std::get<double>(pop());
+                stack.emplace_back(sequence_range_real(values,instruction.type,first,last,step));
+            } else if (type_info(program,instruction.type).element==Type::big_integer) {
                 const auto step=instruction.operand ? std::get<BigInteger>(pop()) : checked_big(instruction.location,[]{return BigInteger::from_signed(1);});
                 if (!instruction.operand) values.number(step);
                 const auto last=std::get<BigInteger>(pop()),first=std::get<BigInteger>(pop());

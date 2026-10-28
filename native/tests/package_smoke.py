@@ -126,6 +126,7 @@ def main():
                 ("regex-search.pas", "Есть число: True\nПервое число: 123\nБез числа: []\nПроверка: True\n"),
                 ("sequence-lists.pas", "Массив: [1,2]\nСписок: [9,2,3]\nКопия: [9,2,3]\nПосле изменения: [9,8,3]\n"),
                 ("sequence-factories.pas", "Снимок: [1,2]\nИсходный массив: [9,2]\nПовторения: [да,да,да]\nПервый большого повтора: 7\nДиапазон: [2,3,4,5]\nСимволы: abc\n"),
+                ("real-ranges.pas", "Точек: 11\nКонец точно 1: True\nЧетверти: [0,0.25,0.5,0.75,1]\nОбратно: [1,0.75,0.5,0.25,0]\nШаг 0.3: 4 точки\n"),
                 ("partition-points.pas", "Разбиение на 4 части: [0,0.25,0.5,0.75,1]\nПять точек: [0,0.25,0.5,0.75,1]\nОбратный порядок: [1,0.75,0.5,0.25,0]\nПервый большого разбиения: 0\n"),
                 ("big-integer-ranges.pas", "Большие числа: [1000000000000000000000000000000,1000000000000000000000000000002,1000000000000000000000000000004,1000000000000000000000000000006]\nОбратный порядок: [7,5,3,1]\nПервый огромного диапазона: 0\nРанний выход: 0\n"),
                 ("stepped-ranges.pas", "Вверх: [1,4,7,10]\nВниз: [10,7,4,1]\nСимволы: авдж\nНачало большого диапазона: -2147483648\nПоследнее значение перед break: 2147483647\n"),
@@ -189,6 +190,9 @@ def main():
                 ("var a:array of integer; Seq(a)", "E_NIL", "Cannot access a nil reference", "Нельзя обратиться к пустой ссылке nil"),
                 ("Range(not(MaxInt),MaxInt)", "E_OVERFLOW", "Integer overflow", "Переполнение целого числа"),
                 ("Range(1,2,0).Any", "E_RANGE", "Sequence step cannot be zero", "Шаг последовательности не может быть равен нулю"),
+                ("Range(0,1,0.0).Any", "E_RANGE", "Sequence step cannot be zero", "Шаг последовательности не может быть равен нулю"),
+                ("Range(0,1e29,1.0).First", "E_OVERFLOW", "Decimal overflow", "Переполнение десятичного числа"),
+                ("Range(0,1,1e-29).Any", "E_DIV_ZERO", "Division by zero", "Деление на ноль"),
                 ("PartitionPoints(0,1,0).Any", "E_RANGE", "Partition count must be positive", "Число частей разбиения должно быть положительным"),
                 ("Linspace(0,1,1).Any", "E_RANGE", "Partition count must be positive", "Число частей разбиения должно быть положительным"),
                 ("Linspace(0,1,not(MaxInt))", "E_OVERFLOW", "Integer overflow", "Переполнение целого числа"),
@@ -529,6 +533,7 @@ def main():
             results[-1]["lazy_integer_character_range"] = "passed"
             results[-1]["arbitrary_span_biginteger_range"] = "passed"
             results[-1]["partition_points_and_linspace"] = "passed"
+            results[-1]["real_range_decimal_scaling"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 

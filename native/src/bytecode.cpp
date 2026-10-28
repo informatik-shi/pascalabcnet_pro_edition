@@ -485,7 +485,8 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             break;
         case Op::sequence_range:
             if (!compound(type) || type_info(program,type).kind!=CompoundKind::sequence || instruction.operand>1
-                || (type_info(program,type).element!=Type::integer && type_info(program,type).element!=Type::character && type_info(program,type).element!=Type::big_integer)) invalid(instruction,"Invalid Range metadata");
+                || (type_info(program,type).element!=Type::integer && type_info(program,type).element!=Type::character && type_info(program,type).element!=Type::big_integer && type_info(program,type).element!=Type::real)
+                || (type_info(program,type).element==Type::real && instruction.operand!=1)) invalid(instruction,"Invalid Range metadata");
             break;
         case Op::sequence_query:
             if (!compound(type) || type_info(program,type).kind!=CompoundKind::sequence
@@ -799,7 +800,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         case Op::sequence_repeat: require(type_info(program,instruction.type).element); require(Type::integer); stack.push_back(instruction.type); break;
         case Op::sequence_partition: require(Type::integer); require(Type::real); require(Type::real); stack.push_back(instruction.type); break;
         case Op::sequence_range:
-            if (instruction.operand) require(type_info(program,instruction.type).element==Type::big_integer ? Type::big_integer : Type::integer);
+            if (instruction.operand) require(type_info(program,instruction.type).element==Type::character ? Type::integer : type_info(program,instruction.type).element);
             require(type_info(program,instruction.type).element); require(type_info(program,instruction.type).element); stack.push_back(instruction.type); break;
         case Op::sequence_resume: require(Type::int64); require(instruction.type); stack.push_back(Type::boolean); break;
         case Op::sequence_count: require(instruction.type); stack.push_back(Type::integer); break;

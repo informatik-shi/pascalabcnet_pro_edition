@@ -18,4 +18,5 @@ std::shared_ptr<Aggregate> sequence_range(Values& values,Type type,const Value& 
 std::shared_ptr<Aggregate> sequence_range_step(Values& values,Type type,const Value& first,const Value& last,std::int32_t step);
 std::shared_ptr<Aggregate> sequence_range_big(Values& values,Type type,const BigInteger& first,const BigInteger& last,const BigInteger& step);
 std::shared_ptr<Aggregate> sequence_partition(Values& values,Type type,double first,double last,std::int32_t intervals);
+std::shared_ptr<Aggregate> sequence_range_real(Values& values,Type type,double first,double last,double step);
 } // namespace abc

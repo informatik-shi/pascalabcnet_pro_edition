@@ -1701,10 +1701,13 @@ private:
         if (name=="range") {
             if (result.arguments.size()!=2 && result.arguments.size()!=3) throw Error("E_TYPE",result.location,"Range requires two integer or character bounds and an optional integer step");
             const bool big=std::any_of(result.arguments.begin(),result.arguments.end(),[](const auto& argument){return argument->type==Type::big_integer;});
-            const auto element=big ? Type::big_integer : result.arguments[0]->type==Type::character && result.arguments[1]->type==Type::character ? Type::character : Type::integer;
+            const bool real=!big && result.arguments.size()==3
+                && std::all_of(result.arguments.begin(),result.arguments.end(),[](const auto& argument){return can_widen(argument->type,Type::real);})
+                && std::any_of(result.arguments.begin(),result.arguments.end(),[](const auto& argument){return !can_widen(argument->type,Type::integer);});
+            const auto element=big ? Type::big_integer : real ? Type::real : result.arguments[0]->type==Type::character && result.arguments[1]->type==Type::character ? Type::character : Type::integer;
             result.left=convert(std::move(result.arguments[0]),element); result.right=convert(std::move(result.arguments[1]),element);
             if (result.arguments.size()==3) {
-                auto step=convert(std::move(result.arguments[2]),big ? Type::big_integer : Type::integer);
+                auto step=convert(std::move(result.arguments[2]),big ? Type::big_integer : real ? Type::real : Type::integer);
                 result.arguments.clear(); result.arguments.push_back(std::move(step));
             } else result.arguments.clear();
             result.kind=hir::ExprKind::sequence_range; result.type=sequence_type(CompoundKind::sequence,element); return true;

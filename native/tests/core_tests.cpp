@@ -4,6 +4,7 @@
 #include "../src/school.hpp"
 #include "../src/runtime_values.hpp"
 #include "../src/sequences.hpp"
+#include "../src/real_range.hpp"
 
 #include <iostream>
 #include <array>
@@ -386,7 +387,7 @@ void sequence_ranges_library() {
     result("function Range(a,b:integer):integer; begin Result:=99; end; begin Writeln(Range(1,2),' ',PABCSystem.Range(1,2).ToArray); end.","99 [1,2]\n");
     for (const auto source:{"begin Range(0,MaxInt); end.","begin Range(not(MaxInt),0); end.","begin Range(not(MaxInt),MaxInt); end."}) runtime_error(source,"E_OVERFLOW");
     runtime_error("begin Range(1,2).ElementAt(2); end.","E_BOUNDS");
-    for (const auto source:{"begin Range(1,3,1.0); end.","begin Range(1bi,2.5); end.","begin Range(1.0,2.0); end.",
+    for (const auto source:{"begin Range(1,3,'x'); end.","begin Range(1bi,2.5); end.","begin Range(1.0,2.0); end.",
         "begin Range('ab','cd'); end.","begin Range(1); end.","begin Range(nil,nil); end.",
         "begin var s:sequence of real:=Range(1,2); end."}) compile_error(source,"E_TYPE");
     abc::ExecutionOptions options; options.allocation_limit=20; options.instruction_limit=200;
@@ -426,7 +427,7 @@ void stepped_ranges_library() {
     runtime_error("begin Range(not(MaxInt),not(MaxInt),-1).Count; end.","E_OVERFLOW");
     runtime_error("begin Range(MaxInt,not(MaxInt),not(MaxInt)).ToArray; end.","E_OVERFLOW");
     runtime_error("begin Range(MaxInt-1,MaxInt,1).Single; end.","E_MANY");
-    for (const auto source:{"begin Range(1,3,True); end.","begin Range(1,3,int64(1)); end.","begin Range(1,3,1,1); end.","begin Range('ab','cd',1); end.","begin Range(1bi,3bi,1.5); end."}) compile_error(source,"E_TYPE");
+    for (const auto source:{"begin Range(1,3,True); end.","begin Range(1,3,nil); end.","begin Range(1,3,1,1); end.","begin Range('ab','cd',1); end.","begin Range(1bi,3bi,1.5); end."}) compile_error(source,"E_TYPE");
     for (const auto source:{"begin foreach var x in Range(MaxInt,MaxInt,1) do Write(x); end.","begin foreach var x in Range(MaxInt,MaxInt,1) do begin Write(x); continue; end; end."}) {
         auto p=abc::compile(source); std::istringstream in; std::ostringstream out;
         error([&]{abc::execute(p,in,out);},"E_OVERFLOW");
@@ -541,6 +542,59 @@ void partition_points_library() {
     error([&]{abc::verify(p);},"E_BYTECODE");
     try { (void)run("begin\nvar s:=PartitionPoints(0,1,0);\ns.Any;\nend."); require(false,"Expected partition count diagnostic"); }
     catch (const abc::Error& caught) { require(caught.code=="E_RANGE" && caught.location.line==3 && std::string_view(caught.what())=="Partition count must be positive" && caught.russian=="Число частей разбиения должно быть положительным","Partition count validation is deferred with both languages and the consumer position"); }
+}
+
+void real_ranges_library() {
+    result("begin var s:sequence of real:=Range(0,1,0.25); Writeln(s.ToArray,' ',s.Count); Writeln(PABCSystem.Range(1.0,0,-0.25).ToList); Writeln(Range(int64(1),3,int64(1)).ToArray); end.","[0,0.25,0.5,0.75,1] 5\n[1,0.75,0.5,0.25,0]\n[1,2,3]\n");
+    result("begin var s:=Range(0,1,0.1); Writeln(s.Count,' ',s.Last=1,' ',s.ToArray[10]=1,' ',s.Contains(1.0),' ',s.ElementAt(3)=3*0.1); Writeln(Range(1,0,-0.1).Last=0); Writeln(Range(0,1,0.3).Last=3*0.3); end.","11 True True True True\nTrue\nTrue\n");
+    result("begin Writeln(Range(0,1,0.4).Count,' ',Range(0,1,0.4).Last=0.8); Writeln(Range(0,1,0.6).Count,' ',Range(0,1,0.6).Last=0.6); Writeln(Range(0,1,2.0).Single,' ',Range(0,1,3.0).Single); Writeln(Range(3,0,0.5).Any,' ',Range(0,3,-0.5).Count); end.","3 True\n2 True\n0 0\nFalse 0\n");
+    result("begin Writeln(Range(0,1,0.500000000000005).Last=1,' ',Range(0,1,0.500000000000006).Count); Writeln(Range(0,1,0.499999999999995).Last=1,' ',Range(0,1,0.499999999999994).Last<>1); end.","True 2\nTrue True\n");
+    result("begin var a:=1e14; var s:=Range(a,a+1,0.01); Writeln(s.Count,' ',s.ElementAt(5)=a+5*0.01,' ',s.Last=a+1); Writeln(Range(0,7.92281625142643e28,7.92281625142643e28).Count); end.","101 True True\n2\n");
+    result("begin var s:=Range(0,1,0.5); foreach var x in s do foreach var y in s do Write(x,':',y,';'); Writeln; var a:=s.ToArray; a[0]:=9; Writeln(s.ToList,' ',s.ToArray); end.","0:0;0:0.5;0:1;0.5:0;0.5:0.5;0.5:1;1:0;1:0.5;1:1;\n[0,0.5,1] [0,0.5,1]\n");
+    result("uses School; begin Writeln(Range(-1,1,0.5).MinMax); var s:=Range(1,2,0.0); Writeln('created ',s.ElementAtOrDefault(-1)); end.","(-1,1)\ncreated 0\n");
+    result("function A:real; begin Write('A'); Result:=0; end; function B:real; begin Write('B'); Result:=1; end; function S:real; begin Write('S'); Result:=0.5; end; begin Writeln(Range(A,B,S).ToArray); end.","ABS[0,0.5,1]\n");
+    result("begin Writeln(Range(1e40,1e40,1e40).Single=1e40,' ',Range(1e40,0,1e40).Any); end.","True False\n");
+    for (const auto suffix:{"Any","First","Last","Count","ToArray","ToList","Contains(0.0)","ElementAt(0)","SingleOrDefault"}) runtime_error("begin Range(0,1,0.0)."+std::string(suffix)+"; end.","E_RANGE");
+    runtime_error("begin foreach var x in Range(0,1,0.0) do Writeln(x); end.","E_RANGE");
+    runtime_error("uses School; begin Range(0,1,0.0).MinMax; end.","E_RANGE");
+    for (const auto source:{"begin Range(0,1,1e-29).Any; end.","begin Range(0.0,1e-29,1e-30).First; end.","begin Range(1e16,1e16+2,1.0).First; end.","begin Range(0.0,1e28,1e-28).First; end."}) runtime_error(source,"E_DIV_ZERO");
+    for (const auto source:{"begin Range(0,1e29,1.0).First; end.","begin Range(-7e28,7e28,1e28).First; end.","begin Range(0,1,1e29).First; end.","begin Range(0,1e29,1e-99).First; end."}) runtime_error(source,"E_OVERFLOW");
+    runtime_error("begin Range(0.0,2147483648,1).First; end.","E_OVERFLOW");
+    runtime_error("begin Range(0,1,0.5).Single; end.","E_MANY");
+    runtime_error("begin Range(1,0,0.5).First; end.","E_EMPTY");
+    runtime_error("begin Range(0,1,0.5).ElementAt(3); end.","E_BOUNDS");
+    for (const auto source:{"begin Range(0.0,1.0); end.","begin Range(0.0,1.0,True); end.","begin Range(0bi,1,0.5); end.","begin var s:sequence of integer:=Range(0,1,0.5); end."}) compile_error(source,"E_TYPE");
+    abc::ExecutionOptions options; options.allocation_limit=512; options.instruction_limit=10000;
+    require(run("begin var s:=Range(0.0,MaxInt,1); Writeln(s.First,' ',s.Any); foreach var x in s do begin Writeln(x); break; end; end.","",options)=="0 True\n0\n","Real Range supports more than int32 elements with bounded planning and early exits");
+    error([&]{(void)run("begin Range(0.0,MaxInt,1).ToArray; end.","",options);},"E_LIMIT");
+    options.allocation_limit=64;
+    error([&]{(void)run("begin Range(0,1,0.5).First; end.","",options);},"E_LIMIT");
+    const auto p=abc::compile("begin end."); abc::Values values{p,300}; options={};
+    const auto plan=abc::real_range_plan(values,0,1,0.4,options);
+    require(plan.prefix==2 && plan.count==3 && !plan.snap,"Decimal reciprocal uses midpoint-to-even rounding");
+    require(values.remaining==300,"Decimal planning releases its bounded scratch allocation");
+    options.cancelled=[]{return true;};
+    error([&]{(void)abc::real_range_plan(values,0,1,0.5,options);},"E_CANCELLED");
+    require(values.remaining==300,"Decimal planning releases scratch after cancellation");
+    options={}; options.instruction_limit=1;
+    error([&]{(void)abc::real_range_plan(values,0,1,0.5,options);},"E_LIMIT");
+    require(values.remaining==300,"Decimal planning releases scratch after a work limit");
+    try { (void)run("begin\nvar s:=Range(0,1e29,1.0);\ns.Any;\nend."); require(false,"Expected Decimal overflow"); }
+    catch (const abc::Error& caught) { require(caught.code=="E_OVERFLOW" && caught.location.line==3 && std::string_view(caught.what())=="Decimal overflow" && caught.russian=="Переполнение десятичного числа","Decimal overflow is deferred and bilingual at the consumer position"); }
+    auto invalid=abc::compile("begin var s:=Range(0,1,0.5); end.");
+    for (auto& instruction:invalid.code) if (instruction.op==abc::Op::sequence_range) instruction.operand=0;
+    error([&]{abc::verify(invalid);},"E_BYTECODE");
+    // Exact quarter-unit corpus, with independent fixed-integer expected values.
+    const auto quarter=[](int n){
+        const auto magnitude=n<0 ? -n : n; const std::array<std::string_view,4> suffix={"",".25",".5",".75"};
+        return (n<0 ? std::string{"-"} : std::string{})+std::to_string(magnitude/4)+std::string(suffix[magnitude%4]);
+    };
+    for (int a=-4;a<=4;++a) for (int b=-4;b<=4;++b) for (int step:{-3,-1,1,3}) {
+        std::string expected="["; bool comma=false;
+        for (int x=a;step>0 ? x<=b : x>=b;x+=step) { if (comma) expected+=","; comma=true; expected+=quarter(x); }
+        expected+="]\n";
+        result("begin Writeln(Range("+quarter(a)+","+quarter(b)+","+quarter(step)+").ToArray); end.",expected);
+    }
 }
 
 void school_minmax_library() {
@@ -3315,6 +3369,7 @@ int main() {
     stepped_ranges_library();
     big_ranges_library();
     partition_points_library();
+    real_ranges_library();
     school_factor_library();
     sequence_mutations();
     arithmetic();

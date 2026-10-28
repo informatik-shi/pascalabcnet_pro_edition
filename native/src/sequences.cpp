@@ -2,6 +2,7 @@
 #include "school_ip.hpp"
 #include "runtime_values.hpp"
 #include "big_integer_runtime.hpp"
+#include "real_range.hpp"
 #include <cmath>
 
 namespace abc {
@@ -36,7 +37,7 @@ std::shared_ptr<Aggregate> sequence_begin(Values& values,const std::shared_ptr<A
     auto result=std::make_shared<Aggregate>(); result->type=sequence->type;
     result->sequence=std::make_unique<SequenceState>(*sequence->sequence);
     auto& state=*result->sequence; state.started=true; state.first=0;
-    if (state.provider==SequenceProvider::repeat || state.provider==SequenceProvider::range || state.provider==SequenceProvider::stepped_range || state.provider==SequenceProvider::big_range || state.provider==SequenceProvider::partition) {
+    if (state.provider==SequenceProvider::repeat || state.provider==SequenceProvider::range || state.provider==SequenceProvider::stepped_range || state.provider==SequenceProvider::big_range || state.provider==SequenceProvider::partition || state.provider==SequenceProvider::real_range) {
         if (!state.seed || state.seed->type!=type_info(values.program,sequence->type).element)
             throw runtime_error(RuntimeError::invalid_bytecode,values.location);
         if (state.provider==SequenceProvider::big_range) {
@@ -48,6 +49,11 @@ std::shared_ptr<Aggregate> sequence_begin(Values& values,const std::shared_ptr<A
             if (!state.partition || state.seed->type!=Type::real) throw runtime_error(RuntimeError::invalid_bytecode,values.location);
             reserve_state(values);
             state.partition=std::make_shared<PartitionState>(PartitionState{state.partition->last,0,std::get<double>(state.seed->value)});
+        }
+        if (state.provider==SequenceProvider::real_range) {
+            if (!state.real_range || state.seed->type!=Type::real) throw runtime_error(RuntimeError::invalid_bytecode,values.location);
+            reserve_state(values); state.count=0;
+            state.real_range=std::make_shared<RealRangeState>(RealRangeState{state.real_range->last,state.real_range->step});
         }
         return result;
     }
@@ -63,7 +69,17 @@ void sequence_check(const std::shared_ptr<Aggregate>& sequence,SourceLocation lo
 }
 bool sequence_resume(Values& values,const std::shared_ptr<Aggregate>& sequence,std::uint64_t index,const ExecutionOptions& options) {
     const auto location=values.location;
-    sequence_check(sequence,location); const auto& state=*sequence->sequence;
+    sequence_check(sequence,location); auto& state=*sequence->sequence;
+    if (state.provider==SequenceProvider::real_range) {
+        if (!state.real_range) throw runtime_error(RuntimeError::invalid_bytecode,location);
+        auto& range=*state.real_range;
+        if (!range.initialized) {
+            if (index) throw runtime_error(RuntimeError::invalid_bytecode,location);
+            const auto plan=real_range_plan(values,std::get<double>(state.seed->value),range.last,range.step,options);
+            state.count=plan.count; range.prefix=plan.prefix; range.snap=plan.snap; range.direct=plan.direct; range.initialized=true;
+        }
+        return index<state.count;
+    }
     if (state.provider==SequenceProvider::big_range) {
         if (!state.big_range) throw runtime_error(RuntimeError::invalid_bytecode,location);
         auto& range=*state.big_range; auto current=range.current;
@@ -108,7 +124,7 @@ bool sequence_resume(Values& values,const std::shared_ptr<Aggregate>& sequence,s
 }
 std::optional<std::uint64_t> sequence_known_length(const std::shared_ptr<Aggregate>& sequence,SourceLocation location) {
     const auto& state=cursor(sequence,location);
-    if (state.provider==SequenceProvider::big_range) return std::nullopt;
+    if (state.provider==SequenceProvider::big_range || (state.provider==SequenceProvider::real_range && !state.real_range->initialized)) return std::nullopt;
     return state.count;
 }
 std::uint64_t sequence_length(const std::shared_ptr<Aggregate>& sequence,SourceLocation location) {
@@ -119,6 +135,14 @@ std::uint64_t sequence_length(const std::shared_ptr<Aggregate>& sequence,SourceL
 Value sequence_at(Values& values,const std::shared_ptr<Aggregate>& sequence,std::int64_t index,const ExecutionOptions& options) {
     sequence_check(sequence,values.location); const auto& state=*sequence->sequence;
     if (index<0 || !sequence_resume(values,sequence,static_cast<std::uint64_t>(index),options)) throw runtime_error(RuntimeError::index_bounds,values.location);
+    if (state.provider==SequenceProvider::real_range) {
+        const auto& range=*state.real_range; const auto first=std::get<double>(state.seed->value);
+        if (range.direct) return first;
+        if (range.snap && index==range.prefix) return range.last;
+        // Preserve the source's separately rounded multiply and add; no FMA.
+        volatile double offset=static_cast<double>(index)*range.step;
+        return finite_partition(first+finite_partition(offset,values.location),values.location);
+    }
     if (state.provider==SequenceProvider::big_range) return state.big_range->current;
     if (state.provider==SequenceProvider::partition) return state.partition->current;
     if (collection_sequence(state.provider)) return values.copy(state.source->items[static_cast<std::size_t>(index)]->value);
@@ -132,8 +156,9 @@ Value sequence_at(Values& values,const std::shared_ptr<Aggregate>& sequence,std:
     return school_ip_sequence_value(values,type_info(values.program,sequence->type).element,state,index);
 }
 Value sequence_collect(Values& values,const std::shared_ptr<Aggregate>& sequence,Type collection,const ExecutionOptions& options) {
-    const auto iterator=sequence_begin(values,sequence); const auto known_count=sequence_known_length(iterator,values.location);
+    const auto iterator=sequence_begin(values,sequence);
     (void)sequence_resume(values,iterator,0,options);
+    const auto known_count=sequence_known_length(iterator,values.location);
     const bool materialize=collection!=Type::invalid;
     const bool list=materialize && type_info(values.program,collection).kind==CompoundKind::list;
     if (!materialize && collection_sequence(iterator->sequence->provider)) {
@@ -270,6 +295,12 @@ std::shared_ptr<Aggregate> sequence_partition(Values& values,Type type,double fi
     reserve_state(values); auto& state=*result->sequence; state.provider=SequenceProvider::partition;
     state.count=intervals>0 ? static_cast<std::uint64_t>(intervals)+1 : 0;
     state.partition=std::make_shared<PartitionState>(PartitionState{last,0,first});
+    return result;
+}
+std::shared_ptr<Aggregate> sequence_range_real(Values& values,Type type,double first,double last,double step) {
+    auto result=sequence_repeat(values,type,0,first);
+    reserve_state(values); result->sequence->provider=SequenceProvider::real_range;
+    result->sequence->real_range=std::make_shared<RealRangeState>(RealRangeState{last,step});
     return result;
 }
 } // namespace abc

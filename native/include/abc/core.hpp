@@ -71,7 +71,7 @@ using Value = std::variant<std::int32_t, std::int64_t, double, bool, std::u16str
     std::shared_ptr<Aggregate>, std::shared_ptr<Cell>, NilString, std::shared_ptr<TextFile>, char16_t, std::uint16_t,
     std::uint8_t, std::int8_t, std::int16_t, std::uint32_t, std::uint64_t, BigInteger>;
 struct Cell { Type type; Value value; std::weak_ptr<Aggregate> list_owner{}; };
-enum class SequenceProvider { school_ip_hosts, school_ip_binary, array, list, repeat, range, stepped_range, big_range, partition };
+enum class SequenceProvider { school_ip_hosts, school_ip_binary, array, list, repeat, range, stepped_range, big_range, partition, real_range };
 inline bool collection_sequence(SequenceProvider provider) { return provider==SequenceProvider::array || provider==SequenceProvider::list; }
 struct BigRangeState {
     BigInteger last,step,current;
@@ -83,6 +83,11 @@ struct PartitionState {
     std::uint64_t index=0;
     bool positioned=false,available=false;
 };
+struct RealRangeState {
+    double last=0,step=0;
+    std::int32_t prefix=0;
+    bool snap=false,direct=false,initialized=false;
+};
 struct SequenceState {
     std::shared_ptr<Aggregate> source;
     SequenceProvider provider=SequenceProvider::school_ip_hosts;
@@ -93,6 +98,7 @@ struct SequenceState {
     std::shared_ptr<Cell> seed;
     std::shared_ptr<BigRangeState> big_range;
     std::shared_ptr<PartitionState> partition;
+    std::shared_ptr<RealRangeState> real_range;
 };
 struct Aggregate {
     Type type;
