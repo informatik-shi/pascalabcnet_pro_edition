@@ -463,7 +463,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         }
         case Op::sequence_query:
             if (!compound(type) || type_info(program,type).kind!=CompoundKind::sequence
-                || instruction.operand>static_cast<std::size_t>(SequenceQuery::contains)) invalid(instruction,"Invalid sequence query metadata");
+                || instruction.operand>static_cast<std::size_t>(SequenceQuery::single_default)) invalid(instruction,"Invalid sequence query metadata");
             break;
         case Op::sequence_begin: case Op::sequence_count: case Op::sequence_array: case Op::sequence_list:
             if (!compound(type) || type_info(program,type).kind!=CompoundKind::sequence) invalid(instruction,"Sequence instruction requires a statically typed sequence");

@@ -9,4 +9,6 @@ begin
   var empty := new integer[0];
   Writeln('Пустая: ', empty.Any);
   Writeln('По умолчанию: ', empty.FirstOrDefault);
+  Writeln('Единственный: ', Arr(42).Single);
+  Writeln('Пустой SingleOrDefault: ', empty.SingleOrDefault);
 end.

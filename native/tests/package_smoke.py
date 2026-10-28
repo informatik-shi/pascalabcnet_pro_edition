@@ -125,7 +125,7 @@ def main():
                 ("school-swap.pas", "Обмен: пёс кот пёс\nОбратно: кот пёс кот\nПустые совпадения: aaa\n"),
                 ("regex-search.pas", "Есть число: True\nПервое число: 123\nБез числа: []\nПроверка: True\n"),
                 ("sequence-lists.pas", "Массив: [1,2]\nСписок: [9,2,3]\nКопия: [9,2,3]\nПосле изменения: [9,8,3]\n"),
-                ("sequence-queries.pas", "Непустая: True\nПервый: 4\nПоследний: 9\nПо индексу 1: 7\nСодержит 7: True\nПустая: False\nПо умолчанию: 0\n"),
+                ("sequence-queries.pas", "Непустая: True\nПервый: 4\nПоследний: 9\nПо индексу 1: 7\nСодержит 7: True\nПустая: False\nПо умолчанию: 0\nЕдинственный: 42\nПустой SingleOrDefault: 0\n"),
                 ("russian-identifiers.pas", "Ответ: 42\nНОД: 6\nНОК: 90\n"),
                 ("big-integers.pas", "100! = 93326215443944152681699238856266700490715968264381621468592963895217599993229915608941463976156518286253697920827223758251185210916864000000000000000000000000\nЦелый корень квадрата: 123456789012345678901234567890\nНОД: 6\nСдвиги: 16\n"),
                 ("big-integer-files.pas", "Из файла: 246913578024691357802469135780\n"),
@@ -178,6 +178,9 @@ def main():
                 ("var s:sequence of integer:=nil; s.ToList()", "E_NIL", "Cannot access a nil reference", "Нельзя обратиться к пустой ссылке nil"),
                 ("var a:=new integer[0]; a.First", "E_EMPTY", "Sequence contains no elements", "Последовательность не содержит элементов"),
                 ("var a:=new integer[0]; a.Last", "E_EMPTY", "Sequence contains no elements", "Последовательность не содержит элементов"),
+                ("var a:=new integer[0]; a.Single", "E_EMPTY", "Sequence contains no elements", "Последовательность не содержит элементов"),
+                ("var a:=Arr(1,2); a.Single", "E_MANY", "Sequence contains more than one element", "Последовательность содержит более одного элемента"),
+                ("var a:=Arr(1,2); a.SingleOrDefault", "E_MANY", "Sequence contains more than one element", "Последовательность содержит более одного элемента"),
                 ("var s:string:='a'; SwapSubstr(s,'a','a')", "E_KEY", "Duplicate swap key", "Повторяющийся ключ замены"),
                 ("var s:string:='a.b acb z'; SwapSubstr(s,'a.b','z')", "E_KEY", "Matched text is not a swap key", "Совпавший текст не является ключом замены"),
                 ("var a:=new Addr32('256.0.0.1')", "E_FORMAT", "Invalid IPv4 address", "Некорректная запись адреса IPv4"),
@@ -507,6 +510,7 @@ def main():
             results[-1]["regex_is_match_and_first_value"] = "passed"
             results[-1]["sequence_to_list_record_copy_and_ownership"] = "passed"
             results[-1]["typed_sequence_queries_and_empty_diagnostics"] = "passed"
+            results[-1]["typed_single_queries_and_multiple_diagnostics"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 

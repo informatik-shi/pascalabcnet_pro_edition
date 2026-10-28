@@ -1199,6 +1199,14 @@ GenAddr выдаёт только адреса хостов, GenAddrBin — дв
 [Enumerable.FirstOrDefault](https://learn.microsoft.com/en-us/dotnet/api/system.linq.enumerable.firstordefault).
 Пример: `examples/sequence-queries.pas`; нативный корпус:
 `tests/fixtures/sequence-query-compat.pas`; исходный компилятор для него не запускался.
+`Single` требует ровно один элемент, а `SingleOrDefault` возвращает стандартное
+значение T при пустом источнике. Оба варианта отклоняют несколько элементов
+двуязычным `E_MANY`; Single на пустом источнике даёт `E_EMPTY`.
+На генераторе поиск останавливается при втором элементе, сохраняя лимиты выдачи;
+на массиве/List достаточно проверить размер и прочитать единственный элемент.
+Поддерживаются те же формы вызова и правила копирования T, без предикатов.
+Правила пустого и неоднозначного результата сверены с
+[Enumerable.SingleOrDefault](https://learn.microsoft.com/dotnet/api/system.linq.enumerable.singleordefault).
 MinMax поддерживает числовые последовательности integer/int64/real/BigInteger.
 
 Count использует размер массива/List без копирования элементов; для генераторов
@@ -1587,7 +1595,7 @@ cmake --build native/build/default --config Release
 ctest --test-dir native/build/default -C Release --output-on-failure
 ```
 
-Проверка от 28 октября 2026 года: MSVC Release — 2287 проверок ядра и 66 тестов
+Проверка от 28 октября 2026 года: MSVC Release — 2304 проверки ядра и 66 тестов
 CTest вместе с Qt; Clang 22 без санитайзера также проверен. Дополнительный локальный
 прогон Clang 22/AddressSanitizer на Windows не завершён: обработчик исключений
 аварийно останавливается, в том числе в отдельной минимальной программе с

@@ -112,7 +112,7 @@ enum class Op {
     bit_not, bit_and, bit_or, bit_xor, shift_left, shift_right, read_console, read_array, console_output, array_query, write_matrix, object_text, print_output, try_read, convert_string, try_parse, val, string_read, string_array, school_list, replace_last, replace_many, school_fold, tuple_literal, school_pair, school_minmax, school_table_print, school_table_new, school_ip, sequence_begin, sequence_count, sequence_array, sequence_wrap, swap_substrings, sequence_list, sequence_query
 };
 
-enum class SequenceQuery { any, first, last, first_default, last_default, element, element_default, contains };
+enum class SequenceQuery { any, first, last, first_default, last_default, element, element_default, contains, single, single_default };
 inline bool sequence_query_index(SequenceQuery method) { return method==SequenceQuery::element || method==SequenceQuery::element_default; }
 inline Type sequence_query_result(Type element,SequenceQuery method) {
     return method==SequenceQuery::any || method==SequenceQuery::contains ? Type::boolean : element;

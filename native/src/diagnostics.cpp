@@ -134,6 +134,8 @@ Error runtime_error(RuntimeError id, SourceLocation location, std::string_view c
         code = "E_EMPTY"; english = "Stack is empty"; russian = "Стек пуст"; break;
     case RuntimeError::sequence_empty:
         code = "E_EMPTY"; english = "Sequence contains no elements"; russian = "Последовательность не содержит элементов"; break;
+    case RuntimeError::sequence_multiple:
+        code = "E_MANY"; english = "Sequence contains more than one element"; russian = "Последовательность содержит более одного элемента"; break;
     case RuntimeError::queue_empty:
         code = "E_EMPTY"; english = "Queue is empty"; russian = "Очередь пуста"; break;
     case RuntimeError::linked_empty:

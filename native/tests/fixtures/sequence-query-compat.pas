@@ -12,4 +12,5 @@ begin
   var ip := new CalcIP('10.0.0.1', 30);
   Writeln(ip.GenAddr.Any, ' ', ip.GenAddr.First.Value, ' ', ip.GenAddr.Last.Value);
   Writeln(ip.GenAddr.ElementAtOrDefault(2) = nil);
+  Writeln(Single(Arr(42)), ' ', (new integer[0]).SingleOrDefault);
 end.

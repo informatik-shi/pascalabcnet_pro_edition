@@ -79,7 +79,9 @@ Value sequence_query(Values& values,const std::shared_ptr<Aggregate>& sequence,S
     require(sequence,values.location);
     const auto element=type_info(values.program,sequence->type).element;
     const bool indexed=sequence_query_index(method);
-    const bool defaults=method==SequenceQuery::first_default || method==SequenceQuery::last_default || method==SequenceQuery::element_default;
+    const bool single=method==SequenceQuery::single || method==SequenceQuery::single_default;
+    const bool defaults=method==SequenceQuery::first_default || method==SequenceQuery::last_default
+        || method==SequenceQuery::element_default || method==SequenceQuery::single_default;
     const auto absent=[&]() -> Value {
         if (defaults) return values.zero(element,false,true);
         throw runtime_error(indexed ? RuntimeError::index_bounds : RuntimeError::sequence_empty,values.location);
@@ -102,6 +104,7 @@ Value sequence_query(Values& values,const std::shared_ptr<Aggregate>& sequence,S
     if (collection_sequence(iterator->sequence->provider) && method!=SequenceQuery::contains) {
         check();
         if (method==SequenceQuery::any) return true;
+        if (single && count!=1) throw runtime_error(RuntimeError::sequence_multiple,values.location);
         const auto target=indexed ? static_cast<std::uint64_t>(index)
             : method==SequenceQuery::last || method==SequenceQuery::last_default ? count-1 : 0;
         if (target>=count) return absent();
@@ -113,11 +116,15 @@ Value sequence_query(Values& values,const std::shared_ptr<Aggregate>& sequence,S
         if (method==SequenceQuery::any) return true;
         if (method==SequenceQuery::contains) { if (values.equal(value,argument)) return true; }
         else if ((indexed && i==static_cast<std::uint64_t>(index)) || method==SequenceQuery::first || method==SequenceQuery::first_default) return value;
+        else if (single) {
+            if (i) throw runtime_error(RuntimeError::sequence_multiple,values.location);
+            last=std::move(value);
+        }
         else if (method==SequenceQuery::last || method==SequenceQuery::last_default) last=std::move(value);
     }
     sequence_check(iterator,values.location);
     if (method==SequenceQuery::contains) return false;
-    if (method==SequenceQuery::last || method==SequenceQuery::last_default) return last;
+    if (method==SequenceQuery::last || method==SequenceQuery::last_default || single) return last;
     return absent();
 }
 } // namespace abc

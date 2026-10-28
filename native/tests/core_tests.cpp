@@ -303,6 +303,24 @@ void sequence_queries_library() {
     catch (const abc::Error& caught) { require(caught.code=="E_EMPTY" && caught.location.line==3 && std::string_view(caught.what())=="Sequence contains no elements" && caught.russian=="Последовательность не содержит элементов","Empty sequence diagnostic carries location and both languages"); }
 }
 
+void sequence_single_library() {
+    result("begin var a:=Arr(7); var s:sequence of integer:=a; Writeln(a.Single,' ',Single(s),' ',PABCSystem.SingleOrDefault(a)); var l:=a.ToList(); Writeln(l.SingleOrDefault()); l.Clear(); Writeln(l.SingleOrDefault,' ',(new string[0]).SingleOrDefault=nil); end.","7 7 7\n7\n0 True\n");
+    result("type R=record x:integer; s:string; end; begin var r:R; r.x:=7; var a:=Arr(r); var b:=a.Single; b.x:=9; Writeln(a[0].x,' ',b.x); var d: R:=(new R[0]).SingleOrDefault; Writeln(d.x,' ',d.s=nil); var n:=new string[1]; n[0]:=nil; Writeln(n.Single=nil); end.","7 9\n0 True\nTrue\n");
+    result("begin Writeln(Arr(1bi shl 80).Single,' ',(new BigInteger[0]).SingleOrDefault); Writeln(Arr((7,'ab')).Single.Item2); end.","1208925819614629174706176 0\nab\n");
+    result("uses School; begin var ip:=new CalcIP('10.0.0.1',30); ip.Broadcast.Value:=ip.Network.Value; Writeln(ip.GenAddrBin.Single.Length,' ',SingleOrDefault(ip.GenAddrBin)=BinFormat(int64(ip.Network.Value10),4,'')); var z:=new CalcIP('10.0.0.1',31); Writeln(z.GenAddr.SingleOrDefault=nil); end.","32 True\nTrue\n");
+    runtime_error("begin Single(new integer[0]); end.","E_EMPTY");
+    for (const auto source:{"begin Single(Arr(1,2)); end.","begin SingleOrDefault(Arr(1,2)); end.",
+        "begin var a:=Arr(1,2).ToList(); a.Single; end.",
+        "uses School; begin var ip:=new CalcIP('10.0.0.1',30); ip.GenAddr.SingleOrDefault; end."}) runtime_error(source,"E_MANY");
+    for (const auto source:{"begin var a:sequence of integer:=nil; a.Single; end.","begin var a:array of integer; SingleOrDefault(a); end."}) runtime_error(source,"E_NIL");
+    for (const auto source:{"begin Single(nil); end.","begin SingleOrDefault(Arr(1),99); end.",
+        "begin Writeln(Arr(1).Single(1)); end.","begin Single(new integer[1,1]); end."}) compile_error(source,"E_TYPE");
+    abc::ExecutionOptions options; options.instruction_limit=1000; options.allocation_limit=300;
+    error([&]{(void)run("uses School; begin var ip:=new CalcIP('128.0.0.1',2); ip.GenAddr.Single; end.","",options);},"E_MANY");
+    try { (void)run("begin\nvar a:=Arr(1,2);\na.SingleOrDefault; end."); require(false,"Expected multiple sequence diagnostic"); }
+    catch (const abc::Error& caught) { require(caught.code=="E_MANY" && caught.location.line==3 && std::string_view(caught.what())=="Sequence contains more than one element" && caught.russian=="Последовательность содержит более одного элемента","Single diagnostic retains location and both languages"); }
+}
+
 void school_minmax_library() {
     result("uses School; begin Writeln(MinMax(Arr(4,-7,9,2)),' ',School.MinMax(Arr(int64(-9223372036854775808),MaxInt64))); var a:=new List<real>; a.Add(1.5); a.Add(-2.25); Writeln(a.MinMax); Writeln(MinMax(new integer[0]),' ',MinMax(new int64[0])); var r:=MinMax(new real[0]); Writeln(r.Item1>1e308,' ',r.Item2< -1e308); end.","(-7,9) (-9223372036854775808,9223372036854775807)\n(-2.25,1.5)\n(2147483647,-2147483648) (9223372036854775807,-9223372036854775808)\nTrue True\n");
     result("uses School; function MinMax(a:array of integer):integer; begin Result:=7; end; begin var a:=Arr(4,2,8); Writeln(MinMax(a),' ',School.MinMax(a),' ',a.MinMax()); end.","7 (2,8) (2,8)\n");
@@ -3069,6 +3087,7 @@ int main() {
     regex_search_library();
     sequence_to_list_library();
     sequence_queries_library();
+    sequence_single_library();
     school_factor_library();
     sequence_mutations();
     arithmetic();

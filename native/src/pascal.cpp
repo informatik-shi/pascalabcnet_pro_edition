@@ -1699,7 +1699,8 @@ private:
         for (const auto& [text,method]:{std::pair<std::string_view,SequenceQuery>{"any",SequenceQuery::any},
             {"first",SequenceQuery::first},{"last",SequenceQuery::last},{"firstordefault",SequenceQuery::first_default},
             {"lastordefault",SequenceQuery::last_default},{"elementat",SequenceQuery::element},
-            {"elementatordefault",SequenceQuery::element_default},{"contains",SequenceQuery::contains}})
+            {"elementatordefault",SequenceQuery::element_default},{"contains",SequenceQuery::contains},
+            {"single",SequenceQuery::single},{"singleordefault",SequenceQuery::single_default}})
             if (name==text) return method;
         return {};
     }
