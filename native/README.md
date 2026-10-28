@@ -1180,6 +1180,25 @@ GenAddr выдаёт только адреса хостов, GenAddrBin — дв
 `ToArray` как метод массива и списка. Nil даёт двуязычную ошибку `E_NIL`.
 Пример: `examples/sequence-lists.pas`; нативный корпус:
 `tests/fixtures/sequence-list-compat.pas`.
+Для этих же источников доступны `Any`, `First`, `Last`, `FirstOrDefault`,
+`LastOrDefault`, `ElementAt(integer)`, `ElementAtOrDefault(integer)` и
+`Contains(T)`. Поддерживаются глобальные, квалифицированные `PABCSystem` и
+методные вызовы. Тип результата известен до запуска: boolean для Any/Contains,
+иначе тип элемента. Новые методы не меняют источник; записи возвращаются копией,
+ссылочные элементы сохраняют ссылку. Существующий List.Contains сохраняет свой путь.
+На массиве/List первый, последний и индексированный элементы читаются напрямую.
+На генераторах поиск выдаёт предшествующие элементы с проверкой работы, памяти,
+отмены и версий источника; Any/First/Contains прекращают обход при ответе.
+Большую IP-последовательность можно проверить без создания массива адресов.
+Пустые First/Last дают двуязычный `E_EMPTY`, неверный ElementAt — `E_BOUNDS`.
+Варианты OrDefault возвращают нулевое значение T: в частности nil для строк и
+ссылочных типов, нулевую запись для record. Nil-источник всегда даёт `E_NIL`,
+включая ElementAtOrDefault с отрицательным индексом. Перегрузки с предикатами,
+компараторами и явно заданным значением по умолчанию пока не реализованы.
+Правила стандартного значения сопоставлены с
+[Enumerable.FirstOrDefault](https://learn.microsoft.com/en-us/dotnet/api/system.linq.enumerable.firstordefault).
+Пример: `examples/sequence-queries.pas`; нативный корпус:
+`tests/fixtures/sequence-query-compat.pas`; исходный компилятор для него не запускался.
 MinMax поддерживает числовые последовательности integer/int64/real/BigInteger.
 
 Count использует размер массива/List без копирования элементов; для генераторов
@@ -1568,7 +1587,7 @@ cmake --build native/build/default --config Release
 ctest --test-dir native/build/default -C Release --output-on-failure
 ```
 
-Проверка от 28 октября 2026 года: MSVC Release — 2243 проверки ядра и 65 тестов
+Проверка от 28 октября 2026 года: MSVC Release — 2287 проверок ядра и 66 тестов
 CTest вместе с Qt; Clang 22 без санитайзера также проверен. Дополнительный локальный
 прогон Clang 22/AddressSanitizer на Windows не завершён: обработчик исключений
 аварийно останавливается, в том числе в отдельной минимальной программе с

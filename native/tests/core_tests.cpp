@@ -247,6 +247,62 @@ void sequence_to_list_library() {
     error([&]{(void)abc::sequence_collect(values,view,find(abc::CompoundKind::list),options);},"E_CANCELLED");
 }
 
+void sequence_queries_library() {
+    result("begin var a:=Arr(4,7,9); var s:sequence of integer:=a; Writeln(a.Any,' ',Any(s),' ',Any(new integer[0])); Writeln(s.First(),' ',s.Last,' ',s.ElementAt(1)); Writeln(First(a),' ',PABCSystem.Last(a),' ',ElementAt(a,2)); Writeln(s.Contains(7),' ',Contains(a,8),' ',a.Contains(9)); end.","True True False\n4 9 7\n4 9 9\nTrue False True\n");
+    result("begin var a:=Arr(1,2).ToList(); Writeln(a.First,' ',a.LastOrDefault(),' ',a.ElementAtOrDefault(2)); Writeln(a.Contains(2),' ',Contains(a,1)); a.Clear(); Writeln(a.Any(),' ',a.FirstOrDefault,' ',a.LastOrDefault); end.","1 2 0\nTrue True\nFalse 0 0\n");
+    result("begin var a:=new string[0]; Writeln(a.FirstOrDefault=nil,' ',a.LastOrDefault=nil,' ',a.ElementAtOrDefault(-1)=nil); var b:=new string[1]; Writeln(b.First=nil,' ',b.Contains(nil)); b[0]:=nil; Writeln(b.First=nil,' ',b.Contains(nil)); Writeln((new char[0]).FirstOrDefault= #0,' ',(new boolean[0]).LastOrDefault); Writeln((new BigInteger[0]).FirstOrDefault,' ',(new uint64[0]).LastOrDefault); end.","True True True\nFalse False\nTrue True\nTrue False\n0 0\n");
+    result("type R=record x:integer; s:string; end; begin var r:R; r.x:=7; var a:=Arr(r); var copy:=a.First; copy.x:=8; Writeln(a.First.x,' ',a.Contains(r),' ',Contains(a,copy)); var d: R:=(new R[0]).FirstOrDefault; Writeln(d.x,' ',d.s=nil); end.","7 True False\n0 True\n");
+    result("begin var a:=Arr(1bi,1bi shl 80); var s:sequence of BigInteger:=a; Writeln(s.First,' ',s.Last); Writeln(s.Contains(1),' ',s.Contains(1bi shl 80),' ',s.Contains(2)); var t:=Arr((1,'ab'),(2,'cd')); Writeln(t.First.Item1,' ',t.Contains((2,'cd'))); end.","1 1208925819614629174706176\nTrue True False\n1 True\n");
+    result("uses School; begin var ip:=new CalcIP('10.0.0.1',30); var s:=ip.GenAddr; Writeln(s.Any,' ',s.First.Value,' ',s.Last.Value,' ',s.ElementAt(1).Value); Writeln(s.ElementAtOrDefault(2)=nil,' ',s.Contains(nil)); var z:=new CalcIP('10.0.0.1',31); Writeln(z.GenAddr.Any,' ',z.GenAddr.FirstOrDefault=nil); end.","True 10.0.0.1 10.0.0.2 10.0.0.2\nTrue False\nFalse True\n");
+    result("var a:array of integer; function Source:sequence of integer; begin Write('S'); Result:=a; end; function Index:integer; begin Write('I'); a[1]:=7; a:=Arr(9); Result:=1; end; begin a:=Arr(1,2); Writeln(ElementAt(Source,Index),' ',a); end.","SI7 [9]\n");
+    result("var a:List<integer>; function Target:integer; begin Write('T'); a.Add(2); Result:=2; end; begin a:=new List<integer>; a.Add(1); Writeln(Contains(a,Target),' ',a.Count); end.","TTrue 2\n");
+    result("function First(a:array of integer):integer; begin Result:=99; end; begin var a:=Arr(7,9); Writeln(First(a),' ',PABCSystem.First(a),' ',a.First); end.","99 7 7\n");
+    result("begin var a:=Arr(Arr(1)); var first:=a.First; first[0]:=7; Writeln(a[0][0]); end.","7\n");
+    for (const auto source:{"begin First(new integer[0]); end.","begin Last(new integer[0]); end.",
+        "begin var a:sequence of integer:=new integer[0]; a.First(); end."}) runtime_error(source,"E_EMPTY");
+    for (const auto source:{"begin ElementAt(Arr(1),-1); end.","begin ElementAt(Arr(1),1); end.",
+        "uses School; begin var ip:=new CalcIP('10.0.0.1',30); ip.GenAddr.ElementAt(2); end."}) runtime_error(source,"E_BOUNDS");
+    for (const auto method:{"Any()","First()","Last()","FirstOrDefault()","LastOrDefault()","ElementAt(-1)","ElementAtOrDefault(-1)","Contains(1)"})
+        runtime_error(std::string("begin var a:sequence of integer:=nil; a.")+method+"; end.","E_NIL");
+    for (const auto source:{"begin Any(nil); end.","begin Any(Arr(1),True); end.","begin First(1); end.",
+        "begin var a:=new integer[1,2]; First(a); end.","begin ElementAt(Arr(1),1.5); end.",
+        "begin Contains(Arr(1),'ab'); end.","begin FirstOrDefault(Arr(1),7); end.",
+        "begin var a:array of real; var x:integer:=a.First; end.","begin Writeln(Arr(1).Any(2)); end."}) compile_error(source,"E_TYPE");
+    abc::ExecutionOptions options; options.instruction_limit=1000; options.allocation_limit=300;
+    require(run("uses School; begin var ip:=new CalcIP('128.0.0.1',2); Writeln(ip.GenAddr.Any,' ',ip.GenAddr.First.Value,' ',ip.GenAddr.ElementAt(2).Value); end.","",options)=="True 128.0.0.1 128.0.0.3\n","Any/First/ElementAt stop within a huge generator without materializing it");
+    error([&]{(void)run("uses School; begin var ip:=new CalcIP('128.0.0.1',2); ip.GenAddr.Last; end.","",options);},"E_LIMIT");
+    auto invalid=abc::compile("begin Writeln(Arr(1).First); end.");
+    for (auto& instruction:invalid.code) if (instruction.op==abc::Op::sequence_query) instruction.operand=255;
+    error([&]{abc::verify(invalid);},"E_BYTECODE");
+    invalid=abc::compile("begin Writeln(Arr(1).First); end.");
+    for (auto& instruction:invalid.code) if (instruction.op==abc::Op::sequence_query) instruction.type=abc::Type::integer;
+    error([&]{abc::verify(invalid);},"E_BYTECODE");
+    invalid=abc::compile("begin Writeln(Arr(1).First); end.");
+    for (auto& instruction:invalid.code) if (instruction.op==abc::Op::sequence_query) instruction.operand=static_cast<std::size_t>(abc::SequenceQuery::contains);
+    error([&]{abc::verify(invalid);},"E_BYTECODE");
+    const auto program=abc::compile("begin var a:=Arr(1,2); var s:sequence of integer:=a; var l:=a.ToList(); Writeln(s.First); end.");
+    const auto find=[&](abc::CompoundKind kind) {
+        for (std::size_t i=0;i<program.types.size();++i) if (program.types[i].kind==kind) return static_cast<abc::Type>(64+i);
+        throw std::runtime_error("Missing query test type");
+    };
+    abc::Values values{program,1'048'576};
+    const auto array=values.array(find(abc::CompoundKind::array),1024);
+    const auto view=abc::sequence_create(values,find(abc::CompoundKind::sequence),array,abc::SequenceProvider::array);
+    options={}; options.instruction_limit=1;
+    require(std::get<bool>(abc::sequence_query(values,view,abc::SequenceQuery::contains,std::int32_t{0},options)),"Contains returns immediately on the first match");
+    require(std::get<std::int32_t>(abc::sequence_query(values,view,abc::SequenceQuery::last,{},options))==0,"Last uses direct access for array views");
+    error([&]{(void)abc::sequence_query(values,view,abc::SequenceQuery::contains,std::int32_t{1},options);},"E_LIMIT");
+    options={}; options.cancelled=[]{return true;};
+    error([&]{(void)abc::sequence_query(values,view,abc::SequenceQuery::contains,std::int32_t{1},options);},"E_CANCELLED");
+    const auto list=values.array(find(abc::CompoundKind::list),1);
+    values.own_list_cell(list->items[0],list);
+    const auto list_view=abc::sequence_create(values,find(abc::CompoundKind::sequence),list,abc::SequenceProvider::list);
+    options.cancelled=[&]{values.write(list->items[0],std::int32_t{7}); return false;};
+    error([&]{(void)abc::sequence_query(values,list_view,abc::SequenceQuery::first,{},options);},"E_MODIFIED");
+    try { (void)run("begin\nvar a:=new integer[0];\nFirst(a); end."); require(false,"Expected empty sequence diagnostic"); }
+    catch (const abc::Error& caught) { require(caught.code=="E_EMPTY" && caught.location.line==3 && std::string_view(caught.what())=="Sequence contains no elements" && caught.russian=="Последовательность не содержит элементов","Empty sequence diagnostic carries location and both languages"); }
+}
+
 void school_minmax_library() {
     result("uses School; begin Writeln(MinMax(Arr(4,-7,9,2)),' ',School.MinMax(Arr(int64(-9223372036854775808),MaxInt64))); var a:=new List<real>; a.Add(1.5); a.Add(-2.25); Writeln(a.MinMax); Writeln(MinMax(new integer[0]),' ',MinMax(new int64[0])); var r:=MinMax(new real[0]); Writeln(r.Item1>1e308,' ',r.Item2< -1e308); end.","(-7,9) (-9223372036854775808,9223372036854775807)\n(-2.25,1.5)\n(2147483647,-2147483648) (9223372036854775807,-9223372036854775808)\nTrue True\n");
     result("uses School; function MinMax(a:array of integer):integer; begin Result:=7; end; begin var a:=Arr(4,2,8); Writeln(MinMax(a),' ',School.MinMax(a),' ',a.MinMax()); end.","7 (2,8) (2,8)\n");
@@ -3012,6 +3068,7 @@ int main() {
     school_swap_substrings();
     regex_search_library();
     sequence_to_list_library();
+    sequence_queries_library();
     school_factor_library();
     sequence_mutations();
     arithmetic();

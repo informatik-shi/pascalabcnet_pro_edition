@@ -109,9 +109,14 @@ enum class Op {
     read_lines, write_lines, array_copy, array_high, sequence_sort, sequence_fill, mutate_string, increment, read_value,
     endpoint_call, buffer_call, association_call, linked_call, file_print, file_newline, file_read, file_skip_line, file_output,
     iteration_version, iteration_check, set_character, random_array, fill_random_array, sequence_mutate, swap_values, write_array,
-    bit_not, bit_and, bit_or, bit_xor, shift_left, shift_right, read_console, read_array, console_output, array_query, write_matrix, object_text, print_output, try_read, convert_string, try_parse, val, string_read, string_array, school_list, replace_last, replace_many, school_fold, tuple_literal, school_pair, school_minmax, school_table_print, school_table_new, school_ip, sequence_begin, sequence_count, sequence_array, sequence_wrap, swap_substrings, sequence_list
+    bit_not, bit_and, bit_or, bit_xor, shift_left, shift_right, read_console, read_array, console_output, array_query, write_matrix, object_text, print_output, try_read, convert_string, try_parse, val, string_read, string_array, school_list, replace_last, replace_many, school_fold, tuple_literal, school_pair, school_minmax, school_table_print, school_table_new, school_ip, sequence_begin, sequence_count, sequence_array, sequence_wrap, swap_substrings, sequence_list, sequence_query
 };
 
+enum class SequenceQuery { any, first, last, first_default, last_default, element, element_default, contains };
+inline bool sequence_query_index(SequenceQuery method) { return method==SequenceQuery::element || method==SequenceQuery::element_default; }
+inline Type sequence_query_result(Type element,SequenceQuery method) {
+    return method==SequenceQuery::any || method==SequenceQuery::contains ? Type::boolean : element;
+}
 enum class SchoolFold { gcd, lcm };
 
 enum class SchoolList { digits, digits_big, digits_to_int64, digits_to_big, primes, primes_range, first_primes, factors, prime_divisors, factors_count, prime_divisors_count, divisors, divisors_count };

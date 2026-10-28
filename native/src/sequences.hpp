@@ -9,4 +9,5 @@ void sequence_check(const std::shared_ptr<Aggregate>& sequence,SourceLocation lo
 std::uint64_t sequence_length(const std::shared_ptr<Aggregate>& sequence,SourceLocation location);
 Value sequence_at(Values& values,const std::shared_ptr<Aggregate>& sequence,std::int64_t index);
 Value sequence_collect(Values& values,const std::shared_ptr<Aggregate>& sequence,Type collection,const ExecutionOptions& options);
+Value sequence_query(Values& values,const std::shared_ptr<Aggregate>& sequence,SequenceQuery method,const Value& argument,const ExecutionOptions& options);
 } // namespace abc

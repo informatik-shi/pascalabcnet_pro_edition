@@ -194,6 +194,12 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
         }
         case Op::sequence_begin:
             stack.emplace_back(sequence_begin(values,std::get<std::shared_ptr<Aggregate>>(pop()))); break;
+        case Op::sequence_query: {
+            const auto method=static_cast<SequenceQuery>(instruction.operand);
+            const auto argument=sequence_query_index(method) || method==SequenceQuery::contains ? pop() : Value{std::int32_t{0}};
+            const auto sequence=std::get<std::shared_ptr<Aggregate>>(pop());
+            stack.push_back(sequence_query(values,sequence,method,argument,options)); break;
+        }
         case Op::sequence_count: case Op::sequence_array: case Op::sequence_list: {
             const auto sequence=std::get<std::shared_ptr<Aggregate>>(pop());
             stack.push_back(sequence_collect(values,sequence,instruction.op==Op::sequence_count ? Type::invalid : static_cast<Type>(instruction.operand),options)); break;

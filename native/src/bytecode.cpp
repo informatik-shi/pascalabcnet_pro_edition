@@ -62,6 +62,9 @@ private:
             expression(*node.left); emit(Op::sequence_wrap,node.left->type,static_cast<std::size_t>(node.type),node.location); break;
         case hir::ExprKind::sequence_call:
             expression(*node.left); emit(node.local==2 ? Op::sequence_list : node.local ? Op::sequence_array : Op::sequence_count,node.left->type,node.local ? static_cast<std::size_t>(node.type) : 0,node.location); break;
+        case hir::ExprKind::sequence_query:
+            expression(*node.left); if (node.right) expression(*node.right);
+            emit(Op::sequence_query,node.left->type,node.local,node.location); break;
         case hir::ExprKind::school_ip:
             for (const auto& argument:node.arguments) expression(*argument);
             emit(Op::school_ip,node.operation_type,node.local,node.location); break;
@@ -458,6 +461,10 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if (target.kind!=CompoundKind::sequence || target.element!=type_info(program,type).element) invalid(instruction,"Invalid sequence view element type");
             break;
         }
+        case Op::sequence_query:
+            if (!compound(type) || type_info(program,type).kind!=CompoundKind::sequence
+                || instruction.operand>static_cast<std::size_t>(SequenceQuery::contains)) invalid(instruction,"Invalid sequence query metadata");
+            break;
         case Op::sequence_begin: case Op::sequence_count: case Op::sequence_array: case Op::sequence_list:
             if (!compound(type) || type_info(program,type).kind!=CompoundKind::sequence) invalid(instruction,"Sequence instruction requires a statically typed sequence");
             if (instruction.op==Op::sequence_array || instruction.op==Op::sequence_list) {
@@ -764,6 +771,12 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         case Op::sequence_begin: require(instruction.type); stack.push_back(instruction.type); break;
         case Op::sequence_wrap: require(instruction.type); stack.push_back(static_cast<Type>(instruction.operand)); break;
         case Op::sequence_count: require(instruction.type); stack.push_back(Type::integer); break;
+        case Op::sequence_query: {
+            const auto method=static_cast<SequenceQuery>(instruction.operand); const auto element=type_info(program,instruction.type).element;
+            if (sequence_query_index(method)) require(Type::integer);
+            else if (method==SequenceQuery::contains) require(element);
+            require(instruction.type); stack.push_back(sequence_query_result(element,method)); break;
+        }
         case Op::sequence_array: case Op::sequence_list: require(instruction.type); stack.push_back(static_cast<Type>(instruction.operand)); break;
         case Op::iteration_check: require(Type::int64); require(instruction.type); break;
         case Op::linked_call: {

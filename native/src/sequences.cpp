@@ -75,4 +75,49 @@ Value sequence_collect(Values& values,const std::shared_ptr<Aggregate>& sequence
     sequence_check(iterator,values.location);
     return materialize ? Value{result} : Value{static_cast<std::int32_t>(count)};
 }
+Value sequence_query(Values& values,const std::shared_ptr<Aggregate>& sequence,SequenceQuery method,const Value& argument,const ExecutionOptions& options) {
+    require(sequence,values.location);
+    const auto element=type_info(values.program,sequence->type).element;
+    const bool indexed=sequence_query_index(method);
+    const bool defaults=method==SequenceQuery::first_default || method==SequenceQuery::last_default || method==SequenceQuery::element_default;
+    const auto absent=[&]() -> Value {
+        if (defaults) return values.zero(element,false,true);
+        throw runtime_error(indexed ? RuntimeError::index_bounds : RuntimeError::sequence_empty,values.location);
+    };
+    const auto index=indexed ? std::get<std::int32_t>(argument) : 0;
+    if (indexed && index<0) return absent();
+    const auto iterator=sequence_begin(values,sequence); const auto count=sequence_length(iterator,values.location);
+    if (!count) {
+        if (method==SequenceQuery::any || method==SequenceQuery::contains) return false;
+        return absent();
+    }
+    std::uint64_t work=0;
+    const auto check=[&] {
+        if (work>=options.instruction_limit) throw runtime_error(RuntimeError::instruction_limit,values.location);
+        if ((work++&255U)==0 && options.cancelled && options.cancelled()) throw runtime_error(RuntimeError::cancelled,values.location);
+        sequence_check(iterator,values.location);
+    };
+    // IList-backed views retain direct access. Generator queries visit and produce
+    // each preceding value, so allocation, cancellation and work limits still apply.
+    if (collection_sequence(iterator->sequence->provider) && method!=SequenceQuery::contains) {
+        check();
+        if (method==SequenceQuery::any) return true;
+        const auto target=indexed ? static_cast<std::uint64_t>(index)
+            : method==SequenceQuery::last || method==SequenceQuery::last_default ? count-1 : 0;
+        if (target>=count) return absent();
+        return sequence_at(values,iterator,static_cast<std::int64_t>(target));
+    }
+    Value last=std::int32_t{0};
+    for (std::uint64_t i=0;i<count;++i) {
+        check(); auto value=sequence_at(values,iterator,static_cast<std::int64_t>(i));
+        if (method==SequenceQuery::any) return true;
+        if (method==SequenceQuery::contains) { if (values.equal(value,argument)) return true; }
+        else if ((indexed && i==static_cast<std::uint64_t>(index)) || method==SequenceQuery::first || method==SequenceQuery::first_default) return value;
+        else if (method==SequenceQuery::last || method==SequenceQuery::last_default) last=std::move(value);
+    }
+    sequence_check(iterator,values.location);
+    if (method==SequenceQuery::contains) return false;
+    if (method==SequenceQuery::last || method==SequenceQuery::last_default) return last;
+    return absent();
+}
 } // namespace abc

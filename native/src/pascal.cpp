@@ -1008,6 +1008,7 @@ private:
                 for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
                 if (bind_print(*result,source.token.text,source.left->token.text)) break;
                 if (bind_sequence_conversion(*result,source.token.text,source.left->token.text)) break;
+                if (bind_sequence_query(*result,source.token.text,source.left->token.text)) break;
                 if (bind_try_read(*result,source.token.text,source.left->token.text)) break;
                 if (bind_number_conversion(*result,source.token.text,source.left->token.text)) break;
                 if (bind_school_text(*result,source.token.text,source.left->token.text)) break;
@@ -1192,6 +1193,12 @@ private:
                 break;
             }
             const auto& type = info(receiver,result->location);
+            if ((type.kind==CompoundKind::sequence || indexed_sequence(type.kind)) && sequence_query_method(source.token.text)
+                && !(type.kind==CompoundKind::list && source.token.text=="contains")) {
+                result->arguments.push_back(std::move(result->left));
+                for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
+                (void)bind_sequence_query(*result,source.token.text,"pabcsystem"); break;
+            }
             if (indexed_sequence(type.kind) && (source.token.text=="toarray" || source.token.text=="tolist")) {
                 result->arguments.push_back(std::move(result->left));
                 for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
@@ -1423,6 +1430,7 @@ private:
             }
             if (bind_print(*result,source.token.text)) break;
             if (bind_sequence_conversion(*result,source.token.text)) break;
+            if (bind_sequence_query(*result,source.token.text)) break;
             if (imported_units_.contains("school") && (source.token.text=="addr32" || source.token.text=="calcip")) {
                 bind_school_ip_constructor(*result,school_ip_type(source.token.text=="addr32" ? CompoundKind::school_address : CompoundKind::school_ip)); break;
             }
@@ -1686,6 +1694,30 @@ private:
         if (source_info.kind!=CompoundKind::sequence) argument=convert(std::move(argument),sequence_type(CompoundKind::sequence,source_info.element));
         result.left=std::move(argument); result.kind=hir::ExprKind::sequence_call; result.local=name=="tolist" ? 2U : name=="toarray" ? 1U : 0U;
         result.type=result.local ? sequence_type(result.local==2 ? CompoundKind::list : CompoundKind::array,source_info.element) : Type::integer; return true;
+    }
+    static std::optional<SequenceQuery> sequence_query_method(std::string_view name) {
+        for (const auto& [text,method]:{std::pair<std::string_view,SequenceQuery>{"any",SequenceQuery::any},
+            {"first",SequenceQuery::first},{"last",SequenceQuery::last},{"firstordefault",SequenceQuery::first_default},
+            {"lastordefault",SequenceQuery::last_default},{"elementat",SequenceQuery::element},
+            {"elementatordefault",SequenceQuery::element_default},{"contains",SequenceQuery::contains}})
+            if (name==text) return method;
+        return {};
+    }
+    bool bind_sequence_query(hir::Expr& result,std::string_view name,std::string_view unit={}) {
+        const auto method=sequence_query_method(name);
+        if (!method || (!unit.empty() && unit!="pabcsystem")) return false;
+        const bool extra=sequence_query_index(*method) || *method==SequenceQuery::contains;
+        if (result.arguments.size()!=(extra ? 2U : 1U)) throw Error("E_TYPE",result.location,"Wrong sequence query argument count");
+        const auto source=result.arguments[0]->type;
+        if (!compound(source)) throw Error("E_TYPE",result.location,"Query requires a typed sequence, array or List");
+        const auto source_info=info(source,result.location);
+        if ((source_info.kind!=CompoundKind::sequence && !indexed_sequence(source_info.kind)) || source_info.rank!=1)
+            throw Error("E_TYPE",result.location,"Query requires a typed sequence, array or List");
+        if (extra) result.right=convert(std::move(result.arguments[1]),sequence_query_index(*method) ? Type::integer : source_info.element);
+        auto argument=std::move(result.arguments[0]); result.arguments.clear();
+        if (source_info.kind!=CompoundKind::sequence) argument=convert(std::move(argument),sequence_type(CompoundKind::sequence,source_info.element));
+        result.left=std::move(argument); result.kind=hir::ExprKind::sequence_query; result.local=static_cast<std::size_t>(*method);
+        result.type=sequence_query_result(source_info.element,*method); return true;
     }
     void bind_school_ip(hir::Expr& result,Type owner,SchoolIPMethod method) {
         const auto parameters=school_ip_parameters(owner,method);
