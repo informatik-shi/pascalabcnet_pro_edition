@@ -597,6 +597,99 @@ void real_ranges_library() {
     }
 }
 
+void numeric_aggregates_library() {
+    result("begin var a:=Arr(1,2,3,4); var s:integer:=a.Sum; var p:int64:=a.Product; var m:real:=a.Average; Writeln(s,' ',p,' ',m); Writeln(Sum(a),' ',PABCSystem.Product(a),' ',Average(a)); Writeln(Range(1,4).Sum,' ',Range(1,4).Product,' ',Range(1,4).Average); end.","10 24 2.5\n10 24 2.5\n10 24 2.5\n");
+    result("begin Writeln(Arr(MaxInt,MaxInt).Average,' ',Arr(MaxInt,MaxInt).Product); var a:=Arr(int64(1),int64(-2),int64(4)); Writeln(a.Sum,' ',a.Product,' ',a.Average); Writeln(Arr(not MaxInt64,int64(1)).Product); end.","2147483647 4611686014132420609\n3 -8 1\n-9223372036854775808\n");
+    result("begin Writeln(Arr(0.25,0.5,0.75).Sum,' ',Arr(0.25,0.5,0.75).Average,' ',Arr(0.25,0.5,0.75).Product); Writeln(Arr(1e16,1.0,-1e16).Sum); Writeln(Arr(1bi,2bi).Sum,' ',Arr(1bi,2bi).Average,' ',Arr(-3bi,7bi).Product); Writeln(Arr(1bi shl 2000,-(1bi shl 2000)).Average); end.","1.5 0.5 0.09375\n0\n3 1.5 -21\n0\n");
+    result("begin Writeln((new integer[0]).Sum,' ',(new integer[0]).Product,' ',(new int64[0]).Sum,' ',(new int64[0]).Product); Writeln((new real[0]).Sum,' ',(new real[0]).Product,' ',(new BigInteger[0]).Sum,' ',(new BigInteger[0]).Product,' ',(new BigInteger[0]).Average); var a:=new List<integer>; a.Add(2); a.Add(3); Writeln(a.Sum(),' ',a.Average(),' ',a.Product()); end.","0 1 0 1\n0 1 0 1 0\n5 2.5 6\n");
+    result("function Sum(a:array of integer):integer; begin Result:=99; end; begin var a:=Arr(1,2,3); Writeln(Sum(a),' ',PABCSystem.Sum(a),' ',a.Sum); end.","99 6 6\n");
+    result("function A:array of integer; begin Write('A'); Result:=Arr(1,2,3); end; begin Writeln(Sum(A)); end.","A6\n");
+    for (const auto source:{"begin Arr(MaxInt,1,-1).Sum; end.","begin Arr(not(MaxInt),-1,1).Sum; end.","begin Arr(MaxInt64,int64(1)).Sum; end.","begin Arr(MaxInt64,MaxInt64).Average; end.","begin Arr(MaxInt,MaxInt,MaxInt).Product; end.","begin Arr(not MaxInt64,int64(-1)).Product; end.","begin Arr(1e308,1e308).Sum; end.","begin Arr(1e308,1e308).Average; end.","begin Arr(1e308,2.0).Product; end."}) runtime_error(source,"E_OVERFLOW");
+    runtime_error("begin Arr(1bi shl 2000,1bi shl 2000).Average; end.","E_OVERFLOW");
+    runtime_error("begin var p:=1bi shl 65535; Arr(p,p).Sum; end.","E_LIMIT");
+    runtime_error("begin var p:=1bi shl 65535; Arr(p,2bi).Product; end.","E_LIMIT");
+    for (const auto method:{"Sum","Average","Product"}) {
+        runtime_error("begin var s:sequence of integer; s."+std::string(method)+"; end.","E_NIL");
+        runtime_error("begin Range(MaxInt,MaxInt,1)."+std::string(method)+"; end.","E_OVERFLOW");
+        runtime_error("begin Range(0,1,0.0)."+std::string(method)+"; end.","E_RANGE");
+    }
+    runtime_error("begin Writeln((new integer[0]).Average); end.","E_EMPTY");
+    runtime_error("begin Writeln((new int64[0]).Average); end.","E_EMPTY");
+    runtime_error("begin Writeln((new real[0]).Average); end.","E_EMPTY");
+    // Zero cannot hide later generator failures or skip the rest of the input.
+    runtime_error("begin Range(0,MaxInt,MaxInt).Product; end.","E_OVERFLOW");
+    for (const auto source:{"begin Sum(Arr(True,False)); end.","begin Arr('ab','cd').Product; end.","begin Arr(byte(1),byte(2)).Sum; end.","begin Writeln((new integer[1,2]).Average); end.","begin Sum(Arr(1,2),7); end.","begin var n:integer:=Arr(1,2).Product; end.","begin var n:BigInteger:=Arr(1bi,2bi).Average; end."}) compile_error(source,"E_TYPE");
+    abc::ExecutionOptions options; options.instruction_limit=100; options.allocation_limit=64;
+    for (const auto method:{"Sum","Average","Product"}) error([&]{(void)run("begin SeqFill(MaxInt,1)."+std::string(method)+"; end.","",options);},"E_LIMIT");
+    auto invalid=abc::compile("begin var a:=Arr(1,2).Sum; end.");
+    for (auto& instruction:invalid.code) if (instruction.op==abc::Op::sequence_aggregate) instruction.operand=99;
+    error([&]{abc::verify(invalid);},"E_BYTECODE");
+    invalid=abc::compile("begin var a:=Arr(1,2).Sum; var s:=Seq('ab'); end.");
+    abc::Type strings=abc::Type::invalid;
+    for (std::size_t i=0;i<invalid.types.size();++i) if (invalid.types[i].kind==abc::CompoundKind::sequence && invalid.types[i].element==abc::Type::string) strings=static_cast<abc::Type>(64+i);
+    for (auto& instruction:invalid.code) if (instruction.op==abc::Op::sequence_aggregate) instruction.type=strings;
+    error([&]{abc::verify(invalid);},"E_BYTECODE");
+    try { (void)run("begin\nArr(MaxInt,1).Sum;\nend."); require(false,"Expected sum overflow"); }
+    catch (const abc::Error& caught) { require(caught.code=="E_OVERFLOW" && caught.location.line==2 && std::string_view(caught.what())=="Integer overflow" && caught.russian=="Переполнение целого числа","Sum overflow retains both languages and the consuming source location"); }
+    // Independent fixed-integer corpus tests Sum/Average/Product across signs.
+    for (int a=-3;a<=3;++a) for (int b=-3;b<=3;++b) {
+        const auto args=std::to_string(a)+","+std::to_string(b);
+        result("begin var a:=Arr("+args+"); Writeln(a.Sum,' ',a.Product,' ',a.Average=("+std::to_string(a+b)+")/2); end.",std::to_string(a+b)+" "+std::to_string(a*b)+" True\n");
+        result("begin var a:=Arr("+std::to_string(a)+"bi,"+std::to_string(b)+"bi); Writeln(a.Sum,' ',a.Product,' ',a.Average=("+std::to_string(a+b)+")/2); end.",std::to_string(a+b)+" "+std::to_string(a*b)+" True\n");
+    }
+}
+
+void partial_sums_library() {
+    result("begin var s:sequence of integer:=Arr(1,2,3,-4).PartialSum; Writeln(s.ToArray,' ',s.Sum,' ',s.Average); Writeln(PartialSum(Arr(1,2,3)).ToArray,' ',PABCSystem.PartialSum(Arr(2,3)).ToList); Writeln(Arr(0.25,0.5,0.75).PartialSum.ToArray,' ',Arr(1bi,2bi,3bi).PartialSum.ToArray); end.","[1,3,6,2] 12 3\n[1,3,6] [2,5]\n[0.25,0.75,1.5] [1,3,6]\n");
+    result("begin var s:=Arr(1,2,3).PartialSum; Writeln(s.PartialSum.ToArray); foreach var x in s do foreach var y in s do Write(x,':',y,';'); Writeln; Writeln(s.ToArray,' ',s.ToArray); end.","[1,4,10]\n1:1;1:3;1:6;3:1;3:3;3:6;6:1;6:3;6:6;\n[1,3,6] [1,3,6]\n");
+    result("begin var a:=Arr(1,2,3); var s:=a.PartialSum; a[0]:=9; Writeln(s.ToArray); var b:=s.ToArray; b[0]:=7; Writeln(s.First); foreach var x in Arr(1,2,3).PartialSum do begin Write(x,';'); end; Writeln; end.","[9,11,14]\n9\n1;3;6;\n");
+    result("begin var a:=Arr(1,2,3); foreach var x in a.PartialSum do begin Write(x,';'); a[1]:=5; end; Writeln; var l:=new List<real>; l.Add(0.5); l.Add(0.25); Writeln(l.PartialSum.ToArray); end.","1;6;9;\n[0.5,0.75]\n");
+    result("begin var a:array of integer; var s:=a.PartialSum; Writeln(s<>nil,' ',s.ElementAtOrDefault(-1)); Writeln((new integer[0]).PartialSum.Any,' ',(new BigInteger[0]).PartialSum.Average); end.","True 0\nFalse 0\n");
+    result("begin var s:=Arr(MaxInt,1).PartialSum; Writeln(s.First,' ',s.Contains(MaxInt)); foreach var x in s do begin Writeln(x); break; end; end.","2147483647 True\n2147483647\n");
+    result("uses School; begin Writeln(Range(1,3).PartialSum.MinMax); var a:=new List<integer>; a.Add(1); foreach var x in a.PartialSum do begin a.Add(2); Writeln(x); break; end; end.","(1,6)\n1\n");
+    result("begin var p:=1bi shl 65535; var s:=Arr(p,p).PartialSum; Writeln(s.First=p); foreach var x in s do begin Writeln(x=p); break; end; end.","True\nTrue\n");
+    for (const auto suffix:{"Last","Count","ToArray","Sum","Product","Average","ElementAt(1)"}) runtime_error("begin Arr(MaxInt,1).PartialSum."+std::string(suffix)+"; end.","E_OVERFLOW");
+    runtime_error("begin var s:sequence of integer; s.PartialSum.Any; end.","E_NIL");
+    runtime_error("begin var a:List<integer>:=nil; a.PartialSum.First; end.","E_NIL");
+    runtime_error("begin var a:=new List<integer>; a.Add(1); foreach var x in a.PartialSum do a.Add(2); end.","E_MODIFIED");
+    runtime_error("begin Arr(1e308,1e308).PartialSum.Last; end.","E_OVERFLOW");
+    runtime_error("begin var p:=1bi shl 65535; Arr(p,p).PartialSum.Count; end.","E_LIMIT");
+    runtime_error("begin Range(MaxInt,MaxInt,1).PartialSum.Last; end.","E_OVERFLOW");
+    for (const auto source:{"begin Arr(int64(1),int64(2)).PartialSum; end.","begin Arr('a','b').PartialSum; end.","begin PartialSum(Arr(1,2),7); end.","begin var s:sequence of real:=Arr(1,2).PartialSum; end."}) compile_error(source,"E_TYPE");
+    abc::ExecutionOptions options; options.allocation_limit=64; options.instruction_limit=500;
+    require(run("begin var s:=SeqFill(MaxInt,1).PartialSum; Writeln(s.First,' ',s.ElementAt(2)); foreach var x in s do begin Writeln(x); break; end; end.","",options)=="1 3\n1\n","PartialSum streams huge inputs without materialization");
+    error([&]{(void)run("begin SeqFill(MaxInt,1).PartialSum.ToArray; end.","",options);},"E_LIMIT");
+    options={}; options.call_limit=4;
+    error([&]{(void)run("begin var s:=Seq(1); for var i:=1 to 5 do s:=s.PartialSum; s.First; end.","",options);},"E_LIMIT");
+    try { (void)run("begin var s:=Seq(1); for var i:=1 to 100000 do s:=s.PartialSum; end."); require(false,"Expected sequence composition limit"); }
+    catch (const abc::Error& caught) { require(caught.code=="E_LIMIT" && std::string_view(caught.what())=="Sequence nesting limit exceeded" && caught.russian=="Превышена допустимая глубина последовательностей","Deep chains are rejected during composition, before enumeration or recursive destruction"); }
+    auto invalid=abc::compile("begin var s:=Arr(1,2).PartialSum; end.");
+    for (auto& instruction:invalid.code) if (instruction.op==abc::Op::sequence_partial) instruction.operand=1;
+    error([&]{abc::verify(invalid);},"E_BYTECODE");
+    invalid=abc::compile("begin var s:=Arr(1,2).PartialSum; var a:=SeqFill(2,int64(1)); end.");
+    abc::Type longs=abc::Type::invalid;
+    for (std::size_t i=0;i<invalid.types.size();++i) if (invalid.types[i].kind==abc::CompoundKind::sequence && invalid.types[i].element==abc::Type::int64) longs=static_cast<abc::Type>(64+i);
+    for (auto& instruction:invalid.code) if (instruction.op==abc::Op::sequence_partial) instruction.type=longs;
+    error([&]{abc::verify(invalid);},"E_BYTECODE");
+    const auto p=abc::compile("begin var a:=Arr(1,2); var s:=a.PartialSum; end.");
+    abc::Type array=abc::Type::invalid,sequence=abc::Type::invalid;
+    for (std::size_t i=0;i<p.types.size();++i) {
+        if (p.types[i].kind==abc::CompoundKind::sequence) sequence=static_cast<abc::Type>(64+i);
+        if (p.types[i].kind==abc::CompoundKind::array) array=static_cast<abc::Type>(64+i);
+    }
+    abc::Values values{p,1000}; const auto data=values.array(array,2); data->items[0]->value=std::int32_t{1}; data->items[1]->value=std::int32_t{2};
+    const auto source=abc::sequence_create(values,sequence,data,abc::SequenceProvider::array);
+    const auto partial=abc::sequence_partial(values,sequence,source),cursor=abc::sequence_begin(values,partial);
+    require(!abc::sequence_known_length(cursor,{}).has_value(),"PartialSum does not expose a count that skips arithmetic");
+    options={}; options.cancelled=[]{return true;};
+    error([&]{(void)abc::sequence_resume(values,cursor,0,options);},"E_CANCELLED");
+    require(values.sequence_depth==0,"Sequence depth guard unwinds after cancellation");
+    options={};
+    require(abc::sequence_resume(values,cursor,0,options) && abc::sequence_resume(values,cursor,0,options),"PartialSum resume is idempotent at its current position");
+    require(std::get<std::int32_t>(abc::sequence_at(values,cursor,0,options))==1,"Repeated resume does not double a partial sum");
+    require(abc::sequence_resume(values,cursor,1,options) && std::get<std::int32_t>(abc::sequence_at(values,cursor,1,options))==3,"PartialSum advances exactly once");
+}
+
 void school_minmax_library() {
     result("uses School; begin Writeln(MinMax(Arr(4,-7,9,2)),' ',School.MinMax(Arr(int64(-9223372036854775808),MaxInt64))); var a:=new List<real>; a.Add(1.5); a.Add(-2.25); Writeln(a.MinMax); Writeln(MinMax(new integer[0]),' ',MinMax(new int64[0])); var r:=MinMax(new real[0]); Writeln(r.Item1>1e308,' ',r.Item2< -1e308); end.","(-7,9) (-9223372036854775808,9223372036854775807)\n(-2.25,1.5)\n(2147483647,-2147483648) (9223372036854775807,-9223372036854775808)\nTrue True\n");
     result("uses School; function MinMax(a:array of integer):integer; begin Result:=7; end; begin var a:=Arr(4,2,8); Writeln(MinMax(a),' ',School.MinMax(a),' ',a.MinMax()); end.","7 (2,8) (2,8)\n");
@@ -3370,6 +3463,8 @@ int main() {
     big_ranges_library();
     partition_points_library();
     real_ranges_library();
+    numeric_aggregates_library();
+    partial_sums_library();
     school_factor_library();
     sequence_mutations();
     arithmetic();

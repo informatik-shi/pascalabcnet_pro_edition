@@ -1272,6 +1272,45 @@ instruction_limit. До первого продолжения размер не 
 после расчёта его используют общие ограничения ToArray/ToList. Пример:
 examples/real-ranges.pas; нативный корпус tests/fixtures/real-range-compat.pas.
 
+Добавлены числовые Sum, Average, Product и PartialSum для последовательностей,
+одномерных массивов и List. Типы входных элементов и результата известны до запуска:
+
+| Операция | integer | int64 | real | BigInteger |
+| --- | --- | --- | --- | --- |
+| Sum | integer | int64 | real | BigInteger |
+| Average | real | real | real | real |
+| Product | int64 | int64 | real | BigInteger |
+| PartialSum | sequence of integer | не определена в исходнике | sequence of real | sequence of BigInteger |
+
+Sum пустого входа равен 0, Product — 1. Average пустого BigInteger-входа равен 0;
+для integer/int64/real это двуязычный E_EMPTY. Обычные Sum/Average сохраняют
+последовательный checked-профиль
+[LINQ Reference Source](https://github.com/microsoft/referencesource/blob/main/System.Core/System/Linq/Enumerable.cs):
+Sum(integer) складывает в integer, Average(integer/int64) — в int64; переполнение
+промежуточной суммы не скрывается последующим уменьшением. Average(BigInteger)
+складывает BigInteger, считает integer-элементы и преобразует общую сумму в real
+перед делением. Product(integer) вычисляет int64-произведение. Нули не прекращают
+обход Product и не скрывают последующие ошибки генератора. Real сохраняет общий
+конечный профиль; NaN/Infinity пока не воспроизводятся. BigInteger ограничен
+65536 битами и общим бюджетом памяти/работы.
+
+PartialSum выдаёт накопленные суммы лениво, без промежуточного массива. Каждый
+повторный или вложенный обход начинает с нуля и получает собственный курсор.
+Nil источника проверяется при первом продолжении; создание PartialSum от
+типизированного nil само по себе допустимо. First, удачный Contains и break могут
+остановиться до следующего переполнения, Count и материализация вычисляют все
+частичные суммы. Изменения массива видны во время перебора; версия List проверяется
+исходным курсором, включая завершение. Частичная сумма BigInteger сохраняет
+независимые неизменяемые значения. Цепочки PartialSum ограничены call_limit
+(по умолчанию 128) при создании и обходе, чтобы ограничить нативную рекурсию и
+глубину освобождения объектов. Превышение даёт двуязычный E_LIMIT.
+
+Доступны вызовы Sum(a)/Average(a)/Product(a)/PartialSum(a), квалификация PABCSystem
+и методы a.Sum/a.Sum() и аналогичные. Перегрузки с selector-делегатами, nullable,
+малые/беззнаковые числовые последовательности остаются в плане. Пример:
+examples/sequence-aggregates.pas; нативные корпуса sequence-aggregate-compat и
+partial-sum-compat. Исходный компилятор для этих корпусов не запускался.
+
 Одномерный массив и List<T> неявно преобразуются в `sequence of T` при точном
 совпадении типа элемента; преобразование числового T в другой тип автоматически
 не выполняется. Представление удерживает исходный контейнер, видит изменения
@@ -1704,7 +1743,7 @@ cmake --build native/build/default --config Release
 ctest --test-dir native/build/default -C Release --output-on-failure
 ```
 
-Проверка от 28 октября 2026 года: MSVC Release — 3271 проверка ядра и 71 тест
+Проверка от 29 октября 2026 года: MSVC Release — 3450 проверок ядра и 73 теста
 CTest вместе с Qt; Clang 22 без санитайзера также проверен. Дополнительный локальный
 прогон Clang 22/AddressSanitizer на Windows не завершён: обработчик исключений
 аварийно останавливается, в том числе в отдельной минимальной программе с

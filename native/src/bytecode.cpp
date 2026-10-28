@@ -73,6 +73,10 @@ private:
             emit(Op::sequence_partition,node.type,node.local,node.location); break;
         case hir::ExprKind::sequence_call:
             expression(*node.left); emit(node.local==2 ? Op::sequence_list : node.local ? Op::sequence_array : Op::sequence_count,node.left->type,node.local ? static_cast<std::size_t>(node.type) : 0,node.location); break;
+        case hir::ExprKind::sequence_aggregate:
+            expression(*node.left); emit(Op::sequence_aggregate,node.left->type,node.local,node.location); break;
+        case hir::ExprKind::sequence_partial:
+            expression(*node.left); emit(Op::sequence_partial,node.left->type,0,node.location); break;
         case hir::ExprKind::sequence_query:
             expression(*node.left); if (node.right) expression(*node.right);
             emit(Op::sequence_query,node.left->type,node.local,node.location); break;
@@ -488,6 +492,12 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
                 || (type_info(program,type).element!=Type::integer && type_info(program,type).element!=Type::character && type_info(program,type).element!=Type::big_integer && type_info(program,type).element!=Type::real)
                 || (type_info(program,type).element==Type::real && instruction.operand!=1)) invalid(instruction,"Invalid Range metadata");
             break;
+        case Op::sequence_aggregate: case Op::sequence_partial:
+            if (!compound(type) || type_info(program,type).kind!=CompoundKind::sequence || !numeric_sequence_element(type_info(program,type).element)) invalid(instruction,"Invalid numeric sequence metadata");
+            if (instruction.op==Op::sequence_aggregate) {
+                if (instruction.operand>static_cast<std::size_t>(SequenceAggregate::product)) invalid(instruction,"Invalid numeric aggregate operation");
+            } else if (instruction.operand || !partial_sum_element(type_info(program,type).element)) invalid(instruction,"Invalid PartialSum element or flags");
+            break;
         case Op::sequence_query:
             if (!compound(type) || type_info(program,type).kind!=CompoundKind::sequence
                 || instruction.operand>static_cast<std::size_t>(SequenceQuery::single_default)) invalid(instruction,"Invalid sequence query metadata");
@@ -804,6 +814,9 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             require(type_info(program,instruction.type).element); require(type_info(program,instruction.type).element); stack.push_back(instruction.type); break;
         case Op::sequence_resume: require(Type::int64); require(instruction.type); stack.push_back(Type::boolean); break;
         case Op::sequence_count: require(instruction.type); stack.push_back(Type::integer); break;
+        case Op::sequence_aggregate:
+            require(instruction.type); stack.push_back(sequence_aggregate_result(type_info(program,instruction.type).element,static_cast<SequenceAggregate>(instruction.operand))); break;
+        case Op::sequence_partial: require(instruction.type); stack.push_back(instruction.type); break;
         case Op::sequence_query: {
             const auto method=static_cast<SequenceQuery>(instruction.operand); const auto element=type_info(program,instruction.type).element;
             if (sequence_query_index(method)) require(Type::integer);

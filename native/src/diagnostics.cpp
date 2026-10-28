@@ -138,6 +138,8 @@ Error runtime_error(RuntimeError id, SourceLocation location, std::string_view c
         code = "E_MANY"; english = "Sequence contains more than one element"; russian = "Последовательность содержит более одного элемента"; break;
     case RuntimeError::decimal_overflow:
         code = "E_OVERFLOW"; english = "Decimal overflow"; russian = "Переполнение десятичного числа"; break;
+    case RuntimeError::sequence_depth:
+        code = "E_LIMIT"; english = "Sequence nesting limit exceeded"; russian = "Превышена допустимая глубина последовательностей"; break;
     case RuntimeError::partition_count:
         code = "E_RANGE"; english = "Partition count must be positive"; russian = "Число частей разбиения должно быть положительным"; break;
     case RuntimeError::sequence_step_zero:

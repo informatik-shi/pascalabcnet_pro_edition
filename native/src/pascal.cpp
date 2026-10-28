@@ -1010,6 +1010,7 @@ private:
                 if (bind_sequence_conversion(*result,source.token.text,source.left->token.text)) break;
                 if (bind_sequence_factory(*result,source.token.text,source.left->token.text)) break;
                 if (bind_sequence_query(*result,source.token.text,source.left->token.text)) break;
+                if (bind_sequence_numeric(*result,source.token.text,source.left->token.text)) break;
                 if (bind_try_read(*result,source.token.text,source.left->token.text)) break;
                 if (bind_number_conversion(*result,source.token.text,source.left->token.text)) break;
                 if (bind_school_text(*result,source.token.text,source.left->token.text)) break;
@@ -1194,6 +1195,12 @@ private:
                 break;
             }
             const auto& type = info(receiver,result->location);
+            if ((type.kind==CompoundKind::sequence || indexed_sequence(type.kind))
+                && (source.token.text=="sum" || source.token.text=="average" || source.token.text=="product" || source.token.text=="partialsum")) {
+                result->arguments.push_back(std::move(result->left));
+                for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
+                (void)bind_sequence_numeric(*result,source.token.text,"pabcsystem"); break;
+            }
             if ((type.kind==CompoundKind::sequence || indexed_sequence(type.kind)) && sequence_query_method(source.token.text)
                 && !(type.kind==CompoundKind::list && source.token.text=="contains")) {
                 result->arguments.push_back(std::move(result->left));
@@ -1433,6 +1440,7 @@ private:
             if (bind_sequence_conversion(*result,source.token.text)) break;
             if (bind_sequence_factory(*result,source.token.text)) break;
             if (bind_sequence_query(*result,source.token.text)) break;
+            if (bind_sequence_numeric(*result,source.token.text)) break;
             if (imported_units_.contains("school") && (source.token.text=="addr32" || source.token.text=="calcip")) {
                 bind_school_ip_constructor(*result,school_ip_type(source.token.text=="addr32" ? CompoundKind::school_address : CompoundKind::school_ip)); break;
             }
@@ -1740,6 +1748,27 @@ private:
         if (source_info.kind!=CompoundKind::sequence) argument=convert(std::move(argument),sequence_type(CompoundKind::sequence,source_info.element));
         result.left=std::move(argument); result.kind=hir::ExprKind::sequence_call; result.local=name=="tolist" ? 2U : name=="toarray" ? 1U : 0U;
         result.type=result.local ? sequence_type(result.local==2 ? CompoundKind::list : CompoundKind::array,source_info.element) : Type::integer; return true;
+    }
+    bool bind_sequence_numeric(hir::Expr& result,std::string_view name,std::string_view unit={}) {
+        if ((name!="sum" && name!="average" && name!="product" && name!="partialsum") || (!unit.empty() && unit!="pabcsystem")) return false;
+        if (result.arguments.size()!=1) throw Error("E_TYPE",result.location,"Numeric sequence operation requires one sequence");
+        const auto source=result.arguments[0]->type;
+        if (!compound(source)) throw Error("E_TYPE",result.location,"Numeric operation requires a typed sequence, array or List");
+        const auto source_info=info(source,result.location); const auto element=source_info.element;
+        if ((source_info.kind!=CompoundKind::sequence && !indexed_sequence(source_info.kind)) || source_info.rank!=1
+            || !numeric_sequence_element(element) || (name=="partialsum" && !partial_sum_element(element)))
+            throw Error("E_TYPE",result.location,"Unsupported numeric sequence element type");
+        auto argument=std::move(result.arguments[0]); result.arguments.clear();
+        const auto sequence=sequence_type(CompoundKind::sequence,element);
+        if (source_info.kind!=CompoundKind::sequence) argument=convert(std::move(argument),sequence);
+        result.left=std::move(argument);
+        if (name=="partialsum") { result.kind=hir::ExprKind::sequence_partial; result.type=sequence; }
+        else {
+            const auto method=name=="sum" ? SequenceAggregate::sum : name=="average" ? SequenceAggregate::average : SequenceAggregate::product;
+            result.kind=hir::ExprKind::sequence_aggregate; result.local=static_cast<std::size_t>(method);
+            result.type=sequence_aggregate_result(element,method);
+        }
+        return true;
     }
     static std::optional<SequenceQuery> sequence_query_method(std::string_view name) {
         for (const auto& [text,method]:{std::pair<std::string_view,SequenceQuery>{"any",SequenceQuery::any},

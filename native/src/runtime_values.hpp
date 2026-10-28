@@ -18,6 +18,7 @@ struct Values {
     std::size_t remaining;
     SourceLocation location{};
     std::shared_ptr<Aggregate> empty_integer_range{};
+    std::size_t sequence_depth=0;
     void number(const Value& value) {
         if (const auto* big=std::get_if<BigInteger>(&value)) {
             const auto size=(big->bits()+31)/32;

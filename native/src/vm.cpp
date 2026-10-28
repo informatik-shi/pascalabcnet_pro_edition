@@ -232,6 +232,12 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
         }
         case Op::sequence_begin:
             stack.emplace_back(sequence_begin(values,std::get<std::shared_ptr<Aggregate>>(pop()))); break;
+        case Op::sequence_aggregate: {
+            const auto sequence=std::get<std::shared_ptr<Aggregate>>(pop());
+            stack.push_back(sequence_aggregate(values,sequence,static_cast<SequenceAggregate>(instruction.operand),options)); break;
+        }
+        case Op::sequence_partial:
+            stack.emplace_back(sequence_partial(values,instruction.type,std::get<std::shared_ptr<Aggregate>>(pop()),options)); break;
         case Op::sequence_query: {
             const auto method=static_cast<SequenceQuery>(instruction.operand);
             const auto argument=sequence_query_index(method) || method==SequenceQuery::contains ? pop() : Value{std::int32_t{0}};

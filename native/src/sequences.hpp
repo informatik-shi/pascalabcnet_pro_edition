@@ -19,4 +19,8 @@ std::shared_ptr<Aggregate> sequence_range_step(Values& values,Type type,const Va
 std::shared_ptr<Aggregate> sequence_range_big(Values& values,Type type,const BigInteger& first,const BigInteger& last,const BigInteger& step);
 std::shared_ptr<Aggregate> sequence_partition(Values& values,Type type,double first,double last,std::int32_t intervals);
 std::shared_ptr<Aggregate> sequence_range_real(Values& values,Type type,double first,double last,double step);
+Value sequence_numeric_step(Values& values,Type type,const Value& left,const Value& right,bool product,const ExecutionOptions& options);
+Value sequence_aggregate(Values& values,const std::shared_ptr<Aggregate>& sequence,SequenceAggregate method,const ExecutionOptions& options);
+std::shared_ptr<Aggregate> sequence_partial(Values& values,Type type,const std::shared_ptr<Aggregate>& source,const ExecutionOptions& options={});
+bool sequence_partial_resume(Values& values,const std::shared_ptr<Aggregate>& sequence,std::uint64_t index,const ExecutionOptions& options);
 } // namespace abc
