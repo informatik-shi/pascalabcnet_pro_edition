@@ -25,4 +25,6 @@ std::shared_ptr<Aggregate> sequence_partial(Values& values,Type type,const std::
 bool sequence_partial_resume(Values& values,const std::shared_ptr<Aggregate>& sequence,std::uint64_t index,const ExecutionOptions& options);
 std::shared_ptr<Aggregate> sequence_slice(Values& values,Type type,const std::shared_ptr<Aggregate>& source,SequenceSlice method,std::int32_t count,const ExecutionOptions& options);
 bool sequence_slice_resume(Values& values,const std::shared_ptr<Aggregate>& sequence,std::uint64_t index,const ExecutionOptions& options);
+std::shared_ptr<Aggregate> sequence_concat(Values& values,Type type,const std::shared_ptr<Aggregate>& first,const std::shared_ptr<Aggregate>& second,const ExecutionOptions& options);
+bool sequence_concat_resume(Values& values,const std::shared_ptr<Aggregate>& sequence,std::uint64_t index,const ExecutionOptions& options);
 } // namespace abc

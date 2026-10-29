@@ -750,6 +750,43 @@ void sequence_slices_library() {
     }
 }
 
+void sequence_concat_library() {
+    result("begin var s:=Range(1,3).Concat(Range(4,5)); Writeln(s.ToArray,' ',s.ToArray); Writeln((0+s+6).ToList); Writeln(Concat(Arr(1,2),Arr(3,4)).Sum,' ',PABCSystem.Concat(Seq(5),Arr(6)).ToArray); end.","[1,2,3,4,5] [1,2,3,4,5]\n[0,1,2,3,4,5,6]\n10 [5,6]\n");
+    result("begin var a:=new List<integer>; a.Add(2); var s:=Seq(1)+a; a.Add(3); Writeln(s.ToArray,' ',(a+Seq(4)).ToArray); Writeln(('a'+Range('b','c')+'d').ToArray); Writeln((Seq('ab')+'cd').ToArray); end.","[1,2,3] [2,3,4]\n[a,b,c,d]\n[ab,cd]\n");
+    result("function S(n:integer):sequence of integer; begin Write(n); Result:=Seq(n); end; function N(value:integer):integer; begin Write(value); Result:=value; end; begin Writeln((S(1)+S(2)).ToArray); Writeln((S(3)+N(4)).ToArray); Writeln((N(5)+S(6)).ToArray); end.","12[1,2]\n34[3,4]\n56[5,6]\n");
+    result("begin var a:=new List<integer>; a.Add(2); foreach var x in Seq(1).Concat(a) do begin Write(x,';'); if x=1 then a.Add(3); end; Writeln; end.","1;2;3;\n");
+    result("begin var a:=new List<integer>; a.Add(1); var b:=new List<integer>; b.Add(2); foreach var x in a.Concat(b) do begin Write(x,';'); if x=2 then a.Add(9); end; Writeln; end.","1;2;\n");
+    result("begin var s:=Seq(1)+Seq(2); foreach var x in s do foreach var y in s do Write(x,':',y,';'); Writeln; Writeln((SeqFill(0,1)+Seq(2)).ToArray,' ',(Seq(1)+SeqFill(0,2)).ToArray); end.","1:1;1:2;2:1;2:2;\n[2] [1]\n");
+    result("begin Writeln(Seq(7.0).Concat(Range(0,1,0.0)).First); Writeln(Range(MaxInt,MaxInt,1).Concat(Seq(0)).Take(1).Single); Writeln(Seq(7.0).Concat(Range(0,1,0.0)).ElementAtOrDefault(-1)); end.","7\n2147483647\n0\n");
+    result("type R=record x:integer; a:array of integer; end; begin var r:R; r.x:=1; r.a:=Arr(2); var s:=Seq(r)+r; r.x:=9; r.a[0]:=3; var a:=s.ToArray; a[0].x:=7; Writeln(a[0].x,' ',a[1].x,' ',r.x,' ',a[1].a[0]); end.","7 1 9 3\n");
+    result("begin var a:=Seq(1); var s:=Seq(a)+a; Writeln(s.Count,' ',s.First=a,' ',s.Last=a); var t:=a+Seq(a); Writeln(t.Count,' ',t.First=a); Writeln((Seq(1bi)+2bi).Sum); end.","2 True True\n2 True\n3\n");
+    result("function Concat(a,b:array of integer):integer; begin Result:=99; end; begin Writeln(Concat(Arr(1),Arr(2)),' ',PABCSystem.Concat(Arr(1),Arr(2)).Sum); end.","99 3\n");
+    for (const auto source:{"begin var s:sequence of integer; var x:=s.Concat(Seq(1)); end.","begin var s:sequence of integer; var x:=Seq(1).Concat(s); end.","begin var x:=Seq(1)+nil; end.","begin var x:=nil+Seq(1); end.","begin var x:=Concat(nil,Seq(1)); end.","begin var a:array of integer; var x:=a+Seq(1); end."}) runtime_error(source,"E_NIL");
+    runtime_error("begin Seq(1.0).Concat(Range(0,1,0.0)).Count; end.","E_RANGE");
+    runtime_error("begin Range(MaxInt,MaxInt,1).Concat(Seq(0)).Count; end.","E_OVERFLOW");
+    runtime_error("begin var a:=new List<integer>; a.Add(1); foreach var x in a.Concat(Seq(2)) do a.Add(3); end.","E_MODIFIED");
+    for (const auto source:{"begin Seq(1).Concat(Seq(2.0)); end.","begin Seq(1).Concat; end.","begin Seq(1).Concat(Seq(2),Seq(3)); end.","begin var a:=Seq(1)+2.0; end.","begin var a:sequence of real:=Seq(1)+Seq(2); end.","begin var a:=(new integer[1,2]).Concat(Seq(1)); end."}) compile_error(source,"E_TYPE");
+    abc::ExecutionOptions options; options.allocation_limit=80; options.instruction_limit=1000;
+    require(run("begin Writeln(SeqFill(MaxInt,1).Concat(Seq(2)).Take(3).Sum); end.","",options)=="3\n","Concat starts a huge source without materialization");
+    options={}; options.call_limit=3;
+    error([&]{(void)run("begin var s:=Seq(1); for var i:=1 to 4 do s:=s+1; end.","",options);},"E_LIMIT");
+    error([&]{(void)run("begin var s:=Seq(1); for var i:=1 to 4 do s:=1+s; end.","",options);},"E_LIMIT");
+    for (unsigned flags:{1U,99U}) { auto invalid=abc::compile("begin var s:=Seq(1)+Seq(2); end."); for(auto& instruction:invalid.code) if(instruction.op==abc::Op::sequence_concat) instruction.operand=flags; error([&]{abc::verify(invalid);},"E_BYTECODE"); }
+    const auto p=abc::compile("begin var s:=Seq(1); end."); abc::Type sequence=abc::Type::invalid;
+    for(std::size_t i=0;i<p.types.size();++i) if(p.types[i].kind==abc::CompoundKind::sequence) sequence=static_cast<abc::Type>(64+i);
+    abc::Values values{p,1000}; const auto first=abc::sequence_repeat(values,sequence,1,std::int32_t{1}), second=abc::sequence_repeat(values,sequence,1,std::int32_t{2});
+    options={}; auto combined=abc::sequence_concat(values,sequence,first,second,options); auto cursor=abc::sequence_begin(values,combined);
+    options.cancelled=[]{return true;}; error([&]{(void)abc::sequence_resume(values,cursor,0,options);},"E_CANCELLED"); require(!values.sequence_depth,"Concat depth guard unwinds after cancellation");
+    options={}; cursor=abc::sequence_begin(values,combined);
+    require(abc::sequence_resume(values,cursor,0,options) && std::get<std::int32_t>(abc::sequence_at(values,cursor,0,options))==1,"Concat resume remains idempotent on the first source");
+    require(abc::sequence_resume(values,cursor,1,options) && std::get<std::int32_t>(abc::sequence_at(values,cursor,1,options))==2,"Concat resumes the second source at its own index zero");
+    require(!abc::sequence_resume(values,cursor,2,options) && !abc::sequence_resume(values,cursor,2,options),"Concat end is idempotent");
+    for (int left=0;left<=6;++left) for (int right=0;right<=6;++right) {
+        std::string expected="["; for(int i=0;i<left+right;++i){if(i)expected+=","; expected+=std::to_string(i<left ? i+1 : i-left+10);} expected+="]\n";
+        result("begin Writeln(Range(1,"+std::to_string(left)+").Concat(Range(10,"+std::to_string(right+9)+")).ToArray); end.",expected);
+    }
+}
+
 void default_arguments_language() {
     result("function F(a:integer;b:integer:=3):integer; begin Result:=a+b; end; function G(a:integer:=4;b:real:=2.5):real; begin Result:=a+b; end; begin Writeln(F(2),' ',F(2,7),' ',G,' ',G(),' ',G(1)); end.","5 9 6.5 6.5 3.5\n");
     result("var value:integer:=F; function F(a:integer:=3):integer; begin Result:=a*2; end; begin Writeln(value); end.","6\n");
@@ -3560,6 +3597,7 @@ int main() {
     numeric_aggregates_library();
     partial_sums_library();
     sequence_slices_library();
+    sequence_concat_library();
     default_arguments_language();
     school_factor_library();
     sequence_mutations();

@@ -238,6 +238,10 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
         }
         case Op::sequence_partial:
             stack.emplace_back(sequence_partial(values,instruction.type,std::get<std::shared_ptr<Aggregate>>(pop()),options)); break;
+        case Op::sequence_concat: {
+            const auto second=std::get<std::shared_ptr<Aggregate>>(pop()); const auto first=std::get<std::shared_ptr<Aggregate>>(pop());
+            stack.emplace_back(sequence_concat(values,instruction.type,first,second,options)); break;
+        }
         case Op::sequence_slice: {
             const auto count=std::get<std::int32_t>(pop()); const auto sequence=std::get<std::shared_ptr<Aggregate>>(pop());
             stack.emplace_back(sequence_slice(values,instruction.type,sequence,static_cast<SequenceSlice>(instruction.operand),count,options)); break;

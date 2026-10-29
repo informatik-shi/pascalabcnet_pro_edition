@@ -1082,6 +1082,7 @@ private:
                 if (bind_sequence_query(*result,source.token.text,source.left->token.text)) break;
                 if (bind_sequence_numeric(*result,source.token.text,source.left->token.text)) break;
                 if (bind_sequence_slice(*result,source.token.text,source.left->token.text)) break;
+                if (bind_sequence_concat(*result,source.token.text,source.left->token.text)) break;
                 if (bind_try_read(*result,source.token.text,source.left->token.text)) break;
                 if (bind_number_conversion(*result,source.token.text,source.left->token.text)) break;
                 if (bind_school_text(*result,source.token.text,source.left->token.text)) break;
@@ -1266,6 +1267,11 @@ private:
                 break;
             }
             const auto& type = info(receiver,result->location);
+            if ((type.kind==CompoundKind::sequence || indexed_sequence(type.kind)) && source.token.text=="concat") {
+                result->arguments.push_back(std::move(result->left));
+                for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
+                (void)bind_sequence_concat(*result,"concat","pabcsystem"); break;
+            }
             if ((type.kind==CompoundKind::sequence || indexed_sequence(type.kind)) && sequence_slice_method(source.token.text)) {
                 result->arguments.push_back(std::move(result->left));
                 for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
@@ -1516,6 +1522,7 @@ private:
             if (bind_sequence_query(*result,source.token.text)) break;
             if (bind_sequence_numeric(*result,source.token.text)) break;
             if (bind_sequence_slice(*result,source.token.text)) break;
+            if (bind_sequence_concat(*result,source.token.text)) break;
             if (imported_units_.contains("school") && (source.token.text=="addr32" || source.token.text=="calcip")) {
                 bind_school_ip_constructor(*result,school_ip_type(source.token.text=="addr32" ? CompoundKind::school_address : CompoundKind::school_ip)); break;
             }
@@ -1576,6 +1583,20 @@ private:
             auto left = result->left->type;
             auto right = result->right->type;
             const auto& op = result->operation;
+            const auto is_sequence=[&](Type type) { return compound(type) && info(type,result->location).kind==CompoundKind::sequence; };
+            if (op=="+" && (is_sequence(left) || is_sequence(right))) {
+                const auto singleton=[&](std::unique_ptr<hir::Expr> item,Type sequence) {
+                    auto repeat=std::make_unique<hir::Expr>(); repeat->kind=hir::ExprKind::sequence_repeat; repeat->type=sequence; repeat->location=result->location;
+                    repeat->left=std::make_unique<hir::Expr>(); repeat->left->kind=hir::ExprKind::literal; repeat->left->type=Type::integer; repeat->left->value=std::int32_t{1}; repeat->left->location=result->location;
+                    repeat->right=convert(std::move(item),info(sequence,result->location).element); return repeat;
+                };
+                if (is_sequence(left) && right==info(left,result->location).element) result->right=singleton(std::move(result->right),left);
+                else if (is_sequence(right) && left==info(right,result->location).element) result->left=singleton(std::move(result->left),right);
+                else if (is_sequence(left) && !is_sequence(right) && right!=Type::nil && !sequence_view(right,left,result->location)) result->right=singleton(std::move(result->right),left);
+                else if (is_sequence(right) && !is_sequence(left) && left!=Type::nil && !sequence_view(left,right,result->location)) result->left=singleton(std::move(result->left),right);
+                result->arguments.push_back(std::move(result->left)); result->arguments.push_back(std::move(result->right));
+                (void)bind_sequence_concat(*result,"concat","pabcsystem"); break;
+            }
             const auto address_type=[&](Type type) { return compound(type) && info(type,result->location).kind==CompoundKind::school_address; };
             if ((op=="and" || op=="or" || op=="+") && (address_type(left) || address_type(right))) {
                 const auto owner=address_type(left) ? left : right;
@@ -1823,6 +1844,22 @@ private:
         if (source_info.kind!=CompoundKind::sequence) argument=convert(std::move(argument),sequence_type(CompoundKind::sequence,source_info.element));
         result.left=std::move(argument); result.kind=hir::ExprKind::sequence_call; result.local=name=="tolist" ? 2U : name=="toarray" ? 1U : 0U;
         result.type=result.local ? sequence_type(result.local==2 ? CompoundKind::list : CompoundKind::array,source_info.element) : Type::integer; return true;
+    }
+    bool bind_sequence_concat(hir::Expr& result,std::string_view name,std::string_view unit={}) {
+        if (name!="concat" || (!unit.empty() && unit!="pabcsystem")) return false;
+        // Preserve the existing string Concat overloads.
+        if (result.arguments.empty()) return false;
+        const auto first=result.arguments[0]->type;
+        const bool inferred_nil=first==Type::nil && result.arguments.size()==2 && compound(result.arguments[1]->type);
+        if (!compound(first) && !inferred_nil) return false;
+        if (result.arguments.size()!=2) throw Error("E_TYPE",result.location,"Sequence Concat requires two sources");
+        const auto source=inferred_nil ? result.arguments[1]->type : first; const auto source_info=info(source,result.location);
+        if ((source_info.kind!=CompoundKind::sequence && !indexed_sequence(source_info.kind)) || source_info.rank!=1)
+            throw Error("E_TYPE",result.location,"Concat requires rank-one sequences, arrays or Lists");
+        const auto sequence=sequence_type(CompoundKind::sequence,source_info.element);
+        result.left=convert(std::move(result.arguments[0]),sequence);
+        result.right=convert(std::move(result.arguments[1]),sequence);
+        result.arguments.clear(); result.kind=hir::ExprKind::sequence_concat; result.type=sequence; return true;
     }
     static std::optional<SequenceSlice> sequence_slice_method(std::string_view name) {
         if (name=="take") return SequenceSlice::take;
