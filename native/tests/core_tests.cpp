@@ -1874,6 +1874,58 @@ void structural_output() {
     error([&]{abc::verify(program);},"E_BYTECODE");
 }
 
+void sequence_prefix_predicates_library() {
+    for (const bool indexed:{false,true}) {
+        const auto program=abc::compile(indexed
+            ? "function No(n,i:integer):boolean; begin Result:=False; end; begin Seq(1).SkipWhile(No).Count; end."
+            : "function No(n:integer):boolean; begin Result:=False; end; begin Seq(1).SkipWhile(No).Count; end.");
+        abc::Type type=abc::Type::invalid;
+        for (std::size_t i=0;i<program.types.size();++i)
+            if (program.types[i].kind==abc::CompoundKind::sequence && program.types[i].element==abc::Type::integer)
+                type=static_cast<abc::Type>(64+i);
+        abc::Values values{program,1000}; unsigned calls=0;
+        values.invoke=[&](std::size_t,std::span<const abc::Value>)->abc::Value {++calls; return false;};
+        const auto source=abc::sequence_range_step(values,type,std::int32_t{INT32_MIN},std::int32_t{INT32_MAX},1);
+        const auto sequence=abc::sequence_transform(values,type,source,0,abc::SequenceTransform::skip_while,{});
+        const auto iterator=abc::sequence_begin(values,sequence);
+        auto& cursor=*iterator->sequence->transform;
+        cursor.iterator=abc::sequence_begin(values,source); cursor.prefix_done=true;
+        cursor.positioned=true; cursor.available=true; cursor.index=0;
+        cursor.source_index=std::uint64_t{INT32_MAX}+1;
+        if (indexed) error([&]{(void)abc::sequence_resume(values,iterator,1,{});},"E_OVERFLOW");
+        else require(abc::sequence_resume(values,iterator,1,{}) && std::get<std::int32_t>(abc::sequence_at(values,iterator,1,{}))==0,
+            "Non-indexed SkipWhile can continue beyond integer index range");
+        require(calls==0,"SkipWhile stops calling the predicate after the first false value");
+    }
+
+    result("function Below(n:integer):boolean; begin Result:=n<3; end; begin Writeln(Seq(1,2,3,1).TakeWhile(Below).ToArray); Writeln(Seq(1,2,3,1).SkipWhile(Below).ToArray); Writeln(PABCSystem.TakeWhile(Arr(1,2,4),Below).Count); end.","[1,2]\n[3,1]\n2\n");
+    result("function Below(n,index:integer):boolean; begin Write(index); Result:=index<2; end; begin var t:=Seq(9,8,7,6).TakeWhile(Below); Write('C'); Writeln(' ',t.ToArray); Writeln(' ',t.ToArray); var s:=Seq(9,8,7,6).SkipWhile(Below); Writeln(' ',s.ToArray); Writeln(' ',s.ToArray); end.","C012 [9,8]\n012 [9,8]\n012 [7,6]\n012 [7,6]\n");
+    result("function Prefix(n:integer):boolean; begin Write(n); if n>2 then Result:=(1 div 0)=0 else Result:=n<2; end; begin Writeln(' ',Seq(1,2,3,4).SkipWhile(Prefix).ToArray); end.","12 [2,3,4]\n");
+    result("function Prefix(n:integer):boolean; begin Write(n); if n>2 then Result:=(1 div 0)=0 else Result:=n<2; end; begin Writeln(' ',Seq(1,2,3,4).TakeWhile(Prefix).ToArray); end.","12 [1]\n");
+    result("function Yes(n:integer):boolean; begin Write('P'); Result:=True; end; begin Writeln(SeqFill(0,1).TakeWhile(Yes).Count,' ',SeqFill(0,1).SkipWhile(Yes).Count); Writeln(Seq(1,2).TakeWhile(Yes).ToArray); Writeln(Seq(1,2).SkipWhile(Yes).ToArray); end.","0 0\nPP[1,2]\nPP[]\n");
+    result("function No(n:integer):boolean; begin Result:=False; end; begin Writeln(Seq(1,2).TakeWhile(No).Count,' ',Seq(1,2).SkipWhile(No).ToArray); end.","0 [1,2]\n");
+    result("function Letter(c:char):boolean; begin Result:=c<>'!'; end; begin Writeln('ЯБ!В'.TakeWhile(Letter).ToArray); Writeln('ЯБ!В'.SkipWhile(Letter).ToArray); end.","[Я,Б]\n[!,В]\n");
+    result("function UntilIndex(n,i:integer):boolean; begin Result:=i<2; end; begin var q:=Seq(1,2,3).TakeWhile(UntilIndex); foreach var a in q do foreach var b in q do Write(a,b,'|'); end.","11|12|21|22|");
+    result("function Even(n:integer):boolean; begin Result:=n mod 2=0; end; function Two(n,i:integer):boolean; begin Result:=i<2; end; begin Writeln(Seq(1,2,3,4,5,6).Where(Even).TakeWhile(Two).ToArray); Writeln(Seq(1,2,3,4,5,6).Where(Even).SkipWhile(Two).ToArray); end.","[2,4]\n[6]\n");
+    result("type R=record x:integer; a:array of integer; end; function Keep(r:R):boolean; begin r.x:=9; r.a[0]:=8; Result:=True; end; begin var r:R; r.x:=3; r.a:=Arr(7); var a:=Arr(r).TakeWhile(Keep).First; Writeln(a.x,' ',a.a[0],' ',r.x,' ',r.a[0]); end.","3 8 3 8\n");
+    runtime_error("function Yes(n:integer):boolean; begin Result:=True; end; begin var s:sequence of integer; var q:=s.TakeWhile(Yes); Writeln('bad'); end.","E_NIL");
+    runtime_error("function Yes(n:integer):boolean; begin Result:=True; end; begin var s:sequence of integer; var q:=s.SkipWhile(Yes); Writeln('bad'); end.","E_NIL");
+    runtime_error("function Bad(n:integer):boolean; begin Result:=(1 div 0)=0; end; begin Seq(1).TakeWhile(Bad).Count; end.","E_DIV_ZERO");
+    runtime_error("function Bad(n:integer):boolean; begin Result:=(1 div 0)=0; end; begin Seq(1).SkipWhile(Bad).Count; end.","E_DIV_ZERO");
+    result("function Bad(n:integer):boolean; begin Result:=(1 div 0)=0; end; begin var q:=Seq(1).TakeWhile(Bad); var r:=Seq(1).SkipWhile(Bad); Writeln(q.Take(0).Count,' ',r.Take(0).Count); end.","0 0\n");
+    for (const auto source:{"function F(n:integer):integer; begin Result:=n; end; begin Seq(1).TakeWhile(F); end.",
+        "function F(n:real):boolean; begin Result:=True; end; begin Seq(1).SkipWhile(F); end.",
+        "function F(var n:integer):boolean; begin Result:=True; end; begin Seq(1).TakeWhile(F); end.",
+        "function F(n:integer;var i:integer):boolean; begin Result:=True; end; begin Seq(1).SkipWhile(F); end.",
+        "begin Seq(1).TakeWhile; end.","begin Seq(1).SkipWhile(True); end."}) compile_error(source,"E_TYPE");
+    auto invalid=abc::compile("function F(n:integer):integer; begin Result:=n; end; begin Seq(1).Select(F).Count; end.");
+    for (auto& instruction:invalid.code) if (instruction.op==abc::Op::sequence_select) instruction.op=abc::Op::sequence_takewhile;
+    error([&]{abc::verify(invalid);},"E_BYTECODE");
+    invalid=abc::compile("function F(n:integer):integer; begin Result:=n; end; begin Seq(1).Select(F).Count; end.");
+    for (auto& instruction:invalid.code) if (instruction.op==abc::Op::sequence_select) instruction.op=abc::Op::sequence_skipwhile;
+    error([&]{abc::verify(invalid);},"E_BYTECODE");
+}
+
 void sequence_zip_library() {
     result("begin Writeln(Zip(Seq(1,2,3),Seq(10,20)).ToArray); Writeln('ab'.Zip(Seq(1,2,3)).ToArray); end.","[(1,10),(2,20)]\n[(a,1),(b,2)]\n");
     result("begin Writeln(Zip(Seq(1),Seq('a'),Seq(2.5)).First); Writeln(Zip(Seq(1),Seq(2),Seq(3),Seq(4)).First); Writeln(Zip(Seq(1),Seq(2),Seq(3),Seq(4),Seq(5)).First); end.","(1,a,2.5)\n(1,2,3,4)\n(1,2,3,4,5)\n");
@@ -3861,6 +3913,7 @@ int main() {
     array_initializers_language();
     constants_language();
     sequence_zip_library();
+    sequence_prefix_predicates_library();
     structural_output();
     try_console_read();
     string_conversions();

@@ -2065,20 +2065,20 @@ private:
         result.local=routine|(static_cast<std::size_t>(*method)<<8); return true;
     }
     bool bind_sequence_transform(hir::Expr& result,const SyntaxExpr& source,std::string_view unit={},bool member=false,std::string_view operation={}) {
-        const auto name=operation.empty() ? std::string_view(source.token.text) : operation; const bool predicate=name=="where",flatten=name=="selectmany";
+        const auto name=operation.empty() ? std::string_view(source.token.text) : operation; const bool predicate=name=="where" || name=="takewhile" || name=="skipwhile",flatten=name=="selectmany";
         if ((name!="select" && !predicate && !flatten) || (!unit.empty() && unit!="pabcsystem")) return false;
-        if (source.arguments.size()!=(member ? 1U : 2U)) throw Error("E_TYPE",result.location,"Select/Where require a source and typed function");
+        if (source.arguments.size()!=(member ? 1U : 2U)) throw Error("E_TYPE",result.location,"Sequence transform requires a source and typed function");
         const auto& callback=*source.arguments[member ? 0 : 1];
         if (callback.kind!=SyntaxExprKind::name || !routine_names_.contains(callback.token.text)
             || (lookup(callback.token) && callback.token.text!=current_name_))
-            throw Error("E_TYPE",callback.token.location,"Select/Where require a named user function with known types");
+            throw Error("E_TYPE",callback.token.location,"Sequence transform requires a named user function with known types");
         const auto routine=routine_names_.at(callback.token.text); const auto signature=module_.routines[routine].signature;
         if (!member) result.left=expression(*source.arguments[0]);
         const auto input=sequence_source(result.left->type,result.location);
         if ((signature.parameters.size()!=1 && signature.parameters.size()!=2) || signature.parameters[0].by_reference || signature.parameters[0].type!=input.element
             || (signature.parameters.size()==2 && (signature.parameters[1].by_reference || signature.parameters[1].type!=Type::integer))
             || signature.result==Type::unit || (predicate && signature.result!=Type::boolean))
-            throw Error("E_TYPE",callback.token.location,"Select/Where function requires an exact element by value, optional integer index and a value result (boolean for Where)");
+            throw Error("E_TYPE",callback.token.location,"Sequence function requires an exact element by value, optional integer index and a value result (boolean for predicates)");
         result.left=convert(std::move(result.left),sequence_type(CompoundKind::sequence,input.element));
         result.type=sequence_type(CompoundKind::sequence,predicate ? input.element : flatten ? sequence_source(signature.result,callback.token.location).element : signature.result);
         result.kind=hir::ExprKind::sequence_transform; result.local=routine; return true;

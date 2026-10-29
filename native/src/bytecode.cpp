@@ -83,7 +83,7 @@ private:
         case hir::ExprKind::sequence_predicate:
             expression(*node.left); emit(Op::sequence_predicate,node.left->type,node.local,node.location); break;
         case hir::ExprKind::sequence_transform:
-            expression(*node.left); emit(node.operation=="where" ? Op::sequence_where : node.operation=="selectmany" ? Op::sequence_flatmap : Op::sequence_select,node.left->type,(static_cast<std::size_t>(node.type)<<8)|node.local,node.location); break;
+            expression(*node.left); emit(node.operation=="where" ? Op::sequence_where : node.operation=="takewhile" ? Op::sequence_takewhile : node.operation=="skipwhile" ? Op::sequence_skipwhile : node.operation=="selectmany" ? Op::sequence_flatmap : Op::sequence_select,node.left->type,(static_cast<std::size_t>(node.type)<<8)|node.local,node.location); break;
         case hir::ExprKind::sequence_concat: case hir::ExprKind::sequence_equal: case hir::ExprKind::sequence_default:
             expression(*node.left); expression(*node.right);
             emit(node.kind==hir::ExprKind::sequence_equal ? Op::sequence_equal : node.kind==hir::ExprKind::sequence_default ? Op::sequence_default : Op::sequence_concat,node.left->type,0,node.location); break;
@@ -547,12 +547,12 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
                 || signature.result!=Type::boolean) invalid(instruction,"Invalid predicate query signature");
             break;
         }
-        case Op::sequence_select: case Op::sequence_where: case Op::sequence_flatmap: {
+        case Op::sequence_select: case Op::sequence_where: case Op::sequence_flatmap: case Op::sequence_takewhile: case Op::sequence_skipwhile: {
             const auto callback=instruction.operand&255U,result=instruction.operand>>8;
             if (!compound(type) || type_info(program,type).kind!=CompoundKind::sequence || callback>=program.routines.size()
                 || result<64 || result>=64+program.types.size()) invalid(instruction,"Invalid sequence callback metadata");
             const auto& signature=program.routines[callback]; const auto& output=type_info(program,static_cast<Type>(result));
-            const auto element=type_info(program,type).element; const bool predicate=instruction.op==Op::sequence_where,flatten=instruction.op==Op::sequence_flatmap;
+            const auto element=type_info(program,type).element; const bool predicate=instruction.op==Op::sequence_where || instruction.op==Op::sequence_takewhile || instruction.op==Op::sequence_skipwhile,flatten=instruction.op==Op::sequence_flatmap;
             auto returned=signature.result;
             if (flatten) {
                 if (returned==Type::string) returned=Type::character;
@@ -907,7 +907,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             stack.push_back(instruction.type); break;
         }
         case Op::sequence_predicate: require(instruction.type); stack.push_back(predicate_query_result(type_info(program,instruction.type).element,static_cast<PredicateQuery>(instruction.operand>>8))); break;
-        case Op::sequence_select: case Op::sequence_where: case Op::sequence_flatmap: require(instruction.type); stack.push_back(static_cast<Type>(instruction.operand>>8)); break;
+        case Op::sequence_select: case Op::sequence_where: case Op::sequence_flatmap: case Op::sequence_takewhile: case Op::sequence_skipwhile: require(instruction.type); stack.push_back(static_cast<Type>(instruction.operand>>8)); break;
         case Op::sequence_equal: require(instruction.type); require(instruction.type); stack.push_back(Type::boolean); break;
         case Op::sequence_default: require(type_info(program,instruction.type).element); require(instruction.type); stack.push_back(instruction.type); break;
         case Op::sequence_slice: require(Type::integer); require(instruction.type); stack.push_back(instruction.type); break;

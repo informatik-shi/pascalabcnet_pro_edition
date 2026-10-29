@@ -3,10 +3,10 @@
 #include <array>
 
 namespace abc {
-std::shared_ptr<Aggregate> sequence_transform(Values& values,Type type,const std::shared_ptr<Aggregate>& source,std::size_t callback,bool predicate,const ExecutionOptions& options,bool flatten) {
+std::shared_ptr<Aggregate> sequence_transform(Values& values,Type type,const std::shared_ptr<Aggregate>& source,std::size_t callback,SequenceTransform method,const ExecutionOptions& options) {
     if (!source || source->nil) throw runtime_error(RuntimeError::nil_reference,values.location);
     auto result=sequence_composed(values,type,source,SequenceProvider::transform,options);
-    result->sequence->callback=callback; result->sequence->predicate=predicate; result->sequence->flatten=flatten; return result;
+    result->sequence->callback=callback; result->sequence->transform_method=method; return result;
 }
 bool sequence_transform_resume(Values& values,const std::shared_ptr<Aggregate>& sequence,std::uint64_t index,const ExecutionOptions& options) {
     SequenceDepthGuard guard(values,options); const auto& state=*sequence->sequence;
@@ -19,7 +19,7 @@ bool sequence_transform_resume(Values& values,const std::shared_ptr<Aggregate>& 
     while (!cursor.ended) {
         if (cursor.work>=options.instruction_limit) throw runtime_error(RuntimeError::instruction_limit,values.location);
         if ((cursor.work++&255U)==0 && options.cancelled && options.cancelled()) throw runtime_error(RuntimeError::cancelled,values.location);
-        if (state.flatten && cursor.inner) {
+        if (state.transform_method==SequenceTransform::flatmap && cursor.inner) {
             if (cursor.inner_index>static_cast<std::uint64_t>(INT64_MAX)) throw runtime_error(RuntimeError::integer_overflow,values.location);
             if (sequence_resume(values,cursor.inner,cursor.inner_index,options)) {
                 cursor.current=sequence_at(values,cursor.inner,static_cast<std::int64_t>(cursor.inner_index),options); ++cursor.inner_index;
@@ -32,9 +32,13 @@ bool sequence_transform_resume(Values& values,const std::shared_ptr<Aggregate>& 
         if (!sequence_resume(values,cursor.iterator,cursor.source_index,options)) { cursor.ended=true; break; }
         auto item=sequence_at(values,cursor.iterator,static_cast<std::int64_t>(cursor.source_index),options);
         if (indexed && cursor.source_index>INT32_MAX) throw runtime_error(RuntimeError::integer_overflow,values.location);
+        if (state.transform_method==SequenceTransform::skip_while && cursor.prefix_done) {
+            ++cursor.source_index; cursor.current=std::move(item);
+            cursor.positioned=true; cursor.available=true; cursor.index=index; return true;
+        }
         const std::array<Value,2> arguments={item,static_cast<std::int32_t>(indexed ? cursor.source_index : 0)}; ++cursor.source_index;
         auto value=values.invoke(state.callback,std::span<const Value>(arguments).first(indexed ? 2U : 1U));
-        if (state.flatten) {
+        if (state.transform_method==SequenceTransform::flatmap) {
             const auto returned=values.program.routines[state.callback].result;
             std::shared_ptr<Aggregate> source;
             if (returned==Type::string) source=sequence_text(values,sequence->type,std::move(value));
@@ -45,8 +49,15 @@ bool sequence_transform_resume(Values& values,const std::shared_ptr<Aggregate>& 
             }
             cursor.inner=sequence_begin(values,source); cursor.inner_index=0; continue;
         }
-        if (state.predicate && !std::get<bool>(value)) continue;
-        cursor.current=state.predicate ? std::move(item) : std::move(value);
+        if (predicate_transform(state.transform_method)) {
+            const bool matched=std::get<bool>(value);
+            if (state.transform_method==SequenceTransform::take_while && !matched) { cursor.ended=true; break; }
+            if (state.transform_method==SequenceTransform::skip_while) {
+                if (matched) continue;
+                cursor.prefix_done=true;
+            } else if (!matched) continue;
+        }
+        cursor.current=predicate_transform(state.transform_method) ? std::move(item) : std::move(value);
         cursor.positioned=true; cursor.available=true; cursor.index=index; return true;
     }
     cursor.positioned=true; cursor.available=false; cursor.index=index; return false;
