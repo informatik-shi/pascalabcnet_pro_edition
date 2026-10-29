@@ -23,4 +23,6 @@ Value sequence_numeric_step(Values& values,Type type,const Value& left,const Val
 Value sequence_aggregate(Values& values,const std::shared_ptr<Aggregate>& sequence,SequenceAggregate method,const ExecutionOptions& options);
 std::shared_ptr<Aggregate> sequence_partial(Values& values,Type type,const std::shared_ptr<Aggregate>& source,const ExecutionOptions& options={});
 bool sequence_partial_resume(Values& values,const std::shared_ptr<Aggregate>& sequence,std::uint64_t index,const ExecutionOptions& options);
+std::shared_ptr<Aggregate> sequence_slice(Values& values,Type type,const std::shared_ptr<Aggregate>& source,SequenceSlice method,std::int32_t count,const ExecutionOptions& options);
+bool sequence_slice_resume(Values& values,const std::shared_ptr<Aggregate>& sequence,std::uint64_t index,const ExecutionOptions& options);
 } // namespace abc

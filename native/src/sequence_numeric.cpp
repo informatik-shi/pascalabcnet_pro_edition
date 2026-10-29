@@ -1,6 +1,7 @@
 #include "sequences.hpp"
 #include "runtime_values.hpp"
 #include "big_integer_runtime.hpp"
+#include "sequence_guard.hpp"
 #include <cmath>
 #include <limits>
 
@@ -23,15 +24,6 @@ double finite(double n,SourceLocation location) {
     if (!std::isfinite(n)) throw runtime_error(RuntimeError::real_overflow,location);
     return n;
 }
-class SequenceDepth {
-    Values& values_;
-public:
-    SequenceDepth(Values& values,const ExecutionOptions& options):values_(values) {
-        if (values_.sequence_depth>=options.call_limit) throw runtime_error(RuntimeError::sequence_depth,values_.location);
-        ++values_.sequence_depth;
-    }
-    ~SequenceDepth(){--values_.sequence_depth;}
-};
 }
 Value sequence_numeric_step(Values& values,Type type,const Value& left,const Value& right,bool product,const ExecutionOptions& options) {
     if (type==Type::big_integer) {
@@ -86,16 +78,10 @@ Value sequence_aggregate(Values& values,const std::shared_ptr<Aggregate>& sequen
     return finite(sum/static_cast<double>(count),values.location);
 }
 std::shared_ptr<Aggregate> sequence_partial(Values& values,Type type,const std::shared_ptr<Aggregate>& source,const ExecutionOptions& options) {
-    const auto nesting=source && source->sequence ? source->sequence->nesting : 0;
-    if (nesting>=options.call_limit) throw runtime_error(RuntimeError::sequence_depth,values.location);
-    if (!values.remaining) throw runtime_error(RuntimeError::allocation_limit,values.location);
-    --values.remaining;
-    auto result=std::make_shared<Aggregate>(); result->type=type; result->sequence=std::make_unique<SequenceState>();
-    result->sequence->provider=SequenceProvider::partial_sum; result->sequence->source=source; result->sequence->nesting=nesting+1;
-    return result;
+    return sequence_composed(values,type,source,SequenceProvider::partial_sum,options);
 }
 bool sequence_partial_resume(Values& values,const std::shared_ptr<Aggregate>& sequence,std::uint64_t index,const ExecutionOptions& options) {
-    SequenceDepth guard(values,options);
+    SequenceDepthGuard guard(values,options);
     auto& state=*sequence->sequence;
     if (!state.partial) throw runtime_error(RuntimeError::invalid_bytecode,values.location);
     auto& partial=*state.partial;

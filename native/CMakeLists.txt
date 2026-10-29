@@ -32,6 +32,7 @@ add_library(abc_core
     src/sequences.cpp
     src/real_range.cpp
     src/sequence_numeric.cpp
+    src/sequence_slice.cpp
     src/diagnostics.cpp
     src/types.cpp
     src/pascal.cpp
@@ -258,6 +259,9 @@ if(BUILD_TESTING)
     add_test(NAME sequence_query_compatibility COMMAND ${CMAKE_COMMAND}
         -DABC_RUNNER=$<TARGET_FILE:abc> -DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures
         -DABC_FIXTURE_NAME=sequence-query-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")
+    add_test(NAME sequence_slice_compatibility COMMAND ${CMAKE_COMMAND}
+        -DABC_RUNNER=$<TARGET_FILE:abc> -DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures
+        -DABC_FIXTURE_NAME=sequence-slice-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")
     add_test(NAME numeric_aggregate_compatibility COMMAND ${CMAKE_COMMAND}
         -DABC_RUNNER=$<TARGET_FILE:abc> -DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures
         -DABC_FIXTURE_NAME=sequence-aggregate-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")

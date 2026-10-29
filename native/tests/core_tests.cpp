@@ -690,6 +690,66 @@ void partial_sums_library() {
     require(abc::sequence_resume(values,cursor,1,options) && std::get<std::int32_t>(abc::sequence_at(values,cursor,1,options))==3,"PartialSum advances exactly once");
 }
 
+void sequence_slices_library() {
+    result("begin var a:=Arr(1,2,3,4,5); Writeln(a.Take(3).ToArray,' ',Skip(a,2).ToList); Writeln(PABCSystem.TakeLast(a,2).ToArray,' ',a.SkipLast(2).ToArray,' ',a.SkipLast.ToArray); Writeln(a.Take(0).Any,' ',a.Take(-1).Count,' ',a.Skip(-1).ToArray,' ',a.TakeLast(-1).Any); end.","[1,2,3] [3,4,5]\n[4,5] [1,2,3] [1,2,3,4]\nFalse 0 [1,2,3,4,5] False\n");
+    result("begin var a:=new List<string>; a.Add('ab'); a.Add('cd'); a.Add('ef'); Writeln(a.Skip(1).Take(1).Single,' ',a.TakeLast(2).ToArray,' ',a.SkipLast().ToList); Writeln(Seq(1bi,2bi,3bi).TakeLast(2).Sum,' ',Range('a','d').SkipLast.ToArray); end.","cd [cd,ef] [ab,cd]\n5 [a,b,c]\n");
+    result("begin Writeln(Range(MaxInt,MaxInt,1).Take(1).Single); Writeln(Range(0,1,0.0).Take(0).Any,' ',Range(0,1,0.0).TakeLast(0).Count); Writeln(Range(0.0,2147483648,1).Take(0).Any); Writeln(Range(MaxInt-1,MaxInt,1).SkipLast(1).First); end.","2147483647\nFalse 0\nFalse\n2147483646\n");
+    result("begin var nils:sequence of integer; var a:=nils.TakeLast(0); var b:=nils.SkipLast(1); Writeln(a<>nil,' ',a.Count,' ',b<>nil,' ',b.ElementAtOrDefault(-1)); Writeln(Seq(1,2).SkipLast(not(MaxInt)).ToArray); end.","True 0 True 0\n[1,2]\n");
+    result("function Source:array of integer; begin Write('S'); Result:=Arr(1,2,3); end; function N:integer; begin Write('N'); Result:=2; end; begin Writeln(Take(Source,N).ToArray); end.","SN[1,2]\n");
+    result("function Take(a:array of integer;n:integer):integer; begin Result:=77; end; begin Writeln(Take(Arr(1,2),1),' ',PABCSystem.Take(Arr(1,2),1).ToArray); end.","77 [1]\n");
+    result("begin var s:=Range(1,3).Skip(1).TakeLast(2); foreach var x in s do foreach var y in s do Write(x,':',y,';'); Writeln; Writeln(s.ToArray,' ',s.ToArray); Writeln(Seq(1,2,3).PartialSum.Skip(1).Take(1).Single); end.","2:2;2:3;3:2;3:3;\n[2,3] [2,3]\n3\n");
+    result("begin var a:=new List<integer>; a.Add(1); foreach var x in a.Take(1) do begin a.Add(2); Writeln(x); end; foreach var x in a.TakeLast(2) do begin a.Clear; Write(x,';'); end; Writeln; end.","1\n1;2;\n");
+    result("type R=record x:integer; a:array of integer; end; begin var a:=new R[3]; var shared:=Arr(7); for var i:=0 to 2 do begin a[i].x:=i+1; a[i].a:=shared; end; foreach var v in a.TakeLast(2) do begin Write(v.x,' ',v.a[0],';'); a[2].x:=9; v.a[0]:=8; end; Writeln; Writeln(a[2].x); var b:=a.SkipLast(1).ToList; b[0].x:=77; Writeln(a[0].x,' ',b[1].x); end.","2 7;3 8;\n9\n1 2\n");
+    result("begin var x:=Arr(1); var y:=Arr(2); var s:=Arr(x,y).Skip(1); Writeln(s.First=y); s.First[0]:=9; Writeln(y[0]); var text:string:=nil; Writeln(Seq(text,'ab').Take(1).Single=nil,' ',Seq(True,False).TakeLast(1).Single); end.","True\n9\nTrue False\n");
+    for (const auto method:{"Take","Skip"}) runtime_error("begin var s:sequence of integer; var a:=s."+std::string(method)+"(0); end.","E_NIL");
+    runtime_error("begin var s:sequence of integer; s.TakeLast(1).First; end.","E_NIL");
+    runtime_error("begin var s:sequence of integer; s.SkipLast(0).Any; end.","E_NIL");
+    runtime_error("begin Range(MaxInt,MaxInt,1).Skip(1).Any; end.","E_OVERFLOW");
+    runtime_error("begin Range(MaxInt,MaxInt,1).TakeLast(1).First; end.","E_OVERFLOW");
+    runtime_error("begin Range(MaxInt-1,MaxInt,1).SkipLast(1).Count; end.","E_OVERFLOW");
+    runtime_error("begin Arr(MaxInt,1).PartialSum.Take(2).Count; end.","E_OVERFLOW");
+    runtime_error("begin Range(0,1,0.0).Skip(0).Any; end.","E_RANGE");
+    runtime_error("begin Seq(1,2).Skip(3).First; end.","E_EMPTY");
+    runtime_error("begin var a:=new List<integer>; a.Add(1); foreach var x in a.Take(2) do a.Add(2); end.","E_MODIFIED");
+    runtime_error("begin var a:=new List<integer>; a.Add(1); a.Add(2); a.Add(3); foreach var x in a.SkipLast(1) do a.Clear; end.","E_MODIFIED");
+    for (const auto source:{"begin Seq(1,2).Take(1.0); end.","begin Seq(1,2).Skip(int64(1)); end.","begin Take(Arr(1),1,2); end.","begin TakeLast(Arr(1)); end.","begin Skip(Arr(1)); end.","begin Writeln((new integer[1,2]).Take(1)); end.","begin var a:sequence of real:=Seq(1,2).Take(1); end.","begin Take('abc',1); end."}) compile_error(source,"E_TYPE");
+    abc::ExecutionOptions options; options.instruction_limit=1000; options.allocation_limit=64;
+    require(run("begin var s:=SeqFill(MaxInt,1); Writeln(s.Take(3).Sum,' ',s.SkipLast(1).First); Writeln(Range(0bi,1bi shl 100).Take(3).Sum); end.","",options)=="3 1\n3\n","Prefix slicing and bounded lookahead work on huge lazy inputs");
+    options.instruction_limit=100000;
+    require(run("begin Writeln(SeqFill(20000,7).TakeLast(3).ToArray); Writeln(SeqFill(20000,7).SkipLast(3).Count); Writeln(Seq(1,2,3).TakeLast(MaxInt).ToArray); end.","",options)=="[7,7,7]\n19997\n[1,2,3]\n","Tail buffers reuse cells and grow only to the actual retained values");
+    options.instruction_limit=100;
+    error([&]{(void)run("begin SeqFill(MaxInt,1).TakeLast(1).First; end.","",options);},"E_LIMIT");
+    error([&]{(void)run("begin SeqFill(MaxInt,1).Skip(1000).First; end.","",options);},"E_LIMIT");
+    error([&]{(void)run("begin SeqFill(MaxInt,1).SkipLast(1000).First; end.","",options);},"E_LIMIT");
+    options={}; options.call_limit=3;
+    error([&]{(void)run("begin var s:=Seq(1); for var i:=1 to 4 do s:=s.Skip(0); end.","",options);},"E_LIMIT");
+    auto invalid=abc::compile("begin var s:=Seq(1,2).Take(1); end.");
+    for (auto& instruction:invalid.code) if (instruction.op==abc::Op::sequence_slice) instruction.operand=99;
+    error([&]{abc::verify(invalid);},"E_BYTECODE");
+    invalid=abc::compile("begin var s:=Seq(1,2).Take(1); end.");
+    for (auto& instruction:invalid.code) if (instruction.op==abc::Op::sequence_slice) instruction.type=abc::Type::integer;
+    error([&]{abc::verify(invalid);},"E_BYTECODE");
+    const auto p=abc::compile("begin var s:=Seq(1,2); end."); abc::Type sequence=abc::Type::invalid,array=abc::Type::invalid;
+    for (std::size_t i=0;i<p.types.size();++i) { if (p.types[i].kind==abc::CompoundKind::sequence) sequence=static_cast<abc::Type>(64+i); if (p.types[i].kind==abc::CompoundKind::array) array=static_cast<abc::Type>(64+i); }
+    abc::Values values{p,10000}; auto data=values.array(array,4); for (int i=0;i<4;++i) data->items[i]->value=std::int32_t{i+1};
+    const auto source=abc::sequence_create(values,sequence,data,abc::SequenceProvider::array);
+    options={}; auto slice=abc::sequence_slice(values,sequence,source,abc::SequenceSlice::take_last,2,options); auto cursor=abc::sequence_begin(values,slice);
+    options.cancelled=[]{return true;}; error([&]{(void)abc::sequence_resume(values,cursor,0,options);},"E_CANCELLED");
+    require(values.sequence_depth==0,"Slicing depth guard unwinds after cancellation");
+    cursor=abc::sequence_begin(values,slice); options={};
+    require(abc::sequence_resume(values,cursor,0,options) && abc::sequence_resume(values,cursor,0,options),"Buffered slice resume is idempotent");
+    require(std::get<std::int32_t>(abc::sequence_at(values,cursor,0,options))==3,"TakeLast emits the buffered tail in source order");
+    // Independent vector index ranges cover empty, negative, exact and oversized counts.
+    const std::array<std::string_view,4> names={"Take","Skip","TakeLast","SkipLast"};
+    for (int length=0;length<=6;++length) for (int count=-2;count<=8;++count) for (std::size_t method=0;method<names.size();++method) {
+        const auto n=std::max(count,0); const auto first=method==1 ? std::min(n,length) : method==2 ? std::max(length-n,0) : 0;
+        const auto last=method==0 ? std::min(n,length) : method==3 ? std::max(length-n,0) : length;
+        std::string expected="["; for (int i=first;i<last;++i) { if(i!=first)expected+=","; expected+=std::to_string(i+1); } expected+="]\n";
+        std::string input="new integer[0]"; if(length) { input="Arr(";for(int i=1;i<=length;++i){if(i!=1)input+=",";input+=std::to_string(i);}input+=")"; }
+        result("begin var a:="+input+"; Writeln(a."+std::string(names[method])+"("+std::to_string(count)+").ToArray); end.",expected);
+    }
+}
+
 void school_minmax_library() {
     result("uses School; begin Writeln(MinMax(Arr(4,-7,9,2)),' ',School.MinMax(Arr(int64(-9223372036854775808),MaxInt64))); var a:=new List<real>; a.Add(1.5); a.Add(-2.25); Writeln(a.MinMax); Writeln(MinMax(new integer[0]),' ',MinMax(new int64[0])); var r:=MinMax(new real[0]); Writeln(r.Item1>1e308,' ',r.Item2< -1e308); end.","(-7,9) (-9223372036854775808,9223372036854775807)\n(-2.25,1.5)\n(2147483647,-2147483648) (9223372036854775807,-9223372036854775808)\nTrue True\n");
     result("uses School; function MinMax(a:array of integer):integer; begin Result:=7; end; begin var a:=Arr(4,2,8); Writeln(MinMax(a),' ',School.MinMax(a),' ',a.MinMax()); end.","7 (2,8) (2,8)\n");
@@ -3465,6 +3525,7 @@ int main() {
     real_ranges_library();
     numeric_aggregates_library();
     partial_sums_library();
+    sequence_slices_library();
     school_factor_library();
     sequence_mutations();
     arithmetic();

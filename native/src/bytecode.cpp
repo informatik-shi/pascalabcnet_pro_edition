@@ -77,6 +77,8 @@ private:
             expression(*node.left); emit(Op::sequence_aggregate,node.left->type,node.local,node.location); break;
         case hir::ExprKind::sequence_partial:
             expression(*node.left); emit(Op::sequence_partial,node.left->type,0,node.location); break;
+        case hir::ExprKind::sequence_slice:
+            expression(*node.left); expression(*node.right); emit(Op::sequence_slice,node.left->type,node.local,node.location); break;
         case hir::ExprKind::sequence_query:
             expression(*node.left); if (node.right) expression(*node.right);
             emit(Op::sequence_query,node.left->type,node.local,node.location); break;
@@ -498,6 +500,9 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
                 if (instruction.operand>static_cast<std::size_t>(SequenceAggregate::product)) invalid(instruction,"Invalid numeric aggregate operation");
             } else if (instruction.operand || !partial_sum_element(type_info(program,type).element)) invalid(instruction,"Invalid PartialSum element or flags");
             break;
+        case Op::sequence_slice:
+            if (!compound(type) || type_info(program,type).kind!=CompoundKind::sequence || instruction.operand>static_cast<std::size_t>(SequenceSlice::skip_last)) invalid(instruction,"Invalid sequence slicing metadata");
+            break;
         case Op::sequence_query:
             if (!compound(type) || type_info(program,type).kind!=CompoundKind::sequence
                 || instruction.operand>static_cast<std::size_t>(SequenceQuery::single_default)) invalid(instruction,"Invalid sequence query metadata");
@@ -817,6 +822,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         case Op::sequence_aggregate:
             require(instruction.type); stack.push_back(sequence_aggregate_result(type_info(program,instruction.type).element,static_cast<SequenceAggregate>(instruction.operand))); break;
         case Op::sequence_partial: require(instruction.type); stack.push_back(instruction.type); break;
+        case Op::sequence_slice: require(Type::integer); require(instruction.type); stack.push_back(instruction.type); break;
         case Op::sequence_query: {
             const auto method=static_cast<SequenceQuery>(instruction.operand); const auto element=type_info(program,instruction.type).element;
             if (sequence_query_index(method)) require(Type::integer);

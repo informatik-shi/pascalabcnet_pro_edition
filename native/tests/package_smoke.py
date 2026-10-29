@@ -126,6 +126,7 @@ def main():
                 ("regex-search.pas", "Есть число: True\nПервое число: 123\nБез числа: []\nПроверка: True\n"),
                 ("sequence-lists.pas", "Массив: [1,2]\nСписок: [9,2,3]\nКопия: [9,2,3]\nПосле изменения: [9,8,3]\n"),
                 ("sequence-factories.pas", "Снимок: [1,2]\nИсходный массив: [9,2]\nПовторения: [да,да,да]\nПервый большого повтора: 7\nДиапазон: [2,3,4,5]\nСимволы: abc\n"),
+                ("sequence-slices.pas", "Первые: [1,2]\nПропустить: [3,4,5]\nПоследние: [4,5]\nБез последних: [1,2,3]\nБез одного последнего: [1,2,3,4]\nРанняя остановка: 2147483647\n"),
                 ("sequence-aggregates.pas", "Сумма: 10\nСреднее: 2.5\nПроизведение: 24\nЧастичные суммы: [1,3,6,10]\nBigInteger: 24\nСреднее пустой BigInteger: 0\n"),
                 ("real-ranges.pas", "Точек: 11\nКонец точно 1: True\nЧетверти: [0,0.25,0.5,0.75,1]\nОбратно: [1,0.75,0.5,0.25,0]\nШаг 0.3: 4 точки\n"),
                 ("partition-points.pas", "Разбиение на 4 части: [0,0.25,0.5,0.75,1]\nПять точек: [0,0.25,0.5,0.75,1]\nОбратный порядок: [1,0.75,0.5,0.25,0]\nПервый большого разбиения: 0\n"),
@@ -192,6 +193,9 @@ def main():
                 ("Range(not(MaxInt),MaxInt)", "E_OVERFLOW", "Integer overflow", "Переполнение целого числа"),
                 ("Range(1,2,0).Any", "E_RANGE", "Sequence step cannot be zero", "Шаг последовательности не может быть равен нулю"),
                 ("var s:=Seq(1); for var i:=1 to 129 do s:=s.PartialSum", "E_LIMIT", "Sequence nesting limit exceeded", "Превышена допустимая глубина последовательностей"),
+                ("var s:sequence of integer; s.Take(0)", "E_NIL", "Cannot access a nil reference", "Нельзя обратиться к пустой ссылке nil"),
+                ("var s:sequence of integer; s.TakeLast(1).First", "E_NIL", "Cannot access a nil reference", "Нельзя обратиться к пустой ссылке nil"),
+                ("Range(MaxInt,MaxInt,1).Skip(1).Any", "E_OVERFLOW", "Integer overflow", "Переполнение целого числа"),
                 ("Arr(MaxInt,1).Sum", "E_OVERFLOW", "Integer overflow", "Переполнение целого числа"),
                 ("Writeln((new integer[0]).Average)", "E_EMPTY", "Sequence contains no elements", "Последовательность не содержит элементов"),
                 ("Arr(MaxInt,MaxInt,MaxInt).Product", "E_OVERFLOW", "Integer overflow", "Переполнение целого числа"),
@@ -542,6 +546,7 @@ def main():
             results[-1]["partition_points_and_linspace"] = "passed"
             results[-1]["real_range_decimal_scaling"] = "passed"
             results[-1]["typed_numeric_aggregates_and_partial_sums"] = "passed"
+            results[-1]["typed_streaming_and_buffered_sequence_slices"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 
