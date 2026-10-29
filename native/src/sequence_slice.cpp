@@ -6,10 +6,16 @@ namespace abc {
 std::shared_ptr<Aggregate> sequence_slice(Values& values,Type type,const std::shared_ptr<Aggregate>& source,SequenceSlice method,std::int32_t count,const ExecutionOptions& options) {
     // Enumerable.Take/Skip validate source at the call; the Pascal tail
     // iterators defer that access, and TakeLast(n<=0) never opens it.
-    if ((method==SequenceSlice::take || method==SequenceSlice::skip) && (!source || source->nil)) throw runtime_error(RuntimeError::nil_reference,values.location);
+    if ((method==SequenceSlice::take || method==SequenceSlice::skip || method==SequenceSlice::reverse) && (!source || source->nil)) throw runtime_error(RuntimeError::nil_reference,values.location);
     auto result=sequence_composed(values,type,source,SequenceProvider::slice,options);
     result->sequence->slice_method=method; result->sequence->slice_count=count;
     return result;
+}
+std::shared_ptr<Aggregate> sequence_default(Values& values,Type type,const std::shared_ptr<Aggregate>& source,Value fallback,const ExecutionOptions& options) {
+    if (!source || source->nil) throw runtime_error(RuntimeError::nil_reference,values.location);
+    auto result=sequence_composed(values,type,source,SequenceProvider::slice,options);
+    result->sequence->slice_method=SequenceSlice::default_if_empty;
+    result->sequence->seed=values.cell(type_info(values.program,type).element,values.copy(fallback)); return result;
 }
 bool sequence_slice_resume(Values& values,const std::shared_ptr<Aggregate>& sequence,std::uint64_t index,const ExecutionOptions& options) {
     SequenceDepthGuard guard(values,options);
@@ -45,6 +51,12 @@ bool sequence_slice_resume(Values& values,const std::shared_ptr<Aggregate>& sequ
         else cell=values.cell(element,std::move(item));
         slice.buffer.push_back(std::move(cell));
     };
+    if (method==SequenceSlice::default_if_empty) {
+        if (!state.seed) throw runtime_error(RuntimeError::invalid_bytecode,values.location);
+        if (pull(slice.current)) return finish(true);
+        if (!index) { slice.current=state.seed->value; return finish(true); }
+        return finish(false);
+    }
     if (method==SequenceSlice::take) return finish(pull(slice.current));
     if (method==SequenceSlice::skip) {
         if (!slice.positioned) {
@@ -52,6 +64,11 @@ bool sequence_slice_resume(Values& values,const std::shared_ptr<Aggregate>& sequ
             for (std::uint32_t skipped=0;skipped<count;++skipped) if (!pull(ignored)) return finish(false);
         }
         return finish(pull(slice.current));
+    }
+    if (method==SequenceSlice::reverse) {
+        if (!slice.buffered) { Value item; while (pull(item)) enqueue(std::move(item)); slice.buffered=true; }
+        if (slice.buffer.empty()) return finish(false);
+        slice.current=slice.buffer.back()->value; slice.buffer.pop_back(); return finish(true);
     }
     if (method==SequenceSlice::take_last) {
         if (!slice.buffered) {

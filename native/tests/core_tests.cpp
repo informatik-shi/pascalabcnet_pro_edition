@@ -750,6 +750,39 @@ void sequence_slices_library() {
     }
 }
 
+void sequence_tools_library() {
+    result("begin var a:=Arr(1,2,3); var s:=a.AsEnumerable; Writeln(s.Reverse.ToArray,' ',a); Writeln(Reverse(s).ToList,' ',PABCSystem.Reverse(s).ToArray); Reverse(a); Writeln(a); var b:=new List<integer>; b.Add(1); b.Add(2); b.Reverse; Writeln(b,' ',b.AsEnumerable.Reverse.ToArray); Writeln('abcd'.Reverse.ToArray); end.","[3,2,1] [1,2,3]\n[3,2,1] [3,2,1]\n[3,2,1]\n[2,1] [1,2]\n[d,c,b,a]\n");
+    result("begin var a:=new List<integer>; a.Add(1); a.Add(2); foreach var x in a.AsEnumerable.Reverse do begin Write(x,';'); a.Clear; end; Writeln; var s:=Seq(1,2).Reverse; Writeln(s.ToArray,' ',s.ToArray); end.","2;1;\n[2,1] [2,1]\n");
+    result("begin var a:=Arr(1,2); var s:=a.AsEnumerable.Reverse; a[0]:=3; Writeln(s.ToArray); a[0]:=4; Writeln(s.ToArray); end.","[2,3]\n[2,4]\n");
+    result("type R=record x:integer; a:array of integer; end; begin var a:=new R[2]; a[0].x:=1; a[1].x:=2; a[0].a:=Arr(9); a[1].a:=a[0].a; foreach var r in a.AsEnumerable.Reverse do begin Write(r.x,' ',r.a[0],';'); a[0].x:=7; r.a[0]:=8; end; Writeln; end.","2 9;1 8;\n");
+    result("begin Writeln((new integer[0]).DefaultIfEmpty.ToArray,' ',DefaultIfEmpty(Seq(1,2),9).ToArray); Writeln(''.DefaultIfEmpty('x').Single,' ',Ord(''.DefaultIfEmpty.Single)); Writeln((new string[0]).DefaultIfEmpty.Single=nil); Writeln((new (integer,string)[0]).DefaultIfEmpty.Single=nil); end.","[0] [1,2]\nx 0\nTrue\nTrue\n");
+    result("type R=record x:integer; s:string; a:array of integer; end; begin var r:=(new R[0]).DefaultIfEmpty.Single; Writeln(r.x,' ',r.s=nil,' ',r.a=nil); var value:R; value.x:=7; value.a:=Arr(1); var s:=(new R[0]).DefaultIfEmpty(value); value.x:=9; value.a[0]:=2; Writeln(s.First.x,' ',s.First.a[0]); end.","0 True True\n7 2\n");
+    result("function Source:sequence of integer; begin Write('S'); Result:=Seq(1); end; function Fallback:integer; begin Write('D'); Result:=9; end; begin Writeln(Source.DefaultIfEmpty(Fallback).ToArray); end.","SD[1]\n");
+    result("begin var a:=new List<integer>; var s:=a.DefaultIfEmpty(9); a.Add(1); Writeln(s.ToArray); a.Clear; Writeln(s.ToArray,' ',s.ToArray); end.","[1]\n[9] [9]\n");
+    result("begin var a:sequence of integer; var b:=a.AsEnumerable; var c:array of integer; Writeln(a=nil,' ',b=nil,' ',c.AsEnumerable=nil); var s:=Seq(1); Writeln(s=s.AsEnumerable); end.","True True True\nTrue\n");
+    result("begin Writeln(Seq(1,2).SequenceEqual(Arr(1,2)),' ',SequenceEqual(Arr(1,2),Seq(1,3)),' ',Seq(1).SequenceEqual(Seq(1,2)),' ',Seq(1,2).SequenceEqual(Seq(1))); Writeln('abcd'.SequenceEqual('abcd'),' ',SequenceEqual('abcd','abce'),' ',Seq('a','b').SequenceEqual('ab')); Writeln((new integer[0]).SequenceEqual(new integer[0])); end.","True False False False\nTrue False True\nTrue\n");
+    result("type R=record x:integer; a:array of integer; end; begin var a:R; a.x:=1; a.a:=Arr(2); var b:=a; Writeln(Seq(a).SequenceEqual(Seq(b))); b.a:=Arr(2); Writeln(Seq(a).SequenceEqual(Seq(b))); Writeln(Seq((1,'ab')).SequenceEqual(Seq((1,'ab')))); end.","True\nFalse\nTrue\n");
+    result("begin Writeln(Range(MaxInt,MaxInt,1).SequenceEqual(Seq(0))); Writeln(Range(MaxInt,MaxInt,1).SequenceEqual(new integer[0])); Writeln(Range(MaxInt,MaxInt,1).DefaultIfEmpty(0).First); Writeln(Range(0,1,0.0).Reverse.Take(0).Count); end.","False\nFalse\n2147483647\n0\n");
+    for(const auto source:{"begin var a:sequence of integer; var b:=a.Reverse; end.","begin var a:sequence of integer; var b:=a.DefaultIfEmpty; end.","begin var a:sequence of integer; Seq(1).SequenceEqual(a); end.","begin var a:sequence of integer; a.SequenceEqual(Seq(1)); end."}) runtime_error(source,"E_NIL");
+    runtime_error("begin Range(MaxInt,MaxInt,1).Reverse.First; end.","E_OVERFLOW");
+    runtime_error("begin Range(MaxInt,MaxInt,1).DefaultIfEmpty.Count; end.","E_OVERFLOW");
+    runtime_error("begin Seq(MaxInt).SequenceEqual(Range(MaxInt,MaxInt,1)); end.","E_OVERFLOW");
+    runtime_error("begin var a:=new real[0]; a.SequenceEqual(Range(0,1,0.0)); end.","E_RANGE");
+    runtime_error("begin var a:=new List<integer>; a.Add(1); foreach var x in a.DefaultIfEmpty do a.Add(2); end.","E_MODIFIED");
+    for(const auto source:{"begin Seq(1).Reverse(1); end.","begin Seq(1).SequenceEqual(Seq(1.0)); end.","begin Seq(1).SequenceEqual; end.","begin Seq(1).DefaultIfEmpty(1.5); end.","begin Seq(1).DefaultIfEmpty(1,2); end.","begin AsEnumerable(1); end."}) compile_error(source,"E_TYPE");
+    abc::ExecutionOptions options; options.allocation_limit=80; options.instruction_limit=1000;
+    require(run("begin Writeln(SeqFill(MaxInt,1).DefaultIfEmpty.Take(3).Sum,' ',SeqFill(MaxInt,1).SequenceEqual(Seq(2))); end.","",options)=="3 False\n","DefaultIfEmpty streams and SequenceEqual stops at the first mismatch");
+    options={}; options.allocation_limit=32;
+    error([&]{(void)run("begin SeqFill(100,1).Reverse.First; end.","",options);},"E_LIMIT");
+    options={}; options.instruction_limit=100;
+    error([&]{(void)run("begin SeqFill(1000,1).SequenceEqual(SeqFill(1000,1)); end.","",options);},"E_LIMIT");
+    options={}; options.call_limit=3;
+    error([&]{(void)run("begin var s:=Seq(1); for var i:=1 to 4 do s:=s.DefaultIfEmpty; end.","",options);},"E_LIMIT");
+    for(const auto [source,opcode]:{std::pair{"begin var s:=Seq(1).DefaultIfEmpty; end.",abc::Op::sequence_default},{"begin Seq(1).SequenceEqual(Seq(2)); end.",abc::Op::sequence_equal}}) { auto invalid=abc::compile(source);for(auto& instruction:invalid.code) if(instruction.op==opcode) instruction.operand=1; error([&]{abc::verify(invalid);},"E_BYTECODE"); }
+    auto invalid=abc::compile("begin Seq(1).Reverse; end.");for(auto& instruction:invalid.code) if(instruction.op==abc::Op::sequence_slice) instruction.operand=static_cast<std::size_t>(abc::SequenceSlice::default_if_empty); error([&]{abc::verify(invalid);},"E_BYTECODE");
+    for(int left=0;left<=6;++left) for(int right=0;right<=6;++right) result("begin Writeln(Range(1,"+std::to_string(left)+").SequenceEqual(Range(1,"+std::to_string(right)+"))); end.",left==right ? "True\n" : "False\n");
+}
+
 void string_sequence_library() {
     result("begin var s:sequence of char:='Я🌍x'; Writeln(s.Count,' ',s.First,' ',s.Last); var a:=s.ToArray; Writeln(Ord(a[1]),' ',Ord(a[2])); Writeln('abcd'.Take(2).ToArray,' ','abcd'.Skip(2).ToList,' ',TakeLast('abcd',2).ToArray); end.","4 Я x\n55356 57101\n[a,b] [c,d] [c,d]\n");
     result("function F(s:sequence of char):integer; begin Result:=s.Count; end; function TextValue:string; begin Result:='ab'; end; begin Writeln(F('abc'),' ',TextValue.ToArray,' ',Count('')); Writeln('abc'.First,' ','abc'.LastOrDefault,' ',Ord(''.FirstOrDefault),' ',Ord(ElementAtOrDefault('ab',9))); Writeln(Contains('abc','b'),' ','abc'.Contains('d'),' ',Any('')); end.","3 [a,b] 0\na c 0 0\nTrue False False\n");
@@ -3616,6 +3649,7 @@ int main() {
     sequence_slices_library();
     sequence_concat_library();
     string_sequence_library();
+    sequence_tools_library();
     default_arguments_language();
     school_factor_library();
     sequence_mutations();

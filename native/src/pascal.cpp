@@ -1087,6 +1087,7 @@ private:
                 if (bind_sequence_query(*result,source.token.text,source.left->token.text)) break;
                 if (bind_sequence_numeric(*result,source.token.text,source.left->token.text)) break;
                 if (bind_sequence_slice(*result,source.token.text,source.left->token.text)) break;
+                if (bind_sequence_default(*result,source.token.text,source.left->token.text)) break;
                 if (bind_sequence_concat(*result,source.token.text,source.left->token.text)) break;
                 if (bind_try_read(*result,source.token.text,source.left->token.text)) break;
                 if (bind_number_conversion(*result,source.token.text,source.left->token.text)) break;
@@ -1107,10 +1108,11 @@ private:
             }
             result->left = expression(*source.left); const auto receiver = result->left->type;
             if (receiver==Type::string && (sequence_slice_method(source.token.text) || sequence_query_method(source.token.text)
-                || source.token.text=="count" || source.token.text=="toarray" || source.token.text=="tolist" || source.token.text=="concat")) {
+                || source.token.text=="count" || source.token.text=="toarray" || source.token.text=="tolist" || source.token.text=="concat"
+                || source.token.text=="asenumerable" || source.token.text=="sequenceequal" || source.token.text=="defaultifempty")) {
                 result->arguments.push_back(convert(std::move(result->left),sequence_type(CompoundKind::sequence,Type::character)));
                 for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
-                if (bind_sequence_slice(*result,source.token.text,"pabcsystem") || bind_sequence_query(*result,source.token.text,"pabcsystem")
+                if (bind_sequence_default(*result,source.token.text,"pabcsystem") || bind_sequence_slice(*result,source.token.text,"pabcsystem") || bind_sequence_query(*result,source.token.text,"pabcsystem")
                     || bind_sequence_concat(*result,source.token.text,"pabcsystem") || bind_sequence_conversion(*result,source.token.text,"pabcsystem")) break;
             }
             if (receiver==Type::string && (source.token.text=="ismatch" || source.token.text=="matchvalue")) {
@@ -1279,12 +1281,18 @@ private:
                 break;
             }
             const auto& type = info(receiver,result->location);
-            if ((type.kind==CompoundKind::sequence || indexed_sequence(type.kind)) && source.token.text=="concat") {
+            if ((type.kind==CompoundKind::sequence || indexed_sequence(type.kind)) && source.token.text=="defaultifempty") {
                 result->arguments.push_back(std::move(result->left));
                 for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
-                (void)bind_sequence_concat(*result,"concat","pabcsystem"); break;
+                (void)bind_sequence_default(*result,source.token.text,"pabcsystem"); break;
             }
-            if ((type.kind==CompoundKind::sequence || indexed_sequence(type.kind)) && sequence_slice_method(source.token.text)) {
+            if ((type.kind==CompoundKind::sequence || indexed_sequence(type.kind)) && (source.token.text=="concat" || source.token.text=="sequenceequal")) {
+                result->arguments.push_back(std::move(result->left));
+                for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
+                (void)bind_sequence_concat(*result,source.token.text,"pabcsystem"); break;
+            }
+            if ((type.kind==CompoundKind::sequence || indexed_sequence(type.kind)) && sequence_slice_method(source.token.text)
+                && (source.token.text!="reverse" || type.kind==CompoundKind::sequence)) {
                 result->arguments.push_back(std::move(result->left));
                 for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
                 (void)bind_sequence_slice(*result,source.token.text,"pabcsystem"); break;
@@ -1301,7 +1309,8 @@ private:
                 for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
                 (void)bind_sequence_query(*result,source.token.text,"pabcsystem"); break;
             }
-            if (indexed_sequence(type.kind) && (source.token.text=="toarray" || source.token.text=="tolist")) {
+            if ((indexed_sequence(type.kind) && (source.token.text=="toarray" || source.token.text=="tolist"))
+                || ((indexed_sequence(type.kind) || type.kind==CompoundKind::sequence) && source.token.text=="asenumerable")) {
                 result->arguments.push_back(std::move(result->left));
                 for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
                 (void)bind_sequence_conversion(*result,source.token.text,"pabcsystem"); break;
@@ -1534,6 +1543,7 @@ private:
             if (bind_sequence_query(*result,source.token.text)) break;
             if (bind_sequence_numeric(*result,source.token.text)) break;
             if (bind_sequence_slice(*result,source.token.text)) break;
+            if (bind_sequence_default(*result,source.token.text)) break;
             if (bind_sequence_concat(*result,source.token.text)) break;
             if (imported_units_.contains("school") && (source.token.text=="addr32" || source.token.text=="calcip")) {
                 bind_school_ip_constructor(*result,school_ip_type(source.token.text=="addr32" ? CompoundKind::school_address : CompoundKind::school_ip)); break;
@@ -1854,41 +1864,60 @@ private:
         return result;
     }
     bool bind_sequence_conversion(hir::Expr& result,std::string_view name,std::string_view unit={}) {
-        if ((name!="count" && name!="toarray" && name!="tolist") || (!unit.empty() && unit!="pabcsystem")) return false;
+        if ((name!="count" && name!="toarray" && name!="tolist" && name!="asenumerable") || (!unit.empty() && unit!="pabcsystem")) return false;
         if (result.arguments.size()!=1) throw Error("E_TYPE",result.location,"Sequence conversion requires one sequence");
         const auto source=result.arguments[0]->type;
         const auto source_info=sequence_source(source,result.location);
         auto argument=std::move(result.arguments[0]); result.arguments.clear();
         argument=convert(std::move(argument),sequence_type(CompoundKind::sequence,source_info.element));
+        if (name=="asenumerable") { result=std::move(*argument); return true; }
         result.left=std::move(argument); result.kind=hir::ExprKind::sequence_call; result.local=name=="tolist" ? 2U : name=="toarray" ? 1U : 0U;
         result.type=result.local ? sequence_type(result.local==2 ? CompoundKind::list : CompoundKind::array,source_info.element) : Type::integer; return true;
     }
+    bool bind_sequence_default(hir::Expr& result,std::string_view name,std::string_view unit={}) {
+        if (name!="defaultifempty" || (!unit.empty() && unit!="pabcsystem")) return false;
+        if (result.arguments.empty() || result.arguments.size()>2) throw Error("E_TYPE",result.location,"DefaultIfEmpty requires a source and optional element value");
+        const auto source=sequence_source(result.arguments[0]->type,result.location);
+        const auto sequence=sequence_type(CompoundKind::sequence,source.element);
+        result.left=convert(std::move(result.arguments[0]),sequence);
+        if (result.arguments.size()==2) result.right=convert(std::move(result.arguments[1]),source.element);
+        else { result.right=std::make_unique<hir::Expr>(); result.right->kind=hir::ExprKind::default_value; result.right->operation="default"; result.right->type=source.element; result.right->location=result.location; }
+        result.arguments.clear(); result.kind=hir::ExprKind::sequence_default; result.type=sequence; return true;
+    }
     bool bind_sequence_concat(hir::Expr& result,std::string_view name,std::string_view unit={}) {
-        if (name!="concat" || (!unit.empty() && unit!="pabcsystem")) return false;
+        const bool compare=name=="sequenceequal";
+        if ((name!="concat" && !compare) || (!unit.empty() && unit!="pabcsystem")) return false;
         // Preserve the existing string Concat overloads.
-        if (result.arguments.empty()) return false;
+        if (result.arguments.empty()) { if(compare) throw Error("E_TYPE",result.location,"SequenceEqual requires two sources"); return false; }
         const auto first=result.arguments[0]->type;
-        const bool inferred_nil=first==Type::nil && result.arguments.size()==2 && compound(result.arguments[1]->type);
+        const bool inferred_nil=first==Type::nil && result.arguments.size()==2 && (compound(result.arguments[1]->type) || (compare && result.arguments[1]->type==Type::string));
         const bool inferred_text=first==Type::string && result.arguments.size()==2 && compound(result.arguments[1]->type)
             && info(result.arguments[1]->type,result.location).element==Type::character;
-        if (!compound(first) && !inferred_nil && !inferred_text) return false;
+        if (!compound(first) && !inferred_nil && !inferred_text && !compare) return false;
         if (result.arguments.size()!=2) throw Error("E_TYPE",result.location,"Sequence Concat requires two sources");
         const auto source=inferred_nil ? result.arguments[1]->type : first; const auto source_info=sequence_source(source,result.location);
         const auto sequence=sequence_type(CompoundKind::sequence,source_info.element);
         result.left=convert(std::move(result.arguments[0]),sequence);
         result.right=convert(std::move(result.arguments[1]),sequence);
-        result.arguments.clear(); result.kind=hir::ExprKind::sequence_concat; result.type=sequence; return true;
+        result.arguments.clear(); result.kind=compare ? hir::ExprKind::sequence_equal : hir::ExprKind::sequence_concat; result.type=compare ? Type::boolean : sequence; return true;
     }
     static std::optional<SequenceSlice> sequence_slice_method(std::string_view name) {
         if (name=="take") return SequenceSlice::take;
         if (name=="skip") return SequenceSlice::skip;
         if (name=="takelast") return SequenceSlice::take_last;
         if (name=="skiplast") return SequenceSlice::skip_last;
+        if (name=="reverse") return SequenceSlice::reverse;
         return {};
     }
     bool bind_sequence_slice(hir::Expr& result,std::string_view name,std::string_view unit={}) {
         const auto method=sequence_slice_method(name);
         if (!method || (!unit.empty() && unit!="pabcsystem")) return false;
+        if (*method==SequenceSlice::reverse) {
+            if (result.arguments.empty() || !compound(result.arguments[0]->type) || info(result.arguments[0]->type,result.location).kind!=CompoundKind::sequence) return false;
+            if (result.arguments.size()!=1) throw Error("E_TYPE",result.location,"Sequence Reverse takes no extra arguments");
+            auto count=std::make_unique<hir::Expr>(); count->kind=hir::ExprKind::literal; count->type=Type::integer; count->value=std::int32_t{0}; count->location=result.location;
+            result.arguments.push_back(std::move(count));
+        }
         if (result.arguments.size()==1 && *method==SequenceSlice::skip_last) {
             auto count=std::make_unique<hir::Expr>(); count->kind=hir::ExprKind::literal; count->type=Type::integer; count->value=std::int32_t{1}; count->location=result.location;
             result.arguments.push_back(std::move(count));
