@@ -1185,6 +1185,7 @@ private:
                 }
                 result->kind=hir::ExprKind::call;
                 if (bind_school_table(*result,source,source.left->token.text)) break;
+                if (bind_sequence_zip(*result,source,source.left->token.text)) break;
                 if (bind_sequence_numeric_selector(*result,source,source.left->token.text)) break;
                 if (bind_sequence_predicate(*result,source,source.left->token.text)) break;
                 if (bind_sequence_transform(*result,source,source.left->token.text)) break;
@@ -1216,7 +1217,7 @@ private:
             }
             result->left = expression(*source.left); const auto receiver = result->left->type;
             if ((receiver==Type::string || (compound(receiver) && (info(receiver,result->location).kind==CompoundKind::sequence || indexed_sequence(info(receiver,result->location).kind))))
-                && (bind_sequence_numeric_selector(*result,source,{},true) || bind_sequence_predicate(*result,source,{},true) || bind_sequence_transform(*result,source,{},true))) break;
+                && (bind_sequence_zip(*result,source,{},true) || bind_sequence_numeric_selector(*result,source,{},true) || bind_sequence_predicate(*result,source,{},true) || bind_sequence_transform(*result,source,{},true))) break;
             if (receiver==Type::string && (sequence_slice_method(source.token.text) || sequence_query_method(source.token.text)
                 || source.token.text=="count" || source.token.text=="toarray" || source.token.text=="tolist" || source.token.text=="concat"
                 || source.token.text=="asenumerable" || source.token.text=="sequenceequal" || source.token.text=="defaultifempty")) {
@@ -1636,6 +1637,7 @@ private:
             if (lookup(source.token) && source.token.text != current_name_) throw Error("E_TYPE", result->location, "Variable is not callable: '" + source.token.text + "'");
             result->kind = hir::ExprKind::call;
             if (!routine_names_.contains(source.token.text) && bind_school_table(*result,source)) break;
+            if (!routine_names_.contains(source.token.text) && bind_sequence_zip(*result,source)) break;
             if (!routine_names_.contains(source.token.text) && bind_sequence_numeric_selector(*result,source)) break;
             if (!routine_names_.contains(source.token.text) && bind_sequence_predicate(*result,source)) break;
             if (!routine_names_.contains(source.token.text) && bind_sequence_transform(*result,source)) break;
@@ -1989,6 +1991,42 @@ private:
         if (name=="asenumerable") { result=std::move(*argument); return true; }
         result.left=std::move(argument); result.kind=hir::ExprKind::sequence_call; result.local=name=="tolist" ? 2U : name=="toarray" ? 1U : 0U;
         result.type=result.local ? sequence_type(result.local==2 ? CompoundKind::list : CompoundKind::array,source_info.element) : Type::integer; return true;
+    }
+    bool bind_sequence_zip(hir::Expr& result,const SyntaxExpr& source,std::string_view unit={},bool member=false) {
+        const auto name=source.token.text;
+        if ((name!="zip" && name!="ziptuple") || (!unit.empty() && unit!="pabcsystem")) return false;
+        std::optional<std::size_t> callback;
+        if (name=="zip" && !source.arguments.empty()) {
+            const auto& last=*source.arguments.back();
+            if (last.kind==SyntaxExprKind::name && routine_names_.contains(last.token.text)
+                && (!lookup(last.token) || last.token.text==current_name_)) {
+                const auto routine=routine_names_.at(last.token.text);
+                if (module_.routines[routine].signature.parameters.size()>=2) callback=routine;
+            }
+        }
+        const auto count=source.arguments.size()+(member ? 1U : 0U)-(callback ? 1U : 0U);
+        if (count<2 || count>(name=="ziptuple" ? 4U : 5U))
+            throw Error("E_TYPE",result.location,"Zip requires two to five typed sources and an optional function");
+        std::vector<Type> elements;
+        const auto append=[&](std::unique_ptr<hir::Expr> argument) {
+            const auto element=sequence_source(argument->type,argument->location).element;
+            elements.push_back(element);
+            result.arguments.push_back(convert(std::move(argument),sequence_type(CompoundKind::sequence,element)));
+        };
+        if (member) append(std::move(result.left));
+        for (std::size_t i=0;i<source.arguments.size()-(callback ? 1U : 0U);++i) append(expression(*source.arguments[i]));
+        Type output=Type::invalid;
+        if (callback) {
+            const auto& signature=module_.routines[*callback].signature;
+            if (signature.parameters.size()!=count || signature.result==Type::unit)
+                throw Error("E_TYPE",result.location,"Zip function arity must match the source count and return a value");
+            for (std::size_t i=0;i<count;++i)
+                if (signature.parameters[i].by_reference || signature.parameters[i].type!=elements[i])
+                    throw Error("E_TYPE",result.location,"Zip function parameters must be values of the exact source element types");
+            output=signature.result;
+        } else output=tuple_type(elements,result.location);
+        result.type=sequence_type(CompoundKind::sequence,output); result.kind=hir::ExprKind::sequence_zip;
+        result.local=((count-2U)<<9)|(callback ? *callback+1U : 0U); return true;
     }
     bool bind_sequence_numeric_selector(hir::Expr& result,const SyntaxExpr& source,std::string_view unit={},bool member=false) {
         const auto name=source.token.text;

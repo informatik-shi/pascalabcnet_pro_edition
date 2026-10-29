@@ -46,6 +46,7 @@ std::shared_ptr<Aggregate> sequence_begin(Values& values,const std::shared_ptr<A
     result->sequence=std::make_unique<SequenceState>(*sequence->sequence);
     auto& state=*result->sequence; state.started=true; state.first=0;
     if (state.provider==SequenceProvider::transform) { reserve_state(values); state.transform=std::make_shared<TransformState>(); return result; }
+    if (state.provider==SequenceProvider::zip) { reserve_state(values); state.zip=std::make_shared<ZipState>(); return result; }
     if (state.provider==SequenceProvider::string) {
         if (!state.seed || state.seed->type!=Type::string || !std::holds_alternative<std::u16string>(state.seed->value)) throw runtime_error(RuntimeError::invalid_bytecode,values.location);
         return result;
@@ -97,6 +98,7 @@ bool sequence_resume(Values& values,const std::shared_ptr<Aggregate>& sequence,s
     if (state.provider==SequenceProvider::slice) return sequence_slice_resume(values,sequence,index,options);
     if (state.provider==SequenceProvider::concat) return sequence_concat_resume(values,sequence,index,options);
     if (state.provider==SequenceProvider::transform) return sequence_transform_resume(values,sequence,index,options);
+    if (state.provider==SequenceProvider::zip) return sequence_zip_resume(values,sequence,index,options);
     if (state.provider==SequenceProvider::real_range) {
         if (!state.real_range) throw runtime_error(RuntimeError::invalid_bytecode,location);
         auto& range=*state.real_range;
@@ -151,7 +153,7 @@ bool sequence_resume(Values& values,const std::shared_ptr<Aggregate>& sequence,s
 }
 std::optional<std::uint64_t> sequence_known_length(const std::shared_ptr<Aggregate>& sequence,SourceLocation location) {
     const auto& state=cursor(sequence,location);
-    if (state.provider==SequenceProvider::transform || state.provider==SequenceProvider::concat || state.provider==SequenceProvider::slice || state.provider==SequenceProvider::partial_sum || state.provider==SequenceProvider::big_range || (state.provider==SequenceProvider::real_range && !state.real_range->initialized)) return std::nullopt;
+    if (state.provider==SequenceProvider::zip || state.provider==SequenceProvider::transform || state.provider==SequenceProvider::concat || state.provider==SequenceProvider::slice || state.provider==SequenceProvider::partial_sum || state.provider==SequenceProvider::big_range || (state.provider==SequenceProvider::real_range && !state.real_range->initialized)) return std::nullopt;
     return state.count;
 }
 std::uint64_t sequence_length(const std::shared_ptr<Aggregate>& sequence,SourceLocation location) {
@@ -172,6 +174,7 @@ Value sequence_at(Values& values,const std::shared_ptr<Aggregate>& sequence,std:
     }
     if (state.provider==SequenceProvider::string) return std::get<std::u16string>(state.seed->value)[static_cast<std::size_t>(index)];
     if (state.provider==SequenceProvider::transform) return values.copy(state.transform->current);
+    if (state.provider==SequenceProvider::zip) return values.copy(state.zip->current);
     if (state.provider==SequenceProvider::concat) return values.copy(state.concat->current);
     if (state.provider==SequenceProvider::slice) return values.copy(state.slice->current);
     if (state.provider==SequenceProvider::partial_sum) return state.partial->total;

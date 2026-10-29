@@ -71,7 +71,7 @@ using Value = std::variant<std::int32_t, std::int64_t, double, bool, std::u16str
     std::shared_ptr<Aggregate>, std::shared_ptr<Cell>, NilString, std::shared_ptr<TextFile>, char16_t, std::uint16_t,
     std::uint8_t, std::int8_t, std::int16_t, std::uint32_t, std::uint64_t, BigInteger>;
 struct Cell { Type type; Value value; std::weak_ptr<Aggregate> list_owner{}; };
-enum class SequenceProvider { school_ip_hosts, school_ip_binary, array, list, repeat, range, stepped_range, big_range, partition, real_range, partial_sum, slice, concat, string, transform };
+enum class SequenceProvider { school_ip_hosts, school_ip_binary, array, list, repeat, range, stepped_range, big_range, partition, real_range, partial_sum, slice, concat, string, transform, zip };
 inline bool collection_sequence(SequenceProvider provider) { return provider==SequenceProvider::array || provider==SequenceProvider::list; }
 struct BigRangeState {
     BigInteger last,step,current;
@@ -115,6 +115,12 @@ struct TransformState {
     std::uint64_t index=0,source_index=0,inner_index=0,work=0;
     bool positioned=false,available=false,ended=false;
 };
+struct ZipState {
+    std::vector<std::shared_ptr<Aggregate>> iterators;
+    Value current=std::int32_t{0};
+    std::uint64_t index=0;
+    bool positioned=false,available=false;
+};
 struct SequenceState {
     std::shared_ptr<Aggregate> source;
     SequenceProvider provider=SequenceProvider::school_ip_hosts;
@@ -134,6 +140,8 @@ struct SequenceState {
     std::shared_ptr<Aggregate> second_source;
     std::shared_ptr<ConcatState> concat;
     std::shared_ptr<TransformState> transform;
+    std::vector<std::shared_ptr<Aggregate>> sources;
+    std::shared_ptr<ZipState> zip;
     std::size_t callback=0;
     bool predicate=false,flatten=false;
 };
@@ -167,7 +175,7 @@ enum class Op {
     read_lines, write_lines, array_copy, array_high, sequence_sort, sequence_fill, mutate_string, increment, read_value,
     endpoint_call, buffer_call, association_call, linked_call, file_print, file_newline, file_read, file_skip_line, file_output,
     iteration_version, iteration_check, set_character, random_array, fill_random_array, sequence_mutate, swap_values, write_array,
-    bit_not, bit_and, bit_or, bit_xor, shift_left, shift_right, read_console, read_array, console_output, array_query, write_matrix, object_text, print_output, try_read, convert_string, try_parse, val, string_read, string_array, school_list, replace_last, replace_many, school_fold, tuple_literal, school_pair, school_minmax, school_table_print, school_table_new, school_ip, sequence_begin, sequence_count, sequence_array, sequence_wrap, swap_substrings, sequence_list, sequence_query, sequence_snapshot, sequence_repeat, sequence_range, sequence_resume, sequence_partition, sequence_aggregate, sequence_partial, sequence_slice, sequence_concat, sequence_equal, sequence_default, sequence_select, sequence_where, sequence_predicate, sequence_flatmap
+    bit_not, bit_and, bit_or, bit_xor, shift_left, shift_right, read_console, read_array, console_output, array_query, write_matrix, object_text, print_output, try_read, convert_string, try_parse, val, string_read, string_array, school_list, replace_last, replace_many, school_fold, tuple_literal, school_pair, school_minmax, school_table_print, school_table_new, school_ip, sequence_begin, sequence_count, sequence_array, sequence_wrap, swap_substrings, sequence_list, sequence_query, sequence_snapshot, sequence_repeat, sequence_range, sequence_resume, sequence_partition, sequence_aggregate, sequence_partial, sequence_slice, sequence_concat, sequence_equal, sequence_default, sequence_select, sequence_where, sequence_predicate, sequence_flatmap, sequence_zip
 };
 
 enum class SequenceQuery { any, first, last, first_default, last_default, element, element_default, contains, single, single_default };

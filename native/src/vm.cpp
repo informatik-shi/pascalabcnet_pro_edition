@@ -267,6 +267,12 @@ static void execute_impl(const Program& program, std::istream& input, std::ostre
         }
         case Op::sequence_partial:
             stack.emplace_back(sequence_partial(values,instruction.type,std::get<std::shared_ptr<Aggregate>>(pop()),options)); break;
+        case Op::sequence_zip: {
+            const auto count=(instruction.operand>>9)+2;
+            std::vector<std::shared_ptr<Aggregate>> sources(count);
+            for (auto i=count;i>0;--i) sources[i-1]=std::get<std::shared_ptr<Aggregate>>(pop());
+            stack.emplace_back(sequence_zip(values,instruction.type,std::move(sources),instruction.operand&511U,options)); break;
+        }
         case Op::sequence_predicate: {
             const auto source=std::get<std::shared_ptr<Aggregate>>(pop());
             stack.push_back(sequence_predicate(values,source,instruction.operand&255U,static_cast<PredicateQuery>(instruction.operand>>8),options)); break;

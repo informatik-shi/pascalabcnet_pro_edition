@@ -77,6 +77,9 @@ private:
             expression(*node.left); emit(Op::sequence_aggregate,node.left->type,node.local,node.location); break;
         case hir::ExprKind::sequence_partial:
             expression(*node.left); emit(Op::sequence_partial,node.left->type,0,node.location); break;
+        case hir::ExprKind::sequence_zip:
+            for (const auto& argument:node.arguments) expression(*argument);
+            emit(Op::sequence_zip,node.type,node.local,node.location); break;
         case hir::ExprKind::sequence_predicate:
             expression(*node.left); emit(Op::sequence_predicate,node.left->type,node.local,node.location); break;
         case hir::ExprKind::sequence_transform:
@@ -521,6 +524,20 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
                 if (instruction.operand>static_cast<std::size_t>(SequenceAggregate::product)) invalid(instruction,"Invalid numeric aggregate operation");
             } else if (instruction.operand || !partial_sum_element(type_info(program,type).element)) invalid(instruction,"Invalid PartialSum element or flags");
             break;
+        case Op::sequence_zip: {
+            const auto callback=instruction.operand&511U,arity=instruction.operand>>9;
+            if (!compound(type) || type_info(program,type).kind!=CompoundKind::sequence || arity>3 || callback>program.routines.size())
+                invalid(instruction,"Invalid Zip metadata");
+            const auto element=type_info(program,type).element; const auto count=arity+2;
+            if (callback) {
+                const auto& signature=program.routines[callback-1];
+                if (signature.parameters.size()!=count || signature.result!=element
+                    || std::any_of(signature.parameters.begin(),signature.parameters.end(),[](const Parameter& p){return p.by_reference;}))
+                    invalid(instruction,"Invalid Zip function signature");
+            } else if (!compound(element) || type_info(program,element).kind!=CompoundKind::tuple || type_info(program,element).fields.size()!=count)
+                invalid(instruction,"Invalid Zip tuple result");
+            break;
+        }
         case Op::sequence_predicate: {
             const auto callback=instruction.operand&255U,method=instruction.operand>>8;
             if (!compound(type) || type_info(program,type).kind!=CompoundKind::sequence || callback>=program.routines.size()
@@ -878,6 +895,17 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             require(instruction.type); stack.push_back(sequence_aggregate_result(type_info(program,instruction.type).element,static_cast<SequenceAggregate>(instruction.operand))); break;
         case Op::sequence_partial: require(instruction.type); stack.push_back(instruction.type); break;
         case Op::sequence_concat: require(instruction.type); require(instruction.type); stack.push_back(instruction.type); break;
+        case Op::sequence_zip: {
+            const auto callback=instruction.operand&511U,count=(instruction.operand>>9)+2;
+            for (auto i=count;i>0;--i) {
+                const auto expected=callback ? program.routines[callback-1].parameters[i-1].type
+                    : type_info(program,type_info(program,instruction.type).element).fields[i-1].type;
+                const auto source=pop();
+                if (!compound(source) || type_info(program,source).kind!=CompoundKind::sequence || type_info(program,source).element!=expected)
+                    invalid(instruction,"Zip source element type mismatch");
+            }
+            stack.push_back(instruction.type); break;
+        }
         case Op::sequence_predicate: require(instruction.type); stack.push_back(predicate_query_result(type_info(program,instruction.type).element,static_cast<PredicateQuery>(instruction.operand>>8))); break;
         case Op::sequence_select: case Op::sequence_where: case Op::sequence_flatmap: require(instruction.type); stack.push_back(static_cast<Type>(instruction.operand>>8)); break;
         case Op::sequence_equal: require(instruction.type); require(instruction.type); stack.push_back(Type::boolean); break;

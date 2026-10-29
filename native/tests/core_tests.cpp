@@ -1874,6 +1874,48 @@ void structural_output() {
     error([&]{abc::verify(program);},"E_BYTECODE");
 }
 
+void sequence_zip_library() {
+    result("begin Writeln(Zip(Seq(1,2,3),Seq(10,20)).ToArray); Writeln('ab'.Zip(Seq(1,2,3)).ToArray); end.","[(1,10),(2,20)]\n[(a,1),(b,2)]\n");
+    result("begin Writeln(Zip(Seq(1),Seq('a'),Seq(2.5)).First); Writeln(Zip(Seq(1),Seq(2),Seq(3),Seq(4)).First); Writeln(Zip(Seq(1),Seq(2),Seq(3),Seq(4),Seq(5)).First); end.","(1,a,2.5)\n(1,2,3,4)\n(1,2,3,4,5)\n");
+    result("function Add(a,b:integer):integer; begin Result:=a+b; end; function Sum3(a,b,c:integer):integer; begin Result:=a+b+c; end; function Sum4(a,b,c,d:integer):integer; begin Result:=a+b+c+d; end; function Sum5(a,b,c,d,e:integer):integer; begin Result:=a+b+c+d+e; end; begin Writeln(Zip(Seq(1,2),Seq(10,20),Add).ToArray); Writeln(Seq(1).Zip(Seq(2),Seq(3),Sum3).First); Writeln(Zip(Seq(1),Seq(2),Seq(3),Seq(4),Sum4).First); Writeln(Seq(1).Zip(Seq(2),Seq(3),Seq(4),Seq(5),Sum5).First); end.","[11,22]\n6\n10\n15\n");
+    result("function Join(n:integer;c:char):string; begin Result:=IntToStr(n)+c; end; begin Writeln(PABCSystem.Zip(Arr(1,2),'ab',Join).ToArray); end.","[1a,2b]\n");
+    result("function Source:sequence of integer; begin Write('S'); Result:=Seq(10,20); end; begin var z:=Zip(Seq(1,2),Source); Write('C'); Writeln(z.ToArray); Writeln(z.ToArray); end.","SC[(1,10),(2,20)]\n[(1,10),(2,20)]\n");
+    result("function A(n:integer):integer; begin Write('A',n); Result:=n; end; function B(n:integer):integer; begin Write('B',n); Result:=n; end; begin var z:=Zip(Seq(1,2).Select(A),Seq(3).Select(B)); Write('C'); Writeln(' ',z.Count); end.","CA1B3A2 1\n");
+    result("function F(a,b:integer):integer; begin Write('F'); Result:=a+b; end; begin var z:=Zip(Seq(1),Seq(2),F); Write('C'); Writeln(z.Count,' ',z.Count); end.","CFF1 1\n");
+    result("begin var z:=Zip(Seq(1,2),Seq(3,4)); foreach var x in z do begin foreach var y in z do Write(x.Item1,y.Item2,'|'); end; end.","13|14|23|24|");
+    result("begin Writeln(ZipTuple(Seq(1),Seq(2)).First); Writeln(Seq(1).ZipTuple(Seq(2),Seq(3)).First); Writeln(Seq(1).ZipTuple(Seq(2),Seq(3),Seq(4)).First); end.","(1,2)\n(1,2,3)\n(1,2,3,4)\n");
+    result("type R=record x:integer; a:array of integer; end; begin var r:R; r.x:=3; r.a:=Arr(7); var rows:=Arr(r); var z:=Zip(rows,Seq(1)); var t:=z.First; rows[0].x:=9; rows[0].a[0]:=8; Writeln(t.Item1.x,' ',t.Item1.a[0],' ',z.First.Item1.x); end.","3 8 9\n");
+    result("var data:array of integer; function Change(n:integer):integer; begin data[0]:=9; Result:=n; end; begin data:=Arr(1,2); var z:=Zip(data,Seq(10).Select(Change)); Writeln(z.First.Item1,' ',data[0]); end.","9 9\n");
+    result("var data:List<integer>; function Change(n:integer):integer; begin data[0]:=9; Result:=n; end; begin data:=Arr(1,2).ToList; var z:=Zip(data,Seq(10).Select(Change)); Writeln(z.First.Item1,' ',data[0]); end.","1 9\n");
+    runtime_error("var data:List<integer>; function Change(n:integer):integer; begin data[0]:=9; Result:=n; end; begin data:=Arr(1,2).ToList; var a:=Zip(data,Seq(10).Select(Change)).ToArray; end.","E_MODIFIED");
+    runtime_error("var data:List<integer>; function Change(n:integer):integer; begin data.Add(9); Result:=n; end; begin data:=Arr(1).ToList; Zip(Seq(2).Select(Change),data).Count; end.","E_MODIFIED");
+    result("begin var a:sequence of integer; var z:=Zip(a,Seq(1)); Writeln('created ',z.Take(0).Count); end.","created 0\n");
+    runtime_error("begin var a:sequence of integer; Zip(a,Seq(1)).Count; end.","E_NIL");
+    runtime_error("begin var a:sequence of integer; Zip(SeqFill(0,1),a).Count; end.","E_NIL");
+    result("begin Writeln(Zip(SeqFill(0,1),Range(1,2,0)).Count); end.","0\n");
+    runtime_error("begin Zip(Seq(1),Range(1,2,0)).Count; end.","E_RANGE");
+    result("function Add(a,b:integer):integer; begin Result:=a+b; end; begin Writeln(Zip(Range(1,1000),Range(1001,2000),Add).Sum); Writeln(Zip('Я🌍',Seq(1,2,3,4)).Count); end.","2001000\n3\n");
+    result("function F(a,b:integer):array of integer; begin Result:=new integer[2](a,b); end; begin var z:=Zip(Seq(1,2),Seq(3,4),F); Writeln(z.First,' ',z.Last); end.","[1,3] [2,4]\n");
+    for (const auto source:{"begin Zip(Seq(1)); end.","begin Zip(Seq(1),Seq(2),Seq(3),Seq(4),Seq(5),Seq(6)); end.",
+        "begin ZipTuple(Seq(1),Seq(2),Seq(3),Seq(4),Seq(5)); end.","begin Zip(1,Seq(2)); end.",
+        "begin Zip(new integer[1,2],Seq(2)); end.","function F(a,b:real):real; begin Result:=a+b; end; begin Zip(Seq(1),Seq(2),F); end.",
+        "procedure F(a,b:integer); begin end; begin Zip(Seq(1),Seq(2),F); end.",
+        "function F(var a:integer;b:integer):integer; begin Result:=a+b; end; begin Zip(Seq(1),Seq(2),F); end."}) compile_error(source,"E_TYPE");
+    abc::ExecutionOptions limits; limits.call_limit=8;
+    error([&]{(void)run("function F(a,b:integer):integer; begin Result:=a+b; end; begin var q:=Seq(1); for var i:=1 to 10 do q:=Zip(q,Seq(1),F); end.","",limits);},"E_LIMIT");
+    limits={}; limits.cancelled=[] {return true;};
+    error([&]{(void)run("begin Zip(Range(1,1000),Range(1,1000)).Count; end.","",limits);},"E_CANCELLED");
+    auto invalid=abc::compile("begin Zip(Seq(1),Seq(2)).Count; end.");
+    for (auto& instruction:invalid.code) if (instruction.op==abc::Op::sequence_zip) instruction.operand=511;
+    error([&]{abc::verify(invalid);},"E_BYTECODE");
+    invalid=abc::compile("begin Zip(Seq(1),Seq(2)).Count; end.");
+    for (auto& instruction:invalid.code) if (instruction.op==abc::Op::sequence_zip) instruction.operand=4U<<9;
+    error([&]{abc::verify(invalid);},"E_BYTECODE");
+    invalid=abc::compile("function F(a,b:integer):integer; begin Result:=a+b; end; begin Zip(Seq(1),Seq(2),F).Count; end.");
+    invalid.routines[0].parameters[0].by_reference=true;
+    error([&]{abc::verify(invalid);},"E_BYTECODE");
+}
+
 void constants_language() {
     result("const a=2; b=a*3+5; c:byte=b; d=1.3+2.4+2; e='a'#66; f:integer=Ord('Я'); begin Writeln(a,' ',b,' ',c,' ',d,' ',e,' ',f); var xs:=new integer[a](b,c); Writeln(xs); end.","2 11 11 5.7 aB 1071\n[11,11]\n");
     result("const a:int64=1; b:uint64=a+2; c:word=10*20; d=not(MaxInt); begin Writeln(b,' ',c,' ',d,' ',new integer[int64(1)+1](4,5)); end.","3 200 -2147483648 [4,5]\n");
@@ -3818,6 +3860,7 @@ int main() {
     rectangular_arrays();
     array_initializers_language();
     constants_language();
+    sequence_zip_library();
     structural_output();
     try_console_read();
     string_conversions();
