@@ -3045,7 +3045,12 @@ void text_file_changes() {
     result("begin Writeln(ReadAllText("+from+"),' ',ReadAllText("+to+")); end.","source occupied\n");
     for (const auto& target:{std::string("nil"),std::string("''"),folder,quote(directory/"absent"/"file.txt")})
         runtime_error(prefix+"Rename(f,"+target+"); end.","E_IO");
-    runtime_error(prefix+"var bad:string; SetLength(bad,1); f.Rename(bad); end.","E_IO");
+    runtime_error(prefix+"var bad:string:=#0; f.Rename(bad); end.","E_IO");
+#ifdef _WIN32
+    runtime_error(prefix+"ChDir("+folder+"); var spaced:string; SetLength(spaced,1); f.Rename(spaced); end.","E_IO");
+#else
+    result(prefix+"ChDir("+folder+"); var spaced:string; SetLength(spaced,1); f.Rename(spaced); Assign(f,spaced); Writeln(f.Name=' ',' ',ReadAllText(spaced)); f.Erase; end.","True source\n");
+#endif
     runtime_error("begin var f:Text; Assign(f,"+folder+"); f.Erase; end.","E_IO");
     runtime_error("begin var f:Text; Assign(f,"+folder+"); f.Rename("+quote(directory/"folder-copy")+"); end.","E_IO");
     require(fs::is_directory(directory/"child"),"Erase and Rename never remove directories");
