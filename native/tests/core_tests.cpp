@@ -712,7 +712,7 @@ void sequence_slices_library() {
     runtime_error("begin Seq(1,2).Skip(3).First; end.","E_EMPTY");
     runtime_error("begin var a:=new List<integer>; a.Add(1); foreach var x in a.Take(2) do a.Add(2); end.","E_MODIFIED");
     runtime_error("begin var a:=new List<integer>; a.Add(1); a.Add(2); a.Add(3); foreach var x in a.SkipLast(1) do a.Clear; end.","E_MODIFIED");
-    for (const auto source:{"begin Seq(1,2).Take(1.0); end.","begin Seq(1,2).Skip(int64(1)); end.","begin Take(Arr(1),1,2); end.","begin TakeLast(Arr(1)); end.","begin Skip(Arr(1)); end.","begin Writeln((new integer[1,2]).Take(1)); end.","begin var a:sequence of real:=Seq(1,2).Take(1); end.","begin Take('abc',1); end."}) compile_error(source,"E_TYPE");
+    for (const auto source:{"begin Seq(1,2).Take(1.0); end.","begin Seq(1,2).Skip(int64(1)); end.","begin Take(Arr(1),1,2); end.","begin TakeLast(Arr(1)); end.","begin Skip(Arr(1)); end.","begin Writeln((new integer[1,2]).Take(1)); end.","begin var a:sequence of real:=Seq(1,2).Take(1); end."}) compile_error(source,"E_TYPE");
     abc::ExecutionOptions options; options.instruction_limit=1000; options.allocation_limit=64;
     require(run("begin var s:=SeqFill(MaxInt,1); Writeln(s.Take(3).Sum,' ',s.SkipLast(1).First); Writeln(Range(0bi,1bi shl 100).Take(3).Sum); end.","",options)=="3 1\n3\n","Prefix slicing and bounded lookahead work on huge lazy inputs");
     options.instruction_limit=100000;
@@ -748,6 +748,23 @@ void sequence_slices_library() {
         std::string input="new integer[0]"; if(length) { input="Arr(";for(int i=1;i<=length;++i){if(i!=1)input+=",";input+=std::to_string(i);}input+=")"; }
         result("begin var a:="+input+"; Writeln(a."+std::string(names[method])+"("+std::to_string(count)+").ToArray); end.",expected);
     }
+}
+
+void string_sequence_library() {
+    result("begin var s:sequence of char:='Я🌍x'; Writeln(s.Count,' ',s.First,' ',s.Last); var a:=s.ToArray; Writeln(Ord(a[1]),' ',Ord(a[2])); Writeln('abcd'.Take(2).ToArray,' ','abcd'.Skip(2).ToList,' ',TakeLast('abcd',2).ToArray); end.","4 Я x\n55356 57101\n[a,b] [c,d] [c,d]\n");
+    result("function F(s:sequence of char):integer; begin Result:=s.Count; end; function TextValue:string; begin Result:='ab'; end; begin Writeln(F('abc'),' ',TextValue.ToArray,' ',Count('')); Writeln('abc'.First,' ','abc'.LastOrDefault,' ',Ord(''.FirstOrDefault),' ',Ord(ElementAtOrDefault('ab',9))); Writeln(Contains('abc','b'),' ','abc'.Contains('d'),' ',Any('')); end.","3 [a,b] 0\na c 0 0\nTrue False False\n");
+    result("begin var text:string:='abc'; var s:sequence of char:=text; text[1]:='X'; Writeln(s.ToArray,' ',text,' ',s.ToArray); var t:=s; Writeln(s=t); end.","[a,b,c] Xbc [a,b,c]\nTrue\n");
+    result("begin Writeln('ab'.Concat('cd').ToArray,' ',('ab'+Range('c','d')).ToArray,' ',(Range('a','b')+'cd').ToArray); Writeln(Concat('ab','cd'),' ',Concat('ab',Range('c','d')).ToArray); Writeln('ab'.SkipLast.ToArray,' ',Ord(''.SingleOrDefault)); end.","[a,b,c,d] [a,b,c,d] [a,b,c,d]\nabcd [a,b,c,d]\n[a] 0\n");
+    result("begin var text:string:=nil; var s:sequence of char:=text; Writeln(s=nil,' ',Length(text),' ',TakeLast(text,0).Count,' ',s.TakeLast(0).Any); end.","True 0 0 False\n");
+    result("begin var text:=#55296'Я'#56320; var s:sequence of char:=text; foreach var x in s do foreach var y in s do Write(Ord(x),':',Ord(y),';'); Writeln; end.","55296:55296;55296:1071;55296:56320;1071:55296;1071:1071;1071:56320;56320:55296;56320:1071;56320:56320;\n");
+    for (const auto source:{"begin var s:string:=nil; s.Any; end.","begin var s:string:=nil; s.ToArray; end.","begin var s:string:=nil; s.Take(0); end.","begin var s:string:=nil; s.TakeLast(1).First; end.","begin var s:string:=nil; Seq('a').Concat(s); end."}) runtime_error(source,"E_NIL");
+    runtime_error("begin Writeln('ab'.Single); end.","E_MANY"); runtime_error("begin Writeln(''.First); end.","E_EMPTY");
+    for (const auto source:{"begin var s:sequence of integer:='ab'; end.","begin var s:sequence of string:='ab'; end.","begin Writeln('ab'.Take(1.5)); end.","begin Writeln('ab'.Contains(1)); end.","procedure P(var s:sequence of char); begin end; begin var s:='ab'; P(s); end."}) compile_error(source,"E_TYPE");
+    auto invalid=abc::compile("begin var s:sequence of char:='ab'; end."); for(auto& instruction:invalid.code) if(instruction.op==abc::Op::sequence_wrap) instruction.type=abc::Type::integer; error([&]{abc::verify(invalid);},"E_BYTECODE");
+    invalid=abc::compile("begin var a:sequence of integer:=Seq(1); var s:sequence of char:='ab'; end."); for(auto& instruction:invalid.code) if(instruction.op==abc::Op::sequence_wrap && instruction.type==abc::Type::string) { for(std::size_t i=0;i<invalid.types.size();++i) if(invalid.types[i].kind==abc::CompoundKind::sequence && invalid.types[i].element==abc::Type::integer) instruction.operand=64+i; } error([&]{abc::verify(invalid);},"E_BYTECODE");
+    abc::ExecutionOptions options; options.allocation_limit=32;
+    error([&]{(void)run("begin var s:sequence of char:=StringOfChar('a',100); Writeln(s.First); end.","",options);},"E_LIMIT");
+    require(run("begin var s:sequence of char:='abc'; for var i:=1 to 3 do Write(s.First); end.","",options)=="aaa","String cursors share captured UTF-16 storage");
 }
 
 void sequence_concat_library() {
@@ -3598,6 +3615,7 @@ int main() {
     partial_sums_library();
     sequence_slices_library();
     sequence_concat_library();
+    string_sequence_library();
     default_arguments_language();
     school_factor_library();
     sequence_mutations();

@@ -227,6 +227,7 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
             stack.emplace_back(sequence_resume(values,sequence,static_cast<std::uint64_t>(index),options)); break;
         }
         case Op::sequence_wrap: {
+            if (instruction.type==Type::string) { stack.emplace_back(sequence_text(values,static_cast<Type>(instruction.operand),pop())); break; }
             const auto source=std::get<std::shared_ptr<Aggregate>>(pop());
             stack.emplace_back(sequence_create(values,static_cast<Type>(instruction.operand),source,type_info(program,instruction.type).kind==CompoundKind::array ? SequenceProvider::array : SequenceProvider::list)); break;
         }

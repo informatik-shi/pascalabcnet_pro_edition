@@ -3,6 +3,7 @@
 
 namespace abc {
 struct Values;
+std::shared_ptr<Aggregate> sequence_text(Values& values,Type type,Value text);
 std::shared_ptr<Aggregate> sequence_create(Values& values,Type type,const std::shared_ptr<Aggregate>& source,SequenceProvider provider);
 std::shared_ptr<Aggregate> sequence_begin(Values& values,const std::shared_ptr<Aggregate>& sequence);
 void sequence_check(const std::shared_ptr<Aggregate>& sequence,SourceLocation location);

@@ -478,10 +478,11 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         const auto type = instruction.type;
         switch (instruction.op) {
         case Op::sequence_snapshot: case Op::sequence_wrap: {
-            if (!compound(type) || !indexed_sequence(type_info(program,type).kind) || type_info(program,type).rank!=1
+            const bool text=type==Type::string && instruction.op==Op::sequence_wrap;
+            if ((!text && (!compound(type) || !indexed_sequence(type_info(program,type).kind) || type_info(program,type).rank!=1))
                 || instruction.operand<64 || instruction.operand>=64+program.types.size()) invalid(instruction,"Invalid sequence view source");
             const auto& target=type_info(program,static_cast<Type>(instruction.operand));
-            if (target.kind!=CompoundKind::sequence || target.element!=type_info(program,type).element) invalid(instruction,"Invalid sequence view element type");
+            if (target.kind!=CompoundKind::sequence || target.element!=(text ? Type::character : type_info(program,type).element)) invalid(instruction,"Invalid sequence view element type");
             if (instruction.op==Op::sequence_snapshot && type_info(program,type).kind!=CompoundKind::array) invalid(instruction,"Seq snapshot requires an array");
             break;
         }

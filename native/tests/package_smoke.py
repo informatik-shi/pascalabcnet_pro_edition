@@ -126,6 +126,7 @@ def main():
                 ("regex-search.pas", "Есть число: True\nПервое число: 123\nБез числа: []\nПроверка: True\n"),
                 ("sequence-lists.pas", "Массив: [1,2]\nСписок: [9,2,3]\nКопия: [9,2,3]\nПосле изменения: [9,8,3]\n"),
                 ("sequence-factories.pas", "Снимок: [1,2]\nИсходный массив: [9,2]\nПовторения: [да,да,да]\nПервый большого повтора: 7\nДиапазон: [2,3,4,5]\nСимволы: abc\n"),
+                ("string-sequences.pas", "Символов: 6\nПервые три: [П,р,и]\nПоследние два: [е,т]\nОбъединение: !\n"),
                 ("sequence-concat.pas", "Последовательность: [0,1,2,3,4,5,6]\nПовторный обход: [0,1,2,3,4,5,6]\nПервые два: [0,1]\nСумма: 21\n"),
                 ("default-arguments.pas", "Первый вызов: 11\nВторой вызов: 12\nЯвный аргумент: 17\nВычислений по умолчанию: 2\nСтроковый default равен nil: True\n"),
                 ("sequence-slices.pas", "Первые: [1,2]\nПропустить: [3,4,5]\nПоследние: [4,5]\nБез последних: [1,2,3]\nБез одного последнего: [1,2,3,4]\nРанняя остановка: 2147483647\n"),
@@ -196,6 +197,7 @@ def main():
                 ("Range(1,2,0).Any", "E_RANGE", "Sequence step cannot be zero", "Шаг последовательности не может быть равен нулю"),
                 ("var s:=Seq(1); for var i:=1 to 129 do s:=s.PartialSum", "E_LIMIT", "Sequence nesting limit exceeded", "Превышена допустимая глубина последовательностей"),
                 ("var s:sequence of integer; s.Take(0)", "E_NIL", "Cannot access a nil reference", "Нельзя обратиться к пустой ссылке nil"),
+                ("var s:string:=nil; s.ToArray", "E_NIL", "Cannot access a nil reference", "Нельзя обратиться к пустой ссылке nil"),
                 ("var s:sequence of integer; var joined:=Seq(1).Concat(s)", "E_NIL", "Cannot access a nil reference", "Нельзя обратиться к пустой ссылке nil"),
                 ("var s:sequence of integer; s.TakeLast(1).First", "E_NIL", "Cannot access a nil reference", "Нельзя обратиться к пустой ссылке nil"),
                 ("Range(MaxInt,MaxInt,1).Skip(1).Any", "E_OVERFLOW", "Integer overflow", "Переполнение целого числа"),
@@ -559,6 +561,7 @@ def main():
             results[-1]["typed_streaming_and_buffered_sequence_slices"] = "passed"
             results[-1]["runtime_optional_arguments_and_typed_default"] = "passed"
             results[-1]["typed_lazy_concat_and_sequence_addition"] = "passed"
+            results[-1]["utf16_string_sequence_adapters"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 

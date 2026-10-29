@@ -889,10 +889,15 @@ private:
         throw Error("E_NAME", token.location, "Unknown name '" + token.text + "'");
     }
     bool sequence_view(Type from,Type to,SourceLocation location) const {
+        if (from==Type::string) return compound(to) && info(to,location).kind==CompoundKind::sequence && info(to,location).element==Type::character;
         return compound(from) && compound(to) && indexed_sequence(info(from,location).kind) && info(from,location).rank==1
             && info(to,location).kind==CompoundKind::sequence && info(from,location).element==info(to,location).element;
     }
     std::unique_ptr<hir::Expr> convert(std::unique_ptr<hir::Expr> expression, Type type) {
+        if (expression->type==Type::string && sequence_view(Type::string,type,expression->location)) {
+            auto result=std::make_unique<hir::Expr>(); result->kind=hir::ExprKind::sequence_wrap; result->type=type;
+            result->location=expression->location; result->left=std::move(expression); return result;
+        }
         if (compound(type) && info(type,expression->location).kind==CompoundKind::sequence && compound(expression->type)
             && indexed_sequence(info(expression->type,expression->location).kind)) {
             const auto& source=info(expression->type,expression->location);
@@ -1101,6 +1106,13 @@ private:
                 bind_builtin(*result,source.token.text,source.left->token.text); break;
             }
             result->left = expression(*source.left); const auto receiver = result->left->type;
+            if (receiver==Type::string && (sequence_slice_method(source.token.text) || sequence_query_method(source.token.text)
+                || source.token.text=="count" || source.token.text=="toarray" || source.token.text=="tolist" || source.token.text=="concat")) {
+                result->arguments.push_back(convert(std::move(result->left),sequence_type(CompoundKind::sequence,Type::character)));
+                for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
+                if (bind_sequence_slice(*result,source.token.text,"pabcsystem") || bind_sequence_query(*result,source.token.text,"pabcsystem")
+                    || bind_sequence_concat(*result,source.token.text,"pabcsystem") || bind_sequence_conversion(*result,source.token.text,"pabcsystem")) break;
+            }
             if (receiver==Type::string && (source.token.text=="ismatch" || source.token.text=="matchvalue")) {
                 result->arguments.push_back(std::move(result->left));
                 for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
@@ -1833,15 +1845,21 @@ private:
         result.kind=hir::ExprKind::sequence_snapshot;
         result.type=sequence_type(CompoundKind::sequence,info(result.left->type,result.location).element); return true;
     }
+    TypeInfo sequence_source(Type source,SourceLocation location) const {
+        if (source==Type::string) return TypeInfo{"string",CompoundKind::sequence,Type::character,{}};
+        if (!compound(source)) throw Error("E_TYPE",location,"Operation requires a typed sequence, string, array or List");
+        const auto result=info(source,location);
+        if ((result.kind!=CompoundKind::sequence && !indexed_sequence(result.kind)) || result.rank!=1)
+            throw Error("E_TYPE",location,"Operation requires a rank-one sequence, string, array or List");
+        return result;
+    }
     bool bind_sequence_conversion(hir::Expr& result,std::string_view name,std::string_view unit={}) {
         if ((name!="count" && name!="toarray" && name!="tolist") || (!unit.empty() && unit!="pabcsystem")) return false;
         if (result.arguments.size()!=1) throw Error("E_TYPE",result.location,"Sequence conversion requires one sequence");
         const auto source=result.arguments[0]->type;
-        if (!compound(source)) throw Error("E_TYPE",result.location,"Count/ToArray requires a typed sequence, array or List");
-        const auto source_info=info(source,result.location);
-        if (source_info.kind!=CompoundKind::sequence && !indexed_sequence(source_info.kind)) throw Error("E_TYPE",result.location,"Count/ToArray requires a typed sequence, array or List");
+        const auto source_info=sequence_source(source,result.location);
         auto argument=std::move(result.arguments[0]); result.arguments.clear();
-        if (source_info.kind!=CompoundKind::sequence) argument=convert(std::move(argument),sequence_type(CompoundKind::sequence,source_info.element));
+        argument=convert(std::move(argument),sequence_type(CompoundKind::sequence,source_info.element));
         result.left=std::move(argument); result.kind=hir::ExprKind::sequence_call; result.local=name=="tolist" ? 2U : name=="toarray" ? 1U : 0U;
         result.type=result.local ? sequence_type(result.local==2 ? CompoundKind::list : CompoundKind::array,source_info.element) : Type::integer; return true;
     }
@@ -1851,11 +1869,11 @@ private:
         if (result.arguments.empty()) return false;
         const auto first=result.arguments[0]->type;
         const bool inferred_nil=first==Type::nil && result.arguments.size()==2 && compound(result.arguments[1]->type);
-        if (!compound(first) && !inferred_nil) return false;
+        const bool inferred_text=first==Type::string && result.arguments.size()==2 && compound(result.arguments[1]->type)
+            && info(result.arguments[1]->type,result.location).element==Type::character;
+        if (!compound(first) && !inferred_nil && !inferred_text) return false;
         if (result.arguments.size()!=2) throw Error("E_TYPE",result.location,"Sequence Concat requires two sources");
-        const auto source=inferred_nil ? result.arguments[1]->type : first; const auto source_info=info(source,result.location);
-        if ((source_info.kind!=CompoundKind::sequence && !indexed_sequence(source_info.kind)) || source_info.rank!=1)
-            throw Error("E_TYPE",result.location,"Concat requires rank-one sequences, arrays or Lists");
+        const auto source=inferred_nil ? result.arguments[1]->type : first; const auto source_info=sequence_source(source,result.location);
         const auto sequence=sequence_type(CompoundKind::sequence,source_info.element);
         result.left=convert(std::move(result.arguments[0]),sequence);
         result.right=convert(std::move(result.arguments[1]),sequence);
@@ -1877,14 +1895,11 @@ private:
         }
         if (result.arguments.size()!=2) throw Error("E_TYPE",result.location,"Sequence slicing requires a source and integer count");
         const auto source=result.arguments[0]->type;
-        if (!compound(source)) throw Error("E_TYPE",result.location,"Sequence slicing requires a typed sequence, array or List");
-        const auto source_info=info(source,result.location);
-        if ((source_info.kind!=CompoundKind::sequence && !indexed_sequence(source_info.kind)) || source_info.rank!=1)
-            throw Error("E_TYPE",result.location,"Sequence slicing requires a rank-one sequence, array or List");
+        const auto source_info=sequence_source(source,result.location);
         result.right=convert(std::move(result.arguments[1]),Type::integer);
         auto argument=std::move(result.arguments[0]); result.arguments.clear();
         const auto sequence=sequence_type(CompoundKind::sequence,source_info.element);
-        if (source_info.kind!=CompoundKind::sequence) argument=convert(std::move(argument),sequence);
+        argument=convert(std::move(argument),sequence);
         result.left=std::move(argument); result.type=sequence; result.kind=hir::ExprKind::sequence_slice; result.local=static_cast<std::size_t>(*method); return true;
     }
     bool bind_sequence_numeric(hir::Expr& result,std::string_view name,std::string_view unit={}) {
@@ -1923,13 +1938,10 @@ private:
         const bool extra=sequence_query_index(*method) || *method==SequenceQuery::contains;
         if (result.arguments.size()!=(extra ? 2U : 1U)) throw Error("E_TYPE",result.location,"Wrong sequence query argument count");
         const auto source=result.arguments[0]->type;
-        if (!compound(source)) throw Error("E_TYPE",result.location,"Query requires a typed sequence, array or List");
-        const auto source_info=info(source,result.location);
-        if ((source_info.kind!=CompoundKind::sequence && !indexed_sequence(source_info.kind)) || source_info.rank!=1)
-            throw Error("E_TYPE",result.location,"Query requires a typed sequence, array or List");
+        const auto source_info=sequence_source(source,result.location);
         if (extra) result.right=convert(std::move(result.arguments[1]),sequence_query_index(*method) ? Type::integer : source_info.element);
         auto argument=std::move(result.arguments[0]); result.arguments.clear();
-        if (source_info.kind!=CompoundKind::sequence) argument=convert(std::move(argument),sequence_type(CompoundKind::sequence,source_info.element));
+        argument=convert(std::move(argument),sequence_type(CompoundKind::sequence,source_info.element));
         result.left=std::move(argument); result.kind=hir::ExprKind::sequence_query; result.local=static_cast<std::size_t>(*method);
         result.type=sequence_query_result(source_info.element,*method); return true;
     }

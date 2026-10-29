@@ -24,6 +24,14 @@ void reserve_state(Values& values) {
     --values.remaining;
 }
 }
+std::shared_ptr<Aggregate> sequence_text(Values& values,Type type,Value text) {
+    if (std::holds_alternative<NilString>(text)) return std::get<std::shared_ptr<Aggregate>>(values.zero(type));
+    const auto size=std::get<std::u16string>(text).size();
+    if (size>values.remaining) throw runtime_error(RuntimeError::allocation_limit,values.location);
+    values.remaining-=size; reserve_state(values);
+    auto result=std::make_shared<Aggregate>(); result->type=type; result->sequence=std::make_unique<SequenceState>();
+    auto& state=*result->sequence; state.provider=SequenceProvider::string; state.count=size; state.seed=values.cell(Type::string,std::move(text)); return result;
+}
 std::shared_ptr<Aggregate> sequence_create(Values& values,Type type,const std::shared_ptr<Aggregate>& source,SequenceProvider provider) {
     if (!source || source->nil) return std::get<std::shared_ptr<Aggregate>>(values.zero(type));
     reserve_state(values);
@@ -37,6 +45,10 @@ std::shared_ptr<Aggregate> sequence_begin(Values& values,const std::shared_ptr<A
     auto result=std::make_shared<Aggregate>(); result->type=sequence->type;
     result->sequence=std::make_unique<SequenceState>(*sequence->sequence);
     auto& state=*result->sequence; state.started=true; state.first=0;
+    if (state.provider==SequenceProvider::string) {
+        if (!state.seed || state.seed->type!=Type::string || !std::holds_alternative<std::u16string>(state.seed->value)) throw runtime_error(RuntimeError::invalid_bytecode,values.location);
+        return result;
+    }
     if (state.provider==SequenceProvider::concat) {
         reserve_state(values); state.concat=std::make_shared<ConcatState>(); return result;
     }
@@ -156,6 +168,7 @@ Value sequence_at(Values& values,const std::shared_ptr<Aggregate>& sequence,std:
         volatile double offset=static_cast<double>(index)*range.step;
         return finite_partition(first+finite_partition(offset,values.location),values.location);
     }
+    if (state.provider==SequenceProvider::string) return std::get<std::u16string>(state.seed->value)[static_cast<std::size_t>(index)];
     if (state.provider==SequenceProvider::concat) return values.copy(state.concat->current);
     if (state.provider==SequenceProvider::slice) return values.copy(state.slice->current);
     if (state.provider==SequenceProvider::partial_sum) return state.partial->total;
