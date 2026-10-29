@@ -2,6 +2,8 @@
 #include "abc/core.hpp"
 #include "diagnostics.hpp"
 #include "text_file.hpp"
+#include <span>
+#include <functional>
 
 namespace abc {
 inline const TypeInfo& type_info(const Program& program, Type type) {
@@ -19,6 +21,7 @@ struct Values {
     SourceLocation location{};
     std::shared_ptr<Aggregate> empty_integer_range{};
     std::size_t sequence_depth=0;
+    std::function<Value(std::size_t,std::span<const Value>)> invoke{};
     void number(const Value& value) {
         if (const auto* big=std::get_if<BigInteger>(&value)) {
             const auto size=(big->bits()+31)/32;

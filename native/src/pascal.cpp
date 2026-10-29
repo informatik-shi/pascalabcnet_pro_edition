@@ -1080,6 +1080,7 @@ private:
                 }
                 result->kind=hir::ExprKind::call;
                 if (bind_school_table(*result,source,source.left->token.text)) break;
+                if (bind_sequence_transform(*result,source,source.left->token.text)) break;
                 for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
                 if (bind_print(*result,source.token.text,source.left->token.text)) break;
                 if (bind_sequence_conversion(*result,source.token.text,source.left->token.text)) break;
@@ -1107,6 +1108,8 @@ private:
                 bind_builtin(*result,source.token.text,source.left->token.text); break;
             }
             result->left = expression(*source.left); const auto receiver = result->left->type;
+            if ((receiver==Type::string || (compound(receiver) && (info(receiver,result->location).kind==CompoundKind::sequence || indexed_sequence(info(receiver,result->location).kind))))
+                && bind_sequence_transform(*result,source,{},true)) break;
             if (receiver==Type::string && (sequence_slice_method(source.token.text) || sequence_query_method(source.token.text)
                 || source.token.text=="count" || source.token.text=="toarray" || source.token.text=="tolist" || source.token.text=="concat"
                 || source.token.text=="asenumerable" || source.token.text=="sequenceequal" || source.token.text=="defaultifempty")) {
@@ -1523,6 +1526,7 @@ private:
             if (lookup(source.token) && source.token.text != current_name_) throw Error("E_TYPE", result->location, "Variable is not callable: '" + source.token.text + "'");
             result->kind = hir::ExprKind::call;
             if (!routine_names_.contains(source.token.text) && bind_school_table(*result,source)) break;
+            if (!routine_names_.contains(source.token.text) && bind_sequence_transform(*result,source)) break;
             for (const auto& argument : source.arguments) result->arguments.push_back(expression(*argument));
             if (auto routine = routine_names_.find(source.token.text); routine != routine_names_.end()) {
                 const auto& signature = module_.routines[routine->second].signature;
@@ -1873,6 +1877,25 @@ private:
         if (name=="asenumerable") { result=std::move(*argument); return true; }
         result.left=std::move(argument); result.kind=hir::ExprKind::sequence_call; result.local=name=="tolist" ? 2U : name=="toarray" ? 1U : 0U;
         result.type=result.local ? sequence_type(result.local==2 ? CompoundKind::list : CompoundKind::array,source_info.element) : Type::integer; return true;
+    }
+    bool bind_sequence_transform(hir::Expr& result,const SyntaxExpr& source,std::string_view unit={},bool member=false) {
+        const auto name=source.token.text; const bool predicate=name=="where";
+        if ((name!="select" && !predicate) || (!unit.empty() && unit!="pabcsystem")) return false;
+        if (source.arguments.size()!=(member ? 1U : 2U)) throw Error("E_TYPE",result.location,"Select/Where require a source and typed function");
+        const auto& callback=*source.arguments[member ? 0 : 1];
+        if (callback.kind!=SyntaxExprKind::name || !routine_names_.contains(callback.token.text)
+            || (lookup(callback.token) && callback.token.text!=current_name_))
+            throw Error("E_TYPE",callback.token.location,"Select/Where require a named user function with known types");
+        const auto routine=routine_names_.at(callback.token.text); const auto signature=module_.routines[routine].signature;
+        if (!member) result.left=expression(*source.arguments[0]);
+        const auto input=sequence_source(result.left->type,result.location);
+        if ((signature.parameters.size()!=1 && signature.parameters.size()!=2) || signature.parameters[0].by_reference || signature.parameters[0].type!=input.element
+            || (signature.parameters.size()==2 && (signature.parameters[1].by_reference || signature.parameters[1].type!=Type::integer))
+            || signature.result==Type::unit || (predicate && signature.result!=Type::boolean))
+            throw Error("E_TYPE",callback.token.location,"Select/Where function requires an exact element by value, optional integer index and a value result (boolean for Where)");
+        result.left=convert(std::move(result.left),sequence_type(CompoundKind::sequence,input.element));
+        result.type=sequence_type(CompoundKind::sequence,predicate ? input.element : signature.result);
+        result.kind=hir::ExprKind::sequence_transform; result.local=routine; return true;
     }
     bool bind_sequence_default(hir::Expr& result,std::string_view name,std::string_view unit={}) {
         if (name!="defaultifempty" || (!unit.empty() && unit!="pabcsystem")) return false;

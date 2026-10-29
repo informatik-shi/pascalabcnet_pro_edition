@@ -182,7 +182,33 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
         Instruction instruction; instruction.location=location;
         write(text,instruction);
     },delimiter_value,options,school,values};
-    while (!frames.empty()) {
+    const auto enter_routine=[&](std::size_t id,SourceLocation location) {
+        if (id>=program.routines.size()) throw runtime_error(RuntimeError::invalid_bytecode,location);
+        if (frames.size()>options.call_limit) throw runtime_error(RuntimeError::call_limit,location);
+        const auto& routine=program.routines[id];
+        Frame next{&routine.code,&routine,std::vector<std::shared_ptr<Cell>>(program.locals.size()),0,stack.size()-routine.parameters.size()};
+        for (auto index:routine.locals) next.locals[index]=values.cell(program.locals[index].type,values.zero(program.locals[index].type));
+        for (std::size_t i=routine.parameters.size();i>0;--i) {
+            const auto& parameter=routine.parameters[i-1]; auto value=pop();
+            if (parameter.by_reference) next.locals[parameter.local]=std::get<std::shared_ptr<Cell>>(value);
+            else values.write(next.locals[parameter.local],value);
+        }
+        frames.push_back(std::move(next));
+    };
+    std::function<void(std::size_t)> run_to;
+    values.invoke=[&](std::size_t id,std::span<const Value> arguments)->Value {
+        const auto location=values.location;
+        struct RestoreLocation { Values& values; SourceLocation saved; ~RestoreLocation(){values.location=saved;} } restore{values,location};
+        if (id>=program.routines.size() || program.routines[id].parameters.size()!=arguments.size() || program.routines[id].result==Type::unit)
+            throw runtime_error(RuntimeError::invalid_bytecode,location);
+        const auto depth=frames.size(),base=stack.size();
+        for (const auto& argument:arguments) stack.push_back(values.copy(argument));
+        enter_routine(id,location); run_to(depth);
+        if (frames.size()!=depth || stack.size()!=base+1) throw runtime_error(RuntimeError::invalid_bytecode,location);
+        return pop();
+    };
+    run_to=[&](std::size_t depth) {
+    while (frames.size()>depth) {
         auto& frame = frames.back(); auto& locals = frame.locals;
         const auto& instruction = (*frame.code)[frame.pc++]; values.location = instruction.location;
         if (steps++ >= options.instruction_limit) trap(instruction, RuntimeError::instruction_limit);
@@ -239,6 +265,10 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
         }
         case Op::sequence_partial:
             stack.emplace_back(sequence_partial(values,instruction.type,std::get<std::shared_ptr<Aggregate>>(pop()),options)); break;
+        case Op::sequence_select: case Op::sequence_where: {
+            const auto source=std::get<std::shared_ptr<Aggregate>>(pop());
+            stack.emplace_back(sequence_transform(values,static_cast<Type>(instruction.operand>>8),source,instruction.operand&255U,instruction.op==Op::sequence_where,options)); break;
+        }
         case Op::sequence_default: {
             auto fallback=pop(); const auto source=std::get<std::shared_ptr<Aggregate>>(pop());
             stack.emplace_back(sequence_default(values,instruction.type,source,std::move(fallback),options)); break;
@@ -1057,18 +1087,7 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
             for (const auto& item : list->items) if (values.equal(item->value,value)) { found = true; break; }
             stack.emplace_back(found); break;
         }
-        case Op::call_user: {
-            if (frames.size() > options.call_limit) trap(instruction,RuntimeError::call_limit);
-            const auto& routine = program.routines[instruction.operand];
-            Frame next{&routine.code,&routine,std::vector<std::shared_ptr<Cell>>(program.locals.size()),0,stack.size()-routine.parameters.size()};
-            for (auto index : routine.locals) next.locals[index] = values.cell(program.locals[index].type,values.zero(program.locals[index].type));
-            for (std::size_t i = routine.parameters.size(); i > 0; --i) {
-                const auto& parameter = routine.parameters[i-1]; auto value = pop();
-                if (parameter.by_reference) next.locals[parameter.local] = std::get<std::shared_ptr<Cell>>(value);
-                else values.write(next.locals[parameter.local],value);
-            }
-            frames.push_back(std::move(next)); break;
-        }
+        case Op::call_user: enter_routine(instruction.operand,instruction.location); break;
         case Op::return_user: {
             std::optional<Value> result;
             if (frame.routine->result != Type::unit) result = values.copy(frame.locals[frame.routine->result_local]->value);
@@ -1204,9 +1223,11 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
             const auto value=console.read(instruction.type,instruction.location); account_number(value);
             values.write((program.locals[instruction.operand].global ? globals : locals)[instruction.operand],value); console.skip_line(instruction.location); break;
         }
-        case Op::halt: console_output.finish(); return;
+        case Op::halt: frames.clear(); break;
         }
     }
+    };
+    run_to(0);
     console_output.finish();
 }
 

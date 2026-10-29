@@ -35,6 +35,7 @@ add_library(abc_core
     src/sequence_slice.cpp
     src/sequence_concat.cpp
     src/sequence_compare.cpp
+    src/sequence_transform.cpp
     src/diagnostics.cpp
     src/types.cpp
     src/pascal.cpp
@@ -264,6 +265,9 @@ if(BUILD_TESTING)
     add_test(NAME default_argument_compatibility COMMAND ${CMAKE_COMMAND}
         -DABC_RUNNER=$<TARGET_FILE:abc> -DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures
         -DABC_FIXTURE_NAME=default-argument-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")
+    add_test(NAME sequence_callback_compatibility COMMAND ${CMAKE_COMMAND}
+        -DABC_RUNNER=$<TARGET_FILE:abc> -DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures
+        -DABC_FIXTURE_NAME=sequence-callback-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")
     add_test(NAME sequence_tools_compatibility COMMAND ${CMAKE_COMMAND}
         -DABC_RUNNER=$<TARGET_FILE:abc> -DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures
         -DABC_FIXTURE_NAME=sequence-tools-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")

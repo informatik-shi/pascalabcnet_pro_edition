@@ -750,6 +750,41 @@ void sequence_slices_library() {
     }
 }
 
+void sequence_callbacks_library() {
+    result("type R=record Select:integer; Where:integer; end; begin var r:R; r.Select:=2; r.Where:=3; Writeln(r.Select,' ',r.Where); end.","2 3\n");
+    result("function Select(a:array of integer):integer; begin Result:=99; end; function F(value:integer):integer; begin Result:=value+1; end; begin Writeln(Select(Arr(1)),' ',PABCSystem.Select(Arr(1),F).Single); end.","99 2\n");
+    result("function Indexed(value,index:integer):integer; begin Result:=value+index*10; end; function OddIndex(value,index:integer):boolean; begin Result:=index mod 2=1; end; begin var s:=Range(1,5).Where(OddIndex).Select(Indexed); Writeln(s.ToArray,' ',s.ToArray); Writeln(Select(Arr(3,3,3),Indexed).ToArray); end.","[2,14] [2,14]\n[3,13,23]\n");
+    compile_error("function F(value:integer;index:int64):integer; begin Result:=value; end; begin Seq(1).Select(F); end.","E_TYPE");
+    compile_error("function F(value:integer;var index:integer):boolean; begin Result:=True; end; begin Seq(1).Where(F); end.","E_TYPE");
+    result("var calls:integer; function Twice(value:integer):integer; begin Inc(calls); Result:=2*value; end; function Even(value:integer):boolean; begin Result:=value mod 2=0; end; begin var s:=Range(1,4).Select(Twice).Where(Even); Writeln(calls); Writeln(s.First,' ',calls); Writeln(s.ToArray,' ',calls); Writeln(s.Count,' ',calls); Writeln(3+Seq(1,2).Select(Twice).Sum*2,' ',calls); end.","0\n2 1\n[2,4,6,8] 5\n4 9\n15 11\n");
+    result("function Positive(value:integer):boolean; begin Result:=value>0; end; function TextValue(value:integer):string; begin Result:=IntToStr(value); end; function CodeValue(value:char):integer; begin Result:=Ord(value); end; begin Writeln(Select(Arr(1,2),TextValue).ToList); Writeln(PABCSystem.Where(Arr(-1,0,2,3),Positive).ToArray); Writeln('ab'.Select(CodeValue).ToArray,' ',Seq(-1,2).Where(Positive).Single); end.","[1,2]\n[2,3]\n[97,98] 2\n");
+    result("function Twice(value:integer):integer; begin Result:=value*2; end; function Outer(value:integer):integer; begin Result:=Seq(value,value+1).Select(Twice).Sum; end; function Run(value:integer):integer; begin var saved:=value; Result:=Seq(1,2).Select(Outer).Sum+saved; end; begin Writeln(Run(100)); end.","116\n");
+    result("function Factorial(value:integer):integer; begin if value=0 then Result:=1 else Result:=value*Factorial(value-1); end; begin Writeln(Range(0,5).Select(Factorial).ToArray); end.","[1,1,2,6,24,120]\n");
+    result("var factor:integer:=2; function Scale(value:integer):integer; begin Result:=value*factor; end; begin var s:=Seq(1,2).Select(Scale); factor:=3; Writeln(s.ToArray); factor:=4; Writeln(s.ToArray); end.","[3,6]\n[4,8]\n");
+    result("function Pair(value:integer):sequence of integer; begin Result:=Seq(value,value+1); end; begin var s:=Seq(1,2).Select(Pair); Writeln(s.First.ToArray,' ',s.Last.ToArray); end.","[1,2] [2,3]\n");
+    result("type R=record x:integer; a:array of integer; end; function Edit(value:R):R; begin value.x:=value.x+10; value.a[0]:=value.a[0]+1; Result:=value; end; function Keep(value:R):boolean; begin value.x:=99; Result:=True; end; begin var r:R; r.x:=1; r.a:=Arr(2); var a:=Arr(r); var b:=a.Select(Edit).Where(Keep).ToArray; Writeln(a[0].x,' ',b[0].x,' ',r.a[0]); b[0].x:=7; Writeln(a[0].x,' ',b[0].x); end.","1 11 3\n1 7\n");
+    result("var calls:integer; function F(value:integer):integer; begin Inc(calls); Result:=value; end; function No(value:integer):boolean; begin Inc(calls); Result:=False; end; begin Writeln(Range(MaxInt,MaxInt,1).Select(F).Take(1).Single,' ',calls); Writeln(Seq(1,2).Select(F).Take(0).Count,' ',Seq(1,2).Where(No).Take(0).Count,' ',calls); Writeln((new integer[0]).Select(F).Count,' ',calls); Writeln(Seq(1,2).Where(No).DefaultIfEmpty(9).Single,' ',calls); end.","2147483647 1\n0 0 1\n0 1\n9 3\n");
+    result("var a:List<integer>; function Change(value:integer):integer; begin a.Add(2); Result:=value; end; begin a:=new List<integer>; a.Add(1); Writeln(a.Select(Change).Take(1).Single,' ',a.Count); end.","1 2\n");
+    result("function Even(value:integer):boolean; begin Result:=value mod 2=0; end; begin var s:=Range(1,4).Where(Even); foreach var x in s do foreach var y in s do Write(x,':',y,';'); Writeln; end.","2:2;2:4;4:2;4:4;\n");
+    result("function F(value:integer):integer; begin Write(value); Result:=value+1; end; begin Write('A'); Writeln(Seq(1,2).Select(F).Sum,'Z'); end.","A125Z\n");
+    for(const auto source:{"function F(value:integer):integer; begin Result:=value; end; begin var s:sequence of integer; var a:=s.Select(F); end.","function F(value:integer):boolean; begin Result:=True; end; begin var s:sequence of integer; var a:=s.Where(F); end."}) runtime_error(source,"E_NIL");
+    runtime_error("function F(value:integer):integer; begin Result:=10 div value; end; begin Seq(0).Select(F).First; end.","E_DIV_ZERO");
+    runtime_error("var a:List<integer>; function F(value:integer):integer; begin a.Add(2); Result:=value; end; begin a:=new List<integer>; a.Add(1); a.Select(F).Count; end.","E_MODIFIED");
+    runtime_error("var a:List<integer>; function F(value:integer):boolean; begin a.Add(2); Result:=False; end; begin a:=new List<integer>; a.Add(1); a.Where(F).First; end.","E_MODIFIED");
+    runtime_error("function F(value:integer):integer; begin Result:=value; end; begin Range(MaxInt,MaxInt,1).Select(F).Count; end.","E_OVERFLOW");
+    for(const auto source:{"function F(value:real):integer; begin Result:=1; end; begin Seq(1).Select(F); end.","function F(var value:integer):integer; begin Result:=value; end; begin Seq(1).Select(F); end.","procedure F(value:integer); begin end; begin Seq(1).Select(F); end.","function F(value:integer):integer; begin Result:=1; end; begin Seq(1).Where(F); end.","function F(x,y,z:integer):integer; begin Result:=x+y+z; end; begin Seq(1).Select(F); end.","begin Seq(1).Select(Abs); end.","begin Seq(1).Select; end.","function F(value:integer):integer; begin Result:=value; end; begin var F:=1; Seq(1).Select(F); end."}) compile_error(source,"E_TYPE");
+    abc::ExecutionOptions options; options.instruction_limit=100;
+    error([&]{(void)run("function F(value:integer):integer; begin while True do Inc(value); Result:=value; end; begin Seq(1).Select(F).First; end.","",options);},"E_LIMIT");
+    options={}; options.call_limit=8;
+    error([&]{(void)run("function F(value:integer):integer; begin if value=0 then Result:=0 else Result:=Seq(value-1).Select(F).First+1; end; begin Seq(20).Select(F).First; end.","",options);},"E_LIMIT");
+    options={}; std::size_t polls=0; options.cancelled=[&]{return ++polls>100;};
+    error([&]{(void)run("function F(value:integer):boolean; begin Result:=False; end; begin SeqFill(10000,1).Where(F).First; end.","",options);},"E_CANCELLED");
+    auto invalid=abc::compile("function F(value:integer):integer; begin Result:=value; end; begin Seq(1).Select(F); end.");
+    for(auto& instruction:invalid.code) if(instruction.op==abc::Op::sequence_select) instruction.operand=(instruction.operand&~std::size_t{255})|255U; error([&]{abc::verify(invalid);},"E_BYTECODE");
+    invalid=abc::compile("function F(value:integer):integer; begin Result:=value; end; begin Seq(1).Select(F); end."); for(auto& instruction:invalid.code) if(instruction.op==abc::Op::sequence_select) instruction.op=abc::Op::sequence_where; error([&]{abc::verify(invalid);},"E_BYTECODE");
+    try { (void)run("function F(value:integer):integer;\nbegin Result:=1 div value; end;\nbegin Seq(0).Select(F).First; end."); require(false,"Expected a callback error"); } catch(const abc::Error& caught) { require(caught.code=="E_DIV_ZERO" && caught.location.line==2 && !caught.russian.empty(),"Callback errors retain the failing function location and both languages"); }
+}
+
 void sequence_tools_library() {
     result("begin var a:=Arr(1,2,3); var s:=a.AsEnumerable; Writeln(s.Reverse.ToArray,' ',a); Writeln(Reverse(s).ToList,' ',PABCSystem.Reverse(s).ToArray); Reverse(a); Writeln(a); var b:=new List<integer>; b.Add(1); b.Add(2); b.Reverse; Writeln(b,' ',b.AsEnumerable.Reverse.ToArray); Writeln('abcd'.Reverse.ToArray); end.","[3,2,1] [1,2,3]\n[3,2,1] [3,2,1]\n[3,2,1]\n[2,1] [1,2]\n[d,c,b,a]\n");
     result("begin var a:=new List<integer>; a.Add(1); a.Add(2); foreach var x in a.AsEnumerable.Reverse do begin Write(x,';'); a.Clear; end; Writeln; var s:=Seq(1,2).Reverse; Writeln(s.ToArray,' ',s.ToArray); end.","2;1;\n[2,1] [2,1]\n");
@@ -3650,6 +3685,7 @@ int main() {
     sequence_concat_library();
     string_sequence_library();
     sequence_tools_library();
+    sequence_callbacks_library();
     default_arguments_language();
     school_factor_library();
     sequence_mutations();

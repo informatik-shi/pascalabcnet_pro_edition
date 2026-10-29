@@ -28,6 +28,8 @@ std::shared_ptr<Aggregate> sequence_slice(Values& values,Type type,const std::sh
 bool sequence_slice_resume(Values& values,const std::shared_ptr<Aggregate>& sequence,std::uint64_t index,const ExecutionOptions& options);
 std::shared_ptr<Aggregate> sequence_concat(Values& values,Type type,const std::shared_ptr<Aggregate>& first,const std::shared_ptr<Aggregate>& second,const ExecutionOptions& options);
 bool sequence_concat_resume(Values& values,const std::shared_ptr<Aggregate>& sequence,std::uint64_t index,const ExecutionOptions& options);
+std::shared_ptr<Aggregate> sequence_transform(Values& values,Type type,const std::shared_ptr<Aggregate>& source,std::size_t callback,bool predicate,const ExecutionOptions& options);
+bool sequence_transform_resume(Values& values,const std::shared_ptr<Aggregate>& sequence,std::uint64_t index,const ExecutionOptions& options);
 bool sequence_equal(Values& values,const std::shared_ptr<Aggregate>& first,const std::shared_ptr<Aggregate>& second,const ExecutionOptions& options);
 std::shared_ptr<Aggregate> sequence_default(Values& values,Type type,const std::shared_ptr<Aggregate>& source,Value fallback,const ExecutionOptions& options);
 } // namespace abc

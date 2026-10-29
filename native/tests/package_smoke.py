@@ -126,6 +126,7 @@ def main():
                 ("regex-search.pas", "Есть число: True\nПервое число: 123\nБез числа: []\nПроверка: True\n"),
                 ("sequence-lists.pas", "Массив: [1,2]\nСписок: [9,2,3]\nКопия: [9,2,3]\nПосле изменения: [9,8,3]\n"),
                 ("sequence-factories.pas", "Снимок: [1,2]\nИсходный массив: [9,2]\nПовторения: [да,да,да]\nПервый большого повтора: 7\nДиапазон: [2,3,4,5]\nСимволы: abc\n"),
+                ("sequence-callbacks.pas", "Квадраты чётных: [4,16,36,64,100]\nПервые два: [4,16]\nСумма: 220\n"),
                 ("sequence-tools.pas", "В обратном порядке: [3,2,1]\nИсходный массив: [1,2,3]\nЗначение для пустого источника: 42\nСовпадают: True\n"),
                 ("string-sequences.pas", "Символов: 6\nПервые три: [П,р,и]\nПоследние два: [е,т]\nОбъединение: !\n"),
                 ("sequence-concat.pas", "Последовательность: [0,1,2,3,4,5,6]\nПовторный обход: [0,1,2,3,4,5,6]\nПервые два: [0,1]\nСумма: 21\n"),
@@ -248,6 +249,13 @@ def main():
                     or "EN: Division by zero" not in invalid.stderr or "RU: Деление на ноль" not in invalid.stderr
                     or f"{school_error}:1:" not in invalid.stderr):
                 raise RuntimeError(f"{name} bilingual optional-argument error failed: {invalid.stderr!r}")
+            school_error.write_text("function F(value:integer):integer;\nbegin Result:=1 div value; end;\nbegin Seq(0).Select(F).First; end.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(school_error)], text=True, encoding="utf-8",
+                                     capture_output=True, cwd=folder, env=env, timeout=10)
+            if (invalid.returncode != 1 or invalid.stdout or "E_DIV_ZERO" not in invalid.stderr
+                    or "EN: Division by zero" not in invalid.stderr or "RU: Деление на ноль" not in invalid.stderr
+                    or f"{school_error}:2:" not in invalid.stderr):
+                raise RuntimeError(f"{name} bilingual callback error failed: {invalid.stderr!r}")
             school_error.write_text("uses School;\nfunction F(a:array of boolean):boolean; begin Result:=True; end;\nbegin\n TrueTable(-1,F);\nend.", encoding="utf-8")
             invalid = subprocess.run([runner, "run", str(school_error)], text=True, encoding="utf-8",
                                      capture_output=True, cwd=folder, env=env, timeout=10)
@@ -566,6 +574,7 @@ def main():
             results[-1]["typed_lazy_concat_and_sequence_addition"] = "passed"
             results[-1]["utf16_string_sequence_adapters"] = "passed"
             results[-1]["typed_reverse_default_if_empty_sequence_equal_and_views"] = "passed"
+            results[-1]["typed_lazy_select_where_and_shared_vm_callbacks"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 
