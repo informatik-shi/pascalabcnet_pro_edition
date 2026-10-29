@@ -10,6 +10,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: native-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   core:
     strategy:
@@ -24,7 +28,7 @@ jobs:
       - name: Build
         run: cmake --build native/build/ci --config Release --parallel
       - name: Test
-        run: ctest --test-dir native/build/ci -C Release --output-on-failure
+        run: cmake -DABC_TEST_DIR=native/build/ci -DABC_TEST_CONFIG=Release -P native/cmake/RunTests.cmake
       - name: Install
         run: cmake --install native/build/ci --config Release --prefix native/build/install
   sanitizers:
@@ -36,4 +40,4 @@ jobs:
       - name: Build
         run: cmake --build native/build/sanitizers --parallel
       - name: Test
-        run: ctest --test-dir native/build/sanitizers --output-on-failure
+        run: cmake -DABC_TEST_DIR=native/build/sanitizers -DABC_TEST_CONFIG=Debug -P native/cmake/RunTests.cmake
