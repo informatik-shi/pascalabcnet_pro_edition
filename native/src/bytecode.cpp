@@ -233,6 +233,19 @@ private:
         case hir::ExprKind::array_new:
             for (const auto& argument:node.arguments) expression(*argument);
             emit(Op::array_new,node.type,0,node.location); break;
+        case hir::ExprKind::array_initialized: {
+            expression(*node.left); local(Op::store,node.local,node.location);
+            const auto rank=type_info(program_,node.type).rank;
+            const auto columns=rank==2 ? static_cast<std::size_t>(std::get<std::int32_t>(node.value)) : 0;
+            for (std::size_t i=0;i<node.arguments.size();++i) {
+                local(Op::load,node.local,node.location);
+                constant(static_cast<std::int32_t>(rank==2 ? i/columns : i),node.location);
+                if (rank==2) constant(static_cast<std::int32_t>(i%columns),node.location);
+                emit(Op::ref_index,node.type,0,node.location); expression(*node.arguments[i]);
+                emit(Op::store_ref,type_info(program_,node.type).element,0,node.arguments[i]->location);
+            }
+            local(Op::load,node.local,node.location); break;
+        }
         case hir::ExprKind::array_literal:
             for (const auto& argument : node.arguments) expression(*argument);
             emit(Op::array_literal,node.type,node.arguments.size(),node.location); break;

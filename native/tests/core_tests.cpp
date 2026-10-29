@@ -1874,6 +1874,38 @@ void structural_output() {
     error([&]{abc::verify(program);},"E_BYTECODE");
 }
 
+void array_initializers_language() {
+    result("begin var a:=new integer[3](4,5,6); Writeln(a,' ',a.Length,' ',a[1]); var empty:=new integer[0](); Writeln(empty=nil,' ',empty.Length); end.","[4,5,6] 3 5\nFalse 0\n");
+    result("begin Writeln(new integer[1+2](1,2,3)); Writeln(new integer[(8 shr 1)-1](4,5,6)); Writeln(new integer[not(-2)](7)); Writeln(new integer[byte(2)](8,9)); end.","[1,2,3]\n[4,5,6]\n[7]\n[8,9]\n");
+    result("begin var a:=new real[2](1,2.5); var b:=new string[3]('a',nil,'bc'); Writeln(a,' ',b,' ',b[1]=nil); var c:=new byte[2](0,255); Writeln(c); end.","[1,2.5] [a,nil,bc] True\n[0,255]\n");
+    result("var trace:string; function F(n:integer):integer; begin trace:=trace+Chr(64+n); Result:=n; end; begin var a:=new integer[3](F(1),F(2),F(3)); Writeln(trace,' ',a); end.","ABC [1,2,3]\n");
+    result("type R=record x:integer; a:array of integer; end; var r:R; function Change:R; begin r.x:=9; r.a[0]:=8; Result:=r; end; begin r.x:=3; r.a:=Arr(7); var a:=new R[2](r,Change); Writeln(a[0].x,' ',a[0].a[0],' ',a[1].x); end.","3 8 9\n");
+    result("type Row=array of integer; begin var row:=Arr(1); var a:=new Row[2](row,row); a[0][0]:=7; Writeln(a[1][0],' ',a[0]=row); end.","7 True\n");
+    result("type Pair=(integer,integer); begin var a:=new Pair[2]((1,2),(3,4)); Writeln(a[0].Item2,' ',a[1].Item1); end.","2 3\n");
+    result("begin var m:=new integer[2,3]((1,2,3),(4,5,6)); Writeln(m.Rank,' ',m.GetLength(0),' ',m.GetLength(1),' ',m[1,2]); foreach var n in m do Write(n); end.","2 2 3 6\n123456");
+    result("begin var a:=new integer[0,3](); var b:=new integer[2,0]((),()); Writeln(a.Length,' ',a.GetLength(1),' ',b.GetLength(0),' ',b.GetLength(1)); end.","0 3 2 0\n");
+    result("var trace:string; function F(n:integer):integer; begin trace:=trace+Chr(64+n); Result:=n; end; begin var m:=new integer[2,2]((F(1),F(2)),(F(3),F(4))); Writeln(trace,' ',m[1,0]); end.","ABCD 3\n");
+    result("function F(n:integer):array of integer; begin if n=0 then Result:=new integer[1](7) else Result:=new integer[2](n,F(n-1)[0]); end; begin Writeln(F(4)); end.","[4,3]\n");
+    result("begin var m:=new integer[1,8]((1,2,3,4,5,6,7,8)); Writeln(m[0,7]); end.","8\n");
+    compile_error("begin var a:=new integer[2](1); end.","E_TYPE");
+    compile_error("begin var a:=new integer[0](1); end.","E_TYPE");
+    compile_error("begin var a:=new integer[1](); end.","E_TYPE");
+    compile_error("begin var a:=new integer[-1](); end.","E_RANGE");
+    compile_error("begin var a:=new integer[2](1,'x'); end.","E_TYPE");
+    compile_error("begin var a:=new integer[2,2]((1,2),(3)); end.","E_TYPE");
+    compile_error("begin var a:=new integer[2,2]((1,2)); end.","E_TYPE");
+    compile_error("begin var n:=2; var a:=new integer[n](1,2); end.","E_UNSUPPORTED");
+    compile_error("function F:integer; begin Result:=2; end; begin var a:=new integer[F](1,2); end.","E_UNSUPPORTED");
+    compile_error("begin var a:=new integer[1 div 0](); end.","E_DIV_ZERO");
+    compile_error("begin var a:=new integer[MaxInt+1](); end.","E_OVERFLOW");
+    runtime_error("begin var a:=new integer[2](1,1 div 0); end.","E_DIV_ZERO");
+    const auto program=abc::compile("var trace:string; function F:integer; begin Write('called'); Result:=1; end; begin var a:=new integer[2](F,F); end.");
+    abc::ExecutionOptions limits; limits.allocation_limit=4;
+    std::istringstream input; std::ostringstream output;
+    error([&]{abc::execute(program,input,output,limits);},"E_LIMIT");
+    require(output.str().empty(),"Array allocation is checked before initializer callbacks");
+}
+
 void rectangular_arrays() {
     result("uses Arrays; begin var m:=new integer[1,2]; Arrays.FillByValue(m,3); var c:=PABCSystem.Copy(m); Writeln(PABCSystem.High(c),' ',c[0,1]); var a:=Arr(3,1,2); Arrays.Sort(a); Arrays.SortDescending(a); foreach var x in a do Write(x); end.","0 3\n321");
     compile_error("uses Arrays; begin var l:=new List<integer>; Arrays.Sort(l); end.","E_TYPE");
@@ -3749,6 +3781,7 @@ int main() {
     console_functions();
     console_unicode_output();
     rectangular_arrays();
+    array_initializers_language();
     structural_output();
     try_console_read();
     string_conversions();

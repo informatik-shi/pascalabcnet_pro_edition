@@ -9,6 +9,7 @@
 
 
 #include <algorithm>
+#include <bit>
 #include <charconv>
 #include <cmath>
 #include <limits>
@@ -169,6 +170,8 @@ struct SyntaxExpr {
     std::shared_ptr<SyntaxType> constructed{};
     std::vector<std::unique_ptr<SyntaxExpr>> arguments{};
     bool array_construction = false;
+    bool initialized_array = false;
+    std::vector<std::unique_ptr<SyntaxExpr>> initializers{};
 };
 
 std::unique_ptr<SyntaxExpr> make_expression(SyntaxExprKind kind, Token token,
@@ -547,6 +550,26 @@ private:
                     result->arguments.push_back(expression());
                 } while (accept(","));
                 expect("]");
+                if (accept("(")) {
+                    result->initialized_array=true;
+                    std::size_t elements=0;
+                    if (!is(")")) do {
+                        if (result->initializers.size()>=4096) fail("Array initializer limit exceeded");
+                        if (result->arguments.size()==2) {
+                            const auto row_token=current_; expect("(");
+                            auto row=make_expression(SyntaxExprKind::tuple,row_token);
+                            if (!is(")")) do {
+                                if (++elements>4096) fail("Array initializer limit exceeded");
+                                row->arguments.push_back(expression());
+                            } while (accept(","));
+                            expect(")"); result->initializers.push_back(std::move(row));
+                        } else {
+                            if (++elements>4096) fail("Array initializer limit exceeded");
+                            result->initializers.push_back(expression());
+                        }
+                    } while (accept(","));
+                    expect(")");
+                }
             }
             else if (accept("(")) {
                 if (!is(")")) do {
@@ -976,6 +999,57 @@ private:
         return std::make_unique<hir::Expr>(hir::Expr{
             hir::ExprKind::convert, type, location, std::int32_t{0}, 0, "", std::move(expression), {}});
     }
+    // Initializer dimensions must be integer constants, never values read at runtime.
+    std::optional<std::int32_t> array_dimension_constant(const hir::Expr& node) const {
+        const auto checked=[&](std::int64_t n) {
+            if (n<INT32_MIN || n>INT32_MAX) throw runtime_error(RuntimeError::integer_overflow,node.location);
+            return static_cast<std::int32_t>(n);
+        };
+        if (node.kind==hir::ExprKind::literal && (integer_type(node.type) || node.type==Type::character || node.type==Type::boolean))
+            return checked(integral_number(node.value,node.location));
+        const bool cast=node.kind==hir::ExprKind::call && node.arguments.size()==1
+            && stdlib::signatures()[node.local].function==stdlib::Function::integer_cast;
+        if ((node.kind==hir::ExprKind::convert || cast) && integer_type(node.type)) {
+            const auto value=array_dimension_constant(cast ? *node.arguments[0] : *node.left);
+            if (!value) return {};
+            if (small_integer(node.type)) (void)checked_small_integer(node.type,*value,node.location);
+            if (wide_unsigned(node.type) && *value<0) throw runtime_error(RuntimeError::number_range,node.location,type_name(node.type));
+            return value;
+        }
+        if (node.type!=Type::integer) return {};
+        if (node.kind==hir::ExprKind::unary) {
+            const auto value=array_dimension_constant(*node.left);
+            if (!value) return {};
+            if (node.operation=="+") return value;
+            if (node.operation=="-") return checked(-std::int64_t{*value});
+            if (node.operation=="not") return std::bit_cast<std::int32_t>(~std::bit_cast<std::uint32_t>(*value));
+            return {};
+        }
+        if (node.kind!=hir::ExprKind::binary) return {};
+        const auto left=array_dimension_constant(*node.left),right=array_dimension_constant(*node.right);
+        if (!left || !right) return {};
+        const auto a=std::int64_t{*left},b=std::int64_t{*right};
+        if (node.operation=="+") return checked(a+b);
+        if (node.operation=="-") return checked(a-b);
+        if (node.operation=="*") return checked(a*b);
+        if (node.operation=="div" || node.operation=="mod") {
+            if (!b) throw runtime_error(RuntimeError::division_zero,node.location);
+            return checked(node.operation=="div" ? a/b : a%b);
+        }
+        auto bits=std::bit_cast<std::uint32_t>(*left);
+        const auto other=std::bit_cast<std::uint32_t>(*right);
+        if (node.operation=="and") return std::bit_cast<std::int32_t>(bits&other);
+        if (node.operation=="or") return std::bit_cast<std::int32_t>(bits|other);
+        if (node.operation=="xor") return std::bit_cast<std::int32_t>(bits^other);
+        const auto shift=other&31U;
+        if (node.operation=="shl") return std::bit_cast<std::int32_t>(bits<<shift);
+        if (node.operation=="shr") {
+            bits>>=shift;
+            if (*left<0 && shift) bits|=~std::uint32_t{0}<<(32U-shift);
+            return std::bit_cast<std::int32_t>(bits);
+        }
+        return {};
+    }
     std::unique_ptr<hir::Expr> expression(const SyntaxExpr& source) {
         auto result = std::make_unique<hir::Expr>();
         result->location = source.token.location;
@@ -999,6 +1073,31 @@ private:
             if (source.array_construction) {
                 result->kind = hir::ExprKind::array_new; result->type = sequence_type(CompoundKind::array,type,static_cast<unsigned>(source.arguments.size()));
                 for (const auto& argument:source.arguments) result->arguments.push_back(convert(expression(*argument),Type::integer));
+                if (source.initialized_array) {
+                    std::vector<std::int32_t> sizes;
+                    for (const auto& dimension:result->arguments) {
+                        const auto size=array_dimension_constant(*dimension);
+                        if (!size) throw Error("E_UNSUPPORTED",dimension->location,"Array initializer size requires a constant integer expression");
+                        if (*size<0) throw Error("E_RANGE",dimension->location,"Array initializer size cannot be negative");
+                        sizes.push_back(*size);
+                    }
+                    if (source.initializers.size()!=static_cast<std::size_t>(sizes[0]))
+                        throw Error("E_TYPE",result->location,"Array initializer element count must match its size");
+                    auto initialized=std::make_unique<hir::Expr>();
+                    initialized->kind=hir::ExprKind::array_initialized; initialized->type=result->type; initialized->location=result->location;
+                    initialized->local=module_.locals.size();
+                    module_.locals.push_back({"$array_init_"+std::to_string(initialized->local),result->type,!in_routine_});
+                    if (sizes.size()==2) initialized->value=sizes[1];
+                    for (const auto& item:source.initializers) {
+                        if (sizes.size()==1) initialized->arguments.push_back(convert(expression(*item),type));
+                        else {
+                            if (item->arguments.size()!=static_cast<std::size_t>(sizes[1]))
+                                throw Error("E_TYPE",item->token.location,"Array initializer row length must match its second dimension");
+                            for (const auto& element:item->arguments) initialized->arguments.push_back(convert(expression(*element),type));
+                        }
+                    }
+                    initialized->left=std::move(result); result=std::move(initialized);
+                }
             } else {
                 if (type==Type::text_file) {
                     if (!source.arguments.empty()) throw Error("E_TYPE",result->location,"Text constructor takes no arguments");
