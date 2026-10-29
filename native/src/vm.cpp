@@ -931,7 +931,7 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
             if (sequence->nil) trap(instruction,RuntimeError::nil_reference);
             for (const auto& item:sequence->items) values.write(item,value); break;
         }
-        case Op::make_default: stack.push_back(values.zero(instruction.type,instruction.operand!=0)); break;
+        case Op::make_default: stack.push_back(values.zero(instruction.type,instruction.operand==1,instruction.operand==2)); break;
         case Op::load_global: stack.push_back(values.copy(globals[instruction.operand]->value)); break;
         case Op::store_global: values.write(globals[instruction.operand],pop()); break;
         case Op::ref_local: stack.emplace_back(locals[instruction.operand]); break;

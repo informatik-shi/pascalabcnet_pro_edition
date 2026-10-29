@@ -214,7 +214,7 @@ private:
             for (const auto& argument:node.arguments) expression(*argument);
             emit(node.kind==hir::ExprKind::random_array ? Op::random_array : Op::fill_random_array,
                 node.left ? node.left->type : node.type,node.local,node.location); break;
-        case hir::ExprKind::default_value: emit(Op::make_default,node.type,node.operation=="new" ? 1 : 0,node.location); break;
+        case hir::ExprKind::default_value: emit(Op::make_default,node.type,node.operation=="new" ? 1 : node.operation=="default" ? 2 : 0,node.location); break;
         case hir::ExprKind::index:
             expression(*node.left); expression(*node.right);
             for (const auto& argument:node.arguments) expression(*argument);
@@ -683,8 +683,8 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if (!compound(type) || !indexed_sequence(type_info(program,type).kind)) invalid(instruction,"Indexed sequence required");
             if (instruction.op==Op::sequence_sort && (!scalar(type_info(program,type).element) || type_info(program,type).rank!=1 || instruction.operand>1)) invalid(instruction,"Invalid sort"); break;
         case Op::make_default: case Op::store_ref: case Op::drop:
-            if (!valid_value_type(program,type) || (instruction.op==Op::make_default && instruction.operand>1)) invalid(instruction,"Invalid value type");
-            if (instruction.op==Op::make_default && instruction.operand && compound(type) && (node_kind(type_info(program,type).kind) || type_info(program,type).kind==CompoundKind::tuple || type_info(program,type).kind==CompoundKind::sequence || school_ip_kind(type_info(program,type).kind)))
+            if (!valid_value_type(program,type) || (instruction.op==Op::make_default && instruction.operand>2)) invalid(instruction,"Invalid value type");
+            if (instruction.op==Op::make_default && instruction.operand==1 && compound(type) && (node_kind(type_info(program,type).kind) || type_info(program,type).kind==CompoundKind::tuple || type_info(program,type).kind==CompoundKind::sequence || school_ip_kind(type_info(program,type).kind)))
                 invalid(instruction,"Nodes and tuples require the typed constructor");
             break;
         case Op::call_user:
@@ -765,7 +765,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if (type != Type::integer && type != Type::int64 && type!=Type::uint64 && type!=Type::big_integer) invalid(instruction, "Integer division requires integer");
             break;
         case Op::equal: case Op::not_equal:
-            if (!valid_value_type(program,type) || type==Type::text_file) invalid(instruction,"Invalid equality type"); break;
+            if (!valid_value_type(program,type)) invalid(instruction,"Invalid equality type"); break;
         case Op::print:
             if (!valid_type(type)) invalid(instruction, "Invalid value type"); break;
         case Op::less: case Op::less_equal: case Op::greater: case Op::greater_equal:

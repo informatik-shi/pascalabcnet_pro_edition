@@ -750,6 +750,40 @@ void sequence_slices_library() {
     }
 }
 
+void default_arguments_language() {
+    result("function F(a:integer;b:integer:=3):integer; begin Result:=a+b; end; function G(a:integer:=4;b:real:=2.5):real; begin Result:=a+b; end; begin Writeln(F(2),' ',F(2,7),' ',G,' ',G(),' ',G(1)); end.","5 9 6.5 6.5 3.5\n");
+    result("var value:integer:=F; function F(a:integer:=3):integer; begin Result:=a*2; end; begin Writeln(value); end.","6\n");
+    result("procedure P(a:integer:=3); begin Write(a,';'); end; begin P; P(); P(7); Writeln; end.","3;3;7;\n");
+    result("var n:integer; function Next:integer; begin Inc(n); Write('N'); Result:=n; end; function F(a:integer;b:integer:=Next;c:integer:=Next):integer; begin Result:=a+b+c; end; function A:integer; begin Write('A'); Result:=10; end; begin Writeln(F(A)); Writeln(F(1,9)); Writeln(F(1,2,3)); Writeln(n); end.","ANN13\nN13\n6\n3\n");
+    result("var x:integer:=5; function Value:integer; begin Result:=x; end; function F(a:integer:=Value):integer; begin Result:=a; end; function G(x:integer):integer; begin Result:=F; end; begin Writeln(G(99)); x:=7; Writeln(F); end.","5\n7\n");
+    result("function F(a:integer:=G(2)):integer; begin Result:=a; end; function G(a:integer):integer; begin Result:=a*3; end; begin Writeln(F,' ',F(9)); end.","6 9\n");
+    result("function F(a:array of integer:=new integer[1]):integer; begin Inc(a[0]); Result:=a[0]; end; function Text(s:string:=nil):boolean; begin Result:=s=nil; end; begin Writeln(F,' ',F,' ',Text); end.","1 1 True\n");
+    result("function F(a:byte:=default(byte)):byte; begin Result:=a; end; function G(a:integer:=2;b:integer:=2):integer; begin Result:=a+b; end; begin Writeln(F,' ',F(7),' ',G,' ',G(3),' ',G(3,4)); end.","0 7 4 5 7\n");
+    result("function F(a:integer:=F()):integer; begin Result:=a; end; begin Writeln(F(42)); end.","42\n");
+    result("begin Writeln(default(integer),' ',default(int64),' ',default(real),' ',default(boolean),' ',Ord(default(char)),' ',default(BigInteger)); Writeln(default(string)=nil,' ',default(array of integer)=nil,' ',default(sequence of integer)=nil,' ',default(List<integer>)=nil); end.","0 0 0 False 0 0\nTrue True True True\n");
+    result("type R=record s:string; a:array of integer; x:integer; end; begin var r:=default(R); Writeln(r.s=nil,' ',r.a=nil,' ',r.x); var made:=new R; Writeln(made.s='',' ',made.s=nil); end.","True True 0\nTrue False\n");
+    result("type R=record s:string; end; function F(a:R:=default(R)):boolean; begin Result:=a.s=nil; end; function G(a:Text:=default(Text)):boolean; begin Result:=a=nil; end; begin Writeln(F,' ',G); end.","True True\n");
+    for (const auto source:{"function F(a:integer;b:integer:=2):integer; begin Result:=a+b; end; begin F; end.","procedure P(var x:integer:=2); begin end; begin end.","procedure P(a:integer:=2;b:integer); begin end; begin end.","procedure P(a:integer:=1.5); begin end; begin end.","function F:integer; begin Result:=1; end; begin F(1); end."}) compile_error(source,"E_TYPE");
+    compile_error("procedure P(a:integer:=UnknownDefault); begin end; begin end.","E_NAME");
+    compile_error("procedure P(a,b:integer:=2); begin end; begin end.","E_TYPE");
+    compile_error("var x:integer; procedure P(a:integer:=x); begin end; begin end.","E_TYPE");
+    compile_error("var x:integer; function F(a:integer):integer; begin Result:=a; end; procedure P(a:integer:=F(x)); begin end; begin end.","E_TYPE");
+    compile_error("procedure P(a:integer;b:integer:=a); begin end; begin end.","E_NAME");
+    result("begin var f:Text; f:=nil; Writeln(f=nil); end.","True\n");
+    result("begin var f:Text; var g:Text; Writeln(f=f,' ',f=g); end.","True False\n");
+    result("begin var f:Text:=nil; var g:=default(Text); Writeln(f=g,' ',f=nil,' ',(new Text)<>f); end.","True True True\n");
+    runtime_error("begin var f:Text:=nil; f.Close; end.","E_NIL");
+    runtime_error("function F(a:integer:=1 div 0):integer; begin Result:=a; end; begin Writeln(F); end.","E_DIV_ZERO");
+    abc::ExecutionOptions options; options.call_limit=8;
+    error([&]{(void)run("function F(a:integer:=F()):integer; begin Result:=a; end; begin F; end.","",options);},"E_LIMIT");
+    auto invalid=abc::compile("begin var s:=default(string); end.");
+    for (auto& instruction:invalid.code) if (instruction.op==abc::Op::make_default) instruction.operand=3;
+    error([&]{abc::verify(invalid);},"E_BYTECODE");
+    const auto checked=abc::compile("function F(a:integer:=1 div 0):integer; begin Result:=a; end; begin Writeln(F(7)); end.");
+    std::istringstream in; std::ostringstream out; abc::execute(checked,in,out);
+    require(out.str()=="7\n","Provided arguments skip default expressions completely");
+}
+
 void school_minmax_library() {
     result("uses School; begin Writeln(MinMax(Arr(4,-7,9,2)),' ',School.MinMax(Arr(int64(-9223372036854775808),MaxInt64))); var a:=new List<real>; a.Add(1.5); a.Add(-2.25); Writeln(a.MinMax); Writeln(MinMax(new integer[0]),' ',MinMax(new int64[0])); var r:=MinMax(new real[0]); Writeln(r.Item1>1e308,' ',r.Item2< -1e308); end.","(-7,9) (-9223372036854775808,9223372036854775807)\n(-2.25,1.5)\n(2147483647,-2147483648) (9223372036854775807,-9223372036854775808)\nTrue True\n");
     result("uses School; function MinMax(a:array of integer):integer; begin Result:=7; end; begin var a:=Arr(4,2,8); Writeln(MinMax(a),' ',School.MinMax(a),' ',a.MinMax()); end.","7 (2,8) (2,8)\n");
@@ -2733,8 +2767,8 @@ void text_files() {
     runtime_error("begin var files:=new List<Text>; var i:=0; while i<65 do begin files.Add(OpenRead("+file+")); Inc(i); end; end.","E_LIMIT");
     result("begin var files:=new List<Text>; var i:=0; while i<200 do begin var f:=OpenRead("+file+"); Close(f); files.Add(f); Inc(i); end; Writeln(files.Count); end.","200\n");
     runtime_error("uses Collections; begin var m:=new AssocArray<string,Text>; Reset(m['absent']); end.","E_NIL");
-    for (auto source:{"begin var f:Text; var n:integer:=f; end.","begin var f:Text; f:=nil; end.",
-         "begin var f:Text; Writeln(f=f); end.","begin var f:Text; var n:integer; Read(f,1); end.",
+    for (auto source:{"begin var f:Text; var n:integer:=f; end.",
+         "begin var f:Text; var n:integer; Read(f,1); end.",
          "begin var f:Text; Writeln(1,f); end.","begin var f:Text; Readln(1); end.",
          "begin var a:=new Text[2]; Sort(a); end.","begin var f:Text; Reset(f,1); end.",
          "begin var f:=new Text(1); end.","begin var f:Text; Read(f,f); end."}) compile_error(source,"E_TYPE");
@@ -3526,6 +3560,7 @@ int main() {
     numeric_aggregates_library();
     partial_sums_library();
     sequence_slices_library();
+    default_arguments_language();
     school_factor_library();
     sequence_mutations();
     arithmetic();

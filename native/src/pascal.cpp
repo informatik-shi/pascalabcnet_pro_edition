@@ -152,7 +152,7 @@ private:
     SourceLocation position_;
 };
 
-enum class SyntaxExprKind { literal, literal_group, name, unary, binary, call, index, field, member_call, construction, formatted, tuple };
+enum class SyntaxExprKind { literal, literal_group, name, unary, binary, call, index, field, member_call, construction, formatted, tuple, typed_default };
 struct SyntaxType {
     Token token;
     std::string kind;
@@ -198,7 +198,7 @@ struct SyntaxStmt {
     bool declares_control = false, descending = false;
 };
 
-struct SyntaxParameter { Token name; std::shared_ptr<SyntaxType> type; bool by_reference; };
+struct SyntaxParameter { Token name; std::shared_ptr<SyntaxType> type; bool by_reference; std::shared_ptr<SyntaxExpr> default_value; };
 struct SyntaxRoutine {
     Token name;
     std::shared_ptr<SyntaxType> result;
@@ -211,7 +211,7 @@ bool reserved(std::string_view text) {
         "program", "begin", "end", "var", "if", "then", "else", "while", "do", "and", "or", "not",
         "div", "mod", "xor", "shl", "shr", "true", "false", "uses", "unit", "type", "const", "function", "procedure",
         "for", "to", "downto", "repeat", "until", "foreach", "in", "case", "of", "array", "record", "class", "nil",
-        "new", "set", "try", "except", "finally", "raise", "break", "continue", "exit", "writeln", "write", "readln", "read"};
+        "new", "default", "set", "try", "except", "finally", "raise", "break", "continue", "exit", "writeln", "write", "readln", "read"};
     return words.contains(text);
 }
 
@@ -325,7 +325,11 @@ private:
                 const bool by_reference = accept("var");
                 std::vector<Token> names{name()}; while (accept(",")) names.push_back(name());
                 expect(":"); auto type = type_syntax();
-                for (const auto& parameter : names) result->parameters.push_back({parameter,type,by_reference});
+                std::shared_ptr<SyntaxExpr> default_value; if (accept(":=")) {
+                    if (names.size()!=1) throw Error("E_TYPE",names.front().location,"Default value requires exactly one parameter name");
+                    default_value=expression();
+                }
+                for (const auto& parameter : names) result->parameters.push_back({parameter,type,by_reference,default_value});
                 if (result->parameters.size() > 16) fail("Too many routine parameters");
             } while (accept(";"));
             expect(")");
@@ -525,6 +529,11 @@ private:
         }
         if (current_.kind == TokenKind::number || is("true") || is("false") || is("nil"))
             return postfix(make_expression(SyntaxExprKind::literal, consume()));
+        if (is("default")) {
+            const auto token=consume(); expect("("); auto type=type_syntax(); expect(")");
+            auto result=make_expression(SyntaxExprKind::typed_default,token); result->constructed=std::move(type);
+            return postfix(std::move(result));
+        }
         if (accept("new")) {
             const auto token = current_; auto type = type_syntax();
             auto result = make_expression(SyntaxExprKind::construction, token); result->constructed = type;
@@ -647,8 +656,6 @@ public:
             aliases_[name.text] = resolve_type(*syntax);
         }
         scopes_.emplace_back();
-        for (std::size_t i = 0; i + 1 < source.statements.size(); ++i)
-            module_.body.statements.push_back(statement(source.statements[i]));
         for (const auto& routine : source.routines) {
             if (routine_names_.contains(routine->name.text) || lookup(routine->name)) throw Error("E_DUPLICATE",routine->name.location,"Duplicate routine");
             hir::RoutineBody body;
@@ -658,6 +665,10 @@ public:
                 body.signature.parameters.push_back({0,resolve_type(*parameter.type),parameter.by_reference});
             routine_names_[routine->name.text] = module_.routines.size(); module_.routines.push_back(std::move(body));
         }
+        register_defaults(source);
+        for (std::size_t i=0;i+1<source.statements.size();++i) module_.body.statements.push_back(statement(source.statements[i]));
+        for (const auto& routine:source.routines) if (lookup(routine->name)) throw Error("E_DUPLICATE",routine->name.location,"Routine conflicts with a global variable");
+        bind_defaults(source);
         for (std::size_t i = 0; i < source.routines.size(); ++i) {
             const auto& syntax = *source.routines[i]; auto& routine = module_.routines[i];
             in_routine_ = true; current_result_ = routine.signature.result; current_name_ = syntax.name.text; scopes_.emplace_back();
@@ -692,6 +703,60 @@ public:
     }
 
 private:
+    void register_defaults(const SyntaxStmt& source) {
+        parameter_defaults_.resize(source.routines.size());
+        for (std::size_t i=0;i<source.routines.size();++i) {
+            const auto& syntax=*source.routines[i]; auto& defaults=parameter_defaults_[i]; defaults.resize(syntax.parameters.size());
+            bool optional=false;
+            for (std::size_t n=0;n<syntax.parameters.size();++n) {
+                const auto& parameter=syntax.parameters[n];
+                if (!parameter.default_value) {
+                    if (optional) throw Error("E_TYPE",parameter.name.location,"Required parameter cannot follow an optional parameter");
+                    continue;
+                }
+                optional=true;
+                if (parameter.by_reference) throw Error("E_TYPE",parameter.name.location,"var parameter cannot have a default value");
+                if (module_.routines.size()>=256) throw Error("E_LIMIT",parameter.name.location,"Routine limit exceeded by default parameter helpers");
+                hir::RoutineBody helper; helper.signature.name="$default_"+std::to_string(i)+"_"+std::to_string(n);
+                helper.signature.result=module_.routines[i].signature.parameters[n].type;
+                helper.signature.result_local=module_.locals.size(); helper.signature.locals.push_back(module_.locals.size());
+                module_.locals.push_back({helper.signature.name+"_result",helper.signature.result,false});
+                defaults[n]=module_.routines.size(); module_.routines.push_back(std::move(helper));
+            }
+        }
+    }
+    void check_default_expression(const hir::Expr& expression) {
+        if (expression.kind==hir::ExprKind::local)
+            throw Error("E_TYPE",expression.location,"Variable reference is not allowed in a default parameter expression");
+        if (expression.left) check_default_expression(*expression.left);
+        if (expression.right) check_default_expression(*expression.right);
+        for (const auto& argument:expression.arguments) check_default_expression(*argument);
+    }
+    void bind_defaults(const SyntaxStmt& source) {
+        // All helper signatures exist before binding any expression. Recursive
+        // defaults become bounded VM calls instead of recursive AST expansion.
+        for (std::size_t i=0;i<source.routines.size();++i) for (std::size_t n=0;n<source.routines[i]->parameters.size();++n) {
+            if (!parameter_defaults_[i][n]) continue;
+            auto& helper=module_.routines[*parameter_defaults_[i][n]];
+            const auto& syntax=*source.routines[i]->parameters[n].default_value;
+            const auto first=module_.locals.size(); in_routine_=true; current_result_=helper.signature.result; current_name_=helper.signature.name; scopes_.emplace_back();
+            helper.body.kind=hir::StmtKind::return_stmt; helper.body.location=syntax.token.location;
+            helper.body.expression=convert(expression(syntax),helper.signature.result);
+            check_default_expression(*helper.body.expression);
+            for (auto j=first;j<module_.locals.size();++j) if (!module_.locals[j].global) helper.signature.locals.push_back(j);
+            scopes_.pop_back(); in_routine_=false; current_result_=Type::unit; current_name_.clear();
+        }
+    }
+    void add_default_arguments(hir::Expr& result,std::size_t routine) {
+        const auto& signature=module_.routines[routine].signature;
+        if (result.arguments.size()>signature.parameters.size()) throw Error("E_TYPE",result.location,"Wrong routine argument count");
+        for (auto n=result.arguments.size();n<signature.parameters.size();++n) {
+            if (routine>=parameter_defaults_.size() || !parameter_defaults_[routine][n]) throw Error("E_TYPE",result.location,"Missing required routine argument");
+            auto argument=std::make_unique<hir::Expr>(); argument->kind=hir::ExprKind::user_call;
+            argument->local=*parameter_defaults_[routine][n]; argument->type=signature.parameters[n].type; argument->location=result.location;
+            result.arguments.push_back(std::move(argument));
+        }
+    }
     std::size_t print_delimiter() {
         if (!module_.print_delimiter) {
             module_.print_delimiter=module_.locals.size();
@@ -856,6 +921,9 @@ private:
         if (expression->type == Type::nil && type == Type::string) {
             expression->type=type; expression->kind=hir::ExprKind::literal; expression->value=NilString{}; return expression;
         }
+        if (expression->type==Type::nil && type==Type::text_file) {
+            expression->type=type; expression->kind=hir::ExprKind::default_value; expression->operation="default"; return expression;
+        }
         if (expression->type == Type::nil && compound(type) && info(type,expression->location).kind!=CompoundKind::record) {
             expression->type=type; expression->kind=hir::ExprKind::default_value; return expression;
         }
@@ -872,6 +940,8 @@ private:
         result->location = source.token.location;
         result->operation = source.token.text;
         switch (source.kind) {
+        case SyntaxExprKind::typed_default:
+            result->kind=hir::ExprKind::default_value; result->type=resolve_type(*source.constructed); result->operation="default"; break;
         case SyntaxExprKind::tuple: {
             result->kind=hir::ExprKind::tuple_literal; std::vector<Type> elements;
             for (const auto& argument:source.arguments) { auto element=expression(*argument); elements.push_back(element->type); result->arguments.push_back(std::move(element)); }
@@ -1388,8 +1458,6 @@ private:
                 result->local = *local;
                 result->type = module_.locals[*local].type;
             } else if (auto routine = routine_names_.find(source.token.text); routine != routine_names_.end()) {
-                if (!module_.routines[routine->second].signature.parameters.empty())
-                    throw Error("E_TYPE",result->location,"Routine requires arguments; routine values are not supported yet");
                 SyntaxExpr call{SyntaxExprKind::call,source.token,{},{},1,{},{}};
                 return expression(call);
             } else if (source.token.text=="printdelimdefault") {
@@ -1431,7 +1499,7 @@ private:
             for (const auto& argument : source.arguments) result->arguments.push_back(expression(*argument));
             if (auto routine = routine_names_.find(source.token.text); routine != routine_names_.end()) {
                 const auto& signature = module_.routines[routine->second].signature;
-                if (signature.parameters.size() != result->arguments.size()) throw Error("E_TYPE",result->location,"Wrong routine argument count");
+                add_default_arguments(*result,routine->second);
                 result->kind = hir::ExprKind::user_call; result->local = routine->second; result->type = signature.result;
                 for (std::size_t n = 0; n < result->arguments.size(); ++n) {
                     const auto& parameter = signature.parameters[n];
@@ -1566,7 +1634,7 @@ private:
                 if (left==Type::character) { result->left=convert(std::move(result->left),Type::string); left=Type::string; }
                 if (right==Type::character) { result->right=convert(std::move(result->right),Type::string); right=Type::string; }
             }
-            if ((op=="=" || op=="<>") && (compound(left) || compound(right))) {
+            if ((op=="=" || op=="<>") && (compound(left) || compound(right) || left==Type::text_file || right==Type::text_file)) {
                 if (left==Type::nil) { result->left=convert(std::move(result->left),right); left=right; }
                 if (right==Type::nil) { result->right=convert(std::move(result->right),left); right=left; }
                 if (left!=right && sequence_view(right,left,result->location)) { result->right=convert(std::move(result->right),left); right=left; }
@@ -2502,6 +2570,7 @@ private:
     std::map<std::string,Type> aliases_;
     std::map<const SyntaxType*,Type> resolved_types_;
     std::map<std::string,std::size_t> routine_names_;
+    std::vector<std::vector<std::optional<std::size_t>>> parameter_defaults_;
     bool in_routine_ = false;
     bool collections_imported_ = false;
     std::set<std::string> imported_units_;

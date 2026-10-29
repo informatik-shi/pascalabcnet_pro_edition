@@ -126,6 +126,7 @@ def main():
                 ("regex-search.pas", "Есть число: True\nПервое число: 123\nБез числа: []\nПроверка: True\n"),
                 ("sequence-lists.pas", "Массив: [1,2]\nСписок: [9,2,3]\nКопия: [9,2,3]\nПосле изменения: [9,8,3]\n"),
                 ("sequence-factories.pas", "Снимок: [1,2]\nИсходный массив: [9,2]\nПовторения: [да,да,да]\nПервый большого повтора: 7\nДиапазон: [2,3,4,5]\nСимволы: abc\n"),
+                ("default-arguments.pas", "Первый вызов: 11\nВторой вызов: 12\nЯвный аргумент: 17\nВычислений по умолчанию: 2\nСтроковый default равен nil: True\n"),
                 ("sequence-slices.pas", "Первые: [1,2]\nПропустить: [3,4,5]\nПоследние: [4,5]\nБез последних: [1,2,3]\nБез одного последнего: [1,2,3,4]\nРанняя остановка: 2147483647\n"),
                 ("sequence-aggregates.pas", "Сумма: 10\nСреднее: 2.5\nПроизведение: 24\nЧастичные суммы: [1,3,6,10]\nBigInteger: 24\nСреднее пустой BigInteger: 0\n"),
                 ("real-ranges.pas", "Точек: 11\nКонец точно 1: True\nЧетверти: [0,0.25,0.5,0.75,1]\nОбратно: [1,0.75,0.5,0.25,0]\nШаг 0.3: 4 точки\n"),
@@ -233,6 +234,13 @@ def main():
                         or f"EN: {english}" not in invalid.stderr or f"RU: {russian}" not in invalid.stderr
                         or f"{school_error}:3:" not in invalid.stderr):
                     raise RuntimeError(f"{name} bilingual School diagnostic failed: {invalid.stderr!r}")
+            school_error.write_text("function F(a:integer:=1 div 0):integer; begin Result:=a; end;\nbegin Writeln(F); end.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(school_error)], text=True, encoding="utf-8",
+                                     capture_output=True, cwd=folder, env=env, timeout=10)
+            if (invalid.returncode != 1 or invalid.stdout or "E_DIV_ZERO" not in invalid.stderr
+                    or "EN: Division by zero" not in invalid.stderr or "RU: Деление на ноль" not in invalid.stderr
+                    or f"{school_error}:1:" not in invalid.stderr):
+                raise RuntimeError(f"{name} bilingual optional-argument error failed: {invalid.stderr!r}")
             school_error.write_text("uses School;\nfunction F(a:array of boolean):boolean; begin Result:=True; end;\nbegin\n TrueTable(-1,F);\nend.", encoding="utf-8")
             invalid = subprocess.run([runner, "run", str(school_error)], text=True, encoding="utf-8",
                                      capture_output=True, cwd=folder, env=env, timeout=10)
@@ -547,6 +555,7 @@ def main():
             results[-1]["real_range_decimal_scaling"] = "passed"
             results[-1]["typed_numeric_aggregates_and_partial_sums"] = "passed"
             results[-1]["typed_streaming_and_buffered_sequence_slices"] = "passed"
+            results[-1]["runtime_optional_arguments_and_typed_default"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 
