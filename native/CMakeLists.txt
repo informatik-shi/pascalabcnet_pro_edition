@@ -39,6 +39,7 @@ add_library(abc_core
     src/sequence_predicate.cpp
     src/sequence_zip.cpp
     src/diagnostics.cpp
+    src/compiler_diagnostics.cpp
     src/types.cpp
     src/pascal.cpp
     src/constant.cpp
@@ -71,6 +72,9 @@ endif()
 
 add_executable(abc src/main.cpp)
 target_link_libraries(abc PRIVATE abc_core)
+if(MSVC)
+    target_compile_options(abc PRIVATE /utf-8)
+endif()
 
 include(CTest)
 if(BUILD_TESTING)
@@ -82,6 +86,9 @@ if(BUILD_TESTING)
     add_executable(abc_big_integer_tests tests/big_integer_tests.cpp)
     target_link_libraries(abc_big_integer_tests PRIVATE abc_core)
     add_test(NAME core COMMAND abc_tests)
+    add_test(NAME cli_bilingual_diagnostics COMMAND ${CMAKE_COMMAND}
+        "-DABC_RUNNER=$<TARGET_FILE:abc>" "-DABC_SOURCE=${CMAKE_CURRENT_SOURCE_DIR}/examples/sum.pas"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/cli-diagnostics.cmake")
     add_executable(abc_number_fallback_tests tests/number_tests.cpp)
     add_test(NAME number_fallback COMMAND abc_number_fallback_tests)
     add_test(NAME big_integer_backend COMMAND abc_big_integer_tests)

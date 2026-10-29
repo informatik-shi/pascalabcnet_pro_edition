@@ -331,8 +331,10 @@ def main():
             school_error.write_text("uses School;\nfunction F(a,b:boolean):integer; begin Result:=1; end;\nbegin Writeln('must never run'); TrueTable(F); end.", encoding="utf-8")
             invalid = subprocess.run([runner, "run", str(school_error)], text=True, encoding="utf-8",
                                      capture_output=True, cwd=folder, env=env, timeout=10)
-            if invalid.returncode != 1 or invalid.stdout or "E_TYPE" not in invalid.stderr:
-                raise RuntimeError(f"{name} truth-table function types were not checked before output")
+            if (invalid.returncode != 1 or invalid.stdout or "E_TYPE" not in invalid.stderr
+                    or "EN: TrueTable function must return boolean" not in invalid.stderr
+                    or "RU: Функция TrueTable должна возвращать boolean" not in invalid.stderr):
+                raise RuntimeError(f"{name} bilingual truth-table function type check failed before output")
             school_error.write_text("begin Writeln('must never run'); Bin(7); end.", encoding="utf-8")
             invalid = subprocess.run([runner, "run", str(school_error)], text=True, encoding="utf-8",
                                      capture_output=True, cwd=folder, env=env, timeout=10)

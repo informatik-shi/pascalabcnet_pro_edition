@@ -27,14 +27,13 @@ struct SourceLocation {
 
 class Error : public std::runtime_error {
 public:
-    Error(std::string code, SourceLocation location, std::string message, std::string russian = {})
-        : std::runtime_error(std::move(message)), code(std::move(code)), location(location), russian(std::move(russian)) {}
+    Error(std::string code, SourceLocation location, std::string message, std::string russian = {});
     std::string code;
     SourceLocation location;
     std::string russian;
 };
 
-// English remains available through what(); runtime diagnostics also carry Russian.
+// English remains available through what(); source and runtime errors carry Russian.
 std::string format_diagnostic(const Error& error, std::string_view filename);
 
 enum class Type { integer, int64, real, boolean, string, invalid, unit, nil, text_file, character, word, byte, shortint, smallint, longword, uint64, big_integer, first_compound = 64 };

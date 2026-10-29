@@ -1874,6 +1874,44 @@ void structural_output() {
     error([&]{abc::verify(program);},"E_BYTECODE");
 }
 
+void bilingual_source_diagnostics() {
+    struct Case {std::string_view source,code,english,russian;};
+    for (const auto& item:std::initializer_list<Case>{
+        {"begin var n:integer:='ab'; end.","E_TYPE","Cannot assign","Нельзя присвоить значение типа"},
+        {"begin var n:byte:=256; end.","E_RANGE","Constant is outside","Константа находится вне диапазона"},
+        {"function F(x integer):integer; begin Result:=x; end; begin end.","E_SYNTAX","Expected ':'","Ожидалось ':'"},
+        {"begin if 1 then Write(1); end.","E_TYPE","Condition must","Условие должно"},
+        {"begin var n:=1; var n:=2; end.","E_DUPLICATE","Duplicate name","Повторное имя 'n'"},
+        {"uses GraphABC; begin end.","E_UNSUPPORTED","Unit is not ported","Модуль пока не перенесён: 'graphabc'"},
+        {"const n=1; begin n:=2; end.","E_TYPE","Assignment target","Левая часть присваивания"},
+        {"begin var a:=new integer[2](1); end.","E_TYPE","Array initializer element","Число элементов инициализатора"},
+        {"function F(a,b:real):real; begin Result:=a+b; end; begin Zip(Seq(1),Seq(2),F); end.","E_TYPE","Zip function parameters","Параметры функции Zip"},
+        {"function F(n:integer):integer; begin Result:=n; end; begin Seq(1).TakeWhile(F); end.","E_TYPE","Sequence function requires","Функция должна принимать"},
+        {"begin Writeln(True+1); end.","E_TYPE","Incompatible operands","Несовместимые операнды"},
+        {"begin var n:=1\n Writeln(n); end.","E_SYNTAX","Expected ';'","Между операторами ожидается"}
+    }) {
+        try { (void)abc::compile(item.source); require(false,"Expected a bilingual source diagnostic"); }
+        catch (const abc::Error& caught) {
+            require(caught.code==item.code && std::string_view(caught.what()).find(item.english)!=std::string_view::npos
+                && caught.russian.find(item.russian)!=std::string::npos,"Source diagnostics retain code and detailed English/Russian text");
+        }
+    }
+    try {(void)abc::compile("begin\n  отсутствует:=1;\nend."); require(false,"Expected an unknown Unicode name");}
+    catch (const abc::Error& caught) {
+        require(abc::format_diagnostic(caught,"Тест.pas")=="Тест.pas:2:3: E_NAME\nEN: Unknown name 'отсутствует'\nRU: Неизвестное имя 'отсутствует'\n",
+            "Source localization preserves Unicode identifiers, source file and token position");
+    }
+    try {(void)abc::compile(std::string("begin ")+char(0xff)+" end."); require(false,"Expected invalid UTF-8");}
+    catch (const abc::Error& caught) {
+        require(caught.code=="E_ENCODING" && caught.russian=="Исходный текст должен быть в кодировке UTF-8","Invalid UTF-8 source has bilingual encoding diagnostic");
+    }
+    const abc::Error supplied("E_TYPE",{},"Custom English","Особый текст");
+    require(std::string_view(supplied.what())=="Custom English" && supplied.russian=="Особый текст","An explicit Russian diagnostic is preserved");
+    const abc::Error internal("E_BYTECODE",{},"Future verifier invariant");
+    require(std::string_view(internal.what())=="Future verifier invariant" && internal.russian=="Некорректный байт-код: выполнение невозможно",
+        "Unknown verifier details retain English and a localized category");
+}
+
 void sequence_prefix_predicates_library() {
     for (const bool indexed:{false,true}) {
         const auto program=abc::compile(indexed
@@ -3914,6 +3952,7 @@ int main() {
     constants_language();
     sequence_zip_library();
     sequence_prefix_predicates_library();
+    bilingual_source_diagnostics();
     structural_output();
     try_console_read();
     string_conversions();

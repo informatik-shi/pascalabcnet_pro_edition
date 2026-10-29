@@ -46,7 +46,7 @@ if (!$BackendOnly) {
     $regexLibrary = Join-Path $regexBuild 'abc-regex.lib'
     & $librarian "/OUT:$regexLibrary" @regexObjects
     if ($LASTEXITCODE -ne 0) { throw 'Regex C library archive failed' }
-    $core = @('big_integer','big_integer_runtime','stdlib','random','console_input','console_output','formatting','files','file_moves','file_operations','text_file','stdlib_text','string_arrays','school','school_text','regex','school_ip','sequences','real_range','sequence_numeric','sequence_slice','sequence_concat','sequence_compare','sequence_transform','sequence_predicate','sequence_zip','diagnostics','types','pascal','constant','bytecode','vm') | ForEach-Object { Join-Path $nativeRoot "src/$_.cpp" }
+    $core = @('big_integer','big_integer_runtime','stdlib','random','console_input','console_output','formatting','files','file_moves','file_operations','text_file','stdlib_text','string_arrays','school','school_text','regex','school_ip','sequences','real_range','sequence_numeric','sequence_slice','sequence_concat','sequence_compare','sequence_transform','sequence_predicate','sequence_zip','diagnostics','compiler_diagnostics','types','pascal','constant','bytecode','vm') | ForEach-Object { Join-Path $nativeRoot "src/$_.cpp" }
     $tests = Join-Path $buildRoot 'core-tests.exe'
     & $cxx -std=c++20 -Wall -Wextra -Wpedantic -O2 -DABC_HAS_FLOAT_FROM_CHARS=1 @defines "-I$mathRoot" "-I$regexBuild" "-I$nativeRoot/include" @core (Join-Path $nativeRoot 'tests/core_tests.cpp') $library $regexLibrary -ladvapi32 -o $tests
     if ($LASTEXITCODE -ne 0) { throw 'Core C++ compilation failed' }
