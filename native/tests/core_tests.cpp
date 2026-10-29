@@ -750,6 +750,17 @@ void sequence_slices_library() {
     }
 }
 
+void const_out_parameters_language() {
+    result("procedure Add(const a,b:integer;out total:integer); begin total:=a+b; end; procedure Bump(out value:integer); begin Inc(value); end; begin var total:=10; Add(2,3,total); Writeln(total); Bump(total); Writeln(total); end.","5\n6\n");
+    result("procedure P(out value:integer;copy:integer); begin value:=copy+1; end; procedure Forward(var value:integer); begin P(value,value); end; begin var a:=5; Forward(a); Writeln(a); end.","6\n");
+    result("procedure Replace(out values:array of integer); begin values:=Arr(8,9); end; begin var a:=Arr(1); var alias:=a; Replace(a); Writeln(a,' ',alias); end.","[8,9] [1]\n");
+    result("function Twice(const value:integer):integer; begin Result:=value*2; end; function Positive(const value:integer):boolean; begin Result:=value>0; end; begin Writeln(Seq(1,2,3).Select(Twice).ToArray,' ',Seq(1,2).All(Positive)); end.","[2,4,6] True\n");
+    result("type R=record x:integer; a:array of integer; end; function Copy(const value:R):R; begin Result:=value; end; procedure AssignRecord(out value:R); begin value.x:=9; end; begin var r:R; r.x:=1; r.a:=Arr(2); var t:=Copy(r); t.x:=7; t.a[0]:=3; AssignRecord(r); Writeln(r.x,' ',t.x,' ',r.a[0]); end.","9 7 3\n");
+    result("procedure Change(const values:array of integer;const list:List<integer>); begin var alias:=values; alias[0]:=4; list.Add(5); end; begin var a:=Arr(1); var list:=new List<integer>; Change(a,list); Writeln(a,' ',list); end.","[4] [5]\n");
+    result("procedure P(const s:string;const r:real); begin var t:=s; SetLength(t,2); Writeln(s,' [',t,'] ',r); end; begin P('abcd',2); end.","abcd [ab] 2\n");
+    for(const auto source:{"procedure P(const value:integer); begin value:=2; end; begin P(1); end.","procedure P(const value:integer); begin Inc(value); end; begin P(1); end.","procedure P(const value:string); begin SetLength(value,2); end; begin P('ab'); end.","procedure P(const value:string); begin value[1]:='x'; end; begin P('ab'); end.","procedure P(const values:array of integer); begin values[0]:=2; end; begin end.","type R=record x:integer; end; procedure P(const value:R); begin value.x:=2; end; begin end.","type R=record a:array of integer; end; procedure P(const value:R); begin value.a[0]:=2; end; begin end.","procedure Change(var value:integer); begin end; procedure P(const value:integer); begin Change(value); end; begin end.","procedure Change(out value:integer); begin end; procedure P(const values:array of integer); begin Change(values[0]); end; begin end.","procedure P(const value:integer); begin for value:=1 to 2 do Writeln(value); end; begin end.","procedure P(const value:integer); begin foreach value in Arr(1,2) do Writeln(value); end; begin end.","procedure P(const value:integer:=2); begin end; begin end.","procedure P(out value:integer:=2); begin end; begin end.","procedure P(out value:integer); begin value:=2; end; begin P(1); end.","procedure P(out value:integer); begin value:=2; end; begin var a:int64; P(a); end."}) compile_error(source,"E_TYPE");
+}
+
 void sequence_flatmap_library() {
     result("var calls:integer; function Parts(value:integer):array of integer; begin Inc(calls); Result:=Arr(value,value+10); end; begin var s:=Seq(1,2).SelectMany(Parts); Writeln(calls); Writeln(s.Take(3).ToArray,' ',calls); Writeln(s.First,' ',calls); Writeln(s.Count,' ',calls); end.","0\n[1,11,2] 2\n1 3\n4 5\n");
     result("function Parts(value,index:integer):sequence of integer; begin Result:=SeqFill(index,value); end; begin var s:=SelectMany(Arr(5,6,7),Parts); Writeln(s.ToArray,' ',s.ToArray); Writeln((new integer[0]).SelectMany(Parts).Count); end.","[6,7,7] [6,7,7]\n0\n");
@@ -3744,6 +3755,7 @@ int main() {
     sequence_callbacks_library();
     sequence_predicate_library();
     sequence_flatmap_library();
+    const_out_parameters_language();
     default_arguments_language();
     school_factor_library();
     sequence_mutations();

@@ -198,7 +198,7 @@ struct SyntaxStmt {
     bool declares_control = false, descending = false;
 };
 
-struct SyntaxParameter { Token name; std::shared_ptr<SyntaxType> type; bool by_reference; std::shared_ptr<SyntaxExpr> default_value; };
+struct SyntaxParameter { Token name; std::shared_ptr<SyntaxType> type; bool by_reference; std::shared_ptr<SyntaxExpr> default_value; bool read_only=false; };
 struct SyntaxRoutine {
     Token name;
     std::shared_ptr<SyntaxType> result;
@@ -211,7 +211,7 @@ bool reserved(std::string_view text) {
         "program", "begin", "end", "var", "if", "then", "else", "while", "do", "and", "or", "not",
         "div", "mod", "xor", "shl", "shr", "true", "false", "uses", "unit", "type", "const", "function", "procedure",
         "for", "to", "downto", "repeat", "until", "foreach", "in", "case", "of", "array", "record", "class", "nil",
-        "new", "default", "set", "try", "except", "finally", "raise", "break", "continue", "exit", "writeln", "write", "readln", "read"};
+        "new", "default", "out", "set", "try", "except", "finally", "raise", "break", "continue", "exit", "writeln", "write", "readln", "read"};
     return words.contains(text);
 }
 
@@ -322,14 +322,15 @@ private:
         auto result = std::make_shared<SyntaxRoutine>(); result->name = name();
         if (accept("(")) {
             if (!is(")")) do {
-                const bool by_reference = accept("var");
+                const bool by_reference = accept("var") || accept("out");
+                const bool read_only = !by_reference && accept("const");
                 std::vector<Token> names{name()}; while (accept(",")) names.push_back(name());
                 expect(":"); auto type = type_syntax();
                 std::shared_ptr<SyntaxExpr> default_value; if (accept(":=")) {
                     if (names.size()!=1) throw Error("E_TYPE",names.front().location,"Default value requires exactly one parameter name");
                     default_value=expression();
                 }
-                for (const auto& parameter : names) result->parameters.push_back({parameter,type,by_reference,default_value});
+                for (const auto& parameter : names) result->parameters.push_back({parameter,type,by_reference,default_value,read_only});
                 if (result->parameters.size() > 16) fail("Too many routine parameters");
             } while (accept(";"));
             expect(")");
@@ -678,6 +679,7 @@ public:
                 if (scopes_.back().contains(name.text)) throw Error("E_DUPLICATE", name.location,"Duplicate parameter");
                 auto& parameter = routine.signature.parameters[n]; parameter.local = module_.locals.size();
                 scopes_.back()[name.text] = parameter.local; module_.locals.push_back({name.text,parameter.type,false});
+                if (syntax.parameters[n].read_only) constant_parameters_.insert(parameter.local);
             }
             if (current_result_ != Type::unit) {
                 if (scopes_.back().contains("result")) throw Error("E_DUPLICATE",syntax.name.location,"Result is reserved inside functions");
@@ -687,6 +689,7 @@ public:
                 scopes_.back()[current_name_] = routine.signature.result_local;
             }
             routine.body = statement(syntax.body);
+            for (const auto& parameter:routine.signature.parameters) constant_parameters_.erase(parameter.local);
             for (auto n = first; n < module_.locals.size(); ++n) if (!module_.locals[n].global) routine.signature.locals.push_back(n);
             scopes_.pop_back(); in_routine_ = false; current_name_.clear();
         }
@@ -715,7 +718,7 @@ private:
                     continue;
                 }
                 optional=true;
-                if (parameter.by_reference) throw Error("E_TYPE",parameter.name.location,"var parameter cannot have a default value");
+                if (parameter.by_reference || parameter.read_only) throw Error("E_TYPE",parameter.name.location,"var/out/const parameter cannot have a default value");
                 if (module_.routines.size()>=256) throw Error("E_LIMIT",parameter.name.location,"Routine limit exceeded by default parameter helpers");
                 hir::RoutineBody helper; helper.signature.name="$default_"+std::to_string(i)+"_"+std::to_string(n);
                 helper.signature.result=module_.routines[i].signature.parameters[n].type;
@@ -870,7 +873,15 @@ private:
         if (auto found = aliases_.find(syntax.kind); found != aliases_.end()) return found->second;
         throw Error("E_UNSUPPORTED",syntax.token.location,"Unknown or unsupported type '"+syntax.kind+"'");
     }
+    bool constant_parameter_target(const hir::Expr& expression) const {
+        if (expression.kind==hir::ExprKind::local) return constant_parameters_.contains(expression.local);
+        if (expression.kind==hir::ExprKind::field) return constant_parameter_target(*expression.left);
+        if (expression.kind==hir::ExprKind::index && compound(expression.left->type)
+            && info(expression.left->type,expression.location).kind==CompoundKind::array) return constant_parameter_target(*expression.left);
+        return false;
+    }
     bool lvalue(const hir::Expr& expression) const {
+        if (constant_parameter_target(expression)) return false;
         if (expression.kind==hir::ExprKind::index && expression.left->type==Type::string) return false;
         if (expression.kind==hir::ExprKind::field && compound(expression.left->type) && info(expression.left->type,expression.location).kind==CompoundKind::tuple) return false;
         if (expression.kind==hir::ExprKind::index && compound(expression.left->type)
@@ -2593,6 +2604,7 @@ private:
                 scopes_.back()[name.text]=control;
             } else {
                 control=resolve(name);
+                if (constant_parameters_.contains(control)) throw Error("E_TYPE",name.location,"Cannot use a const parameter as an iteration variable");
                 if (for_controls_.contains(control)) throw Error("E_TYPE",name.location,"Cannot reuse an active iteration variable");
                 if (in_routine_ && module_.locals[control].global) throw Error("E_TYPE",name.location,"Foreach variable must be local to the routine");
                 if (in_routine_ && current_result_!=Type::unit && module_.locals[control].name=="result")
@@ -2621,6 +2633,7 @@ private:
                 scopes_.back()[name.text]=control;
             } else {
                 control=resolve(name);
+                if (constant_parameters_.contains(control)) throw Error("E_TYPE",name.location,"Cannot use a const parameter as a for control variable");
                 if (for_controls_.contains(control)) throw Error("E_TYPE",name.location,"Cannot reuse an active for control variable");
                 if (in_routine_ && module_.locals[control].global) throw Error("E_TYPE",name.location,"For control must be local to the routine");
                 if (in_routine_ && current_result_!=Type::unit && module_.locals[control].name=="result") throw Error("E_UNSUPPORTED",name.location,"Function Result as for control is not supported");
@@ -2718,7 +2731,7 @@ private:
     Type current_result_ = Type::unit;
     std::string current_name_;
     std::vector<std::map<std::string, std::size_t>> scopes_;
-    std::set<std::size_t> for_controls_;
+    std::set<std::size_t> for_controls_,constant_parameters_;
     unsigned loop_depth_=0;
 };
 

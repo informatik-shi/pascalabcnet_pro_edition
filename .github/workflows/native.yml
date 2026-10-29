@@ -12,7 +12,8 @@ permissions:
 
 concurrency:
   group: native-${{ github.ref }}
-  cancel-in-progress: true
+  # Keep a queued macOS runner from being starved by frequent incremental pushes.
+  cancel-in-progress: false
 
 jobs:
   core:

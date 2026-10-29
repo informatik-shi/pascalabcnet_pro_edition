@@ -168,6 +168,7 @@ def main():
                 ("regex-search.pas", "Есть число: True\nПервое число: 123\nБез числа: []\nПроверка: True\n"),
                 ("sequence-lists.pas", "Массив: [1,2]\nСписок: [9,2,3]\nКопия: [9,2,3]\nПосле изменения: [9,8,3]\n"),
                 ("sequence-factories.pas", "Снимок: [1,2]\nИсходный массив: [9,2]\nПовторения: [да,да,да]\nПервый большого повтора: 7\nДиапазон: [2,3,4,5]\nСимволы: abc\n"),
+                ("const-out-parameters.pas", "Сумма: 42\nПосле изменения: 43\n"),
                 ("sequence-flatmap.pas", "Все элементы: [1,1,2,1,2,3]\nПервые четыре: [1,1,2,1]\nСумма: 10\n"),
                 ("sequence-predicates.pas", "Есть чётные: True\nЧётных чисел: 5\nПервое чётное: 2\nСумма квадратов: 385\n"),
                 ("sequence-callbacks.pas", "Квадраты чётных: [4,16,36,64,100]\nПервые два: [4,16]\nСумма: 220\n"),
@@ -632,6 +633,7 @@ def main():
             results[-1]["typed_lazy_select_where_and_shared_vm_callbacks"] = "passed"
             results[-1]["typed_predicate_queries_and_numeric_selectors"] = "passed"
             results[-1]["typed_lazy_select_many"] = "passed"
+            results[-1]["typed_const_and_out_parameters"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 

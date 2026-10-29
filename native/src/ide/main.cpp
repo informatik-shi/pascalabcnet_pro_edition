@@ -37,7 +37,7 @@ public:
 protected:
     void highlightBlock(const QString& text) override {
         const QRegularExpression tokens(QStringLiteral(
-            "\\b(begin|end|program|uses|type|var|array|of|record|function|procedure|new|default|nil|exit|result|list|stack|queue|dynarray|simpleset|assocarray|linkedlist|linkedlistnode|singlenode|integer|int64|real|double|boolean|string|char|word|byte|shortint|smallint|longword|uint64|biginteger|addr32|calcip|sequence|text|textfile|if|then|else|while|do|for|foreach|in|to|downto|repeat|until|break|continue|and|or|xor|not|shl|shr|div|mod|true|false)\\b"),
+            "\\b(begin|end|program|uses|type|var|const|out|array|of|record|function|procedure|new|default|nil|exit|result|list|stack|queue|dynarray|simpleset|assocarray|linkedlist|linkedlistnode|singlenode|integer|int64|real|double|boolean|string|char|word|byte|shortint|smallint|longword|uint64|biginteger|addr32|calcip|sequence|text|textfile|if|then|else|while|do|for|foreach|in|to|downto|repeat|until|break|continue|and|or|xor|not|shl|shr|div|mod|true|false)\\b"),
             QRegularExpression::CaseInsensitiveOption | QRegularExpression::UseUnicodePropertiesOption);
         auto matches = tokens.globalMatch(text);
         while (matches.hasNext()) {
