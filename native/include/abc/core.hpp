@@ -341,7 +341,7 @@ inline Type linked_result(Type receiver, const TypeInfo& info, LinkedMethod meth
     if (method == LinkedMethod::to_string) return Type::string;
     return Type::unit;
 }
-struct Parameter { std::size_t local; Type type; bool by_reference = false; };
+struct Parameter { std::size_t local; Type type; bool by_reference = false; bool variadic = false; };
 struct Routine {
     std::string name;
     Type result = Type::unit;

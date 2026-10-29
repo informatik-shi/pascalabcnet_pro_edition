@@ -198,7 +198,7 @@ struct SyntaxStmt {
     bool declares_control = false, descending = false;
 };
 
-struct SyntaxParameter { Token name; std::shared_ptr<SyntaxType> type; bool by_reference; std::shared_ptr<SyntaxExpr> default_value; bool read_only=false; };
+struct SyntaxParameter { Token name; std::shared_ptr<SyntaxType> type; bool by_reference; std::shared_ptr<SyntaxExpr> default_value; bool read_only=false,variadic=false; };
 struct SyntaxRoutine {
     Token name;
     std::shared_ptr<SyntaxType> result;
@@ -211,7 +211,7 @@ bool reserved(std::string_view text) {
         "program", "begin", "end", "var", "if", "then", "else", "while", "do", "and", "or", "not",
         "div", "mod", "xor", "shl", "shr", "true", "false", "uses", "unit", "type", "const", "function", "procedure",
         "for", "to", "downto", "repeat", "until", "foreach", "in", "case", "of", "array", "record", "class", "nil",
-        "new", "default", "out", "set", "try", "except", "finally", "raise", "break", "continue", "exit", "writeln", "write", "readln", "read"};
+        "new", "default", "out", "params", "set", "try", "except", "finally", "raise", "break", "continue", "exit", "writeln", "write", "readln", "read"};
     return words.contains(text);
 }
 
@@ -324,13 +324,15 @@ private:
             if (!is(")")) do {
                 const bool by_reference = accept("var") || accept("out");
                 const bool read_only = !by_reference && accept("const");
+                const bool variadic = !by_reference && !read_only && accept("params");
                 std::vector<Token> names{name()}; while (accept(",")) names.push_back(name());
                 expect(":"); auto type = type_syntax();
+                if (variadic && names.size()!=1) throw Error("E_TYPE",names.front().location,"params declaration requires exactly one parameter name");
                 std::shared_ptr<SyntaxExpr> default_value; if (accept(":=")) {
                     if (names.size()!=1) throw Error("E_TYPE",names.front().location,"Default value requires exactly one parameter name");
                     default_value=expression();
                 }
-                for (const auto& parameter : names) result->parameters.push_back({parameter,type,by_reference,default_value,read_only});
+                for (const auto& parameter : names) result->parameters.push_back({parameter,type,by_reference,default_value,read_only,variadic});
                 if (result->parameters.size() > 16) fail("Too many routine parameters");
             } while (accept(";"));
             expect(")");
@@ -596,7 +598,9 @@ private:
                     auto argument = (name=="print" || name=="println" || name=="str" || (result->kind==SyntaxExprKind::member_call && (name=="write" || name=="writeln")))
                         ? output_argument() : expression();
                     result->depth = std::max(result->depth, argument->depth + 1);
-                    const auto limit=(result->kind==SyntaxExprKind::call && name=="arr") || name=="seq" || name=="gcd" || name=="lcm" ? 4096U : 16U;
+                    // Argument arity belongs to binding: user params routines may
+                    // be forward-declared or shadow standard function names.
+                    constexpr auto limit=4096U;
                     if (result->depth > 256 || result->arguments.size() >= limit) fail("Function call limit exceeded");
                     result->arguments.push_back(std::move(argument));
                 } while (accept(","));
@@ -662,8 +666,13 @@ public:
             hir::RoutineBody body;
             body.signature.name = routine->name.text;
             body.signature.result = routine->result ? resolve_type(*routine->result) : Type::unit;
-            for (const auto& parameter : routine->parameters)
-                body.signature.parameters.push_back({0,resolve_type(*parameter.type),parameter.by_reference});
+            for (std::size_t n=0;n<routine->parameters.size();++n) {
+                const auto& parameter=routine->parameters[n]; const auto type=resolve_type(*parameter.type);
+                if (parameter.variadic && (n+1!=routine->parameters.size() || !compound(type)
+                    || info(type,parameter.name.location).kind!=CompoundKind::array || info(type,parameter.name.location).rank!=1))
+                    throw Error("E_TYPE",parameter.name.location,"params requires a final rank-one array parameter");
+                body.signature.parameters.push_back({0,type,parameter.by_reference,parameter.variadic});
+            }
             routine_names_[routine->name.text] = module_.routines.size(); module_.routines.push_back(std::move(body));
         }
         register_defaults(source);
@@ -713,6 +722,11 @@ private:
             bool optional=false;
             for (std::size_t n=0;n<syntax.parameters.size();++n) {
                 const auto& parameter=syntax.parameters[n];
+                if (parameter.variadic) {
+                    if (optional) throw Error("E_TYPE",parameter.name.location,"Routine with params cannot have preceding default parameters");
+                    if (parameter.default_value) throw Error("E_UNSUPPORTED",parameter.name.location,"Default value on a params parameter is not supported");
+                    continue;
+                }
                 if (!parameter.default_value) {
                     if (optional) throw Error("E_TYPE",parameter.name.location,"Required parameter cannot follow an optional parameter");
                     continue;
@@ -752,6 +766,17 @@ private:
     }
     void add_default_arguments(hir::Expr& result,std::size_t routine) {
         const auto& signature=module_.routines[routine].signature;
+        if (!signature.parameters.empty() && signature.parameters.back().variadic) {
+            const auto fixed=signature.parameters.size()-1;
+            if (result.arguments.size()<fixed) throw Error("E_TYPE",result.location,"Missing required routine argument before params");
+            if (result.arguments.size()>4096) throw Error("E_LIMIT",result.location,"Too many actual params arguments");
+            const auto array=signature.parameters.back().type;
+            if (result.arguments.size()==signature.parameters.size() && (result.arguments.back()->type==array || result.arguments.back()->type==Type::nil)) return;
+            auto packed=std::make_unique<hir::Expr>(); packed->kind=hir::ExprKind::array_literal; packed->type=array; packed->location=result.location;
+            const auto element=info(array,result.location).element;
+            for (auto n=fixed;n<result.arguments.size();++n) packed->arguments.push_back(convert(std::move(result.arguments[n]),element));
+            result.arguments.resize(fixed); result.arguments.push_back(std::move(packed)); return;
+        }
         if (result.arguments.size()>signature.parameters.size()) throw Error("E_TYPE",result.location,"Wrong routine argument count");
         for (auto n=result.arguments.size();n<signature.parameters.size();++n) {
             if (routine>=parameter_defaults_.size() || !parameter_defaults_[routine][n]) throw Error("E_TYPE",result.location,"Missing required routine argument");

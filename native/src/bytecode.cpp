@@ -1158,6 +1158,12 @@ void verify(const Program& program) {
         std::set<std::size_t> owned;
         for (auto local : routine.locals) if (local >= program.locals.size() || program.locals[local].global || !owned.insert(local).second) throw Error("E_BYTECODE",{},"Invalid routine locals");
         if (routine.result != Type::unit && (!owned.contains(routine.result_local) || program.locals[routine.result_local].type != routine.result)) throw Error("E_BYTECODE",{},"Invalid Result local");
+        for (std::size_t n=0;n<routine.parameters.size();++n) {
+            const auto& parameter=routine.parameters[n];
+            if (parameter.variadic && (n+1!=routine.parameters.size() || parameter.by_reference || !compound(parameter.type)
+                || type_info(program,parameter.type).kind!=CompoundKind::array || type_info(program,parameter.type).rank!=1))
+                throw Error("E_BYTECODE",{},"Invalid params signature");
+        }
         std::set<std::size_t> parameters;
         for (const auto& parameter : routine.parameters)
             if (!owned.contains(parameter.local) || program.locals[parameter.local].type != parameter.type

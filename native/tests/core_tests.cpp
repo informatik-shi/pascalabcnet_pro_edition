@@ -750,6 +750,26 @@ void sequence_slices_library() {
     }
 }
 
+void params_parameters_language() {
+    result("function F(params values:array of integer):integer; begin Result:=values.Sum; end; var initial:integer:=F(1,2); begin Writeln(initial,' ',F,' ',F(),' ',F(1,2,3),' ',F(Arr(4,5))); end.","3 0 0 6 9\n");
+    result("function F(first:integer;params values:array of integer):integer; begin Result:=first+values.Sum; end; begin Writeln(F(7),' ',F(7,1,2),' ',F(7,Arr(3,4))); end.","7 10 14\n");
+    result("function Identity(params values:array of integer):array of integer; begin Result:=values; end; begin var a:=Arr(1,2); var b:=Identity(a); b[0]:=9; Writeln(a,' ',a=b,' ',Identity=nil,' ',Identity.Length); end.","[9,2] True False 0\n");
+    result("function Missing(params values:array of string):boolean; begin Result:=values=nil; end; function Size(params values:array of string):integer; begin Result:=values.Length; end; begin var s:string:=nil; Writeln(Missing(nil),' ',Missing(),' ',Missing(s),' ',Size(s)); end.","True False False 1\n");
+    result("function F(params values:array of real):real; begin Result:=values.Sum; end; function Rows(params values:array of array of integer):integer; begin Result:=values.Length; end; begin Writeln(F(1,2.5),' ',Rows(Arr(1,2)),' ',Rows(Arr(1),Arr(2))); end.","3.5 1 2\n");
+    result("type R=record x:integer; end; function F(params values:array of R):array of R; begin Result:=values; end; begin var r:R; r.x:=1; var a:=F(r,r); r.x:=9; a[0].x:=7; Writeln(a[0].x,' ',a[1].x,' ',r.x); end.","7 1 9\n");
+    result("function SumRow(params values:array of integer):integer; begin Result:=values.Sum; end; begin Writeln(Arr(Arr(1,2),Arr(3)).Select(SumRow).ToArray); end.","[3,3]\n");
+    result("function Number(value:integer):integer; begin Write(value); Result:=value; end; function F(first:integer;params values:array of integer):integer; begin Result:=first+values.Sum; end; begin Writeln(F(Number(1),Number(2),Number(3))); end.","1236\n");
+    result("function F(depth:integer;params values:array of integer):integer; begin if depth=0 then Result:=values.Sum else Result:=F(depth-1,values); end; begin Writeln(F(5,1,2,3)); end.","6\n");
+    runtime_error("function F(params values:array of integer):integer; begin Result:=values.Length; end; begin F(nil); end.","E_NIL");
+    for(const auto source:{"procedure P(params value:integer); begin end; begin end.","procedure P(params a:array[,] of integer); begin end; begin end.","procedure P(params a,b:array of integer); begin end; begin end.","procedure P(params a:array of integer;b:integer); begin end; begin end.","procedure P(a:integer:=2;params values:array of integer); begin end; begin end.","procedure P(a,b:integer;params values:array of integer); begin end; begin P(1); end.","procedure P(params values:array of integer); begin end; begin P('ab'); end.","procedure P(params values:array of int64); begin end; begin P(Arr(1,2)); end."}) compile_error(source,"E_TYPE");
+    compile_error("procedure P(params values:array of integer:=nil); begin end; begin end.","E_UNSUPPORTED");
+    std::string many="function F(params values:array of integer):integer; begin Result:=values.Sum; end; begin Writeln(F(";
+    for(int i=1;i<=100;++i){if(i!=1)many+=",";many+=std::to_string(i);} many+=")); end."; result(many,"5050\n");
+    auto invalid=abc::compile("function F(value:integer):integer; begin Result:=value; end; begin F(1); end.");invalid.routines[0].parameters[0].variadic=true;error([&]{abc::verify(invalid);},"E_BYTECODE");
+    invalid=abc::compile("function F(params values:array of integer):integer; begin Result:=values.Length; end; begin F(1); end.");invalid.routines[0].parameters[0].by_reference=true;error([&]{abc::verify(invalid);},"E_BYTECODE");
+    for(int length=0;length<=10;++length){std::string source="function F(params values:array of integer):integer; begin Result:=values.Sum; end; begin Writeln(F(";for(int i=1;i<=length;++i){if(i!=1)source+=",";source+=std::to_string(i);}source+=")); end.";result(source,std::to_string(length*(length+1)/2)+"\n");}
+}
+
 void const_out_parameters_language() {
     result("procedure Add(const a,b:integer;out total:integer); begin total:=a+b; end; procedure Bump(out value:integer); begin Inc(value); end; begin var total:=10; Add(2,3,total); Writeln(total); Bump(total); Writeln(total); end.","5\n6\n");
     result("procedure P(out value:integer;copy:integer); begin value:=copy+1; end; procedure Forward(var value:integer); begin P(value,value); end; begin var a:=5; Forward(a); Writeln(a); end.","6\n");
@@ -3756,6 +3776,7 @@ int main() {
     sequence_predicate_library();
     sequence_flatmap_library();
     const_out_parameters_language();
+    params_parameters_language();
     default_arguments_language();
     school_factor_library();
     sequence_mutations();
