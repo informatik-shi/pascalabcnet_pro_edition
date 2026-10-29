@@ -26,6 +26,11 @@ std::span<const Signature> signatures() {
         auto add = [&](std::string_view name, std::vector<Type> parameters, Type result, Function function, std::string_view unit = {}) {
             entries.push_back({name, std::move(parameters), result, function,unit});
         };
+        add("assert",{Type::boolean},Type::unit,Function::assertion);
+        add("assert",{Type::boolean,Type::string},Type::unit,Function::assertion);
+        add("assert",{Type::boolean,Type::string,Type::integer},Type::unit,Function::assertion);
+        add("assert",{Type::boolean,Type::string,Type::string},Type::unit,Function::assertion);
+        add("assert",{Type::boolean,Type::string,Type::string,Type::integer},Type::unit,Function::assertion);
         for (auto source:{Type::integer,Type::int64,Type::real,Type::word,Type::byte,Type::shortint,Type::smallint,Type::longword,Type::uint64,Type::character,Type::big_integer}) {
             add("biginteger",{source},Type::big_integer,Function::big_cast);
             for (auto name:{"real","double"}) add(name,{source},Type::real,Function::big_cast);
@@ -347,6 +352,22 @@ Value invoke(std::size_t id, std::span<const Value> arguments, SourceLocation lo
     auto& files=context.files; auto& random=context.random;
     const auto& signature = signatures()[id]; // Verified before execution.
     const auto function = signature.function;
+    if (function==Function::assertion) {
+        if (std::get<bool>(arguments[0])) return false;
+        std::string details;
+        const bool message_present=arguments.size()==2 || arguments.size()==4 || (arguments.size()==3 && signature.parameters.back()==Type::string);
+        if (arguments.size()>=3) {
+            details=to_utf8(string_text(arguments[message_present ? 2 : 1]),true);
+            const auto line=signature.parameters.back()==Type::integer ? std::get<std::int32_t>(arguments.back()) : 0;
+            if (!details.empty()) details+=":"+std::to_string(line);
+        }
+        if (message_present) {
+            const auto message=to_utf8(string_text(arguments[1]),true);
+            if (!details.empty() && !message.empty()) details+=": ";
+            details+=message;
+        }
+        throw runtime_error(RuntimeError::assertion_failed,location,details.empty() ? "" : ": "+details);
+    }
     if (function==Function::regex_is_match || function==Function::regex_match_value)
         return regex_search(context.values,arguments[0],arguments[1],function==Function::regex_match_value,context.options);
     if (function>=Function::console_read && function<=Function::console_token) {

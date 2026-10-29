@@ -750,6 +750,20 @@ void sequence_slices_library() {
     }
 }
 
+void assertion_library() {
+    result("begin Assert(True); Assert(2+2=4,'math'); PABCSystem.Assert(True,'file.pas',2); Assert(True,'message','file.pas'); Assert(True,'message','file.pas',2); Writeln('ok'); end.","ok\n");
+    result("var calls:integer; function Message:string; begin Inc(calls); Result:='checked'; end; begin Assert(True,Message); Writeln(calls); end.","1\n");
+    result("procedure Assert(value:boolean); begin Write('user'); end; begin Assert(False); PABCSystem.Assert(True); Writeln; end.","user\n");
+    runtime_error("begin Assert(False); end.","E_ASSERT");
+    runtime_error("begin Assert(False,'проверка'); end.","E_ASSERT");
+    for(const auto source:{"begin Assert(1); end.","begin Assert(True,2); end.","begin Assert; end.","begin var a:=Assert(True); end."}) compile_error(source,"E_TYPE");
+    auto program=abc::compile("function Condition:boolean; begin Write('C'); Result:=False; end;\nfunction Message:string; begin Write('M'); Result:='причина'; end;\nbegin Assert(Condition,Message); Write('after'); end.");
+    std::istringstream input; std::ostringstream output;
+    try { abc::execute(program,input,output); require(false,"Expected an assertion error"); }
+    catch(const abc::Error& caught) { require(caught.code=="E_ASSERT" && caught.location.line==3 && std::string_view(caught.what())=="Assertion failed: причина" && caught.russian=="Проверка Assert не пройдена: причина" && output.str()=="CM","Assert evaluates arguments in order and stops with both languages at the call site"); }
+    for(const auto source:{"begin Assert(False,'explicit.pas',42); end.","begin Assert(False,'message','explicit.pas',42); end."}) { try { (void)run(source); require(false,"Expected source-aware assertion failure"); } catch(const abc::Error& caught) { require(std::string_view(caught.what()).find("explicit.pas:42")!=std::string_view::npos && caught.russian.find("explicit.pas:42")!=std::string::npos,"Explicit assertion source context survives in both languages"); } }
+}
+
 void params_parameters_language() {
     result("function F(params values:array of integer):integer; begin Result:=values.Sum; end; var initial:integer:=F(1,2); begin Writeln(initial,' ',F,' ',F(),' ',F(1,2,3),' ',F(Arr(4,5))); end.","3 0 0 6 9\n");
     result("function F(first:integer;params values:array of integer):integer; begin Result:=first+values.Sum; end; begin Writeln(F(7),' ',F(7,1,2),' ',F(7,Arr(3,4))); end.","7 10 14\n");
@@ -3777,6 +3791,7 @@ int main() {
     sequence_flatmap_library();
     const_out_parameters_language();
     params_parameters_language();
+    assertion_library();
     default_arguments_language();
     school_factor_library();
     sequence_mutations();

@@ -108,6 +108,8 @@ Error runtime_error(RuntimeError id, SourceLocation location, std::string_view c
         code = "E_RANGE"; english = "Array length must not be negative"; russian = "Длина массива не должна быть отрицательной"; break;
     case RuntimeError::call_limit:
         code = "E_LIMIT"; english = "Routine call depth limit exceeded"; russian = "Превышена допустимая глубина вызовов подпрограмм"; break;
+    case RuntimeError::assertion_failed:
+        code = "E_ASSERT"; english = "Assertion failed"; russian = "Проверка Assert не пройдена"; break;
     case RuntimeError::file_io:
         code = "E_IO"; english = "Cannot open, read or write the file"; russian = "Не удалось открыть, прочитать или записать файл"; break;
     case RuntimeError::file_unassigned:

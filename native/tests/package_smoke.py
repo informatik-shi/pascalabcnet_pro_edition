@@ -168,6 +168,7 @@ def main():
                 ("regex-search.pas", "Есть число: True\nПервое число: 123\nБез числа: []\nПроверка: True\n"),
                 ("sequence-lists.pas", "Массив: [1,2]\nСписок: [9,2,3]\nКопия: [9,2,3]\nПосле изменения: [9,8,3]\n"),
                 ("sequence-factories.pas", "Снимок: [1,2]\nИсходный массив: [9,2]\nПовторения: [да,да,да]\nПервый большого повтора: 7\nДиапазон: [2,3,4,5]\nСимволы: abc\n"),
+                ("assertions.pas", "Проверки выполнены\n"),
                 ("params-parameters.pas", "Без аргументов: 0\nТри числа: 6\nГотовый массив: 60\n"),
                 ("const-out-parameters.pas", "Сумма: 42\nПосле изменения: 43\n"),
                 ("sequence-flatmap.pas", "Все элементы: [1,1,2,1,2,3]\nПервые четыре: [1,1,2,1]\nСумма: 10\n"),
@@ -245,6 +246,8 @@ def main():
                 ("Range(1,2,0).Any", "E_RANGE", "Sequence step cannot be zero", "Шаг последовательности не может быть равен нулю"),
                 ("var s:=Seq(1); for var i:=1 to 129 do s:=s.PartialSum", "E_LIMIT", "Sequence nesting limit exceeded", "Превышена допустимая глубина последовательностей"),
                 ("var s:sequence of integer; s.Take(0)", "E_NIL", "Cannot access a nil reference", "Нельзя обратиться к пустой ссылке nil"),
+                ("Assert(False)", "E_ASSERT", "Assertion failed", "Проверка Assert не пройдена"),
+                ("Assert(False,'причина')", "E_ASSERT", "Assertion failed: причина", "Проверка Assert не пройдена: причина"),
                 ("var s:sequence of integer; var reversed:=s.Reverse", "E_NIL", "Cannot access a nil reference", "Нельзя обратиться к пустой ссылке nil"),
                 ("var s:sequence of integer; var filled:=s.DefaultIfEmpty", "E_NIL", "Cannot access a nil reference", "Нельзя обратиться к пустой ссылке nil"),
                 ("var s:string:=nil; s.ToArray", "E_NIL", "Cannot access a nil reference", "Нельзя обратиться к пустой ссылке nil"),
@@ -636,6 +639,7 @@ def main():
             results[-1]["typed_lazy_select_many"] = "passed"
             results[-1]["typed_const_and_out_parameters"] = "passed"
             results[-1]["typed_user_params_arrays"] = "passed"
+            results[-1]["native_assertions_and_bilingual_failures"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 
