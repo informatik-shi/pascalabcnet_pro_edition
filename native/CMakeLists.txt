@@ -40,6 +40,7 @@ add_library(abc_core
     src/diagnostics.cpp
     src/types.cpp
     src/pascal.cpp
+    src/constant.cpp
     src/bytecode.cpp
     src/vm.cpp)
 target_include_directories(abc_core PUBLIC include)
@@ -80,6 +81,8 @@ if(BUILD_TESTING)
     add_executable(abc_big_integer_tests tests/big_integer_tests.cpp)
     target_link_libraries(abc_big_integer_tests PRIVATE abc_core)
     add_test(NAME core COMMAND abc_tests)
+    add_executable(abc_number_fallback_tests tests/number_tests.cpp)
+    add_test(NAME number_fallback COMMAND abc_number_fallback_tests)
     add_test(NAME big_integer_backend COMMAND abc_big_integer_tests)
     add_test(NAME cli_check COMMAND abc check "${CMAKE_CURRENT_SOURCE_DIR}/examples/sum.pas")
     add_test(NAME cli_run COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/examples/hello.pas")
@@ -269,7 +272,9 @@ if(BUILD_TESTING)
     add_test(NAME original_params1 COMMAND $<TARGET_FILE:abc> run "${CMAKE_CURRENT_SOURCE_DIR}/../TestSuite/params1.pas")
     add_test(NAME original_constparam2 COMMAND $<TARGET_FILE:abc> run "${CMAKE_CURRENT_SOURCE_DIR}/../TestSuite/constparam2.pas")
     add_test(NAME original_params5 COMMAND $<TARGET_FILE:abc> run "${CMAKE_CURRENT_SOURCE_DIR}/../TestSuite/params5.pas")
-    set_tests_properties(original_params1 original_constparam2 original_params5 PROPERTIES TIMEOUT 10)
+    add_test(NAME original_const1 COMMAND $<TARGET_FILE:abc> run "${CMAKE_CURRENT_SOURCE_DIR}/../TestSuite/const1.pas")
+    add_test(NAME original_const3 COMMAND $<TARGET_FILE:abc> run "${CMAKE_CURRENT_SOURCE_DIR}/../TestSuite/const3.pas")
+    set_tests_properties(original_params1 original_constparam2 original_params5 original_const1 original_const3 PROPERTIES TIMEOUT 10)
     add_test(NAME params_compatibility COMMAND ${CMAKE_COMMAND}
         -DABC_RUNNER=$<TARGET_FILE:abc> -DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures
         -DABC_FIXTURE_NAME=params-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")

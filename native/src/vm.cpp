@@ -1,4 +1,6 @@
 #include "abc/core.hpp"
+#include "constant.hpp"
+#include <sstream>
 #include "number.hpp"
 #include "diagnostics.hpp"
 #include "stdlib.hpp"
@@ -142,7 +144,7 @@ void append_collection_text(std::u16string& text, const Value& value, const Inst
 
 } // namespace
 
-void execute(const Program& program, std::istream& input, std::ostream& output, const ExecutionOptions& options) {
+static void execute_impl(const Program& program, std::istream& input, std::ostream& output, const ExecutionOptions& options, Value* constant_result) {
     try { verify(program); }
     catch (const Error& error) {
         throw Error(error.code, error.location, error.what(), "Некорректный байт-код: выполнение невозможно");
@@ -1233,6 +1235,21 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
     };
     run_to(0);
     console_output.finish();
+    if (constant_result) *constant_result=globals[0]->value;
+}
+
+void execute(const Program& program, std::istream& input, std::ostream& output, const ExecutionOptions& options) {
+    execute_impl(program,input,output,options,nullptr);
+}
+
+Value execute_scalar_constant(const Program& program) {
+    if (!program.routines.empty() || program.locals.size()!=1 || !program.locals[0].global
+        || compound(program.locals[0].type) || program.locals[0].type==Type::text_file)
+        throw Error("E_HIR",{},"Invalid scalar constant program");
+    std::istringstream input; std::ostringstream output; Value result;
+    ExecutionOptions options; options.instruction_limit=100'000; options.allocation_limit=1'048'576;
+    execute_impl(program,input,output,options,&result);
+    return result;
 }
 
 } // namespace abc

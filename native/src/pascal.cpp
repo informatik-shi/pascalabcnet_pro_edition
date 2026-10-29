@@ -1,4 +1,5 @@
 #include "hir.hpp"
+#include "constant.hpp"
 #include "number.hpp"
 #include "stdlib.hpp"
 #include "integer_values.hpp"
@@ -9,7 +10,6 @@
 
 
 #include <algorithm>
-#include <bit>
 #include <charconv>
 #include <cmath>
 #include <limits>
@@ -181,7 +181,7 @@ std::unique_ptr<SyntaxExpr> make_expression(SyntaxExprKind kind, Token token,
     return std::make_unique<SyntaxExpr>(SyntaxExpr{kind, std::move(token), std::move(left), std::move(right), depth, {}});
 }
 
-enum class SyntaxStmtKind { block, declaration, assignment, print, read, conditional, loop, increment, string_mutation, call, return_stmt,
+enum class SyntaxStmtKind { block, declaration, constant_declaration, assignment, print, read, conditional, loop, increment, string_mutation, call, return_stmt,
     for_loop, repeat_loop, break_stmt, continue_stmt, foreach_loop };
 struct SyntaxRoutine;
 struct SyntaxStmt {
@@ -254,8 +254,11 @@ public:
             } else if (accept("var")) {
                 do { root.statements.push_back(declaration()); expect(";"); }
                 while (current_.kind == TokenKind::name && !reserved(current_.text));
+            } else if (accept("const")) {
+                do { root.statements.push_back(constant_declaration()); expect(";"); }
+                while (current_.kind==TokenKind::name && !reserved(current_.text));
             } else if (is("function") || is("procedure")) root.routines.push_back(routine());
-            else fail("Expected type, var, function, procedure or begin");
+            else fail("Expected type, var, const, function, procedure or begin");
         }
         root.statements.push_back(block());
         expect(".");
@@ -342,12 +345,19 @@ private:
         }
         if (function) { expect(":"); result->result = type_syntax(); }
         expect(";");
-        while (accept("var")) {
-            do { result->body.statements.push_back(declaration()); expect(";"); }
+        while (is("var") || is("const")) {
+            const bool constants=accept("const"); if (!constants) expect("var");
+            do { result->body.statements.push_back(constants ? constant_declaration() : declaration()); expect(";"); }
             while (current_.kind == TokenKind::name && !reserved(current_.text));
         }
         result->body.statements.push_back(block()); expect(";");
         return result;
+    }
+    SyntaxStmt constant_declaration() {
+        SyntaxStmt result; result.kind=SyntaxStmtKind::constant_declaration; result.token=current_;
+        result.names.push_back(name());
+        if (accept(":")) result.annotation=type_syntax();
+        expect("="); result.expression=expression(); return result;
     }
     SyntaxStmt declaration() {
         SyntaxStmt result;
@@ -379,6 +389,7 @@ private:
         if (is(";")) return SyntaxStmt{};
         if (is("begin")) return block();
         if (accept("var")) return declaration();
+        if (accept("const")) return constant_declaration();
         SyntaxStmt result;
         result.token = current_;
         if (accept("exit")) {
@@ -726,6 +737,8 @@ public:
             scopes_.pop_back(); in_routine_ = false; current_name_.clear();
         }
         module_.body.statements.push_back(statement(source.statements.back()));
+        for (auto& statement:module_.body.statements) constant_initializers_.push_back(std::move(statement));
+        module_.body.statements=std::move(constant_initializers_);
         if (module_.print_delimiter) {
             hir::Stmt initial; initial.kind=hir::StmtKind::assign; initial.local=*module_.print_delimiter;
             initial.expression=std::make_unique<hir::Expr>(); initial.expression->kind=hir::ExprKind::literal;
@@ -766,7 +779,7 @@ private:
         }
     }
     void check_default_expression(const hir::Expr& expression) {
-        if (expression.kind==hir::ExprKind::local)
+        if (expression.kind==hir::ExprKind::local && !constant_locals_.contains(expression.local))
             throw Error("E_TYPE",expression.location,"Variable reference is not allowed in a default parameter expression");
         if (expression.left) check_default_expression(*expression.left);
         if (expression.right) check_default_expression(*expression.right);
@@ -922,7 +935,7 @@ private:
         throw Error("E_UNSUPPORTED",syntax.token.location,"Unknown or unsupported type '"+syntax.kind+"'");
     }
     bool constant_parameter_target(const hir::Expr& expression) const {
-        if (expression.kind==hir::ExprKind::local) return constant_parameters_.contains(expression.local);
+        if (expression.kind==hir::ExprKind::local) return constant_parameters_.contains(expression.local) || constant_locals_.contains(expression.local);
         if (expression.kind==hir::ExprKind::field) return constant_parameter_target(*expression.left);
         if (expression.kind==hir::ExprKind::index && compound(expression.left->type)
             && info(expression.left->type,expression.location).kind==CompoundKind::array) return constant_parameter_target(*expression.left);
@@ -970,6 +983,13 @@ private:
             for (std::size_t i=0;i<fields.size();++i) expression->arguments[i]=convert(std::move(expression->arguments[i]),fields[i].type);
             expression->type=type; return expression;
         }
+        if (integer_type(type) && integer_type(expression->type) && expression->kind!=hir::ExprKind::literal && !can_widen(expression->type,type)) {
+            if (const auto value=hir::constant_value(*expression)) {
+                const auto location=expression->location; const auto original_type=expression->type;
+                expression=std::make_unique<hir::Expr>(); expression->kind=hir::ExprKind::literal;
+                expression->type=original_type; expression->location=location; expression->value=*value;
+            }
+        }
         if (integer_type(type) && integer_type(expression->type) && expression->kind==hir::ExprKind::literal && !can_widen(expression->type,type)) {
             try {
                 if (small_integer(type)) expression->value=checked_small_integer(type,integral_number(expression->value,expression->location,type_name(type)),expression->location);
@@ -999,57 +1019,6 @@ private:
         return std::make_unique<hir::Expr>(hir::Expr{
             hir::ExprKind::convert, type, location, std::int32_t{0}, 0, "", std::move(expression), {}});
     }
-    // Initializer dimensions must be integer constants, never values read at runtime.
-    std::optional<std::int32_t> array_dimension_constant(const hir::Expr& node) const {
-        const auto checked=[&](std::int64_t n) {
-            if (n<INT32_MIN || n>INT32_MAX) throw runtime_error(RuntimeError::integer_overflow,node.location);
-            return static_cast<std::int32_t>(n);
-        };
-        if (node.kind==hir::ExprKind::literal && (integer_type(node.type) || node.type==Type::character || node.type==Type::boolean))
-            return checked(integral_number(node.value,node.location));
-        const bool cast=node.kind==hir::ExprKind::call && node.arguments.size()==1
-            && stdlib::signatures()[node.local].function==stdlib::Function::integer_cast;
-        if ((node.kind==hir::ExprKind::convert || cast) && integer_type(node.type)) {
-            const auto value=array_dimension_constant(cast ? *node.arguments[0] : *node.left);
-            if (!value) return {};
-            if (small_integer(node.type)) (void)checked_small_integer(node.type,*value,node.location);
-            if (wide_unsigned(node.type) && *value<0) throw runtime_error(RuntimeError::number_range,node.location,type_name(node.type));
-            return value;
-        }
-        if (node.type!=Type::integer) return {};
-        if (node.kind==hir::ExprKind::unary) {
-            const auto value=array_dimension_constant(*node.left);
-            if (!value) return {};
-            if (node.operation=="+") return value;
-            if (node.operation=="-") return checked(-std::int64_t{*value});
-            if (node.operation=="not") return std::bit_cast<std::int32_t>(~std::bit_cast<std::uint32_t>(*value));
-            return {};
-        }
-        if (node.kind!=hir::ExprKind::binary) return {};
-        const auto left=array_dimension_constant(*node.left),right=array_dimension_constant(*node.right);
-        if (!left || !right) return {};
-        const auto a=std::int64_t{*left},b=std::int64_t{*right};
-        if (node.operation=="+") return checked(a+b);
-        if (node.operation=="-") return checked(a-b);
-        if (node.operation=="*") return checked(a*b);
-        if (node.operation=="div" || node.operation=="mod") {
-            if (!b) throw runtime_error(RuntimeError::division_zero,node.location);
-            return checked(node.operation=="div" ? a/b : a%b);
-        }
-        auto bits=std::bit_cast<std::uint32_t>(*left);
-        const auto other=std::bit_cast<std::uint32_t>(*right);
-        if (node.operation=="and") return std::bit_cast<std::int32_t>(bits&other);
-        if (node.operation=="or") return std::bit_cast<std::int32_t>(bits|other);
-        if (node.operation=="xor") return std::bit_cast<std::int32_t>(bits^other);
-        const auto shift=other&31U;
-        if (node.operation=="shl") return std::bit_cast<std::int32_t>(bits<<shift);
-        if (node.operation=="shr") {
-            bits>>=shift;
-            if (*left<0 && shift) bits|=~std::uint32_t{0}<<(32U-shift);
-            return std::bit_cast<std::int32_t>(bits);
-        }
-        return {};
-    }
     std::unique_ptr<hir::Expr> expression(const SyntaxExpr& source) {
         auto result = std::make_unique<hir::Expr>();
         result->location = source.token.location;
@@ -1076,7 +1045,8 @@ private:
                 if (source.initialized_array) {
                     std::vector<std::int32_t> sizes;
                     for (const auto& dimension:result->arguments) {
-                        const auto size=array_dimension_constant(*dimension);
+                        const auto value=hir::constant_value(*dimension);
+                        const auto size=value ? std::optional<std::int32_t>{std::get<std::int32_t>(*value)} : std::nullopt;
                         if (!size) throw Error("E_UNSUPPORTED",dimension->location,"Array initializer size requires a constant integer expression");
                         if (*size<0) throw Error("E_RANGE",dimension->location,"Array initializer size cannot be negative");
                         sizes.push_back(*size);
@@ -1624,6 +1594,9 @@ private:
                 result->kind = hir::ExprKind::local;
                 result->local = *local;
                 result->type = module_.locals[*local].type;
+                if (const auto found=constant_values_.find(*local); found!=constant_values_.end()) {
+                    result->kind=hir::ExprKind::literal; result->value=found->second;
+                }
             } else if (auto routine = routine_names_.find(source.token.text); routine != routine_names_.end()) {
                 SyntaxExpr call{SyntaxExprKind::call,source.token,{},{},1,{},{}};
                 return expression(call);
@@ -2564,6 +2537,21 @@ private:
         for (std::size_t n=0;n<result.arguments.size();++n)
             result.arguments[n]=convert(std::move(result.arguments[n]),signature.parameters[n]);
     }
+    bool constant_initializer(const hir::Expr& node) const {
+        if (compound(node.type) || node.type==Type::unit || node.type==Type::text_file || node.type==Type::nil) return false;
+        switch (node.kind) {
+        case hir::ExprKind::literal: case hir::ExprKind::convert: case hir::ExprKind::unary:
+        case hir::ExprKind::binary: case hir::ExprKind::default_value: case hir::ExprKind::length: break;
+        case hir::ExprKind::local: return constant_locals_.contains(node.local);
+        case hir::ExprKind::call:
+            if (!stdlib::signatures()[node.local].unit.empty()) return false;
+            break;
+        default: return false;
+        }
+        if (node.left && !constant_initializer(*node.left)) return false;
+        if (node.right && !constant_initializer(*node.right)) return false;
+        return std::all_of(node.arguments.begin(),node.arguments.end(),[&](const auto& item){return constant_initializer(*item);});
+    }
     hir::Stmt scoped_statement(const SyntaxStmt& source) {
         scopes_.emplace_back();
         auto result = statement(source);
@@ -2579,6 +2567,28 @@ private:
             for (const auto& child : source.statements) result.statements.push_back(statement(child));
             scopes_.pop_back();
             break;
+        case SyntaxStmtKind::constant_declaration: {
+            const auto& name=source.names.front();
+            if (scopes_.back().contains(name.text) || (!in_routine_ && routine_names_.contains(name.text)))
+                throw Error("E_DUPLICATE",name.location,"Duplicate constant name '"+name.text+"'");
+            auto initial=expression(*source.expression);
+            const auto type=source.annotation ? resolve_type(*source.annotation) : initial->type;
+            if (compound(type) || type==Type::text_file || type==Type::nil || type==Type::unit)
+                throw Error("E_UNSUPPORTED",name.location,"Only scalar const declarations are ported");
+            initial=convert(std::move(initial),type);
+            if (!constant_initializer(*initial)) throw Error("E_TYPE",name.location,"Constant initializer cannot read a variable or call a user routine");
+            const auto value=hir::constant_value(*initial);
+            if (module_.locals.size()>=4096) throw Error("E_LIMIT",name.location,"Local and constant limit exceeded");
+            const auto local=module_.locals.size();
+            module_.locals.push_back({name.text,type,true}); scopes_.back()[name.text]=local; constant_locals_.insert(local);
+            if (value) constant_values_[local]=*value;
+            else {
+                hir::Stmt initialize; initialize.kind=hir::StmtKind::assign; initialize.local=local;
+                initialize.location=name.location; initialize.expression=std::move(initial);
+                constant_initializers_.push_back(std::move(initialize));
+            }
+            break;
+        }
         case SyntaxStmtKind::declaration: {
             auto initial = source.expression ? expression(*source.expression) : nullptr;
             auto type = initial ? initial->type : Type::invalid;
@@ -2728,7 +2738,7 @@ private:
                 scopes_.back()[name.text]=control;
             } else {
                 control=resolve(name);
-                if (constant_parameters_.contains(control)) throw Error("E_TYPE",name.location,"Cannot use a const parameter as an iteration variable");
+                if (constant_parameters_.contains(control) || constant_locals_.contains(control)) throw Error("E_TYPE",name.location,"Cannot use a const parameter as an iteration variable");
                 if (for_controls_.contains(control)) throw Error("E_TYPE",name.location,"Cannot reuse an active iteration variable");
                 if (in_routine_ && module_.locals[control].global) throw Error("E_TYPE",name.location,"Foreach variable must be local to the routine");
                 if (in_routine_ && current_result_!=Type::unit && module_.locals[control].name=="result")
@@ -2757,7 +2767,7 @@ private:
                 scopes_.back()[name.text]=control;
             } else {
                 control=resolve(name);
-                if (constant_parameters_.contains(control)) throw Error("E_TYPE",name.location,"Cannot use a const parameter as a for control variable");
+                if (constant_parameters_.contains(control) || constant_locals_.contains(control)) throw Error("E_TYPE",name.location,"Cannot use a const parameter as a for control variable");
                 if (for_controls_.contains(control)) throw Error("E_TYPE",name.location,"Cannot reuse an active for control variable");
                 if (in_routine_ && module_.locals[control].global) throw Error("E_TYPE",name.location,"For control must be local to the routine");
                 if (in_routine_ && current_result_!=Type::unit && module_.locals[control].name=="result") throw Error("E_UNSUPPORTED",name.location,"Function Result as for control is not supported");
@@ -2855,7 +2865,9 @@ private:
     Type current_result_ = Type::unit;
     std::string current_name_;
     std::vector<std::map<std::string, std::size_t>> scopes_;
-    std::set<std::size_t> for_controls_,constant_parameters_;
+    std::set<std::size_t> for_controls_,constant_parameters_,constant_locals_;
+    std::map<std::size_t,Value> constant_values_;
+    std::vector<hir::Stmt> constant_initializers_;
     unsigned loop_depth_=0;
 };
 

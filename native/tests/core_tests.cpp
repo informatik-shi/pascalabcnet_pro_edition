@@ -712,7 +712,7 @@ void sequence_slices_library() {
     runtime_error("begin Seq(1,2).Skip(3).First; end.","E_EMPTY");
     runtime_error("begin var a:=new List<integer>; a.Add(1); foreach var x in a.Take(2) do a.Add(2); end.","E_MODIFIED");
     runtime_error("begin var a:=new List<integer>; a.Add(1); a.Add(2); a.Add(3); foreach var x in a.SkipLast(1) do a.Clear; end.","E_MODIFIED");
-    for (const auto source:{"begin Seq(1,2).Take(1.0); end.","begin Seq(1,2).Skip(int64(1)); end.","begin Take(Arr(1),1,2); end.","begin TakeLast(Arr(1)); end.","begin Skip(Arr(1)); end.","begin Writeln((new integer[1,2]).Take(1)); end.","begin var a:sequence of real:=Seq(1,2).Take(1); end."}) compile_error(source,"E_TYPE");
+    for (const auto source:{"begin Seq(1,2).Take(1.0); end.","begin var n:int64:=1; Seq(1,2).Skip(n); end.","begin Take(Arr(1),1,2); end.","begin TakeLast(Arr(1)); end.","begin Skip(Arr(1)); end.","begin Writeln((new integer[1,2]).Take(1)); end.","begin var a:sequence of real:=Seq(1,2).Take(1); end."}) compile_error(source,"E_TYPE");
     abc::ExecutionOptions options; options.instruction_limit=1000; options.allocation_limit=64;
     require(run("begin var s:=SeqFill(MaxInt,1); Writeln(s.Take(3).Sum,' ',s.SkipLast(1).First); Writeln(Range(0bi,1bi shl 100).Take(3).Sum); end.","",options)=="3 1\n3\n","Prefix slicing and bounded lookahead work on huge lazy inputs");
     options.instruction_limit=100000;
@@ -1872,6 +1872,41 @@ void structural_output() {
     program=abc::compile("begin Writeln(ObjectToString(Arr(1))); end.");
     for (auto& instruction:program.code) if (instruction.op==abc::Op::object_text) instruction.type=abc::Type::text_file;
     error([&]{abc::verify(program);},"E_BYTECODE");
+}
+
+void constants_language() {
+    result("const a=2; b=a*3+5; c:byte=b; d=1.3+2.4+2; e='a'#66; f:integer=Ord('Я'); begin Writeln(a,' ',b,' ',c,' ',d,' ',e,' ',f); var xs:=new integer[a](b,c); Writeln(xs); end.","2 11 11 5.7 aB 1071\n[11,11]\n");
+    result("const a:int64=1; b:uint64=a+2; c:word=10*20; d=not(MaxInt); begin Writeln(b,' ',c,' ',d,' ',new integer[int64(1)+1](4,5)); end.","3 200 -2147483648 [4,5]\n");
+    result("const c='x'; s:string=c; t:string=nil; yes=True; no=not yes; n=default(integer); begin Writeln(s,' ',t=nil,' ',no,' ',n); end.","x True False 0\n");
+    result("const h=Round(1.3); h2=h; procedure P; const dh=h; begin Writeln(dh); end; begin P; P; Writeln(h2=h); end.","1\n1\nTrue\n");
+    result("const n=3; procedure P; const n=2; a=n+1; begin Writeln(n,' ',a); end; begin P; Writeln(n); begin const n=5; Writeln(n); end; Writeln(n); end.","2 3\n3\n5\n3\n");
+    result("procedure P; const n=ReadInteger; begin Writeln(n); end; begin P; P; Writeln(ReadInteger); end.","7\n7\n8\n","7 8");
+    result("const a=ReadInteger; b=a+2; var x:=b; function F(n:integer:=a):integer; begin Result:=n; end; begin Writeln(a,' ',b,' ',x,' ',F); end.","5 7 7 5\n","5");
+    result("function F:integer; const n=ReadInteger; begin Result:=n; end; var x:=F; begin Writeln(x,' ',F); end.","9 9\n","9");
+    result("const a=1; procedure P(const a:integer); begin Writeln(a); end; begin P(3); var a:=4; Writeln(a); end.","3\n4\n");
+    result("const a=1 shl 63; b=int64(1) shl 63; c=uint64(1) shl 63; d=byte(255); begin Writeln(a,' ',b,' ',c,' ',d); end.","-2147483648 -9223372036854775808 9223372036854775808 255\n");
+    compile_error("const a=1; a=2; begin end.","E_DUPLICATE");
+    compile_error("const a=missing; begin end.","E_NAME");
+    compile_error("const a=b; b=1; begin end.","E_NAME");
+    compile_error("var x:=1; const a=x; begin end.","E_TYPE");
+    compile_error("function F:integer; begin Result:=1; end; const a=F; begin end.","E_TYPE");
+    compile_error("procedure P(x:integer); const a=x; begin end; begin end.","E_TYPE");
+    compile_error("const a:byte=256; begin end.","E_RANGE");
+    compile_error("const a:integer='x'; begin end.","E_TYPE");
+    compile_error("const a=MaxInt+1; begin end.","E_OVERFLOW");
+    compile_error("const a=1 div 0; begin end.","E_DIV_ZERO");
+    for (const auto source:{"const n=3; begin n:=4; end.","const n=3; begin Inc(n); end.",
+        "const n=ReadInteger; begin n:=4; end.","const n=ReadInteger; begin Read(n); end.",
+        "const n=3; begin for n:=1 to 3 do Write(n); end.","const n=ReadInteger; begin foreach n in Arr(1) do Write(n); end.",
+        "const n=3; procedure P(var x:integer); begin end; begin P(n); end.",
+        "const n=ReadInteger; procedure P(out x:integer); begin end; begin P(n); end.",
+        "const s='abc'; begin SetLength(s,4); end."}) compile_error(source,"E_TYPE");
+    runtime_error("const n=ReadInteger; begin end.","E_INPUT");
+    runtime_error("const n=ISqrt(-1); begin end.","E_DOMAIN");
+    compile_error("const a=Arr(1,2); begin end.","E_UNSUPPORTED");
+    result("begin var n:byte:=100+1; Writeln(n); end.","101\n");
+    result("begin Writeln(Seq(1,2).Skip(int64(1)).ToArray); end.","[2]\n");
+    compile_error("begin var n:byte:=100+200; end.","E_RANGE");
 }
 
 void array_initializers_language() {
@@ -3782,6 +3817,7 @@ int main() {
     console_unicode_output();
     rectangular_arrays();
     array_initializers_language();
+    constants_language();
     structural_output();
     try_console_read();
     string_conversions();
