@@ -750,6 +750,31 @@ void sequence_slices_library() {
     }
 }
 
+void sequence_flatmap_library() {
+    result("var calls:integer; function Parts(value:integer):array of integer; begin Inc(calls); Result:=Arr(value,value+10); end; begin var s:=Seq(1,2).SelectMany(Parts); Writeln(calls); Writeln(s.Take(3).ToArray,' ',calls); Writeln(s.First,' ',calls); Writeln(s.Count,' ',calls); end.","0\n[1,11,2] 2\n1 3\n4 5\n");
+    result("function Parts(value,index:integer):sequence of integer; begin Result:=SeqFill(index,value); end; begin var s:=SelectMany(Arr(5,6,7),Parts); Writeln(s.ToArray,' ',s.ToArray); Writeln((new integer[0]).SelectMany(Parts).Count); end.","[6,7,7] [6,7,7]\n0\n");
+    result("function Chars(value:string):string; begin Result:=value; end; function Codes(value:integer):List<integer>; begin Result:=new List<integer>; Result.Add(value); Result.Add(value+1); end; begin var s:='ab'; Writeln(PABCSystem.SelectMany(Seq(s,'cd'),Chars).ToArray); Writeln(Seq(1,3).SelectMany(Codes).ToList); end.","[a,b,c,d]\n[1,2,3,4]\n");
+    result("function Inner(value:integer):sequence of integer; begin Result:=Seq(value,value+10); end; function Outer(value:integer):sequence of integer; begin Result:=Seq(value,value+1).SelectMany(Inner); end; begin Writeln(Seq(1,3).SelectMany(Outer).ToArray); end.","[1,11,2,12,3,13,4,14]\n");
+    result("function Parts(value:integer):sequence of integer; begin Result:=Seq(value,value+1); end; begin var s:=Seq(1,3).SelectMany(Parts); foreach var x in s do foreach var y in s.Take(1) do Write(x,':',y,';'); Writeln; end.","1:1;2:1;3:1;4:1;\n");
+    result("type R=record x:integer; a:array of integer; end; function Parts(value:R):array of R; begin Result:=Arr(value,value); end; begin var r:R; r.x:=1; r.a:=Arr(2); var s:=Seq(r).SelectMany(Parts); r.x:=9; r.a[0]:=3; var a:=s.ToArray; a[0].x:=7; Writeln(a[0].x,' ',a[1].x,' ',r.x,' ',a[1].a[0]); end.","7 1 9 3\n");
+    result("function Parts(value:integer):sequence of integer; begin Result:=nil; end; begin var s:=Seq(1).SelectMany(Parts); Writeln(s<>nil,' ',s.Take(0).Any); end.","True False\n");
+    result("function Parts(value:integer):sequence of integer; begin Result:=Seq(value); end; begin Writeln(Range(MaxInt,MaxInt,1).SelectMany(Parts).Take(1).Single); end.","2147483647\n");
+    result("var a:array of integer; function Parts(value:integer):array of integer; begin Result:=a; end; begin a:=Arr(1,2); foreach var x in Seq(0).SelectMany(Parts) do begin Write(x,';'); a[1]:=3; end; Writeln; end.","1;3;\n");
+    runtime_error("function Parts(value:integer):sequence of integer; begin Result:=nil; end; begin Seq(1).SelectMany(Parts).First; end.","E_NIL");
+    runtime_error("function Parts(value:integer):array of integer; begin Result:=nil; end; begin Seq(1).SelectMany(Parts).First; end.","E_NIL");
+    runtime_error("function Parts(value:integer):sequence of integer; begin Result:=Seq(value); end; begin var s:sequence of integer; var a:=s.SelectMany(Parts); end.","E_NIL");
+    runtime_error("function Parts(value:integer):sequence of integer; begin Result:=Seq(value); end; begin Range(MaxInt,MaxInt,1).SelectMany(Parts).Count; end.","E_OVERFLOW");
+    runtime_error("var a:List<integer>; function Parts(value:integer):List<integer>; begin Result:=a; end; begin a:=new List<integer>; a.Add(1); foreach var x in Seq(0).SelectMany(Parts) do a.Add(2); end.","E_MODIFIED");
+    for(const auto source:{"function F(value:integer):integer; begin Result:=value; end; begin Seq(1).SelectMany(F); end.","function F(value:integer):array[,] of integer; begin Result:=new integer[1,2]; end; begin Seq(1).SelectMany(F); end.","function F(var value:integer):sequence of integer; begin Result:=Seq(value); end; begin Seq(1).SelectMany(F); end.","function F(value:integer;index:int64):sequence of integer; begin Result:=Seq(value); end; begin Seq(1).SelectMany(F); end."}) compile_error(source,"E_TYPE");
+    abc::ExecutionOptions options; options.allocation_limit=80; options.instruction_limit=1000;
+    require(run("function Huge(value:integer):sequence of BigInteger; begin Result:=Range(0bi,1bi shl 100); end; begin Writeln(Seq(1).SelectMany(Huge).Take(3).ToArray); end.","",options)=="[0,1,2]\n","SelectMany streams a huge lazy inner source");
+    options={}; options.instruction_limit=100;
+    error([&]{(void)run("function Empty(value:integer):sequence of integer; begin Result:=SeqFill(0,1); end; begin SeqFill(MaxInt,1).SelectMany(Empty).First; end.","",options);},"E_LIMIT");
+    options={}; std::size_t polls=0; options.cancelled=[&]{return ++polls>100;};
+    error([&]{(void)run("function Empty(value:integer):sequence of integer; begin Result:=SeqFill(0,1); end; begin SeqFill(10000,1).SelectMany(Empty).First; end.","",options);},"E_CANCELLED");
+    auto invalid=abc::compile("function F(value:integer):sequence of integer; begin Result:=Seq(value); end; begin Seq(1).SelectMany(F); end."); for(auto& instruction:invalid.code) if(instruction.op==abc::Op::sequence_flatmap) instruction.op=abc::Op::sequence_select; error([&]{abc::verify(invalid);},"E_BYTECODE");
+}
+
 void sequence_predicate_library() {
     result("var calls:integer; function Even(value:integer):boolean; begin Inc(calls); Result:=value mod 2=0; end; begin var s:=Range(1,4); Writeln(s.Any(Even),' ',calls); Writeln(s.All(Even),' ',calls); Writeln(s.Count(Even),' ',calls); Writeln(s.First(Even),' ',calls); Writeln(s.Last(Even),' ',calls); Writeln(Seq(1,2,3).Single(Even),' ',calls); Writeln(Seq(1,3).SingleOrDefault(Even),' ',calls); end.","True 2\nFalse 3\n2 7\n2 9\n4 13\n2 16\n0 18\n");
     result("function Yes(value:integer):boolean; begin Result:=True; end; function No(value:integer):boolean; begin Result:=False; end; begin var a:=new integer[0]; Writeln(a.Any(Yes),' ',a.All(No),' ',a.Count(Yes),' ',a.FirstOrDefault(Yes),' ',a.LastOrDefault(Yes),' ',a.SingleOrDefault(Yes)); Writeln(Any(Seq(1),Yes),' ',All(Arr(2,4),Yes),' ',Count(Arr(1,2,3),No),' ',PABCSystem.First(Seq(3),Yes)); end.","False True 0 0 0 0\nTrue True 0 3\n");
@@ -3713,6 +3738,7 @@ int main() {
     sequence_tools_library();
     sequence_callbacks_library();
     sequence_predicate_library();
+    sequence_flatmap_library();
     default_arguments_language();
     school_factor_library();
     sequence_mutations();

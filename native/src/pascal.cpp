@@ -1919,8 +1919,8 @@ private:
         result.local=routine|(static_cast<std::size_t>(*method)<<8); return true;
     }
     bool bind_sequence_transform(hir::Expr& result,const SyntaxExpr& source,std::string_view unit={},bool member=false,std::string_view operation={}) {
-        const auto name=operation.empty() ? std::string_view(source.token.text) : operation; const bool predicate=name=="where";
-        if ((name!="select" && !predicate) || (!unit.empty() && unit!="pabcsystem")) return false;
+        const auto name=operation.empty() ? std::string_view(source.token.text) : operation; const bool predicate=name=="where",flatten=name=="selectmany";
+        if ((name!="select" && !predicate && !flatten) || (!unit.empty() && unit!="pabcsystem")) return false;
         if (source.arguments.size()!=(member ? 1U : 2U)) throw Error("E_TYPE",result.location,"Select/Where require a source and typed function");
         const auto& callback=*source.arguments[member ? 0 : 1];
         if (callback.kind!=SyntaxExprKind::name || !routine_names_.contains(callback.token.text)
@@ -1934,7 +1934,7 @@ private:
             || signature.result==Type::unit || (predicate && signature.result!=Type::boolean))
             throw Error("E_TYPE",callback.token.location,"Select/Where function requires an exact element by value, optional integer index and a value result (boolean for Where)");
         result.left=convert(std::move(result.left),sequence_type(CompoundKind::sequence,input.element));
-        result.type=sequence_type(CompoundKind::sequence,predicate ? input.element : signature.result);
+        result.type=sequence_type(CompoundKind::sequence,predicate ? input.element : flatten ? sequence_source(signature.result,callback.token.location).element : signature.result);
         result.kind=hir::ExprKind::sequence_transform; result.local=routine; return true;
     }
     bool bind_sequence_default(hir::Expr& result,std::string_view name,std::string_view unit={}) {

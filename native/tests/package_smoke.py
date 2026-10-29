@@ -6,6 +6,47 @@ from pathlib import Path
 import subprocess
 import tempfile
 import zipfile
+import struct
+
+
+def assert_native_binaries(folder):
+    """Reject CLR metadata and runtime hosts in the actual extracted package."""
+    checked = 0
+    for binary in folder.rglob("*"):
+        if not binary.is_file():
+            continue
+        name = binary.name.lower()
+        if (name in {"dotnet", "dotnet.exe", "mscorlib.dll", "system.private.corelib.dll", "mono", "mono.exe"}
+                or name.startswith(("coreclr.", "libcoreclr.", "clr.", "libmonosgen-", "mono-2.0."))
+                or name.endswith(".runtimeconfig.json")):
+            raise RuntimeError(f"Managed runtime is forbidden in the application package: {binary}")
+        if binary.suffix.lower() not in {".exe", ".dll", ".netmodule"}:
+            continue
+        data = binary.read_bytes()
+        if not data.startswith(b"MZ"):
+            continue
+        if len(data) < 64:
+            raise RuntimeError(f"Truncated PE binary: {binary}")
+        pe = struct.unpack_from("<I", data, 60)[0]
+        if pe + 24 > len(data) or data[pe:pe + 4] != b"PE\0\0":
+            raise RuntimeError(f"Invalid PE binary: {binary}")
+        optional = pe + 24
+        size = struct.unpack_from("<H", data, pe + 20)[0]
+        if size < 2 or optional + size > len(data):
+            raise RuntimeError(f"Truncated PE optional header: {binary}")
+        magic = struct.unpack_from("<H", data, optional)[0]
+        directories = {0x10b: 96, 0x20b: 112}.get(magic)
+        if directories is None or size < directories:
+            raise RuntimeError(f"Unsupported PE optional header: {binary}")
+        count = struct.unpack_from("<I", data, optional + directories - 4)[0]
+        if count > 14:
+            if size < directories + 15 * 8:
+                raise RuntimeError(f"Truncated CLR directory: {binary}")
+            address, length = struct.unpack_from("<II", data, optional + directories + 14 * 8)
+            if address or length:
+                raise RuntimeError(f"CLR-managed binary is forbidden in the application package: {binary}")
+        checked += 1
+    return checked
 
 
 def main():
@@ -22,6 +63,7 @@ def main():
             folder = Path(temporary)
             with zipfile.ZipFile(archive) as package:
                 package.extractall(folder)
+            native_binaries = assert_native_binaries(folder)
             if not (folder / "licenses" / "PCRE2-LICENCE.md").is_file():
                 raise RuntimeError(f"{name} PCRE2 license is missing")
             env = os.environ.copy()
@@ -126,6 +168,7 @@ def main():
                 ("regex-search.pas", "Есть число: True\nПервое число: 123\nБез числа: []\nПроверка: True\n"),
                 ("sequence-lists.pas", "Массив: [1,2]\nСписок: [9,2,3]\nКопия: [9,2,3]\nПосле изменения: [9,8,3]\n"),
                 ("sequence-factories.pas", "Снимок: [1,2]\nИсходный массив: [9,2]\nПовторения: [да,да,да]\nПервый большого повтора: 7\nДиапазон: [2,3,4,5]\nСимволы: abc\n"),
+                ("sequence-flatmap.pas", "Все элементы: [1,1,2,1,2,3]\nПервые четыре: [1,1,2,1]\nСумма: 10\n"),
                 ("sequence-predicates.pas", "Есть чётные: True\nЧётных чисел: 5\nПервое чётное: 2\nСумма квадратов: 385\n"),
                 ("sequence-callbacks.pas", "Квадраты чётных: [4,16,36,64,100]\nПервые два: [4,16]\nСумма: 220\n"),
                 ("sequence-tools.pas", "В обратном порядке: [3,2,1]\nИсходный массив: [1,2,3]\nЗначение для пустого источника: 42\nСовпадают: True\n"),
@@ -498,7 +541,7 @@ def main():
                     or "EN: Instruction limit exceeded" not in invalid.stderr
                     or "RU: Превышен предел числа выполняемых инструкций" not in invalid.stderr or f"{single}:5:" not in invalid.stderr):
                 raise RuntimeError(f"{name} SingleNode cycle limit failed: {invalid.stderr!r}")
-            results.append({"variant": name, "gui": "passed", "sum": 55, "type_error_before_output": "passed", "bilingual_runtime_error": "passed", "standard_library": "passed", "text_conversions": "passed", "string_mutations": "passed", "arrays_records_routines_lists": "passed", "text_files": "passed", "bilingual_array_error": "passed", "stacks_queues": "passed", "bilingual_empty_collections": "passed", "dynarray_simpleset": "passed", "bilingual_dynarray_error": "passed", "assocarray": "passed", "typed_keys_before_output": "passed", "bilingual_assocarray_error": "passed", "linked_lists": "passed", "bilingual_linked_error": "passed", "cyclic_linked_limit": "passed", "single_nodes": "passed", "bilingual_single_error": "passed", "single_cycle_limit": "passed"})
+            results.append({"native_pe_binaries": native_binaries, "no_managed_runtime": "passed", "variant": name, "gui": "passed", "sum": 55, "type_error_before_output": "passed", "bilingual_runtime_error": "passed", "standard_library": "passed", "text_conversions": "passed", "string_mutations": "passed", "arrays_records_routines_lists": "passed", "text_files": "passed", "bilingual_array_error": "passed", "stacks_queues": "passed", "bilingual_empty_collections": "passed", "dynarray_simpleset": "passed", "bilingual_dynarray_error": "passed", "assocarray": "passed", "typed_keys_before_output": "passed", "bilingual_assocarray_error": "passed", "linked_lists": "passed", "bilingual_linked_error": "passed", "cyclic_linked_limit": "passed", "single_nodes": "passed", "bilingual_single_error": "passed", "single_cycle_limit": "passed"})
             loop = folder / "Циклы.pas"
             loop.write_text("begin\n repeat until false;\nend.", encoding="utf-8")
             invalid = subprocess.run([runner, "run", str(loop), "--max-instructions=50"], text=True, encoding="utf-8",
@@ -588,6 +631,7 @@ def main():
             results[-1]["typed_reverse_default_if_empty_sequence_equal_and_views"] = "passed"
             results[-1]["typed_lazy_select_where_and_shared_vm_callbacks"] = "passed"
             results[-1]["typed_predicate_queries_and_numeric_selectors"] = "passed"
+            results[-1]["typed_lazy_select_many"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 

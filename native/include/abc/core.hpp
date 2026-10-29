@@ -110,9 +110,9 @@ struct ConcatState {
     bool positioned=false,available=false,second=false,ended=false;
 };
 struct TransformState {
-    std::shared_ptr<Aggregate> iterator;
+    std::shared_ptr<Aggregate> iterator,inner;
     Value current=std::int32_t{0};
-    std::uint64_t index=0,source_index=0,work=0;
+    std::uint64_t index=0,source_index=0,inner_index=0,work=0;
     bool positioned=false,available=false,ended=false;
 };
 struct SequenceState {
@@ -135,7 +135,7 @@ struct SequenceState {
     std::shared_ptr<ConcatState> concat;
     std::shared_ptr<TransformState> transform;
     std::size_t callback=0;
-    bool predicate=false;
+    bool predicate=false,flatten=false;
 };
 struct Aggregate {
     Type type;
@@ -167,7 +167,7 @@ enum class Op {
     read_lines, write_lines, array_copy, array_high, sequence_sort, sequence_fill, mutate_string, increment, read_value,
     endpoint_call, buffer_call, association_call, linked_call, file_print, file_newline, file_read, file_skip_line, file_output,
     iteration_version, iteration_check, set_character, random_array, fill_random_array, sequence_mutate, swap_values, write_array,
-    bit_not, bit_and, bit_or, bit_xor, shift_left, shift_right, read_console, read_array, console_output, array_query, write_matrix, object_text, print_output, try_read, convert_string, try_parse, val, string_read, string_array, school_list, replace_last, replace_many, school_fold, tuple_literal, school_pair, school_minmax, school_table_print, school_table_new, school_ip, sequence_begin, sequence_count, sequence_array, sequence_wrap, swap_substrings, sequence_list, sequence_query, sequence_snapshot, sequence_repeat, sequence_range, sequence_resume, sequence_partition, sequence_aggregate, sequence_partial, sequence_slice, sequence_concat, sequence_equal, sequence_default, sequence_select, sequence_where, sequence_predicate
+    bit_not, bit_and, bit_or, bit_xor, shift_left, shift_right, read_console, read_array, console_output, array_query, write_matrix, object_text, print_output, try_read, convert_string, try_parse, val, string_read, string_array, school_list, replace_last, replace_many, school_fold, tuple_literal, school_pair, school_minmax, school_table_print, school_table_new, school_ip, sequence_begin, sequence_count, sequence_array, sequence_wrap, swap_substrings, sequence_list, sequence_query, sequence_snapshot, sequence_repeat, sequence_range, sequence_resume, sequence_partition, sequence_aggregate, sequence_partial, sequence_slice, sequence_concat, sequence_equal, sequence_default, sequence_select, sequence_where, sequence_predicate, sequence_flatmap
 };
 
 enum class SequenceQuery { any, first, last, first_default, last_default, element, element_default, contains, single, single_default };

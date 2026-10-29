@@ -269,9 +269,9 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
             const auto source=std::get<std::shared_ptr<Aggregate>>(pop());
             stack.push_back(sequence_predicate(values,source,instruction.operand&255U,static_cast<PredicateQuery>(instruction.operand>>8),options)); break;
         }
-        case Op::sequence_select: case Op::sequence_where: {
+        case Op::sequence_select: case Op::sequence_where: case Op::sequence_flatmap: {
             const auto source=std::get<std::shared_ptr<Aggregate>>(pop());
-            stack.emplace_back(sequence_transform(values,static_cast<Type>(instruction.operand>>8),source,instruction.operand&255U,instruction.op==Op::sequence_where,options)); break;
+            stack.emplace_back(sequence_transform(values,static_cast<Type>(instruction.operand>>8),source,instruction.operand&255U,instruction.op==Op::sequence_where,options,instruction.op==Op::sequence_flatmap)); break;
         }
         case Op::sequence_default: {
             auto fallback=pop(); const auto source=std::get<std::shared_ptr<Aggregate>>(pop());
