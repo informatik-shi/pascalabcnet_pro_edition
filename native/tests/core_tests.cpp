@@ -750,6 +750,32 @@ void sequence_slices_library() {
     }
 }
 
+void sequence_predicate_library() {
+    result("var calls:integer; function Even(value:integer):boolean; begin Inc(calls); Result:=value mod 2=0; end; begin var s:=Range(1,4); Writeln(s.Any(Even),' ',calls); Writeln(s.All(Even),' ',calls); Writeln(s.Count(Even),' ',calls); Writeln(s.First(Even),' ',calls); Writeln(s.Last(Even),' ',calls); Writeln(Seq(1,2,3).Single(Even),' ',calls); Writeln(Seq(1,3).SingleOrDefault(Even),' ',calls); end.","True 2\nFalse 3\n2 7\n2 9\n4 13\n2 16\n0 18\n");
+    result("function Yes(value:integer):boolean; begin Result:=True; end; function No(value:integer):boolean; begin Result:=False; end; begin var a:=new integer[0]; Writeln(a.Any(Yes),' ',a.All(No),' ',a.Count(Yes),' ',a.FirstOrDefault(Yes),' ',a.LastOrDefault(Yes),' ',a.SingleOrDefault(Yes)); Writeln(Any(Seq(1),Yes),' ',All(Arr(2,4),Yes),' ',Count(Arr(1,2,3),No),' ',PABCSystem.First(Seq(3),Yes)); end.","False True 0 0 0 0\nTrue True 0 3\n");
+    result("function Letter(value:char):boolean; begin Result:=value='b'; end; function Text(value:string):boolean; begin Result:=value='ab'; end; begin Writeln('abc'.Any(Letter),' ','abc'.First(Letter),' ','abc'.Single(Letter),' ',Ord(''.LastOrDefault(Letter))); Writeln(Seq('ab','cd').First(Text),' ',(new string[0]).FirstOrDefault(Text)=nil); end.","True b b 0\nab True\n");
+    result("type R=record x:integer; s:string; end; function Match(value:R):boolean; begin value.x:=99; Result:=True; end; begin var r:R; r.x:=2; var a:=Arr(r); var b:=a.Single(Match); b.x:=7; Writeln(a[0].x,' ',b.x,' ',(new R[0]).FirstOrDefault(Match).s=nil); end.","2 7 True\n");
+    result("function Yes(value:integer):boolean; begin Result:=True; end; function No(value:integer):boolean; begin Result:=False; end; begin Writeln(Range(MaxInt,MaxInt,1).Any(Yes),' ',Range(MaxInt,MaxInt,1).All(No),' ',Range(MaxInt,MaxInt,1).First(Yes)); end.","True False 2147483647\n");
+    result("function Even(value:integer):boolean; begin Result:=value mod 2=0; end; function Outer(value:integer):boolean; begin Result:=Seq(value).Any(Even); end; begin Writeln(Seq(1,2,3).Count(Outer)); end.","1\n");
+    result("var calls:integer; function Square(value:integer):integer; begin Inc(calls); Result:=value*value; end; function Wide(value:integer):int64; begin Result:=int64(value)*1000000000; end; function Fraction(value:integer):real; begin Result:=value/2; end; begin Writeln(Range(1,3).Sum(Square),' ',calls); Writeln(Average(Arr(1,2,3),Fraction),' ',PABCSystem.Sum(Arr(1,2,3),Wide)); Writeln((new integer[0]).Sum(Square),' ',calls); end.","14 3\n1 6000000000\n0 3\n");
+    result("function Any(a:array of integer):integer; begin Result:=77; end; function Yes(value:integer):boolean; begin Result:=True; end; begin Writeln(Any(Arr(1)),' ',PABCSystem.Any(Arr(1),Yes)); end.","77 True\n");
+    for (const auto method:{"First","Last","Single"}) runtime_error("function No(value:integer):boolean; begin Result:=False; end; begin Seq(1,2)."+std::string(method)+"(No); end.","E_EMPTY");
+    for (const auto method:{"Single","SingleOrDefault"}) runtime_error("function Yes(value:integer):boolean; begin Result:=True; end; begin Seq(1,2)."+std::string(method)+"(Yes); end.","E_MANY");
+    for (const auto method:{"Any","All","Count","FirstOrDefault","LastOrDefault","SingleOrDefault"}) runtime_error("function Yes(value:integer):boolean; begin Result:=True; end; begin var a:sequence of integer; a."+std::string(method)+"(Yes); end.","E_NIL");
+    runtime_error("function Yes(value:integer):boolean; begin Result:=True; end; begin Range(MaxInt,MaxInt,1).All(Yes); end.","E_OVERFLOW");
+    runtime_error("function No(value:integer):boolean; begin Result:=False; end; begin Range(MaxInt,MaxInt,1).Count(No); end.","E_OVERFLOW");
+    runtime_error("function CopyValue(value:integer):integer; begin Result:=value; end; begin Seq(MaxInt,1).Sum(CopyValue); end.","E_OVERFLOW");
+    runtime_error("function CopyValue(value:integer):integer; begin Result:=value; end; begin var a:=new integer[0]; a.Average(CopyValue); end.","E_EMPTY");
+    for(const auto source:{"function F(value:integer):integer; begin Result:=1; end; begin Seq(1).All(F); end.","function F(value:integer;index:integer):boolean; begin Result:=True; end; begin Seq(1).Any(F); end.","function F(var value:integer):boolean; begin Result:=True; end; begin Seq(1).Count(F); end.","function F(value:real):boolean; begin Result:=True; end; begin Seq(1).First(F); end.","begin Seq(1).All; end.","begin Seq(1).Any(Abs); end.","function F(value:integer):BigInteger; begin Result:=value; end; begin Seq(1).Sum(F); end.","function F(value,index:integer):integer; begin Result:=value; end; begin Seq(1).Average(F); end."}) compile_error(source,"E_TYPE");
+    abc::ExecutionOptions options; options.instruction_limit=100;
+    error([&]{(void)run("function No(value:integer):boolean; begin Result:=False; end; begin SeqFill(MaxInt,1).Any(No); end.","",options);},"E_LIMIT");
+    options={}; options.call_limit=8;
+    error([&]{(void)run("function F(value:integer):boolean; begin if value=0 then Result:=True else Result:=Seq(value-1).Any(F); end; begin Seq(20).Any(F); end.","",options);},"E_LIMIT");
+    auto invalid=abc::compile("function Yes(value:integer):boolean; begin Result:=True; end; begin Seq(1).Any(Yes); end.");for(auto& instruction:invalid.code) if(instruction.op==abc::Op::sequence_predicate) instruction.operand=(99U<<8); error([&]{abc::verify(invalid);},"E_BYTECODE");
+    invalid=abc::compile("function Yes(value:integer):boolean; begin Result:=True; end; begin Seq(1).Any(Yes); end.");for(auto& instruction:invalid.code) if(instruction.op==abc::Op::sequence_predicate) instruction.operand=255; error([&]{abc::verify(invalid);},"E_BYTECODE");
+    for(const auto source:{"function No(value:integer):boolean; begin Result:=False; end; begin Seq(1).First(No); end.","function Yes(value:integer):boolean; begin Result:=True; end; begin Seq(1,2).Single(Yes); end."}) { try { (void)run(source); require(false,"Expected a matching-element diagnostic"); } catch(const abc::Error& caught) { require(std::string_view(caught.what()).find("matching element")!=std::string_view::npos && caught.russian.find("подходящ")!=std::string::npos,"Predicate query diagnostics distinguish matching elements in both languages"); } }
+}
+
 void sequence_callbacks_library() {
     result("type R=record Select:integer; Where:integer; end; begin var r:R; r.Select:=2; r.Where:=3; Writeln(r.Select,' ',r.Where); end.","2 3\n");
     result("function Select(a:array of integer):integer; begin Result:=99; end; function F(value:integer):integer; begin Result:=value+1; end; begin Writeln(Select(Arr(1)),' ',PABCSystem.Select(Arr(1),F).Single); end.","99 2\n");
@@ -3686,6 +3712,7 @@ int main() {
     string_sequence_library();
     sequence_tools_library();
     sequence_callbacks_library();
+    sequence_predicate_library();
     default_arguments_language();
     school_factor_library();
     sequence_mutations();

@@ -1383,6 +1383,23 @@ First/Take/break допускают досрочную остановку.
 examples/sequence-callbacks.pas; корпус sequence-callback-compat, без запуска
 исходного компилятора.
 
+Перегрузки Any/All/Count/First/FirstOrDefault/Last/LastOrDefault/Single/SingleOrDefault
+принимают именованную функцию T -> boolean, без индекса и var. Они обходят
+источник один раз; Any, All и First останавливаются при первом определяющем
+результате. Last и Count читают источник до конца, Single проверяет отсутствие
+второго совпадения. Пустой All равен True, Any — False, Count — 0; OrDefault
+возвращают default(T). Отсутствие совпадения у First/Last/Single даёт E_EMPTY
+с сообщением Sequence contains no matching element; избыток совпадений у
+Single/SingleOrDefault даёт E_MANY с more than one matching element. Оба
+сообщения имеют русский перевод и отличаются от запросов без предиката.
+
+Sum/Average с именованной selector-функцией T -> integer/int64/real сводятся
+к ленивому Select и обычному числовому агрегату, сохраняя порядок, побочные
+эффекты, переполнения и ошибки в функции. Пустой Sum равен нулю, Average
+вызывает E_EMPTY. Другие типы результата selector и first-class делегаты
+остаются в плане. Пример: examples/sequence-predicates.pas; нативный корпус
+sequence-predicate-compat без запуска исходного компилятора.
+
 AsEnumerable возвращает типизированное представление массива, List или строки;
 для существующей последовательности сохраняет тот же объект, включая nil.
 Массивы и списки удерживаются по ссылке. Представление List проверяет версию
@@ -1877,7 +1894,7 @@ cmake --build native/build/default --config Release
 ctest --test-dir native/build/default -C Release --output-on-failure
 ```
 
-Проверка от 29 октября 2026 года: MSVC Release — 4052 проверки ядра и 79 тестов
+Проверка от 29 октября 2026 года: MSVC Release — 4089 проверок ядра и 80 тестов
 CTest вместе с Qt; Clang 22 без санитайзера также проверен. Дополнительный локальный
 прогон Clang 22/AddressSanitizer на Windows не завершён: обработчик исключений
 аварийно останавливается, в том числе в отдельной минимальной программе с

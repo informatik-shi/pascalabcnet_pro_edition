@@ -126,6 +126,7 @@ def main():
                 ("regex-search.pas", "Есть число: True\nПервое число: 123\nБез числа: []\nПроверка: True\n"),
                 ("sequence-lists.pas", "Массив: [1,2]\nСписок: [9,2,3]\nКопия: [9,2,3]\nПосле изменения: [9,8,3]\n"),
                 ("sequence-factories.pas", "Снимок: [1,2]\nИсходный массив: [9,2]\nПовторения: [да,да,да]\nПервый большого повтора: 7\nДиапазон: [2,3,4,5]\nСимволы: abc\n"),
+                ("sequence-predicates.pas", "Есть чётные: True\nЧётных чисел: 5\nПервое чётное: 2\nСумма квадратов: 385\n"),
                 ("sequence-callbacks.pas", "Квадраты чётных: [4,16,36,64,100]\nПервые два: [4,16]\nСумма: 220\n"),
                 ("sequence-tools.pas", "В обратном порядке: [3,2,1]\nИсходный массив: [1,2,3]\nЗначение для пустого источника: 42\nСовпадают: True\n"),
                 ("string-sequences.pas", "Символов: 6\nПервые три: [П,р,и]\nПоследние два: [е,т]\nОбъединение: !\n"),
@@ -256,6 +257,17 @@ def main():
                     or "EN: Division by zero" not in invalid.stderr or "RU: Деление на ноль" not in invalid.stderr
                     or f"{school_error}:2:" not in invalid.stderr):
                 raise RuntimeError(f"{name} bilingual callback error failed: {invalid.stderr!r}")
+            for operation, predicate, error_code, english, russian in [
+                ("First", "False", "E_EMPTY", "Sequence contains no matching element", "Последовательность не содержит подходящих элементов"),
+                ("Single", "True", "E_MANY", "Sequence contains more than one matching element", "Последовательность содержит более одного подходящего элемента"),
+            ]:
+                school_error.write_text(f"function P(value:integer):boolean; begin Result:={predicate}; end;\nbegin Seq(1,2).{operation}(P); end.", encoding="utf-8")
+                invalid = subprocess.run([runner, "run", str(school_error)], text=True, encoding="utf-8",
+                                         capture_output=True, cwd=folder, env=env, timeout=10)
+                if (invalid.returncode != 1 or invalid.stdout or error_code not in invalid.stderr
+                        or f"EN: {english}" not in invalid.stderr or f"RU: {russian}" not in invalid.stderr
+                        or f"{school_error}:2:" not in invalid.stderr):
+                    raise RuntimeError(f"{name} bilingual predicate query failed: {invalid.stderr!r}")
             school_error.write_text("uses School;\nfunction F(a:array of boolean):boolean; begin Result:=True; end;\nbegin\n TrueTable(-1,F);\nend.", encoding="utf-8")
             invalid = subprocess.run([runner, "run", str(school_error)], text=True, encoding="utf-8",
                                      capture_output=True, cwd=folder, env=env, timeout=10)
@@ -575,6 +587,7 @@ def main():
             results[-1]["utf16_string_sequence_adapters"] = "passed"
             results[-1]["typed_reverse_default_if_empty_sequence_equal_and_views"] = "passed"
             results[-1]["typed_lazy_select_where_and_shared_vm_callbacks"] = "passed"
+            results[-1]["typed_predicate_queries_and_numeric_selectors"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 

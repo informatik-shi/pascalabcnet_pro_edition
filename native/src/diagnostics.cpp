@@ -132,6 +132,10 @@ Error runtime_error(RuntimeError id, SourceLocation location, std::string_view c
         code = "E_NIL"; english = "Cannot access a nil reference"; russian = "Нельзя обратиться к пустой ссылке nil"; break;
     case RuntimeError::stack_empty:
         code = "E_EMPTY"; english = "Stack is empty"; russian = "Стек пуст"; break;
+    case RuntimeError::sequence_no_match:
+        code = "E_EMPTY"; english = "Sequence contains no matching element"; russian = "Последовательность не содержит подходящих элементов"; break;
+    case RuntimeError::sequence_multiple_matches:
+        code = "E_MANY"; english = "Sequence contains more than one matching element"; russian = "Последовательность содержит более одного подходящего элемента"; break;
     case RuntimeError::sequence_empty:
         code = "E_EMPTY"; english = "Sequence contains no elements"; russian = "Последовательность не содержит элементов"; break;
     case RuntimeError::sequence_multiple:

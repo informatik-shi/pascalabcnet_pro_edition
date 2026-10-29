@@ -1080,6 +1080,8 @@ private:
                 }
                 result->kind=hir::ExprKind::call;
                 if (bind_school_table(*result,source,source.left->token.text)) break;
+                if (bind_sequence_numeric_selector(*result,source,source.left->token.text)) break;
+                if (bind_sequence_predicate(*result,source,source.left->token.text)) break;
                 if (bind_sequence_transform(*result,source,source.left->token.text)) break;
                 for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
                 if (bind_print(*result,source.token.text,source.left->token.text)) break;
@@ -1109,7 +1111,7 @@ private:
             }
             result->left = expression(*source.left); const auto receiver = result->left->type;
             if ((receiver==Type::string || (compound(receiver) && (info(receiver,result->location).kind==CompoundKind::sequence || indexed_sequence(info(receiver,result->location).kind))))
-                && bind_sequence_transform(*result,source,{},true)) break;
+                && (bind_sequence_numeric_selector(*result,source,{},true) || bind_sequence_predicate(*result,source,{},true) || bind_sequence_transform(*result,source,{},true))) break;
             if (receiver==Type::string && (sequence_slice_method(source.token.text) || sequence_query_method(source.token.text)
                 || source.token.text=="count" || source.token.text=="toarray" || source.token.text=="tolist" || source.token.text=="concat"
                 || source.token.text=="asenumerable" || source.token.text=="sequenceequal" || source.token.text=="defaultifempty")) {
@@ -1526,6 +1528,8 @@ private:
             if (lookup(source.token) && source.token.text != current_name_) throw Error("E_TYPE", result->location, "Variable is not callable: '" + source.token.text + "'");
             result->kind = hir::ExprKind::call;
             if (!routine_names_.contains(source.token.text) && bind_school_table(*result,source)) break;
+            if (!routine_names_.contains(source.token.text) && bind_sequence_numeric_selector(*result,source)) break;
+            if (!routine_names_.contains(source.token.text) && bind_sequence_predicate(*result,source)) break;
             if (!routine_names_.contains(source.token.text) && bind_sequence_transform(*result,source)) break;
             for (const auto& argument : source.arguments) result->arguments.push_back(expression(*argument));
             if (auto routine = routine_names_.find(source.token.text); routine != routine_names_.end()) {
@@ -1878,8 +1882,44 @@ private:
         result.left=std::move(argument); result.kind=hir::ExprKind::sequence_call; result.local=name=="tolist" ? 2U : name=="toarray" ? 1U : 0U;
         result.type=result.local ? sequence_type(result.local==2 ? CompoundKind::list : CompoundKind::array,source_info.element) : Type::integer; return true;
     }
-    bool bind_sequence_transform(hir::Expr& result,const SyntaxExpr& source,std::string_view unit={},bool member=false) {
-        const auto name=source.token.text; const bool predicate=name=="where";
+    bool bind_sequence_numeric_selector(hir::Expr& result,const SyntaxExpr& source,std::string_view unit={},bool member=false) {
+        const auto name=source.token.text;
+        if ((name!="sum" && name!="average") || (!unit.empty() && unit!="pabcsystem") || source.arguments.size()==(member ? 0U : 1U)) return false;
+        auto selected=std::make_unique<hir::Expr>(); selected->location=result.location; selected->operation="select";
+        if (member) selected->left=std::move(result.left);
+        (void)bind_sequence_transform(*selected,source,unit,member,"select");
+        const auto element=info(selected->type,result.location).element;
+        if (module_.routines[selected->local].signature.parameters.size()!=1 || (element!=Type::integer && element!=Type::int64 && element!=Type::real))
+            throw Error("E_TYPE",result.location,"Sum/Average selector requires one input parameter and integer, int64 or real result");
+        result.arguments.push_back(std::move(selected)); return bind_sequence_numeric(result,name,unit);
+    }
+    static std::optional<PredicateQuery> predicate_method(std::string_view name) {
+        for (const auto& [text,method]:{std::pair<std::string_view,PredicateQuery>{"any",PredicateQuery::any},
+            {"all",PredicateQuery::all},{"count",PredicateQuery::count},{"first",PredicateQuery::first},
+            {"firstordefault",PredicateQuery::first_default},{"last",PredicateQuery::last},{"lastordefault",PredicateQuery::last_default},
+            {"single",PredicateQuery::single},{"singleordefault",PredicateQuery::single_default}}) if (name==text) return method;
+        return {};
+    }
+    bool bind_sequence_predicate(hir::Expr& result,const SyntaxExpr& source,std::string_view unit={},bool member=false) {
+        const auto method=predicate_method(source.token.text);
+        if (!method || (!unit.empty() && unit!="pabcsystem")) return false;
+        if (*method!=PredicateQuery::all && source.arguments.size()==(member ? 0U : 1U)) return false;
+        if (source.arguments.size()!=(member ? 1U : 2U)) throw Error("E_TYPE",result.location,"Predicate query requires a source and boolean function");
+        const auto& callback=*source.arguments[member ? 0 : 1];
+        if (callback.kind!=SyntaxExprKind::name || !routine_names_.contains(callback.token.text)
+            || (lookup(callback.token) && callback.token.text!=current_name_))
+            throw Error("E_TYPE",callback.token.location,"Predicate query requires a named user function with known types");
+        const auto routine=routine_names_.at(callback.token.text); const auto signature=module_.routines[routine].signature;
+        if (!member) result.left=expression(*source.arguments[0]);
+        const auto input=sequence_source(result.left->type,result.location);
+        if (signature.parameters.size()!=1 || signature.parameters[0].by_reference || signature.parameters[0].type!=input.element || signature.result!=Type::boolean)
+            throw Error("E_TYPE",callback.token.location,"Predicate query function must accept one exact element by value and return boolean");
+        result.left=convert(std::move(result.left),sequence_type(CompoundKind::sequence,input.element));
+        result.type=predicate_query_result(input.element,*method); result.kind=hir::ExprKind::sequence_predicate;
+        result.local=routine|(static_cast<std::size_t>(*method)<<8); return true;
+    }
+    bool bind_sequence_transform(hir::Expr& result,const SyntaxExpr& source,std::string_view unit={},bool member=false,std::string_view operation={}) {
+        const auto name=operation.empty() ? std::string_view(source.token.text) : operation; const bool predicate=name=="where";
         if ((name!="select" && !predicate) || (!unit.empty() && unit!="pabcsystem")) return false;
         if (source.arguments.size()!=(member ? 1U : 2U)) throw Error("E_TYPE",result.location,"Select/Where require a source and typed function");
         const auto& callback=*source.arguments[member ? 0 : 1];

@@ -77,6 +77,8 @@ private:
             expression(*node.left); emit(Op::sequence_aggregate,node.left->type,node.local,node.location); break;
         case hir::ExprKind::sequence_partial:
             expression(*node.left); emit(Op::sequence_partial,node.left->type,0,node.location); break;
+        case hir::ExprKind::sequence_predicate:
+            expression(*node.left); emit(Op::sequence_predicate,node.left->type,node.local,node.location); break;
         case hir::ExprKind::sequence_transform:
             expression(*node.left); emit(node.operation=="where" ? Op::sequence_where : Op::sequence_select,node.left->type,(static_cast<std::size_t>(node.type)<<8)|node.local,node.location); break;
         case hir::ExprKind::sequence_concat: case hir::ExprKind::sequence_equal: case hir::ExprKind::sequence_default:
@@ -506,6 +508,15 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
                 if (instruction.operand>static_cast<std::size_t>(SequenceAggregate::product)) invalid(instruction,"Invalid numeric aggregate operation");
             } else if (instruction.operand || !partial_sum_element(type_info(program,type).element)) invalid(instruction,"Invalid PartialSum element or flags");
             break;
+        case Op::sequence_predicate: {
+            const auto callback=instruction.operand&255U,method=instruction.operand>>8;
+            if (!compound(type) || type_info(program,type).kind!=CompoundKind::sequence || callback>=program.routines.size()
+                || method>static_cast<std::size_t>(PredicateQuery::single_default)) invalid(instruction,"Invalid predicate query metadata");
+            const auto& signature=program.routines[callback];
+            if (signature.parameters.size()!=1 || signature.parameters[0].by_reference || signature.parameters[0].type!=type_info(program,type).element
+                || signature.result!=Type::boolean) invalid(instruction,"Invalid predicate query signature");
+            break;
+        }
         case Op::sequence_select: case Op::sequence_where: {
             const auto callback=instruction.operand&255U,result=instruction.operand>>8;
             if (!compound(type) || type_info(program,type).kind!=CompoundKind::sequence || callback>=program.routines.size()
@@ -844,6 +855,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             require(instruction.type); stack.push_back(sequence_aggregate_result(type_info(program,instruction.type).element,static_cast<SequenceAggregate>(instruction.operand))); break;
         case Op::sequence_partial: require(instruction.type); stack.push_back(instruction.type); break;
         case Op::sequence_concat: require(instruction.type); require(instruction.type); stack.push_back(instruction.type); break;
+        case Op::sequence_predicate: require(instruction.type); stack.push_back(predicate_query_result(type_info(program,instruction.type).element,static_cast<PredicateQuery>(instruction.operand>>8))); break;
         case Op::sequence_select: case Op::sequence_where: require(instruction.type); stack.push_back(static_cast<Type>(instruction.operand>>8)); break;
         case Op::sequence_equal: require(instruction.type); require(instruction.type); stack.push_back(Type::boolean); break;
         case Op::sequence_default: require(type_info(program,instruction.type).element); require(instruction.type); stack.push_back(instruction.type); break;
