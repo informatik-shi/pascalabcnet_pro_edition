@@ -5,6 +5,7 @@
 #include "school_ip.hpp"
 #include "generators.hpp"
 #include "array_views.hpp"
+#include "matrix_operations.hpp"
 
 #include <deque>
 #include <algorithm>
@@ -86,6 +87,9 @@ private:
             expression(*node.left); emit(Op::sequence_aggregate,node.left->type,node.local,node.location); break;
         case hir::ExprKind::sequence_partial:
             expression(*node.left); emit(Op::sequence_partial,node.left->type,0,node.location); break;
+        case hir::ExprKind::matrix_operation:
+            expression(*node.left); for (const auto& argument:node.arguments) expression(*argument);
+            emit(Op::matrix_operation,node.left->type,(static_cast<std::size_t>(node.type)<<16)|(static_cast<std::size_t>(node.operation_type)<<4)|node.local,node.location); break;
         case hir::ExprKind::array_view:
             expression(*node.left); if (node.right) expression(*node.right);
             emit(Op::array_view,node.left->type,(static_cast<std::size_t>(node.type)<<16)|((node.right ? static_cast<std::size_t>(node.right->type) : 0U)<<3)|node.local,node.location); break;
@@ -587,6 +591,14 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             }
             break;
         }
+        case Op::matrix_operation: {
+            const auto output=instruction.operand>>16,array=(instruction.operand&65535U)>>4,method=instruction.operand&15U;
+            if ((output!=static_cast<std::size_t>(Type::unit) && (output<64 || output>=64+program.types.size()))
+                || array<64 || array>=64+program.types.size() || method>static_cast<std::size_t>(MatrixMethod::set_column)
+                || !matrix_signature_valid(program,type,static_cast<Type>(output),static_cast<Type>(array),static_cast<MatrixMethod>(method)))
+                invalid(instruction,"Invalid matrix operation signature");
+            break;
+        }
         case Op::array_view: {
             const auto output=instruction.operand>>16,callback=(instruction.operand&65535U)>>3,method=instruction.operand&7U;
             if (output<64 || output>=64+program.types.size() || (callback && (callback<64 || callback>=64+program.types.size()))
@@ -1029,6 +1041,13 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             const auto parameters=generator_parameters(element,static_cast<Type>(instruction.operand>>8),method);
             for (auto n=parameters.size();n>0;--n) require(parameters[n-1]);
             stack.push_back(instruction.type); break;
+        }
+        case Op::matrix_operation: {
+            const auto parameters=matrix_parameters(static_cast<Type>((instruction.operand&65535U)>>4),static_cast<MatrixMethod>(instruction.operand&15U));
+            for (auto i=parameters.size();i>0;--i) require(parameters[i-1]);
+            require(instruction.type);
+            const auto output=static_cast<Type>(instruction.operand>>16); if (output!=Type::unit) stack.push_back(output);
+            break;
         }
         case Op::array_view:
             if (const auto callback=(instruction.operand&65535U)>>3) require(static_cast<Type>(callback));

@@ -1,3 +1,5 @@
+    {"Wrong matrix operation argument count","Неверное число аргументов операции над матрицей"},
+    {"Matrix operation requires a rectangular matrix of known element type","Для операции требуется прямоугольная матрица с известным типом элемента"},
     {"Wrong array view argument count","Неверное число аргументов представления массива"},
     {"Array view requires an array or List of known element type","Для представления требуется массив или List с известным типом элемента"},
     {"Matrix view requires a rectangular matrix and a supported operation","Для этой операции требуется прямоугольная матрица и поддерживаемый вид представления"},

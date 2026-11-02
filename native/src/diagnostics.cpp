@@ -4,6 +4,12 @@ namespace abc {
 Error runtime_error(RuntimeError id, SourceLocation location, std::string_view context) {
     const char *code, *english, *russian;
     switch (id) {
+    case RuntimeError::matrix_row_index:
+        code="E_RANGE"; english="Row index is outside matrix bounds"; russian="Индекс строки находится за границами матрицы"; break;
+    case RuntimeError::matrix_column_index:
+        code="E_RANGE"; english="Column index is outside matrix bounds"; russian="Индекс столбца находится за границами матрицы"; break;
+    case RuntimeError::matrix_line_length:
+        code="E_RANGE"; english="Array length does not match matrix dimension"; russian="Длина массива не совпадает с размерностью матрицы"; break;
     case RuntimeError::cartesian_power_count:
         code="E_RANGE"; english="Cartesian power cannot be negative"; russian="Степень декартова произведения не может быть отрицательной"; break;
     case RuntimeError::generator_positive_count:

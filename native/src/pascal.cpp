@@ -1,5 +1,6 @@
 #include "hir.hpp"
 #include "generators.hpp"
+#include "matrix_operations.hpp"
 #include "constant.hpp"
 #include "number.hpp"
 #include "stdlib.hpp"
@@ -2452,6 +2453,44 @@ private:
         result.type=sequence_type(CompoundKind::sequence,text ? Type::string : array);
         result.arguments.clear();
     }
+    bool bind_matrix_operation(hir::Expr& result,const SyntaxExpr& source,bool member) {
+        std::optional<MatrixMethod> method;
+        for (const auto& [name,value]:{
+            std::pair<std::string_view,MatrixMethod>{"row",MatrixMethod::row},{"col",MatrixMethod::column},
+            {"rowseq",MatrixMethod::row_sequence},{"colseq",MatrixMethod::column_sequence},
+            {"rows",MatrixMethod::rows},{"cols",MatrixMethod::columns},
+            {"rowsseq",MatrixMethod::row_sequences},{"colsseq",MatrixMethod::column_sequences},
+            {"swaprows",MatrixMethod::swap_rows},{"swapcols",MatrixMethod::swap_columns},
+            {"setrow",MatrixMethod::set_row},{"setcol",MatrixMethod::set_column}})
+            if (source.token.text==name) { method=value; break; }
+        if (!method) return false;
+        const auto expected=matrix_outer(*method) ? 1U : matrix_swap(*method) || matrix_set(*method) ? 3U : 2U;
+        if (source.arguments.size()+(member ? 1U : 0U)!=expected)
+            throw Error("E_TYPE",result.location,"Wrong matrix operation argument count");
+        auto input=member ? std::move(result.left) : expression(*source.arguments[0]);
+        if (!compound(input->type) || info(input->type,result.location).kind!=CompoundKind::array || info(input->type,result.location).rank!=2)
+            throw Error("E_TYPE",result.location,"Matrix operation requires a rectangular matrix of known element type");
+        const auto element=info(input->type,result.location).element;
+        const auto array=sequence_type(CompoundKind::array,element);
+        const auto begin=member ? 0U : 1U;
+        for (std::size_t i=begin;i<source.arguments.size();++i) {
+            auto value=expression(*source.arguments[i]);
+            if (matrix_set(*method) && i+1==source.arguments.size()) {
+                if (value->type!=array) {
+                    auto collected=std::make_unique<hir::Expr>(); collected->kind=hir::ExprKind::sequence_call;
+                    collected->location=value->location; collected->type=array; collected->local=1;
+                    collected->left=convert(std::move(value),sequence_type(CompoundKind::sequence,element));
+                    value=std::move(collected);
+                }
+            } else value=convert(std::move(value),Type::integer);
+            result.arguments.push_back(std::move(value));
+        }
+        result.type=matrix_swap(*method) || matrix_set(*method) ? Type::unit
+            : matrix_sequence(*method) ? sequence_type(CompoundKind::sequence,matrix_outer(*method) ? sequence_type(CompoundKind::sequence,element) : element)
+            : matrix_outer(*method) ? sequence_type(CompoundKind::array,array) : array;
+        result.left=std::move(input); result.kind=hir::ExprKind::matrix_operation; result.operation_type=array;
+        result.local=static_cast<std::size_t>(*method); return true;
+    }
     bool bind_array_view(hir::Expr& result,const SyntaxExpr& source,bool member) {
         const auto name=source.token.text;
         if (name!="indices" && name!="elementswithindices" && name!="elementsbyrow" && name!="elementsbycol") return false;
@@ -2494,7 +2533,7 @@ private:
         const auto name=source.token.text; const bool cartesian=name=="cartesian";
         const bool combinations=name=="combinations",permutations=name=="permutations";
         if (!unit.empty() && unit!="pabcsystem") return false;
-        if (bind_array_view(result,source,member)) return true;
+        if (bind_matrix_operation(result,source,member) || bind_array_view(result,source,member)) return true;
         if (name!="zip" && name!="ziptuple" && !cartesian && name!="cartesianpower" && !combinations && !permutations) return false;
         if (combinations || permutations) {
             const auto count=source.arguments.size()+(member ? 1U : 0U);

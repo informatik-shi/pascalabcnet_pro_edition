@@ -7,6 +7,7 @@
 #include "../src/real_range.hpp"
 #include "../src/generators.hpp"
 #include "../src/array_views.hpp"
+#include "../src/matrix_operations.hpp"
 
 #include <iostream>
 #include <array>
@@ -63,6 +64,94 @@ void compile_error(std::string_view source, std::string_view code) {
 
 void runtime_error(std::string_view source, std::string_view code) {
     error([&] { (void)run(source); }, code,source);
+}
+
+void matrix_lines_library() {
+    result("begin var m:=MatrGen(2,3,(r,c)->r*10+c); Writeln(m.Row(1),' ',m.Col(2)); Writeln(m.Rows,' ',m.Cols); Writeln(m.RowSeq(1).ToArray,' ',m.ColSeq(2).ToArray); Writeln(m.RowsSeq.Select(x->x.ToArray).ToArray,' ',m.ColsSeq.Select(x->x.ToArray).ToArray); end.","[10,11,12] [2,12]\n[[0,1,2],[10,11,12]] [[0,10],[1,11],[2,12]]\n[10,11,12] [2,12]\n[[0,1,2],[10,11,12]] [[0,10],[1,11],[2,12]]\n");
+    result("begin var m:=MatrGen(2,2,(r,c)->r*10+c); Writeln(Row(m,0),' ',PABCSystem.Col(m,1)); Writeln(Rows(m),' ',Cols(m)); Writeln(RowSeq(m,0).ToArray,' ',ColSeq(m,1).ToArray); Writeln(RowsSeq(m).Select(x->x.ToArray).ToArray,' ',ColsSeq(m).Select(x->x.ToArray).ToArray); end.","[0,1] [1,11]\n[[0,1],[10,11]] [[0,10],[1,11]]\n[0,1] [1,11]\n[[0,1],[10,11]] [[0,10],[1,11]]\n");
+    result("begin var m:=MatrGen(2,3,(r,c)->r*10+c); m.SwapRows(0,1); Writeln(m); SwapCols(m,0,2); Writeln(m); PABCSystem.SwapRows(m,0,0); m.SwapCols(1,1); Writeln(m); end.","[[10,11,12],[0,1,2]]\n[[12,11,10],[2,1,0]]\n[[12,11,10],[2,1,0]]\n");
+    result("begin var m:=new integer[2,3]; SetRow(m,0,Arr(1,2,3)); m.SetRow(1,Seq(4,5,6)); Writeln(m); SetCol(m,1,Arr(8,9)); m.SetCol(2,Seq(10,11)); Writeln(m); end.","[[1,2,3],[4,5,6]]\n[[1,8,10],[4,9,11]]\n");
+    result("begin var m:=new char[1,2]; m.SetRow(0,'Яx'); Writeln(m.Row(0)); var l:=new List<char>; l.Add('a'); l.Add('b'); m.SetRow(0,l); Writeln(m); end.","[Я,x]\n[[a,b]]\n");
+    result("begin var m:=MatrGen(2,2,(r,c)->r*10+c); var row:=m.Row(0); var col:=m.Col(0); var rows:=m.Rows; var cols:=m.Cols; row[0]:=7; col[0]:=8; rows[0][0]:=9; cols[0][0]:=6; Writeln(m,' ',rows[1],' ',rows[0]=rows[1]); end.","[[0,1],[10,11]] [10,11] False\n");
+    result("begin var m:=new integer[1,2]; var row:=m.RowSeq(0); m[0,0]:=9; Writeln(row.ToArray,' ',row.ToArray); var seqs:=m.RowsSeq; var inner:=seqs.First; m[0,1]:=8; Writeln(inner.ToArray,' ',seqs.First.ToArray); end.","[9,0] [9,0]\n[9,8] [9,8]\n");
+    result("begin var m:=MatrGen(2,2,(r,c)->r*10+c); var s:=m.RowSeq(0); foreach var x in s do foreach var y in s do Write(x,':',y,';'); Writeln; var outer:=m.RowsSeq; foreach var row in outer do foreach var other in outer.Take(1) do Write(row.ToArray,':',other.ToArray,';'); end.","0:0;0:1;1:0;1:1;\n[0,1]:[0,1];[10,11]:[0,1];");
+    result("begin var m:=new integer[1,2]; var saved:=m.RowSeq(0); var rows:=m.RowsSeq; SetLength(m,1,1); m[0,0]:=9; Writeln(saved.ToArray,' ',rows.First.ToArray,' ',m); end.","[0,0] [0,0] [[9]]\n");
+    result("begin var m:=new integer[2,3]; var alias:=m; m.SetRow(0,SeqGen(3,i->begin SetLength(m,1,1); Result:=i+1; end)); Writeln(alias,' ',m); end.","[[1,2,3],[0,0,0]] [[0]]\n");
+    result("begin var m:=MatrGen(2,2,(r,c)->r*10+c); m.SetRow(0,m.RowSeq(1)); m.SetCol(1,m.ColSeq(0)); Writeln(m); end.","[[10,10],[10,10]]\n");
+    result("begin var m:=MatrGen(2,2,(r,c)->r*10+c); var a:=Arr(7,8); m.SetRow(0,a); a[0]:=99; Writeln(m); end.","[[7,8],[10,11]]\n");
+    result("begin var m:=new integer[3,0]; Writeln(m.Rows,' ',m.Cols); Writeln(m.RowsSeq.Select(x->x.ToArray).ToArray,' ',m.ColsSeq.Count); Writeln(m.Row(2),' ',m.RowSeq(2).Count); m.SetRow(2,new integer[0]); m.SwapRows(0,2); var n:=new integer[0,3]; Writeln(n.Rows,' ',n.Cols); Writeln(n.ColsSeq.Select(x->x.ToArray).ToArray,' ',n.RowsSeq.Count); Writeln(n.Col(2),' ',n.ColSeq(2).Count); n.SetCol(2,new integer[0]); n.SwapCols(0,2); end.","[[],[],[]] []\n[[],[],[]] 0\n[] 0\n[] [[],[],[]]\n[[],[],[]] 0\n[] 0\n");
+    result("begin var m:=new integer[2147483647,0]; Writeln(m.RowsSeq.Take(1).First.Count,' ',m.RowSeq(2147483646).Count); var n:=new integer[0,2147483647]; Writeln(n.ColsSeq.Take(1).First.Count,' ',n.ColSeq(2147483646).Count); end.","0 0\n0 0\n");
+    result("begin var m:array[,] of integer; Writeln(m.RowSeq(-1).Take(0).Count,' ',m.ColSeq(0).Take(0).Count,' ',m.RowsSeq.Take(0).Count,' ',m.ColsSeq.Take(0).Count); Writeln(new integer[0,0].RowSeq(0).Take(0).Count); end.","0 0 0 0\n0\n");
+    result("type R=record n:integer; end; begin var m:=new R[2,1]; m[0,0].n:=1; m[1,0].n:=2; var a:=m.Row(0); a[0].n:=9; var b:=m.Col(0); b[0].n:=8; var t:=m.RowSeq(0).First; t.n:=7; Writeln(m[0,0].n,' ',m[1,0].n); var r:R; r.n:=5; m.SetRow(0,Arr(r)); r.n:=99; Writeln(m[0,0].n); end.","1 2\n5\n");
+    result("type R=record n:integer; end; procedure Change(var n:integer;m:array[,] of R); begin m.SwapRows(0,1); Inc(n,10); end; begin var m:=new R[2,1]; m[0,0].n:=1; m[1,0].n:=2; Change(m[0,0].n,m); Writeln(m[0,0].n,' ',m[1,0].n); end.","12 1\n");
+    result("type R=record n:integer; end; procedure Change(var n:integer;m:array[,] of R); begin var r:R; r.n:=8; m.SetRow(0,Arr(r)); Inc(n); end; begin var m:=new R[1,1]; Change(m[0,0].n,m); Writeln(m[0,0].n); end.","9\n");
+    result("type A=array of integer; begin var m:=new A[1,1]; m[0,0]:=Arr(1); var row:=m.Row(0); row[0][0]:=9; Writeln(m[0,0][0]); var cols:=m.Cols; cols[0][0][0]:=8; Writeln(row[0][0]); end.","9\n8\n");
+    result("var log:string; function M:array[,] of integer; begin log:=log+'M'; Result:=new integer[1,2]; end; function K:integer; begin log:=log+'K'; Result:=0; end; function S:sequence of integer; begin log:=log+'S'; Result:=SeqGen(2,i->begin log:=log+'C'; Result:=i; end); end; begin SetRow(M(),K(),S()); Writeln(log); end.","MKSCC\n");
+    for (const auto source:{
+        "begin var m:array[,] of integer; Writeln(m.Row(0)); end.",
+        "begin var m:array[,] of integer; Writeln(m.Col(0)); end.",
+        "begin var m:array[,] of integer; Writeln(m.Rows); end.",
+        "begin var m:array[,] of integer; Writeln(m.Cols); end.",
+        "begin var m:array[,] of integer; m.RowSeq(0).Any; end.",
+        "begin var m:array[,] of integer; m.RowsSeq.Any; end.",
+        "begin var m:array[,] of integer; m.SwapRows(0,-1); end.",
+        "begin var m:array[,] of integer; var a:array of integer; m.SetRow(-1,a); end.",
+        "begin var m:=new integer[1,1]; var a:array of integer; m.SetCol(0,a); end.",
+        "begin var m:=new integer[1,1]; var a:sequence of integer; m.SetRow(-1,a); end."}) runtime_error(source,"E_NIL");
+    for (const auto source:{
+        "begin var m:array[,] of integer; m.Row(-1); end.",
+        "begin var m:array[,] of integer; m.Col(-1); end.",
+        "begin var m:array[,] of integer; m.RowSeq(-1).Any; end.",
+        "begin var m:array[,] of integer; m.ColSeq(-1).Any; end.",
+        "begin var m:array[,] of integer; m.SwapRows(-1,0); end.",
+        "begin var m:array[,] of integer; m.SetRow(-1,Arr(1)); end.",
+        "begin var m:=new integer[1,2]; m.Row(1); end.",
+        "begin var m:=new integer[1,2]; m.Col(2); end.",
+        "begin var m:=new integer[1,2]; m.SetRow(0,Arr(1)); end.",
+        "begin var m:=new integer[1,2]; m.SetCol(0,Arr(1,2)); end.",
+        "begin var m:=new integer[1,2]; m.SwapCols(0,2); end."}) runtime_error(source,"E_RANGE");
+    runtime_error("begin var m:=new integer[1,2]; m.SetRow(-1,SeqGen(2,MaxInt,x->x+1)); end.","E_OVERFLOW");
+    for (const auto source:{
+        "begin Row(Arr(1),0); end.",
+        "begin var m:=new integer[1,1]; m.Row(); end.",
+        "begin var m:=new integer[1,1]; m.Rows(0); end.",
+        "begin var m:=new integer[1,1]; m.SwapRows(0); end.",
+        "begin var m:=new integer[1,1]; m.SetRow(0,Arr(1.5)); end.",
+        "begin var m:=new integer[1,1]; m.SetCol(0,Seq(1.5)); end.",
+        "begin var m:=new integer[1,1]; m.SetRow(0,new integer[1,1]); end."}) compile_error(source,"E_TYPE");
+    for (const auto& [source,english,russian]:{
+        std::array<std::string_view,3>{"begin\nvar m:=new integer[1,1]; m.Row(-1);\nend.","Row index is outside matrix bounds","Индекс строки находится за границами матрицы"},
+        {"begin\nvar m:=new integer[1,1]; m.Col(2);\nend.","Column index is outside matrix bounds","Индекс столбца находится за границами матрицы"},
+        {"begin\nvar m:=new integer[1,1]; m.SetRow(0,Arr(1,2));\nend.","Array length does not match matrix dimension","Длина массива не совпадает с размерностью матрицы"}}) {
+        try { (void)run(source); require(false,"Expected bilingual matrix line error"); }
+        catch (const abc::Error& caught) { require(caught.code=="E_RANGE" && caught.location.line==2 && std::string_view(caught.what())==english && caught.russian==russian,"Matrix operation range errors retain location and both languages"); }
+    }
+    abc::ExecutionOptions options; options.allocation_limit=40;
+    error([&]{(void)run("begin Writeln(new integer[100,0].Rows); end.","",options);},"E_LIMIT");
+    options={};options.instruction_limit=50;
+    error([&]{(void)run("begin Writeln(new integer[100,0].RowsSeq.Count); end.","",options);},"E_LIMIT");
+    options={};options.cancelled=[] { return true; };
+    error([&]{(void)run("begin Writeln(new integer[1,1].Rows); end.","",options);},"E_CANCELLED");
+    const auto program=abc::compile("begin var m:=new integer[1,2]; m.RowSeq(0).Count; m.RowsSeq.Count; end.");
+    const auto op=std::find_if(program.code.begin(),program.code.end(),[](const auto& instruction){return instruction.op==abc::Op::matrix_operation;});
+    abc::Values values{program,1000}; options={};
+    auto m=values.matrix(op->type,1,2); m->items[0]->value=std::int32_t{1};m->items[1]->value=std::int32_t{2};
+    const auto result_type=static_cast<abc::Type>(op->operand>>16),array_type=static_cast<abc::Type>((op->operand&65535U)>>4);
+    const std::array<abc::Value,1> args{std::int32_t{0}};
+    auto row=std::get<std::shared_ptr<abc::Aggregate>>(abc::matrix_operation(values,result_type,array_type,m,abc::MatrixMethod::row_sequence,args,options));
+    auto cursor=abc::sequence_begin(values,row);
+    require(std::get<std::int32_t>(abc::sequence_at(values,cursor,0,options))==1,"Matrix line reads its first value lazily");
+    m->items[0]->value=std::int32_t{9};m->items[1]->value=std::int32_t{8};
+    require(std::get<std::int32_t>(abc::sequence_at(values,cursor,0,options))==1 && std::get<std::int32_t>(abc::sequence_at(values,cursor,1,options))==8,"Matrix line caches Current and observes later unread element mutations");
+    auto fresh=abc::sequence_begin(values,row);
+    require(std::get<std::int32_t>(abc::sequence_at(values,fresh,0,options))==9,"Matrix line cursors are independent");
+    for (const auto text:{"begin var m:=new integer[1,1]; m.Row(0); end.","begin var m:=new integer[1,1]; m.SetRow(0,Arr(1)); end."}) {
+        const auto valid=abc::compile(text);
+        for (const auto operand:{std::size_t{0},std::numeric_limits<std::size_t>::max()}) {
+            auto bad=valid; for (auto& instruction:bad.code) if (instruction.op==abc::Op::matrix_operation) instruction.operand=operand;
+            error([&]{abc::verify(bad);},"E_BYTECODE");
+        }
+    }
 }
 
 void array_views_library() {
@@ -4789,6 +4878,7 @@ int main() {
     cartesian_library();
     combinatorics_library();
     array_views_library();
+    matrix_lines_library();
     structural_output();
     try_console_read();
     string_conversions();

@@ -54,6 +54,7 @@ Text/TextFile: Assign, Reset, Rewrite, Append, Read/Readln, Write/Writeln, Eof, 
 Декартово произведение и степени Cartesian/CartesianPower: examples/cartesian.pas.
 Сочетания, перестановки и NextPermutation: examples/combinatorics.pas.
 Индексы массивов, списков и матриц: examples/array-views.pas.
+Строки и столбцы матриц, замена и обмен: examples/matrix-lines.pas.
 Прямой захват управляющей переменной цикла пока не перенесён; используйте отдельную переменную-копию.
 Совместимость с PascalABC.NET частичная.
 Русские имена и НОД/НОК: examples/russian-identifiers.pas. Массивные GCD/LCM: examples/school-folds.pas.
