@@ -39,4 +39,7 @@ std::shared_ptr<Aggregate> sequence_cartesian(Values& values,Type type,std::vect
 bool sequence_cartesian_resume(Values& values,const std::shared_ptr<Aggregate>& sequence,std::uint64_t index,const ExecutionOptions& options);
 std::shared_ptr<Aggregate> sequence_cartesian_power(Values& values,Type type,Type array_type,Type source_type,Value source,std::int32_t count,const ExecutionOptions& options);
 bool sequence_cartesian_power_resume(Values& values,const std::shared_ptr<Aggregate>& sequence,std::uint64_t index,const ExecutionOptions& options);
+std::shared_ptr<Aggregate> sequence_combinatorics(Values& values,Type type,Type array_type,Type source_type,Value source,std::int32_t count,CombinatorMethod method,const ExecutionOptions& options);
+bool sequence_combinatorics_resume(Values& values,const std::shared_ptr<Aggregate>& sequence,std::uint64_t index,const ExecutionOptions& options);
+bool next_permutation(Values& values,const std::shared_ptr<Aggregate>& array,const ExecutionOptions& options);
 } // namespace abc

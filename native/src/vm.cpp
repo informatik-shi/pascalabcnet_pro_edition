@@ -260,6 +260,16 @@ static void execute_impl(const Program& program, std::istream& input, std::ostre
             }
             break;
         }
+        case Op::next_permutation: {
+            const auto array=std::get<std::shared_ptr<Aggregate>>(pop());
+            stack.emplace_back(next_permutation(values,array,options)); break;
+        }
+        case Op::combinations: case Op::permutations: case Op::partial_permutations: {
+            const auto count=std::get<std::int32_t>(pop()); auto source=pop();
+            const auto method=instruction.op==Op::combinations ? CombinatorMethod::combinations
+                : instruction.op==Op::permutations ? CombinatorMethod::permutations : CombinatorMethod::partial_permutations;
+            stack.emplace_back(sequence_combinatorics(values,static_cast<Type>(instruction.operand>>16),static_cast<Type>(instruction.operand&65535U),instruction.type,std::move(source),count,method,options)); break;
+        }
         case Op::cartesian_power: {
             const auto count=std::get<std::int32_t>(pop()); auto source=pop();
             stack.emplace_back(sequence_cartesian_power(values,static_cast<Type>(instruction.operand>>16),static_cast<Type>(instruction.operand&65535U),instruction.type,std::move(source),count,options)); break;

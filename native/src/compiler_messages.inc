@@ -1,3 +1,5 @@
+    {"Wrong combination or permutation argument count","Неверное число аргументов сочетаний или перестановок"},
+    {"NextPermutation requires one integer array","Для NextPermutation требуется один массив integer"},
     {"CartesianPower requires a typed source and integer power","Для CartesianPower требуется типизированный источник и целая степень"},
     {"Cartesian requires two to five typed sources and an optional function","Для Cartesian требуется от двух до пяти типизированных источников и необязательная функция"},
     {"Cartesian function arity must match the source count and return a value","Число параметров функции Cartesian должно совпадать с числом источников; функция должна возвращать значение"},

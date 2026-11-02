@@ -2454,7 +2454,21 @@ private:
     }
     bool bind_sequence_zip(hir::Expr& result,const SyntaxExpr& source,std::string_view unit={},bool member=false) {
         const auto name=source.token.text; const bool cartesian=name=="cartesian";
-        if ((name!="zip" && name!="ziptuple" && !cartesian && name!="cartesianpower") || (!unit.empty() && unit!="pabcsystem")) return false;
+        const bool combinations=name=="combinations",permutations=name=="permutations";
+        if ((name!="zip" && name!="ziptuple" && !cartesian && name!="cartesianpower" && !combinations && !permutations) || (!unit.empty() && unit!="pabcsystem")) return false;
+        if (combinations || permutations) {
+            const auto count=source.arguments.size()+(member ? 1U : 0U);
+            if ((combinations && count!=2) || (permutations && count!=1 && count!=2))
+                throw Error("E_TYPE",result.location,"Wrong combination or permutation argument count");
+            auto input=member ? std::move(result.left) : expression(*source.arguments[0]);
+            std::unique_ptr<hir::Expr> width;
+            if (count==2) width=expression(*source.arguments.back());
+            else { width=std::make_unique<hir::Expr>(); width->kind=hir::ExprKind::literal; width->type=Type::integer; width->value=std::int32_t{0}; width->location=result.location; }
+            bind_cartesian_power(result,std::move(input),std::move(width));
+            result.kind=hir::ExprKind::combinatorics;
+            result.local=static_cast<std::size_t>(combinations ? CombinatorMethod::combinations : count==1 ? CombinatorMethod::permutations : CombinatorMethod::partial_permutations);
+            return true;
+        }
         if (name=="cartesianpower") {
             if (source.arguments.size()!=(member ? 1U : 2U)) throw Error("E_TYPE",result.location,"CartesianPower requires a typed source and integer power");
             auto input=member ? std::move(result.left) : expression(*source.arguments[0]);
@@ -2918,7 +2932,16 @@ private:
         result.local=(name=="writelnarray" || name=="writeln" ? 1U : 0U)+(member ? 2U : 0U); return true;
     }
     bool bind_sequence_mutation(hir::Expr& result, std::string_view name, std::string_view unit = {}, bool member = false) {
-        if ((name!="reverse" && name!="shuffle" && name!="swap") || (!unit.empty() && unit!="pabcsystem")) return false;
+        if ((name!="reverse" && name!="shuffle" && name!="swap" && name!="nextpermutation") || (!unit.empty() && unit!="pabcsystem")) return false;
+        if (name=="nextpermutation") {
+            if (member || result.arguments.size()!=1 || !compound(result.arguments[0]->type))
+                throw Error("E_TYPE",result.location,"NextPermutation requires one integer array");
+            const auto& input=info(result.arguments[0]->type,result.location);
+            if (input.kind!=CompoundKind::array || input.rank!=1 || input.element!=Type::integer)
+                throw Error("E_TYPE",result.location,"NextPermutation requires one integer array");
+            result.left=std::move(result.arguments[0]); result.arguments.clear();
+            result.kind=hir::ExprKind::next_permutation; result.type=Type::boolean; return true;
+        }
         const auto count=result.arguments.size();
         if (name=="swap" && !member) {
             if (count!=2 || result.arguments[0]->type!=result.arguments[1]->type

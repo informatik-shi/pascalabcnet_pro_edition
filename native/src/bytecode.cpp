@@ -85,6 +85,13 @@ private:
             expression(*node.left); emit(Op::sequence_aggregate,node.left->type,node.local,node.location); break;
         case hir::ExprKind::sequence_partial:
             expression(*node.left); emit(Op::sequence_partial,node.left->type,0,node.location); break;
+        case hir::ExprKind::next_permutation:
+            expression(*node.left); emit(Op::next_permutation,node.left->type,0,node.location); break;
+        case hir::ExprKind::combinatorics: {
+            expression(*node.left); expression(*node.right);
+            const auto method=static_cast<CombinatorMethod>(node.local);
+            emit(method==CombinatorMethod::combinations ? Op::combinations : method==CombinatorMethod::permutations ? Op::permutations : Op::partial_permutations,node.left->type,(static_cast<std::size_t>(node.type)<<16)|static_cast<std::size_t>(node.operation_type),node.location); break;
+        }
         case hir::ExprKind::cartesian_power:
             expression(*node.left); expression(*node.right);
             emit(Op::cartesian_power,node.left->type,(static_cast<std::size_t>(node.type)<<16)|static_cast<std::size_t>(node.operation_type),node.location); break;
@@ -557,7 +564,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
     for (const auto& instruction : code) {
         const auto type = instruction.type;
         switch (instruction.op) {
-        case Op::cartesian_power: {
+        case Op::combinations: case Op::permutations: case Op::partial_permutations: case Op::cartesian_power: {
             const auto result=instruction.operand>>16,array=instruction.operand&65535U;
             if (result<64 || result>=64+program.types.size() || array<64 || array>=64+program.types.size())
                 invalid(instruction,"Invalid CartesianPower type metadata");
@@ -576,6 +583,11 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             }
             break;
         }
+        case Op::next_permutation:
+            if (instruction.operand || !compound(type) || type_info(program,type).kind!=CompoundKind::array
+                || type_info(program,type).rank!=1 || type_info(program,type).element!=Type::integer)
+                invalid(instruction,"Invalid NextPermutation array metadata");
+            break;
         case Op::generator: {
             const auto method=instruction.operand&255U,callback=instruction.operand>>8;
             if (method>static_cast<std::size_t>(GeneratorMethod::while_two) || callback<64 || callback>=64+program.types.size()
@@ -1006,7 +1018,8 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             for (auto n=parameters.size();n>0;--n) require(parameters[n-1]);
             stack.push_back(instruction.type); break;
         }
-        case Op::cartesian_power: require(Type::integer); require(instruction.type); stack.push_back(static_cast<Type>(instruction.operand>>16)); break;
+        case Op::next_permutation: require(instruction.type); stack.push_back(Type::boolean); break;
+        case Op::combinations: case Op::permutations: case Op::partial_permutations: case Op::cartesian_power: require(Type::integer); require(instruction.type); stack.push_back(static_cast<Type>(instruction.operand>>16)); break;
         case Op::iteration_version: require(instruction.type); stack.push_back(Type::int64); break;
         case Op::sequence_begin: require(instruction.type); stack.push_back(instruction.type); break;
         case Op::sequence_snapshot: case Op::sequence_wrap: require(instruction.type); stack.push_back(static_cast<Type>(instruction.operand)); break;

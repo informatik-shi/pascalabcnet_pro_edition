@@ -14,6 +14,7 @@
 #include <fstream>
 #include <chrono>
 #include <limits>
+#include <numeric>
 #include <sstream>
 #ifdef _WIN32
 #ifndef NOMINMAX
@@ -61,6 +62,114 @@ void compile_error(std::string_view source, std::string_view code) {
 
 void runtime_error(std::string_view source, std::string_view code) {
     error([&] { (void)run(source); }, code,source);
+}
+
+void combinatorics_library() {
+    result("begin Writeln(Arr(1,2,3).Combinations(2).ToArray); Writeln(Arr(1,2,3).Permutations.ToArray); Writeln(Arr(1,2,3).Permutations(2).ToArray); end.","[[1,2],[1,3],[2,3]]\n[[1,2,3],[1,3,2],[2,1,3],[2,3,1],[3,1,2],[3,2,1]]\n[[1,2],[2,1],[1,3],[3,1],[2,3],[3,2]]\n");
+    result("begin Writeln(Combinations(Seq(1,2,3),2).ToArray); Writeln(PABCSystem.Permutations(Arr(1,2)).ToArray); Writeln(Permutations(Seq(1,2,3),1).ToArray); end.","[[1,2],[1,3],[2,3]]\n[[1,2],[2,1]]\n[[1],[2],[3]]\n");
+    result("begin Writeln('абв'.Combinations(2).ToArray,' ','абв'.Permutations(2).ToArray); Writeln('ab'.Permutations.ToArray,' ',Permutations('ab').ToArray); end.","[аб,ав,бв] [аб,ба,ав,ва,бв,вб]\n[ab,ba] [ab,ba]\n");
+    result("begin Writeln(Arr(1,1,2).Combinations(2).ToArray); Writeln(Arr(1,1).Permutations.ToArray,' ','аа'.Permutations.ToArray); end.","[[1,1],[1,2],[1,2]]\n[[1,1],[1,1]] [аа,аа]\n");
+    result("begin Writeln(Arr(3,1,2).Permutations.Take(2).ToArray); Writeln(Arr(1).Permutations.ToArray); Writeln(Arr(1,2).Combinations(2).ToArray); end.","[[3,1,2],[3,2,1]]\n[[1]]\n[[1,2]]\n");
+    result("begin var l:=new List<integer>; l.Add(1); l.Add(2); Writeln(l.Combinations(1).ToArray,' ',l.Permutations.ToArray); end.","[[1],[2]] [[1,2],[2,1]]\n");
+    result("begin var a:=Arr(1,2,3); var s:=a.Combinations(2); a[0]:=9; Writeln(s.ToArray,' ',s.ToArray); var p:=a.Permutations; a[1]:=8; Writeln(p.Take(2).ToArray); end.","[[9,2],[9,3],[2,3]] [[9,2],[9,3],[2,3]]\n[[9,8,3],[9,3,8]]\n");
+    result("begin var a:=Arr(1,2,3); var s:sequence of integer:=a; var c:=s.Combinations(2); var p:=s.Permutations; a[0]:=9; Writeln(c.ToArray,' ',p.Take(2).ToArray); end.","[[1,2],[1,3],[2,3]] [[1,2,3],[1,3,2]]\n");
+    result("begin var n:=0; var s:=SeqGen(3,i->begin Inc(n); Result:=i; end); var p:=s.Permutations(2); Writeln(n,' ',p.ToArray,' ',p.Count,' ',n); end.","3 [[0,1],[1,0],[0,2],[2,0],[1,2],[2,1]] 6 3\n");
+    result("begin var a:=Arr(1,2,3); var s:=a.Combinations(2); foreach var row in s do begin Write(row,' '); a[0]:=9; row[0]:=77; end; Writeln(a); end.","[1,2] [9,3] [2,3] [9,2,3]\n");
+    result("begin var a:=Arr(1,2); foreach var row in a.Permutations do begin Write(row,' '); a[0]:=9; row[0]:=77; end; end.","[1,2] [2,9] ");
+    result("begin var a:=Arr(1,2,3); foreach var row in a.Permutations(2) do begin Write(row,' '); a[0]:=9; row[0]:=77; end; end.","[1,2] [2,1] [9,3] [3,9] [2,3] [3,2] ");
+    result("begin var rows:=Arr(1,2,3).Combinations(2).ToArray; Writeln(rows[0]=rows[1]); rows[0][0]:=9; Writeln(rows[1]); var p:=Arr(1,2).Permutations.ToArray; Writeln(p[0]=p[1]); p[0][0]:=9; Writeln(p[1]); end.","False\n[1,3]\nFalse\n[2,1]\n");
+    result("type R=record n:integer; end; begin var r:R; r.n:=1; var a:=Arr(r,r); var s:=a.Permutations; var rows:=s.ToArray; rows[0][0].n:=9; Writeln(a[0].n,' ',rows[1][0].n,' ',s.First[0].n); end.","1 1 1\n");
+    result("type A=array of integer; begin var a:=new A[2]; var value:=Arr(1); a[0]:=value; a[1]:=value; var rows:=a.Combinations(1).ToArray; rows[0][0][0]:=9; Writeln(rows[1][0][0],' ',value[0]); end.","9 9\n");
+    result("begin var s:=Arr(1,2).Permutations; foreach var a in s do foreach var b in s do Write(a,':',b,';'); end.","[1,2]:[1,2];[1,2]:[2,1];[2,1]:[1,2];[2,1]:[2,1];");
+    result("begin var s:=Arr(1,2,3).Combinations(2); foreach var a in s do foreach var b in s.Take(1) do Write(a,':',b,';'); end.","[1,2]:[1,2];[1,3]:[1,2];[2,3]:[1,2];");
+    result("begin var a:=new integer[0]; Writeln(a.Combinations(0).ToArray); Writeln(a.Permutations.First.Length,' ',a.Permutations.Take(1).Count); Writeln(a.Permutations(0).First.Length,' ',a.Permutations(0).Take(1).Count); Writeln(''.Combinations(0).Count,' ',''.Permutations.First.Length); end.","[[]]\n0 1\n0 1\n1 0\n");
+    result("begin Writeln(Arr(1,2).Combinations(0).ToArray); Writeln(Arr(1,2).Permutations(0).First.Length); Writeln(Arr(1,2).Combinations(5).Take(0).Count,' ',Arr(1,2).Combinations(-1).Take(0).Count); end.","[[]]\n0\n0 0\n");
+    result("begin var a:array of integer; Writeln(a.Combinations(-1).Take(0).Count,' ',a.Permutations.Take(0).Count,' ',a.Permutations(2).Take(0).Count); end.","0 0 0\n");
+    result("begin var a:=Arr(1,2,3); Writeln(NextPermutation(a),' ',a); Writeln(PABCSystem.NextPermutation(a),' ',a); var last:=Arr(3,2,1); Writeln(NextPermutation(last),' ',last); Writeln(NextPermutation(Arr(1))); end.","True [1,3,2]\nTrue [2,1,3]\nFalse [3,2,1]\nFalse\n");
+    result("begin var a:=Arr(1,1,2); repeat Write(a,' '); until not NextPermutation(a); end.","[1,1,2] [1,2,1] [2,1,1] ");
+    result("procedure F(var x:integer;a:array of integer); begin NextPermutation(a); Inc(x,10); end; begin var a:=Arr(1,2,3); F(a[1],a); Writeln(a); end.","[1,13,2]\n");
+    result("begin var a:=Arr(-2147483648,0,MaxInt); Writeln(NextPermutation(a),' ',a); end.","True [-2147483648,2147483647,0]\n");
+    result("begin var a:=Arr(1,2); var action:()->boolean:=()->NextPermutation(a); Writeln(action(),' ',a); end.","True [2,1]\n");
+    result("begin var s:=Permutations('🌍'); var row:=s.First; Writeln(row.Length,' ',Ord(row[1]),' ',Ord(row[2])); var c:='🌍'.Combinations(1).ToArray; Writeln(Ord(c[0][1]),' ',Ord(c[1][1])); end.","2 55356 57101\n55356 57101\n");
+    for (const auto source:{
+        "begin var a:array of integer; Writeln(a.Combinations(1).Any); end.",
+        "begin var a:array of integer; Writeln(a.Permutations.Any); end.",
+        "begin var a:array of integer; Writeln(a.Permutations(1).Any); end.",
+        "begin var a:sequence of integer; a.Combinations(-1).Take(0).Count; end.",
+        "begin var s:string:=nil; s.Permutations.Take(0).Count; end.",
+        "begin var a:array of integer; NextPermutation(a); end."}) runtime_error(source,"E_NIL");
+    for (const auto source:{
+        "begin Arr(1).Combinations(-1).Any; end.",
+        "begin var a:array of integer; a.Combinations(-1).Any; end.",
+        "begin Arr(1).Permutations(-1).Any; end."}) runtime_error(source,"E_RANGE");
+    for (const auto source:{
+        "begin Writeln(new integer[0].Permutations.Count); end.",
+        "begin Writeln(''.Permutations.Count); end.",
+        "begin Arr(1,2).Permutations(0).Count; end.",
+        "begin Arr(1,2).Combinations(3).First; end.",
+        "begin Writeln(new integer[0].Combinations(1).Any); end.",
+        "begin NextPermutation(new integer[0]); end."}) runtime_error(source,"E_BOUNDS");
+    for (const auto source:{
+        "begin Combinations(Arr(1)); end.",
+        "begin Permutations(Arr(1),1,2); end.",
+        "begin Arr(1).Combinations(1.5); end.",
+        "begin Writeln(new integer[1,1].Permutations); end.",
+        "begin NextPermutation(Arr(1.0,2.0)); end.",
+        "begin NextPermutation(new List<integer>); end.",
+        "begin NextPermutation(Arr(1),2); end."}) compile_error(source,"E_TYPE");
+    const auto failed=[&](std::string_view source,std::string_view code,std::string_view output) {
+        const auto p=abc::compile(source); std::istringstream in; std::ostringstream out;
+        error([&]{abc::execute(p,in,out);},code,source); require(out.str()==output,"Combinatorics retains source error timing");
+    };
+    failed("begin var s:=SeqGen(1,i->begin Write('source'); Result:=i; end); s.Combinations(-1).Any; end.","E_RANGE","source");
+    failed("begin foreach var row in new integer[0].Permutations do Writeln(row); end.","E_BOUNDS","[]\n");
+    failed("begin foreach var row in Arr(1).Permutations(0) do Writeln(row); end.","E_BOUNDS","[]\n");
+    for (int n=1;n<=5;++n) {
+        std::vector<int> order(static_cast<std::size_t>(n)); std::iota(order.begin(),order.end(),0);
+        std::string source="Arr(",expected;
+        for (int i=0;i<n;++i) { if (i) source+=","; source+=std::to_string(i); } source+=")";
+        do {
+            expected+="[";
+            for (int i=0;i<n;++i) { if (i) expected+=","; expected+=std::to_string(order[static_cast<std::size_t>(i)]); }
+            expected+="]\n";
+        } while (std::next_permutation(order.begin(),order.end()));
+        result("begin foreach var row in "+source+".Permutations do Writeln(row); end.",expected);
+        for (int width=0;width<=n;++width) {
+            std::vector<std::vector<int>> subsets;
+            for (int mask=0;mask<(1<<n);++mask) {
+                std::vector<int> row;
+                for (int bit=0;bit<n;++bit) if ((mask>>bit)&1) row.push_back(bit);
+                if (static_cast<int>(row.size())==width) subsets.push_back(std::move(row));
+            }
+            std::sort(subsets.begin(),subsets.end()); expected="[";
+            for (std::size_t i=0;i<subsets.size();++i) {
+                if (i) expected+=","; expected+="[";
+                for (std::size_t j=0;j<subsets[i].size();++j) { if (j) expected+=","; expected+=std::to_string(subsets[i][j]); }
+                expected+="]";
+            }
+            expected+="]\n";
+            result("begin Writeln("+source+".Combinations("+std::to_string(width)+").ToArray); end.",expected);
+        }
+    }
+    abc::ExecutionOptions options; options.instruction_limit=40;
+    error([&]{(void)run("begin Arr(1,2,3,4,5).Permutations.Count; end.","",options);},"E_LIMIT");
+    options={}; options.allocation_limit=35;
+    error([&]{(void)run("begin Arr(1,2,3).Permutations.ToArray; end.","",options);},"E_LIMIT");
+    options={}; options.cancelled=[] { return true; };
+    error([&]{(void)run("begin Arr(1,2).Combinations(1).Any; end.","",options);},"E_CANCELLED");
+    auto p=abc::compile("begin Arr(1,2).Combinations(1).Count; Arr(1,2).Permutations.Count; Arr(1,2).Permutations(1).Count; end.");
+    for (const auto opcode:{abc::Op::combinations,abc::Op::permutations,abc::Op::partial_permutations}) {
+        auto bad=p;
+        for (auto& instruction:bad.code) if (instruction.op==opcode) instruction.operand=0;
+        error([&]{abc::verify(bad);},"E_BYTECODE");
+    }
+    p=abc::compile("begin NextPermutation(Arr(1,2)); end.");
+    for (int variant=0;variant<2;++variant) {
+        auto bad=p; for (auto& instruction:bad.code) if (instruction.op==abc::Op::next_permutation) {
+            if (!variant) instruction.operand=1; else instruction.type=abc::Type::integer;
+        }
+        error([&]{abc::verify(bad);},"E_BYTECODE");
+    }
 }
 
 void cartesian_library() {
@@ -4585,6 +4694,7 @@ int main() {
     lambda_language();
     generators_library();
     cartesian_library();
+    combinatorics_library();
     structural_output();
     try_console_read();
     string_conversions();
