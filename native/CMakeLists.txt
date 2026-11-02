@@ -282,7 +282,13 @@ if(BUILD_TESTING)
     add_test(NAME original_params5 COMMAND $<TARGET_FILE:abc> run "${CMAKE_CURRENT_SOURCE_DIR}/../TestSuite/params5.pas")
     add_test(NAME original_const1 COMMAND $<TARGET_FILE:abc> run "${CMAKE_CURRENT_SOURCE_DIR}/../TestSuite/const1.pas")
     add_test(NAME original_const3 COMMAND $<TARGET_FILE:abc> run "${CMAKE_CURRENT_SOURCE_DIR}/../TestSuite/const3.pas")
-    set_tests_properties(original_params1 original_constparam2 original_params5 original_const1 original_const3 PROPERTIES TIMEOUT 10)
+    add_test(NAME original_delegates1 COMMAND $<TARGET_FILE:abc> run "${CMAKE_CURRENT_SOURCE_DIR}/../TestSuite/delegates1.pas")
+    add_test(NAME original_delegates2 COMMAND $<TARGET_FILE:abc> run "${CMAKE_CURRENT_SOURCE_DIR}/../TestSuite/delegates2.pas")
+    add_test(NAME original_delegates6 COMMAND $<TARGET_FILE:abc> run "${CMAKE_CURRENT_SOURCE_DIR}/../TestSuite/delegates6.pas")
+    add_test(NAME callable_values_compatibility COMMAND ${CMAKE_COMMAND}
+        -DABC_RUNNER=$<TARGET_FILE:abc> -DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures
+        -DABC_FIXTURE_NAME=callable-values-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")
+    set_tests_properties(original_params1 original_constparam2 original_params5 original_const1 original_const3 original_delegates1 original_delegates2 original_delegates6 PROPERTIES TIMEOUT 10)
     add_test(NAME params_compatibility COMMAND ${CMAKE_COMMAND}
         -DABC_RUNNER=$<TARGET_FILE:abc> -DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures
         -DABC_FIXTURE_NAME=params-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")

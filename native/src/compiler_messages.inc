@@ -268,3 +268,8 @@
     {"Zip function arity must match the source count and return a value","Число параметров функции Zip должно совпадать с числом источников; функция должна возвращать значение"},
     {"Zip function parameters must be values of the exact source element types","Параметры функции Zip должны передаваться по значению и точно соответствовать типам элементов источников"},
     {"Zip requires two to five typed sources and an optional function","Для Zip требуются от двух до пяти типизированных источников и необязательная функция"},
+    {"Routine does not match the callable parameter and result types","Типы параметров или результата подпрограммы не соответствуют процедурному типу"},
+    {"Wrong callable generic argument count","Неверное число аргументов обобщённого процедурного типа"},
+    {"Wrong callable argument count","Неверное число аргументов вызова процедурного значения"},
+    {"Invoke requires a callable argument list","Для Invoke требуется список аргументов в скобках"},
+    {"Callable constructor requires one matching routine value","Конструктору процедурного типа требуется одно значение с совместимой сигнатурой"},

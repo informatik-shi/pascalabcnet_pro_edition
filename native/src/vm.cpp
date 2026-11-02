@@ -1101,6 +1101,22 @@ static void execute_impl(const Program& program, std::istream& input, std::ostre
             for (const auto& item : list->items) if (values.equal(item->value,value)) { found = true; break; }
             stack.emplace_back(found); break;
         }
+        case Op::routine_value: {
+            if (!values.remaining) trap(instruction,RuntimeError::allocation_limit);
+            --values.remaining;
+            auto value=std::make_shared<Aggregate>(); value->type=instruction.type; value->routine=instruction.operand;
+            stack.emplace_back(std::move(value)); break;
+        }
+        case Op::call_value: {
+            const auto count=type_info(program,instruction.type).parameters.size();
+            const auto position=stack.size()-count-1;
+            const auto callable=std::get<std::shared_ptr<Aggregate>>(stack[position]);
+            stack.erase(stack.begin()+static_cast<std::ptrdiff_t>(position));
+            if (callable->nil) trap(instruction,RuntimeError::nil_reference);
+            if (!callable->routine || *callable->routine>=program.routines.size()
+                || !callable_matches(type_info(program,instruction.type),program.routines[*callable->routine])) trap(instruction,RuntimeError::invalid_bytecode);
+            enter_routine(*callable->routine,instruction.location); break;
+        }
         case Op::call_user: enter_routine(instruction.operand,instruction.location); break;
         case Op::return_user: {
             std::optional<Value> result;

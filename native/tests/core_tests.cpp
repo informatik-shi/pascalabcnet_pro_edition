@@ -62,6 +62,104 @@ void runtime_error(std::string_view source, std::string_view code) {
     error([&] { (void)run(source); }, code,source);
 }
 
+void named_callable_values() {
+    result(R"(type F=function(x:integer):integer; P=procedure(var x:integer);
+function Twice(x:integer):integer; begin Result:=2*x; end;
+procedure Add(var x:integer); begin x:=x+3; end;
+function Apply(f:F;x:integer):integer; begin Result:=f(x); end;
+function Make:F; begin Result:=Twice; end;
+begin var f:F:=Twice; var g:=Twice; var p:P:=Add; var n:=4; p(n);
+Writeln(f(n),' ',g(5),' ',Apply(Twice,6),' ',Make()(8),' ',f.Invoke(9));
+var a:=Arr(Twice,Twice); Writeln(a[0](10),' ',a[0]=a[1],' ',f=g);
+end.)","14 10 12 16 18\n20 True True\n");
+    result(R"(type F=function:integer; P=procedure;
+var count:integer;
+function Next:integer; begin Inc(count); Result:=count; end;
+procedure Tick; begin Inc(count); end;
+procedure Use(f:F;p:P); begin Writeln(f()); p; end;
+begin var f:F:=Next; var p:P:=Tick; Writeln(count); Use(Next,Tick);
+var n:integer:=f; Writeln(n,' ',count); var g:F:=f; Writeln(f=g,' ',f=nil,' ',nil<>p); Assert(f=Next);
+end.)","0\n1\n3 3\nTrue False True\n");
+    result(R"(type F=function(x:integer):integer; Box=record f:F; end;
+function IncOne(x:integer):integer; begin Result:=x+1; end;
+function Apply(f:F):F; begin Result:=f; end;
+begin var b:Box; b.f:=IncOne; var c:=b; Writeln(c.f(2),' ',Apply(b.f)(3));
+var a:=new List<F>; a.Add(IncOne); Writeln(a[0](4));
+b.f:=nil; Writeln(c.f(5),' ',b.f=nil);
+end.)","3 4\n5\n6 True\n");
+    result(R"(type F=function(params a:array of integer):integer;
+function Total(params a:array of integer):integer; begin Result:=a.Sum; end;
+begin var f:F:=Total; Writeln(f(),' ',f(1,2,3),' ',f(Arr(4,5)));
+end.)","0 6 9\n");
+    result(R"(function Same(const n:integer):integer; begin Result:=n; end;
+procedure Change(out n:integer); begin n:=9; end;
+begin var f:function(const x:integer):integer:=Same;
+var p:procedure(out n:integer):=Change; var n:=2; p(n); Writeln(f(n));
+end.)","9\n");
+    result(R"(function Twice(x:integer):integer; begin Result:=2*x; end;
+var recurse:function(x:integer):integer;
+function Factorial(n:integer):integer; begin if n<2 then Result:=1 else Result:=n*recurse(n-1); end;
+begin var f:Func<integer,integer>:=Twice; var g:IntFunc:=f; var h:System.Func<integer,integer>:=g;
+Writeln(h(7)); recurse:=Factorial; Writeln(recurse(6));
+end.)","14\n720\n");
+    result(R"(var n:integer;
+procedure SetN(x:integer); begin n:=x; end;
+function Pos(x:integer):boolean; begin Result:=x>0; end;
+function Seven:integer; begin Result:=7; end;
+begin var p:Action<integer>:=SetN; p(3); var f:Predicate<integer>:=Pos;
+var z:Func0<integer>:=Seven; Writeln(n,' ',f(-1),' ',z());
+end.)","3 False 7\n");
+    result(R"(type F=function(x:integer):integer;
+var selected:F;
+function A(x:integer):integer; begin Result:=10+x; end;
+function B(x:integer):integer; begin Result:=100+x; end;
+function Argument:integer; begin selected:=B; Result:=1; end;
+begin selected:=A; Writeln(selected(Argument),' ',selected(2)); end.)","11 102\n");
+    result(R"(function Twice(x:integer):integer; begin Result:=2*x; end;
+procedure SetF(var f:Func<integer,integer>); begin f:=Twice; end;
+begin var f:Func<integer,integer>; SetF(f); Writeln(f(8)); end.)","16\n");
+    result("function Twice(x:integer):integer; begin Result:=2*x; end; procedure P; begin Write(1); end; begin var f:=new Func<integer,integer>(Twice); var p:System.Action:=P; Writeln(f(3)); p(); end.","6\n1");
+    result("type F=function:integer; function Seven:integer; begin Result:=7; end; procedure Use(f:F:=Seven); begin Writeln(f()); end; begin var a:=new F[2](Seven,Seven); var l:=new List<F>; l.Add(Seven); Writeln(a[0](),' ',l[0]()); Use; end.","7 7\n7\n");
+    result("type F=System.Func<integer,integer,integer>; IntFunc=integer; function Add(x,y:integer):integer; begin Result:=x+y; end; begin var f:F:=Add; var n:IntFunc:=7; Writeln(f(n,3)); end.","10\n");
+    result("begin var f:function:integer; var p:procedure; Writeln(f=nil,' ',nil=p,' ',f=default(function:integer)); end.","True True True\n");
+    for (const auto source:{
+        "function F(x:integer):integer; begin Result:=x; end; begin var p:procedure(x:integer):=F; end.",
+        "function F(x:int64):integer; begin Result:=0; end; begin var f:Func<integer,integer>:=F; end.",
+        "function F(var x:integer):integer; begin Result:=x; end; begin var f:Func<integer,integer>:=F; end.",
+        "begin var f:Func<integer,integer>; f(); end.",
+        "begin var f:Func<integer,integer>; f(1,2); end.",
+        "begin var f:Func<integer,integer>; f('ab'); end.",
+        "begin var f:function(var x:integer):integer; f(1); end.",
+        "begin var f:function(var x:integer):integer; const n=1; f(n); end.",
+        "begin var f:function(params x:integer):integer; end.",
+        "begin var f:Func<integer>; end.",
+        "begin var f:=new Func<integer,integer>(); end.",
+        "begin var f:Action<integer,integer>; end.",
+        "begin var f:Predicate2<integer>; end.",
+        "begin var f:procedure; var x:=f(); end.",
+        "begin var n:=1; n(); end.",
+        "type R=record x:integer; end; begin var r:R; r.x(); end."}) compile_error(source,"E_TYPE");
+    runtime_error("begin var f:function(x:integer):integer; f(1); end.","E_NIL");
+    runtime_error("begin var p:procedure; p; end.","E_NIL");
+    runtime_error("type F=function(x:integer):integer; begin var a:=new F[1]; a[0](1); end.","E_NIL");
+    try { (void)run("begin\nvar f:function:integer;\nf();\nend."); require(false,"Expected nil callable failure"); }
+    catch (const abc::Error& caught) { require(caught.code=="E_NIL" && caught.location.line==3 && !caught.russian.empty(),"Nil callable error retains source position and both languages"); }
+    abc::ExecutionOptions options; options.call_limit=8;
+    error([&]{(void)run("var f:Func<integer,integer>; function Again(n:integer):integer; begin Result:=f(n); end; begin f:=Again; f(0); end.","",options);},"E_LIMIT");
+    auto p=abc::compile("function F(x:integer):integer; begin Result:=x; end; begin var f:=F; f(1); end.");
+    require(p.types.size()==1 && p.types[0].kind==abc::CompoundKind::callable && p.types[0].element==abc::Type::integer && p.types[0].parameters[0].type==abc::Type::integer,"Callable signature is fully known before execution");
+    auto invalid=p; for (auto& instruction:invalid.code) if (instruction.op==abc::Op::routine_value) instruction.operand=invalid.routines.size();
+    error([&]{abc::verify(invalid);},"E_BYTECODE");
+    invalid=p; invalid.types[0].parameters[0].type=abc::Type::real;
+    error([&]{abc::verify(invalid);},"E_BYTECODE");
+    invalid=p; for (auto& instruction:invalid.code) if (instruction.op==abc::Op::call_value) instruction.operand=1;
+    error([&]{abc::verify(invalid);},"E_BYTECODE");
+    invalid=p; invalid.types[0].parameters[0].by_reference=true;
+    error([&]{abc::verify(invalid);},"E_BYTECODE");
+    invalid=p; invalid.types[0].parameters[0].type=abc::Type::first_compound;
+    error([&]{abc::verify(invalid);},"E_BYTECODE");
+}
+
 void big_integer_library() {
     result("begin var a:BigInteger:=123456789012345678901234567890bi; Writeln(a+10,' ',a*2); Writeln((-11bi) div 2,' ',(-11bi) mod 2,' ',1bi/2,' ',5bi/2bi); Writeln((1bi shl 80) shr 76,' ',(-9bi) shr 1,' ',not 0bi); end.","123456789012345678901234567900 246913578024691357802469135780\n-5 -1 0.5 2\n16 -5 -1\n");
     result("begin var n:BigInteger:=1; for var i:=2 to 100 do n:=n*i; Writeln(n); var a:=BigInteger.Parse(' +000123 '); Writeln(a,' ',new BigInteger(-1.9),' ',BigInteger.Create(MaxUInt64)); end.","93326215443944152681699238856266700490715968264381621468592963895217599993229915608941463976156518286253697920827223758251185210916864000000000000000000000000\n123 -1 18446744073709551615\n");
@@ -3953,6 +4051,7 @@ int main() {
     sequence_zip_library();
     sequence_prefix_predicates_library();
     bilingual_source_diagnostics();
+    named_callable_values();
     structural_output();
     try_console_read();
     string_conversions();

@@ -252,6 +252,16 @@ private:
         case hir::ExprKind::array_literal:
             for (const auto& argument : node.arguments) expression(*argument);
             emit(Op::array_literal,node.type,node.arguments.size(),node.location); break;
+        case hir::ExprKind::routine_value:
+            emit(Op::routine_value,node.type,node.local,node.location); break;
+        case hir::ExprKind::value_call: {
+            expression(*node.left);
+            const auto& signature=type_info(program_,node.left->type);
+            for (std::size_t n=0;n<node.arguments.size();++n) {
+                if (signature.parameters[n].by_reference) reference(*node.arguments[n]); else expression(*node.arguments[n]);
+            }
+            emit(Op::call_value,node.left->type,0,node.location); break;
+        }
         case hir::ExprKind::user_call: {
             const auto& signature = program_.routines[node.local];
             for (std::size_t n = 0; n < node.arguments.size(); ++n) {
@@ -756,8 +766,15 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if (instruction.op==Op::sequence_sort && (!scalar(type_info(program,type).element) || type_info(program,type).rank!=1 || instruction.operand>1)) invalid(instruction,"Invalid sort"); break;
         case Op::make_default: case Op::store_ref: case Op::drop:
             if (!valid_value_type(program,type) || (instruction.op==Op::make_default && instruction.operand>2)) invalid(instruction,"Invalid value type");
-            if (instruction.op==Op::make_default && instruction.operand==1 && compound(type) && (node_kind(type_info(program,type).kind) || type_info(program,type).kind==CompoundKind::tuple || type_info(program,type).kind==CompoundKind::sequence || school_ip_kind(type_info(program,type).kind)))
+            if (instruction.op==Op::make_default && instruction.operand==1 && compound(type) && (node_kind(type_info(program,type).kind) || type_info(program,type).kind==CompoundKind::tuple || type_info(program,type).kind==CompoundKind::sequence || type_info(program,type).kind==CompoundKind::callable || school_ip_kind(type_info(program,type).kind)))
                 invalid(instruction,"Nodes and tuples require the typed constructor");
+            break;
+        case Op::routine_value:
+            if (!compound(type) || type_info(program,type).kind!=CompoundKind::callable || instruction.operand>=program.routines.size()
+                || !callable_matches(type_info(program,type),program.routines[instruction.operand])) invalid(instruction,"Invalid callable target signature");
+            break;
+        case Op::call_value:
+            if (!compound(type) || type_info(program,type).kind!=CompoundKind::callable || instruction.operand) invalid(instruction,"Invalid callable invocation metadata");
             break;
         case Op::call_user:
             if (instruction.operand >= program.routines.size() || type != program.routines[instruction.operand].result) invalid(instruction,"Invalid user call"); break;
@@ -1092,6 +1109,15 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             require(instruction.op == Op::get_field ? instruction.type : reference_type(instruction.type));
             stack.push_back(instruction.op == Op::get_field ? type_info(program,instruction.type).fields[instruction.operand].type : reference_type(type_info(program,instruction.type).fields[instruction.operand].type)); break;
         case Op::length: require(instruction.type); stack.push_back(compound(instruction.type) && type_info(program,instruction.type).kind==CompoundKind::sequence ? Type::int64 : Type::integer); break;
+        case Op::routine_value: stack.push_back(instruction.type); break;
+        case Op::call_value: {
+            const auto& signature=type_info(program,instruction.type);
+            for (auto parameter=signature.parameters.rbegin();parameter!=signature.parameters.rend();++parameter)
+                require(parameter->by_reference ? reference_type(parameter->type) : parameter->type);
+            require(instruction.type);
+            if (signature.element!=Type::unit) stack.push_back(signature.element);
+            break;
+        }
         case Op::call_user:
             for (auto parameter = program.routines[instruction.operand].parameters.rbegin(); parameter != program.routines[instruction.operand].parameters.rend(); ++parameter)
                 require(parameter->by_reference ? reference_type(parameter->type) : parameter->type);
@@ -1156,7 +1182,17 @@ void verify(const Program& program) {
             if (!valid_value_type(program,t) || (compound(t) && static_cast<unsigned>(t)-64 >= i)) throw Error("E_BYTECODE",{},"Invalid or cyclic type dependency");
             if (compound(t)) level = std::max(level,depth[static_cast<unsigned>(t)-64]+1);
         };
-        if (type.kind==CompoundKind::sequence) {
+        if (type.kind!=CompoundKind::callable && !type.parameters.empty()) throw Error("E_BYTECODE",{},"Parameters on a non-callable type");
+        if (type.kind==CompoundKind::callable) {
+            if (type.name!="callable" || type.key!=Type::invalid || !type.fields.empty() || type.parameters.size()>16) throw Error("E_BYTECODE",{},"Invalid callable type metadata");
+            if (type.element!=Type::unit) prior(type.element);
+            for (std::size_t n=0;n<type.parameters.size();++n) {
+                const auto& parameter=type.parameters[n]; prior(parameter.type);
+                if (parameter.variadic && (n+1!=type.parameters.size() || parameter.by_reference || !compound(parameter.type)
+                    || type_info(program,parameter.type).kind!=CompoundKind::array || type_info(program,parameter.type).rank!=1))
+                    throw Error("E_BYTECODE",{},"Invalid callable params metadata");
+            }
+        } else if (type.kind==CompoundKind::sequence) {
             if (type.key!=Type::invalid || !type.fields.empty() || type.name!="sequence") throw Error("E_BYTECODE",{},"Invalid sequence type metadata");
             prior(type.element);
         } else if (school_ip_kind(type.kind)) {

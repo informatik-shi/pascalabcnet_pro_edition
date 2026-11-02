@@ -153,7 +153,7 @@ private:
     SourceLocation position_;
 };
 
-enum class SyntaxExprKind { literal, literal_group, name, unary, binary, call, index, field, member_call, construction, formatted, tuple, typed_default };
+enum class SyntaxExprKind { literal, literal_group, name, unary, binary, call, index, field, member_call, construction, formatted, tuple, typed_default, value_call };
 struct SyntaxType {
     Token token;
     std::string kind;
@@ -161,6 +161,8 @@ struct SyntaxType {
     std::vector<std::pair<Token, std::shared_ptr<SyntaxType>>> fields;
     std::shared_ptr<SyntaxType> key;
     unsigned rank = 1;
+    std::vector<bool> references{}, variadics{};
+    bool system_qualified=false;
 };
 struct SyntaxExpr {
     SyntaxExprKind kind;
@@ -282,7 +284,25 @@ private:
     std::shared_ptr<SyntaxType> type_syntax() {
         DepthGuard guard(depth_, current_.location);
         auto result = std::make_shared<SyntaxType>(); result->token = current_;
-        if (accept("(")) {
+        if (is("function") || is("procedure")) {
+            const bool function=accept("function"); if (!function) expect("procedure");
+            result->kind="callable";
+            if (accept("(")) {
+                if (!is(")")) do {
+                    const bool reference=accept("var") || accept("out");
+                    const bool read_only=!reference && accept("const");
+                    const bool variadic=!reference && !read_only && accept("params");
+                    std::vector<Token> names{name()}; while (accept(",")) names.push_back(name());
+                    expect(":"); auto type=type_syntax();
+                    for (const auto& parameter:names) {
+                        result->fields.emplace_back(parameter,type); result->references.push_back(reference); result->variadics.push_back(variadic);
+                    }
+                    if (result->fields.size()>16) fail("Too many routine parameters");
+                } while (accept(";"));
+                expect(")");
+            }
+            if (function) { expect(":"); result->element=type_syntax(); }
+        } else if (accept("(")) {
             result->kind="tuple";
             do {
                 if (result->fields.size()>=7) throw Error("E_UNSUPPORTED",result->token.location,"Tuple arities above seven require nested Rest tuples");
@@ -315,7 +335,23 @@ private:
             expect("end");
         } else {
             result->token = name(); result->kind = result->token.text;
-            if (result->kind == "assocarray" && accept("<")) {
+            if (result->kind=="system") {
+                result->system_qualified=true; expect("."); result->kind=name().text;
+                if (result->kind!="func" && result->kind!="action" && result->kind!="predicate")
+                    throw Error("E_UNSUPPORTED",result->token.location,"Unknown or unsupported type 'System."+result->kind+"'");
+            }
+            if (result->kind=="func" || result->kind=="func0" || result->kind=="func2" || result->kind=="func3"
+                || result->kind=="action" || result->kind=="action0" || result->kind=="action2" || result->kind=="action3"
+                || result->kind=="predicate" || result->kind=="predicate2" || result->kind=="predicate3") {
+                if (result->kind!="action0" && !(result->system_qualified && result->kind=="action" && !is("<"))) {
+                    expect("<");
+                    do {
+                        if (result->fields.size()>=17) fail("Too many routine parameters");
+                        result->fields.emplace_back(result->token,type_syntax());
+                    } while (accept(","));
+                    expect(">");
+                }
+            } else if (result->kind == "assocarray" && accept("<")) {
                 result->key = type_syntax(); expect(","); result->element = type_syntax(); expect(">");
             } else if ((result->kind == "list" || result->kind == "stack" || result->kind == "queue" || result->kind == "dynarray" || result->kind == "simpleset" || result->kind == "linkedlist" || result->kind == "linkedlistnode" || result->kind == "singlenode") && accept("<")) {
                 result->element = type_syntax(); expect(">");
@@ -625,8 +661,12 @@ private:
                 const auto field = is("write") || is("writeln") || is("readln") ? consume() : name();
                 result = make_expression(SyntaxExprKind::field, field, std::move(result));
             } else if (accept("(")) {
-                if (result->kind != SyntaxExprKind::name && result->kind != SyntaxExprKind::field) fail("Expression is not callable");
-                result->kind = result->kind == SyntaxExprKind::name ? SyntaxExprKind::call : SyntaxExprKind::member_call;
+                if (result->kind==SyntaxExprKind::name) result->kind=SyntaxExprKind::call;
+                else if (result->kind==SyntaxExprKind::field) result->kind=SyntaxExprKind::member_call;
+                else {
+                    const auto token=result->token;
+                    result=make_expression(SyntaxExprKind::value_call,token,std::move(result));
+                }
                 if (!is(")")) do {
                     const auto& name=result->token.text;
                     auto argument = (name=="print" || name=="println" || name=="str" || (result->kind==SyntaxExprKind::member_call && (name=="write" || name=="writeln")))
@@ -794,7 +834,7 @@ private:
             const auto& syntax=*source.routines[i]->parameters[n].default_value;
             const auto first=module_.locals.size(); in_routine_=true; current_result_=helper.signature.result; current_name_=helper.signature.name; scopes_.emplace_back();
             helper.body.kind=hir::StmtKind::return_stmt; helper.body.location=syntax.token.location;
-            helper.body.expression=convert(expression(syntax),helper.signature.result);
+            helper.body.expression=convert(expression(syntax,helper.signature.result),helper.signature.result);
             check_default_expression(*helper.body.expression);
             for (auto j=first;j<module_.locals.size();++j) if (!module_.locals[j].global) helper.signature.locals.push_back(j);
             scopes_.pop_back(); in_routine_=false; current_result_=Type::unit; current_name_.clear();
@@ -844,6 +884,32 @@ private:
         for (std::size_t i=0;i<elements.size();++i) tuple.fields.push_back({"item"+std::to_string(i+1),elements[i],false});
         module_.types.push_back(std::move(tuple)); return static_cast<Type>(63+module_.types.size());
     }
+    bool callable_type(Type type) const { return compound(type) && info(type,{}).kind==CompoundKind::callable; }
+    Type function_type(Type result,std::vector<CallableParameter> parameters,SourceLocation location) {
+        for (std::size_t n=0;n<parameters.size();++n) if (parameters[n].variadic
+            && (n+1!=parameters.size() || parameters[n].by_reference || !compound(parameters[n].type)
+                || info(parameters[n].type,location).kind!=CompoundKind::array || info(parameters[n].type,location).rank!=1))
+            throw Error("E_TYPE",location,"params requires a final rank-one array parameter");
+        for (std::size_t n=0;n<module_.types.size();++n) {
+            const auto& type=module_.types[n];
+            if (type.kind==CompoundKind::callable && type.element==result && type.parameters==parameters) return static_cast<Type>(64+n);
+        }
+        if (module_.types.size()>=1024) throw Error("E_LIMIT",location,"Type limit exceeded");
+        TypeInfo type{"callable",CompoundKind::callable,result,{}}; type.parameters=std::move(parameters);
+        module_.types.push_back(std::move(type)); return static_cast<Type>(63+module_.types.size());
+    }
+    Type routine_type(std::size_t id,SourceLocation location) {
+        const auto& signature=module_.routines[id].signature; std::vector<CallableParameter> parameters;
+        for (const auto& parameter:signature.parameters) parameters.push_back({parameter.type,parameter.by_reference,parameter.variadic});
+        return function_type(signature.result,std::move(parameters),location);
+    }
+    std::unique_ptr<hir::Expr> routine_value(std::size_t id,SourceLocation location,Type expected=Type::invalid) {
+        auto value=std::make_unique<hir::Expr>(); value->kind=hir::ExprKind::routine_value; value->location=location; value->local=id;
+        value->type=callable_type(expected) ? expected : routine_type(id,location);
+        if (!callable_matches(info(value->type,location),module_.routines[id].signature))
+            throw Error("E_TYPE",location,"Routine does not match the callable parameter and result types");
+        return value;
+    }
     Type sequence_type(CompoundKind kind, Type element, unsigned rank = 1) {
         for (std::size_t i = 0; i < module_.types.size(); ++i)
             if (module_.types[i].kind == kind && module_.types[i].element == element && module_.types[i].rank==rank) return static_cast<Type>(64+i);
@@ -881,6 +947,32 @@ private:
     }
     Type resolve_type(const SyntaxType& syntax) {
         if (auto found=resolved_types_.find(&syntax); found!=resolved_types_.end()) return found->second;
+        if (!syntax.system_qualified && !syntax.element && syntax.fields.empty() && syntax.kind!="callable")
+            if (const auto found=aliases_.find(syntax.kind);found!=aliases_.end()) return found->second;
+        if (syntax.kind=="callable") {
+            std::vector<CallableParameter> parameters;
+            for (std::size_t n=0;n<syntax.fields.size();++n) parameters.push_back({resolve_type(*syntax.fields[n].second),syntax.references[n],syntax.variadics[n]});
+            const auto result=syntax.element ? resolve_type(*syntax.element) : Type::unit;
+            return function_type(result,std::move(parameters),syntax.token.location);
+        }
+        if (syntax.kind=="intfunc" || syntax.kind=="realfunc" || syntax.kind=="stringfunc") {
+            const auto type=syntax.kind=="intfunc" ? Type::integer : syntax.kind=="realfunc" ? Type::real : Type::string;
+            return function_type(type,{{type}},syntax.token.location);
+        }
+        if (syntax.kind=="func" || syntax.kind=="func0" || syntax.kind=="func2" || syntax.kind=="func3"
+            || syntax.kind=="action" || syntax.kind=="action0" || syntax.kind=="action2" || syntax.kind=="action3"
+            || syntax.kind=="predicate" || syntax.kind=="predicate2" || syntax.kind=="predicate3") {
+            const auto& name=syntax.kind; const bool function=name.starts_with("func"),predicate=name.starts_with("predicate");
+            const auto arity=name.ends_with('0') ? 0U : name.ends_with('2') ? 2U : name.ends_with('3') ? 3U : 1U;
+            const bool system=syntax.system_qualified && (name=="func" || name=="action");
+            if ((!system && syntax.fields.size()!=arity+(function ? 1U : 0U)) || (function && syntax.fields.empty()) || syntax.fields.size()>17)
+                throw Error("E_TYPE",syntax.token.location,"Wrong callable generic argument count");
+            std::vector<CallableParameter> parameters;
+            for (std::size_t n=0;n<syntax.fields.size()-(function ? 1U : 0U);++n) parameters.push_back({resolve_type(*syntax.fields[n].second)});
+            if (parameters.size()>16) throw Error("E_TYPE",syntax.token.location,"Too many routine parameters");
+            const auto result=function ? resolve_type(*syntax.fields.back().second) : predicate ? Type::boolean : Type::unit;
+            return function_type(result,std::move(parameters),syntax.token.location);
+        }
         if (syntax.kind=="addr32" || syntax.kind=="calcip") {
             if (auto found=aliases_.find(syntax.kind); found!=aliases_.end()) return found->second;
             if (!imported_units_.contains("school")) throw Error("E_UNSUPPORTED",syntax.token.location,"IPv4 classes require uses School");
@@ -1012,6 +1104,11 @@ private:
             expression->type=type; expression->kind=hir::ExprKind::default_value; return expression;
         }
         if (expression->type == type) return expression;
+        if (callable_type(expression->type) && info(expression->type,expression->location).parameters.empty()
+            && info(expression->type,expression->location).element!=Type::unit) {
+            auto call=std::make_unique<hir::Expr>(); call->kind=hir::ExprKind::value_call; call->type=info(expression->type,expression->location).element;
+            call->location=expression->location; call->left=std::move(expression); return convert(std::move(call),type);
+        }
         if (!can_widen(expression->type, type))
             throw Error("E_TYPE", expression->location, "Cannot assign " + std::string(type_name(expression->type))
                 + " to " + std::string(type_name(type)));
@@ -1019,11 +1116,51 @@ private:
         return std::make_unique<hir::Expr>(hir::Expr{
             hir::ExprKind::convert, type, location, std::int32_t{0}, 0, "", std::move(expression), {}});
     }
-    std::unique_ptr<hir::Expr> expression(const SyntaxExpr& source) {
+    void bind_value_call(hir::Expr& result,const std::vector<std::unique_ptr<SyntaxExpr>>& arguments) {
+        const auto type=result.left->type;
+        if (!callable_type(type)) throw Error("E_TYPE",result.location,"Expression is not callable");
+        // Binding an argument may register more types; do not retain references into types.
+        const auto signature=info(type,result.location);
+        result.kind=hir::ExprKind::value_call; result.type=signature.element;
+        const auto count=signature.parameters.size(); const bool variadic=count && signature.parameters.back().variadic;
+        const auto fixed=count-(variadic ? 1U : 0U);
+        if (arguments.size()<fixed || (!variadic && arguments.size()!=count)) throw Error("E_TYPE",result.location,"Wrong callable argument count");
+        for (std::size_t n=0;n<arguments.size();++n) {
+            const auto expected=n<fixed ? signature.parameters[n].type : signature.parameters.back().type;
+            const auto context=variadic && n>=fixed ? info(expected,result.location).element : expected;
+            result.arguments.push_back(expression(*arguments[n],context));
+        }
+        if (variadic && !(result.arguments.size()==count && (result.arguments.back()->type==signature.parameters.back().type || result.arguments.back()->type==Type::nil))) {
+            auto packed=std::make_unique<hir::Expr>(); packed->kind=hir::ExprKind::array_literal; packed->type=signature.parameters.back().type; packed->location=result.location;
+            const auto element=info(packed->type,result.location).element;
+            for (auto n=fixed;n<result.arguments.size();++n) packed->arguments.push_back(convert(std::move(result.arguments[n]),element));
+            result.arguments.resize(fixed); result.arguments.push_back(std::move(packed));
+        }
+        for (std::size_t n=0;n<count;++n) {
+            const auto& parameter=signature.parameters[n];
+            if (parameter.by_reference) {
+                if (!lvalue(*result.arguments[n]) || result.arguments[n]->type!=parameter.type)
+                    throw Error("E_TYPE",result.location,"var argument requires an assignable value of exactly the parameter type");
+            } else result.arguments[n]=convert(std::move(result.arguments[n]),parameter.type);
+        }
+    }
+    std::unique_ptr<hir::Expr> expression(const SyntaxExpr& source,Type expected=Type::invalid) {
+        if (source.kind==SyntaxExprKind::name && callable_type(expected)) {
+            const auto local=lookup(source.token);
+            if ((!local || source.token.text==current_name_) && routine_names_.contains(source.token.text)) {
+                const auto id=routine_names_.at(source.token.text); const auto& signature=module_.routines[id].signature;
+                if (signature.parameters.empty() && signature.result==expected) {
+                    SyntaxExpr call{SyntaxExprKind::call,source.token,{},{},1,{},{}}; return expression(call);
+                }
+                return routine_value(id,source.token.location,expected);
+            }
+        }
         auto result = std::make_unique<hir::Expr>();
         result->location = source.token.location;
         result->operation = source.token.text;
         switch (source.kind) {
+        case SyntaxExprKind::value_call:
+            result->left=expression(*source.left); bind_value_call(*result,source.arguments); break;
         case SyntaxExprKind::typed_default:
             result->kind=hir::ExprKind::default_value; result->type=resolve_type(*source.constructed); result->operation="default"; break;
         case SyntaxExprKind::tuple: {
@@ -1059,11 +1196,11 @@ private:
                     module_.locals.push_back({"$array_init_"+std::to_string(initialized->local),result->type,!in_routine_});
                     if (sizes.size()==2) initialized->value=sizes[1];
                     for (const auto& item:source.initializers) {
-                        if (sizes.size()==1) initialized->arguments.push_back(convert(expression(*item),type));
+                        if (sizes.size()==1) initialized->arguments.push_back(convert(expression(*item,type),type));
                         else {
                             if (item->arguments.size()!=static_cast<std::size_t>(sizes[1]))
                                 throw Error("E_TYPE",item->token.location,"Array initializer row length must match its second dimension");
-                            for (const auto& element:item->arguments) initialized->arguments.push_back(convert(expression(*element),type));
+                            for (const auto& element:item->arguments) initialized->arguments.push_back(convert(expression(*element,type),type));
                         }
                     }
                     initialized->left=std::move(result); result=std::move(initialized);
@@ -1074,6 +1211,10 @@ private:
                     result->kind=hir::ExprKind::default_value; result->type=type; result->operation="new"; break;
                 }
                 if (!compound(type)) throw Error("E_TYPE",result->location,"new requires an array length, record or collection type");
+                if (callable_type(type)) {
+                    if (source.arguments.size()!=1) throw Error("E_TYPE",result->location,"Callable constructor requires one matching routine value");
+                    return convert(expression(*source.arguments[0],type),type);
+                }
                 if (info(type,result->location).kind==CompoundKind::sequence) throw Error("E_TYPE",result->location,"Sequences require a typed producer");
                 if (school_ip_kind(info(type,result->location).kind)) {
                     for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
@@ -1083,7 +1224,7 @@ private:
                     const auto fields=info(type,result->location).fields;
                     if (source.arguments.size()!=fields.size()) throw Error("E_TYPE",result->location,"Tuple constructor arity mismatch");
                     result->kind=hir::ExprKind::tuple_literal; result->type=type;
-                    for (std::size_t i=0;i<fields.size();++i) result->arguments.push_back(convert(expression(*source.arguments[i]),fields[i].type));
+                    for (std::size_t i=0;i<fields.size();++i) result->arguments.push_back(convert(expression(*source.arguments[i],fields[i].type),fields[i].type));
                     break;
                 }
                 if (node_kind(info(type,result->location).kind)) {
@@ -1091,7 +1232,7 @@ private:
                     if (source.arguments.size() != parameters.size()) throw Error("E_TYPE",result->location,"Wrong node constructor argument count");
                     result->kind = hir::ExprKind::linked_call; result->type = type;
                     result->local = static_cast<std::size_t>(LinkedMethod::construct);
-                    for (std::size_t i=0;i<parameters.size();++i) result->arguments.push_back(convert(expression(*source.arguments[i]),parameters[i]));
+                    for (std::size_t i=0;i<parameters.size();++i) result->arguments.push_back(convert(expression(*source.arguments[i],parameters[i]),parameters[i]));
                     break;
                 }
                 if (!source.arguments.empty()) {
@@ -1216,6 +1357,10 @@ private:
                 bind_builtin(*result,source.token.text,source.left->token.text); break;
             }
             result->left = expression(*source.left); const auto receiver = result->left->type;
+            if (callable_type(receiver) && source.token.text=="invoke") {
+                if (source.kind!=SyntaxExprKind::member_call) throw Error("E_TYPE",result->location,"Invoke requires a callable argument list");
+                bind_value_call(*result,source.arguments); break;
+            }
             if ((receiver==Type::string || (compound(receiver) && (info(receiver,result->location).kind==CompoundKind::sequence || indexed_sequence(info(receiver,result->location).kind))))
                 && (bind_sequence_zip(*result,source,{},true) || bind_sequence_numeric_selector(*result,source,{},true) || bind_sequence_predicate(*result,source,{},true) || bind_sequence_transform(*result,source,{},true))) break;
             if (receiver==Type::string && (sequence_slice_method(source.token.text) || sequence_query_method(source.token.text)
@@ -1486,7 +1631,7 @@ private:
                 result->kind = hir::ExprKind::linked_call; result->local = static_cast<std::size_t>(method);
                 result->type = linked_result(receiver,type,method);
                 if (source.arguments.size() != parameters.size()) throw Error("E_TYPE",result->location,"Wrong linked method argument count");
-                for (std::size_t i=0;i<parameters.size();++i) result->arguments.push_back(convert(expression(*source.arguments[i]),parameters[i]));
+                for (std::size_t i=0;i<parameters.size();++i) result->arguments.push_back(convert(expression(*source.arguments[i],parameters[i]),parameters[i]));
                 break;
             }
             if (type.kind == CompoundKind::association) {
@@ -1525,7 +1670,7 @@ private:
                 if (method >= BufferMethod::to_string && !scalar(element)) throw Error("E_UNSUPPORTED",result->location,"Collection text output currently requires scalar elements");
                 result->kind = hir::ExprKind::buffer_call; result->local = static_cast<std::size_t>(method);
                 result->type = buffer_result(receiver,element,method);
-                for (std::size_t i=0;i<parameters.size();++i) result->arguments.push_back(convert(expression(*source.arguments[i]),parameters[i]));
+                for (std::size_t i=0;i<parameters.size();++i) result->arguments.push_back(convert(expression(*source.arguments[i],parameters[i]),parameters[i]));
                 break;
             }
             if (endpoint_collection(type.kind)) {
@@ -1546,7 +1691,7 @@ private:
                     throw Error("E_UNSUPPORTED",result->location,"Collection text output currently requires scalar elements");
                 result->kind = hir::ExprKind::endpoint_call; result->local = static_cast<std::size_t>(method);
                 result->type = endpoint_result(element,method);
-                if (count) result->arguments.push_back(convert(expression(*source.arguments[0]),element));
+                if (count) result->arguments.push_back(convert(expression(*source.arguments[0],element),element));
                 break;
             }
             if (type.kind != CompoundKind::record && type.kind!=CompoundKind::tuple) {
@@ -1565,13 +1710,17 @@ private:
                 else if (name == "clear") result->kind = hir::ExprKind::list_clear;
                 else if (name == "contains") { result->kind = hir::ExprKind::list_contains; result->type = Type::boolean; }
                 else throw Error("E_NAME",result->location,"Unknown list method");
-                if (count) result->arguments.push_back(convert(expression(*source.arguments[0]),name == "removeat" ? Type::integer : element));
+                if (count) result->arguments.push_back(convert(expression(*source.arguments[0],name == "removeat" ? Type::integer : element),name == "removeat" ? Type::integer : element));
                 break;
             }
-            if (source.kind == SyntaxExprKind::member_call) throw Error("E_TYPE",result->location,"Record field is not callable");
             result->kind = hir::ExprKind::field;
             for (std::size_t i = 0; i < type.fields.size(); ++i) if (type.fields[i].name == source.token.text) {
-                result->local = i; result->type = type.fields[i].type; return result;
+                result->local = i; result->type = type.fields[i].type;
+                if (source.kind==SyntaxExprKind::member_call) {
+                    auto call=std::make_unique<hir::Expr>(); call->location=result->location; call->left=std::move(result);
+                    bind_value_call(*call,source.arguments); return call;
+                }
+                return result;
             }
             throw Error("E_NAME",result->location,"Unknown record field '"+source.token.text+"'");
         }
@@ -1599,6 +1748,12 @@ private:
                     result->kind=hir::ExprKind::literal; result->value=found->second;
                 }
             } else if (auto routine = routine_names_.find(source.token.text); routine != routine_names_.end()) {
+                const auto& signature=module_.routines[routine->second].signature;
+                const auto id=routine->second;
+                const bool no_arguments=signature.parameters.empty()
+                    || (signature.parameters.size()==1 && signature.parameters[0].variadic)
+                    || (id<parameter_defaults_.size() && !parameter_defaults_[id].empty() && parameter_defaults_[id][0].has_value());
+                if (!no_arguments || signature.result==Type::unit) return routine_value(id,result->location);
                 SyntaxExpr call{SyntaxExprKind::call,source.token,{},{},1,{},{}};
                 return expression(call);
             } else if (source.token.text=="printdelimdefault") {
@@ -1634,16 +1789,25 @@ private:
             break;
         }
         case SyntaxExprKind::call: {
-            if (lookup(source.token) && source.token.text != current_name_) throw Error("E_TYPE", result->location, "Variable is not callable: '" + source.token.text + "'");
+            if (const auto local=lookup(source.token); local && source.token.text!=current_name_) {
+                result->left=std::make_unique<hir::Expr>(); result->left->kind=hir::ExprKind::local;
+                result->left->local=*local; result->left->type=module_.locals[*local].type; result->left->location=result->location;
+                bind_value_call(*result,source.arguments); break;
+            }
             result->kind = hir::ExprKind::call;
             if (!routine_names_.contains(source.token.text) && bind_school_table(*result,source)) break;
             if (!routine_names_.contains(source.token.text) && bind_sequence_zip(*result,source)) break;
             if (!routine_names_.contains(source.token.text) && bind_sequence_numeric_selector(*result,source)) break;
             if (!routine_names_.contains(source.token.text) && bind_sequence_predicate(*result,source)) break;
             if (!routine_names_.contains(source.token.text) && bind_sequence_transform(*result,source)) break;
-            for (const auto& argument : source.arguments) result->arguments.push_back(expression(*argument));
             if (auto routine = routine_names_.find(source.token.text); routine != routine_names_.end()) {
-                const auto& signature = module_.routines[routine->second].signature;
+                const auto signature = module_.routines[routine->second].signature;
+                for (std::size_t n=0;n<source.arguments.size();++n) {
+                    auto context=n<signature.parameters.size() ? signature.parameters[n].type : Type::invalid;
+                    if (!signature.parameters.empty() && signature.parameters.back().variadic && n+1>=signature.parameters.size())
+                        context=info(signature.parameters.back().type,result->location).element;
+                    result->arguments.push_back(expression(*source.arguments[n],context));
+                }
                 add_default_arguments(*result,routine->second);
                 result->kind = hir::ExprKind::user_call; result->local = routine->second; result->type = signature.result;
                 for (std::size_t n = 0; n < result->arguments.size(); ++n) {
@@ -1655,6 +1819,7 @@ private:
                 }
                 break;
             }
+            for (const auto& argument : source.arguments) result->arguments.push_back(expression(*argument));
             if (bind_print(*result,source.token.text)) break;
             if (bind_sequence_conversion(*result,source.token.text)) break;
             if (bind_sequence_factory(*result,source.token.text)) break;
@@ -1719,7 +1884,7 @@ private:
         case SyntaxExprKind::binary: {
             result->kind = hir::ExprKind::binary;
             result->left = expression(*source.left);
-            result->right = expression(*source.right);
+            result->right = expression(*source.right,callable_type(result->left->type) ? result->left->type : Type::invalid);
             auto left = result->left->type;
             auto right = result->right->type;
             const auto& op = result->operation;
@@ -2628,9 +2793,9 @@ private:
             break;
         }
         case SyntaxStmtKind::declaration: {
-            auto initial = source.expression ? expression(*source.expression) : nullptr;
-            auto type = initial ? initial->type : Type::invalid;
-            if (source.annotation) type = resolve_type(*source.annotation);
+            auto type=source.annotation ? resolve_type(*source.annotation) : Type::invalid;
+            auto initial=source.expression ? expression(*source.expression,type) : nullptr;
+            if (type==Type::invalid && initial) type=initial->type;
             if (type == Type::unit || type == Type::nil) throw Error("E_TYPE",source.token.location,"Procedure has no value");
             if (initial) initial = convert(std::move(initial), type);
             for (const auto& token : source.names) {
@@ -2726,19 +2891,19 @@ private:
             if (result.target->kind == hir::ExprKind::linked_call && result.target->local == static_cast<std::size_t>(LinkedMethod::next)
                 && info(result.target->left->type,result.location).kind == CompoundKind::single_node) {
                 auto setter = std::move(result.target);
-                setter->arguments.push_back(convert(expression(*source.expression),setter->type));
+                setter->arguments.push_back(convert(expression(*source.expression,setter->type),setter->type));
                 setter->local = static_cast<std::size_t>(LinkedMethod::set_next); setter->type = Type::unit;
                 result.kind = hir::StmtKind::call; result.expression = std::move(setter); break;
             }
             if (result.target->kind == hir::ExprKind::linked_call && result.target->local == static_cast<std::size_t>(LinkedMethod::value)) {
                 auto setter = std::move(result.target);
-                setter->arguments.push_back(convert(expression(*source.expression),setter->type));
+                setter->arguments.push_back(convert(expression(*source.expression,setter->type),setter->type));
                 setter->local = static_cast<std::size_t>(LinkedMethod::set_value); setter->type = Type::unit;
                 result.kind = hir::StmtKind::call; result.expression = std::move(setter); break;
             }
             if (result.target->kind == hir::ExprKind::association_call && result.target->local == static_cast<std::size_t>(AssociationMethod::get)) {
                 auto setter = std::move(result.target);
-                setter->arguments.push_back(convert(expression(*source.expression),setter->type));
+                setter->arguments.push_back(convert(expression(*source.expression,setter->type),setter->type));
                 setter->local = static_cast<std::size_t>(AssociationMethod::set); setter->type = Type::unit;
                 result.kind = hir::StmtKind::call; result.expression = std::move(setter); break;
             }
@@ -2746,17 +2911,22 @@ private:
                 const auto method = static_cast<BufferMethod>(result.target->local);
                 if (method == BufferMethod::get || method == BufferMethod::count || method == BufferMethod::capacity) {
                     auto setter = std::move(result.target);
-                    setter->arguments.push_back(convert(expression(*source.expression),setter->type));
+                    setter->arguments.push_back(convert(expression(*source.expression,setter->type),setter->type));
                     setter->local = static_cast<std::size_t>(method == BufferMethod::get ? BufferMethod::set
                         : method == BufferMethod::count ? BufferMethod::resize : BufferMethod::reserve);
                     setter->type = Type::unit; result.kind = hir::StmtKind::call; result.expression = std::move(setter); break;
                 }
             }
             if (!lvalue(*result.target)) throw Error("E_TYPE",result.location,"Assignment target must be assignable");
-            result.expression = convert(expression(*source.expression), result.target->type);
+            result.expression = convert(expression(*source.expression,result.target->type), result.target->type);
             break;
         case SyntaxStmtKind::call:
-            result.kind = hir::StmtKind::call; result.expression = expression(*source.expression); break;
+            result.kind = hir::StmtKind::call; result.expression = expression(*source.expression);
+            if (callable_type(result.expression->type) && result.expression->kind!=hir::ExprKind::user_call && result.expression->kind!=hir::ExprKind::value_call) {
+                auto call=std::make_unique<hir::Expr>(); call->location=result.location; call->left=std::move(result.expression);
+                const std::vector<std::unique_ptr<SyntaxExpr>> arguments; bind_value_call(*call,arguments); result.expression=std::move(call);
+            }
+            break;
         case SyntaxStmtKind::break_stmt: case SyntaxStmtKind::continue_stmt:
             if (!loop_depth_) throw Error("E_SYNTAX",result.location,"Break/Continue requires an enclosing loop");
             result.kind=source.kind==SyntaxStmtKind::break_stmt ? hir::StmtKind::break_stmt : hir::StmtKind::continue_stmt;
@@ -2840,7 +3010,7 @@ private:
             result.kind = hir::StmtKind::return_stmt;
             if (source.expression) {
                 if (!in_routine_ || current_result_ == Type::unit) throw Error("E_TYPE",result.location,"Procedure Exit takes no value");
-                result.expression = convert(expression(*source.expression),current_result_);
+                result.expression = convert(expression(*source.expression,current_result_),current_result_);
             }
             break;
         case SyntaxStmtKind::print:

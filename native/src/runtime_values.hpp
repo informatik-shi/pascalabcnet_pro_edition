@@ -94,6 +94,7 @@ struct Values {
             if (kind==CompoundKind::sequence && !(*a)->nil && !b->nil && (*a)->sequence && b->sequence
                 && collection_sequence((*a)->sequence->provider) && collection_sequence(b->sequence->provider))
                 return (*a)->sequence->source==b->sequence->source;
+            if (kind==CompoundKind::callable) return (*a)->nil || b->nil ? (*a)->nil==b->nil : (*a)->routine==b->routine;
             if (kind!=CompoundKind::record && kind!=CompoundKind::tuple) return ((*a)->nil && b->nil) || *a == b;
             if ((*a)->nil || b->nil) return (*a)->nil && b->nil;
             for (std::size_t i = 0; i < (*a)->items.size(); ++i)

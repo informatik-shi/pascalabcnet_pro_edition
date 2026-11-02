@@ -46,6 +46,9 @@ Text/TextFile: Assign, Reset, Rewrite, Append, Read/Readln, Write/Writeln, Eof, 
 Методы Text: ReadWord, ReadToEnd, Name/FullName, Write/Writeln, Print/Println, Erase/Rename и чтение значений.
 Добавлены создание, удаление и переименование файлов и каталогов, работа с текущей папкой программы.
 Строковый nil отличается от пустой строки; стандартные строковые операции учитывают это различие.
+Процедурные значения: function/procedure, Func, Action, Predicate; пример examples/callable-values.pas.
+Типы параметров и результата проверяются до запуска; вызов nil даёт двуязычную ошибку.
+Лямбды и захват переменных ещё не перенесены.
 Совместимость с PascalABC.NET частичная.
 Русские имена и НОД/НОК: examples/russian-identifiers.pas. Массивные GCD/LCM: examples/school-folds.pas.
 Регистр и категории Unicode: examples/unicode-characters.pas. Правила регистра фиксированы таблицами Unicode 15.1.
