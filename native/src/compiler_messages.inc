@@ -1,3 +1,7 @@
+    {"CartesianPower requires a typed source and integer power","Для CartesianPower требуется типизированный источник и целая степень"},
+    {"Cartesian requires two to five typed sources and an optional function","Для Cartesian требуется от двух до пяти типизированных источников и необязательная функция"},
+    {"Cartesian function arity must match the source count and return a value","Число параметров функции Cartesian должно совпадать с числом источников; функция должна возвращать значение"},
+    {"Cartesian function parameters must be values of the exact source element types","Параметры функции Cartesian должны передаваться по значению и иметь точные типы элементов источников"},
     {"Wrong generator argument count","Неверное число аргументов генератора"},
     {"Indexed generator requires integer value parameters and a known result type","Индексный генератор требует целочисленных параметров по значению и известного типа результата"},
     {"Recurrent generator requires value parameters and result of the same known type","Рекуррентный генератор требует параметров по значению и результата одного известного типа"},

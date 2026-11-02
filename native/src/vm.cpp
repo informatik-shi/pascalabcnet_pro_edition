@@ -260,6 +260,10 @@ static void execute_impl(const Program& program, std::istream& input, std::ostre
             }
             break;
         }
+        case Op::cartesian_power: {
+            const auto count=std::get<std::int32_t>(pop()); auto source=pop();
+            stack.emplace_back(sequence_cartesian_power(values,static_cast<Type>(instruction.operand>>16),static_cast<Type>(instruction.operand&65535U),instruction.type,std::move(source),count,options)); break;
+        }
         case Op::generator: {
             const auto method=static_cast<GeneratorMethod>(instruction.operand&255U);
             const auto callback=static_cast<Type>(instruction.operand>>8);
@@ -297,18 +301,18 @@ static void execute_impl(const Program& program, std::istream& input, std::ostre
         }
         case Op::sequence_partial:
             stack.emplace_back(sequence_partial(values,instruction.type,std::get<std::shared_ptr<Aggregate>>(pop()),options)); break;
-        case Op::sequence_zip_value: {
+        case Op::sequence_cartesian_value: case Op::sequence_zip_value: {
             const auto callable=std::get<std::shared_ptr<Aggregate>>(pop());
             const auto count=(instruction.operand>>16)+2;
             std::vector<std::shared_ptr<Aggregate>> sources(count);
             for (auto i=count;i>0;--i) sources[i-1]=std::get<std::shared_ptr<Aggregate>>(pop());
-            stack.emplace_back(sequence_zip(values,instruction.type,std::move(sources),0,options,callable)); break;
+            stack.emplace_back(instruction.op==Op::sequence_cartesian_value ? sequence_cartesian(values,instruction.type,std::move(sources),0,options,callable) : sequence_zip(values,instruction.type,std::move(sources),0,options,callable)); break;
         }
-        case Op::sequence_zip: {
+        case Op::sequence_cartesian: case Op::sequence_zip: {
             const auto count=(instruction.operand>>9)+2;
             std::vector<std::shared_ptr<Aggregate>> sources(count);
             for (auto i=count;i>0;--i) sources[i-1]=std::get<std::shared_ptr<Aggregate>>(pop());
-            stack.emplace_back(sequence_zip(values,instruction.type,std::move(sources),instruction.operand&511U,options)); break;
+            stack.emplace_back(instruction.op==Op::sequence_cartesian ? sequence_cartesian(values,instruction.type,std::move(sources),instruction.operand&511U,options) : sequence_zip(values,instruction.type,std::move(sources),instruction.operand&511U,options)); break;
         }
         case Op::sequence_predicate: case Op::sequence_predicate_value: {
             const bool dynamic=instruction.op==Op::sequence_predicate_value;

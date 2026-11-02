@@ -49,6 +49,8 @@ std::shared_ptr<Aggregate> sequence_begin(Values& values,const std::shared_ptr<A
     if (state.provider==SequenceProvider::transform) { reserve_state(values); state.transform=std::make_shared<TransformState>(); return result; }
     if (state.provider==SequenceProvider::zip) { reserve_state(values); state.zip=std::make_shared<ZipState>(); return result; }
     if (state.provider==SequenceProvider::generated) { reserve_state(values); state.generator=std::make_shared<GeneratorState>(); return result; }
+    if (state.provider==SequenceProvider::cartesian) { reserve_state(values); state.cartesian=std::make_shared<CartesianState>(); return result; }
+    if (state.provider==SequenceProvider::cartesian_power) { reserve_state(values); state.power=std::make_shared<CartesianPowerState>(); return result; }
     if (state.provider==SequenceProvider::string) {
         if (!state.seed || state.seed->type!=Type::string || !std::holds_alternative<std::u16string>(state.seed->value)) throw runtime_error(RuntimeError::invalid_bytecode,values.location);
         return result;
@@ -102,6 +104,8 @@ bool sequence_resume(Values& values,const std::shared_ptr<Aggregate>& sequence,s
     if (state.provider==SequenceProvider::transform) return sequence_transform_resume(values,sequence,index,options);
     if (state.provider==SequenceProvider::zip) return sequence_zip_resume(values,sequence,index,options);
     if (state.provider==SequenceProvider::generated) return generator_resume(values,sequence,index,options);
+    if (state.provider==SequenceProvider::cartesian) return sequence_cartesian_resume(values,sequence,index,options);
+    if (state.provider==SequenceProvider::cartesian_power) return sequence_cartesian_power_resume(values,sequence,index,options);
     if (state.provider==SequenceProvider::real_range) {
         if (!state.real_range) throw runtime_error(RuntimeError::invalid_bytecode,location);
         auto& range=*state.real_range;
@@ -156,7 +160,7 @@ bool sequence_resume(Values& values,const std::shared_ptr<Aggregate>& sequence,s
 }
 std::optional<std::uint64_t> sequence_known_length(const std::shared_ptr<Aggregate>& sequence,SourceLocation location) {
     const auto& state=cursor(sequence,location);
-    if (state.provider==SequenceProvider::generated || state.provider==SequenceProvider::zip || state.provider==SequenceProvider::transform || state.provider==SequenceProvider::concat || state.provider==SequenceProvider::slice || state.provider==SequenceProvider::partial_sum || state.provider==SequenceProvider::big_range || (state.provider==SequenceProvider::real_range && !state.real_range->initialized)) return std::nullopt;
+    if (state.provider==SequenceProvider::cartesian || state.provider==SequenceProvider::cartesian_power || state.provider==SequenceProvider::generated || state.provider==SequenceProvider::zip || state.provider==SequenceProvider::transform || state.provider==SequenceProvider::concat || state.provider==SequenceProvider::slice || state.provider==SequenceProvider::partial_sum || state.provider==SequenceProvider::big_range || (state.provider==SequenceProvider::real_range && !state.real_range->initialized)) return std::nullopt;
     return state.count;
 }
 std::uint64_t sequence_length(const std::shared_ptr<Aggregate>& sequence,SourceLocation location) {
@@ -179,6 +183,8 @@ Value sequence_at(Values& values,const std::shared_ptr<Aggregate>& sequence,std:
     if (state.provider==SequenceProvider::transform) return values.copy(state.transform->current);
     if (state.provider==SequenceProvider::zip) return values.copy(state.zip->current);
     if (state.provider==SequenceProvider::generated) return values.copy(state.generator->current);
+    if (state.provider==SequenceProvider::cartesian) return values.copy(state.cartesian->current);
+    if (state.provider==SequenceProvider::cartesian_power) return values.copy(state.power->current);
     if (state.provider==SequenceProvider::concat) return values.copy(state.concat->current);
     if (state.provider==SequenceProvider::slice) return values.copy(state.slice->current);
     if (state.provider==SequenceProvider::partial_sum) return state.partial->total;

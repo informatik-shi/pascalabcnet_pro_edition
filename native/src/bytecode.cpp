@@ -85,11 +85,16 @@ private:
             expression(*node.left); emit(Op::sequence_aggregate,node.left->type,node.local,node.location); break;
         case hir::ExprKind::sequence_partial:
             expression(*node.left); emit(Op::sequence_partial,node.left->type,0,node.location); break;
-        case hir::ExprKind::sequence_zip:
+        case hir::ExprKind::cartesian_power:
+            expression(*node.left); expression(*node.right);
+            emit(Op::cartesian_power,node.left->type,(static_cast<std::size_t>(node.type)<<16)|static_cast<std::size_t>(node.operation_type),node.location); break;
+        case hir::ExprKind::sequence_zip: {
+            const bool cartesian=node.operation=="cartesian";
             for (const auto& argument:node.arguments) expression(*argument);
-            if (node.right) { expression(*node.right); emit(Op::sequence_zip_value,node.type,((node.local>>9)<<16)|static_cast<std::size_t>(node.right->type),node.location); }
-            else emit(Op::sequence_zip,node.type,node.local,node.location);
+            if (node.right) { expression(*node.right); emit(cartesian ? Op::sequence_cartesian_value : Op::sequence_zip_value,node.type,((node.local>>9)<<16)|static_cast<std::size_t>(node.right->type),node.location); }
+            else emit(cartesian ? Op::sequence_cartesian : Op::sequence_zip,node.type,node.local,node.location);
             break;
+        }
         case hir::ExprKind::sequence_predicate:
             expression(*node.left);
             if (node.right) { expression(*node.right); emit(Op::sequence_predicate_value,node.left->type,((node.local>>8)<<16)|static_cast<std::size_t>(node.right->type),node.location); }
@@ -552,6 +557,25 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
     for (const auto& instruction : code) {
         const auto type = instruction.type;
         switch (instruction.op) {
+        case Op::cartesian_power: {
+            const auto result=instruction.operand>>16,array=instruction.operand&65535U;
+            if (result<64 || result>=64+program.types.size() || array<64 || array>=64+program.types.size())
+                invalid(instruction,"Invalid CartesianPower type metadata");
+            const auto& output=type_info(program,static_cast<Type>(result));
+            const auto& buffer=type_info(program,static_cast<Type>(array));
+            if (output.kind!=CompoundKind::sequence || buffer.kind!=CompoundKind::array || buffer.rank!=1
+                || output.element!=(type==Type::string ? Type::string : static_cast<Type>(array)))
+                invalid(instruction,"Invalid CartesianPower output type");
+            if (type==Type::string) {
+                if (buffer.element!=Type::character) invalid(instruction,"Invalid CartesianPower character buffer");
+            } else {
+                if (!compound(type)) invalid(instruction,"Invalid CartesianPower source");
+                const auto& input=type_info(program,type);
+                if ((input.kind!=CompoundKind::array && input.kind!=CompoundKind::sequence) || input.rank!=1 || input.element!=buffer.element)
+                    invalid(instruction,"Invalid CartesianPower source element");
+            }
+            break;
+        }
         case Op::generator: {
             const auto method=instruction.operand&255U,callback=instruction.operand>>8;
             if (method>static_cast<std::size_t>(GeneratorMethod::while_two) || callback<64 || callback>=64+program.types.size()
@@ -585,7 +609,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
                 if (instruction.operand>static_cast<std::size_t>(SequenceAggregate::product)) invalid(instruction,"Invalid numeric aggregate operation");
             } else if (instruction.operand || !partial_sum_element(type_info(program,type).element)) invalid(instruction,"Invalid PartialSum element or flags");
             break;
-        case Op::sequence_zip_value: {
+        case Op::sequence_cartesian_value: case Op::sequence_zip_value: {
             const auto arity=instruction.operand>>16;
             const auto signature=value_signature(program,static_cast<Type>(instruction.operand&65535U),instruction);
             if (!compound(type) || type_info(program,type).kind!=CompoundKind::sequence || arity>3
@@ -594,7 +618,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
                 invalid(instruction,"Invalid Zip callable signature");
             break;
         }
-        case Op::sequence_zip: {
+        case Op::sequence_cartesian: case Op::sequence_zip: {
             const auto callback=instruction.operand&511U,arity=instruction.operand>>9;
             if (!compound(type) || type_info(program,type).kind!=CompoundKind::sequence || arity>3 || callback>program.routines.size())
                 invalid(instruction,"Invalid Zip metadata");
@@ -982,6 +1006,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             for (auto n=parameters.size();n>0;--n) require(parameters[n-1]);
             stack.push_back(instruction.type); break;
         }
+        case Op::cartesian_power: require(Type::integer); require(instruction.type); stack.push_back(static_cast<Type>(instruction.operand>>16)); break;
         case Op::iteration_version: require(instruction.type); stack.push_back(Type::int64); break;
         case Op::sequence_begin: require(instruction.type); stack.push_back(instruction.type); break;
         case Op::sequence_snapshot: case Op::sequence_wrap: require(instruction.type); stack.push_back(static_cast<Type>(instruction.operand)); break;
@@ -996,7 +1021,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             require(instruction.type); stack.push_back(sequence_aggregate_result(type_info(program,instruction.type).element,static_cast<SequenceAggregate>(instruction.operand))); break;
         case Op::sequence_partial: require(instruction.type); stack.push_back(instruction.type); break;
         case Op::sequence_concat: require(instruction.type); require(instruction.type); stack.push_back(instruction.type); break;
-        case Op::sequence_zip_value: {
+        case Op::sequence_cartesian_value: case Op::sequence_zip_value: {
             const auto callback=static_cast<Type>(instruction.operand&65535U);
             require(callback); const auto& parameters=type_info(program,callback).parameters;
             for (auto i=parameters.size();i>0;--i) {
@@ -1006,7 +1031,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             }
             stack.push_back(instruction.type); break;
         }
-        case Op::sequence_zip: {
+        case Op::sequence_cartesian: case Op::sequence_zip: {
             const auto callback=instruction.operand&511U,count=(instruction.operand>>9)+2;
             for (auto i=count;i>0;--i) {
                 const auto expected=callback ? program.routines[callback-1].parameters[i-1].type

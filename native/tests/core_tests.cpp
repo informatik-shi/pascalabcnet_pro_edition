@@ -63,6 +63,141 @@ void runtime_error(std::string_view source, std::string_view code) {
     error([&] { (void)run(source); }, code,source);
 }
 
+void cartesian_library() {
+    result("begin Writeln(Cartesian(Seq(1,2),Seq(10,20)).ToArray); Writeln(Seq(1,2).Cartesian('ab').ToArray); end.","[(1,10),(1,20),(2,10),(2,20)]\n[(1,a),(1,b),(2,a),(2,b)]\n");
+    result("begin Writeln(Cartesian(Seq(1,2),Seq(10),Seq(True,False)).ToArray); Writeln(Cartesian(Seq(1),Seq(2),Seq(3),Seq(4)).ToArray); Writeln(Cartesian(Seq(1),Seq(2),Seq(3),Seq(4),Seq(5)).ToArray); end.","[(1,10,True),(1,10,False),(2,10,True),(2,10,False)]\n[(1,2,3,4)]\n[(1,2,3,4,5)]\n");
+    result("begin Writeln(Cartesian(Seq(1,2),Seq(10,20),(a,b)->a+b).ToArray); Writeln(Cartesian(Seq(1),Seq(2),Seq(3),(a,b,c)->a+b+c).ToArray); Writeln(Seq(1).Cartesian(Seq(2),Seq(3),Seq(4),(a,b,c,d)->a+b+c+d).ToArray); Writeln(Cartesian(Seq(1),Seq(2),Seq(3),Seq(4),Seq(5),(a,b,c,d,e)->a+b+c+d+e).ToArray); end.","[11,21,12,22]\n[6]\n[10]\n[15]\n");
+    result("begin Writeln(PABCSystem.Cartesian(Arr(1,2),'Яx',(n,c)->IntToStr(n)+c).ToArray); var l:=new List<integer>; l.Add(10); l.Add(20); Writeln('ab'.Cartesian(l).ToArray); end.","[1Я,1x,2Я,2x]\n[(a,10),(a,20),(b,10),(b,20)]\n");
+    result("function Sum(a,b:integer):integer; begin Result:=a+b; end; begin Writeln(Cartesian(Seq(1,2),Seq(10,20),Sum).ToArray); var f:(integer,integer)->integer:=Sum; Writeln(Cartesian(Seq(1),Seq(2),f).ToArray); f:=(a,b)->a*b; Writeln(Cartesian(Seq(2),Seq(3),f).First); end.","[11,21,12,22]\n[3]\n6\n");
+    result("function Build(k:integer):sequence of integer; begin Result:=Cartesian(Seq(1,2),Seq(3,4),(a,b)->a+b+k); k:=10; end; begin var s:=Build(2); Writeln(s.ToArray,' ',s.ToArray); end.","[14,15,15,16] [14,15,15,16]\n");
+    result("type R=record f:(integer,integer)->integer; end; function Make(k:integer):(integer,integer)->integer; begin Result:=(a,b)->a+b+k; end; begin var r:R; r.f:=Make(5); var a:=Arr(r.f); var l:=new List<(integer,integer)->integer>; l.Add(Make(10)); Writeln(Cartesian(Seq(1),Seq(2),r.f).First,' ',Cartesian(Seq(1),Seq(2),a[0]).First,' ',Cartesian(Seq(1),Seq(2),l[0]).First,' ',Cartesian(Seq(1),Seq(2),Make(20)).First); end.","8 8 13 23\n");
+    result("begin var calls:=0; var f:(integer,integer)->integer:=(a,b)->begin Inc(calls); Result:=a+b; end; var s:=Cartesian(Seq(1,2),Seq(10,20),f); f:=(a,b)->0; Writeln(calls,' ',s.First,' ',calls,' ',s.Count,' ',calls); Writeln(s.ToArray,' ',calls); end.","0 11 1 4 5\n[11,21,12,22] 9\n");
+    result("begin var a:=SeqGen(2,i->begin Write('A',i); Result:=i; end); var b:=SeqGen(2,i->begin Write('B',i); Result:=i; end); var s:=Cartesian(a,b,(x,y)->x*10+y); Writeln('start'); foreach var n in s do Write('=',n,';'); end.","start\nA0B0=0;B1=1;A1B0=10;B1=11;");
+    result("begin var a:=Arr(1); var b:=SeqGen(2,i->begin a[0]:=9; Result:=i; end); Writeln(Cartesian(a,b).ToArray); end.","[(1,0),(1,1)]\n");
+    result("begin var s:=Cartesian(Seq(1,2),'ab'); foreach var a in s do foreach var b in s.Take(1) do Write(a.Item1,a.Item2,':',b.Item1,b.Item2,';'); end.","1a:1a;1b:1a;2a:1a;2b:1a;");
+    result("begin var missing:sequence of integer; Writeln(Cartesian(SeqFill(0,1),missing).Count); Writeln(Cartesian(Seq(1),SeqFill(0,1),missing).Count); end.","0\n0\n");
+    result("begin var f:(integer,integer)->integer; var a:sequence of integer; Writeln(Cartesian(a,a,f).Take(0).Count); var s:=Cartesian(a,a,f); Writeln('created'); end.","0\ncreated\n");
+    result("begin var l:=new List<integer>; l.Add(1); l.Add(2); var s:=Cartesian(l,Seq(10,20),(a,b)->begin l.Add(3); Result:=a+b; end); Writeln(s.Take(2).ToArray); end.","[11,21]\n");
+    runtime_error("begin var l:=new List<integer>; l.Add(1); l.Add(2); Cartesian(l,Seq(10,20),(a,b)->begin l.Add(3); Result:=a+b; end).Take(3).Count; end.","E_MODIFIED");
+    runtime_error("begin var l:=new List<integer>; l.Add(1); l.Add(2); Cartesian(Seq(10),l,(a,b)->begin l.Add(3); Result:=a+b; end).Take(2).Count; end.","E_MODIFIED");
+    result("type R=record n:integer; end; begin var r:R; r.n:=1; var s:=Cartesian(Arr(r),Seq(10,20),(x,y)->begin x.n:=x.n+y; Result:=x.n; end); Writeln(s.ToArray,' ',r.n); end.","[11,21] 1\n");
+    result("begin Writeln(Arr(1,2).CartesianPower(2).ToArray); Writeln(CartesianPower(Arr(1,2),2).ToArray); Writeln(Cartesian(Arr(1,2),2).ToArray); Writeln(PABCSystem.CartesianPower(Arr(1,2),1).ToArray); end.","[[1,1],[1,2],[2,1],[2,2]]\n[[1,1],[1,2],[2,1],[2,2]]\n[[1,1],[1,2],[2,1],[2,2]]\n[[1],[2]]\n");
+    result("begin Writeln('ab'.CartesianPower(2).ToArray,' ','Яx'.Cartesian(2).ToArray); Writeln(CartesianPower('ab',1).ToArray,' ',PABCSystem.Cartesian('ab',0).ToArray); end.","[aa,ab,ba,bb] [ЯЯ,Яx,xЯ,xx]\n[a,b] []\n");
+    result("begin Writeln(Seq(1,2).CartesianPower(2).ToArray); var l:=new List<integer>; l.Add(3); l.Add(4); Writeln(l.Cartesian(2).ToArray); end.","[[1,1],[1,2],[2,1],[2,2]]\n[[3,3],[3,4],[4,3],[4,4]]\n");
+    result("begin Writeln(new integer[0].CartesianPower(0).Count,' ',new integer[0].CartesianPower(0).First.Length); Writeln(new integer[0].CartesianPower(MaxInt).Count); Writeln(''.CartesianPower(0).Count,' ',''.CartesianPower(1).Count); end.","1 0\n0\n1 0\n");
+    result("begin var a:=Arr(1,2); var s:=a.CartesianPower(2); a[0]:=9; Writeln(s.ToArray,' ',s.ToArray); var rows:=s.ToArray; Writeln(rows[0]=rows[1]); rows[0][0]:=77; Writeln(rows[1],' ',a); end.","[[9,9],[9,2],[2,9],[2,2]] [[9,9],[9,2],[2,9],[2,2]]\nFalse\n[9,2] [9,2]\n");
+    result("begin var a:=Arr(1,2); var s:=a.CartesianPower(2); foreach var row in s do begin Write(row,' '); a[0]:=9; row[0]:=-1; end; end.","[1,1] [9,2] [2,9] [2,2] ");
+    result("begin var a:=Arr(1,2); var s:sequence of integer:=a; var power:=s.CartesianPower(2); a[0]:=9; Writeln(power.ToArray); var l:=new List<integer>; l.Add(3); var p:=l.CartesianPower(1); l[0]:=8; Writeln(p.ToArray); end.","[[1,1],[1,2],[2,1],[2,2]]\n[[3]]\n");
+    result("begin var calls:=0; var s:=SeqGen(2,i->begin Inc(calls); Result:=i; end); var p:=s.CartesianPower(2); Writeln(calls,' ',p.ToArray,' ',p.ToArray,' ',calls); end.","2 [[0,0],[0,1],[1,0],[1,1]] [[0,0],[0,1],[1,0],[1,1]] 2\n");
+    result("begin var a:=Arr(1); var p:=a.CartesianPower(1); var rows:=new List<array of integer>; foreach var row in p do rows.Add(row); foreach var row in p do rows.Add(row); Writeln(rows[0]=rows[1]); end.","False\n");
+    result("type R=record n:integer; end; begin var r:R; r.n:=2; var a:=Arr(r); var p:=a.CartesianPower(1); var row:=p.First; row[0].n:=9; Writeln(a[0].n,' ',p.First[0].n); end.","2 2\n");
+    result("type A=array of integer; begin var a:=Arr(1); var outer:=new A[1]; outer[0]:=a; var p:=outer.CartesianPower(2).First; p[0][0]:=7; Writeln(a[0],' ',p[1][0]); end.","7 7\n");
+    result("begin var s:sequence of integer:=Seq(1,2); var p:=s.CartesianPower(-1); Writeln(p.Take(0).Count); Writeln(Arr(1).CartesianPower(-1).Take(0).Count); end.","0\n0\n");
+    result("begin var a:array of integer; Writeln(a.CartesianPower(-1).Take(0).Count); Writeln(Arr(1).CartesianPower(MaxInt).Take(0).Count); end.","0\n0\n");
+    result("begin var log:=''; var a:=SeqGen(2,i->begin log:=log+IntToStr(i); Result:=i; end); var p:=a.CartesianPower(-1); Writeln(log,' ',p.Take(0).Count); end.","01 0\n");
+    result("begin var s:sequence of string:='🌍'.CartesianPower(1); var a:=s.ToArray; Writeln(a.Length,' ',Ord(a[0][1]),' ',Ord(a[1][1])); end.","2 55356 57101\n");
+    result("function Cartesian(n:integer):integer; begin Result:=n+1; end; begin Writeln(Cartesian(2),' ',PABCSystem.Cartesian(Arr(1),Arr(2)).First); end.","3 (1,2)\n");
+    for (int width=0;width<=5;++width) {
+        std::string expected="[";
+        for (int mask=0;mask<(1<<width);++mask) {
+            if (mask) expected+=",";
+            expected+="[";
+            for (int bit=width-1;bit>=0;--bit) { if (bit!=width-1) expected+=","; expected+=((mask>>bit)&1) ? "1" : "0"; }
+            expected+="]";
+        }
+        expected+="]\n";
+        result("begin Writeln(Arr(0,1).CartesianPower("+std::to_string(width)+").ToArray); end.",expected);
+        result("begin Writeln(Seq(0,1).Cartesian("+std::to_string(width)+").ToArray); end.",expected);
+    }
+    for (const auto source:{
+        "begin var s:sequence of integer; Cartesian(s,Seq(1)).Any; end.",
+        "begin var s:sequence of integer; Cartesian(Seq(1),s).Any; end.",
+        "begin var f:(integer,integer)->integer; Cartesian(SeqFill(0,1),Seq(1),f).Any; end.",
+        "begin var a:array of integer; a.CartesianPower(0).Any; end.",
+        "begin var s:sequence of integer; s.CartesianPower(-1).Take(0).Count; end.",
+        "begin var s:string:=nil; s.CartesianPower(-1).Take(0).Count; end."}) runtime_error(source,"E_NIL");
+    for (const auto source:{
+        "begin Arr(1).CartesianPower(-1).Any; end.",
+        "begin var a:array of integer; a.CartesianPower(-1).Any; end.",
+        "begin Writeln(''.CartesianPower(-1).Any); end.",
+        "begin Seq(1).Cartesian(-1).Any; end."}) runtime_error(source,"E_RANGE");
+    for (const auto source:{
+        "begin Cartesian(Seq(1)); end.",
+        "begin Cartesian(Seq(1),Seq(2),Seq(3),Seq(4),Seq(5),Seq(6)); end.",
+        "begin Cartesian(Seq(1),Seq(2),x->x); end.",
+        "begin Cartesian(Seq(1),Seq(2),(a,b)->Writeln(a)); end.",
+        "begin Cartesian(Seq(1),Seq(2),(a:real;b:integer)->a+b); end.",
+        "begin Cartesian(Seq(1),Seq(2),(var a:integer;b:integer)->a+b); end.",
+        "begin CartesianPower(Seq(1)); end.",
+        "begin Arr(1).CartesianPower(2.5); end.",
+        "begin Writeln(new integer[1,1].CartesianPower(2)); end."}) compile_error(source,"E_TYPE");
+    const auto failed=[&](std::string_view source,std::string_view code,std::string_view output) {
+        const auto p=abc::compile(source); std::istringstream in; std::ostringstream out;
+        error([&]{abc::execute(p,in,out);},code,source); require(out.str()==output,"Cartesian source errors preserve callback timing");
+    };
+    failed("begin var s:=SeqGen(1,i->begin Write('source'); Result:=i; end); var f:(integer,integer)->integer; Cartesian(s,s,f).Any; end.","E_NIL","");
+    failed("begin var s:=SeqGen(1,i->begin Write('source'); Result:=i; end); s.CartesianPower(-1).Any; end.","E_RANGE","source");
+    failed("begin Cartesian(Seq(1),Iterate(MaxInt,x->x+1)).Count; end.","E_OVERFLOW","");
+    try { (void)run("begin\n Arr(1).CartesianPower(-1).Any;\nend."); require(false,"Expected bilingual CartesianPower range error"); }
+    catch (const abc::Error& caught) { require(caught.code=="E_RANGE" && caught.location.line==2 && std::string_view(caught.what())=="Cartesian power cannot be negative" && caught.russian=="Степень декартова произведения не может быть отрицательной","CartesianPower range error retains location and both languages"); }
+    abc::ExecutionOptions options; options.instruction_limit=120;
+    error([&]{(void)run("begin Cartesian(Iterate(1,x->x+1),SeqFill(0,1)).Any; end.","",options);},"E_LIMIT");
+    error([&]{(void)run("begin Arr(1,2).CartesianPower(5).Count; end.","",options);},"E_LIMIT");
+    options={}; options.allocation_limit=30;
+    error([&]{(void)run("begin Arr(1).CartesianPower(100).Any; end.","",options);},"E_LIMIT");
+    options={}; options.cancelled=[] { return true; };
+    error([&]{(void)run("begin Cartesian(Seq(1),Seq(2)).Any; end.","",options);},"E_CANCELLED");
+    const auto cursor_program=abc::compile("begin Cartesian(Seq(1,2),Seq(10,20),(a,b)->a+b).Count; Arr(1).CartesianPower(2).Count; end.");
+    const auto find=[&](abc::CompoundKind kind,abc::Type element) {
+        for (std::size_t i=0;i<cursor_program.types.size();++i)
+            if (cursor_program.types[i].kind==kind && cursor_program.types[i].element==element) return static_cast<abc::Type>(64+i);
+        throw std::runtime_error("Missing Cartesian test type");
+    };
+    const auto array_type=find(abc::CompoundKind::array,abc::Type::integer),seq_type=find(abc::CompoundKind::sequence,abc::Type::integer);
+    abc::Values values{cursor_program,1000}; int calls=0;
+    values.invoke=[&](std::size_t,std::span<const abc::Value> actual)->abc::Value { ++calls; return std::get<std::int32_t>(actual[0])+std::get<std::int32_t>(actual[1]); };
+    const auto target=std::make_shared<abc::Aggregate>(); target->routine=0;
+    for (std::size_t i=0;i<cursor_program.types.size();++i) if (cursor_program.types[i].kind==abc::CompoundKind::callable) target->type=static_cast<abc::Type>(64+i);
+    auto a=values.array(array_type,2),b=values.array(array_type,2);
+    a->items[0]->value=std::int32_t{1}; a->items[1]->value=std::int32_t{2};
+    b->items[0]->value=std::int32_t{10}; b->items[1]->value=std::int32_t{20};
+    options={};
+    auto product=abc::sequence_cartesian(values,seq_type,{abc::sequence_create(values,seq_type,a,abc::SequenceProvider::array),abc::sequence_create(values,seq_type,b,abc::SequenceProvider::array)},0,options,target);
+    auto cursor=abc::sequence_begin(values,product);
+    require(abc::sequence_resume(values,cursor,0,options) && std::get<std::int32_t>(abc::sequence_at(values,cursor,0,options))==11
+        && abc::sequence_resume(values,cursor,0,options) && calls==1,"Cartesian caches Current and repeated resume without repeating callbacks");
+    require(abc::sequence_resume(values,cursor,1,options) && std::get<std::int32_t>(abc::sequence_at(values,cursor,1,options))==21 && calls==2,"Cartesian advances its inner cursor before the outer cursor");
+    auto independent=abc::sequence_begin(values,product);
+    require(abc::sequence_resume(values,independent,0,options) && calls==3,"Cartesian cursors start independently");
+    const auto power_type=find(abc::CompoundKind::sequence,array_type);
+    auto power_source=abc::sequence_cartesian_power(values,power_type,array_type,array_type,a,2,options);
+    auto power_cursor=abc::sequence_begin(values,power_source);
+    const auto first=std::get<std::shared_ptr<abc::Aggregate>>(abc::sequence_at(values,power_cursor,0,options));
+    const auto again=std::get<std::shared_ptr<abc::Aggregate>>(abc::sequence_at(values,power_cursor,0,options));
+    require(first==again && !abc::sequence_known_length(power_cursor,values.location),"CartesianPower caches a yielded array while Count still enumerates");
+    const auto second=std::get<std::shared_ptr<abc::Aggregate>>(abc::sequence_at(values,power_cursor,1,options));
+    require(first!=second && std::get<std::int32_t>(second->items[0]->value)==1 && std::get<std::int32_t>(second->items[1]->value)==2,"CartesianPower allocates a distinct array for each result");
+    error([&]{(void)abc::sequence_resume(values,power_cursor,3,options);},"E_BYTECODE");
+    const auto good=abc::compile("begin Cartesian(Seq(1),Seq(2)).Count; end.");
+    for (const auto operand:{std::size_t{511},std::size_t{4}<<9,std::numeric_limits<std::size_t>::max()}) {
+        auto bad=good; for (auto& op:bad.code) if (op.op==abc::Op::sequence_cartesian) op.operand=operand;
+        error([&]{abc::verify(bad);},"E_BYTECODE");
+    }
+    auto bad=good;
+    for (auto& op:bad.code) if (op.op==abc::Op::sequence_cartesian) op.type=abc::Type::integer;
+    error([&]{abc::verify(bad);},"E_BYTECODE");
+    const auto power=abc::compile("begin Arr(1,2).CartesianPower(2).Count; end.");
+    for (const auto operand:{std::size_t{0},std::numeric_limits<std::size_t>::max()}) {
+        bad=power; for (auto& op:bad.code) if (op.op==abc::Op::cartesian_power) op.operand=operand;
+        error([&]{abc::verify(bad);},"E_BYTECODE");
+    }
+    bad=power; for (auto& op:bad.code) if (op.op==abc::Op::cartesian_power) op.type=abc::Type::string;
+    error([&]{abc::verify(bad);},"E_BYTECODE");
+    bad=abc::compile("begin Cartesian(Seq(1),Seq(2),(a,b)->a+b).Any; end.");
+    for (auto& op:bad.code) if (op.op==abc::Op::sequence_cartesian_value) op.operand|=std::size_t{4}<<16;
+    error([&]{abc::verify(bad);},"E_BYTECODE");
+}
+
 void generators_library() {
     result("begin Writeln(SeqGen(4,i->i*2).ToArray,' ',ArrGen(3,i->i+10)); Writeln(SeqGen(3,i->i,5).ToArray,' ',ArrGen(3,i->i,-2)); end.","[0,2,4,6] [10,11,12]\n[5,6,7] [-2,-1,0]\n");
     result("begin Writeln(SeqGen(0,i->i).Count,' ',ArrGen(0,i->i).Length); end.","0 0\n");
@@ -4449,6 +4584,7 @@ int main() {
     library_callable_values();
     lambda_language();
     generators_library();
+    cartesian_library();
     structural_output();
     try_console_read();
     string_conversions();

@@ -4,6 +4,8 @@ namespace abc {
 Error runtime_error(RuntimeError id, SourceLocation location, std::string_view context) {
     const char *code, *english, *russian;
     switch (id) {
+    case RuntimeError::cartesian_power_count:
+        code="E_RANGE"; english="Cartesian power cannot be negative"; russian="Степень декартова произведения не может быть отрицательной"; break;
     case RuntimeError::generator_positive_count:
         code="E_RANGE"; english="Generator count must be greater than zero"; russian="Число элементов генератора должно быть больше нуля"; break;
     case RuntimeError::generator_pair_count:

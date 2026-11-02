@@ -2441,20 +2441,36 @@ private:
         result.type=sequence_type(generator_sequence(method) ? CompoundKind::sequence : CompoundKind::array,element,matrix ? 2U : 1U);
         result.kind=hir::ExprKind::generator; result.local=static_cast<std::size_t>(method); return true;
     }
+    void bind_cartesian_power(hir::Expr& result,std::unique_ptr<hir::Expr> source,std::unique_ptr<hir::Expr> count) {
+        const auto input=sequence_source(source->type,result.location);
+        const bool text=source->type==Type::string;
+        const auto array=sequence_type(CompoundKind::array,input.element);
+        if (!text && info(source->type,result.location).kind!=CompoundKind::array)
+            source=convert(std::move(source),sequence_type(CompoundKind::sequence,input.element));
+        result.kind=hir::ExprKind::cartesian_power; result.left=std::move(source);
+        result.right=convert(std::move(count),Type::integer); result.operation_type=array;
+        result.type=sequence_type(CompoundKind::sequence,text ? Type::string : array);
+        result.arguments.clear();
+    }
     bool bind_sequence_zip(hir::Expr& result,const SyntaxExpr& source,std::string_view unit={},bool member=false) {
-        const auto name=source.token.text;
-        if ((name!="zip" && name!="ziptuple") || (!unit.empty() && unit!="pabcsystem")) return false;
+        const auto name=source.token.text; const bool cartesian=name=="cartesian";
+        if ((name!="zip" && name!="ziptuple" && !cartesian && name!="cartesianpower") || (!unit.empty() && unit!="pabcsystem")) return false;
+        if (name=="cartesianpower") {
+            if (source.arguments.size()!=(member ? 1U : 2U)) throw Error("E_TYPE",result.location,"CartesianPower requires a typed source and integer power");
+            auto input=member ? std::move(result.left) : expression(*source.arguments[0]);
+            auto count=expression(*source.arguments.back());
+            bind_cartesian_power(result,std::move(input),std::move(count)); return true;
+        }
         std::optional<LibraryCallback> callback;
         std::vector<Type> elements;
         const auto append=[&](std::unique_ptr<hir::Expr> argument) {
-            const auto element=sequence_source(argument->type,argument->location).element;
-            elements.push_back(element);
-            result.arguments.push_back(convert(std::move(argument),sequence_type(CompoundKind::sequence,element)));
+            elements.push_back(sequence_source(argument->type,argument->location).element);
+            result.arguments.push_back(std::move(argument));
         };
         if (member) append(std::move(result.left));
         for (std::size_t n=0;n<source.arguments.size();++n) {
             const auto& argument=*source.arguments[n];
-            if (name=="zip" && n+1==source.arguments.size()) {
+            if (name!="ziptuple" && n+1==source.arguments.size()) {
                 if (argument.kind==SyntaxExprKind::lambda) { callback=library_callback(argument,elements); continue; }
                 if (argument.kind==SyntaxExprKind::name && routine_names_.contains(argument.token.text)
                     && (!lookup(argument.token) || argument.token.text==current_name_)
@@ -2462,25 +2478,30 @@ private:
                     callback=library_callback(argument); continue;
                 }
                 auto value=expression(argument);
+                if (cartesian && elements.size()==1 && integer_type(value->type)) {
+                    auto input=std::move(result.arguments[0]);
+                    bind_cartesian_power(result,std::move(input),std::move(value)); return true;
+                }
                 if (callable_type(value->type)) { callback=library_callback_value(std::move(value)); continue; }
                 append(std::move(value));
             } else append(expression(argument));
         }
         const auto count=elements.size();
         if (count<2 || count>(name=="ziptuple" ? 4U : 5U))
-            throw Error("E_TYPE",result.location,"Zip requires two to five typed sources and an optional function");
+            throw Error("E_TYPE",result.location,cartesian ? "Cartesian requires two to five typed sources and an optional function" : "Zip requires two to five typed sources and an optional function");
+        for (std::size_t n=0;n<count;++n) result.arguments[n]=convert(std::move(result.arguments[n]),sequence_type(CompoundKind::sequence,elements[n]));
         Type output=Type::invalid;
         if (callback) {
             const auto& signature=callback->signature;
             if (signature.parameters.size()!=count || signature.result==Type::unit)
-                throw Error("E_TYPE",result.location,"Zip function arity must match the source count and return a value");
+                throw Error("E_TYPE",result.location,cartesian ? "Cartesian function arity must match the source count and return a value" : "Zip function arity must match the source count and return a value");
             for (std::size_t n=0;n<count;++n)
                 if (signature.parameters[n].by_reference || signature.parameters[n].type!=elements[n])
-                    throw Error("E_TYPE",result.location,"Zip function parameters must be values of the exact source element types");
+                    throw Error("E_TYPE",result.location,cartesian ? "Cartesian function parameters must be values of the exact source element types" : "Zip function parameters must be values of the exact source element types");
             output=signature.result;
             result.right=std::move(callback->value);
         } else output=tuple_type(elements,result.location);
-        result.type=sequence_type(CompoundKind::sequence,output); result.kind=hir::ExprKind::sequence_zip;
+        result.type=sequence_type(CompoundKind::sequence,output); result.kind=hir::ExprKind::sequence_zip; result.operation=name;
         result.local=((count-2U)<<9)|(callback && callback->named ? *callback->named+1U : 0U); return true;
     }
     bool bind_sequence_numeric_selector(hir::Expr& result,const SyntaxExpr& source,std::string_view unit={},bool member=false) {

@@ -35,4 +35,8 @@ bool sequence_equal(Values& values,const std::shared_ptr<Aggregate>& first,const
 std::shared_ptr<Aggregate> sequence_default(Values& values,Type type,const std::shared_ptr<Aggregate>& source,Value fallback,const ExecutionOptions& options);
 std::shared_ptr<Aggregate> sequence_zip(Values& values,Type type,std::vector<std::shared_ptr<Aggregate>> sources,std::size_t callback,const ExecutionOptions& options,std::shared_ptr<Aggregate> callable={});
 bool sequence_zip_resume(Values& values,const std::shared_ptr<Aggregate>& sequence,std::uint64_t index,const ExecutionOptions& options);
+std::shared_ptr<Aggregate> sequence_cartesian(Values& values,Type type,std::vector<std::shared_ptr<Aggregate>> sources,std::size_t callback,const ExecutionOptions& options,std::shared_ptr<Aggregate> callable={});
+bool sequence_cartesian_resume(Values& values,const std::shared_ptr<Aggregate>& sequence,std::uint64_t index,const ExecutionOptions& options);
+std::shared_ptr<Aggregate> sequence_cartesian_power(Values& values,Type type,Type array_type,Type source_type,Value source,std::int32_t count,const ExecutionOptions& options);
+bool sequence_cartesian_power_resume(Values& values,const std::shared_ptr<Aggregate>& sequence,std::uint64_t index,const ExecutionOptions& options);
 } // namespace abc

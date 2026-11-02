@@ -202,6 +202,7 @@ def main():
                 ("sequence-prefixes.pas", "Начало: [1,2]\nОстаток: [3,1]\nПосле двух: [7,6]\n"),
                 ("callable-values.pas", "Значение: 14\nЧерез массив: 18\nЧерез параметр: 22\nПустое значение: True\n"),
                 ("library-callables.pas", "Сохранённая функция: [2,4,6]\nОтбор: [1,2]\nСуммы пар: [11,22]\nРезультат для True, True: True\n"),
+                ("cartesian.pas", "Пары: [(1,a),(1,b),(2,a),(2,b)]\nСуммы: [11,21,12,22]\nТройки: [[0,0,0],[0,0,1],[0,1,0],[0,1,1],[1,0,0],[1,0,1],[1,1,0],[1,1,1]]\nСлова: [аа,аб,ба,бб]\nСтепень последовательности: [[1,1],[1,2],[2,1],[2,2]]\n"),
                 ("generators.pas", "Квадраты индексов: [0,1,4,9,16]\nИндексы со смещением: [10,11,12,13]\nФибоначчи: [0,1,1,2,3,5,8,13]\nСтепени двойки: [1,2,4,8,16]\nПовторный перебор: [3,6,9,12]\nМатрица: [[0,1,2],[10,11,12]]\n"),
                 ("lambdas.pas", "Квадраты: [1,4,9]\nИзменяемый захват: [2,3]\nСчётчик: 11 12\nВложенные функции: 9\n"),
                 ("const-out-parameters.pas", "Сумма: 42\nПосле изменения: 43\n"),
@@ -582,6 +583,28 @@ def main():
                     or "EN: Instruction limit exceeded" not in invalid.stderr
                     or "RU: Превышен предел числа выполняемых инструкций" not in invalid.stderr or f"{single}:5:" not in invalid.stderr):
                 raise RuntimeError(f"{name} SingleNode cycle limit failed: {invalid.stderr!r}")
+            cartesian_error = folder / "Декартово произведение.pas"
+            cartesian_error.write_text("begin\n Arr(1).CartesianPower(-1).Any;\nend.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(cartesian_error)], text=True, encoding="utf-8",
+                                     capture_output=True, cwd=folder, env=env, timeout=10)
+            if (invalid.returncode != 1 or "E_RANGE" not in invalid.stderr
+                    or "EN: Cartesian power cannot be negative" not in invalid.stderr
+                    or "RU: Степень декартова произведения не может быть отрицательной" not in invalid.stderr
+                    or f"{cartesian_error}:2:" not in invalid.stderr):
+                raise RuntimeError(f"{name} bilingual CartesianPower error failed: {invalid.stderr!r}")
+            cartesian_error.write_text("begin\n var f:(integer,integer)->integer;\n Cartesian(SeqFill(0,1),Seq(2),f).Any;\nend.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(cartesian_error)], text=True, encoding="utf-8",
+                                     capture_output=True, cwd=folder, env=env, timeout=10)
+            if (invalid.returncode != 1 or "E_NIL" not in invalid.stderr
+                    or "EN: Cannot access a nil reference" not in invalid.stderr
+                    or "RU: Нельзя обратиться к пустой ссылке nil" not in invalid.stderr
+                    or f"{cartesian_error}:3:" not in invalid.stderr):
+                raise RuntimeError(f"{name} deferred Cartesian function error failed: {invalid.stderr!r}")
+            cartesian_error.write_text("begin Writeln('must never run'); Cartesian(Seq(1),Seq(2),x->x); end.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(cartesian_error)], text=True, encoding="utf-8",
+                                     capture_output=True, cwd=folder, env=env, timeout=10)
+            if invalid.returncode != 1 or invalid.stdout or "E_TYPE" not in invalid.stderr or "RU:" not in invalid.stderr:
+                raise RuntimeError(f"{name} Cartesian callback arity was not rejected before output")
             generator_error = folder / "Генератор.pas"
             for source, code, english, russian in (
                 ("begin\n SeqGen(0,1,x->x);\nend.", "E_RANGE",
@@ -701,6 +724,7 @@ def main():
             results[-1]["typed_library_callable_values_and_bilingual_nil_timing"] = "passed"
             results[-1]["typed_lambdas_captures_and_bilingual_diagnostics"] = "passed"
             results[-1]["typed_generators_and_bilingual_diagnostics"] = "passed"
+            results[-1]["typed_cartesian_products_powers_and_bilingual_diagnostics"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 

@@ -51,6 +51,7 @@ Text/TextFile: Assign, Reset, Rewrite, Append, Read/Readln, Write/Writeln, Eof, 
 Сохранённые функции принимают Select/Where/Zip и TrueTable; пример examples/library-callables.pas.
 Лямбды и локальные захваты: examples/lambdas.pas.
 Генераторы SeqGen/ArrGen/MatrGen/Iterate/SeqWhile: examples/generators.pas.
+Декартово произведение и степени Cartesian/CartesianPower: examples/cartesian.pas.
 Прямой захват управляющей переменной цикла пока не перенесён; используйте отдельную переменную-копию.
 Совместимость с PascalABC.NET частичная.
 Русские имена и НОД/НОК: examples/russian-identifiers.pas. Массивные GCD/LCM: examples/school-folds.pas.
