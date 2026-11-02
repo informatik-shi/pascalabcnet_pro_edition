@@ -1,4 +1,4 @@
-type Transform = function(x: integer): integer;
+type Transform = integer → integer;
 
 function Twice(x: integer): integer;
 begin

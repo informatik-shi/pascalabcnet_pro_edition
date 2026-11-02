@@ -62,6 +62,60 @@ void runtime_error(std::string_view source, std::string_view code) {
     error([&] { (void)run(source); }, code,source);
 }
 
+void short_callable_types() {
+    result(R"(type F=integer->integer; P=integer->(); Z=()->integer; Tick=()->();
+var total:integer;
+function Twice(x:integer):integer; begin Result:=2*x; end;
+function Seven:integer; begin Result:=7; end;
+procedure Save(x:integer); begin total:=x; end;
+procedure AddOne; begin Inc(total); end;
+begin var f:F:=Twice; var p:P:=Save; var z:Z:=Seven; var t:Tick:=AddOne;
+p(f(z())); t; Writeln(total,' ',f=Twice,' ',default(integer->integer)=nil);
+end.)","15 True True\n");
+    result(R"(type Pair=(integer,real)->real; TextMap=string → string;
+function Add(x:integer;y:real):real; begin Result:=x+y; end;
+function Echo(s:string):string; begin Result:=s+s; end;
+begin var f:Pair:=Add; var g:TextMap:=Echo; Writeln(f(2,0.5),' ',g('Я')); end.)","2.5 ЯЯ\n");
+    result(R"(type F=integer->integer; Factory=integer->integer->integer;
+function Twice(x:integer):integer; begin Result:=2*x; end;
+function Make(n:integer):F; begin Result:=Twice; end;
+function Apply(f:F):integer; begin Result:=f(4); end;
+begin var m:Factory:=Make; var apply:(integer->integer)->integer:=Apply;
+Writeln(m(99)(3),' ',apply(Twice)); var f:(integer)->integer:=Twice; Writeln(f(5));
+end.)","6 8\n10\n");
+    result(R"(type SumArray=(array of integer)->integer; SumList=List<integer>->integer;
+function A(values:array of integer):integer; begin Result:=values.Sum; end;
+function L(values:List<integer>):integer; begin Result:=values.Sum; end;
+begin var a:SumArray:=A; var l:SumList:=L; var values:=new List<integer>; values.Add(7);
+Writeln(a(Arr(1,2,3)),' ',l(values)); var callbacks:array of integer->integer; Writeln(callbacks=nil); end.)","6 7\nTrue\n");
+    result(R"(function Twice(x:integer):integer; begin Result:=2*x; end;
+begin var f:Func<integer,integer>:=Twice; var g:integer→integer:=f;
+var a:=new List<integer->integer>; a.Add(g); Writeln(a[0](4)); end.)","8\n");
+    result(R"(type R=record next:integer->integer; end;
+function Twice(x:integer):integer; begin Result:=2*x; end;
+begin var r:R; r.next:=Twice; var pair:(integer,integer):=(2,3); Writeln(r.next(pair[0])); end.)","4\n");
+    std::string parameters,types,arguments;
+    for (int n=0;n<16;++n) { if (n) {parameters+=',';types+=',';arguments+=',';} parameters+=static_cast<char>('a'+n);types+="integer";arguments+=std::to_string(n+1); }
+    result("function Total("+parameters+":integer):integer; begin Result:=a+p; end; begin var f:("+types+")->integer:=Total; Writeln(f("+arguments+")); end.","17\n");
+    compile_error("begin var f:("+types+",integer)->integer; end.","E_SYNTAX");
+    for (const auto source:{
+        "function Bad(x:real):integer; begin Result:=0; end; begin var f:integer->integer:=Bad; end.",
+        "procedure P(x:integer); begin end; begin var f:integer->integer:=P; end.",
+        "begin var f:()->(); var n:=f(); end.",
+        "begin var f:(integer,real)->integer; f(1); end.",
+        "begin var f:integer->integer; f('bad'); end."}) compile_error(source,"E_TYPE");
+    compile_error("begin var f:integer->Missing; end.","E_UNSUPPORTED");
+    compile_error("begin var f:()->; end.","E_SYNTAX");
+    compile_error("begin var f:(); end.","E_SYNTAX");
+    compile_error("begin var f:integer - > integer; end.","E_SYNTAX");
+    compile_error("begin var f:record x:integer; end->integer; end.","E_SYNTAX");
+    runtime_error("begin var f:integer→integer; f(1); end.","E_NIL");
+    try { (void)abc::compile("begin var f:integer → Unknown; end."); require(false,"Expected unknown arrow result type"); }
+    catch (const abc::Error& caught) { require(caught.code=="E_UNSUPPORTED" && caught.location.column==23 && !caught.russian.empty(),"Unicode arrow counts one UTF-16 source column and retains bilingual diagnostics"); }
+    auto p=abc::compile("begin var a:integer->integer; var b:Func<integer,integer>; var c:function(x:integer):integer; end.");
+    require(p.locals[0].type==p.locals[1].type && p.locals[1].type==p.locals[2].type,"Short, classic and Func forms share one concrete signature");
+}
+
 void named_callable_values() {
     result(R"(type F=function(x:integer):integer; P=procedure(var x:integer);
 function Twice(x:integer):integer; begin Result:=2*x; end;
@@ -4052,6 +4106,7 @@ int main() {
     sequence_prefix_predicates_library();
     bilingual_source_diagnostics();
     named_callable_values();
+    short_callable_types();
     structural_output();
     try_console_read();
     string_conversions();

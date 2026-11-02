@@ -90,9 +90,10 @@ public:
             }
             return {TokenKind::text, std::move(text), start};
         }
+        if (point()==U'→') { take(); take(); take(); return {TokenKind::symbol,"->",start}; }
         std::string symbol(1, take());
         if ((symbol == ":" && peek() == '=') || (symbol == "<" && (peek() == '=' || peek() == '>'))
-            || (symbol == ">" && peek() == '=')) symbol += take();
+            || (symbol == ">" && peek() == '=') || (symbol == "-" && peek() == '>')) symbol += take();
         if (std::string_view(";:,.()[]+-*/=<> ").find(symbol.front()) == std::string_view::npos)
             throw Error("E_SYNTAX", start, "Unsupported character in source");
         return {TokenKind::symbol, std::move(symbol), start};
@@ -281,7 +282,7 @@ private:
         if (current_.kind != TokenKind::name || reserved(current_.text)) fail("Expected an identifier");
         return consume();
     }
-    std::shared_ptr<SyntaxType> type_syntax() {
+    std::shared_ptr<SyntaxType> type_syntax(bool allow_empty_result=false) {
         DepthGuard guard(depth_, current_.location);
         auto result = std::make_shared<SyntaxType>(); result->token = current_;
         if (is("function") || is("procedure")) {
@@ -304,13 +305,12 @@ private:
             if (function) { expect(":"); result->element=type_syntax(); }
         } else if (accept("(")) {
             result->kind="tuple";
-            do {
-                if (result->fields.size()>=7) throw Error("E_UNSUPPORTED",result->token.location,"Tuple arities above seven require nested Rest tuples");
+            if (!is(")")) do {
+                if (result->fields.size()>=16) fail("Too many routine parameters");
                 auto element=type_syntax();
                 result->fields.emplace_back(Token{TokenKind::name,"item"+std::to_string(result->fields.size()+1),result->token.location},std::move(element));
             } while (accept(","));
             expect(")");
-            if (result->fields.size()<2) fail("A tuple type needs at least two elements");
         } else if (accept("array")) {
             result->kind = "array";
             if (accept("[")) {
@@ -356,6 +356,22 @@ private:
             } else if ((result->kind == "list" || result->kind == "stack" || result->kind == "queue" || result->kind == "dynarray" || result->kind == "simpleset" || result->kind == "linkedlist" || result->kind == "linkedlistnode" || result->kind == "singlenode") && accept("<")) {
                 result->element = type_syntax(); expect(">");
             }
+        }
+        if (accept("->")) {
+            if (result->kind=="record" || result->kind=="callable")
+                throw Error("E_SYNTAX",result->token.location,"Short callable input type requires parentheses");
+            auto callable=std::make_shared<SyntaxType>(); callable->token=result->token; callable->kind="callable";
+            if (result->kind=="tuple") callable->fields=std::move(result->fields);
+            else callable->fields.emplace_back(result->token,std::move(result));
+            callable->references.assign(callable->fields.size(),false); callable->variadics.assign(callable->fields.size(),false);
+            auto output=type_syntax(true);
+            if (output->kind!="empty_result") callable->element=std::move(output);
+            return callable;
+        }
+        if (result->kind=="tuple") {
+            if (result->fields.empty() && allow_empty_result) result->kind="empty_result";
+            else if (result->fields.size()<2) fail("A tuple type needs at least two elements");
+            else if (result->fields.size()>7) throw Error("E_UNSUPPORTED",result->token.location,"Tuple arities above seven require nested Rest tuples");
         }
         return result;
     }

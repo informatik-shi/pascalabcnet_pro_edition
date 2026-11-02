@@ -273,3 +273,4 @@
     {"Wrong callable argument count","Неверное число аргументов вызова процедурного значения"},
     {"Invoke requires a callable argument list","Для Invoke требуется список аргументов в скобках"},
     {"Callable constructor requires one matching routine value","Конструктору процедурного типа требуется одно значение с совместимой сигнатурой"},
+    {"Short callable input type requires parentheses","Тип аргумента в коротком процедурном типе нужно заключить в скобки"},
