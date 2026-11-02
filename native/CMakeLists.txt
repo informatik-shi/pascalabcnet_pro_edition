@@ -285,6 +285,9 @@ if(BUILD_TESTING)
     add_test(NAME original_delegates1 COMMAND $<TARGET_FILE:abc> run "${CMAKE_CURRENT_SOURCE_DIR}/../TestSuite/delegates1.pas")
     add_test(NAME original_delegates2 COMMAND $<TARGET_FILE:abc> run "${CMAKE_CURRENT_SOURCE_DIR}/../TestSuite/delegates2.pas")
     add_test(NAME original_delegates6 COMMAND $<TARGET_FILE:abc> run "${CMAKE_CURRENT_SOURCE_DIR}/../TestSuite/delegates6.pas")
+    add_test(NAME library_callables_compatibility COMMAND ${CMAKE_COMMAND}
+        -DABC_RUNNER=$<TARGET_FILE:abc> -DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures
+        -DABC_FIXTURE_NAME=library-callables-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")
     add_test(NAME callable_values_compatibility COMMAND ${CMAKE_COMMAND}
         -DABC_RUNNER=$<TARGET_FILE:abc> -DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures
         -DABC_FIXTURE_NAME=callable-values-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")

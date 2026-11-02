@@ -22,6 +22,18 @@ struct Values {
     std::shared_ptr<Aggregate> empty_integer_range{};
     std::size_t sequence_depth=0;
     std::function<Value(std::size_t,std::span<const Value>)> invoke{};
+    std::size_t callable_target(const std::shared_ptr<Aggregate>& callable) const {
+        if (!callable || callable->nil) throw runtime_error(RuntimeError::nil_reference,location);
+        if (!callable->routine || *callable->routine>=program.routines.size()
+            || !callable_matches(type_info(program,callable->type),program.routines[*callable->routine]))
+            throw runtime_error(RuntimeError::invalid_bytecode,location);
+        return *callable->routine;
+    }
+    Value invoke_value(const std::shared_ptr<Aggregate>& callable,std::span<const Value> arguments) {
+        const auto target=callable_target(callable);
+        if (!invoke) throw runtime_error(RuntimeError::invalid_bytecode,location);
+        return invoke(target,arguments);
+    }
     void number(const Value& value) {
         if (const auto* big=std::get_if<BigInteger>(&value)) {
             const auto size=(big->bits()+31)/32;

@@ -62,6 +62,123 @@ void runtime_error(std::string_view source, std::string_view code) {
     error([&] { (void)run(source); }, code,source);
 }
 
+void library_callable_values() {
+    result(R"(function DoubleIt(x:integer):integer; begin Result:=2*x; end;
+function TripleIt(x:integer):integer; begin Result:=3*x; end;
+begin var f:integer->integer:=DoubleIt; var s:=Seq(1,2,3).Select(f); f:=TripleIt;
+Writeln(s.ToArray,' ',Select(Seq(1,2),f).ToArray); f:=nil; Writeln(s.ToArray); end.)","[2,4,6] [3,6]\n[2,4,6]\n");
+    result(R"(function Map(x,i:integer):integer; begin Result:=x+i; end;
+function Keep(x,i:integer):boolean; begin Result:=i<2; end;
+begin var f:(integer,integer)->integer:=Map; var p:(integer,integer)->boolean:=Keep;
+Writeln(Seq(10,20,30).Select(f).ToArray,' ',Where(Arr(10,20,30),p).ToArray);
+Writeln(Seq(10,20,30).TakeWhile(p).ToArray,' ',Seq(10,20,30).SkipWhile(p).ToArray); end.)","[10,21,32] [10,20]\n[10,20] [30]\n");
+    result(R"(function Small(x:integer):boolean; begin Result:=x<3; end;
+function Twice(x:integer):integer; begin Result:=2*x; end;
+begin var p:integer->boolean:=Small; var f:Func<integer,integer>:=Twice; var a:=Arr(1,2,3);
+Writeln(a.Any(p),' ',a.All(p),' ',a.Count(p),' ',a.First(p),' ',a.Last(p));
+Writeln(Seq(2).Single(p),' ',Seq(4).SingleOrDefault(p),' ',Seq(4).FirstOrDefault(p),' ',Seq(4).LastOrDefault(p));
+Writeln(a.Sum(f),' ',Average(a,f),' ',PABCSystem.Count(a,p)); end.)","True False 2 1 2\n2 0 0 0\n12 4 2\n");
+    result(R"(function Expand(x:integer):array of integer; begin Result:=Arr(x,-x); end;
+function Text(x:integer):string; begin Result:='Яx'; end;
+begin var f:integer->array of integer:=Expand; var t:integer->string:=Text;
+Writeln(Seq(1,2).SelectMany(f).ToArray,' ',Seq(1).SelectMany(t).ToArray); end.)","[1,-1,2,-2] [Я,x]\n");
+    result(R"(function Add(a,b:integer):integer; begin Result:=a+b; end;
+function Add3(a,b,c:integer):integer; begin Result:=a+b+c; end;
+function Add4(a,b,c,d:integer):integer; begin Result:=a+b+c+d; end;
+function Add5(a,b,c,d,e:integer):integer; begin Result:=a+b+c+d+e; end;
+function Text(a:integer;b:char):string; begin Result:=IntToStr(a)+b; end;
+begin var f:(integer,integer)->integer:=Add; var g:Func3<integer,integer,integer,integer>:=Add3;
+var h:(integer,integer,integer,integer)->integer:=Add4; var k:(integer,integer,integer,integer,integer)->integer:=Add5;
+var t:(integer,char)->string:=Text; var s:=Zip(Seq(1,2),Seq(10,20),f); f:=nil;
+Writeln(s.ToArray,' ',Seq(1).Zip(Seq(2),Seq(3),g).ToArray);
+Writeln(Zip(Seq(1),Seq(2),Seq(3),Seq(4),h).ToArray,' ',PABCSystem.Zip(Seq(1),Seq(2),Seq(3),Seq(4),Seq(5),k).ToArray);
+Writeln(Zip(Seq(1,2),'Яx',t).ToArray,' ',s.ToArray); end.)","[11,22] [6]\n[10] [15]\n[1Я,2x] [11,22]\n");
+    result(R"(type F=integer->integer; Box=record f:F; end;
+function Twice(x:integer):integer; begin Result:=2*x; end;
+function Triple(x:integer):integer; begin Result:=3*x; end;
+function Factory:F; begin Write('F'); Result:=Twice; end;
+function Source:sequence of integer; begin Write('S'); Result:=Seq(1,2); end;
+begin var b:Box; b.f:=Twice; var s:=Source().Select(Factory()); Write('|');
+var fromfield:=Seq(3).Select(b.f); b.f:=Triple; var a:=Arr(Twice); var fromarray:=Seq(4).Select(a[0]); a[0]:=Triple;
+Writeln(s.ToArray,' ',fromfield.ToArray,' ',fromarray.ToArray); end.)","SF|[2,4] [6] [8]\n");
+    result(R"(type F=(integer,integer)->integer;
+function Add(a,b:integer):integer; begin Result:=a+b; end;
+function SourceA:sequence of integer; begin Write('A'); Result:=Seq(1); end;
+function SourceB:sequence of integer; begin Write('B'); Result:=Seq(2); end;
+function Factory:F; begin Write('F'); Result:=Add; end;
+begin var s:=Zip(SourceA(),SourceB(),Factory()); Writeln('|',s.ToArray); end.)","ABF|[3]\n");
+    result(R"(type F=integer->integer; var chosen:F;
+function Triple(x:integer):integer; begin Result:=3*x; end;
+function Map(x:integer):integer; begin chosen:=Triple; Result:=2*x; end;
+begin chosen:=Map; var s:=Seq(1,2).Select(chosen); Writeln(s.ToArray,' ',s.ToArray,' ',Seq(3).Select(chosen).ToArray); end.)","[2,4] [2,4] [9]\n");
+    result(R"(uses School; type F=(boolean,boolean)->boolean; var chosen:F;
+function Both(a,b:boolean):boolean; begin Result:=a and b; end;
+function Neither(a,b:boolean):boolean; begin Result:=not(a or b); end;
+function Map(a,b:boolean):boolean; begin chosen:=Neither; Result:=a and b; end;
+function General(a:array of boolean):boolean; begin Result:=Length(a)=0; end;
+begin chosen:=Map; var table:=TrueTable(chosen); Writeln(table[0,2],' ',table[3,2]);
+var f:(array of boolean)->boolean:=General; var t:=School.TrueTable(0,f); Writeln(t[0,0]); end.)","False True\nTrue\n");
+    result(R"(uses School; type F=(array of boolean)->boolean;
+function General(a:array of boolean):boolean; begin Result:=a[0]; end;
+function Count:integer; begin Write('N'); Result:=1; end;
+function Factory:F; begin Write('F'); Result:=General; end;
+begin var t:=TrueTable(Count(),Factory()); Writeln('|',t[0,1],' ',t[1,1]); end.)","NF|False True\n");
+    result(R"(var f:integer->integer;
+function Inner(x:integer):integer; begin Result:=x+1; end;
+function Outer(x:integer):integer; begin var g:integer->integer:=Inner; Result:=Seq(x).Select(g).First; end;
+begin f:=Outer; Writeln(Seq(1,2).Select(f).ToArray); end.)","[2,3]\n");
+    result("begin var f:(integer,integer)->integer; var s:=Zip(Seq(1),Seq(2),f); Writeln(s.Take(0).Count); end.","0\n");
+    for (const auto source:{
+        "begin var f:integer->integer; Seq(1).Select(f); end.",
+        "begin var f:integer->array of integer; Seq(1).SelectMany(f); end.",
+        "begin var f:integer->boolean; Seq(1).Where(f); end.",
+        "begin var f:integer->boolean; Seq(1).TakeWhile(f); end.",
+        "begin var f:integer->boolean; Seq(1).SkipWhile(f); end.",
+        "begin var f:integer->boolean; var a:=new integer[0]; a.Any(f); end.",
+        "begin var f:(integer,integer)->integer; var a:=new integer[0]; Zip(a,a,f).Count; end.",
+        "uses School; begin var f:(boolean,boolean)->boolean; TrueTable(f); end."}) runtime_error(source,"E_NIL");
+    for (const auto source:{
+        "begin var f:real->integer; Seq(1).Select(f); end.",
+        "begin var f:integer->integer; Seq(1).Where(f); end.",
+        "begin var f:integer->integer; Seq(1).SelectMany(f); end.",
+        "begin var f:integer->boolean; Zip(Seq(1),Seq(1),f); end.",
+        "begin var f:(integer,real)->integer; Zip(Seq(1),Seq(1),f); end.",
+        "begin var f:function(var x:integer):integer; Seq(1).Select(f); end.",
+        "begin var f:(integer,integer)->integer; Seq(1).Sum(f); end.",
+        "begin var f:integer->real; Seq(1).All(f); end.",
+        "uses School; begin var f:integer->boolean; TrueTable(f); end.",
+        "uses School; begin var f:boolean->boolean; TrueTable(1,f); end.",
+        "begin var n:=1; Seq(1).Select(n); end."}) compile_error(source,"E_TYPE");
+    try { (void)run("begin\nvar f:integer->boolean;\nSeq(1).Where(f);\nend."); require(false,"Expected nil callback"); }
+    catch (const abc::Error& caught) { require(caught.code=="E_NIL" && caught.location.line==3 && !caught.russian.empty(),"Nil library callback retains call location and both languages"); }
+    result(R"(type R=record n:integer; a:array of integer; end;
+function Change(r:R):integer; begin r.n:=99; Inc(r.a[0]); Result:=r.n; end;
+begin var r:R; r.n:=5; r.a:=Arr(1); var f:R->integer:=Change;
+Writeln(Seq(r).Select(f).ToArray,' ',r.n,' ',r.a[0]); end.)","[99] 5 2\n");
+    runtime_error("var a:List<integer>; function Change(x:integer):integer; begin a.Add(9); Result:=x; end; begin a:=new List<integer>; a.Add(1); var f:integer->integer:=Change; a.Select(f).ToArray; end.","E_MODIFIED");
+    try { (void)run("function Bad(x:integer):integer;\nbegin\nResult:=1 div x;\nend;\nbegin var f:integer->integer:=Bad; Seq(0).Select(f).Count; end."); require(false,"Expected callback body failure"); }
+    catch (const abc::Error& caught) { require(caught.code=="E_DIV_ZERO" && caught.location.line==3 && !caught.russian.empty(),"Stored callback failure retains body source location and both languages"); }
+    auto p=abc::compile("function F(x:integer):integer; begin Result:=x; end; begin var f:integer->integer:=F; Seq(1).Select(f).Count; end.");
+    auto invalid=p; for (auto& op:invalid.code) if (op.op==abc::Op::sequence_select_value) op.operand=(op.operand&~std::size_t{65535})|static_cast<std::size_t>(abc::Type::integer);
+    error([&]{abc::verify(invalid);},"E_BYTECODE");
+    invalid=p; for (auto& op:invalid.code) if (op.op==abc::Op::sequence_select_value) op.op=abc::Op::sequence_where_value;
+    error([&]{abc::verify(invalid);},"E_BYTECODE");
+    invalid=p; for (auto& op:invalid.code) if (op.op==abc::Op::sequence_select_value) op.operand=std::numeric_limits<std::size_t>::max();
+    error([&]{abc::verify(invalid);},"E_BYTECODE");
+    p=abc::compile("function F(a,b:integer):integer; begin Result:=a+b; end; begin var f:(integer,integer)->integer:=F; Zip(Seq(1),Seq(2),f).Count; end.");
+    invalid=p; for (auto& op:invalid.code) if (op.op==abc::Op::sequence_zip_value) op.operand|=std::size_t{4}<<16;
+    error([&]{abc::verify(invalid);},"E_BYTECODE");
+    invalid=p; for (auto& op:invalid.code) if (op.op==abc::Op::sequence_zip_value) op.operand=(op.operand&~std::size_t{65535})|static_cast<std::size_t>(abc::Type::string);
+    error([&]{abc::verify(invalid);},"E_BYTECODE");
+    p=abc::compile("function F(x:integer):boolean; begin Result:=True; end; begin var f:integer->boolean:=F; Seq(1).Any(f); end.");
+    invalid=p; for (auto& op:invalid.code) if (op.op==abc::Op::sequence_predicate_value) op.operand|=std::size_t{99}<<16;
+    error([&]{abc::verify(invalid);},"E_BYTECODE");
+    abc::ExecutionOptions options; options.instruction_limit=80;
+    error([&]{(void)run("function F(x:integer):integer; begin while True do Inc(x); Result:=x; end; begin var f:integer->integer:=F; Seq(1).Select(f).Count; end.","",options);},"E_LIMIT");
+    options={}; options.call_limit=8;
+    error([&]{(void)run("var f:integer->integer; function Again(x:integer):integer; begin Result:=Seq(x).Select(f).First; end; begin f:=Again; Seq(1).Select(f).Count; end.","",options);},"E_LIMIT");
+}
+
 void short_callable_types() {
     result(R"(type F=integer->integer; P=integer->(); Z=()->integer; Tick=()->();
 var total:integer;
@@ -2065,10 +2182,10 @@ void bilingual_source_diagnostics() {
 }
 
 void sequence_prefix_predicates_library() {
-    for (const bool indexed:{false,true}) {
+    for (const bool stored:{false,true}) for (const bool indexed:{false,true}) {
         const auto program=abc::compile(indexed
-            ? "function No(n,i:integer):boolean; begin Result:=False; end; begin Seq(1).SkipWhile(No).Count; end."
-            : "function No(n:integer):boolean; begin Result:=False; end; begin Seq(1).SkipWhile(No).Count; end.");
+            ? "function No(n,i:integer):boolean; begin Result:=False; end; begin var f:=No; Seq(1).SkipWhile(No).Count; end."
+            : "function No(n:integer):boolean; begin Result:=False; end; begin var f:=No; Seq(1).SkipWhile(No).Count; end.");
         abc::Type type=abc::Type::invalid;
         for (std::size_t i=0;i<program.types.size();++i)
             if (program.types[i].kind==abc::CompoundKind::sequence && program.types[i].element==abc::Type::integer)
@@ -2076,7 +2193,12 @@ void sequence_prefix_predicates_library() {
         abc::Values values{program,1000}; unsigned calls=0;
         values.invoke=[&](std::size_t,std::span<const abc::Value>)->abc::Value {++calls; return false;};
         const auto source=abc::sequence_range_step(values,type,std::int32_t{INT32_MIN},std::int32_t{INT32_MAX},1);
-        const auto sequence=abc::sequence_transform(values,type,source,0,abc::SequenceTransform::skip_while,{});
+        std::shared_ptr<abc::Aggregate> callable;
+        if (stored) {
+            callable=std::make_shared<abc::Aggregate>(); callable->routine=0;
+            for (std::size_t n=0;n<program.types.size();++n) if (program.types[n].kind==abc::CompoundKind::callable) callable->type=static_cast<abc::Type>(64+n);
+        }
+        const auto sequence=abc::sequence_transform(values,type,source,0,abc::SequenceTransform::skip_while,{},callable);
         const auto iterator=abc::sequence_begin(values,sequence);
         auto& cursor=*iterator->sequence->transform;
         cursor.iterator=abc::sequence_begin(values,source); cursor.prefix_done=true;
@@ -4107,6 +4229,7 @@ int main() {
     bilingual_source_diagnostics();
     named_callable_values();
     short_callable_types();
+    library_callable_values();
     structural_output();
     try_console_read();
     string_conversions();

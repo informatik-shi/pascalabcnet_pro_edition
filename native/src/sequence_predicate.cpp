@@ -3,9 +3,10 @@
 #include <array>
 
 namespace abc {
-Value sequence_predicate(Values& values,const std::shared_ptr<Aggregate>& source,std::size_t callback,PredicateQuery method,const ExecutionOptions& options) {
+Value sequence_predicate(Values& values,const std::shared_ptr<Aggregate>& source,std::size_t callback,PredicateQuery method,const ExecutionOptions& options,std::shared_ptr<Aggregate> callable) {
     if (!source || source->nil) throw runtime_error(RuntimeError::nil_reference,values.location);
-    if (!values.invoke || callback>=values.program.routines.size()) throw runtime_error(RuntimeError::invalid_bytecode,values.location);
+    if (callable) (void)values.callable_target(callable);
+    if (!values.invoke || (!callable && callback>=values.program.routines.size())) throw runtime_error(RuntimeError::invalid_bytecode,values.location);
     const auto iterator=sequence_begin(values,source);
     std::int32_t count=0; std::optional<Value> kept;
     for (std::uint64_t index=0;;++index) {
@@ -14,7 +15,7 @@ Value sequence_predicate(Values& values,const std::shared_ptr<Aggregate>& source
         if (index>static_cast<std::uint64_t>(INT64_MAX)) throw runtime_error(RuntimeError::integer_overflow,values.location);
         if (!sequence_resume(values,iterator,index,options)) break;
         auto item=sequence_at(values,iterator,static_cast<std::int64_t>(index),options);
-        const std::array<Value,1> arguments={item}; const auto matched=std::get<bool>(values.invoke(callback,arguments));
+        const std::array<Value,1> arguments={item}; const auto matched=std::get<bool>(callable ? values.invoke_value(callable,arguments) : values.invoke(callback,arguments));
         if (method==PredicateQuery::all) { if (!matched) return false; continue; }
         if (!matched) continue;
         if (method==PredicateQuery::any) return true;

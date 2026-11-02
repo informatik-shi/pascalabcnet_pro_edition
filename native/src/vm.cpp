@@ -267,21 +267,36 @@ static void execute_impl(const Program& program, std::istream& input, std::ostre
         }
         case Op::sequence_partial:
             stack.emplace_back(sequence_partial(values,instruction.type,std::get<std::shared_ptr<Aggregate>>(pop()),options)); break;
+        case Op::sequence_zip_value: {
+            const auto callable=std::get<std::shared_ptr<Aggregate>>(pop());
+            const auto count=(instruction.operand>>16)+2;
+            std::vector<std::shared_ptr<Aggregate>> sources(count);
+            for (auto i=count;i>0;--i) sources[i-1]=std::get<std::shared_ptr<Aggregate>>(pop());
+            stack.emplace_back(sequence_zip(values,instruction.type,std::move(sources),0,options,callable)); break;
+        }
         case Op::sequence_zip: {
             const auto count=(instruction.operand>>9)+2;
             std::vector<std::shared_ptr<Aggregate>> sources(count);
             for (auto i=count;i>0;--i) sources[i-1]=std::get<std::shared_ptr<Aggregate>>(pop());
             stack.emplace_back(sequence_zip(values,instruction.type,std::move(sources),instruction.operand&511U,options)); break;
         }
-        case Op::sequence_predicate: {
+        case Op::sequence_predicate: case Op::sequence_predicate_value: {
+            const bool dynamic=instruction.op==Op::sequence_predicate_value;
+            const auto callable=dynamic ? std::get<std::shared_ptr<Aggregate>>(pop()) : std::shared_ptr<Aggregate>{};
             const auto source=std::get<std::shared_ptr<Aggregate>>(pop());
-            stack.push_back(sequence_predicate(values,source,instruction.operand&255U,static_cast<PredicateQuery>(instruction.operand>>8),options)); break;
+            stack.push_back(sequence_predicate(values,source,dynamic ? 0 : instruction.operand&255U,static_cast<PredicateQuery>(instruction.operand>>(dynamic ? 16 : 8)),options,callable)); break;
         }
-        case Op::sequence_select: case Op::sequence_where: case Op::sequence_flatmap: case Op::sequence_takewhile: case Op::sequence_skipwhile: {
+        case Op::sequence_select: case Op::sequence_where: case Op::sequence_flatmap: case Op::sequence_takewhile: case Op::sequence_skipwhile:
+        case Op::sequence_select_value: case Op::sequence_where_value: case Op::sequence_flatmap_value: case Op::sequence_takewhile_value: case Op::sequence_skipwhile_value: {
+            const bool dynamic=instruction.op==Op::sequence_select_value || instruction.op==Op::sequence_where_value || instruction.op==Op::sequence_flatmap_value
+                || instruction.op==Op::sequence_takewhile_value || instruction.op==Op::sequence_skipwhile_value;
+            const auto callable=dynamic ? std::get<std::shared_ptr<Aggregate>>(pop()) : std::shared_ptr<Aggregate>{};
             const auto source=std::get<std::shared_ptr<Aggregate>>(pop());
-            const auto method=instruction.op==Op::sequence_where ? SequenceTransform::where : instruction.op==Op::sequence_flatmap ? SequenceTransform::flatmap
-                : instruction.op==Op::sequence_takewhile ? SequenceTransform::take_while : instruction.op==Op::sequence_skipwhile ? SequenceTransform::skip_while : SequenceTransform::select;
-            stack.emplace_back(sequence_transform(values,static_cast<Type>(instruction.operand>>8),source,instruction.operand&255U,method,options)); break;
+            const auto method=instruction.op==Op::sequence_where || instruction.op==Op::sequence_where_value ? SequenceTransform::where
+                : instruction.op==Op::sequence_flatmap || instruction.op==Op::sequence_flatmap_value ? SequenceTransform::flatmap
+                : instruction.op==Op::sequence_takewhile || instruction.op==Op::sequence_takewhile_value ? SequenceTransform::take_while
+                : instruction.op==Op::sequence_skipwhile || instruction.op==Op::sequence_skipwhile_value ? SequenceTransform::skip_while : SequenceTransform::select;
+            stack.emplace_back(sequence_transform(values,static_cast<Type>(instruction.operand>>(dynamic ? 16 : 8)),source,dynamic ? 0 : instruction.operand&255U,method,options,callable)); break;
         }
         case Op::sequence_default: {
             auto fallback=pop(); const auto source=std::get<std::shared_ptr<Aggregate>>(pop());

@@ -79,11 +79,24 @@ private:
             expression(*node.left); emit(Op::sequence_partial,node.left->type,0,node.location); break;
         case hir::ExprKind::sequence_zip:
             for (const auto& argument:node.arguments) expression(*argument);
-            emit(Op::sequence_zip,node.type,node.local,node.location); break;
+            if (node.right) { expression(*node.right); emit(Op::sequence_zip_value,node.type,((node.local>>9)<<16)|static_cast<std::size_t>(node.right->type),node.location); }
+            else emit(Op::sequence_zip,node.type,node.local,node.location);
+            break;
         case hir::ExprKind::sequence_predicate:
-            expression(*node.left); emit(Op::sequence_predicate,node.left->type,node.local,node.location); break;
-        case hir::ExprKind::sequence_transform:
-            expression(*node.left); emit(node.operation=="where" ? Op::sequence_where : node.operation=="takewhile" ? Op::sequence_takewhile : node.operation=="skipwhile" ? Op::sequence_skipwhile : node.operation=="selectmany" ? Op::sequence_flatmap : Op::sequence_select,node.left->type,(static_cast<std::size_t>(node.type)<<8)|node.local,node.location); break;
+            expression(*node.left);
+            if (node.right) { expression(*node.right); emit(Op::sequence_predicate_value,node.left->type,((node.local>>8)<<16)|static_cast<std::size_t>(node.right->type),node.location); }
+            else emit(Op::sequence_predicate,node.left->type,node.local,node.location);
+            break;
+        case hir::ExprKind::sequence_transform: {
+            expression(*node.left);
+            if (node.right) {
+                expression(*node.right);
+                const auto op=node.operation=="where" ? Op::sequence_where_value : node.operation=="takewhile" ? Op::sequence_takewhile_value : node.operation=="skipwhile" ? Op::sequence_skipwhile_value
+                    : node.operation=="selectmany" ? Op::sequence_flatmap_value : Op::sequence_select_value;
+                emit(op,node.left->type,(static_cast<std::size_t>(node.type)<<16)|static_cast<std::size_t>(node.right->type),node.location);
+            } else emit(node.operation=="where" ? Op::sequence_where : node.operation=="takewhile" ? Op::sequence_takewhile : node.operation=="skipwhile" ? Op::sequence_skipwhile : node.operation=="selectmany" ? Op::sequence_flatmap : Op::sequence_select,node.left->type,(static_cast<std::size_t>(node.type)<<8)|node.local,node.location);
+            break;
+        }
         case hir::ExprKind::sequence_concat: case hir::ExprKind::sequence_equal: case hir::ExprKind::sequence_default:
             expression(*node.left); expression(*node.right);
             emit(node.kind==hir::ExprKind::sequence_equal ? Op::sequence_equal : node.kind==hir::ExprKind::sequence_default ? Op::sequence_default : Op::sequence_concat,node.left->type,0,node.location); break;
@@ -107,7 +120,9 @@ private:
             const auto number=[&](std::int32_t n) { constant(n,node.location); };
             const auto operation=[&](Op op,Type type=Type::integer) { emit(op,type,0,node.location); };
             const auto increment=[&](std::size_t index) { load(index); number(1); operation(Op::add); store(index); };
-            expression(*node.left); store(count); load(count); operation(Op::school_table_new,node.type); store(matrix);
+            expression(*node.left); store(count);
+            if (node.right) { expression(*node.right); store(node.temporaries.back()); }
+            load(count); operation(Op::school_table_new,node.type); store(matrix);
             number(0); store(row);
             const auto start=code_->size();
             load(row); load(matrix); number(0); emit(Op::array_query,node.type,static_cast<std::size_t>(ArrayQuery::length),node.location);
@@ -123,20 +138,25 @@ private:
                 load(matrix); load(row); load(column); operation(Op::ref_index,node.type);
                 load(values); load(column); operation(Op::get_index,node.operation_type); operation(Op::store_ref,Type::boolean);
                 increment(column); emit(Op::jump,Type::invalid,begin_column,node.location); (*code_)[end_column].operand=code_->size();
-                load(matrix); load(row); load(count); operation(Op::ref_index,node.type); load(values);
+                load(matrix); load(row); load(count); operation(Op::ref_index,node.type);
+                if (node.right) load(node.temporaries.back());
+                load(values);
             } else {
-                const auto arity=program_.routines[node.local].parameters.size();
+                const auto arity=node.right ? type_info(program_,node.right->type).parameters.size() : program_.routines[node.local].parameters.size();
                 for (std::size_t column=0;column<arity;++column) {
                     load(matrix); load(row); number(static_cast<std::int32_t>(column)); operation(Op::ref_index,node.type);
                     load(row); number(static_cast<std::int32_t>(arity-column-1)); operation(Op::shift_right);
                     number(1); operation(Op::bit_and); number(0); operation(Op::not_equal); operation(Op::store_ref,Type::boolean);
                 }
                 load(matrix); load(row); load(count); operation(Op::ref_index,node.type);
+                if (node.right) load(node.temporaries.back());
                 for (std::size_t column=0;column<arity;++column) {
                     load(matrix); load(row); number(static_cast<std::int32_t>(column)); operation(Op::get_index,node.type);
                 }
             }
-            emit(Op::call_user,Type::boolean,node.local,node.location); operation(Op::store_ref,Type::boolean);
+            if (node.right) emit(Op::call_value,node.right->type,0,node.location);
+            else emit(Op::call_user,Type::boolean,node.local,node.location);
+            operation(Op::store_ref,Type::boolean);
             increment(row); emit(Op::jump,Type::invalid,start,node.location); (*code_)[finish].operand=code_->size(); load(matrix); break;
         }
         case hir::ExprKind::tuple_literal: case hir::ExprKind::school_pair:
@@ -489,6 +509,16 @@ private:
 }
 
 bool valid_type(Type type) { return scalar(type); }
+bool value_transform(Op op) {
+    return op==Op::sequence_select_value || op==Op::sequence_where_value || op==Op::sequence_flatmap_value
+        || op==Op::sequence_takewhile_value || op==Op::sequence_skipwhile_value;
+}
+Routine value_signature(const Program& program,Type type,const Instruction& instruction) {
+    if (!compound(type) || type_info(program,type).kind!=CompoundKind::callable) invalid(instruction,"Invalid library callable type");
+    const auto& signature=type_info(program,type); Routine routine; routine.result=signature.element;
+    for (const auto& parameter:signature.parameters) routine.parameters.push_back({0,parameter.type,parameter.by_reference,parameter.variadic});
+    return routine;
+}
 
 } // namespace
 
@@ -534,6 +564,15 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
                 if (instruction.operand>static_cast<std::size_t>(SequenceAggregate::product)) invalid(instruction,"Invalid numeric aggregate operation");
             } else if (instruction.operand || !partial_sum_element(type_info(program,type).element)) invalid(instruction,"Invalid PartialSum element or flags");
             break;
+        case Op::sequence_zip_value: {
+            const auto arity=instruction.operand>>16;
+            const auto signature=value_signature(program,static_cast<Type>(instruction.operand&65535U),instruction);
+            if (!compound(type) || type_info(program,type).kind!=CompoundKind::sequence || arity>3
+                || signature.parameters.size()!=arity+2 || signature.result!=type_info(program,type).element
+                || std::any_of(signature.parameters.begin(),signature.parameters.end(),[](const Parameter& p){return p.by_reference;}))
+                invalid(instruction,"Invalid Zip callable signature");
+            break;
+        }
         case Op::sequence_zip: {
             const auto callback=instruction.operand&511U,arity=instruction.operand>>9;
             if (!compound(type) || type_info(program,type).kind!=CompoundKind::sequence || arity>3 || callback>program.routines.size())
@@ -548,21 +587,27 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
                 invalid(instruction,"Invalid Zip tuple result");
             break;
         }
-        case Op::sequence_predicate: {
-            const auto callback=instruction.operand&255U,method=instruction.operand>>8;
-            if (!compound(type) || type_info(program,type).kind!=CompoundKind::sequence || callback>=program.routines.size()
+        case Op::sequence_predicate: case Op::sequence_predicate_value: {
+            const bool dynamic=instruction.op==Op::sequence_predicate_value;
+            const auto callback=instruction.operand&(dynamic ? 65535U : 255U),method=instruction.operand>>(dynamic ? 16 : 8);
+            if (!compound(type) || type_info(program,type).kind!=CompoundKind::sequence || (!dynamic && callback>=program.routines.size())
                 || method>static_cast<std::size_t>(PredicateQuery::single_default)) invalid(instruction,"Invalid predicate query metadata");
-            const auto& signature=program.routines[callback];
+            const auto value=dynamic ? value_signature(program,static_cast<Type>(callback),instruction) : Routine{};
+            const auto& signature=dynamic ? value : program.routines[callback];
             if (signature.parameters.size()!=1 || signature.parameters[0].by_reference || signature.parameters[0].type!=type_info(program,type).element
                 || signature.result!=Type::boolean) invalid(instruction,"Invalid predicate query signature");
             break;
         }
-        case Op::sequence_select: case Op::sequence_where: case Op::sequence_flatmap: case Op::sequence_takewhile: case Op::sequence_skipwhile: {
-            const auto callback=instruction.operand&255U,result=instruction.operand>>8;
-            if (!compound(type) || type_info(program,type).kind!=CompoundKind::sequence || callback>=program.routines.size()
+        case Op::sequence_select: case Op::sequence_where: case Op::sequence_flatmap: case Op::sequence_takewhile: case Op::sequence_skipwhile:
+        case Op::sequence_select_value: case Op::sequence_where_value: case Op::sequence_flatmap_value: case Op::sequence_takewhile_value: case Op::sequence_skipwhile_value: {
+            const bool dynamic=value_transform(instruction.op);
+            const auto callback=instruction.operand&(dynamic ? 65535U : 255U),result=instruction.operand>>(dynamic ? 16 : 8);
+            if (!compound(type) || type_info(program,type).kind!=CompoundKind::sequence || (!dynamic && callback>=program.routines.size())
                 || result<64 || result>=64+program.types.size()) invalid(instruction,"Invalid sequence callback metadata");
-            const auto& signature=program.routines[callback]; const auto& output=type_info(program,static_cast<Type>(result));
-            const auto element=type_info(program,type).element; const bool predicate=instruction.op==Op::sequence_where || instruction.op==Op::sequence_takewhile || instruction.op==Op::sequence_skipwhile,flatten=instruction.op==Op::sequence_flatmap;
+            const auto value=dynamic ? value_signature(program,static_cast<Type>(callback),instruction) : Routine{};
+            const auto& signature=dynamic ? value : program.routines[callback]; const auto& output=type_info(program,static_cast<Type>(result));
+            const auto element=type_info(program,type).element; const bool predicate=instruction.op==Op::sequence_where || instruction.op==Op::sequence_takewhile || instruction.op==Op::sequence_skipwhile
+                || instruction.op==Op::sequence_where_value || instruction.op==Op::sequence_takewhile_value || instruction.op==Op::sequence_skipwhile_value,flatten=instruction.op==Op::sequence_flatmap || instruction.op==Op::sequence_flatmap_value;
             auto returned=signature.result;
             if (flatten) {
                 if (returned==Type::string) returned=Type::character;
@@ -912,6 +957,16 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             require(instruction.type); stack.push_back(sequence_aggregate_result(type_info(program,instruction.type).element,static_cast<SequenceAggregate>(instruction.operand))); break;
         case Op::sequence_partial: require(instruction.type); stack.push_back(instruction.type); break;
         case Op::sequence_concat: require(instruction.type); require(instruction.type); stack.push_back(instruction.type); break;
+        case Op::sequence_zip_value: {
+            const auto callback=static_cast<Type>(instruction.operand&65535U);
+            require(callback); const auto& parameters=type_info(program,callback).parameters;
+            for (auto i=parameters.size();i>0;--i) {
+                const auto source=pop();
+                if (!compound(source) || type_info(program,source).kind!=CompoundKind::sequence || type_info(program,source).element!=parameters[i-1].type)
+                    invalid(instruction,"Zip source element type mismatch");
+            }
+            stack.push_back(instruction.type); break;
+        }
         case Op::sequence_zip: {
             const auto callback=instruction.operand&511U,count=(instruction.operand>>9)+2;
             for (auto i=count;i>0;--i) {
@@ -923,7 +978,12 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             }
             stack.push_back(instruction.type); break;
         }
+        case Op::sequence_predicate_value:
+            require(static_cast<Type>(instruction.operand&65535U)); require(instruction.type);
+            stack.push_back(predicate_query_result(type_info(program,instruction.type).element,static_cast<PredicateQuery>(instruction.operand>>16))); break;
         case Op::sequence_predicate: require(instruction.type); stack.push_back(predicate_query_result(type_info(program,instruction.type).element,static_cast<PredicateQuery>(instruction.operand>>8))); break;
+        case Op::sequence_select_value: case Op::sequence_where_value: case Op::sequence_flatmap_value: case Op::sequence_takewhile_value: case Op::sequence_skipwhile_value:
+            require(static_cast<Type>(instruction.operand&65535U)); require(instruction.type); stack.push_back(static_cast<Type>(instruction.operand>>16)); break;
         case Op::sequence_select: case Op::sequence_where: case Op::sequence_flatmap: case Op::sequence_takewhile: case Op::sequence_skipwhile: require(instruction.type); stack.push_back(static_cast<Type>(instruction.operand>>8)); break;
         case Op::sequence_equal: require(instruction.type); require(instruction.type); stack.push_back(Type::boolean); break;
         case Op::sequence_default: require(type_info(program,instruction.type).element); require(instruction.type); stack.push_back(instruction.type); break;

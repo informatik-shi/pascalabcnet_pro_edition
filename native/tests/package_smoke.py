@@ -120,6 +120,18 @@ def main():
             if (console.returncode != 1 or "E_INPUT" not in console.stderr or f"{console_source}:3:" not in console.stderr
                     or "EN:" not in console.stderr or "RU:" not in console.stderr):
                 raise RuntimeError(f"{name} bilingual console error failed: {console.stderr!r}")
+            callback_source = folder / "Процедурное значение.pas"
+            for source, expected, line in [
+                ("begin\nvar f:integer->boolean;\nvar s:=Seq(1).Where(f);\nWriteln('late');\nend.", "", 3),
+                ("begin\nvar f:(integer,integer)->integer;\nvar s:=Zip(Seq(1),Seq(2),f);\nWriteln(s.Take(0).Count);\ns.Count;\nend.", "0\n", 5),
+            ]:
+                callback_source.write_text(source, encoding="utf-8")
+                attempted = subprocess.run([runner, "run", str(callback_source)], text=True, encoding="utf-8",
+                                           capture_output=True, cwd=folder, env=env, timeout=10)
+                if (attempted.returncode != 1 or attempted.stdout != expected or "E_NIL" not in attempted.stderr
+                        or "EN:" not in attempted.stderr or "RU:" not in attempted.stderr
+                        or f"{callback_source}:{line}:" not in attempted.stderr):
+                    raise RuntimeError(f"{name} library callable timing/diagnostic failed: {attempted.stdout!r}, {attempted.stderr!r}")
             example = subprocess.run([runner, "run", str(folder / "examples" / "sum.pas")],
                                      input="10\n", text=True, encoding="utf-8", capture_output=True,
                                      cwd=folder, env=env, timeout=10)
@@ -175,6 +187,7 @@ def main():
                 ("sequence-zip.pas", "1: А\n2: Б\nСуммы: [11,22]\nТройка: (1,Я,2.5)\n"),
                 ("sequence-prefixes.pas", "Начало: [1,2]\nОстаток: [3,1]\nПосле двух: [7,6]\n"),
                 ("callable-values.pas", "Значение: 14\nЧерез массив: 18\nЧерез параметр: 22\nПустое значение: True\n"),
+                ("library-callables.pas", "Сохранённая функция: [2,4,6]\nОтбор: [1,2]\nСуммы пар: [11,22]\nРезультат для True, True: True\n"),
                 ("const-out-parameters.pas", "Сумма: 42\nПосле изменения: 43\n"),
                 ("sequence-flatmap.pas", "Все элементы: [1,1,2,1,2,3]\nПервые четыре: [1,1,2,1]\nСумма: 10\n"),
                 ("sequence-predicates.pas", "Есть чётные: True\nЧётных чисел: 5\nПервое чётное: 2\nСумма квадратов: 385\n"),
@@ -647,6 +660,7 @@ def main():
             results[-1]["typed_const_and_out_parameters"] = "passed"
             results[-1]["typed_user_params_arrays"] = "passed"
             results[-1]["native_assertions_and_bilingual_failures"] = "passed"
+            results[-1]["typed_library_callable_values_and_bilingual_nil_timing"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 

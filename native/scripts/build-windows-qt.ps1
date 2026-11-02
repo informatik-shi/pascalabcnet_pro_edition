@@ -48,6 +48,7 @@ Text/TextFile: Assign, Reset, Rewrite, Append, Read/Readln, Write/Writeln, Eof, 
 Строковый nil отличается от пустой строки; стандартные строковые операции учитывают это различие.
 Процедурные значения: function/procedure, Func, Action, Predicate и короткие типы T->U; пример examples/callable-values.pas.
 Типы параметров и результата проверяются до запуска; вызов nil даёт двуязычную ошибку.
+Сохранённые функции принимают Select/Where/Zip и TrueTable; пример examples/library-callables.pas.
 Лямбды и захват переменных ещё не перенесены.
 Совместимость с PascalABC.NET частичная.
 Русские имена и НОД/НОК: examples/russian-identifiers.pas. Массивные GCD/LCM: examples/school-folds.pas.

@@ -274,3 +274,4 @@
     {"Invoke requires a callable argument list","Для Invoke требуется список аргументов в скобках"},
     {"Callable constructor requires one matching routine value","Конструктору процедурного типа требуется одно значение с совместимой сигнатурой"},
     {"Short callable input type requires parentheses","Тип аргумента в коротком процедурном типе нужно заключить в скобки"},
+    {"Library callback requires a function value with known types","Для библиотечного вызова требуется значение функции с известными типами"},

@@ -3,15 +3,18 @@
 #include <array>
 
 namespace abc {
-std::shared_ptr<Aggregate> sequence_transform(Values& values,Type type,const std::shared_ptr<Aggregate>& source,std::size_t callback,SequenceTransform method,const ExecutionOptions& options) {
+std::shared_ptr<Aggregate> sequence_transform(Values& values,Type type,const std::shared_ptr<Aggregate>& source,std::size_t callback,SequenceTransform method,const ExecutionOptions& options,std::shared_ptr<Aggregate> callable) {
     if (!source || source->nil) throw runtime_error(RuntimeError::nil_reference,values.location);
+    if (callable) (void)values.callable_target(callable);
     auto result=sequence_composed(values,type,source,SequenceProvider::transform,options);
+    result->sequence->callable=std::move(callable);
     result->sequence->callback=callback; result->sequence->transform_method=method; return result;
 }
 bool sequence_transform_resume(Values& values,const std::shared_ptr<Aggregate>& sequence,std::uint64_t index,const ExecutionOptions& options) {
     SequenceDepthGuard guard(values,options); const auto& state=*sequence->sequence;
-    if (!state.transform || !values.invoke || state.callback>=values.program.routines.size()) throw runtime_error(RuntimeError::invalid_bytecode,values.location);
-    const bool indexed=values.program.routines[state.callback].parameters.size()==2;
+    if (!state.transform || !values.invoke || (!state.callable && state.callback>=values.program.routines.size())) throw runtime_error(RuntimeError::invalid_bytecode,values.location);
+    const bool indexed=state.callable ? type_info(values.program,state.callable->type).parameters.size()==2
+        : values.program.routines[state.callback].parameters.size()==2;
     auto& cursor=*state.transform;
     if (cursor.positioned && index==cursor.index) return cursor.available;
     if ((!cursor.positioned && index) || (cursor.positioned && (!cursor.available || index<=cursor.index || index-cursor.index!=1)))
@@ -37,9 +40,10 @@ bool sequence_transform_resume(Values& values,const std::shared_ptr<Aggregate>& 
             cursor.positioned=true; cursor.available=true; cursor.index=index; return true;
         }
         const std::array<Value,2> arguments={item,static_cast<std::int32_t>(indexed ? cursor.source_index : 0)}; ++cursor.source_index;
-        auto value=values.invoke(state.callback,std::span<const Value>(arguments).first(indexed ? 2U : 1U));
+        const auto actual=std::span<const Value>(arguments).first(indexed ? 2U : 1U);
+        auto value=state.callable ? values.invoke_value(state.callable,actual) : values.invoke(state.callback,actual);
         if (state.transform_method==SequenceTransform::flatmap) {
-            const auto returned=values.program.routines[state.callback].result;
+            const auto returned=state.callable ? type_info(values.program,state.callable->type).element : values.program.routines[state.callback].result;
             std::shared_ptr<Aggregate> source;
             if (returned==Type::string) source=sequence_text(values,sequence->type,std::move(value));
             else {

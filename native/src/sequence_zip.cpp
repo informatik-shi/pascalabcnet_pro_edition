@@ -4,12 +4,13 @@
 #include <algorithm>
 
 namespace abc {
-std::shared_ptr<Aggregate> sequence_zip(Values& values,Type type,std::vector<std::shared_ptr<Aggregate>> sources,std::size_t callback,const ExecutionOptions& options) {
+std::shared_ptr<Aggregate> sequence_zip(Values& values,Type type,std::vector<std::shared_ptr<Aggregate>> sources,std::size_t callback,const ExecutionOptions& options,std::shared_ptr<Aggregate> callable) {
     if (sources.size()<2 || sources.size()>5) throw runtime_error(RuntimeError::invalid_bytecode,values.location);
     std::size_t nesting=0;
     for (const auto& source:sources) if (source && source->sequence) nesting=std::max(nesting,source->sequence->nesting);
     if (nesting>=options.call_limit) throw runtime_error(RuntimeError::sequence_depth,values.location);
     auto result=sequence_composed(values,type,sources.front(),SequenceProvider::zip,options);
+    result->sequence->callable=std::move(callable);
     result->sequence->nesting=nesting+1; result->sequence->sources=std::move(sources); result->sequence->callback=callback;
     return result;
 }
@@ -25,8 +26,11 @@ bool sequence_zip_resume(Values& values,const std::shared_ptr<Aggregate>& sequen
     if (index>=options.instruction_limit) throw runtime_error(RuntimeError::instruction_limit,values.location);
     if ((index&255U)==0 && options.cancelled && options.cancelled()) throw runtime_error(RuntimeError::cancelled,values.location);
     // Pascal's iterator obtains every enumerator before the first MoveNext.
-    if (cursor.iterators.empty())
+    if (cursor.iterators.empty()) {
+        // The iterator body checks the function before opening even empty sources.
+        if (state.callable) (void)values.callable_target(state.callable);
         for (const auto& source:state.sources) cursor.iterators.push_back(sequence_begin(values,source));
+    }
     std::array<Value,5> arguments{};
     for (std::size_t i=0;i<cursor.iterators.size();++i) {
         const auto& iterator=cursor.iterators[i];
@@ -42,7 +46,8 @@ bool sequence_zip_resume(Values& values,const std::shared_ptr<Aggregate>& sequen
         if (cursor.iterators[i]->sequence->provider!=SequenceProvider::list)
             arguments[i]=sequence_at(values,cursor.iterators[i],static_cast<std::int64_t>(index),options);
     const auto count=cursor.iterators.size();
-    if (state.callback) {
+    if (state.callable) cursor.current=values.invoke_value(state.callable,std::span<const Value>(arguments).first(count));
+    else if (state.callback) {
         if (!values.invoke || state.callback-1>=values.program.routines.size()) throw runtime_error(RuntimeError::invalid_bytecode,values.location);
         cursor.current=values.invoke(state.callback-1,std::span<const Value>(arguments).first(count));
     } else {

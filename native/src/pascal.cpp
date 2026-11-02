@@ -2173,21 +2173,33 @@ private:
         result.left=std::move(argument); result.kind=hir::ExprKind::sequence_call; result.local=name=="tolist" ? 2U : name=="toarray" ? 1U : 0U;
         result.type=result.local ? sequence_type(result.local==2 ? CompoundKind::list : CompoundKind::array,source_info.element) : Type::integer; return true;
     }
+    struct LibraryCallback {
+        Routine signature;
+        std::optional<std::size_t> named;
+        std::unique_ptr<hir::Expr> value;
+    };
+    LibraryCallback library_callback_value(std::unique_ptr<hir::Expr> value) {
+        if (!callable_type(value->type)) throw Error("E_TYPE",value->location,"Library callback requires a function value with known types");
+        LibraryCallback callback; const auto signature=info(value->type,value->location);
+        callback.signature.result=signature.element;
+        for (const auto& parameter:signature.parameters) callback.signature.parameters.push_back({0,parameter.type,parameter.by_reference,parameter.variadic});
+        callback.value=std::move(value); return callback;
+    }
+    LibraryCallback library_callback(const SyntaxExpr& source) {
+        if (source.kind==SyntaxExprKind::name && routine_names_.contains(source.token.text)
+            && (!lookup(source.token) || source.token.text==current_name_)) {
+            LibraryCallback callback; callback.named=routine_names_.at(source.token.text);
+            const auto& signature=module_.routines[*callback.named].signature;
+            callback.signature.result=signature.result; callback.signature.parameters=signature.parameters; return callback;
+        }
+        if (source.kind==SyntaxExprKind::name && !lookup(source.token))
+            throw Error("E_TYPE",source.token.location,"Library callback requires a function value with known types");
+        return library_callback_value(expression(source));
+    }
     bool bind_sequence_zip(hir::Expr& result,const SyntaxExpr& source,std::string_view unit={},bool member=false) {
         const auto name=source.token.text;
         if ((name!="zip" && name!="ziptuple") || (!unit.empty() && unit!="pabcsystem")) return false;
-        std::optional<std::size_t> callback;
-        if (name=="zip" && !source.arguments.empty()) {
-            const auto& last=*source.arguments.back();
-            if (last.kind==SyntaxExprKind::name && routine_names_.contains(last.token.text)
-                && (!lookup(last.token) || last.token.text==current_name_)) {
-                const auto routine=routine_names_.at(last.token.text);
-                if (module_.routines[routine].signature.parameters.size()>=2) callback=routine;
-            }
-        }
-        const auto count=source.arguments.size()+(member ? 1U : 0U)-(callback ? 1U : 0U);
-        if (count<2 || count>(name=="ziptuple" ? 4U : 5U))
-            throw Error("E_TYPE",result.location,"Zip requires two to five typed sources and an optional function");
+        std::optional<LibraryCallback> callback;
         std::vector<Type> elements;
         const auto append=[&](std::unique_ptr<hir::Expr> argument) {
             const auto element=sequence_source(argument->type,argument->location).element;
@@ -2195,19 +2207,35 @@ private:
             result.arguments.push_back(convert(std::move(argument),sequence_type(CompoundKind::sequence,element)));
         };
         if (member) append(std::move(result.left));
-        for (std::size_t i=0;i<source.arguments.size()-(callback ? 1U : 0U);++i) append(expression(*source.arguments[i]));
+        for (std::size_t n=0;n<source.arguments.size();++n) {
+            const auto& argument=*source.arguments[n];
+            if (name=="zip" && n+1==source.arguments.size()) {
+                if (argument.kind==SyntaxExprKind::name && routine_names_.contains(argument.token.text)
+                    && (!lookup(argument.token) || argument.token.text==current_name_)
+                    && module_.routines[routine_names_.at(argument.token.text)].signature.parameters.size()>=2) {
+                    callback=library_callback(argument); continue;
+                }
+                auto value=expression(argument);
+                if (callable_type(value->type)) { callback=library_callback_value(std::move(value)); continue; }
+                append(std::move(value));
+            } else append(expression(argument));
+        }
+        const auto count=elements.size();
+        if (count<2 || count>(name=="ziptuple" ? 4U : 5U))
+            throw Error("E_TYPE",result.location,"Zip requires two to five typed sources and an optional function");
         Type output=Type::invalid;
         if (callback) {
-            const auto& signature=module_.routines[*callback].signature;
+            const auto& signature=callback->signature;
             if (signature.parameters.size()!=count || signature.result==Type::unit)
                 throw Error("E_TYPE",result.location,"Zip function arity must match the source count and return a value");
-            for (std::size_t i=0;i<count;++i)
-                if (signature.parameters[i].by_reference || signature.parameters[i].type!=elements[i])
+            for (std::size_t n=0;n<count;++n)
+                if (signature.parameters[n].by_reference || signature.parameters[n].type!=elements[n])
                     throw Error("E_TYPE",result.location,"Zip function parameters must be values of the exact source element types");
             output=signature.result;
+            result.right=std::move(callback->value);
         } else output=tuple_type(elements,result.location);
         result.type=sequence_type(CompoundKind::sequence,output); result.kind=hir::ExprKind::sequence_zip;
-        result.local=((count-2U)<<9)|(callback ? *callback+1U : 0U); return true;
+        result.local=((count-2U)<<9)|(callback && callback->named ? *callback->named+1U : 0U); return true;
     }
     bool bind_sequence_numeric_selector(hir::Expr& result,const SyntaxExpr& source,std::string_view unit={},bool member=false) {
         const auto name=source.token.text;
@@ -2216,7 +2244,8 @@ private:
         if (member) selected->left=std::move(result.left);
         (void)bind_sequence_transform(*selected,source,unit,member,"select");
         const auto element=info(selected->type,result.location).element;
-        if (module_.routines[selected->local].signature.parameters.size()!=1 || (element!=Type::integer && element!=Type::int64 && element!=Type::real))
+        const auto arity=selected->right ? info(selected->right->type,result.location).parameters.size() : module_.routines[selected->local].signature.parameters.size();
+        if (arity!=1 || (element!=Type::integer && element!=Type::int64 && element!=Type::real))
             throw Error("E_TYPE",result.location,"Sum/Average selector requires one input parameter and integer, int64 or real result");
         result.arguments.push_back(std::move(selected)); return bind_sequence_numeric(result,name,unit);
     }
@@ -2233,27 +2262,22 @@ private:
         if (*method!=PredicateQuery::all && source.arguments.size()==(member ? 0U : 1U)) return false;
         if (source.arguments.size()!=(member ? 1U : 2U)) throw Error("E_TYPE",result.location,"Predicate query requires a source and boolean function");
         const auto& callback=*source.arguments[member ? 0 : 1];
-        if (callback.kind!=SyntaxExprKind::name || !routine_names_.contains(callback.token.text)
-            || (lookup(callback.token) && callback.token.text!=current_name_))
-            throw Error("E_TYPE",callback.token.location,"Predicate query requires a named user function with known types");
-        const auto routine=routine_names_.at(callback.token.text); const auto signature=module_.routines[routine].signature;
+        auto bound=library_callback(callback); const auto& signature=bound.signature;
         if (!member) result.left=expression(*source.arguments[0]);
         const auto input=sequence_source(result.left->type,result.location);
         if (signature.parameters.size()!=1 || signature.parameters[0].by_reference || signature.parameters[0].type!=input.element || signature.result!=Type::boolean)
             throw Error("E_TYPE",callback.token.location,"Predicate query function must accept one exact element by value and return boolean");
         result.left=convert(std::move(result.left),sequence_type(CompoundKind::sequence,input.element));
         result.type=predicate_query_result(input.element,*method); result.kind=hir::ExprKind::sequence_predicate;
-        result.local=routine|(static_cast<std::size_t>(*method)<<8); return true;
+        result.right=std::move(bound.value);
+        result.local=bound.named.value_or(0)|(static_cast<std::size_t>(*method)<<8); return true;
     }
     bool bind_sequence_transform(hir::Expr& result,const SyntaxExpr& source,std::string_view unit={},bool member=false,std::string_view operation={}) {
         const auto name=operation.empty() ? std::string_view(source.token.text) : operation; const bool predicate=name=="where" || name=="takewhile" || name=="skipwhile",flatten=name=="selectmany";
         if ((name!="select" && !predicate && !flatten) || (!unit.empty() && unit!="pabcsystem")) return false;
         if (source.arguments.size()!=(member ? 1U : 2U)) throw Error("E_TYPE",result.location,"Sequence transform requires a source and typed function");
         const auto& callback=*source.arguments[member ? 0 : 1];
-        if (callback.kind!=SyntaxExprKind::name || !routine_names_.contains(callback.token.text)
-            || (lookup(callback.token) && callback.token.text!=current_name_))
-            throw Error("E_TYPE",callback.token.location,"Sequence transform requires a named user function with known types");
-        const auto routine=routine_names_.at(callback.token.text); const auto signature=module_.routines[routine].signature;
+        auto bound=library_callback(callback); const auto& signature=bound.signature;
         if (!member) result.left=expression(*source.arguments[0]);
         const auto input=sequence_source(result.left->type,result.location);
         if ((signature.parameters.size()!=1 && signature.parameters.size()!=2) || signature.parameters[0].by_reference || signature.parameters[0].type!=input.element
@@ -2262,7 +2286,8 @@ private:
             throw Error("E_TYPE",callback.token.location,"Sequence function requires an exact element by value, optional integer index and a value result (boolean for predicates)");
         result.left=convert(std::move(result.left),sequence_type(CompoundKind::sequence,input.element));
         result.type=sequence_type(CompoundKind::sequence,predicate ? input.element : flatten ? sequence_source(signature.result,callback.token.location).element : signature.result);
-        result.kind=hir::ExprKind::sequence_transform; result.local=routine; return true;
+        result.right=std::move(bound.value);
+        result.kind=hir::ExprKind::sequence_transform; result.local=bound.named.value_or(0); return true;
     }
     bool bind_sequence_default(hir::Expr& result,std::string_view name,std::string_view unit={}) {
         if (name!="defaultifempty" || (!unit.empty() && unit!="pabcsystem")) return false;
@@ -2388,9 +2413,7 @@ private:
         if (!imported_units_.contains("school")) throw Error("E_NAME",result.location,"TrueTable requires uses School");
         if (source.arguments.empty() || source.arguments.size()>2) throw Error("E_TYPE",result.location,"TrueTable requires a typed boolean function and optional variable count");
         const auto& callback=*source.arguments.back();
-        if (callback.kind!=SyntaxExprKind::name || (lookup(callback.token) && callback.token.text!=current_name_) || !routine_names_.contains(callback.token.text))
-            throw Error("E_TYPE",callback.token.location,"TrueTable requires a named user function with known parameter and result types");
-        const auto routine=routine_names_.at(callback.token.text); const auto& signature=module_.routines[routine].signature;
+        auto bound=library_callback(callback); const auto& signature=bound.signature;
         if (signature.result!=Type::boolean) throw Error("E_TYPE",callback.token.location,"TrueTable function must return boolean");
         const bool general=source.arguments.size()==2;
         const auto array=sequence_type(CompoundKind::array,Type::boolean);
@@ -2405,13 +2428,15 @@ private:
             result.left=std::make_unique<hir::Expr>(); result.left->kind=hir::ExprKind::literal; result.left->type=Type::integer;
             result.left->value=static_cast<std::int32_t>(signature.parameters.size()); result.left->location=result.location;
         }
-        result.kind=hir::ExprKind::school_table; result.local=routine; result.type=sequence_type(CompoundKind::array,Type::boolean,2);
+        result.right=std::move(bound.value);
+        result.kind=hir::ExprKind::school_table; result.local=bound.named.value_or(0); result.type=sequence_type(CompoundKind::array,Type::boolean,2);
         result.operation_type=general ? array : Type::invalid;
         const auto temporary=[&](Type type) {
             const auto index=module_.locals.size(); module_.locals.push_back({"$truetable_"+std::to_string(index),type,!in_routine_}); result.temporaries.push_back(index);
         };
         temporary(result.type); temporary(Type::integer); temporary(Type::integer);
         if (general) { temporary(array); temporary(Type::integer); }
+        if (result.right) temporary(result.right->type);
         return true;
     }
     bool bind_school_table_print(hir::Expr& result,std::string_view name,std::string_view unit={}) {
