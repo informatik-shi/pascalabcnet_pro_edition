@@ -150,6 +150,15 @@ static void execute_impl(const Program& program, std::istream& input, std::ostre
         throw Error(error.code, error.location, error.what(), "Некорректный байт-код: выполнение невозможно");
     }
     Values values{program,options.allocation_limit};
+    struct ClosureTracker {
+        struct Entry { std::weak_ptr<Aggregate> object; std::shared_ptr<Aggregate> retained; };
+        std::vector<Entry> entries;
+        ~ClosureTracker() {
+            // Hold surviving closures before breaking edges, without allocating in cleanup.
+            for (auto& entry:entries) entry.retained=entry.object.lock();
+            for (auto& entry:entries) if (entry.retained) entry.retained->captures.clear();
+        }
+    } closures;
     LinkedRuntime linked{values,{}};
     FileContext files;
     RandomContext random;
@@ -184,10 +193,11 @@ static void execute_impl(const Program& program, std::istream& input, std::ostre
         Instruction instruction; instruction.location=location;
         write(text,instruction);
     },delimiter_value,options,school,values};
-    const auto enter_routine=[&](std::size_t id,SourceLocation location) {
+    const auto enter_routine=[&](std::size_t id,SourceLocation location,std::span<const std::shared_ptr<Cell>> captured={}) {
         if (id>=program.routines.size()) throw runtime_error(RuntimeError::invalid_bytecode,location);
         if (frames.size()>options.call_limit) throw runtime_error(RuntimeError::call_limit,location);
         const auto& routine=program.routines[id];
+        if (captured.size()!=routine.captures.size()) throw runtime_error(RuntimeError::invalid_bytecode,location);
         Frame next{&routine.code,&routine,std::vector<std::shared_ptr<Cell>>(program.locals.size()),0,stack.size()-routine.parameters.size()};
         for (auto index:routine.locals) next.locals[index]=values.cell(program.locals[index].type,values.zero(program.locals[index].type));
         for (std::size_t i=routine.parameters.size();i>0;--i) {
@@ -195,19 +205,28 @@ static void execute_impl(const Program& program, std::istream& input, std::ostre
             if (parameter.by_reference) next.locals[parameter.local]=std::get<std::shared_ptr<Cell>>(value);
             else values.write(next.locals[parameter.local],value);
         }
+        for (std::size_t n=0;n<captured.size();++n) {
+            const auto index=routine.captures[n];
+            if (!captured[n] || captured[n]->type!=program.locals[index].type) throw runtime_error(RuntimeError::invalid_bytecode,location);
+            next.locals[index]=captured[n];
+        }
         frames.push_back(std::move(next));
     };
     std::function<void(std::size_t)> run_to;
-    values.invoke=[&](std::size_t id,std::span<const Value> arguments)->Value {
+    const auto invoke_result=[&](std::size_t id,std::span<const Value> arguments,std::span<const std::shared_ptr<Cell>> captured)->Value {
         const auto location=values.location;
         struct RestoreLocation { Values& values; SourceLocation saved; ~RestoreLocation(){values.location=saved;} } restore{values,location};
         if (id>=program.routines.size() || program.routines[id].parameters.size()!=arguments.size() || program.routines[id].result==Type::unit)
             throw runtime_error(RuntimeError::invalid_bytecode,location);
         const auto depth=frames.size(),base=stack.size();
         for (const auto& argument:arguments) stack.push_back(values.copy(argument));
-        enter_routine(id,location); run_to(depth);
+        enter_routine(id,location,captured); run_to(depth);
         if (frames.size()!=depth || stack.size()!=base+1) throw runtime_error(RuntimeError::invalid_bytecode,location);
         return pop();
+    };
+    values.invoke=[&](std::size_t id,std::span<const Value> arguments)->Value { return invoke_result(id,arguments,{}); };
+    values.invoke_closure=[&](const std::shared_ptr<Aggregate>& callable,std::span<const Value> arguments)->Value {
+        return invoke_result(values.callable_target(callable),arguments,callable->captures);
     };
     run_to=[&](std::size_t depth) {
     while (frames.size()>depth) {
@@ -1116,10 +1135,22 @@ static void execute_impl(const Program& program, std::istream& input, std::ostre
             for (const auto& item : list->items) if (values.equal(item->value,value)) { found = true; break; }
             stack.emplace_back(found); break;
         }
+        case Op::fresh_local: {
+            const auto value=values.copy(pop()); const auto cell=values.cell(instruction.type,value);
+            locals[instruction.operand]=cell;
+            if (program.locals[instruction.operand].global) globals[instruction.operand]=cell;
+            break;
+        }
         case Op::routine_value: {
-            if (!values.remaining) trap(instruction,RuntimeError::allocation_limit);
-            --values.remaining;
+            const auto& captured=program.routines[instruction.operand].captures;
+            if (captured.size()>=values.remaining) trap(instruction,RuntimeError::allocation_limit);
+            values.remaining-=captured.size()+1;
             auto value=std::make_shared<Aggregate>(); value->type=instruction.type; value->routine=instruction.operand;
+            for (auto index:captured) {
+                // Non-null routine slots hold owned or inherited cells, including captured main-block cells.
+                value->captures.push_back(frame.routine && locals[index] ? locals[index] : globals[index]);
+            }
+            if (!captured.empty()) closures.entries.push_back({value,{}});
             stack.emplace_back(std::move(value)); break;
         }
         case Op::call_value: {
@@ -1127,10 +1158,7 @@ static void execute_impl(const Program& program, std::istream& input, std::ostre
             const auto position=stack.size()-count-1;
             const auto callable=std::get<std::shared_ptr<Aggregate>>(stack[position]);
             stack.erase(stack.begin()+static_cast<std::ptrdiff_t>(position));
-            if (callable->nil) trap(instruction,RuntimeError::nil_reference);
-            if (!callable->routine || *callable->routine>=program.routines.size()
-                || !callable_matches(type_info(program,instruction.type),program.routines[*callable->routine])) trap(instruction,RuntimeError::invalid_bytecode);
-            enter_routine(*callable->routine,instruction.location); break;
+            enter_routine(values.callable_target(callable),instruction.location,callable->captures); break;
         }
         case Op::call_user: enter_routine(instruction.operand,instruction.location); break;
         case Op::return_user: {

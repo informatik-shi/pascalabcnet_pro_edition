@@ -18,7 +18,10 @@ public:
     Program generate(hir::Module module) {
         program_.locals = std::move(module.locals); program_.types = std::move(module.types);
         program_.print_delimiter=module.print_delimiter;
-        for (auto& routine : module.routines) program_.routines.push_back(std::move(routine.signature));
+        for (auto& routine : module.routines) {
+            for (auto local:routine.signature.captures) captured_.insert(local);
+            program_.routines.push_back(std::move(routine.signature));
+        }
         code_ = &program_.code; statement(module.body); emit(Op::halt,Type::invalid,0,module.body.location);
         for (std::size_t i = 0; i < module.routines.size(); ++i) {
             routine_ = i; code_ = &program_.routines[i].code;
@@ -38,7 +41,8 @@ private:
         emit(Op::push, type, program_.constants.size() - 1, location);
     }
     void local(Op op, std::size_t index, SourceLocation location) {
-        if (routine_ && program_.locals[index].global) {
+        if (routine_ && program_.locals[index].global
+            && std::find(program_.routines[*routine_].captures.begin(),program_.routines[*routine_].captures.end(),index)==program_.routines[*routine_].captures.end()) {
             if (op == Op::load) op = Op::load_global;
             if (op == Op::store) op = Op::store_global;
             if (op == Op::ref_local) op = Op::ref_global;
@@ -347,7 +351,11 @@ private:
                 emit(Op::set_character,Type::string,0,node.location);
             }
             else if (node.target) { reference(*node.target); expression(*node.expression); emit(Op::store_ref,node.target->type,0,node.location); }
-            else { expression(*node.expression); local(Op::store,node.local,node.location); }
+            else {
+                expression(*node.expression);
+                if (node.declaration && captured_.contains(node.local)) emit(Op::fresh_local,program_.locals[node.local].type,node.local,node.location);
+                else local(Op::store,node.local,node.location);
+            }
             break;
         case hir::StmtKind::string_mutation: {
             const auto& signature=stdlib::signatures()[node.local];
@@ -499,6 +507,7 @@ private:
     }
     struct LoopJumps { std::vector<std::size_t> breaks,continues; };
     std::vector<LoopJumps> loops_;
+    std::set<std::size_t> captured_;
     Program program_;
     std::vector<Instruction>* code_ = nullptr;
     std::optional<std::size_t> routine_;
@@ -532,7 +541,8 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
 
     auto allowed_local = [&](std::size_t index) {
         if (!routine) return program.locals[index].global;
-        return std::find(routine->locals.begin(),routine->locals.end(),index) != routine->locals.end();
+        return std::find(routine->locals.begin(),routine->locals.end(),index) != routine->locals.end()
+            || std::find(routine->captures.begin(),routine->captures.end(),index)!=routine->captures.end();
     };
     // Validate operands even in unreachable code before propagating stack types.
     for (const auto& instruction : code) {
@@ -817,12 +827,16 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         case Op::routine_value:
             if (!compound(type) || type_info(program,type).kind!=CompoundKind::callable || instruction.operand>=program.routines.size()
                 || !callable_matches(type_info(program,type),program.routines[instruction.operand])) invalid(instruction,"Invalid callable target signature");
+            for (auto capture:program.routines[instruction.operand].captures)
+                if (!program.locals[capture].global && !allowed_local(capture)) invalid(instruction,"Unavailable closure capture");
             break;
         case Op::call_value:
             if (!compound(type) || type_info(program,type).kind!=CompoundKind::callable || instruction.operand) invalid(instruction,"Invalid callable invocation metadata");
             break;
         case Op::call_user:
-            if (instruction.operand >= program.routines.size() || type != program.routines[instruction.operand].result) invalid(instruction,"Invalid user call"); break;
+            if (instruction.operand >= program.routines.size() || type != program.routines[instruction.operand].result
+                || !program.routines[instruction.operand].captures.empty()) invalid(instruction,"Invalid user call");
+            break;
         case Op::return_user:
             if (!routine || type != routine->result) invalid(instruction,"Invalid return"); break;
         case Op::array_new: case Op::array_literal: case Op::resize_array:
@@ -858,12 +872,13 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if (const auto* value = std::get_if<double>(&program.constants[instruction.operand]); value && !std::isfinite(*value))
                 invalid(instruction, "Non-finite real constant");
             break;
-        case Op::load: case Op::store: case Op::read_line: case Op::ref_local: case Op::load_global: case Op::store_global: case Op::ref_global:
+        case Op::fresh_local: case Op::load: case Op::store: case Op::read_line: case Op::ref_local: case Op::load_global: case Op::store_global: case Op::ref_global:
             if (instruction.operand >= program.locals.size()
                 || type != program.locals[instruction.operand].type) invalid(instruction, "Invalid local access");
             if (instruction.op == Op::load_global || instruction.op == Op::store_global || instruction.op == Op::ref_global) {
                 if (!program.locals[instruction.operand].global) invalid(instruction,"Invalid global access");
             } else if (!allowed_local(instruction.operand) && !(instruction.op == Op::read_line && program.locals[instruction.operand].global)) invalid(instruction,"Invalid routine local access");
+            if (instruction.op==Op::fresh_local && routine && std::find(routine->locals.begin(),routine->locals.end(),instruction.operand)==routine->locals.end()) invalid(instruction,"Cannot rebind a captured cell");
             if (instruction.op == Op::read_line && !valid_type(type)) invalid(instruction,"Readln requires a scalar");
             break;
         case Op::jump: case Op::jump_false:
@@ -1199,7 +1214,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             break;
         }
         case Op::push: case Op::load: stack.push_back(instruction.type); break;
-        case Op::store: case Op::print: require(instruction.type); break;
+        case Op::fresh_local: case Op::store: case Op::print: require(instruction.type); break;
         case Op::convert:
             if (!can_widen(pop(), instruction.type)) invalid(instruction, "Invalid conversion");
             stack.push_back(instruction.type);
@@ -1286,6 +1301,17 @@ void verify(const Program& program) {
         else if (indexed_sequence(type.kind) || endpoint_collection(type.kind) || buffer_collection(type.kind) || node_kind(type.kind)) prior(type.element);
         else throw Error("E_BYTECODE",{},"Invalid compound kind");
         if (level > 32) throw Error("E_BYTECODE",{},"Type nesting limit exceeded"); depth[i] = level;
+    }
+    std::vector<bool> owned_locals(program.locals.size());
+    for (const auto& routine:program.routines) for (auto local:routine.locals) {
+        if (local>=program.locals.size() || program.locals[local].global || owned_locals[local]) throw Error("E_BYTECODE",{},"Invalid or shared routine local ownership");
+        owned_locals[local]=true;
+    }
+    for (const auto& routine:program.routines) {
+        std::set<std::size_t> captures;
+        for (auto local:routine.captures)
+            if (local>=program.locals.size() || (!program.locals[local].global && !owned_locals[local]) || !captures.insert(local).second
+                || std::find(routine.locals.begin(),routine.locals.end(),local)!=routine.locals.end()) throw Error("E_BYTECODE",{},"Invalid closure capture metadata");
     }
     std::size_t instructions=program.code.size();
     for (const auto& routine : program.routines) {

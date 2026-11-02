@@ -62,6 +62,101 @@ void runtime_error(std::string_view source, std::string_view code) {
     error([&] { (void)run(source); }, code,source);
 }
 
+void lambda_language() {
+    result("begin var f:integer->integer:=x->x+1; Writeln(f(4),' ',Seq(1,2,3).Select(x->x*2).ToArray); Writeln(Seq(1,2,3).Where(x->x>1).ToArray); end.","5 [2,4,6]\n[2,3]\n");
+    result("begin var f:=(x:integer)->x+2; var g:=function(x:integer):integer -> x*3; Writeln(f(3),' ',g(3),' ',((x:integer)->x+1)(7)); end.","5 9 8\n");
+    result("begin Writeln(Seq(10,20).Select((x,i)->x+i).ToArray); Writeln(Seq(1,2,3,1).TakeWhile(x->x<3).ToArray,' ',Seq(1,2,3,1).SkipWhile(x->x<3).ToArray); Writeln(Seq(1,2).Sum(x->x*2),' ',Seq(1,2).All(x->x>0)); end.","[10,21]\n[1,2] [3,1]\n6 True\n");
+    result("begin Writeln(Zip(Seq(1,2),'Яx',(n,c)->IntToStr(n)+c).ToArray); Writeln(Seq(1,2).SelectMany(x->Arr(x,-x)).ToArray); end.","[1Я,2x]\n[1,-1,2,-2]\n");
+    result("uses School; begin var t:=TrueTable((a,b)->a and b); Writeln(t[0,2],' ',t[3,2]); var a:=TrueTable(1,values->values[0]); Writeln(a[0,1],' ',a[1,1]); end.","False True\nFalse True\n");
+    result(R"(function Make(k:integer):integer->integer;
+begin Result:=x -> x+k; end;
+begin var f:=Make(10); var g:=Make(20); Writeln(f(2),' ',g(3),' ',f=g); end.)","12 23 False\n");
+    result(R"(function Counter:()->integer;
+begin var n:=0; Result:=()->begin Inc(n); Result:=n; end; end;
+begin var f:=Counter(); var alias:=f; var g:=Counter(); Writeln(f(),' ',alias(),' ',g(),' ',f=alias,' ',f=g); end.)","1 2 1 True False\n");
+    result(R"(function Build(k:integer):sequence of integer;
+begin Result:=Seq(1,2).Select(x->x+k); k:=20; end;
+begin var s:=Build(10); Writeln(s.ToArray,' ',s.ToArray); end.)","[21,22] [21,22]\n");
+    result("begin var nested:=(x:integer)->(y:integer)->x+y; var a:=nested(4); var b:=nested(10); Writeln(a(5),' ',b(5),' ',a=b); end.","9 15 False\n");
+    result(R"(function Build(k:integer):integer->integer->integer;
+begin Result:=x->y->k+x+y; end;
+begin var f:=Build(10); var a:=f(2); var b:=f(5); Writeln(a(3),' ',b(3)); end.)","15 18\n");
+    result("begin var offset:=1; var f:integer->integer:=x->x+offset; offset:=7; Writeln(f(2)); var p:procedure:=()->offset:=9; p(); Writeln(f(2)); end.","9\n11\n");
+    result("begin var actions:=new List<()->integer>; for var i:=1 to 3 do begin var value:=i; actions.Add(()->value); end; foreach var f in actions do Write(f(),' '); end.","1 2 3 ");
+    result("begin var factories:=new List<()->()->integer>; for var i:=1 to 3 do begin var n:=i; factories.Add(()->()->n); end; foreach var create in factories do Write(create()(),' '); end.","1 2 3 ");
+    result(R"(function Build:List<()->integer>;
+begin Result:=new List<()->integer>; for var i:=1 to 3 do begin var n:=i; Result.Add(()->n); end; end;
+begin var a:=Build(); foreach var f in a do Write(f(),' '); end.)","1 2 3 ");
+    result("begin var f:integer->integer:=x->begin var y:=x+1; if y>2 then Exit(y*2); Result:=y; end; Writeln(f(1),' ',f(2)); end.","2 6\n");
+    result("begin var f:=(x:integer)->begin Result:=x+1; end; Writeln(f(2)); var g:=(x:integer)->begin Exit(x+2); end; Writeln(g(2)); end.","3\n4\n");
+    result("begin var f:integer->real:=x->begin if x>0 then Result:=x else Result:=0.5; end; Writeln(f(1),' ',f(0)); end.","1 0.5\n");
+    result("begin var total:=0; var p:=procedure(x:integer)->begin total:=total+x; end; p(3); p(4); var q:Action<integer>:=x->Print(x); q(total); end.","7 ");
+    result("begin var p:procedure:=()->Writeln('Я'); p(); var f:()->integer:=()->7; Writeln(f()); end.","Я\n7\n");
+    result("begin var f:function(var x:integer):integer:=function(var x:integer):integer->begin Inc(x); Result:=x; end; var n:=2; Writeln(f(n),' ',n); end.","3 3\n");
+    result(R"(function Make(const k:integer):integer->integer;
+begin Result:=x->x+k; end;
+begin Writeln(Make(5)(2)); end.)","7\n");
+    result(R"(type R=record n:integer; a:array of integer; end;
+function Make(r:R):()->integer;
+begin Result:=()->begin Inc(r.n); Inc(r.a[0]); Result:=r.n; end; end;
+begin var r:R; r.n:=2; r.a:=Arr(1); var f:=Make(r); Writeln(f(),' ',f(),' ',r.n,' ',r.a[0]); end.)","3 4 2 3\n");
+    result(R"(function Make:()->integer;
+begin var n:=0; var f:()->integer; f:=()->begin Inc(n); if n<4 then Result:=f() else Result:=n; end; Result:=f; end;
+begin var f:=Make(); Writeln(f(),' ',f()); end.)","4 5\n");
+    result("type F=integer->integer; begin var a:=new F[2]((x:integer)->x+1,(x:integer)->x+2); Writeln(a[0](3),' ',a[1](3)); end.","4 5\n");
+    // A closure can keep a record alive, whose function field refers back to it.
+    const auto cycle=abc::compile("type R=record f:()->integer; n:integer; end; function Make:()->integer; begin var r:R; r.n:=3; r.f:=()->r.n; Result:=r.f; end; begin var f:=Make(); Assert(f()=3); end.");
+    bool cycles_ok=true;
+    for (int i=0;i<30;++i) {
+        std::istringstream in; std::ostringstream out;
+        try { abc::execute(cycle,in,out); cycles_ok=cycles_ok && out.str().empty(); }
+        catch (const std::exception&) { cycles_ok=false; }
+    }
+    require(cycles_ok,"Cyclic closures invoke correctly across repeated VM executions and are checked by leak sanitizers");
+    const auto failed_cycle=abc::compile("type R=record f:()->integer; n:integer; end; function Make:()->integer; begin var r:R; r.n:=3; r.f:=()->r.n; Result:=r.f; end; begin var f:=Make(); Assert(False); end.");
+    bool cleanup_error_ok=true;
+    for (int i=0;i<20;++i) {
+        std::istringstream in; std::ostringstream out;
+        try { abc::execute(failed_cycle,in,out); cleanup_error_ok=false; }
+        catch (const abc::Error& caught) { cleanup_error_ok=cleanup_error_ok && caught.code=="E_ASSERT" && !caught.russian.empty(); }
+    }
+    require(cleanup_error_ok,"Cyclic captured environments are exercised through exceptional VM cleanup for leak sanitizers");
+
+    for (const auto source:{
+        "begin var f:=x->x+1; end.",
+        "begin var f:integer->integer:=(x,y)->x+y; end.",
+        "begin var f:integer->integer:=(x:real)->x; end.",
+        "begin var f:procedure:=()->1; end.",
+        "begin var f:=function()->Print(1); end.",
+        "begin var f:=(x:integer)->begin Result:=Result+1; end; end.",
+        "begin var f:=(x:integer)->nil; end.",
+        "procedure P(var n:integer); begin var f:()->integer:=()->n; end; begin end.",
+        "procedure P(out n:integer); begin var f:()->integer:=()->n; end; begin end.",
+        "function Make(const n:integer):procedure; begin Result:=()->n:=3; end; begin end.",
+        "begin Seq(1).Select(x->Print(x)); end.",
+        "begin Seq(1).Where(x->1); end."}) compile_error(source,"E_TYPE");
+    compile_error("begin var f:integer->integer:=(x,x)->x; end.","E_TYPE");
+    compile_error("begin var f:=(x,x:integer)->x; end.","E_DUPLICATE");
+    compile_error("begin while True do begin var f:procedure:=()->begin break; end; break; end; end.","E_SYNTAX");
+    compile_error("begin for var i:=1 to 2 do begin var f:()->integer:=()->i; end; end.","E_UNSUPPORTED");
+    compile_error("begin foreach var i in Seq(1) do begin var f:()->integer:=()->i; end; end.","E_UNSUPPORTED");
+    try { (void)run("begin\nvar f:integer->integer:=x->1 div x;\nf(0);\nend."); require(false,"Expected lambda division error"); }
+    catch (const abc::Error& caught) { require(caught.code=="E_DIV_ZERO" && caught.location.line==2 && !caught.russian.empty(),"Lambda body failure retains its source location and both languages"); }
+    auto p=abc::compile("function Make(n:integer):()->integer; begin Result:=()->n; end; begin var f:=Make(2); f(); end.");
+    auto invalid=p; for (auto& routine:invalid.routines) if (!routine.captures.empty()) routine.captures.push_back(routine.captures[0]);
+    error([&]{abc::verify(invalid);},"E_BYTECODE");
+    invalid=p; for (auto& op:invalid.code) if (op.op==abc::Op::call_user) {op.operand=1;op.type=abc::Type::integer;break;}
+    error([&]{abc::verify(invalid);},"E_BYTECODE");
+    invalid=p; for (auto& routine:invalid.routines) if (!routine.captures.empty()) routine.captures[0]=invalid.locals.size();
+    error([&]{abc::verify(invalid);},"E_BYTECODE");
+    invalid=p; for (auto& op:invalid.code) if (op.op==abc::Op::call_user) {op.op=abc::Op::routine_value;op.operand=1;break;}
+    error([&]{abc::verify(invalid);},"E_BYTECODE");
+    invalid=p; invalid.routines[1].locals.push_back(invalid.routines[0].locals[0]);
+    error([&]{abc::verify(invalid);},"E_BYTECODE");
+    abc::ExecutionOptions options; options.call_limit=8;
+    error([&]{(void)run("begin var f:()->integer; f:=()->f(); f(); end.","",options);},"E_LIMIT");
+}
+
 void library_callable_values() {
     result(R"(function DoubleIt(x:integer):integer; begin Result:=2*x; end;
 function TripleIt(x:integer):integer; begin Result:=3*x; end;
@@ -4230,6 +4325,7 @@ int main() {
     named_callable_values();
     short_callable_types();
     library_callable_values();
+    lambda_language();
     structural_output();
     try_console_read();
     string_conversions();

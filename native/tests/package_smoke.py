@@ -132,6 +132,20 @@ def main():
                         or "EN:" not in attempted.stderr or "RU:" not in attempted.stderr
                         or f"{callback_source}:{line}:" not in attempted.stderr):
                     raise RuntimeError(f"{name} library callable timing/diagnostic failed: {attempted.stdout!r}, {attempted.stderr!r}")
+            lambda_source = folder / "Лямбда и типы.pas"
+            for source, code, line in [
+                ("begin\nWriteln('must not execute');\nvar f:=x->x+1;\nend.", "E_TYPE", 3),
+                ("begin\nvar f:integer->integer:=x->1 div x;\nf(0);\nend.", "E_DIV_ZERO", 2),
+            ]:
+                lambda_source.write_text(source, encoding="utf-8")
+                attempted = subprocess.run([runner, "run", str(lambda_source)], text=True, encoding="utf-8",
+                                           capture_output=True, cwd=folder, env=env, timeout=10)
+                if (attempted.returncode != 1 or attempted.stdout or code not in attempted.stderr
+                        or "EN:" not in attempted.stderr or "RU:" not in attempted.stderr
+                        or f"{lambda_source}:{line}:" not in attempted.stderr):
+                    raise RuntimeError(f"{name} lambda type/body diagnostic failed: {attempted.stdout!r}, {attempted.stderr!r}")
+                if code == "E_TYPE" and "тип параметра лямбды" not in attempted.stderr:
+                    raise RuntimeError(f"{name} detailed Russian lambda diagnostic missing: {attempted.stderr!r}")
             example = subprocess.run([runner, "run", str(folder / "examples" / "sum.pas")],
                                      input="10\n", text=True, encoding="utf-8", capture_output=True,
                                      cwd=folder, env=env, timeout=10)
@@ -188,6 +202,7 @@ def main():
                 ("sequence-prefixes.pas", "Начало: [1,2]\nОстаток: [3,1]\nПосле двух: [7,6]\n"),
                 ("callable-values.pas", "Значение: 14\nЧерез массив: 18\nЧерез параметр: 22\nПустое значение: True\n"),
                 ("library-callables.pas", "Сохранённая функция: [2,4,6]\nОтбор: [1,2]\nСуммы пар: [11,22]\nРезультат для True, True: True\n"),
+                ("lambdas.pas", "Квадраты: [1,4,9]\nИзменяемый захват: [2,3]\nСчётчик: 11 12\nВложенные функции: 9\n"),
                 ("const-out-parameters.pas", "Сумма: 42\nПосле изменения: 43\n"),
                 ("sequence-flatmap.pas", "Все элементы: [1,1,2,1,2,3]\nПервые четыре: [1,1,2,1]\nСумма: 10\n"),
                 ("sequence-predicates.pas", "Есть чётные: True\nЧётных чисел: 5\nПервое чётное: 2\nСумма квадратов: 385\n"),
@@ -661,6 +676,7 @@ def main():
             results[-1]["typed_user_params_arrays"] = "passed"
             results[-1]["native_assertions_and_bilingual_failures"] = "passed"
             results[-1]["typed_library_callable_values_and_bilingual_nil_timing"] = "passed"
+            results[-1]["typed_lambdas_captures_and_bilingual_diagnostics"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 

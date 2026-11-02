@@ -154,7 +154,7 @@ private:
     SourceLocation position_;
 };
 
-enum class SyntaxExprKind { literal, literal_group, name, unary, binary, call, index, field, member_call, construction, formatted, tuple, typed_default, value_call };
+enum class SyntaxExprKind { literal, literal_group, name, unary, binary, call, index, field, member_call, construction, formatted, tuple, typed_default, value_call, lambda };
 struct SyntaxType {
     Token token;
     std::string kind;
@@ -165,6 +165,7 @@ struct SyntaxType {
     std::vector<bool> references{}, variadics{};
     bool system_qualified=false;
 };
+struct SyntaxRoutine;
 struct SyntaxExpr {
     SyntaxExprKind kind;
     Token token;
@@ -175,6 +176,7 @@ struct SyntaxExpr {
     bool array_construction = false;
     bool initialized_array = false;
     std::vector<std::unique_ptr<SyntaxExpr>> initializers{};
+    std::shared_ptr<SyntaxRoutine> lambda{};
 };
 
 std::unique_ptr<SyntaxExpr> make_expression(SyntaxExprKind kind, Token token,
@@ -210,6 +212,7 @@ struct SyntaxRoutine {
     std::shared_ptr<SyntaxType> result;
     std::vector<SyntaxParameter> parameters;
     SyntaxStmt body;
+    bool expression_body=false, procedure_lambda=false, function_lambda=false;
 };
 
 bool reserved(std::string_view text) {
@@ -282,7 +285,7 @@ private:
         if (current_.kind != TokenKind::name || reserved(current_.text)) fail("Expected an identifier");
         return consume();
     }
-    std::shared_ptr<SyntaxType> type_syntax(bool allow_empty_result=false) {
+    std::shared_ptr<SyntaxType> type_syntax(bool allow_empty_result=false,bool allow_arrow=true) {
         DepthGuard guard(depth_, current_.location);
         auto result = std::make_shared<SyntaxType>(); result->token = current_;
         if (is("function") || is("procedure")) {
@@ -319,10 +322,10 @@ private:
                 if (is(",")) throw Error("E_UNSUPPORTED",current_.location,"Array ranks above two are not implemented");
                 expect("]");
             }
-            expect("of"); result->element = type_syntax();
+            expect("of"); result->element = type_syntax(false,allow_arrow);
         }
         else if (accept("sequence")) {
-            result->kind="sequence"; expect("of"); result->element=type_syntax();
+            result->kind="sequence"; expect("of"); result->element=type_syntax(false,allow_arrow);
         }
         else if (accept("record")) {
             result->kind = "record";
@@ -357,7 +360,7 @@ private:
                 result->element = type_syntax(); expect(">");
             }
         }
-        if (accept("->")) {
+        if (allow_arrow && accept("->")) {
             if (result->kind=="record" || result->kind=="callable")
                 throw Error("E_SYNTAX",result->token.location,"Short callable input type requires parentheses");
             auto callable=std::make_shared<SyntaxType>(); callable->token=result->token; callable->kind="callable";
@@ -546,6 +549,49 @@ private:
         if (op == "*" || op == "/" || op == "div" || op == "mod" || op == "and" || op=="shl" || op=="shr") return 3;
         return 0;
     }
+    std::shared_ptr<SyntaxRoutine> lambda_head(Token token,bool function=false,bool procedure=false) {
+        auto lambda=std::make_shared<SyntaxRoutine>(); lambda->name=std::move(token);
+        lambda->function_lambda=function; lambda->procedure_lambda=procedure;
+        if (accept("(")) {
+            if (!is(")")) do {
+                const bool reference=accept("var") || accept("out");
+                const bool read_only=!reference && accept("const");
+                const bool variadic=!reference && !read_only && accept("params");
+                std::vector<Token> names{name()}; while (accept(",")) names.push_back(name());
+                auto type=accept(":") ? type_syntax() : std::shared_ptr<SyntaxType>{};
+                for (const auto& parameter:names) {
+                    if (lambda->parameters.size()>=16) throw Error("E_LIMIT",parameter.location,"Too many lambda parameters");
+                    lambda->parameters.push_back({parameter,type,reference,{},read_only,variadic});
+                }
+            } while (accept(";") || accept(","));
+            expect(")");
+        }
+        if (accept(":")) {
+            if (procedure) fail("Procedure lambda cannot declare a result type");
+            lambda->result=type_syntax(false,false);
+        }
+        expect("->"); return lambda;
+    }
+    std::unique_ptr<SyntaxExpr> lambda_body(std::shared_ptr<SyntaxRoutine> lambda) {
+        const auto token=lambda->name;
+        if (lambda->procedure_lambda || is("begin") || is("if") || is("while") || is("repeat") || is("for")
+            || is("foreach") || is("exit") || is("write") || is("writeln") || is("read") || is("readln")
+            || is("inc") || is("dec")) lambda->body=statement();
+        else {
+            auto body=expression();
+            if (accept(":=")) {
+                lambda->body.kind=SyntaxStmtKind::assignment; lambda->body.token=body->token;
+                lambda->body.target=std::move(body); lambda->body.expression=expression();
+            } else {
+                lambda->expression_body=true; lambda->body.kind=SyntaxStmtKind::return_stmt;
+                lambda->body.token=body->token; lambda->body.expression=std::move(body);
+            }
+        }
+        auto result=make_expression(SyntaxExprKind::lambda,token); result->lambda=std::move(lambda);
+        if (result->lambda->expression_body) result->depth=result->lambda->body.expression->depth+1;
+        if (result->depth>256) throw Error("E_LIMIT",token.location,"Expression tree nesting limit exceeded");
+        return result;
+    }
     std::unique_ptr<SyntaxExpr> expression(int minimum = 1) {
         DepthGuard guard(depth_, current_.location);
         auto left = prefix();
@@ -553,6 +599,12 @@ private:
             const auto op = consume();
             auto right = expression(precedence(op.text) + 1);
             left = make_expression(SyntaxExprKind::binary, op, std::move(left), std::move(right));
+        }
+        if (minimum==1 && accept("->")) {
+            if (left->kind!=SyntaxExprKind::name) fail("Lambda parameter must be an identifier");
+            auto lambda=std::make_shared<SyntaxRoutine>(); lambda->name=left->token;
+            lambda->parameters.push_back({left->token,{},false,{},false,false});
+            return lambda_body(std::move(lambda));
         }
         return left;
     }
@@ -569,7 +621,15 @@ private:
             }
             return make_expression(SyntaxExprKind::unary, op, prefix());
         }
+        if (is("function") || is("procedure")) {
+            const bool function=is("function"); const auto token=consume();
+            return postfix(lambda_body(lambda_head(token,function,!function)));
+        }
         if (is("(")) {
+            Parser trial=*this; std::shared_ptr<SyntaxRoutine> lambda;
+            try { lambda=trial.lambda_head(current_); }
+            catch (const Error& error) { if (error.code=="E_LIMIT") throw; }
+            if (lambda) { lexer_=std::move(trial.lexer_); current_=std::move(trial.current_); return postfix(lambda_body(std::move(lambda))); }
             const auto token=consume(); auto result=expression();
             if (accept(",")) {
                 auto tuple=make_expression(SyntaxExprKind::tuple,token); tuple->depth=result->depth+1;
@@ -744,6 +804,7 @@ Value literal(const Token& token) {
 class Analyzer {
 public:
     hir::Module analyze(const SyntaxStmt& source) {
+        module_.routines.reserve(256);
         collections_imported_ = source.collections_imported;
         imported_units_=source.imported_units; imported_units_.insert("pabcsystem");
         for (const auto& [name, syntax] : source.type_declarations) {
@@ -779,6 +840,7 @@ public:
                 auto& parameter = routine.signature.parameters[n]; parameter.local = module_.locals.size();
                 scopes_.back()[name.text] = parameter.local; module_.locals.push_back({name.text,parameter.type,false});
                 if (syntax.parameters[n].read_only) constant_parameters_.insert(parameter.local);
+                if (parameter.by_reference) reference_parameters_.insert(parameter.local);
             }
             if (current_result_ != Type::unit) {
                 if (scopes_.back().contains("result")) throw Error("E_DUPLICATE",syntax.name.location,"Result is reserved inside functions");
@@ -789,7 +851,7 @@ public:
             }
             routine.body = statement(syntax.body);
             for (const auto& parameter:routine.signature.parameters) constant_parameters_.erase(parameter.local);
-            for (auto n = first; n < module_.locals.size(); ++n) if (!module_.locals[n].global) routine.signature.locals.push_back(n);
+            for (auto n = first; n < module_.locals.size(); ++n) if (!module_.locals[n].global && !lambda_locals_.contains(n)) routine.signature.locals.push_back(n);
             scopes_.pop_back(); in_routine_ = false; current_name_.clear();
         }
         module_.body.statements.push_back(statement(source.statements.back()));
@@ -852,7 +914,7 @@ private:
             helper.body.kind=hir::StmtKind::return_stmt; helper.body.location=syntax.token.location;
             helper.body.expression=convert(expression(syntax,helper.signature.result),helper.signature.result);
             check_default_expression(*helper.body.expression);
-            for (auto j=first;j<module_.locals.size();++j) if (!module_.locals[j].global) helper.signature.locals.push_back(j);
+            for (auto j=first;j<module_.locals.size();++j) if (!module_.locals[j].global && !lambda_locals_.contains(j)) helper.signature.locals.push_back(j);
             scopes_.pop_back(); in_routine_=false; current_result_=Type::unit; current_name_.clear();
         }
     }
@@ -1064,8 +1126,17 @@ private:
         }
         return std::nullopt;
     }
-    std::size_t resolve(const Token& token) const {
-        if (const auto local = lookup(token)) return *local;
+    void capture_local(std::size_t local,SourceLocation location) {
+        if (module_.locals[local].global && !lexical_globals_.contains(local)) return;
+        for (const auto& lambda:lambdas_) if (local<lambda.first) {
+            if (reference_parameters_.contains(local)) throw Error("E_TYPE",location,"Lambda cannot capture a var or out parameter");
+            if (for_controls_.contains(local)) throw Error("E_UNSUPPORTED",location,"Capturing loop control variables is not ported yet");
+            auto& captures=module_.routines[lambda.routine].signature.captures;
+            if (std::find(captures.begin(),captures.end(),local)==captures.end()) captures.push_back(local);
+        }
+    }
+    std::size_t resolve(const Token& token) {
+        if (const auto local = lookup(token)) { capture_local(*local,token.location); return *local; }
         throw Error("E_NAME", token.location, "Unknown name '" + token.text + "'");
     }
     bool sequence_view(Type from,Type to,SourceLocation location) const {
@@ -1160,7 +1231,67 @@ private:
             } else result.arguments[n]=convert(std::move(result.arguments[n]),parameter.type);
         }
     }
+    void lambda_result(Type type,SourceLocation location) {
+        if (type==Type::invalid || type==Type::nil) throw Error("E_TYPE",location,"Lambda result type cannot be inferred");
+        current_result_=type; auto& signature=module_.routines[lambdas_.back().routine].signature; signature.result=type;
+        if (type==Type::unit) return;
+        if (scopes_[lambdas_.back().scope].contains("result")) throw Error("E_DUPLICATE",location,"Result is reserved inside functions");
+        signature.result_local=module_.locals.size(); scopes_[lambdas_.back().scope]["result"]=signature.result_local;
+        module_.locals.push_back({"result",type,false});
+    }
+    std::unique_ptr<hir::Expr> bind_lambda(const SyntaxExpr& source,Type expected=Type::invalid,std::vector<Type> hints={}) {
+        const auto& syntax=*source.lambda;
+        const auto context=callable_type(expected) ? std::optional<TypeInfo>{info(expected,source.token.location)} : std::nullopt;
+        if (context) {
+            if (syntax.parameters.size()!=context->parameters.size()) throw Error("E_TYPE",source.token.location,"Lambda parameter count does not match context");
+            for (const auto& parameter:context->parameters) hints.push_back(parameter.type);
+        }
+        if (module_.routines.size()>=256) throw Error("E_LIMIT",source.token.location,"Lambda routine limit exceeded");
+        const auto id=module_.routines.size(); module_.routines.emplace_back();
+        auto& routine=module_.routines[id]; routine.signature.name="$lambda_"+std::to_string(id);
+        const auto saved_routine=in_routine_; const auto saved_result=current_result_; const auto saved_name=current_name_; const auto saved_loop=loop_depth_;
+        in_routine_=true; current_result_=Type::invalid; current_name_=routine.signature.name; loop_depth_=0;
+        scopes_.emplace_back(); const auto first=module_.locals.size(); lambdas_.push_back({id,first,scopes_.size()-1});
+        for (std::size_t n=0;n<syntax.parameters.size();++n) {
+            const auto& parameter=syntax.parameters[n]; const auto name=parameter.name;
+            if (name.text=="result" || scopes_.back().contains(name.text)) throw Error("E_DUPLICATE",name.location,"Duplicate or reserved lambda parameter");
+            const auto type=parameter.type ? resolve_type(*parameter.type) : n<hints.size() ? hints[n] : Type::invalid;
+            if (type==Type::invalid) throw Error("E_TYPE",name.location,"Lambda parameter type cannot be inferred");
+            if (context && (type!=context->parameters[n].type || parameter.by_reference!=context->parameters[n].by_reference))
+                throw Error("E_TYPE",name.location,"Lambda parameter type does not match context");
+            const auto local=module_.locals.size(); module_.locals.push_back({name.text,type,false}); scopes_.back()[name.text]=local;
+            routine.signature.parameters.push_back({local,type,parameter.by_reference,parameter.variadic});
+            if (parameter.read_only) constant_parameters_.insert(local);
+            if (parameter.by_reference) reference_parameters_.insert(local);
+        }
+        auto result=syntax.result ? resolve_type(*syntax.result) : syntax.procedure_lambda ? Type::unit : context ? context->element : Type::invalid;
+        if (result!=Type::invalid) lambda_result(result,source.token.location);
+        if (syntax.expression_body) {
+            auto value=expression(*syntax.body.expression,current_result_);
+            if (current_result_==Type::invalid) lambda_result(value->type,value->location);
+            routine.body.location=value->location;
+            if (current_result_==Type::unit) {
+                if (value->type!=Type::unit) throw Error("E_TYPE",value->location,"Procedure lambda expression must return no value");
+                routine.body.kind=hir::StmtKind::call; routine.body.expression=std::move(value);
+            } else { routine.body.kind=hir::StmtKind::return_stmt; routine.body.expression=convert(std::move(value),current_result_); }
+        } else routine.body=statement(syntax.body);
+        if (current_result_==Type::invalid) lambda_result(Type::unit,source.token.location);
+        if (syntax.function_lambda && current_result_==Type::unit) throw Error("E_TYPE",source.token.location,"Function lambda must return a value");
+        std::vector<CallableParameter> parameters;
+        for (const auto& parameter:routine.signature.parameters) {
+            parameters.push_back({parameter.type,parameter.by_reference,parameter.variadic}); constant_parameters_.erase(parameter.local);
+        }
+        (void)function_type(routine.signature.result,std::move(parameters),source.token.location);
+        for (auto local=first;local<module_.locals.size();++local) if (!module_.locals[local].global && !lambda_locals_.contains(local)) {
+            routine.signature.locals.push_back(local); lambda_locals_.insert(local);
+        }
+        lambdas_.pop_back(); scopes_.pop_back(); in_routine_=saved_routine; current_result_=saved_result; current_name_=saved_name; loop_depth_=saved_loop;
+        return routine_value(id,source.token.location,expected);
+    }
     std::unique_ptr<hir::Expr> expression(const SyntaxExpr& source,Type expected=Type::invalid) {
+        if (source.kind==SyntaxExprKind::lambda) return bind_lambda(source,expected);
+        if (source.kind==SyntaxExprKind::name && source.token.text=="result" && !lambdas_.empty() && (current_result_==Type::invalid || current_result_==Type::unit))
+            throw Error("E_TYPE",source.token.location,"Lambda Result requires a known value type");
         if (source.kind==SyntaxExprKind::name && callable_type(expected)) {
             const auto local=lookup(source.token);
             if ((!local || source.token.text==current_name_) && routine_names_.contains(source.token.text)) {
@@ -1175,6 +1306,7 @@ private:
         result->location = source.token.location;
         result->operation = source.token.text;
         switch (source.kind) {
+        case SyntaxExprKind::lambda: throw Error("E_HIR",result->location,"Lambda escaped typed binding");
         case SyntaxExprKind::value_call:
             result->left=expression(*source.left); bind_value_call(*result,source.arguments); break;
         case SyntaxExprKind::typed_default:
@@ -1757,6 +1889,7 @@ private:
             break;
         case SyntaxExprKind::name:
             if (const auto local = lookup(source.token)) {
+                capture_local(*local,result->location);
                 result->kind = hir::ExprKind::local;
                 result->local = *local;
                 result->type = module_.locals[*local].type;
@@ -1806,6 +1939,7 @@ private:
         }
         case SyntaxExprKind::call: {
             if (const auto local=lookup(source.token); local && source.token.text!=current_name_) {
+                capture_local(*local,result->location);
                 result->left=std::make_unique<hir::Expr>(); result->left->kind=hir::ExprKind::local;
                 result->left->local=*local; result->left->type=module_.locals[*local].type; result->left->location=result->location;
                 bind_value_call(*result,source.arguments); break;
@@ -2185,7 +2319,8 @@ private:
         for (const auto& parameter:signature.parameters) callback.signature.parameters.push_back({0,parameter.type,parameter.by_reference,parameter.variadic});
         callback.value=std::move(value); return callback;
     }
-    LibraryCallback library_callback(const SyntaxExpr& source) {
+    LibraryCallback library_callback(const SyntaxExpr& source,std::vector<Type> hints={}) {
+        if (source.kind==SyntaxExprKind::lambda) return library_callback_value(bind_lambda(source,Type::invalid,std::move(hints)));
         if (source.kind==SyntaxExprKind::name && routine_names_.contains(source.token.text)
             && (!lookup(source.token) || source.token.text==current_name_)) {
             LibraryCallback callback; callback.named=routine_names_.at(source.token.text);
@@ -2210,6 +2345,7 @@ private:
         for (std::size_t n=0;n<source.arguments.size();++n) {
             const auto& argument=*source.arguments[n];
             if (name=="zip" && n+1==source.arguments.size()) {
+                if (argument.kind==SyntaxExprKind::lambda) { callback=library_callback(argument,elements); continue; }
                 if (argument.kind==SyntaxExprKind::name && routine_names_.contains(argument.token.text)
                     && (!lookup(argument.token) || argument.token.text==current_name_)
                     && module_.routines[routine_names_.at(argument.token.text)].signature.parameters.size()>=2) {
@@ -2262,9 +2398,9 @@ private:
         if (*method!=PredicateQuery::all && source.arguments.size()==(member ? 0U : 1U)) return false;
         if (source.arguments.size()!=(member ? 1U : 2U)) throw Error("E_TYPE",result.location,"Predicate query requires a source and boolean function");
         const auto& callback=*source.arguments[member ? 0 : 1];
-        auto bound=library_callback(callback); const auto& signature=bound.signature;
         if (!member) result.left=expression(*source.arguments[0]);
         const auto input=sequence_source(result.left->type,result.location);
+        auto bound=library_callback(callback,{input.element}); const auto& signature=bound.signature;
         if (signature.parameters.size()!=1 || signature.parameters[0].by_reference || signature.parameters[0].type!=input.element || signature.result!=Type::boolean)
             throw Error("E_TYPE",callback.token.location,"Predicate query function must accept one exact element by value and return boolean");
         result.left=convert(std::move(result.left),sequence_type(CompoundKind::sequence,input.element));
@@ -2277,9 +2413,9 @@ private:
         if ((name!="select" && !predicate && !flatten) || (!unit.empty() && unit!="pabcsystem")) return false;
         if (source.arguments.size()!=(member ? 1U : 2U)) throw Error("E_TYPE",result.location,"Sequence transform requires a source and typed function");
         const auto& callback=*source.arguments[member ? 0 : 1];
-        auto bound=library_callback(callback); const auto& signature=bound.signature;
         if (!member) result.left=expression(*source.arguments[0]);
         const auto input=sequence_source(result.left->type,result.location);
+        auto bound=library_callback(callback,{input.element,Type::integer}); const auto& signature=bound.signature;
         if ((signature.parameters.size()!=1 && signature.parameters.size()!=2) || signature.parameters[0].by_reference || signature.parameters[0].type!=input.element
             || (signature.parameters.size()==2 && (signature.parameters[1].by_reference || signature.parameters[1].type!=Type::integer))
             || signature.result==Type::unit || (predicate && signature.result!=Type::boolean))
@@ -2413,10 +2549,10 @@ private:
         if (!imported_units_.contains("school")) throw Error("E_NAME",result.location,"TrueTable requires uses School");
         if (source.arguments.empty() || source.arguments.size()>2) throw Error("E_TYPE",result.location,"TrueTable requires a typed boolean function and optional variable count");
         const auto& callback=*source.arguments.back();
-        auto bound=library_callback(callback); const auto& signature=bound.signature;
-        if (signature.result!=Type::boolean) throw Error("E_TYPE",callback.token.location,"TrueTable function must return boolean");
         const bool general=source.arguments.size()==2;
         const auto array=sequence_type(CompoundKind::array,Type::boolean);
+        auto bound=library_callback(callback,general ? std::vector<Type>{array} : std::vector<Type>(16,Type::boolean)); const auto& signature=bound.signature;
+        if (signature.result!=Type::boolean) throw Error("E_TYPE",callback.token.location,"TrueTable function must return boolean");
         if (general) {
             if (signature.parameters.size()!=1 || signature.parameters[0].by_reference || signature.parameters[0].type!=array)
                 throw Error("E_TYPE",callback.token.location,"TrueTable(n,f) requires a value parameter of array of boolean");
@@ -2848,7 +2984,8 @@ private:
                 hir::Stmt assignment;
                 assignment.kind = hir::StmtKind::assign;
                 assignment.location = token.location;
-                assignment.local = local;
+                assignment.local = local; assignment.declaration=true;
+                if (!in_routine_ && scopes_.size()>1) lexical_globals_.insert(local);
                 // Initialize when the declaration is executed, including inside loops.
                 if (initial) assignment.expression = std::move(initial);
                 else {
@@ -2919,6 +3056,10 @@ private:
         }
         case SyntaxStmtKind::assignment:
             result.kind = hir::StmtKind::assign;
+            if (!lambdas_.empty() && current_result_==Type::invalid && source.target->kind==SyntaxExprKind::name && source.target->token.text=="result") {
+                auto initial=expression(*source.expression); lambda_result(initial->type,initial->location);
+                result.target=expression(*source.target); result.expression=std::move(initial); break;
+            }
             result.target = expression(*source.target);
             if (result.target->kind==hir::ExprKind::school_ip && result.target->local==static_cast<std::size_t>(SchoolIPMethod::address_value)) {
                 auto setter=std::move(result.target); const auto owner=setter->operation_type;
@@ -2985,6 +3126,7 @@ private:
                 const auto type=source.annotation ? resolve_type(*source.annotation) : element;
                 control=module_.locals.size(); module_.locals.push_back({name.text,type,!in_routine_});
                 scopes_.back()[name.text]=control;
+                if (!in_routine_) lexical_globals_.insert(control);
             } else {
                 control=resolve(name);
                 if (constant_parameters_.contains(control) || constant_locals_.contains(control)) throw Error("E_TYPE",name.location,"Cannot use a const parameter as an iteration variable");
@@ -3014,6 +3156,7 @@ private:
                 const auto type=source.annotation ? resolve_type(*source.annotation) : initial->type;
                 control=module_.locals.size(); module_.locals.push_back({name.text,type,!in_routine_});
                 scopes_.back()[name.text]=control;
+                if (!in_routine_) lexical_globals_.insert(control);
             } else {
                 control=resolve(name);
                 if (constant_parameters_.contains(control) || constant_locals_.contains(control)) throw Error("E_TYPE",name.location,"Cannot use a const parameter as a for control variable");
@@ -3050,6 +3193,9 @@ private:
         case SyntaxStmtKind::return_stmt:
             result.kind = hir::StmtKind::return_stmt;
             if (source.expression) {
+                if (!lambdas_.empty() && current_result_==Type::invalid) {
+                    auto initial=expression(*source.expression); lambda_result(initial->type,initial->location); result.expression=std::move(initial); break;
+                }
                 if (!in_routine_ || current_result_ == Type::unit) throw Error("E_TYPE",result.location,"Procedure Exit takes no value");
                 result.expression = convert(expression(*source.expression,current_result_),current_result_);
             }
@@ -3117,6 +3263,9 @@ private:
     std::set<std::size_t> for_controls_,constant_parameters_,constant_locals_;
     std::map<std::size_t,Value> constant_values_;
     std::vector<hir::Stmt> constant_initializers_;
+    struct LambdaContext { std::size_t routine,first,scope; };
+    std::vector<LambdaContext> lambdas_;
+    std::set<std::size_t> lambda_locals_,lexical_globals_,reference_parameters_;
     unsigned loop_depth_=0;
 };
 

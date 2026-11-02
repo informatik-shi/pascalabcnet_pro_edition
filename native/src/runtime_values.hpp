@@ -22,17 +22,19 @@ struct Values {
     std::shared_ptr<Aggregate> empty_integer_range{};
     std::size_t sequence_depth=0;
     std::function<Value(std::size_t,std::span<const Value>)> invoke{};
+    std::function<Value(const std::shared_ptr<Aggregate>&,std::span<const Value>)> invoke_closure{};
     std::size_t callable_target(const std::shared_ptr<Aggregate>& callable) const {
         if (!callable || callable->nil) throw runtime_error(RuntimeError::nil_reference,location);
         if (!callable->routine || *callable->routine>=program.routines.size()
             || !callable_matches(type_info(program,callable->type),program.routines[*callable->routine]))
             throw runtime_error(RuntimeError::invalid_bytecode,location);
+        if (callable->captures.size()!=program.routines[*callable->routine].captures.size()) throw runtime_error(RuntimeError::invalid_bytecode,location);
         return *callable->routine;
     }
     Value invoke_value(const std::shared_ptr<Aggregate>& callable,std::span<const Value> arguments) {
         const auto target=callable_target(callable);
         if (!invoke) throw runtime_error(RuntimeError::invalid_bytecode,location);
-        return invoke(target,arguments);
+        return invoke_closure ? invoke_closure(callable,arguments) : invoke(target,arguments);
     }
     void number(const Value& value) {
         if (const auto* big=std::get_if<BigInteger>(&value)) {
@@ -106,7 +108,7 @@ struct Values {
             if (kind==CompoundKind::sequence && !(*a)->nil && !b->nil && (*a)->sequence && b->sequence
                 && collection_sequence((*a)->sequence->provider) && collection_sequence(b->sequence->provider))
                 return (*a)->sequence->source==b->sequence->source;
-            if (kind==CompoundKind::callable) return (*a)->nil || b->nil ? (*a)->nil==b->nil : (*a)->routine==b->routine;
+            if (kind==CompoundKind::callable) return (*a)->nil || b->nil ? (*a)->nil==b->nil : ((*a)->routine==b->routine && (*a)->captures==b->captures);
             if (kind!=CompoundKind::record && kind!=CompoundKind::tuple) return ((*a)->nil && b->nil) || *a == b;
             if ((*a)->nil || b->nil) return (*a)->nil && b->nil;
             for (std::size_t i = 0; i < (*a)->items.size(); ++i)

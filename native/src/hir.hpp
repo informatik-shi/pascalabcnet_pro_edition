@@ -34,6 +34,7 @@ struct Stmt {
     std::vector<Stmt> statements;
     std::unique_ptr<Stmt> body, alternative;
     std::unique_ptr<Expr> target{};
+    bool declaration=false;
 };
 
 struct RoutineBody { Routine signature; Stmt body; };
