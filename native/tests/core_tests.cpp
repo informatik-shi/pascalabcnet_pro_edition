@@ -6,6 +6,7 @@
 #include "../src/sequences.hpp"
 #include "../src/real_range.hpp"
 #include "../src/generators.hpp"
+#include "../src/array_views.hpp"
 
 #include <iostream>
 #include <array>
@@ -62,6 +63,98 @@ void compile_error(std::string_view source, std::string_view code) {
 
 void runtime_error(std::string_view source, std::string_view code) {
     error([&] { (void)run(source); }, code,source);
+}
+
+void array_views_library() {
+    result("begin var a:=Arr(7,2,9,4); Writeln(a.Indices.ToArray,' ',Indices(a).ToArray,' ',PABCSystem.Indices(a).ToArray); Writeln(a.Indices(x->x>4).ToArray,' ',a.Indices((x,i)->x>i*3).ToArray); end.","[0,1,2,3] [0,1,2,3] [0,1,2,3]\n[0,2] [0,2]\n");
+    result("begin var l:=new List<integer>; l.Add(10); l.Add(3); Writeln(l.Indices.ToArray,' ',l.Indices(x->x>5).ToArray,' ',Indices(l,(x,i)->x>i).ToArray); end.","[0,1] [0] [0,1]\n");
+    result("begin var m:=MatrGen(2,3,(r,c)->r*10+c); Writeln(m.Indices(x->x>=10).ToArray,' ',m.Indices((x,r,c)->r=c).ToArray); Writeln(m.ElementsWithIndices.ToArray); Writeln(m.ElementsByRow.ToArray,' ',m.ElementsByCol.ToArray); end.","[(1,0),(1,1),(1,2)] [(0,0),(1,1)]\n[(0,0,0),(1,0,1),(2,0,2),(10,1,0),(11,1,1),(12,1,2)]\n[0,1,2,10,11,12] [0,10,1,11,2,12]\n");
+    result("begin var m:=MatrGen(2,2,(r,c)->r*10+c); Writeln(PABCSystem.Indices(m,(x,r,c)->r=c).ToArray); Writeln(ElementsByRow(m).ToArray,' ',PABCSystem.ElementsByCol(m).ToArray,' ',ElementsWithIndices(m).ToArray); end.","[(0,0),(1,1)]\n[0,1,10,11] [0,10,1,11] [(0,0,0),(1,0,1),(10,1,0),(11,1,1)]\n");
+    result("function Positive(x:integer):boolean; begin Result:=x>0; end; function Diagonal(x,r,c:integer):boolean; begin Result:=r=c; end; begin Writeln(Arr(-1,2,0).Indices(Positive).ToArray); var m:=new integer[2,2]; Writeln(m.Indices(Diagonal).ToArray); end.","[1]\n[(0,0),(1,1)]\n");
+    result("begin var f:integer->boolean:=x->x>0; var a:=Arr(-1,2); var s:=a.Indices(f); f:=x->False; Writeln(s.ToArray,' ',a.Indices(f).ToArray); var g:(integer,integer)->boolean:=(x,i)->i=0; Writeln(a.Indices(g).ToArray); var h:(integer,integer,integer)->boolean:=(x,r,c)->r=c; Writeln(new integer[2,2].Indices(h).ToArray); end.","[1] []\n[0]\n[(0,0),(1,1)]\n");
+    result("type R=record f:integer->boolean; end; function Make(k:integer):integer->boolean; begin Result:=x->x>k; end; begin var r:R; r.f:=Make(2); var a:=Arr(r.f); var l:=new List<integer->boolean>; l.Add(Make(4)); var source:=Arr(1,3,5); Writeln(source.Indices(r.f).ToArray,' ',source.Indices(a[0]).ToArray,' ',source.Indices(l[0]).ToArray,' ',source.Indices(Make(0)).ToArray); end.","[1,2] [1,2] [2] [0,1,2]\n");
+    result("function Build(k:integer):sequence of integer; begin Result:=Arr(1,2,3).Indices(x->x>k); k:=1; end; begin var s:=Build(3); Writeln(s.ToArray,' ',s.ToArray); end.","[1,2] [1,2]\n");
+    result("begin var calls:=0; var s:=Arr(1,2,3).Indices(x->begin Inc(calls); Result:=x>1; end); Writeln(calls,' ',s.First,' ',calls,' ',s.Count,' ',calls); Writeln(s.ToArray,' ',calls); end.","0 1 2 2 5\n[1,2] 8\n");
+    result("begin var calls:=0; var m:=new integer[2,2]; var s:=m.Indices((x,r,c)->begin Inc(calls); Result:=r=c; end); Writeln(calls,' ',s.Take(1).ToArray,' ',calls); Writeln(s.ToArray,' ',calls); end.","0 [(0,0)] 1\n[(0,0),(1,1)] 5\n");
+    result("begin var a:=Arr(1,2); var s:=a.Indices(x->x>1); a[0]:=9; Writeln(s.ToArray); var m:=new integer[1,2]; var rows:=m.ElementsByRow; m[0,1]:=7; Writeln(rows.ToArray); end.","[0,1]\n[0,7]\n");
+    result("begin var a:=Arr(1,2); var s:=a.Indices(x->begin SetLength(a,1); Result:=x>0; end); Writeln(s.ToArray,' ',a.Length); end.","[0,1] 1\n");
+    result("begin var l:=new List<integer>; l.Add(1); var indices:=l.Indices; l.Add(2); Writeln(indices.ToArray,' ',l.Indices.ToArray); var a:=Arr(1,2); var saved:=a.Indices; SetLength(a,1); Writeln(saved.ToArray); end.","[0] [0,1]\n[0,1]\n");
+    result("begin var l:=new List<integer>; l.Add(1); l.Add(2); var s:=l.Indices(x->begin l.Add(9); Result:=True; end); Writeln(s.ToArray,' ',l.Count); end.","[0,1] 4\n");
+    result("begin var l:=new List<integer>; l.Add(1); l.Add(2); var s:=l.Indices(x->begin l[1]:=7; Result:=x>1; end); Writeln(s.ToArray); end.","[1]\n");
+    result("begin var l:=new List<integer>; l.Add(1); l.Add(2); Writeln(l.Indices(x->begin l.Clear; Result:=True; end).Take(1).ToArray); end.","[0]\n");
+    runtime_error("begin var l:=new List<integer>; l.Add(1); l.Add(2); l.Indices(x->begin l.Clear; Result:=True; end).Count; end.","E_BOUNDS");
+    result("begin var m:=new integer[2,2]; Writeln(m.Indices((x,r,c)->begin m[1,1]:=9; Result:=x>0; end).ToArray); end.","[(1,1)]\n");
+    result("begin var s:=Arr(1,2).Indices(x->True); foreach var a in s do foreach var b in s do Write(a,':',b,';'); var m:=new integer[1,2]; var rows:=m.ElementsWithIndices; foreach var a in rows do foreach var b in rows do Write(a.Item3,':',b.Item3,';'); end.","0:0;0:1;1:0;1:1;0:0;0:1;1:0;1:1;");
+    result("begin var a:=Arr(1,2,3); Writeln(a.Indices(x->x>1).Last,' ',a.Indices(x->x>1).ElementAt(1),' ',a.Indices(x->x>1).Contains(1)); var m:=new integer[2,3]; Writeln(m.ElementsByCol.Count,' ',m.ElementsWithIndices.First.Item3); end.","2 2 True\n6 0\n");
+    result("type R=record n:integer; end; begin var r:R; r.n:=2; var a:=Arr(r); Writeln(a.Indices(x->begin x.n:=9; Result:=True; end).ToArray,' ',a[0].n); var m:=new R[1,1]; m[0,0].n:=3; Writeln(m.Indices(x->begin x.n:=9; Result:=True; end).ToArray,' ',m[0,0].n); var s:=m.ElementsByRow; var value:=s.First; value.n:=9; Writeln(m[0,0].n,' ',s.First.n); var pair:=m.ElementsWithIndices.First; var copy:=pair.Item1; copy.n:=20; Writeln(m[0,0].n,' ',pair.Item1.n); end.","[0] 2\n[(0,0)] 3\n3 3\n3 3\n");
+    result("type A=array of integer; begin var m:=new A[1,1]; m[0,0]:=Arr(1); var t:=m.ElementsWithIndices.First; t.Item1[0]:=9; Writeln(m[0,0][0]); end.","9\n");
+    result("begin var f:integer->boolean; var g:(integer,integer)->boolean; Writeln(new integer[0].Indices(f).Count,' ',new integer[0].Indices(g).Count); var l:=new List<integer>; Writeln(l.Indices(f).Count); var m:=new integer[0,3]; Writeln(m.Indices(f).Take(0).Count,' ',m.ElementsByCol.Count,' ',m.ElementsWithIndices.Count); end.","0 0\n0\n0 0 0\n");
+    result("begin var a:array of integer; var m:array[,] of integer; var f:integer->boolean; Writeln(a.Indices(f).Take(0).Count,' ',m.Indices(f).Take(0).Count,' ',m.ElementsByRow.Take(0).Count); end.","0 0 0\n");
+    result("begin Writeln(new integer[2147483647,0].ElementsByRow.Count,' ',new integer[0,2147483647].ElementsByCol.Count); end.","0 0\n");
+    result("begin var m:=new boolean[1,2]; m[0,1]:=True; Writeln(m.Indices(x->x).ToArray,' ',m.ElementsByRow.ToArray); var a:=Arr(1bi,2bi); Writeln(a.Indices(x->x>1).ToArray); end.","[(0,1)] [False,True]\n[1]\n");
+    for (int rows=0;rows<=4;++rows) for (int cols=0;cols<=4;++cols) {
+        const auto matrix="MatrGen("+std::to_string(rows)+","+std::to_string(cols)+",(r,c)->r*10+c)";
+        std::string by_row="[",by_col="[",coordinates="[";
+        bool comma=false;
+        for (int r=0;r<rows;++r) for (int c=0;c<cols;++c) {
+            if (comma) { by_row+=","; coordinates+=","; } comma=true;
+            by_row+=std::to_string(r*10+c);
+            coordinates+="("+std::to_string(r*10+c)+","+std::to_string(r)+","+std::to_string(c)+")";
+        }
+        comma=false;
+        for (int c=0;c<cols;++c) for (int r=0;r<rows;++r) { if (comma) by_col+=","; comma=true; by_col+=std::to_string(r*10+c); }
+        by_row+="]\n";by_col+="]\n";coordinates+="]\n";
+        result("begin var m:="+matrix+"; Writeln(m.ElementsByRow.ToArray); Writeln(m.ElementsByCol.ToArray); Writeln(m.ElementsWithIndices.ToArray); end.",by_row+by_col+coordinates);
+    }
+    for (const auto source:{
+        "begin var a:array of integer; a.Indices.Take(0).Count; end.",
+        "begin var l:List<integer>; l.Indices; end.",
+        "begin var a:array of integer; a.Indices(x->True).Any; end.",
+        "begin var f:integer->boolean; Arr(1).Indices(f).Any; end.",
+        "begin var f:integer->boolean; Writeln(new integer[0,2].Indices(f).Count); end.",
+        "begin var f:(integer,integer,integer)->boolean; Writeln(new integer[2,0].Indices(f).Count); end.",
+        "begin var m:array[,] of integer; m.ElementsByRow.Any; end.",
+        "begin var m:array[,] of integer; m.ElementsByCol.Any; end.",
+        "begin var m:array[,] of integer; m.ElementsWithIndices.Any; end."}) runtime_error(source,"E_NIL");
+    for (const auto source:{
+        "begin Arr(1).Indices(x->x); end.",
+        "begin Arr(1).Indices((x:real)->True); end.",
+        "begin Arr(1).Indices((x,i,j)->True); end.",
+        "begin Arr(1).Indices((var x:integer)->True); end.",
+        "begin Writeln(new integer[2,2].Indices); end.",
+        "begin Writeln(new integer[2,2].Indices((x,i)->True)); end.",
+        "begin Seq(1).Indices; end.",
+        "begin Arr(1).ElementsByRow; end.",
+        "begin Writeln(new integer[2,2].ElementsByCol(1)); end."}) compile_error(source,"E_TYPE");
+    abc::ExecutionOptions options; options.instruction_limit=50;
+    error([&]{(void)run("begin SeqGen(100,i->i).ToArray.Indices(x->False).Any; end.","",options);},"E_LIMIT");
+    options={};options.cancelled=[] { return true; };
+    error([&]{(void)run("begin Arr(1,2).Indices(x->False).Count; end.","",options);},"E_CANCELLED");
+    const auto p=abc::compile("begin Writeln(new integer[2,2].Indices((x,r,c)->r=c).Count); end.");
+    const auto op=std::find_if(p.code.begin(),p.code.end(),[](const auto& instruction){return instruction.op==abc::Op::array_view;});
+    abc::Values values{p,500}; int calls=0; options={};
+    values.invoke=[&](std::size_t,std::span<const abc::Value> actual)->abc::Value { ++calls; return std::get<std::int32_t>(actual[1])==std::get<std::int32_t>(actual[2]); };
+    const auto callback=std::make_shared<abc::Aggregate>(); callback->type=static_cast<abc::Type>((op->operand&65535U)>>3); callback->routine=0;
+    const auto source=values.matrix(op->type,2,2);
+    const auto view=abc::array_view(values,static_cast<abc::Type>(op->operand>>16),source,abc::ArrayViewMethod::matching_indices,options,callback);
+    auto cursor=abc::sequence_begin(values,view);
+    require(abc::sequence_resume(values,cursor,0,options) && abc::sequence_resume(values,cursor,0,options) && calls==1,"Array view repeated resume does not invoke its predicate again");
+    const auto current=std::get<std::shared_ptr<abc::Aggregate>>(abc::sequence_at(values,cursor,0,options));
+    require(std::get<std::int32_t>(current->items[0]->value)==0 && std::get<std::int32_t>(current->items[1]->value)==0 && calls==1,"Array view Current retains its selected coordinates");
+    require(abc::sequence_resume(values,cursor,1,options) && calls==4 && !abc::sequence_resume(values,cursor,2,options) && calls==4,"Array view scans skipped candidates once and does not call past completion");
+    auto second=abc::sequence_begin(values,view);
+    require(abc::sequence_resume(values,second,0,options) && calls==5 && !abc::sequence_known_length(second,values.location),"Array views have independent cursors and retain predicate calls for Count");
+    options.cancelled=[] { return true; };
+    auto stopped=abc::sequence_begin(values,view);
+    error([&]{(void)abc::sequence_resume(values,stopped,0,options);},"E_CANCELLED");
+    require(!values.sequence_depth,"Array view cancellation unwinds its depth guard");
+    for (const auto text:{"begin Arr(1).Indices(x->True).Any; end.","begin Writeln(new integer[1,1].ElementsByRow.Count); end."}) {
+        const auto p=abc::compile(text);
+        for (const auto operand:{std::size_t{0},std::numeric_limits<std::size_t>::max()}) {
+            auto bad=p; for (auto& op:bad.code) if (op.op==abc::Op::array_view) op.operand=operand;
+            error([&]{abc::verify(bad);},"E_BYTECODE");
+        }
+    }
 }
 
 void combinatorics_library() {
@@ -4695,6 +4788,7 @@ int main() {
     generators_library();
     cartesian_library();
     combinatorics_library();
+    array_views_library();
     structural_output();
     try_console_read();
     string_conversions();

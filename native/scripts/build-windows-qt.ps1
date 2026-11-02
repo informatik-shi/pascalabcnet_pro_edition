@@ -53,6 +53,7 @@ Text/TextFile: Assign, Reset, Rewrite, Append, Read/Readln, Write/Writeln, Eof, 
 Генераторы SeqGen/ArrGen/MatrGen/Iterate/SeqWhile: examples/generators.pas.
 Декартово произведение и степени Cartesian/CartesianPower: examples/cartesian.pas.
 Сочетания, перестановки и NextPermutation: examples/combinatorics.pas.
+Индексы массивов, списков и матриц: examples/array-views.pas.
 Прямой захват управляющей переменной цикла пока не перенесён; используйте отдельную переменную-копию.
 Совместимость с PascalABC.NET частичная.
 Русские имена и НОД/НОК: examples/russian-identifiers.pas. Массивные GCD/LCM: examples/school-folds.pas.

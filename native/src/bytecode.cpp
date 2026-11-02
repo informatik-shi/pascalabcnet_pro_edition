@@ -4,6 +4,7 @@
 #include "formatting.hpp"
 #include "school_ip.hpp"
 #include "generators.hpp"
+#include "array_views.hpp"
 
 #include <deque>
 #include <algorithm>
@@ -85,6 +86,9 @@ private:
             expression(*node.left); emit(Op::sequence_aggregate,node.left->type,node.local,node.location); break;
         case hir::ExprKind::sequence_partial:
             expression(*node.left); emit(Op::sequence_partial,node.left->type,0,node.location); break;
+        case hir::ExprKind::array_view:
+            expression(*node.left); if (node.right) expression(*node.right);
+            emit(Op::array_view,node.left->type,(static_cast<std::size_t>(node.type)<<16)|((node.right ? static_cast<std::size_t>(node.right->type) : 0U)<<3)|node.local,node.location); break;
         case hir::ExprKind::next_permutation:
             expression(*node.left); emit(Op::next_permutation,node.left->type,0,node.location); break;
         case hir::ExprKind::combinatorics: {
@@ -583,6 +587,14 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             }
             break;
         }
+        case Op::array_view: {
+            const auto output=instruction.operand>>16,callback=(instruction.operand&65535U)>>3,method=instruction.operand&7U;
+            if (output<64 || output>=64+program.types.size() || (callback && (callback<64 || callback>=64+program.types.size()))
+                || method>static_cast<std::size_t>(ArrayViewMethod::by_column)
+                || !array_view_signature_valid(program,type,static_cast<Type>(output),callback ? static_cast<Type>(callback) : Type::invalid,static_cast<ArrayViewMethod>(method)))
+                invalid(instruction,"Invalid array view signature");
+            break;
+        }
         case Op::next_permutation:
             if (instruction.operand || !compound(type) || type_info(program,type).kind!=CompoundKind::array
                 || type_info(program,type).rank!=1 || type_info(program,type).element!=Type::integer)
@@ -1018,6 +1030,9 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             for (auto n=parameters.size();n>0;--n) require(parameters[n-1]);
             stack.push_back(instruction.type); break;
         }
+        case Op::array_view:
+            if (const auto callback=(instruction.operand&65535U)>>3) require(static_cast<Type>(callback));
+            require(instruction.type); stack.push_back(static_cast<Type>(instruction.operand>>16)); break;
         case Op::next_permutation: require(instruction.type); stack.push_back(Type::boolean); break;
         case Op::combinations: case Op::permutations: case Op::partial_permutations: case Op::cartesian_power: require(Type::integer); require(instruction.type); stack.push_back(static_cast<Type>(instruction.operand>>16)); break;
         case Op::iteration_version: require(instruction.type); stack.push_back(Type::int64); break;

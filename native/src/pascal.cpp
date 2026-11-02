@@ -2452,10 +2452,50 @@ private:
         result.type=sequence_type(CompoundKind::sequence,text ? Type::string : array);
         result.arguments.clear();
     }
+    bool bind_array_view(hir::Expr& result,const SyntaxExpr& source,bool member) {
+        const auto name=source.token.text;
+        if (name!="indices" && name!="elementswithindices" && name!="elementsbyrow" && name!="elementsbycol") return false;
+        const auto count=source.arguments.size()+(member ? 1U : 0U);
+        if ((name=="indices" && count!=1 && count!=2) || (name!="indices" && count!=1))
+            throw Error("E_TYPE",result.location,"Wrong array view argument count");
+        auto input=member ? std::move(result.left) : expression(*source.arguments[0]);
+        if (!compound(input->type)) throw Error("E_TYPE",result.location,"Array view requires an array or List of known element type");
+        const auto type=info(input->type,result.location);
+        if ((type.kind!=CompoundKind::array && type.kind!=CompoundKind::list) || (type.rank!=1 && type.rank!=2)
+            || (type.kind==CompoundKind::list && type.rank!=1))
+            throw Error("E_TYPE",result.location,"Array view requires an array or List of known element type");
+        const bool matrix=type.rank==2,predicate=name=="indices" && count==2;
+        if ((!matrix && name!="indices") || (matrix && name=="indices" && !predicate))
+            throw Error("E_TYPE",result.location,"Matrix view requires a rectangular matrix and a supported operation");
+        const auto method=predicate ? ArrayViewMethod::matching_indices : name=="indices" ? ArrayViewMethod::indices
+            : name=="elementswithindices" ? ArrayViewMethod::with_indices : name=="elementsbyrow" ? ArrayViewMethod::by_row : ArrayViewMethod::by_column;
+        if (predicate) {
+            std::vector<Type> hints{type.element};
+            for (unsigned i=0;i<type.rank;++i) hints.push_back(Type::integer);
+            auto callback=library_callback(*source.arguments.back(),std::move(hints)); const auto& signature=callback.signature;
+            if (signature.result!=Type::boolean || (signature.parameters.size()!=1 && signature.parameters.size()!=type.rank+1)
+                || signature.parameters[0].type!=type.element
+                || std::any_of(signature.parameters.begin(),signature.parameters.end(),[](const auto& p){return p.by_reference;}))
+                throw Error("E_TYPE",result.location,"Indices predicate requires the exact element type, optional integer indices and boolean result");
+            for (std::size_t i=1;i<signature.parameters.size();++i)
+                if (signature.parameters[i].type!=Type::integer)
+                    throw Error("E_TYPE",result.location,"Indices predicate requires the exact element type, optional integer indices and boolean result");
+            result.right=callback.value ? std::move(callback.value) : routine_value(*callback.named,result.location);
+        }
+        Type element;
+        if (method==ArrayViewMethod::by_row || method==ArrayViewMethod::by_column) element=type.element;
+        else if (!matrix) element=Type::integer;
+        else element=method==ArrayViewMethod::with_indices ? tuple_type({type.element,Type::integer,Type::integer},result.location)
+            : tuple_type({Type::integer,Type::integer},result.location);
+        result.left=std::move(input); result.kind=hir::ExprKind::array_view; result.local=static_cast<std::size_t>(method);
+        result.type=sequence_type(CompoundKind::sequence,element); return true;
+    }
     bool bind_sequence_zip(hir::Expr& result,const SyntaxExpr& source,std::string_view unit={},bool member=false) {
         const auto name=source.token.text; const bool cartesian=name=="cartesian";
         const bool combinations=name=="combinations",permutations=name=="permutations";
-        if ((name!="zip" && name!="ziptuple" && !cartesian && name!="cartesianpower" && !combinations && !permutations) || (!unit.empty() && unit!="pabcsystem")) return false;
+        if (!unit.empty() && unit!="pabcsystem") return false;
+        if (bind_array_view(result,source,member)) return true;
+        if (name!="zip" && name!="ziptuple" && !cartesian && name!="cartesianpower" && !combinations && !permutations) return false;
         if (combinations || permutations) {
             const auto count=source.arguments.size()+(member ? 1U : 0U);
             if ((combinations && count!=2) || (permutations && count!=1 && count!=2))

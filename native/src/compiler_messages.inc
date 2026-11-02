@@ -1,3 +1,7 @@
+    {"Wrong array view argument count","Неверное число аргументов представления массива"},
+    {"Array view requires an array or List of known element type","Для представления требуется массив или List с известным типом элемента"},
+    {"Matrix view requires a rectangular matrix and a supported operation","Для этой операции требуется прямоугольная матрица и поддерживаемый вид представления"},
+    {"Indices predicate requires the exact element type, optional integer indices and boolean result","Предикат Indices должен принимать элемент точного типа и необязательные индексы integer и возвращать boolean"},
     {"Wrong combination or permutation argument count","Неверное число аргументов сочетаний или перестановок"},
     {"NextPermutation requires one integer array","Для NextPermutation требуется один массив integer"},
     {"CartesianPower requires a typed source and integer power","Для CartesianPower требуется типизированный источник и целая степень"},

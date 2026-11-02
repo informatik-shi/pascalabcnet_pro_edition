@@ -18,6 +18,7 @@
 #include "school_ip.hpp"
 #include "sequences.hpp"
 #include "generators.hpp"
+#include "array_views.hpp"
 #include "big_integer_runtime.hpp"
 
 #include <charconv>
@@ -259,6 +260,12 @@ static void execute_impl(const Program& program, std::istream& input, std::ostre
                 stack.emplace_back(instruction.operand ? sequence_range_step(values,instruction.type,first,last,step) : sequence_range(values,instruction.type,first,last));
             }
             break;
+        }
+        case Op::array_view: {
+            const auto callback=(instruction.operand&65535U)>>3;
+            const auto callable=callback ? std::get<std::shared_ptr<Aggregate>>(pop()) : std::shared_ptr<Aggregate>{};
+            const auto source=std::get<std::shared_ptr<Aggregate>>(pop());
+            stack.emplace_back(array_view(values,static_cast<Type>(instruction.operand>>16),source,static_cast<ArrayViewMethod>(instruction.operand&7U),options,callable)); break;
         }
         case Op::next_permutation: {
             const auto array=std::get<std::shared_ptr<Aggregate>>(pop());

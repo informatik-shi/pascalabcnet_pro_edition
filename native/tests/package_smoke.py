@@ -202,6 +202,7 @@ def main():
                 ("sequence-prefixes.pas", "Начало: [1,2]\nОстаток: [3,1]\nПосле двух: [7,6]\n"),
                 ("callable-values.pas", "Значение: 14\nЧерез массив: 18\nЧерез параметр: 22\nПустое значение: True\n"),
                 ("library-callables.pas", "Сохранённая функция: [2,4,6]\nОтбор: [1,2]\nСуммы пар: [11,22]\nРезультат для True, True: True\n"),
+                ("array-views.pas", "Индексы: [0,1,2,3]\nОтбор: [0,2]\nОтбор с индексом: [0,2]\nИндексы матрицы: [(1,0),(1,1),(1,2)]\nДиагональ: [(0,0),(1,1)]\nЭлемент и координаты: [(0,0,0),(1,0,1),(2,0,2),(10,1,0),(11,1,1),(12,1,2)]\nПо строкам: [0,1,2,10,11,12]\nПо столбцам: [0,10,1,11,2,12]\n"),
                 ("combinatorics.pas", "Сочетания: [[1,2],[1,3],[2,3]]\nПерестановки: [[1,2,3],[1,3,2],[2,1,3],[2,3,1],[3,1,2],[3,2,1]]\nЧастичные: [[1,2],[2,1],[1,3],[3,1],[2,3],[3,2]]\nСлова: [аб,ба,ав,ва,бв,вб]\nБуквы: [аб,ав,бв]\nСледующая: True [1,3,2]\n"),
                 ("cartesian.pas", "Пары: [(1,a),(1,b),(2,a),(2,b)]\nСуммы: [11,21,12,22]\nТройки: [[0,0,0],[0,0,1],[0,1,0],[0,1,1],[1,0,0],[1,0,1],[1,1,0],[1,1,1]]\nСлова: [аа,аб,ба,бб]\nСтепень последовательности: [[1,1],[1,2],[2,1],[2,2]]\n"),
                 ("generators.pas", "Квадраты индексов: [0,1,4,9,16]\nИндексы со смещением: [10,11,12,13]\nФибоначчи: [0,1,1,2,3,5,8,13]\nСтепени двойки: [1,2,4,8,16]\nПовторный перебор: [3,6,9,12]\nМатрица: [[0,1,2],[10,11,12]]\n"),
@@ -584,6 +585,19 @@ def main():
                     or "EN: Instruction limit exceeded" not in invalid.stderr
                     or "RU: Превышен предел числа выполняемых инструкций" not in invalid.stderr or f"{single}:5:" not in invalid.stderr):
                 raise RuntimeError(f"{name} SingleNode cycle limit failed: {invalid.stderr!r}")
+            view_error = folder / "Индексы матрицы.pas"
+            view_error.write_text("begin\n var f:integer->boolean;\n Writeln(new integer[0,2].Indices(f).Count);\nend.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(view_error)], text=True, encoding="utf-8",
+                                     capture_output=True, cwd=folder, env=env, timeout=10)
+            if (invalid.returncode != 1 or "E_NIL" not in invalid.stderr
+                    or "EN: Cannot access a nil reference" not in invalid.stderr
+                    or "RU: Нельзя обратиться к пустой ссылке nil" not in invalid.stderr or f"{view_error}:3:" not in invalid.stderr):
+                raise RuntimeError(f"{name} matrix Indices nil timing failed: {invalid.stderr!r}")
+            view_error.write_text("begin Writeln('must never run'); Arr(1).Indices(x->x); end.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(view_error)], text=True, encoding="utf-8",
+                                     capture_output=True, cwd=folder, env=env, timeout=10)
+            if invalid.returncode != 1 or invalid.stdout or "E_TYPE" not in invalid.stderr or "RU:" not in invalid.stderr:
+                raise RuntimeError(f"{name} Indices predicate result was not rejected before output")
             combinator_error = folder / "Сочетания и перестановки.pas"
             for source, code, english, russian in (
                 ("begin\n Arr(1).Combinations(-1).Any;\nend.", "E_RANGE", "Array length must not be negative", "Длина массива не должна быть отрицательной"),
@@ -744,6 +758,7 @@ def main():
             results[-1]["typed_generators_and_bilingual_diagnostics"] = "passed"
             results[-1]["typed_cartesian_products_powers_and_bilingual_diagnostics"] = "passed"
             results[-1]["typed_combinatorics_and_bilingual_diagnostics"] = "passed"
+            results[-1]["typed_indices_matrix_views_and_bilingual_diagnostics"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 
