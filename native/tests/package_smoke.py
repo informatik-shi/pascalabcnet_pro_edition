@@ -202,6 +202,7 @@ def main():
                 ("sequence-prefixes.pas", "Начало: [1,2]\nОстаток: [3,1]\nПосле двух: [7,6]\n"),
                 ("callable-values.pas", "Значение: 14\nЧерез массив: 18\nЧерез параметр: 22\nПустое значение: True\n"),
                 ("library-callables.pas", "Сохранённая функция: [2,4,6]\nОтбор: [1,2]\nСуммы пар: [11,22]\nРезультат для True, True: True\n"),
+                ("generators.pas", "Квадраты индексов: [0,1,4,9,16]\nИндексы со смещением: [10,11,12,13]\nФибоначчи: [0,1,1,2,3,5,8,13]\nСтепени двойки: [1,2,4,8,16]\nПовторный перебор: [3,6,9,12]\nМатрица: [[0,1,2],[10,11,12]]\n"),
                 ("lambdas.pas", "Квадраты: [1,4,9]\nИзменяемый захват: [2,3]\nСчётчик: 11 12\nВложенные функции: 9\n"),
                 ("const-out-parameters.pas", "Сумма: 42\nПосле изменения: 43\n"),
                 ("sequence-flatmap.pas", "Все элементы: [1,1,2,1,2,3]\nПервые четыре: [1,1,2,1]\nСумма: 10\n"),
@@ -581,6 +582,28 @@ def main():
                     or "EN: Instruction limit exceeded" not in invalid.stderr
                     or "RU: Превышен предел числа выполняемых инструкций" not in invalid.stderr or f"{single}:5:" not in invalid.stderr):
                 raise RuntimeError(f"{name} SingleNode cycle limit failed: {invalid.stderr!r}")
+            generator_error = folder / "Генератор.pas"
+            for source, code, english, russian in (
+                ("begin\n SeqGen(0,1,x->x);\nend.", "E_RANGE",
+                 "Generator count must be greater than zero", "Число элементов генератора должно быть больше нуля"),
+                ("begin\n ArrGen(1,1,2,(a,b)->a+b);\nend.", "E_RANGE",
+                 "Two-seed array generator count must be at least two", "Генератор массива с двумя начальными значениями требует не менее двух элементов"),
+                ("begin\n Writeln(SeqGen(1,1,nil).First);\nend.", "E_NIL",
+                 "Cannot access a nil reference", "Нельзя обратиться к пустой ссылке nil"),
+                ("begin\n SeqGen(1,i->i,MaxInt);\nend.", "E_OVERFLOW",
+                 "Integer overflow", "Переполнение целого числа"),
+            ):
+                generator_error.write_text(source, encoding="utf-8")
+                invalid = subprocess.run([runner, "run", str(generator_error)], text=True, encoding="utf-8",
+                                         capture_output=True, cwd=folder, env=env, timeout=10)
+                if (invalid.returncode != 1 or code not in invalid.stderr or f"EN: {english}" not in invalid.stderr
+                        or f"RU: {russian}" not in invalid.stderr or f"{generator_error}:2:" not in invalid.stderr):
+                    raise RuntimeError(f"{name} bilingual generator error failed: {invalid.stderr!r}")
+            generator_error.write_text("begin Writeln('must never run'); SeqGen(3,(i:real)->i); end.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(generator_error)], text=True, encoding="utf-8",
+                                     capture_output=True, cwd=folder, env=env, timeout=10)
+            if invalid.returncode != 1 or invalid.stdout or "E_TYPE" not in invalid.stderr or "RU:" not in invalid.stderr:
+                raise RuntimeError(f"{name} generator signature was not rejected before output")
             results.append({"native_pe_binaries": native_binaries, "no_managed_runtime": "passed", "variant": name, "gui": "passed", "sum": 55, "type_error_before_output": "passed", "bilingual_runtime_error": "passed", "standard_library": "passed", "text_conversions": "passed", "string_mutations": "passed", "arrays_records_routines_lists": "passed", "text_files": "passed", "bilingual_array_error": "passed", "stacks_queues": "passed", "bilingual_empty_collections": "passed", "dynarray_simpleset": "passed", "bilingual_dynarray_error": "passed", "assocarray": "passed", "typed_keys_before_output": "passed", "bilingual_assocarray_error": "passed", "linked_lists": "passed", "bilingual_linked_error": "passed", "cyclic_linked_limit": "passed", "single_nodes": "passed", "bilingual_single_error": "passed", "single_cycle_limit": "passed"})
             loop = folder / "Циклы.pas"
             loop.write_text("begin\n repeat until false;\nend.", encoding="utf-8")
@@ -677,6 +700,7 @@ def main():
             results[-1]["native_assertions_and_bilingual_failures"] = "passed"
             results[-1]["typed_library_callable_values_and_bilingual_nil_timing"] = "passed"
             results[-1]["typed_lambdas_captures_and_bilingual_diagnostics"] = "passed"
+            results[-1]["typed_generators_and_bilingual_diagnostics"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 

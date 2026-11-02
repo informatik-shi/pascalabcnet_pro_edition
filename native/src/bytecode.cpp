@@ -3,6 +3,7 @@
 #include "runtime_values.hpp"
 #include "formatting.hpp"
 #include "school_ip.hpp"
+#include "generators.hpp"
 
 #include <deque>
 #include <algorithm>
@@ -62,6 +63,9 @@ private:
     void expression(const hir::Expr& node) {
         if (node.type == Type::invalid) throw Error("E_HIR", node.location, "Unresolved expression type");
         switch (node.kind) {
+        case hir::ExprKind::generator:
+            for (const auto& argument:node.arguments) expression(*argument);
+            emit(Op::generator,node.type,(static_cast<std::size_t>(node.operation_type)<<8)|node.local,node.location); break;
         case hir::ExprKind::sequence_wrap:
             expression(*node.left); emit(Op::sequence_wrap,node.left->type,static_cast<std::size_t>(node.type),node.location); break;
         case hir::ExprKind::sequence_snapshot:
@@ -548,6 +552,13 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
     for (const auto& instruction : code) {
         const auto type = instruction.type;
         switch (instruction.op) {
+        case Op::generator: {
+            const auto method=instruction.operand&255U,callback=instruction.operand>>8;
+            if (method>static_cast<std::size_t>(GeneratorMethod::while_two) || callback<64 || callback>=64+program.types.size()
+                || !generator_signature_valid(program,type,static_cast<Type>(callback),static_cast<GeneratorMethod>(method)))
+                invalid(instruction,"Invalid generator signature");
+            break;
+        }
         case Op::sequence_snapshot: case Op::sequence_wrap: {
             const bool text=type==Type::string && instruction.op==Op::sequence_wrap;
             if ((!text && (!compound(type) || !indexed_sequence(type_info(program,type).kind) || type_info(program,type).rank!=1))
@@ -958,6 +969,19 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if (pop() != expected) invalid(instruction, "Operand type mismatch");
         };
         switch (instruction.op) {
+        case Op::generator: {
+            const auto method=static_cast<GeneratorMethod>(instruction.operand&255U);
+            const auto element=type_info(program,instruction.type).element;
+            if (generator_while(method)) {
+                const auto predicate=value_signature(program,pop(),instruction);
+                if (predicate.result!=Type::boolean || predicate.parameters.size()!=1
+                    || predicate.parameters[0].by_reference || predicate.parameters[0].type!=element)
+                    invalid(instruction,"Invalid generator predicate");
+            }
+            const auto parameters=generator_parameters(element,static_cast<Type>(instruction.operand>>8),method);
+            for (auto n=parameters.size();n>0;--n) require(parameters[n-1]);
+            stack.push_back(instruction.type); break;
+        }
         case Op::iteration_version: require(instruction.type); stack.push_back(Type::int64); break;
         case Op::sequence_begin: require(instruction.type); stack.push_back(instruction.type); break;
         case Op::sequence_snapshot: case Op::sequence_wrap: require(instruction.type); stack.push_back(static_cast<Type>(instruction.operand)); break;

@@ -1,4 +1,5 @@
 #include "hir.hpp"
+#include "generators.hpp"
 #include "constant.hpp"
 #include "number.hpp"
 #include "stdlib.hpp"
@@ -1473,6 +1474,7 @@ private:
                     }
                 }
                 result->kind=hir::ExprKind::call;
+                if (bind_generators(*result,source,source.left->token.text)) break;
                 if (bind_school_table(*result,source,source.left->token.text)) break;
                 if (bind_sequence_zip(*result,source,source.left->token.text)) break;
                 if (bind_sequence_numeric_selector(*result,source,source.left->token.text)) break;
@@ -1505,6 +1507,7 @@ private:
                 bind_builtin(*result,source.token.text,source.left->token.text); break;
             }
             result->left = expression(*source.left); const auto receiver = result->left->type;
+            if (bind_generators(*result,source,{},true)) break;
             if (callable_type(receiver) && source.token.text=="invoke") {
                 if (source.kind!=SyntaxExprKind::member_call) throw Error("E_TYPE",result->location,"Invoke requires a callable argument list");
                 bind_value_call(*result,source.arguments); break;
@@ -1945,6 +1948,7 @@ private:
                 bind_value_call(*result,source.arguments); break;
             }
             result->kind = hir::ExprKind::call;
+            if (!routine_names_.contains(source.token.text) && bind_generators(*result,source)) break;
             if (!routine_names_.contains(source.token.text) && bind_school_table(*result,source)) break;
             if (!routine_names_.contains(source.token.text) && bind_sequence_zip(*result,source)) break;
             if (!routine_names_.contains(source.token.text) && bind_sequence_numeric_selector(*result,source)) break;
@@ -2330,6 +2334,112 @@ private:
         if (source.kind==SyntaxExprKind::name && !lookup(source.token))
             throw Error("E_TYPE",source.token.location,"Library callback requires a function value with known types");
         return library_callback_value(expression(source));
+    }
+    bool bind_generators(hir::Expr& result,const SyntaxExpr& source,std::string_view unit={},bool member=false) {
+        const auto name=source.token.text;
+        if ((name!="seqgen" && name!="arrgen" && name!="matrgen" && name!="iterate" && name!="seqwhile")
+            || (!unit.empty() && unit!="pabcsystem") || (member && name!="iterate")) return false;
+        if (member && compound(result.left->type)) {
+            const auto receiver=info(result.left->type,result.location);
+            if ((receiver.kind==CompoundKind::record || receiver.kind==CompoundKind::tuple)
+                && std::any_of(receiver.fields.begin(),receiver.fields.end(),[](const auto& field){return field.name=="iterate";})) return false;
+        }
+        const auto count=source.arguments.size()+(member ? 1U : 0U);
+        const bool factory=name=="seqgen" || name=="arrgen",matrix=name=="matrgen",conditional=name=="seqwhile";
+        if ((factory && (count<2 || count>4)) || (matrix && count!=3)
+            || (name=="iterate" && (count<2 || count>3)) || (conditional && (count<3 || count>4)))
+            throw Error("E_TYPE",result.location,"Wrong generator argument count");
+        const auto append_integer=[&](const SyntaxExpr& argument) { result.arguments.push_back(convert(expression(argument),Type::integer)); };
+        const auto value_of=[&](LibraryCallback& callback,SourceLocation location) {
+            return callback.value ? std::move(callback.value) : routine_value(*callback.named,location);
+        };
+        std::optional<LibraryCallback> callback;
+        std::unique_ptr<hir::Expr> from;
+        bool indexed=factory && count==2;
+        if (factory) {
+            append_integer(*source.arguments[0]);
+            if (count==3) {
+                const auto& candidate=*source.arguments[1];
+                const bool named=candidate.kind==SyntaxExprKind::name && routine_names_.contains(candidate.token.text)
+                    && (!lookup(candidate.token) || candidate.token.text==current_name_)
+                    && !module_.routines[routine_names_.at(candidate.token.text)].signature.parameters.empty();
+                if (candidate.kind==SyntaxExprKind::lambda || named) { callback=library_callback(candidate,{Type::integer}); indexed=true; }
+                else {
+                    auto value=expression(candidate);
+                    if (callable_type(value->type)) { callback=library_callback_value(std::move(value)); indexed=true; }
+                    else result.arguments.push_back(std::move(value));
+                }
+                if (indexed) {
+                    const auto& last=*source.arguments[2];
+                    const bool recurrent=last.kind==SyntaxExprKind::lambda || (last.kind==SyntaxExprKind::literal && last.token.text=="nil");
+                    auto tail=recurrent ? std::unique_ptr<hir::Expr>{} : expression(last);
+                    if (recurrent || callable_type(tail->type)) {
+                        result.arguments.push_back(value_of(*callback,result.location));
+                        callback=tail ? std::optional<LibraryCallback>{library_callback_value(std::move(tail))} : std::nullopt;
+                        indexed=false;
+                    } else from=convert(std::move(tail),Type::integer);
+                }
+            }
+        }
+        GeneratorMethod method;
+        Type element=Type::invalid;
+        if (matrix || indexed) {
+            if (matrix) { append_integer(*source.arguments[0]); append_integer(*source.arguments[1]); }
+            const auto position=matrix ? 2U : 1U;
+            if (!callback) callback=library_callback(*source.arguments[position],std::vector<Type>(matrix ? 2U : 1U,Type::integer));
+            const auto& signature=callback->signature;
+            if (signature.result==Type::unit || signature.result==Type::nil || signature.parameters.size()!=(matrix ? 2U : 1U)
+                || std::any_of(signature.parameters.begin(),signature.parameters.end(),[](const auto& p){return p.by_reference || p.type!=Type::integer;}))
+                throw Error("E_TYPE",result.location,"Indexed generator requires integer value parameters and a known result type");
+            element=signature.result;
+            result.arguments.push_back(value_of(*callback,result.location));
+            if (indexed) {
+                if (count==3) result.arguments.push_back(std::move(from));
+                else {
+                    auto zero=std::make_unique<hir::Expr>(); zero->kind=hir::ExprKind::literal; zero->type=Type::integer;
+                    zero->value=std::int32_t{0}; zero->location=result.location; result.arguments.push_back(std::move(zero));
+                }
+            }
+            method=matrix ? GeneratorMethod::matrix : name=="seqgen" ? GeneratorMethod::index_sequence : GeneratorMethod::index_array;
+        } else {
+            const auto seeds=count-(factory || conditional ? 2U : 1U);
+            const auto offset=factory ? 1U : 0U;
+            if (member) result.arguments.push_back(std::move(result.left));
+            for (std::size_t n=result.arguments.size()-offset;n<seeds;++n)
+                result.arguments.push_back(expression(*source.arguments[offset+n-(member ? 1U : 0U)]));
+            const auto hint=result.arguments[offset]->type;
+            const auto callback_position=source.arguments.size()-(conditional ? 2U : 1U);
+            if (!callback && source.arguments[callback_position]->kind==SyntaxExprKind::literal && source.arguments[callback_position]->token.text=="nil" && hint!=Type::nil) {
+                std::vector<CallableParameter> parameters(seeds,{hint,false,false});
+                const auto type=function_type(hint,std::move(parameters),result.location);
+                callback=library_callback_value(convert(expression(*source.arguments[callback_position]),type));
+            } else if (!callback) callback=library_callback(*source.arguments[callback_position],std::vector<Type>(seeds,hint));
+            const auto& signature=callback->signature; element=signature.result;
+            if (element==Type::unit || element==Type::nil || signature.parameters.size()!=seeds
+                || std::any_of(signature.parameters.begin(),signature.parameters.end(),[&](const auto& p){return p.by_reference || p.type!=element;}))
+                throw Error("E_TYPE",result.location,"Recurrent generator requires value parameters and result of the same known type");
+            for (std::size_t n=0;n<seeds;++n) result.arguments[offset+n]=convert(std::move(result.arguments[offset+n]),element);
+            result.arguments.push_back(value_of(*callback,result.location));
+            if (conditional) {
+                auto predicate=source.arguments.back()->kind==SyntaxExprKind::literal && source.arguments.back()->token.text=="nil"
+                    ? library_callback_value(convert(expression(*source.arguments.back()),function_type(Type::boolean,{{element,false,false}},result.location)))
+                    : library_callback(*source.arguments.back(),{element});
+                const auto& pred=predicate.signature;
+                if (pred.result!=Type::boolean || pred.parameters.size()!=1
+                    || pred.parameters[0].by_reference || pred.parameters[0].type!=element)
+                    throw Error("E_TYPE",result.location,"Generator predicate must accept one exact element by value and return boolean");
+                result.arguments.push_back(value_of(predicate,result.location));
+            }
+            const bool pair=seeds==2;
+            method=conditional ? (pair ? GeneratorMethod::while_two : GeneratorMethod::while_one)
+                : name=="iterate" ? (pair ? GeneratorMethod::iterate_two : GeneratorMethod::iterate_one)
+                : name=="seqgen" ? (pair ? GeneratorMethod::sequence_two : GeneratorMethod::sequence_one)
+                : (pair ? GeneratorMethod::array_two : GeneratorMethod::array_one);
+        }
+        const auto callback_position=result.arguments.size()-(conditional ? 2U : indexed ? 2U : 1U);
+        result.operation_type=result.arguments[callback_position]->type;
+        result.type=sequence_type(generator_sequence(method) ? CompoundKind::sequence : CompoundKind::array,element,matrix ? 2U : 1U);
+        result.kind=hir::ExprKind::generator; result.local=static_cast<std::size_t>(method); return true;
     }
     bool bind_sequence_zip(hir::Expr& result,const SyntaxExpr& source,std::string_view unit={},bool member=false) {
         const auto name=source.token.text;

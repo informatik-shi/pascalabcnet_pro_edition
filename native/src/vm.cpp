@@ -17,6 +17,7 @@
 #include "school.hpp"
 #include "school_ip.hpp"
 #include "sequences.hpp"
+#include "generators.hpp"
 #include "big_integer_runtime.hpp"
 
 #include <charconv>
@@ -258,6 +259,16 @@ static void execute_impl(const Program& program, std::istream& input, std::ostre
                 stack.emplace_back(instruction.operand ? sequence_range_step(values,instruction.type,first,last,step) : sequence_range(values,instruction.type,first,last));
             }
             break;
+        }
+        case Op::generator: {
+            const auto method=static_cast<GeneratorMethod>(instruction.operand&255U);
+            const auto callback=static_cast<Type>(instruction.operand>>8);
+            const auto predicate=generator_while(method) ? std::get<std::shared_ptr<Aggregate>>(pop()) : std::shared_ptr<Aggregate>{};
+            const auto count=generator_parameters(type_info(program,instruction.type).element,callback,method).size();
+            // Own arguments across reentrant callbacks: the VM stack and frame vectors can move.
+            std::vector<Value> arguments(count);
+            for (auto n=count;n>0;--n) arguments[n-1]=pop();
+            stack.push_back(generate_values(values,instruction.type,method,arguments,options,predicate)); break;
         }
         case Op::sequence_partition: {
             auto intervals=std::get<std::int32_t>(pop());

@@ -5,6 +5,7 @@
 #include "../src/runtime_values.hpp"
 #include "../src/sequences.hpp"
 #include "../src/real_range.hpp"
+#include "../src/generators.hpp"
 
 #include <iostream>
 #include <array>
@@ -60,6 +61,127 @@ void compile_error(std::string_view source, std::string_view code) {
 
 void runtime_error(std::string_view source, std::string_view code) {
     error([&] { (void)run(source); }, code,source);
+}
+
+void generators_library() {
+    result("begin Writeln(SeqGen(4,i->i*2).ToArray,' ',ArrGen(3,i->i+10)); Writeln(SeqGen(3,i->i,5).ToArray,' ',ArrGen(3,i->i,-2)); end.","[0,2,4,6] [10,11,12]\n[5,6,7] [-2,-1,0]\n");
+    result("begin Writeln(SeqGen(0,i->i).Count,' ',ArrGen(0,i->i).Length); end.","0 0\n");
+    result("begin Writeln(SeqGen(5,1,x->x*2).ToArray,' ',ArrGen(5,1,x->x*2)); Writeln(SeqGen(8,0,1,(a,b)->a+b).ToArray,' ',ArrGen(8,0,1,(a,b)->a+b)); end.","[1,2,4,8,16] [1,2,4,8,16]\n[0,1,1,2,3,5,8,13] [0,1,1,2,3,5,8,13]\n");
+    result("begin Writeln(Iterate(2,x->x+3).Take(4).ToArray,' ',2.Iterate(x->x+3).Take(4).ToArray); Writeln(Iterate(2,3,(a,b)->a+b).Take(5).ToArray,' ',2.Iterate(3,(a,b)->a+b).Take(5).ToArray); end.","[2,5,8,11] [2,5,8,11]\n[2,3,5,8,13] [2,3,5,8,13]\n");
+    result("begin Writeln(SeqWhile(1,x->x*2,x->x<20).ToArray); Writeln(SeqWhile(0,1,(a,b)->a+b,x->x<10).ToArray); Writeln(SeqWhile(1,x->x+1,x->False).ToArray); end.","[1,2,4,8,16]\n[0,1,1,2,3,5,8]\n[]\n");
+    result("uses PABCSystem; begin Writeln(PABCSystem.SeqGen(3,i->i).ToArray,' ',PABCSystem.ArrGen(3,2,x->x+1)); Writeln(PABCSystem.Iterate(1,x->x+1).Take(2).ToArray,' ',PABCSystem.SeqWhile(1,x->x+1,x->x<3).ToArray); Writeln(PABCSystem.MatrGen(1,2,(r,c)->r+c)); end.","[0,1,2] [2,3,4]\n[1,2] [1,2]\n[[0,1]]\n");
+    result("function SeqGen(n:integer):integer; begin Result:=n+1; end; begin Writeln(SeqGen(3),' ',PABCSystem.SeqGen(2,i->i).ToArray); end.","4 [0,1]\n");
+    result("type R=record Iterate:integer->integer; end; begin var r:R; r.Iterate:=x->x+2; Writeln(r.Iterate(3)); end.","5\n");
+    result("function Square(i:integer):integer; begin Result:=i*i; end; function Next(x:integer):integer; begin Result:=x+1; end; begin Writeln(ArrGen(3,Square),' ',SeqGen(3,4,Next).ToArray); end.","[0,1,4] [4,5,6]\n");
+    result("begin var f:integer->integer:=x->x+1; var s:=SeqGen(3,f); f:=x->x+20; Writeln(s.ToArray,' ',ArrGen(2,f)); end.","[1,2,3] [20,21]\n");
+    result("type R=record f:integer->integer; end; function Make(k:integer):integer->integer; begin Result:=x->x+k; end; begin var r:R; r.f:=Make(2); var a:=Arr(r.f); var l:=new List<integer->integer>; l.Add(Make(3)); Writeln(SeqGen(2,r.f).ToArray,' ',ArrGen(2,a[0]),' ',SeqGen(2,l[0]).ToArray,' ',ArrGen(2,Make(5))); end.","[2,3] [2,3] [3,4] [5,6]\n");
+    result("var calls:integer; function F(i:integer):integer; begin Inc(calls); Result:=i; end; begin var s:=SeqGen(3,F); Writeln(calls); Writeln(s.Take(2).ToArray,' ',calls); Writeln(s.ToArray,' ',calls); Writeln(s.Count,' ',calls); Writeln(ArrGen(3,F),' ',calls); end.","0\n[0,1] 2\n[0,1,2] 5\n3 8\n[0,1,2] 11\n");
+    result("var calls:integer; function Next(x:integer):integer; begin Inc(calls); Result:=x+1; end; begin var s:=SeqGen(3,10,Next); Writeln(calls,' ',s.Take(1).ToArray,' ',calls); Writeln(s.ToArray,' ',calls,' ',s.ToArray,' ',calls); Writeln(ArrGen(3,10,Next),' ',calls); end.","0 [10] 0\n[10,11,12] 2 [10,11,12] 4\n[10,11,12] 6\n");
+    result("var calls:integer; function Next(a,b:integer):integer; begin Inc(calls); Result:=a+b; end; begin Writeln(SeqGen(1,10,20,Next).ToArray,' ',calls); Writeln(SeqGen(2,10,20,Next).ToArray,' ',calls); Writeln(SeqGen(4,1,2,Next).ToArray,' ',calls); Writeln(ArrGen(2,1,2,Next),' ',calls); end.","[10] 0\n[10,20] 0\n[1,2,3,5] 2\n[1,2] 2\n");
+    result("begin var calls:=0; var s:=SeqWhile(1,x->begin Inc(calls); Result:=x+1; end,x->x<4); Writeln(s.ToArray,' ',calls); Writeln(s.ToArray,' ',calls); end.","[1,2,3] 3\n[1,2,3] 6\n");
+    result("begin var s:=SeqGen(2,i->i); foreach var a in s do foreach var b in s do Write(a,':',b,' '); end.","0:0 0:1 1:0 1:1 ");
+    result("begin var s:=Iterate(1,x->x+1); foreach var a in s.Take(2) do foreach var b in s.Take(2) do Write(a,':',b,' '); end.","1:1 1:2 2:1 2:2 ");
+    result("function Build(k:integer):sequence of integer; begin Result:=SeqGen(3,i->i+k); k:=10; end; begin var a:=Build(2); Writeln(a.ToArray,' ',a.ToArray); end.","[10,11,12] [10,11,12]\n");
+    result("function Build(k:integer):sequence of integer; begin Result:=Iterate(k,x->x+k); k:=10; end; begin var a:=Build(2); Writeln(a.Take(3).ToArray,' ',a.Take(3).ToArray); end.","[2,12,22] [2,12,22]\n");
+    result("begin Writeln(SeqGen(3,'a',x->Chr(Ord(x)+1)).ToArray); Writeln(ArrGen(3,'я'+'',x->x+'я')); Writeln(ArrGen(3,False,x->not x)); Writeln(SeqGen(3,1,(x:int64)->x+1).ToArray); end.","[a,b,c]\n[я,яя,яяя]\n[False,True,False]\n[1,2,3]\n");
+    result("begin Writeln(SeqGen(3,BigInteger(1),x->x*2).ToArray); Writeln(MatrGen(2,2,(r,c)->r*10+c)); end.","[1,2,4]\n[[0,1],[10,11]]\n");
+    result("begin var calls:=''; var m:=MatrGen(2,3,(r,c)->begin calls:=calls+IntToStr(r)+IntToStr(c); Result:=r*10+c; end); Writeln(calls,' ',m); end.","000102101112 [[0,1,2],[10,11,12]]\n");
+    result("begin var f:(integer,integer)->integer; var m:=MatrGen(2147483647,0,f); Writeln(m.GetLength(0),' ',m.GetLength(1)); Writeln(MatrGen(0,3,f).GetLength(1)); end.","2147483647 0\n3\n");
+    result("begin var f:integer->integer; var g:(integer,integer)->integer; Writeln(ArrGen(1,7,f),' ',ArrGen(2,1,2,g)); Writeln(Iterate(7,f).Take(0).Count,' ',SeqGen(1,7,f).Take(0).Count); Writeln(SeqWhile(7,f,x->True).Take(0).Count); end.","[7] [1,2]\n0 0\n0\n");
+    result("begin Writeln(ArrGen(1,7,nil),' ',ArrGen(2,1,2,nil)); Writeln(Iterate(1,nil).Take(0).Count); end.","[7] [1,2]\n0\n");
+    result("begin Writeln(ArrGen(1,i->i,MaxInt),' ',SeqGen(0,i->i,MaxInt).Count); end.","[2147483647] 0\n");
+    // Record state is copied; references inside records remain shared.
+    result(R"(type R=record n:integer; end;
+function Next(r:R):R; begin Inc(r.n); Result:=r; end;
+begin var r:R; r.n:=1; var s:=SeqGen(3,r,Next); r.n:=99; foreach var v in s do begin Write(v.n,' '); var copy:=v; copy.n:=77; end; Writeln(s.Select(x->x.n).ToArray,' ',r.n); Writeln(ArrGen(3,r,Next).Select(x->x.n).ToArray); end.)","1 2 3 [1,2,3] 99\n[99,100,101]\n");
+    result(R"(type R=record n:integer; end;
+function Next(a,b:R):R; begin a.n:=a.n+b.n; Result:=a; end;
+begin var a:R; var b:R; a.n:=1; b.n:=2; Writeln(SeqGen(5,a,b,Next).Select(x->x.n).ToArray,' ',ArrGen(5,a,b,Next).Select(x->x.n).ToArray,' ',a.n,' ',b.n); end.)","[1,2,3,5,8] [1,2,3,5,8] 1 2\n");
+    result(R"(function Next(a:array of integer):array of integer;
+begin Inc(a[0]); Result:=a; end;
+begin var a:=Arr(1); var s:=Iterate(a,Next); foreach var x in s.Take(3) do begin Write(x[0],' '); Inc(x[0],10); end; Writeln(a[0]); end.)","1 12 23 33\n");
+    result("var log:string; function N:integer; begin log:=log+'N'; Result:=2; end; function F:integer->integer; begin log:=log+'F'; Result:=i->i; end; function Start:integer; begin log:=log+'S'; Result:=5; end; begin var s:=SeqGen(N(),F(),Start()); Writeln(log,' ',s.ToArray); end.","NFS [5,6]\n");
+    result("var log:string; function N:integer; begin log:=log+'N'; Result:=3; end; function Seed:integer; begin log:=log+'S'; Result:=1; end; function F:integer->integer; begin log:=log+'F'; Result:=i->begin log:=log+'C'; Result:=i+1; end; end; begin var a:=ArrGen(N(),Seed(),F()); Writeln(log,' ',a); end.","NSFCC [1,2,3]\n");
+    result("begin Writeln(ArrGen(3,i->SeqGen(2,j->i+j).Sum)); var s:=SeqGen(2,i->ArrGen(2,j->i+j).Sum); Writeln(s.ToArray); end.","[1,3,5]\n[1,3]\n");
+    result("begin var a:=ArrGen(2,i->ReadInteger); Writeln(a); Writeln(SeqGen(2,i->ReadInteger).ToArray); end.","[10,20]\n[30,40]\n","10 20 30 40");
+    for (const auto source:{
+        "begin SeqGen(-1,i->i); end.","begin ArrGen(-1,i->i); end.",
+        "begin SeqGen(0,1,x->x); end.","begin SeqGen(-1,1,2,(a,b)->a+b); end.",
+        "begin ArrGen(0,1,x->x); end.","begin ArrGen(1,1,2,(a,b)->a+b); end.",
+        "begin MatrGen(-1,0,(r,c)->r+c); end.","begin MatrGen(0,-1,(r,c)->r+c); end."}) runtime_error(source,"E_RANGE");
+    for (const auto source:{
+        "begin var f:integer->integer; SeqGen(0,f); end.","begin var f:integer->integer; ArrGen(0,f); end.",
+        "begin var f:integer->integer; Writeln(Iterate(1,f).First); end.",
+        "begin var f:integer->integer; Writeln(SeqGen(1,1,f).First); end.",
+        "begin var f:(integer,integer)->integer; Writeln(SeqGen(1,1,2,f).First); end.",
+        "begin Writeln(SeqGen(1,1,nil).First); end.",
+        "begin Writeln(ArrGen(2,1,nil)); end.","begin Writeln(ArrGen(3,1,2,nil)); end.",
+        "begin Writeln(MatrGen(1,1,default((integer,integer)->integer))); end.",
+        "begin SeqWhile(1,x->x+1,nil); end.","begin SeqWhile(1,2,(a,b)->a+b,nil); end.",
+        "begin Writeln(SeqWhile(1,nil,x->False).Count); end."}) runtime_error(source,"E_NIL");
+    for (const auto source:{
+        "begin SeqGen(1,i->i,MaxInt); end.","begin SeqGen(0,i->i,-2147483648); end.",
+        "begin ArrGen(2,i->i,MaxInt); end.","begin Writeln(Iterate(MaxInt,x->x+1).Take(2).ToArray); end."}) runtime_error(source,"E_OVERFLOW");
+    for (const auto source:{
+        "begin SeqGen(2); end.","begin Iterate(1); end.","begin SeqWhile(1,x->x); end.",
+        "begin MatrGen(2,2,x->x); end.","begin ArrGen(2,(x:int64)->x); end.",
+        "begin SeqGen(2,(var x:integer)->x); end.","begin SeqGen(2,i->Writeln(i)); end.",
+        "begin Iterate(1,(x:integer)->x*1.5); end.","begin SeqGen(3,1,(x:real)->Trunc(x)); end.",
+        "begin SeqGen(3,1,2,(a,b)->True); end.","begin SeqWhile(1,x->x+1,x->x); end.",
+        "begin SeqWhile(1,x->x+1,(x:real)->True); end."}) compile_error(source,"E_TYPE");
+    for (const auto source:{"begin SeqGen(0,1,x->x); end.","begin ArrGen(1,1,2,(a,b)->a+b); end."}) {
+        try { (void)run(source); require(false,"Expected bilingual generator count diagnostic"); }
+        catch (const abc::Error& caught) { require(caught.code=="E_RANGE" && !caught.russian.empty() && std::string_view(caught.what()).find("count")!=std::string_view::npos,"Generator count errors include English and Russian text"); }
+    }
+    const auto partial=[&](std::string_view source,std::string_view code,std::string_view output) {
+        auto program=abc::compile(source); std::istringstream in; std::ostringstream out;
+        error([&]{abc::execute(program,in,out);},code,source);
+        require(out.str()==output,"Generator failure preserves the exact callback timing");
+    };
+    partial("begin ArrGen(2,i->begin Write(i,' '); Result:=i; end,MaxInt); end.","E_OVERFLOW","2147483647 ");
+    partial("begin SeqGen(1,i->begin Write(i); Result:=i; end,MaxInt); end.","E_OVERFLOW","");
+    partial("function Seed:integer; begin Write('S'); Result:=1; end; function F:integer->integer; begin Write('F'); end; begin SeqGen(0,Seed(),F()); end.","E_RANGE","SF");
+    partial("function F:integer->integer; begin Write('F'); end; function P:integer->boolean; begin Write('P'); end; begin SeqWhile(1,F(),P()); end.","E_NIL","FP");
+    abc::ExecutionOptions limited; limited.instruction_limit=150;
+    error([&]{(void)run("begin Writeln(Iterate(1,x->x+1).Count); end.","",limited);},"E_LIMIT");
+    error([&]{(void)run("begin ArrGen(1000,i->i); end.","",limited);},"E_LIMIT");
+    limited={}; limited.allocation_limit=20;
+    error([&]{(void)run("begin ArrGen(100,i->i); end.","",limited);},"E_LIMIT");
+    limited={}; limited.cancelled=[] { return true; };
+    error([&]{(void)run("begin SeqGen(100,i->i).Count; end.","",limited);},"E_CANCELLED");
+    result("begin var f:integer->integer:=x->x+1; var a:=ArrGen(2,f,g->g); Writeln(a[0](2),' ',a[1](3)); var next:Func<integer->integer,integer->integer>:=g->g; var s:=SeqGen(2,f,next).ToArray; Writeln(s[1](5)); Writeln(ArrGen(1,f,nil)[0](7)); end.","3 4\n6\n8\n");
+    result("begin var a:=ArrGen(2,i->(x:integer)->i+x); Writeln(a[0](5),' ',a[1](5)); end.","5 6\n");
+    result("begin Writeln(Iterate(MaxInt,x->x+1).Take(1).ToArray); Writeln(SeqGen(1,MaxInt,x->x+1).ToArray); Writeln(SeqGen(2,MaxInt,MaxInt,(a,b)->a+b).ToArray); end.","[2147483647]\n[2147483647]\n[2147483647,2147483647]\n");
+    result("begin var s:=SeqGen(3,i->i); Writeln(s.First,' ',s.Last,' ',s.Count,' ',s.ElementAt(1),' ',s.Any(x->x>1),' ',s.All(x->x>=0)); end.","0 2 3 1 True True\n");
+    const auto cursor_program=abc::compile("function F(i:integer):integer; begin Result:=i*2; end; begin SeqGen(2,F); end.");
+    const auto opcode=std::find_if(cursor_program.code.begin(),cursor_program.code.end(),[](const auto& op){return op.op==abc::Op::generator;});
+    abc::Values values{cursor_program,1000}; abc::ExecutionOptions options; int calls=0;
+    const auto callback=std::make_shared<abc::Aggregate>(); callback->type=static_cast<abc::Type>(opcode->operand>>8); callback->routine=0;
+    values.invoke=[&](std::size_t,std::span<const abc::Value> actual)->abc::Value { ++calls; return std::get<std::int32_t>(actual[0])*2; };
+    const std::array<abc::Value,3> arguments{std::int32_t{2},callback,std::int32_t{5}};
+    const auto sequence=std::get<std::shared_ptr<abc::Aggregate>>(abc::generate_values(values,opcode->type,abc::GeneratorMethod::index_sequence,arguments,options));
+    auto cursor=abc::sequence_begin(values,sequence);
+    require(!abc::sequence_known_length(cursor,values.location),"Generator Count cannot skip observable callbacks using known length");
+    require(abc::sequence_resume(values,cursor,0,options) && std::get<std::int32_t>(abc::sequence_at(values,cursor,0,options))==10
+        && abc::sequence_resume(values,cursor,0,options) && calls==1,"Repeated resume and Current reuse one generated value");
+    require(abc::sequence_resume(values,cursor,1,options) && std::get<std::int32_t>(abc::sequence_at(values,cursor,1,options))==12 && calls==2,"Generated cursor advances exactly once per element");
+    require(!abc::sequence_resume(values,cursor,2,options) && !abc::sequence_resume(values,cursor,2,options) && calls==2,"Finite generator completion does not call its function");
+    auto independent=abc::sequence_begin(values,sequence);
+    require(abc::sequence_resume(values,independent,0,options) && calls==3,"New generator cursor starts independently");
+    const auto good=abc::compile("begin Writeln(SeqGen(3,i->i).ToArray); end.");
+    for (const auto operand:{std::size_t{255},std::size_t{0},std::numeric_limits<std::size_t>::max()}) {
+        auto bad=good; for (auto& instruction:bad.code) if (instruction.op==abc::Op::generator) instruction.operand=operand;
+        error([&]{abc::verify(bad);},"E_BYTECODE");
+    }
+    auto bad=good;
+    for (auto& instruction:bad.code) if (instruction.op==abc::Op::generator) instruction.type=abc::Type::integer;
+    error([&]{abc::verify(bad);},"E_BYTECODE");
+    bad=good;
+    for (auto& instruction:bad.code) if (instruction.op==abc::Op::generator) instruction.operand=(instruction.operand&~std::size_t{255})|static_cast<std::size_t>(abc::GeneratorMethod::matrix);
+    error([&]{abc::verify(bad);},"E_BYTECODE");
+    bad=abc::compile("begin Writeln(SeqWhile(1,x->x+1,x->x<3).ToArray); end.");
+    for (auto& instruction:bad.code) if (instruction.op==abc::Op::generator) instruction.operand=(instruction.operand&~std::size_t{255})|static_cast<std::size_t>(abc::GeneratorMethod::iterate_one);
+    error([&]{abc::verify(bad);},"E_BYTECODE");
 }
 
 void lambda_language() {
@@ -4326,6 +4448,7 @@ int main() {
     short_callable_types();
     library_callable_values();
     lambda_language();
+    generators_library();
     structural_output();
     try_console_read();
     string_conversions();

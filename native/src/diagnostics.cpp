@@ -4,6 +4,10 @@ namespace abc {
 Error runtime_error(RuntimeError id, SourceLocation location, std::string_view context) {
     const char *code, *english, *russian;
     switch (id) {
+    case RuntimeError::generator_positive_count:
+        code="E_RANGE"; english="Generator count must be greater than zero"; russian="Число элементов генератора должно быть больше нуля"; break;
+    case RuntimeError::generator_pair_count:
+        code="E_RANGE"; english="Two-seed array generator count must be at least two"; russian="Генератор массива с двумя начальными значениями требует не менее двух элементов"; break;
     case RuntimeError::regex_syntax:
         code="E_REGEX"; english="Invalid regular expression"; russian="Некорректное регулярное выражение"; break;
     case RuntimeError::duplicate_swap_key:

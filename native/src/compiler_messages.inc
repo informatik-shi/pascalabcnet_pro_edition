@@ -1,3 +1,7 @@
+    {"Wrong generator argument count","Неверное число аргументов генератора"},
+    {"Indexed generator requires integer value parameters and a known result type","Индексный генератор требует целочисленных параметров по значению и известного типа результата"},
+    {"Recurrent generator requires value parameters and result of the same known type","Рекуррентный генератор требует параметров по значению и результата одного известного типа"},
+    {"Generator predicate must accept one exact element by value and return boolean","Предикат генератора должен принимать элемент точного типа по значению и возвращать boolean"},
     {"НОДНОК requires two integers","Для НОДНОК требуются два целых числа"},
     {"A tuple type needs at least two elements","Тип кортежа должен содержать не менее двух элементов"},
     {"Array element formatting is not implemented","Форматирование элементов массива пока не реализовано"},
