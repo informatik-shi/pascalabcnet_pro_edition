@@ -8,6 +8,7 @@
 #include "../src/generators.hpp"
 #include "../src/array_views.hpp"
 #include "../src/matrix_operations.hpp"
+#include "../src/array_operations.hpp"
 
 #include <iostream>
 #include <array>
@@ -64,6 +65,68 @@ void compile_error(std::string_view source, std::string_view code) {
 
 void runtime_error(std::string_view source, std::string_view code) {
     error([&] { (void)run(source); }, code,source);
+}
+
+void array_operations_library() {
+    result("begin Writeln(ArrFill(3,7),' ',MatrFill(2,2,9)); Writeln(PABCSystem.ArrFill(2,'Я'),' ',PABCSystem.MatrFill(1,2,'ab')); end.","[7,7,7] [[9,9],[9,9]]\n[Я,Я] [[ab,ab]]\n");
+    result("begin var m:=MatrGen(2,3,(r,c)->r*10+c); Writeln(m.Size,' ',m.Size(),' ',Size(m),' ',PABCSystem.Size(m)); Writeln(Transpose(m)); Writeln(m.Elements.ToArray,' ',Elements(m).ToArray,' ',PABCSystem.Elements(m).ToArray); end.","(2,3) (2,3) (2,3) (2,3)\n[[0,10],[1,11],[2,12]]\n[0,1,2,10,11,12] [0,1,2,10,11,12] [0,1,2,10,11,12]\n");
+    result("begin Writeln(ArrFill(0,1),' ',MatrFill(0,3,1).Size,' ',MatrFill(3,0,1).Size); Writeln(Transpose(MatrFill(0,3,1)).Size,' ',Transpose(MatrFill(3,0,1)).Size); Writeln(MatrEqual(new integer[0,3],new integer[0,4]),' ',MatrEqual(new integer[0,3],new integer[3,0])); end.","[] (0,3) (3,0)\n(3,0) (0,3)\nFalse False\n");
+    result("begin Writeln(MatrFill(2147483647,0,1).Size,' ',Transpose(MatrFill(0,2147483647,1)).Size); end.","(2147483647,0) (2147483647,0)\n");
+    result("type R=record n:integer; a:array of integer; end; begin var r:R; r.n:=3; r.a:=Arr(1); var a:=ArrFill(2,r); var m:=MatrFill(1,2,r); r.n:=99; a[0].n:=7; m[0,0].n:=8; a[0].a[0]:=9; Writeln(a[1].n,' ',m[0,1].n,' ',r.n,' ',m[0,1].a[0]); end.","3 3 99 9\n");
+    result("type A=array of integer; begin var a:=Arr(1); var rows:=ArrFill(2,a); var m:=MatrFill(1,2,a); rows[0][0]:=7; Writeln(rows[1][0],' ',m[0,0][0],' ',a[0]); end.","7 7 7\n");
+    result("type R=record n:integer; a:array of integer; end; begin var m:=new R[1,2]; m[0,0].n:=1; m[0,0].a:=Arr(2); var t:=Transpose(m); t[0,0].n:=9; t[0,0].a[0]:=7; Writeln(m[0,0].n,' ',m[0,0].a[0],' ',t.Size,' ',m.Size); end.","1 7 (2,1) (1,2)\n");
+    result("begin var m:=MatrFill(1,2,1bi shl 80); Writeln(m.Size,' ',m[0,1]=1bi shl 80); Writeln(ArrFill(2,not(MaxInt))); var s:string:=nil; Writeln(ArrEqual(ArrFill(2,s),ArrFill(2,s)),' ',ArrEqual(ArrFill(2,s),ArrFill(2,''))); end.","(1,2) True\n[-2147483648,-2147483648]\nTrue False\n");
+    result("begin Writeln(ArrEqual(Arr(1,2),Arr(1,2)),' ',Arr(1,2).ArrEqual(Arr(1,3)),' ',ArrEqual(Arr(1),Arr(1,2))); Writeln(PABCSystem.ArrEqual(Arr(True,False),Arr(True,False))); var m:=MatrGen(2,2,(r,c)->r+c); Writeln(MatrEqual(m,m.Copy),' ',m.MatrEqual(m.Copy),' ',m=m.Copy); end.","True False False\nTrue\nTrue True False\n");
+    result("begin var a:array of integer; var b:array of integer; var m:array[,] of integer; var n:array[,] of integer; Writeln(ArrEqual(a,b),' ',MatrEqual(m,n)); Writeln(ArrEqual(nil,Arr(1)),' ',ArrEqual(Arr(1),nil)); Writeln(MatrEqual(nil,new integer[0,0]),' ',MatrEqual(new integer[0,0],nil)); end.","True True\nFalse False\nFalse False\n");
+    result("type A=array of integer; begin var x:=Arr(1); var a:=new A[1]; var b:=new A[1]; a[0]:=x; b[0]:=Arr(1); Writeln(ArrEqual(a,b)); b[0]:=x; Writeln(ArrEqual(a,b)); var m:=MatrFill(1,1,x); var n:=MatrFill(1,1,Arr(1)); Writeln(MatrEqual(m,n)); n[0,0]:=x; Writeln(MatrEqual(m,n)); end.","False\nTrue\nFalse\nTrue\n");
+    result("type R=record n:integer; end; begin var a:=new R[1]; var b:=new R[1]; a[0].n:=2; b[0].n:=2; Writeln(ArrEqual(a,b)); b[0].n:=3; Writeln(ArrEqual(a,b)); var m:=new R[1,1]; var n:=new R[1,1]; m[0,0].n:=2; n[0,0].n:=2; Writeln(MatrEqual(m,n)); end.","True\nFalse\nTrue\n");
+    result("begin var f:integer->integer:=x->x+1; Writeln(ArrEqual(ArrFill(2,f),ArrFill(2,f))); var g:integer->integer:=x->x+1; Writeln(ArrEqual(ArrFill(1,f),ArrFill(1,g))); end.","True\nFalse\n");
+    result("function Size(n:integer):integer; begin Result:=n+1; end; begin Writeln(Size(2),' ',PABCSystem.Size(new integer[1,2])); end.","3 (1,2)\n");
+    for (int rows=0;rows<=4;++rows) for (int cols=0;cols<=4;++cols) {
+        std::string expected="("+std::to_string(cols)+","+std::to_string(rows)+") [";bool comma=false;
+        for (int c=0;c<cols;++c) for (int r=0;r<rows;++r) { if (comma) expected+=",";comma=true;expected+=std::to_string(r*10+c); }
+        expected+="]\nTrue\n";
+        result("begin var m:=MatrGen("+std::to_string(rows)+","+std::to_string(cols)+",(r,c)->r*10+c); var t:=Transpose(m); Writeln(t.Size,' ',t.Elements.ToArray); Writeln(MatrEqual(m,Transpose(t))); end.",expected);
+    }
+    for (const auto source:{
+        "begin ArrFill(-1,1); end.","begin MatrFill(-1,0,1); end.","begin MatrFill(0,-1,1); end."}) runtime_error(source,"E_RANGE");
+    for (const auto source:{
+        "begin var m:array[,] of integer; Writeln(m.Size); end.","begin var m:array[,] of integer; Writeln(Transpose(m)); end.",
+        "begin var m:array[,] of integer; Writeln(m.Elements.Count); end."}) runtime_error(source,"E_NIL");
+    for (const auto source:{
+        "begin ArrFill(1); end.","begin MatrFill(1,2,3,4); end.","begin ArrFill(1,nil); end.",
+        "procedure P; begin end; begin ArrFill(1,P()); end.","begin Transpose(Arr(1)); end.",
+        "begin Size(Arr(1)); end.","begin ArrEqual(Arr(1),Arr(1.5)); end.",
+        "begin MatrEqual(new integer[1,1],new real[1,1]); end.",
+        "begin ArrEqual(new integer[1,1],new integer[1,1]); end.","begin MatrEqual(Arr(1),Arr(1)); end.",
+        "begin ArrEqual(nil,nil); end."}) compile_error(source,"E_TYPE");
+    const auto failed=[&](std::string_view text,std::string_view output) {
+        const auto p=abc::compile(text); std::istringstream in; std::ostringstream out;
+        error([&]{abc::execute(p,in,out);},"E_RANGE",text); require(out.str()==output,"Array fill evaluates every argument before dimension validation");
+    };
+    failed("function X:integer; begin Write('X'); Result:=7; end; begin ArrFill(-1,X()); end.","X");
+    failed("function R:integer; begin Write('R'); Result:=-1; end; function C:integer; begin Write('C'); Result:=-1; end; function X:integer; begin Write('X'); Result:=7; end; begin MatrFill(R(),C(),X()); end.","RCX");
+    abc::ExecutionOptions options; options.allocation_limit=30;
+    error([&]{(void)run("begin ArrFill(100,1); end.","",options);},"E_LIMIT");
+    error([&]{(void)run("begin MatrFill(10,10,1); end.","",options);},"E_LIMIT");
+    options={};options.cancelled=[] { return true; };
+    error([&]{(void)run("begin ArrFill(10,1); end.","",options);},"E_CANCELLED");
+    const auto p=abc::compile("begin var a:=ArrFill(3,1); var m:=MatrFill(1,3,1); ArrEqual(a,a); MatrEqual(m,m); end.");
+    const auto array_op=std::find_if(p.code.begin(),p.code.end(),[](const auto& op){return op.op==abc::Op::array_operation && (op.operand&255U)==static_cast<std::size_t>(abc::ArrayOperation::equal_array);});
+    const auto matrix_op=std::find_if(p.code.begin(),p.code.end(),[](const auto& op){return op.op==abc::Op::array_operation && (op.operand&255U)==static_cast<std::size_t>(abc::ArrayOperation::equal_matrix);});
+    abc::Values values{p,1000};auto array=values.array(array_op->type,3),matrix=values.matrix(matrix_op->type,1,3);
+    const std::array<abc::Value,2> arrays{array,array},matrices{matrix,matrix};
+    options={};options.instruction_limit=1;
+    error([&]{(void)abc::array_operation(values,array_op->type,abc::Type::boolean,abc::ArrayOperation::equal_array,arrays,options);},"E_LIMIT");
+    options.instruction_limit=0;
+    require(std::get<bool>(abc::array_operation(values,matrix_op->type,abc::Type::boolean,abc::ArrayOperation::equal_matrix,matrices,options)),"MatrEqual preserves the source identity shortcut while ArrEqual still enumerates");
+    for (const auto text:{"begin ArrFill(1,1); end.","begin MatrFill(1,1,1); end.","begin Size(new integer[1,1]); end.","begin Transpose(new integer[1,1]); end.","begin ArrEqual(Arr(1),Arr(2)); end."}) {
+        const auto good=abc::compile(text);
+        for (const auto operand:{std::size_t{0},std::numeric_limits<std::size_t>::max()}) {
+            auto bad=good;for (auto& op:bad.code) if (op.op==abc::Op::array_operation) op.operand=operand;
+            error([&]{abc::verify(bad);},"E_BYTECODE");
+        }
+    }
 }
 
 void matrix_lines_library() {
@@ -4879,6 +4942,7 @@ int main() {
     combinatorics_library();
     array_views_library();
     matrix_lines_library();
+    array_operations_library();
     structural_output();
     try_console_read();
     string_conversions();

@@ -2453,6 +2453,38 @@ private:
         result.type=sequence_type(CompoundKind::sequence,text ? Type::string : array);
         result.arguments.clear();
     }
+    bool bind_array_operation(hir::Expr& result,const SyntaxExpr& source,bool member) {
+        const auto name=source.token.text;
+        const bool fill=name=="arrfill" || name=="matrfill",equal=name=="arrequal" || name=="matrequal";
+        if (!fill && !equal && name!="transpose" && name!="size") return false;
+        if (member && (fill || name=="transpose")) return false;
+        const auto count=source.arguments.size()+(member ? 1U : 0U);
+        const auto expected=fill ? name=="matrfill" ? 3U : 2U : equal ? 2U : 1U;
+        if (count!=expected) throw Error("E_TYPE",result.location,"Wrong array operation argument count");
+        ArrayOperation method;
+        Type array;
+        if (fill) {
+            const auto dimensions=name=="matrfill" ? 2U : 1U;
+            for (unsigned i=0;i<dimensions;++i) result.arguments.push_back(convert(expression(*source.arguments[i]),Type::integer));
+            auto value=expression(*source.arguments.back());
+            if (value->type==Type::nil || value->type==Type::unit) throw Error("E_TYPE",result.location,"Array fill requires a value with a known element type");
+            array=sequence_type(CompoundKind::array,value->type,dimensions); result.arguments.push_back(std::move(value));
+            method=dimensions==2 ? ArrayOperation::fill_matrix : ArrayOperation::fill_array; result.type=array;
+        } else {
+            if (member) result.arguments.push_back(std::move(result.left));
+            for (const auto& argument:source.arguments) result.arguments.push_back(expression(*argument));
+            array=result.arguments[0]->type;
+            if (array==Type::nil && equal) array=result.arguments[1]->type;
+            const auto rank=name=="arrequal" ? 1U : 2U;
+            if (!compound(array) || info(array,result.location).kind!=CompoundKind::array || info(array,result.location).rank!=rank)
+                throw Error("E_TYPE",result.location,"Array operation requires an array of the exact rank and element type");
+            for (auto& argument:result.arguments) argument=convert(std::move(argument),array);
+            method=equal ? name=="arrequal" ? ArrayOperation::equal_array : ArrayOperation::equal_matrix
+                : name=="size" ? ArrayOperation::size : ArrayOperation::transpose;
+            result.type=equal ? Type::boolean : name=="size" ? tuple_type({Type::integer,Type::integer},result.location) : array;
+        }
+        result.operation_type=array; result.local=static_cast<std::size_t>(method); result.kind=hir::ExprKind::array_operation; return true;
+    }
     bool bind_matrix_operation(hir::Expr& result,const SyntaxExpr& source,bool member) {
         std::optional<MatrixMethod> method;
         for (const auto& [name,value]:{
@@ -2493,7 +2525,7 @@ private:
     }
     bool bind_array_view(hir::Expr& result,const SyntaxExpr& source,bool member) {
         const auto name=source.token.text;
-        if (name!="indices" && name!="elementswithindices" && name!="elementsbyrow" && name!="elementsbycol") return false;
+        if (name!="indices" && name!="elementswithindices" && name!="elementsbyrow" && name!="elementsbycol" && name!="elements") return false;
         const auto count=source.arguments.size()+(member ? 1U : 0U);
         if ((name=="indices" && count!=1 && count!=2) || (name!="indices" && count!=1))
             throw Error("E_TYPE",result.location,"Wrong array view argument count");
@@ -2507,7 +2539,7 @@ private:
         if ((!matrix && name!="indices") || (matrix && name=="indices" && !predicate))
             throw Error("E_TYPE",result.location,"Matrix view requires a rectangular matrix and a supported operation");
         const auto method=predicate ? ArrayViewMethod::matching_indices : name=="indices" ? ArrayViewMethod::indices
-            : name=="elementswithindices" ? ArrayViewMethod::with_indices : name=="elementsbyrow" ? ArrayViewMethod::by_row : ArrayViewMethod::by_column;
+            : name=="elementswithindices" ? ArrayViewMethod::with_indices : (name=="elementsbyrow" || name=="elements") ? ArrayViewMethod::by_row : ArrayViewMethod::by_column;
         if (predicate) {
             std::vector<Type> hints{type.element};
             for (unsigned i=0;i<type.rank;++i) hints.push_back(Type::integer);
@@ -2533,7 +2565,7 @@ private:
         const auto name=source.token.text; const bool cartesian=name=="cartesian";
         const bool combinations=name=="combinations",permutations=name=="permutations";
         if (!unit.empty() && unit!="pabcsystem") return false;
-        if (bind_matrix_operation(result,source,member) || bind_array_view(result,source,member)) return true;
+        if (bind_array_operation(result,source,member) || bind_matrix_operation(result,source,member) || bind_array_view(result,source,member)) return true;
         if (name!="zip" && name!="ziptuple" && !cartesian && name!="cartesianpower" && !combinations && !permutations) return false;
         if (combinations || permutations) {
             const auto count=source.arguments.size()+(member ? 1U : 0U);

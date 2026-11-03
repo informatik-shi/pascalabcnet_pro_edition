@@ -1,3 +1,6 @@
+    {"Wrong array operation argument count","Неверное число аргументов операции над массивом"},
+    {"Array fill requires a value with a known element type","Для заполнения массива требуется значение с известным типом элемента"},
+    {"Array operation requires an array of the exact rank and element type","Для операции требуется массив точного ранга и типа элемента"},
     {"Wrong matrix operation argument count","Неверное число аргументов операции над матрицей"},
     {"Matrix operation requires a rectangular matrix of known element type","Для операции требуется прямоугольная матрица с известным типом элемента"},
     {"Wrong array view argument count","Неверное число аргументов представления массива"},

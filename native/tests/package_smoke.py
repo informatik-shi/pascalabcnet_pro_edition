@@ -202,6 +202,7 @@ def main():
                 ("sequence-prefixes.pas", "Начало: [1,2]\nОстаток: [3,1]\nПосле двух: [7,6]\n"),
                 ("callable-values.pas", "Значение: 14\nЧерез массив: 18\nЧерез параметр: 22\nПустое значение: True\n"),
                 ("library-callables.pas", "Сохранённая функция: [2,4,6]\nОтбор: [1,2]\nСуммы пар: [11,22]\nРезультат для True, True: True\n"),
+                ("array-operations.pas", "Заполнение массива: [7,7,7,7]\nЗаполнение матрицы: [[5,5,5],[5,5,5]]\nРазмер: (2,3)\nТранспонирование: [[5,5],[8,5],[5,5]]\nЭлементы: [5,8,5,5,5,5]\nРавенство массивов: True\nРавенство матриц: True\n"),
                 ("matrix-lines.pas", "Строка: [10,11,12]\nСтолбец: [2,12]\nСтроки: [[0,1,2],[10,11,12]]\nСтолбцы: [[0,10],[1,11],[2,12]]\nЛенивые строки: [[0,1,2],[10,11,12]]\nЛенивые столбцы: [[0,10],[1,11],[2,12]]\nПосле обменов: [[12,11,10],[2,1,0]]\nПосле замены: [[7,4,9],[2,5,0]]\n"),
                 ("array-views.pas", "Индексы: [0,1,2,3]\nОтбор: [0,2]\nОтбор с индексом: [0,2]\nИндексы матрицы: [(1,0),(1,1),(1,2)]\nДиагональ: [(0,0),(1,1)]\nЭлемент и координаты: [(0,0,0),(1,0,1),(2,0,2),(10,1,0),(11,1,1),(12,1,2)]\nПо строкам: [0,1,2,10,11,12]\nПо столбцам: [0,10,1,11,2,12]\n"),
                 ("combinatorics.pas", "Сочетания: [[1,2],[1,3],[2,3]]\nПерестановки: [[1,2,3],[1,3,2],[2,1,3],[2,3,1],[3,1,2],[3,2,1]]\nЧастичные: [[1,2],[2,1],[1,3],[3,1],[2,3],[3,2]]\nСлова: [аб,ба,ав,ва,бв,вб]\nБуквы: [аб,ав,бв]\nСледующая: True [1,3,2]\n"),
@@ -586,6 +587,19 @@ def main():
                     or "EN: Instruction limit exceeded" not in invalid.stderr
                     or "RU: Превышен предел числа выполняемых инструкций" not in invalid.stderr or f"{single}:5:" not in invalid.stderr):
                 raise RuntimeError(f"{name} SingleNode cycle limit failed: {invalid.stderr!r}")
+            array_error = folder / "Заполнение массива.pas"
+            array_error.write_text("begin\n ArrFill(-1,1);\nend.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(array_error)], text=True, encoding="utf-8",
+                                     capture_output=True, cwd=folder, env=env, timeout=10)
+            if (invalid.returncode != 1 or "E_RANGE" not in invalid.stderr
+                    or "EN: Array length must not be negative" not in invalid.stderr
+                    or "RU: Длина массива не должна быть отрицательной" not in invalid.stderr or f"{array_error}:2:" not in invalid.stderr):
+                raise RuntimeError(f"{name} bilingual ArrFill dimension error failed: {invalid.stderr!r}")
+            array_error.write_text("begin Writeln('must never run'); ArrEqual(Arr(1),Arr(1.5)); end.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(array_error)], text=True, encoding="utf-8",
+                                     capture_output=True, cwd=folder, env=env, timeout=10)
+            if invalid.returncode != 1 or invalid.stdout or "E_TYPE" not in invalid.stderr or "RU:" not in invalid.stderr:
+                raise RuntimeError(f"{name} array equality element type was not rejected before output")
             matrix_error = folder / "Строки и столбцы матрицы.pas"
             for source, english, russian in (
                 ("begin\n var m:=new integer[1,1]; m.Row(-1);\nend.", "Row index is outside matrix bounds", "Индекс строки находится за границами матрицы"),
@@ -778,6 +792,7 @@ def main():
             results[-1]["typed_combinatorics_and_bilingual_diagnostics"] = "passed"
             results[-1]["typed_indices_matrix_views_and_bilingual_diagnostics"] = "passed"
             results[-1]["typed_matrix_lines_mutations_and_bilingual_diagnostics"] = "passed"
+            results[-1]["typed_fill_transpose_shape_equality_and_bilingual_diagnostics"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 

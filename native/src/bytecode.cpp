@@ -6,6 +6,7 @@
 #include "generators.hpp"
 #include "array_views.hpp"
 #include "matrix_operations.hpp"
+#include "array_operations.hpp"
 
 #include <deque>
 #include <algorithm>
@@ -87,6 +88,9 @@ private:
             expression(*node.left); emit(Op::sequence_aggregate,node.left->type,node.local,node.location); break;
         case hir::ExprKind::sequence_partial:
             expression(*node.left); emit(Op::sequence_partial,node.left->type,0,node.location); break;
+        case hir::ExprKind::array_operation:
+            for (const auto& argument:node.arguments) expression(*argument);
+            emit(Op::array_operation,node.operation_type,(static_cast<std::size_t>(node.type)<<8)|node.local,node.location); break;
         case hir::ExprKind::matrix_operation:
             expression(*node.left); for (const auto& argument:node.arguments) expression(*argument);
             emit(Op::matrix_operation,node.left->type,(static_cast<std::size_t>(node.type)<<16)|(static_cast<std::size_t>(node.operation_type)<<4)|node.local,node.location); break;
@@ -591,6 +595,14 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             }
             break;
         }
+        case Op::array_operation: {
+            const auto output=instruction.operand>>8,method=instruction.operand&255U;
+            if ((output!=static_cast<std::size_t>(Type::boolean) && (output<64 || output>=64+program.types.size()))
+                || method>static_cast<std::size_t>(ArrayOperation::equal_matrix)
+                || !array_operation_signature_valid(program,type,static_cast<Type>(output),static_cast<ArrayOperation>(method)))
+                invalid(instruction,"Invalid array operation signature");
+            break;
+        }
         case Op::matrix_operation: {
             const auto output=instruction.operand>>16,array=(instruction.operand&65535U)>>4,method=instruction.operand&15U;
             if ((output!=static_cast<std::size_t>(Type::unit) && (output<64 || output>=64+program.types.size()))
@@ -1041,6 +1053,11 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             const auto parameters=generator_parameters(element,static_cast<Type>(instruction.operand>>8),method);
             for (auto n=parameters.size();n>0;--n) require(parameters[n-1]);
             stack.push_back(instruction.type); break;
+        }
+        case Op::array_operation: {
+            const auto parameters=array_operation_parameters(program,instruction.type,static_cast<ArrayOperation>(instruction.operand&255U));
+            for (auto i=parameters.size();i>0;--i) require(parameters[i-1]);
+            stack.push_back(static_cast<Type>(instruction.operand>>8)); break;
         }
         case Op::matrix_operation: {
             const auto parameters=matrix_parameters(static_cast<Type>((instruction.operand&65535U)>>4),static_cast<MatrixMethod>(instruction.operand&15U));

@@ -20,6 +20,7 @@
 #include "generators.hpp"
 #include "array_views.hpp"
 #include "matrix_operations.hpp"
+#include "array_operations.hpp"
 #include "big_integer_runtime.hpp"
 
 #include <charconv>
@@ -261,6 +262,12 @@ static void execute_impl(const Program& program, std::istream& input, std::ostre
                 stack.emplace_back(instruction.operand ? sequence_range_step(values,instruction.type,first,last,step) : sequence_range(values,instruction.type,first,last));
             }
             break;
+        }
+        case Op::array_operation: {
+            const auto method=static_cast<ArrayOperation>(instruction.operand&255U);
+            const auto count=array_operation_parameters(program,instruction.type,method).size(); std::vector<Value> arguments(count);
+            for (auto i=count;i>0;--i) arguments[i-1]=pop();
+            stack.push_back(array_operation(values,instruction.type,static_cast<Type>(instruction.operand>>8),method,arguments,options)); break;
         }
         case Op::matrix_operation: {
             const auto output=static_cast<Type>(instruction.operand>>16),array=static_cast<Type>((instruction.operand&65535U)>>4);
