@@ -336,7 +336,7 @@ struct Local {
     bool global = true;
 };
 
-enum class CompoundKind { array, record, list, stack, queue, dynarray, simple_set, association, linked_node, linked_list, single_node, tuple, school_address, school_ip, sequence, callable };
+enum class CompoundKind { array, record, list, stack, queue, dynarray, simple_set, association, linked_node, linked_list, single_node, tuple, school_address, school_ip, sequence, callable, object_class };
 inline bool node_kind(CompoundKind kind) { return kind == CompoundKind::linked_node || kind == CompoundKind::single_node; }
 inline bool indexed_sequence(CompoundKind kind) { return kind == CompoundKind::array || kind == CompoundKind::list; }
 inline bool endpoint_collection(CompoundKind kind) { return kind == CompoundKind::stack || kind == CompoundKind::queue; }

@@ -346,9 +346,15 @@ private:
         else if (accept("sequence")) {
             result->kind="sequence"; expect("of"); result->element=type_syntax(false,allow_arrow);
         }
-        else if (accept("record")) {
-            result->kind = "record";
+        else if (is("record") || is("class")) {
+            const bool object=accept("class");if (!object) expect("record");
+            result->kind=object ? "class" : "record";
+            if (object && is("(")) throw Error("E_UNSUPPORTED",current_.location,"Class inheritance is not ported yet");
+            if (object && is(";")) throw Error("E_UNSUPPORTED",current_.location,"Forward class declarations are not ported yet");
             while (!is("end")) {
+                if (object && accept("public")) continue;
+                if (object && (is("private") || is("protected") || is("internal") || is("function") || is("procedure") || is("constructor") || is("destructor") || is("property") || is("class") || is("var")))
+                    throw Error("E_UNSUPPORTED",current_.location,"Class methods, properties and nonpublic members are not ported yet");
                 std::vector<Token> fields{name()}; while (accept(",")) fields.push_back(name());
                 expect(":"); auto type = type_syntax();
                 for (const auto& field : fields) result->fields.emplace_back(field,type);
@@ -856,9 +862,27 @@ public:
         module_.routines.reserve(256);
         collections_imported_ = source.collections_imported;
         imported_units_=source.imported_units; imported_units_.insert("pabcsystem");
-        for (const auto& [name, syntax] : source.type_declarations) {
-            if (aliases_.contains(name.text) || find_type(name.text)) throw Error("E_DUPLICATE",name.location,"Duplicate type");
-            aliases_[name.text] = resolve_type(*syntax);
+        std::set<std::string> declared_types;
+        for (const auto& [name,syntax]:source.type_declarations) {
+            if (!declared_types.insert(name.text).second || find_type(name.text)) throw Error("E_DUPLICATE",name.location,"Duplicate type");
+            if (syntax->kind=="class" && !syntax->named) {
+                if (module_.types.size()>=1024) throw Error("E_LIMIT",name.location,"Type limit exceeded");
+                const auto type=static_cast<Type>(64+module_.types.size());
+                module_.types.push_back({name.text,CompoundKind::object_class,Type::invalid,{}});
+                aliases_[name.text]=type;resolved_types_[syntax.get()]=type;
+            }
+        }
+        for (const auto& [name,syntax]:source.type_declarations)
+            if (syntax->kind!="class" || syntax->named) aliases_[name.text]=resolve_type(*syntax);
+        for (const auto& [name,syntax]:source.type_declarations) if (syntax->kind=="class" && !syntax->named) {
+            std::vector<Local> fields;
+            for (const auto& [field,type]:syntax->fields) {
+                if (std::any_of(fields.begin(),fields.end(),[&](const auto& item){return item.name==field.text;}))
+                    throw Error("E_DUPLICATE",field.location,"Duplicate class field");
+                fields.push_back({field.text,resolve_type(*type),false});
+            }
+            if (fields.size()>256) throw Error("E_LIMIT",name.location,"Class field limit exceeded");
+            module_.types[static_cast<unsigned>(aliases_.at(name.text))-64].fields=std::move(fields);
         }
         scopes_.emplace_back();
         for (const auto& routine : source.routines) {
@@ -1076,7 +1100,7 @@ private:
         if (auto found=resolved_types_.find(&syntax); found!=resolved_types_.end()) return found->second;
         if (syntax.named && !syntax.system_qualified && !syntax.element && syntax.fields.empty())
             if (const auto found=aliases_.find(syntax.kind);found!=aliases_.end()) return found->second;
-        if (syntax.named && (syntax.kind=="array" || syntax.kind=="record" || syntax.kind=="sequence" || syntax.kind=="tuple" || syntax.kind=="callable" || syntax.kind=="empty_result"))
+        if (syntax.named && (syntax.kind=="array" || syntax.kind=="record" || syntax.kind=="class" || syntax.kind=="sequence" || syntax.kind=="tuple" || syntax.kind=="callable" || syntax.kind=="empty_result"))
             throw Error("E_UNSUPPORTED",syntax.token.location,"Unknown or unsupported type '"+syntax.kind+"'");
         if (syntax.kind=="callable") {
             std::vector<CallableParameter> parameters;
@@ -1141,6 +1165,7 @@ private:
             for (const auto& field:syntax.fields) elements.push_back(resolve_type(*field.second));
             return tuple_type(elements,syntax.token.location);
         }
+        if (syntax.kind=="class") throw Error("E_UNSUPPORTED",syntax.token.location,"Classes require a named type declaration");
         if (syntax.kind == "record") {
             TypeInfo record{syntax.token.text,CompoundKind::record,Type::invalid,{}};
             for (const auto& [name,type] : syntax.fields) {
@@ -1157,7 +1182,10 @@ private:
     }
     bool constant_parameter_target(const hir::Expr& expression) const {
         if (expression.kind==hir::ExprKind::local) return constant_parameters_.contains(expression.local) || constant_locals_.contains(expression.local);
-        if (expression.kind==hir::ExprKind::field) return constant_parameter_target(*expression.left);
+        if (expression.kind==hir::ExprKind::field) {
+            if (compound(expression.left->type) && info(expression.left->type,expression.location).kind==CompoundKind::object_class) return false;
+            return constant_parameter_target(*expression.left);
+        }
         if (expression.kind==hir::ExprKind::index && compound(expression.left->type)
             && info(expression.left->type,expression.location).kind==CompoundKind::array) return constant_parameter_target(*expression.left);
         return false;
@@ -1165,6 +1193,7 @@ private:
     bool lvalue(const hir::Expr& expression) const {
         if (constant_parameter_target(expression)) return false;
         if (expression.kind==hir::ExprKind::index && expression.left->type==Type::string) return false;
+        if (expression.kind==hir::ExprKind::field && compound(expression.left->type) && info(expression.left->type,expression.location).kind==CompoundKind::object_class) return true;
         if (expression.kind==hir::ExprKind::field && compound(expression.left->type) && info(expression.left->type,expression.location).kind==CompoundKind::tuple) return false;
         if (expression.kind==hir::ExprKind::index && compound(expression.left->type)
             && indexed_sequence(info(expression.left->type,expression.location).kind)) return true;
@@ -1459,6 +1488,8 @@ private:
                     for (std::size_t i=0;i<parameters.size();++i) result->arguments.push_back(convert(expression(*source.arguments[i],parameters[i]),parameters[i]));
                     break;
                 }
+                if (info(type,result->location).kind==CompoundKind::object_class && !source.arguments.empty())
+                    throw Error("E_TYPE",result->location,"Class constructor takes no arguments in this profile");
                 if (info(type,result->location).kind==CompoundKind::list && !source.arguments.empty()) {
                     if (source.arguments.size()!=1) throw Error("E_TYPE",result->location,"List constructor requires zero or one argument");
                     auto argument=expression(*source.arguments[0]);
@@ -1599,6 +1630,18 @@ private:
                 bind_builtin(*result,source.token.text,source.left->token.text); break;
             }
             result->left = expression(*source.left); const auto receiver = result->left->type;
+            if (compound(receiver) && info(receiver,result->location).kind==CompoundKind::object_class) {
+                const auto& fields=info(receiver,result->location).fields;
+                for (std::size_t i=0;i<fields.size();++i) if (fields[i].name==source.token.text) {
+                    result->kind=hir::ExprKind::field;result->local=i;result->type=fields[i].type;
+                    if (source.kind==SyntaxExprKind::member_call) {
+                        auto call=std::make_unique<hir::Expr>();call->location=result->location;call->left=std::move(result);
+                        bind_value_call(*call,source.arguments);return call;
+                    }
+                    return result;
+                }
+                throw Error("E_NAME",result->location,"Unknown class field '"+source.token.text+"'");
+            }
             if (bind_generators(*result,source,{},true)) break;
             if (callable_type(receiver) && source.token.text=="invoke") {
                 if (source.kind!=SyntaxExprKind::member_call) throw Error("E_TYPE",result->location,"Invoke requires a callable argument list");

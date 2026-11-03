@@ -21,6 +21,7 @@ constexpr Translation prefixes[]={
     {"Unknown collection member '","Неизвестный член коллекции '"},
     {"Unknown stack or queue method '","Неизвестный метод стека или очереди '"},
     {"Unknown record field '","Неизвестное поле записи '"},
+    {"Unknown class field '","Неизвестное поле класса '"},
     {"Variable is not callable: '","Переменную нельзя вызывать как функцию: '"},
     {"Invalid operand for '","Недопустимый операнд для '"},
     {"Wrong random array/matrix arguments for '","Неверные аргументы случайного массива или матрицы для '"},

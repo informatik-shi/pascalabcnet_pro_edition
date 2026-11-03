@@ -70,6 +70,48 @@ void runtime_error(std::string_view source, std::string_view code) {
     error([&] { (void)run(source); }, code,source);
 }
 
+void native_class_fields_language() {
+    result("type C=class Count,Capacity:integer;Copy:integer->integer;end;begin var c:=new C;c.Count:=3;c.Capacity:=4;c.Copy:=x->x+c.Count;Writeln(c.Count,' ',c.Capacity,' ',c.Copy(2));end.","3 4 5\n");
+    result("type C=class n:integer;s:string;a:array of integer;end;begin var c:C;Writeln(c=nil);c:=new C;Writeln(c.n,' ',c.s=nil,' ',c.a=nil);var d:=c;d.n:=7;Writeln(c.n,' ',c=d,' ',c=new C);end.","True\n0 True True\n7 True False\n");
+    result("type N=class next:N;value:integer;end;begin var n:=new N;n.next:=n;n.value:=3;Writeln(n.next=n,' ',n.next.value);var a:=Lst(n);var c:=Copy(a);c[0].value:=9;Writeln(a[0].value,' ',c[0]=n);end.","True 3\n9 True\n");
+    result("type A=class b:B;end;B=class a:A;end;begin var a:=new A;var b:=new B;a.b:=b;b.a:=a;Writeln(a.b.a=a,' ',b.a.b=b);end.","True True\n");
+    result("type R=record owner:C;s:string;end;C=class r:R;nodes:array of C;end;begin var c:=new C;Writeln(c.r.owner=nil,' ',c.r.s=nil,' ',c.nodes=nil);c.r.owner:=c;c.nodes:=Arr(c);Writeln(c.r.owner=c,' ',c.nodes[0]=c);end.","True True True\nTrue True\n");
+    result("type R=record n:integer;end;C=class r:R;end;var obj:C;var calls:integer;function GetC:C;begin Inc(calls);Result:=obj;end;procedure SetN(var n:integer);begin n:=9;end;begin obj:=new C;GetC().r.n:=7;SetN(GetC().r.n);Writeln(obj.r.n,' ',calls);end.","9 2\n");
+    result("type C=class public n:integer;end;procedure Change(const c:C);begin c.n:=8;end;procedure Reset(out c:C);begin Writeln(c=nil);c:=new C;end;begin var c:=new C;Change(c);Writeln(c.n);Reset(c);Writeln(c.n);end.","8\nFalse\n0\n");
+    result("type C=class n:integer;end;begin var a:=Lst(new C,new C);foreach var x in a do begin x.n:=7;Write(x.n);end;Writeln;var r:=Copy(a);Writeln(r[0]=a[0]);end.","77\nTrue\n");
+    result("type C=class n:integer;f:integer->integer;end;begin var c:=new C;c.n:=2;c.f:=x->x+c.n;Writeln(c.f(3));c:=new C;c.n:=8;Writeln(c.f=nil);end.","5\nTrue\n");
+    result("type C=class n:integer;end;R=record c:C;end;begin var r:R;r.c:=new C;r.c.n:=1;var s:=r;s.c.n:=7;Writeln(r.c.n);var a:=new C[1];Writeln(a[0]=nil,' ',default(C)=nil);end.","7\nTrue True\n");
+    result("type A=class n:integer;end;B=A;begin var b:=new B;b.n:=4;Writeln(b.n);end.","4\n");
+    result("type C=class end;begin var a:=new C;var b:=new C;Writeln(a=a,' ',a=b,' ',a<>nil);var f:=()->a=b;Writeln(f());end.","True False True\nFalse\n");
+    for(const auto source:{"type C=class n:integer;end;begin var c:C;Writeln(c.n);end.","type C=class n:integer;end;begin var c:C;c.n:=1;end.","type C=class n:integer;end;procedure P(var n:integer);begin end;begin var c:C;P(c.n);end."})runtime_error(source,"E_NIL");
+    for(const auto source:{"type C=class private n:integer;end;begin end.","type A=class end;B=class(A)end;begin end.","type C=class function F:integer;begin Result:=1;end;end;begin end.","type C=class;begin end."})compile_error(source,"E_UNSUPPORTED");
+    compile_error("type C=class n:integer;n:integer;end;begin end.","E_DUPLICATE");
+    compile_error("type A=class end;B=class end;begin var a:=new A;var b:=new B;a:=b;end.","E_TYPE");
+    compile_error("type C=class n:integer;end;begin var c:=new C(1);end.","E_TYPE");
+    compile_error("type C=class n:integer;end;begin var c:=new C;c.n:='abc';end.","E_TYPE");
+    compile_error("type C=class n:integer;end;begin var c:=new C;Writeln(c.m);end.","E_NAME");
+    compile_error("type C=class n:integer;end;procedure P(const c:C);begin c:=new C;end;begin end.","E_TYPE");
+    auto p=abc::compile("type N=class next:N;n:integer;end;begin var a:=new N;a.next:=a;a.n:=1;end.");const auto type=p.locals[0].type;
+    require(abc::type_info(p,type).kind==abc::CompoundKind::object_class && abc::type_info(p,type).fields[0].type==type,"Recursive native class fields have closed static types before execution");
+    std::weak_ptr<abc::Aggregate> weak;
+    {
+        abc::ReferenceObjects objects;abc::Values values{p,20};values.observe_object=[&](const auto& object){objects.observe(object);};
+        auto node=std::get<std::shared_ptr<abc::Aggregate>>(values.zero(type,true));weak=node;values.write(node->items[0],node);node.reset();
+        require(!weak.expired() && objects.entries.size()==1,"Tracker records constructed reference objects, including otherwise unreachable cycles");
+    }
+    require(weak.expired(),"Execution-scoped cleanup breaks self-referential class cycles");
+    try{
+        abc::ReferenceObjects objects;abc::Values values{p,20};values.observe_object=[&](const auto& object){objects.observe(object);};
+        auto node=std::get<std::shared_ptr<abc::Aggregate>>(values.zero(type,true));weak=node;values.write(node->items[0],node);
+        throw abc::runtime_error(abc::RuntimeError::assertion_failed,{});
+    }catch(const abc::Error&){require(weak.expired(),"Reference object cleanup also releases cycles during exception unwinding");}
+    abc::ExecutionOptions options;options.allocation_limit=20;error([&]{(void)run("type C=class end;begin for var i:=1 to 100 do begin var c:=new C;end;end.","",options);},"E_LIMIT");
+    options={};options.instruction_limit=100;error([&]{(void)run("type N=class next:N;end;begin var n:=new N;n.next:=n;while True do n:=n.next;end.","",options);},"E_LIMIT");
+    for(int kind=0;kind<6;++kind){auto bad=p;auto& c=bad.types[static_cast<unsigned>(type)-64];if(kind==0)c.fields[0].type=abc::Type::unit;if(kind==1)c.fields[0].global=true;if(kind==2)c.fields.push_back(c.fields[0]);if(kind==3)c.kind=abc::CompoundKind::record;if(kind==4)c.rank=2;if(kind==5)c.fields[0].type=static_cast<abc::Type>(64+bad.types.size());error([&]{abc::verify(bad);},"E_BYTECODE");}
+    for(int kind=0;kind<2;++kind){auto bad=p;for(auto& op:bad.code)if(op.op==abc::Op::ref_field){if(kind==0)op.operand=99;else op.type=abc::Type::integer;}error([&]{abc::verify(bad);},"E_BYTECODE");}
+    try{(void)run("type C=class n:integer;end;begin\nvar c:C;c.n:=1;\nend.");require(false,"Expected class nil field diagnostic");}catch(const abc::Error& e){require(e.code=="E_NIL" && !e.russian.empty() && e.location.line==2,"Native class nil field errors retain bilingual diagnostic and source location");}
+}
+
 void list_copy_to_library() {
     result("begin var l:=Lst(1,2,3);var a:=new integer[5];l.CopyTo(a);Writeln(a);l.CopyTo(a,2);Writeln(a);l.CopyTo(1,a,0,2);Writeln(a);Writeln(l,' ',l.Capacity);end.","[1,2,3,0,0]\n[1,2,1,2,3]\n[2,3,1,2,3]\n[1,2,3] 3\n");
     result("begin var l:=Lst&<integer>;var a:=new integer[0];l.CopyTo(a);l.CopyTo(a,0);l.CopyTo(0,a,0,0);Writeln(a);var n:=Lst(1);n.CopyTo(1,a,0,0);Writeln(a);end.","[]\n[]\n");
@@ -5512,6 +5554,7 @@ int main() {
     list_factories_library();
     explicit_list_types_language();
     list_copy_to_library();
+    native_class_fields_language();
     escaped_identifiers_language();
     structural_output();
     try_console_read();

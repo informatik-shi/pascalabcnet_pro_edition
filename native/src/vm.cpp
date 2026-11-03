@@ -167,6 +167,7 @@ static void execute_impl(const Program& program, std::istream& input, std::ostre
             for (auto& entry:entries) if (entry.retained) entry.retained->captures.clear();
         }
     } closures;
+    ReferenceObjects objects;values.observe_object=[&](const auto& object){objects.observe(object);};
     LinkedRuntime linked{values,{}};
     FileContext files;
     RandomContext random;
@@ -1167,7 +1168,10 @@ static void execute_impl(const Program& program, std::istream& input, std::ostre
             stack.push_back(values.copy(record->items[instruction.operand]->value)); break;
         }
         case Op::ref_field: {
-            auto record = std::get<std::shared_ptr<Aggregate>>(std::get<std::shared_ptr<Cell>>(pop())->value);
+            const auto receiver=pop();
+            auto record=type_info(program,instruction.type).kind==CompoundKind::object_class
+                ? std::get<std::shared_ptr<Aggregate>>(receiver) : std::get<std::shared_ptr<Aggregate>>(std::get<std::shared_ptr<Cell>>(receiver)->value);
+            if (!record || record->nil) trap(instruction,RuntimeError::nil_reference);
             stack.emplace_back(record->items[instruction.operand]); break;
         }
         case Op::length: {

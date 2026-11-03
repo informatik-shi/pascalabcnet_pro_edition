@@ -63,7 +63,8 @@ private:
             for (const auto& argument:node.arguments) expression(*argument);
             emit(Op::ref_index,node.left->type,0,node.location);
         } else if (node.kind == hir::ExprKind::field) {
-            reference(*node.left); emit(Op::ref_field,node.left->type,node.local,node.location);
+            if (type_info(program_,node.left->type).kind==CompoundKind::object_class) expression(*node.left);else reference(*node.left);
+            emit(Op::ref_field,node.left->type,node.local,node.location);
         } else throw Error("E_HIR",node.location,"Expression is not assignable");
     }
     void expression(const hir::Expr& node) {
@@ -1011,7 +1012,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
                 invalid(instruction,"Invalid sequence access mode");
             break;
         case Op::get_field: case Op::ref_field:
-            if (!compound(type) || (type_info(program,type).kind!=CompoundKind::record && !(instruction.op==Op::get_field && type_info(program,type).kind==CompoundKind::tuple))
+            if (!compound(type) || (type_info(program,type).kind!=CompoundKind::record && type_info(program,type).kind!=CompoundKind::object_class && !(instruction.op==Op::get_field && type_info(program,type).kind==CompoundKind::tuple))
                 || instruction.operand>=type_info(program,type).fields.size()) invalid(instruction,"Invalid or writable tuple/record access");
             break;
         case Op::list_add: case Op::list_remove: case Op::list_clear: case Op::list_contains:
@@ -1396,7 +1397,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if (instruction.type==Type::string) { stack.push_back(Type::character); break; }
             stack.push_back(instruction.op == Op::get_index ? type_info(program,instruction.type).element : reference_type(type_info(program,instruction.type).element)); break;
         case Op::get_field: case Op::ref_field:
-            require(instruction.op == Op::get_field ? instruction.type : reference_type(instruction.type));
+            require(instruction.op == Op::get_field || type_info(program,instruction.type).kind==CompoundKind::object_class ? instruction.type : reference_type(instruction.type));
             stack.push_back(instruction.op == Op::get_field ? type_info(program,instruction.type).fields[instruction.operand].type : reference_type(type_info(program,instruction.type).fields[instruction.operand].type)); break;
         case Op::length: require(instruction.type); stack.push_back(compound(instruction.type) && type_info(program,instruction.type).kind==CompoundKind::sequence ? Type::int64 : Type::integer); break;
         case Op::routine_value: stack.push_back(instruction.type); break;
@@ -1498,6 +1499,15 @@ void verify(const Program& program) {
             }
             if (!address && (!compound(type.fields[0].type) || type_info(program,type.fields[0].type).kind!=CompoundKind::school_address))
                 throw Error("E_BYTECODE",{},"CalcIP requires Addr32 fields");
+        } else if (type.kind==CompoundKind::object_class) {
+            if (type.name.empty() || type.element!=Type::invalid || type.key!=Type::invalid || type.fields.size()>256)
+                throw Error("E_BYTECODE",{},"Invalid native class metadata");
+            std::set<std::string> names;
+            for (const auto& field:type.fields) {
+                // References break value initialization cycles, including mutually recursive classes.
+                if (field.global || field.name.empty() || !names.insert(field.name).second || !valid_value_type(program,field.type))
+                    throw Error("E_BYTECODE",{},"Invalid native class field");
+            }
         } else if (type.kind == CompoundKind::record || type.kind==CompoundKind::tuple) {
             if (type.fields.size() > 256) throw Error("E_BYTECODE",{},"Too many record fields");
             if (type.kind==CompoundKind::tuple) {

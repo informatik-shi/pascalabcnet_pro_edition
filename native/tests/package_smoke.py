@@ -202,6 +202,7 @@ def main():
                 ("sequence-prefixes.pas", "Начало: [1,2]\nОстаток: [3,1]\nПосле двух: [7,6]\n"),
                 ("callable-values.pas", "Значение: 14\nЧерез массив: 18\nЧерез параметр: 22\nПустое значение: True\n"),
                 ("library-callables.pas", "Сохранённая функция: [2,4,6]\nОтбор: [1,2]\nСуммы пар: [11,22]\nРезультат для True, True: True\n"),
+                ("class-fields.pas", "Связанные объекты: 9 7\nОбщая ссылка: 11\n11 9 \n"),
                 ("list-copy-to.pas", "Весь список: [0,1,2,3,0]\nДиапазон: [2,3,2,3,0]\nИсходный список: [1,2,3]\n"),
                 ("explicit-list-types.pas", "Пустой типизированный: []\nДобавление: [7]\nФункция: 3\nСимволы: [a,b,c]\nСтрока: [abc]\n"),
                 ("list-factories.pas", "Целые: [1,2,3]\nСтроки: [a,bc,nil]\nПустые: [] []\nКопия массива: [1,2] [9,2]\nВложенный список: [[9,2]]\nКопия последовательности: [9,2]\n"),
@@ -613,6 +614,19 @@ def main():
                                      capture_output=True, cwd=folder, env=env, timeout=10)
             if invalid.returncode != 1 or invalid.stdout or "E_TYPE" not in invalid.stderr or "RU:" not in invalid.stderr:
                 raise RuntimeError(f"{name} array equality element type was not rejected before output")
+            class_error = folder / "Поле класса.pas"
+            class_error.write_text("type C=class n:integer;end;begin\n var c:C;c.n:=1;\nend.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(class_error)], text=True, encoding="utf-8",
+                                     capture_output=True, cwd=folder, env=env, timeout=10)
+            if (invalid.returncode != 1 or "E_NIL" not in invalid.stderr
+                    or "EN: Cannot access a nil reference" not in invalid.stderr
+                    or "RU: Нельзя обратиться к пустой ссылке nil" not in invalid.stderr or f"{class_error}:2:" not in invalid.stderr):
+                raise RuntimeError(f"{name} bilingual class field nil error failed: {invalid.stderr!r}")
+            class_error.write_text("type C=class n:integer;end;begin Writeln('must never run');var c:=new C;c.n:='abc';end.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(class_error)], text=True, encoding="utf-8",
+                                     capture_output=True, cwd=folder, env=env, timeout=10)
+            if invalid.returncode != 1 or invalid.stdout or "E_TYPE" not in invalid.stderr or "RU:" not in invalid.stderr:
+                raise RuntimeError(f"{name} class field type was not checked before output")
             copy_error = folder / "Копирование списка.pas"
             copy_error.write_text("begin\n Lst(1).CopyTo(new integer[0]);\nend.", encoding="utf-8")
             invalid = subprocess.run([runner, "run", str(copy_error)], text=True, encoding="utf-8",
@@ -975,6 +989,7 @@ def main():
             results[-1]["typed_list_factories_and_source_overloads"] = "passed"
             results[-1]["explicit_list_type_arguments"] = "passed"
             results[-1]["typed_list_copy_to"] = "passed"
+            results[-1]["native_class_fields_and_reference_cycles"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 

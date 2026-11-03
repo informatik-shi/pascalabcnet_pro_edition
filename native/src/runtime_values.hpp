@@ -18,6 +18,16 @@ inline bool valid_value_type(const Program& program, Type type) {
     return scalar(type) || type==Type::text_file
         || (compound(type) && static_cast<unsigned>(type) - 64U < program.types.size());
 }
+// Execution-scoped tracking breaks reference cycles without allocating during cleanup.
+struct ReferenceObjects {
+    struct Entry { std::weak_ptr<Aggregate> object;std::shared_ptr<Aggregate> retained; };
+    std::vector<Entry> entries;
+    void observe(const std::shared_ptr<Aggregate>& object) { entries.push_back({object,{}}); }
+    ~ReferenceObjects() {
+        for (auto& entry:entries) entry.retained=entry.object.lock();
+        for (auto& entry:entries) if (entry.retained) entry.retained->items.clear();
+    }
+};
 struct Values {
     const Program& program;
     std::size_t remaining;
@@ -27,6 +37,7 @@ struct Values {
     std::size_t list_storage_remaining=remaining;
     std::function<Value(std::size_t,std::span<const Value>)> invoke{};
     std::function<Value(const std::shared_ptr<Aggregate>&,std::span<const Value>)> invoke_closure{};
+    std::function<void(const std::shared_ptr<Aggregate>&)> observe_object{};
     std::size_t callable_target(const std::shared_ptr<Aggregate>& callable) const {
         if (!callable || callable->nil) throw runtime_error(RuntimeError::nil_reference,location);
         if (!callable->routine || *callable->routine>=program.routines.size()
@@ -71,13 +82,19 @@ struct Values {
         default: {
             const auto& info = type_info(program, type);
             if (buffer_collection(info.kind) && constructed) return buffer(type,0);
+            const bool object=info.kind==CompoundKind::object_class;
+            if (object && constructed) {
+                if (!remaining) throw runtime_error(RuntimeError::allocation_limit,location);
+                --remaining;
+            }
             auto aggregate = std::make_shared<Aggregate>(); aggregate->type = type;
             aggregate->nil = info.kind != CompoundKind::record && !constructed;
             if (info.kind == CompoundKind::linked_list && constructed) aggregate->links = std::make_unique<LinkedLinks>();
             if (endpoint_collection(info.kind) && constructed)
                 aggregate->ends = std::make_unique<std::deque<std::shared_ptr<Cell>>>();
-            if (info.kind == CompoundKind::record)
-                for (const auto& field : info.fields) aggregate->items.push_back(cell(field.type, zero(field.type,false,generic)));
+            if (info.kind == CompoundKind::record || (object && constructed))
+                for (const auto& field : info.fields) aggregate->items.push_back(cell(field.type, zero(field.type,false,generic || object)));
+            if (object && constructed && observe_object) observe_object(aggregate);
             return aggregate;
         }
         }
