@@ -2213,7 +2213,7 @@ private:
         if ((!sort && !fill && name!="copy" && name!="high") || result.arguments.empty() || !compound(result.arguments[0]->type)) return false;
         if (!unit.empty() && !(unit=="pabcsystem" && !fill) && !(unit=="arrays" && (sort || fill))) return false;
         const auto sequence=result.arguments[0]->type; const auto& type=info(sequence,result.location);
-        if (!indexed_sequence(type.kind) || (name=="copy" && type.kind!=CompoundKind::array) || (unit=="arrays" && type.kind!=CompoundKind::array))
+        if (!indexed_sequence(type.kind) || (unit=="arrays" && type.kind!=CompoundKind::array))
             throw Error("E_TYPE",result.location,"Operation requires an array or list");
         if (result.arguments.size()!=(fill ? 2U : 1U) || (sort && (type.rank!=1 || !scalar(type.element))))
             throw Error("E_TYPE",result.location,"Wrong sequence arguments");
@@ -2581,6 +2581,18 @@ private:
     }
     bool bind_collection_operation(hir::Expr& result,const SyntaxExpr& source,bool member) {
         const auto name=source.token.text;
+        if (name=="replace") {
+            if (member && (!compound(result.left->type) || (info(result.left->type,result.location).kind!=CompoundKind::array && info(result.left->type,result.location).kind!=CompoundKind::list))) return false;
+            if (source.arguments.size()!=(member ? 2U : 3U)) throw Error("E_TYPE",result.location,"Replace requires a source and two element values");
+            auto input=member ? std::move(result.left) : expression(*source.arguments[0]);
+            if (!compound(input->type)) throw Error("E_TYPE",result.location,"Replace requires a rank-one typed array or List");
+            const auto type=info(input->type,result.location);
+            if ((type.kind!=CompoundKind::array && type.kind!=CompoundKind::list) || type.rank!=1) throw Error("E_TYPE",result.location,"Replace requires a rank-one typed array or List");
+            auto pair=std::make_unique<hir::Expr>();pair->kind=hir::ExprKind::tuple_literal;pair->location=result.location;pair->type=tuple_type({type.element,type.element},result.location);
+            for (std::size_t i=member ? 0U : 1U;i<source.arguments.size();++i) pair->arguments.push_back(convert(expression(*source.arguments[i],type.element),type.element));
+            result.type=input->type;result.left=std::move(input);result.operation_type=pair->type;result.right=std::move(pair);
+            result.local=static_cast<std::size_t>(CollectionOperation::replace);result.kind=hir::ExprKind::collection_operation;return true;
+        }
         if (name!="fill" && name!="transform" && name!="convertall" && name!="foreach") return false;
         if (source.arguments.size()!=(member ? 1U : 2U)) throw Error("E_TYPE",result.location,"Collection operation requires a source and one value or callback");
         auto input=member ? std::move(result.left) : expression(*source.arguments[0]);

@@ -1060,10 +1060,16 @@ static void execute_impl(const Program& program, std::istream& input, std::ostre
         }
         case Op::array_copy: {
             const auto original=std::get<std::shared_ptr<Aggregate>>(pop());
-            if (original->nil) { stack.emplace_back(original); break; }
-            auto result=values.array(instruction.type,original->items.size());
-            result->rows=original->rows; result->columns=original->columns;
-            for (std::size_t i=0;i<result->items.size();++i) values.write(result->items[i],original->items[i]->value);
+            const bool list=type_info(program,instruction.type).kind==CompoundKind::list;
+            if (original->nil) { if (!list) trap(instruction,RuntimeError::nil_reference);stack.emplace_back(original);break; }
+            auto result=values.array(instruction.type,original->items.size(),true);
+            result->rows=original->rows;result->columns=original->columns;
+            for (std::size_t i=0;i<result->items.size();++i) {
+                if (i>=options.instruction_limit) trap(instruction,RuntimeError::instruction_limit);
+                if ((i&255U)==0 && options.cancelled && options.cancelled()) trap(instruction,RuntimeError::cancelled);
+                values.write(result->items[i],original->items[i]->value);
+                if (list) values.own_list_cell(result->items[i],result);
+            }
             stack.emplace_back(result); break;
         }
         case Op::array_high: {

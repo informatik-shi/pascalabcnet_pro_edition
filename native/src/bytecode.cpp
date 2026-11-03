@@ -619,7 +619,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         case Op::collection_operation: {
             const auto output=instruction.operand>>16,callback=(instruction.operand&65535U)>>3,method=instruction.operand&7U;
             if ((output!=static_cast<std::size_t>(Type::unit) && (output<64 || output>=64+program.types.size()))
-                || (callback && (callback<64 || callback>=64+program.types.size())) || method>static_cast<std::size_t>(CollectionOperation::for_each)
+                || (callback && (callback<64 || callback>=64+program.types.size())) || method>static_cast<std::size_t>(CollectionOperation::replace)
                 || !collection_signature_valid(program,type,static_cast<Type>(output),callback ? static_cast<Type>(callback) : Type::invalid,static_cast<CollectionOperation>(method)))
                 invalid(instruction,"Invalid collection operation signature");
             break;
@@ -927,7 +927,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         case Op::read_lines: case Op::write_lines:
             if (!compound(type) || type_info(program,type).kind!=CompoundKind::array || type_info(program,type).rank!=1 || type_info(program,type).element!=Type::string) invalid(instruction,"File lines require string array"); break;
         case Op::array_copy:
-            if (!compound(type) || type_info(program,type).kind!=CompoundKind::array) invalid(instruction,"Copy requires array"); break;
+            if (!compound(type) || !indexed_sequence(type_info(program,type).kind) || instruction.operand) invalid(instruction,"Copy requires array or List"); break;
         case Op::array_high: case Op::sequence_sort: case Op::sequence_fill:
             if (!compound(type) || !indexed_sequence(type_info(program,type).kind)) invalid(instruction,"Indexed sequence required");
             if (instruction.op==Op::sequence_sort && (!scalar(type_info(program,type).element) || type_info(program,type).rank!=1 || instruction.operand>1)) invalid(instruction,"Invalid sort"); break;

@@ -15,10 +15,15 @@ void work(Values& values,std::uint64_t& used,const ExecutionOptions& options) {
 }
 }
 bool collection_signature_valid(const Program& program,Type source,Type result,Type callback,CollectionOperation method) {
-    if (static_cast<unsigned>(method)>static_cast<unsigned>(CollectionOperation::for_each) || !compound(source)) return false;
+    if (static_cast<unsigned>(method)>static_cast<unsigned>(CollectionOperation::replace) || !compound(source)) return false;
     const auto& input=type_info(program,source); const bool list=input.kind==CompoundKind::list,sequence=input.kind==CompoundKind::sequence;
     if ((input.kind!=CompoundKind::array && !list && !sequence) || (input.rank!=1 && input.rank!=2)
         || ((list || sequence) && input.rank!=1) || (sequence && method!=CollectionOperation::for_each)) return false;
+    if (method==CollectionOperation::replace) {
+        if (result!=source || input.rank!=1 || sequence || !compound(callback)) return false;
+        const auto& pair=type_info(program,callback);
+        return pair.kind==CompoundKind::tuple && pair.fields.size()==2 && pair.fields[0].type==input.element && pair.fields[1].type==input.element;
+    }
     const bool action=method==CollectionOperation::for_each,convert=method==CollectionOperation::convert_all;
     if (action) { if (result!=Type::unit) return false; }
     else if (convert) {
@@ -46,6 +51,15 @@ Value collection_operation(Values& values,Type type,const std::shared_ptr<Aggreg
     if (!source) throw runtime_error(RuntimeError::nil_reference,values.location);
     const auto& input=type_info(values.program,source->type);
     const bool list=input.kind==CompoundKind::list,sequence=input.kind==CompoundKind::sequence,matrix=input.rank==2;
+    if (method==CollectionOperation::replace) {
+        require(source,values.location);const auto pair=std::get<std::shared_ptr<Aggregate>>(argument);
+        const auto old_value=pair->items[0]->value,new_value=pair->items[1]->value;std::uint64_t used=0;
+        for (const auto& cell:source->items) {
+            work(values,used,options);
+            if (values.equal(cell->value,old_value)) values.write(cell,new_value);
+        }
+        return source;
+    }
     const bool fill=method==CollectionOperation::fill_value,generator=method==CollectionOperation::fill_function;
     const bool convert=method==CollectionOperation::convert_all,action=method==CollectionOperation::for_each;
     const auto callback=fill ? std::shared_ptr<Aggregate>{} : std::get<std::shared_ptr<Aggregate>>(argument);

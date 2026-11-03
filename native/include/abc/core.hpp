@@ -164,7 +164,7 @@ struct ArrayViewState {
     bool initialized=false,positioned=false,available=false;
 };
 enum class MatrixBuild { flat_values, jagged_values, rows_arrays, columns_arrays, rows_sequences, columns_sequences, rows_flat, columns_flat };
-enum class CollectionOperation { fill_value, fill_function, transform, convert_all, for_each };
+enum class CollectionOperation { fill_value, fill_function, transform, convert_all, for_each, replace };
 enum class ArrayOperation { fill_array, fill_matrix, transpose, size, equal_array, equal_matrix };
 enum class MatrixMethod { row, column, row_sequence, column_sequence, rows, columns, row_sequences, column_sequences, swap_rows, swap_columns, set_row, set_column, slice_indices, slice_range };
 struct MatrixLineState {

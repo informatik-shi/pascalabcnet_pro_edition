@@ -9,6 +9,7 @@
 #include "../src/array_views.hpp"
 #include "../src/matrix_operations.hpp"
 #include "../src/array_operations.hpp"
+#include "../src/collection_operations.hpp"
 
 #include <iostream>
 #include <array>
@@ -65,6 +66,36 @@ void compile_error(std::string_view source, std::string_view code) {
 
 void runtime_error(std::string_view source, std::string_view code) {
     error([&] { (void)run(source); }, code,source);
+}
+
+void collection_replace_and_copy() {
+    result("begin var a:=Arr(1,2,1); Writeln(a.Replace(1,7)=a,' ',a); Writeln(Replace(a,7,8)); Writeln(PABCSystem.Replace(a,8,9)); var b:=Copy(a); b[0]:=3; Writeln(a,' ',b,' ',a=b); end.","True [7,2,7]\n[8,2,8]\n[9,2,9]\n[9,2,9] [3,2,9] False\n");
+    result("begin var l:=new List<string>; l.Add('abc'); l.Add(nil); l.Add('abc'); Writeln(l.Replace('abc','xyz')=l,' ',l); Writeln(l.Replace(nil,'ok')); var c:=Copy(l); c[0]:='new'; Writeln(l,' ',c,' ',c=l); var n:List<integer>:=nil; Writeln(Copy(n)=nil); end.","True [xyz,nil,xyz]\n[xyz,ok,xyz]\n[xyz,ok,xyz] [new,ok,xyz] False\nTrue\n");
+    result("begin var m:=Matr(2,2,1,2,3,4); var c:=m.Copy; c[0,0]:=9; Writeln(m,' ',c); var a:=new integer[2147483647,0]; var b:=new integer[0,2147483647]; Writeln(Copy(a).Size,' ',b.Copy.Size); end.","[[1,2],[3,4]] [[9,2],[3,4]]\n(2147483647,0) (0,2147483647)\n");
+    result("type R=record n:integer; a:array of integer; end; begin var r:R;r.n:=1;r.a:=Arr(2);var a:=Arr(r,r);var old:=a[0];var value:=r;value.n:=7;Writeln(a.Replace(old,value));a[0].n:=9;Writeln(a[1].n,' ',r.n);var c:=a.Copy;c[0].n:=4;c[0].a[0]:=8;Writeln(a[0].n,' ',a[1].a[0]);end.","[(7,[2]),(7,[2])]\n7 1\n9 8\n");
+    result("type R=record n:integer; end;procedure Change(var n:integer;a:array of R;oldValue,newValue:R);begin a.Replace(oldValue,newValue);Inc(n);end;begin var r:R;r.n:=1;var v:R;v.n:=5;var a:=Arr(r);Change(a[0].n,a,r,v);Writeln(a[0].n);end.","6\n");
+    result("begin var a:=Arr(1);var b:=Arr(1);var values:=Arr(a,a,b);values.Replace(a,b);Writeln(values[0]=b,' ',values[1]=b,' ',values[2]=b);var copy:=Copy(values);copy[0][0]:=9;Writeln(b[0]);end.","True True True\n9\n");
+    result("type R=record n:integer; end;begin var r:R;r.n:=1;var l:=new List<R>;l.Add(r);var c:=Copy(l);c[0].n:=9;Writeln(l[0].n,' ',c[0].n);end.","1 9\n");
+    result("begin var l:=new List<integer>;l.Add(1);l.Add(2);foreach var x in l do begin l.Replace(9,7);Write(x);end;Writeln;var c:=Copy(l);foreach var x in c do begin l[0]:=9;Write(x);end;end.","12\n12");
+    result("begin var a:=new integer[0];var l:=new List<integer>;Writeln(a.Replace(1,2).Length,' ',l.Replace(1,2).Count,' ',Copy(l)=l);end.","0 0 False\n");
+    result("var log:string;var a:array of integer;function A1:array of integer;begin log:=log+'A';Result:=a;end;function OldValue:integer;begin log:=log+'O';Result:=1;end;function NewValue:integer;begin log:=log+'N';Result:=7;end;begin a:=Arr(1);Replace(A1(),OldValue(),NewValue());Writeln(a,' ',log);end.","[7] AON\n");
+    for (const auto source:{"begin var a:array of integer:=nil;Copy(a);end.","begin var a:array[,] of integer:=nil;a.Copy;end.","begin var a:array of integer:=nil;a.Replace(1,2);end.","begin var l:List<integer>:=nil;Replace(l,1,2);end."}) runtime_error(source,"E_NIL");
+    runtime_error("begin var l:=new List<integer>;l.Add(1);foreach var x in l do l.Replace(1,1);end.","E_MODIFIED");
+    runtime_error("type R=record n:integer;end;begin var r:R;var l:=new List<R>;l.Add(r);var c:=Copy(l);foreach var x in c do c[0].n:=1;end.","E_MODIFIED");
+    for (const auto source:{"begin Arr(1).Replace(1,'abc');end.","begin new integer[1,1].Replace(0,1);end.","begin Seq(1).Replace(1,2);end.","begin Arr(1).Replace(1);end."})compile_error(source,"E_TYPE");
+    abc::ExecutionOptions options;options.instruction_limit=50;
+    error([&]{(void)run("begin var a:=new integer[1000];Copy(a);end.","",options);},"E_LIMIT");
+    error([&]{(void)run("begin var a:=new integer[1000];a.Replace(0,1);end.","",options);},"E_LIMIT");
+    options={};int polls=0;options.cancelled=[&]{return ++polls>=2;};
+    error([&]{(void)run("begin var a:=new integer[1000];Copy(a);end.","",options);},"E_CANCELLED");
+    options={};options.allocation_limit=30;
+    error([&]{(void)run("begin var a:=new integer[20];Copy(a);end.","",options);},"E_LIMIT");
+    for (const auto source:{"begin Arr(1).Replace(1,2);end.","begin var l:=new List<integer>;Copy(l);end."}) {
+        const auto good=abc::compile(source);auto bad=good;
+        for(auto& op:bad.code) if(op.op==abc::Op::collection_operation) op.operand=(op.operand&~std::size_t{7})|7;
+        else if(op.op==abc::Op::array_copy)op.operand=1;
+        error([&]{abc::verify(bad);},"E_BYTECODE");
+    }
 }
 
 void conditional_expressions_language() {
@@ -5224,6 +5255,7 @@ int main() {
     matrix_slices_library();
     matrix_construction_library();
     conditional_expressions_language();
+    collection_replace_and_copy();
     escaped_identifiers_language();
     structural_output();
     try_console_read();

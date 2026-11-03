@@ -1,3 +1,5 @@
+    {"Replace requires a source and two element values","Replace требует источник и два значения типа элемента"},
+    {"Replace requires a rank-one typed array or List","Replace требует одномерный типизированный массив или List"},
     {"BigInteger ToString currently takes no arguments","ToString для BigInteger пока вызывается без аргументов"},
     {"Conditional branches require known value types","Ветви условного выражения должны возвращать значения известных типов"},
     {"Conditional nil with a value type requires Nullable support","Для nil и значимого типа в условном выражении требуется поддержка Nullable"},
