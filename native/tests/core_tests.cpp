@@ -67,6 +67,44 @@ void runtime_error(std::string_view source, std::string_view code) {
     error([&] { (void)run(source); }, code,source);
 }
 
+void conditional_expressions_language() {
+    result("begin Writeln(if True then 1 else 2); Writeln(False ? 1 : 2); Writeln(if False then 1 else if True then 2 else 3); Writeln(True ? (False ? 1 : 2) : 3); Writeln(1+(if True then 2 else 3)*4); end.","1\n2\n2\n2\n9\n");
+    result("var log:string; function C:boolean; begin log:=log+'C'; Result:=False; end; function V(c:char):integer; begin log:=log+c; Result:=Ord(c); end; begin var x:=if C then V('A') else V('B'); Writeln(x,' ',log); end.","66 CB\n");
+    result("begin Writeln(if True then 7 else 1 div 0); Writeln(False ? 1 div 0 : 8); Writeln((if True then Arr(1) else new integer[-1]).Length); Writeln(True ? 'abc' : nil); Writeln((if False then 'abc' else nil)=nil); end.","7\n8\n1\nabc\nTrue\n");
+    result("begin var a:=Arr(1); var b:=Arr(2); var c:=if False then a else b; c[0]:=9; Writeln(a,' ',b,' ',c=b); var n:=True ? nil : a; Writeln(n=nil); var s:=if True then 'abc' else Seq('x'); Writeln(s.ToArray); end.","[1] [9] True\nTrue\n[a,b,c]\n");
+    result("type R=record x:integer; a:array of integer; end; begin var r:R;r.x:=1;r.a:=Arr(2);var s:=r;s.x:=3;var t:=if True then r else s;t.x:=9;t.a[0]:=8;Writeln(r.x,' ',s.x,' ',r.a[0]);end.","1 3 8\n");
+    result("function Add(x:integer):integer;begin Result:=x+1;end;function Sub(x:integer):integer;begin Result:=x-1;end;begin var f:integer->integer:=if True then Add else Sub;Writeln(f(3));var g:=False ? f : default(integer->integer);Writeln(g=nil);Writeln((if False then Sub else Add)(5));end.","4\nTrue\n6\n");
+    result("begin var k:=3; var f:integer->integer:=if True then (x->x+k) else (x->x-k); Inc(k); Writeln(f(2)); var values:=Arr(-2,0,3).Select(x->(if x<0 then -x else x)).ToArray; Writeln(values); end.","6\n[2,0,3]\n");
+    result("const a=if True then 3 else 1 div 0; const b=False ? 1 div 0 : byte(7); begin var c:byte:=if True then 5 else 6; Writeln(a,' ',b,' ',c); end.","3 7 5\n");
+    result("begin var &if:=True; Writeln(if &if then (1,2) else (3,4)); Writeln((True ? 'abc' : 'def')[2]); Writeln(False ? 1 : 2:4); end.","(1,2)\nb\n   2\n");
+    result("begin var m:=MatrByRow(Seq(Seq(1,2),Seq(3))); Writeln(if m.RowCount=0 then 0 else m.Row(0).Length); var a:=Arr(1,2).ConvertAll(x->(x=1 ? 'first' : 'last')); Writeln(a); end.","2\n[first,last]\n");
+    result("begin var x:=123bi; Writeln(x.ToString,' ',x.ToString()); Writeln((if False then x else 456bi).ToString); end.","123 123\n456\n");
+    for (const auto& [branches,expected]:std::vector<std::pair<std::string,abc::Type>>{
+        {"byte(1) else byte(2)",abc::Type::byte},{"byte(1) else shortint(2)",abc::Type::integer},
+        {"word(1) else shortint(2)",abc::Type::integer},{"byte(1) else word(2)",abc::Type::word},
+        {"1 else int64(2)",abc::Type::int64},{"1 else 2.5",abc::Type::real},
+        {"'a' else 'abc'",abc::Type::string},{"longword(1) else shortint(2)",abc::Type::int64},
+        {"1bi else 2",abc::Type::big_integer},{"nil else 'abc'",abc::Type::string}}) {
+        const auto p=abc::compile("begin var x:=if True then "+branches+"; end.");require(p.locals[0].type==expected,"Conditional expression has a fixed source-compatible common type: "+branches);
+    }
+    for (const auto source:{
+        "begin var x:=if 1 then 2 else 3; end.","begin var x:=True ? nil : nil; end.",
+        "begin var x:=if True then 1 else 'abc'; end.","begin var x:=if True then Arr(1) else Arr(1.5); end.",
+        "procedure P;begin end;begin var x:=True ? P() : P(); end.",
+        "procedure P(var x:integer);begin end;begin var x:=1;var y:=2;P(if True then x else y);end."})compile_error(source,"E_TYPE");
+    compile_error("begin var x:=if True then 1 else unknown; end.","E_NAME");
+    compile_error("begin var x:=False ? 1 : nil; end.","E_UNSUPPORTED");
+    compile_error("begin var x:=if True then 1; end.","E_SYNTAX");
+    compile_error("begin var x:=True ? 1; end.","E_SYNTAX");
+    runtime_error("begin Writeln(if False then 1 else 1 div 0); end.","E_DIV_ZERO");
+    runtime_error("begin Writeln((if True then nil else Arr(1)).Length); end.","E_NIL");
+    compile_error("begin Writeln('must never run'); var x:=if True then 1 else 'abc'; end.","E_TYPE");
+    const auto good=abc::compile("begin var x:=if True then 1 else 2; Writeln(x); end.");
+    auto bad=good;for(auto& op:bad.code)if(op.op==abc::Op::jump_false){op.operand=static_cast<std::size_t>(std::find_if(bad.code.begin(),bad.code.end(),[](const auto& item){return item.op==abc::Op::store || item.op==abc::Op::store_global;})-bad.code.begin());break;}
+    error([&]{abc::verify(bad);},"E_BYTECODE");
+    std::string deep="begin var x:=";for(int i=0;i<300;++i)deep+="if True then 1 else ";deep+="2;end.";compile_error(deep,"E_LIMIT");
+}
+
 void matrix_construction_library() {
     result("begin Writeln(Matr(2,3,1,2,3,4,5,6)); Writeln(PABCSystem.Matr(2,2,Arr(4,5,6,7))); Writeln(Matr(Arr(1,2),Arr(3))); Writeln(Matr(Arr(Arr(7),Arr(8,9)))); Writeln(Matr(Arr(1,2))); end.","[[1,2,3],[4,5,6]]\n[[4,5],[6,7]]\n[[1,2],[3,0]]\n[[7,0],[8,9]]\n[[1,2]]\n");
     result("begin var a:=Arr(Arr(1,2),Arr(3)); Writeln(MatrByRow(a)); Writeln(MatrByCol(a)); Writeln(MatrByRow(Seq(Arr(1,2),Arr(3)))); Writeln(PABCSystem.MatrByCol(Seq(Arr(1,2),Arr(3)))); end.","[[1,2],[3,0]]\n[[1,3],[2,0]]\n[[1,2],[3,0]]\n[[1,3],[2,0]]\n");
@@ -5185,6 +5223,7 @@ int main() {
     collection_callbacks_library();
     matrix_slices_library();
     matrix_construction_library();
+    conditional_expressions_language();
     escaped_identifiers_language();
     structural_output();
     try_console_read();

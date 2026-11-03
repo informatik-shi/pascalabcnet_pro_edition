@@ -7,7 +7,7 @@ std::unique_ptr<Expr> clone_constant(const Expr& source) {
     if (compound(source.type) || source.type==Type::unit || source.type==Type::text_file) return {};
     switch (source.kind) {
     case ExprKind::literal: case ExprKind::convert: case ExprKind::unary:
-    case ExprKind::binary: case ExprKind::default_value: break;
+    case ExprKind::binary: case ExprKind::default_value: case ExprKind::conditional: break;
     case ExprKind::call: {
         const auto function=stdlib::signatures()[source.local].function;
         if (function!=stdlib::Function::integer_cast && function!=stdlib::Function::ordinal

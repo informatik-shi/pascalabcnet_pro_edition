@@ -202,6 +202,7 @@ def main():
                 ("sequence-prefixes.pas", "Начало: [1,2]\nОстаток: [3,1]\nПосле двух: [7,6]\n"),
                 ("callable-values.pas", "Значение: 14\nЧерез массив: 18\nЧерез параметр: 22\nПустое значение: True\n"),
                 ("library-callables.pas", "Сохранённая функция: [2,4,6]\nОтбор: [1,2]\nСуммы пар: [11,22]\nРезультат для True, True: True\n"),
+                ("conditional-expressions.pas", "Модули: [3,0,4]\nШирина: 2\nВыбор: есть строки\nНеисполняемая ветвь: 7\n"),
                 ("matrix-construction.pas", "По значениям: [[1,2,3],[4,5,6]]\nПо строкам: [[1,2,3],[4,5,0]]\nПо столбцам: [[1,4],[2,5],[3,0]]\nИз последовательности: [[1,3,0],[2,4,0]]\nВложенные последовательности: [[7,8],[9,0]]\nЗначение по умолчанию: True\n"),
                 ("matrix-slices.pas", "Матрица: [[0,1,2,3],[10,11,12,13],[20,21,22,23]]\nИндексы: [[23,21],[3,1],[23,21]]\nГраницы: [[11,12,13],[21,22,23]]\nПустые строки: (0,4)\nПустые столбцы: (0,2)\n"),
                 ("collection-callbacks.pas", "Преобразование: [1,3,5]\nЗаполнение: [0,2,4]\nНовый тип: [0,2,4]\nМатрица: [[0,2],[11,13]]\nДействия: 30\nСписок: [10,11]\n"),
@@ -603,6 +604,19 @@ def main():
                                      capture_output=True, cwd=folder, env=env, timeout=10)
             if invalid.returncode != 1 or invalid.stdout or "E_TYPE" not in invalid.stderr or "RU:" not in invalid.stderr:
                 raise RuntimeError(f"{name} array equality element type was not rejected before output")
+            conditional_error = folder / "Условное выражение.pas"
+            conditional_error.write_text("begin\n Writeln(if False then 7 else 1 div 0);\nend.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(conditional_error)], text=True, encoding="utf-8",
+                                     capture_output=True, cwd=folder, env=env, timeout=10)
+            if (invalid.returncode != 1 or "E_DIV_ZERO" not in invalid.stderr
+                    or "EN: Division by zero" not in invalid.stderr
+                    or "RU: Деление на ноль" not in invalid.stderr or f"{conditional_error}:2:" not in invalid.stderr):
+                raise RuntimeError(f"{name} bilingual conditional branch error failed: {invalid.stderr!r}")
+            conditional_error.write_text("begin Writeln('must never run'); var x:=if True then 1 else 'abc'; end.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(conditional_error)], text=True, encoding="utf-8",
+                                     capture_output=True, cwd=folder, env=env, timeout=10)
+            if invalid.returncode != 1 or invalid.stdout or "E_TYPE" not in invalid.stderr or "RU:" not in invalid.stderr:
+                raise RuntimeError(f"{name} conditional branch types were not checked before output")
             build_error = folder / "Создание матрицы.pas"
             build_error.write_text("begin\n Matr(2,2,1,2,3);\nend.", encoding="utf-8")
             invalid = subprocess.run([runner, "run", str(build_error)], text=True, encoding="utf-8",
@@ -838,6 +852,7 @@ def main():
             results[-1]["typed_collection_callbacks_and_bilingual_diagnostics"] = "passed"
             results[-1]["typed_matrix_slices_and_bilingual_diagnostics"] = "passed"
             results[-1]["typed_matrix_construction_and_bilingual_diagnostics"] = "passed"
+            results[-1]["typed_conditional_expressions_and_bilingual_diagnostics"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 

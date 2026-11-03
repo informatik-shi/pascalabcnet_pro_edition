@@ -68,6 +68,12 @@ private:
     void expression(const hir::Expr& node) {
         if (node.type == Type::invalid) throw Error("E_HIR", node.location, "Unresolved expression type");
         switch (node.kind) {
+        case hir::ExprKind::conditional: {
+            expression(*node.left);const auto otherwise=emit(Op::jump_false,Type::invalid,0,node.location);
+            expression(*node.right);const auto finish=emit(Op::jump,Type::invalid,0,node.location);
+            (*code_)[otherwise].operand=code_->size();expression(*node.arguments[0]);
+            (*code_)[finish].operand=code_->size();break;
+        }
         case hir::ExprKind::generator:
             for (const auto& argument:node.arguments) expression(*argument);
             emit(Op::generator,node.type,(static_cast<std::size_t>(node.operation_type)<<8)|node.local,node.location); break;

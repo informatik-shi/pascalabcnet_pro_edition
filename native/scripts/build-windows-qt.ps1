@@ -59,6 +59,7 @@ Text/TextFile: Assign, Reset, Rewrite, Append, Read/Readln, Write/Writeln, Eof, 
 ConvertAll, Transform, Fill и ForEach: examples/collection-callbacks.pas.
 Срезы матриц по индексам и включительным границам: examples/matrix-slices.pas.
 Конструкторы Matr, MatrByRow и MatrByCol: examples/matrix-construction.pas.
+Условные выражения if/then/else и ?: examples/conditional-expressions.pas.
 Прямой захват управляющей переменной цикла пока не перенесён; используйте отдельную переменную-копию.
 Совместимость с PascalABC.NET частичная.
 Русские имена и НОД/НОК: examples/russian-identifiers.pas. Массивные GCD/LCM: examples/school-folds.pas.

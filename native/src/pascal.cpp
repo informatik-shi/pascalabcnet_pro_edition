@@ -102,7 +102,7 @@ public:
         std::string symbol(1, take());
         if ((symbol == ":" && peek() == '=') || (symbol == "<" && (peek() == '=' || peek() == '>'))
             || (symbol == ">" && peek() == '=') || (symbol == "-" && peek() == '>')) symbol += take();
-        if (std::string_view(";:,.()[]+-*/=<> ").find(symbol.front()) == std::string_view::npos)
+        if (std::string_view(";:,.()[]+-*/=<>? ").find(symbol.front()) == std::string_view::npos)
             throw Error("E_SYNTAX", start, "Unsupported character in source");
         return {TokenKind::symbol, std::move(symbol), start};
     }
@@ -162,7 +162,7 @@ private:
     SourceLocation position_;
 };
 
-enum class SyntaxExprKind { literal, literal_group, name, unary, binary, call, index, field, member_call, construction, formatted, tuple, typed_default, value_call, lambda };
+enum class SyntaxExprKind { literal, literal_group, name, unary, binary, call, index, field, member_call, construction, formatted, tuple, typed_default, value_call, lambda, conditional };
 struct SyntaxType {
     Token token;
     std::string kind;
@@ -193,6 +193,13 @@ std::unique_ptr<SyntaxExpr> make_expression(SyntaxExprKind kind, Token token,
     const auto depth = 1 + std::max(left ? left->depth : 0, right ? right->depth : 0);
     if (depth > 256) throw Error("E_LIMIT", token.location, "Expression tree nesting limit exceeded");
     return std::make_unique<SyntaxExpr>(SyntaxExpr{kind, std::move(token), std::move(left), std::move(right), depth, {}});
+}
+
+std::unique_ptr<SyntaxExpr> make_conditional(Token token,std::unique_ptr<SyntaxExpr> condition,std::unique_ptr<SyntaxExpr> yes,std::unique_ptr<SyntaxExpr> no) {
+    auto result=make_expression(SyntaxExprKind::conditional,std::move(token),std::move(condition),std::move(yes));
+    result->depth=std::max(result->depth,no->depth+1);
+    if (result->depth>256) throw Error("E_LIMIT",result->token.location,"Expression tree nesting limit exceeded");
+    result->arguments.push_back(std::move(no));return result;
 }
 
 enum class SyntaxStmtKind { block, declaration, constant_declaration, assignment, print, read, conditional, loop, increment, string_mutation, call, return_stmt,
@@ -614,11 +621,20 @@ private:
     }
     std::unique_ptr<SyntaxExpr> expression(int minimum = 1) {
         DepthGuard guard(depth_, current_.location);
+        if (minimum==1 && is("if")) {
+            const auto token=consume();auto condition=expression();expect("then");
+            auto yes=expression();expect("else");auto no=expression();
+            return make_conditional(token,std::move(condition),std::move(yes),std::move(no));
+        }
         auto left = prefix();
         while (current_.kind != TokenKind::text && !current_.escaped && precedence(current_.text) >= minimum) {
             const auto op = consume();
             auto right = expression(precedence(op.text) + 1);
             left = make_expression(SyntaxExprKind::binary, op, std::move(left), std::move(right));
+        }
+        if (minimum==1 && is("?")) {
+            const auto token=consume();auto yes=expression();expect(":");auto no=expression();
+            left=make_conditional(token,std::move(left),std::move(yes),std::move(no));
         }
         if (minimum==1 && accept("->")) {
             if (left->kind!=SyntaxExprKind::name) fail("Lambda parameter must be an identifier");
@@ -1328,6 +1344,30 @@ private:
         result->location = source.token.location;
         result->operation = source.token.text;
         switch (source.kind) {
+        case SyntaxExprKind::conditional: {
+            result->kind=hir::ExprKind::conditional;result->left=convert(expression(*source.left),Type::boolean);
+            auto yes=expression(*source.right,expected);
+            auto no=expression(*source.arguments[0],callable_type(yes->type) ? yes->type : expected);
+            const auto a=yes->type,b=no->type;
+            if (a==Type::unit || b==Type::unit || (a==Type::nil && b==Type::nil))
+                throw Error("E_TYPE",result->location,"Conditional branches require known value types");
+            const auto reference=[&](Type type) {return type==Type::string || type==Type::text_file || (compound(type) && info(type,result->location).kind!=CompoundKind::record);};
+            auto type=Type::invalid;
+            if (a==b) type=a;
+            else if (a==Type::nil || b==Type::nil) {
+                type=a==Type::nil ? b : a;
+                if (!reference(type)) throw Error("E_UNSUPPORTED",result->location,"Conditional nil with a value type requires Nullable support");
+            } else if (can_widen(a,b) || sequence_view(a,b,result->location)) type=b;
+            else if (can_widen(b,a) || sequence_view(b,a,result->location)) type=a;
+            else if (integer_type(a) && integer_type(b)) {
+                // Source LUB promotes unrelated small integer types to integer.
+                if (a==Type::uint64 || b==Type::uint64) type=Type::uint64;
+                else if (a==Type::int64 || b==Type::int64 || a==Type::longword || b==Type::longword) type=Type::int64;
+                else type=Type::integer;
+            }
+            if (type==Type::invalid) throw Error("E_TYPE",result->location,"Conditional branches have incompatible static types");
+            result->right=convert(std::move(yes),type);result->arguments.push_back(convert(std::move(no),type));result->type=type;break;
+        }
         case SyntaxExprKind::lambda: throw Error("E_HIR",result->location,"Lambda escaped typed binding");
         case SyntaxExprKind::value_call:
             result->left=expression(*source.left); bind_value_call(*result,source.arguments); break;
@@ -1572,6 +1612,10 @@ private:
                 result->arguments.push_back(std::move(result->left));
                 for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
                 result->kind=hir::ExprKind::call; bind_builtin(*result,source.token.text,"school"); break;
+            }
+            if (receiver==Type::big_integer && source.token.text=="tostring") {
+                if (!source.arguments.empty()) throw Error("E_TYPE",result->location,"BigInteger ToString currently takes no arguments");
+                result->arguments.push_back(std::move(result->left));(void)bind_object_text(*result,"objecttostring","pabcsystem");break;
             }
             if (receiver==Type::big_integer && (source.token.text=="sign" || source.token.text=="iszero" || source.token.text=="isone" || source.token.text=="iseven")) {
                 if (source.kind==SyntaxExprKind::member_call || !source.arguments.empty()) throw Error("E_TYPE",result->location,"BigInteger property is not callable");
@@ -3341,7 +3385,7 @@ private:
         if (compound(node.type) || node.type==Type::unit || node.type==Type::text_file || node.type==Type::nil) return false;
         switch (node.kind) {
         case hir::ExprKind::literal: case hir::ExprKind::convert: case hir::ExprKind::unary:
-        case hir::ExprKind::binary: case hir::ExprKind::default_value: case hir::ExprKind::length: break;
+        case hir::ExprKind::binary: case hir::ExprKind::default_value: case hir::ExprKind::length: case hir::ExprKind::conditional: break;
         case hir::ExprKind::local: return constant_locals_.contains(node.local);
         case hir::ExprKind::call:
             if (!stdlib::signatures()[node.local].unit.empty()) return false;

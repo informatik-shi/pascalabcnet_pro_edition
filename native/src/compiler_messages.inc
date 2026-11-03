@@ -1,3 +1,7 @@
+    {"BigInteger ToString currently takes no arguments","ToString для BigInteger пока вызывается без аргументов"},
+    {"Conditional branches require known value types","Ветви условного выражения должны возвращать значения известных типов"},
+    {"Conditional nil with a value type requires Nullable support","Для nil и значимого типа в условном выражении требуется поддержка Nullable"},
+    {"Conditional branches have incompatible static types","Ветви условного выражения имеют несовместимые статические типы"},
     {"Matr requires values with a known element type","Matr требует значения с известным типом элемента"},
     {"Matr requires one-dimensional row arrays of a known element type","Matr требует одномерные массивы строк с известным типом элемента"},
     {"Matrix construction requires nested rows or columns, or dimensions and a sequence","Для создания матрицы требуются вложенные строки или столбцы либо размеры и последовательность"},
