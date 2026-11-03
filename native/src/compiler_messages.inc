@@ -1,3 +1,7 @@
+    {"Wrong file lines argument count","Неверное число аргументов файловой операции со строками"},
+    {"File lines require statically typed strings","Файловая операция требует строки с известным типом"},
+    {"File lines require string array or sequence","Требуется массив или последовательность строк"},
+    {"Invalid file lines encoding type","Некорректный тип кодировки файловой операции"},
     {"Unknown or unsupported Encoding type","Неизвестный или неподдерживаемый тип кодировки"},
     {"Wrong encoding argument count","Неверное число аргументов операции кодировки"},
     {"Encoding property is not callable","Свойство кодировки нельзя вызывать как функцию"},

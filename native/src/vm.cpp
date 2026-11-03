@@ -27,6 +27,7 @@
 #include "timing.hpp"
 #include "encoding.hpp"
 #include "file_encoding.hpp"
+#include "file_lines.hpp"
 #include "big_integer_runtime.hpp"
 
 #include <charconv>
@@ -1080,32 +1081,13 @@ static void execute_impl(const Program& program, std::istream& input, std::ostre
             const auto result=stdlib::invoke(instruction.operand,arguments,instruction.location,services); values.write(target,result); break;
         }
         case Op::read_lines: {
-            const auto path=pop(); const auto text=read_text_file(files,string_text(path),instruction.location);
-            auto result=values.array(instruction.type,0); std::size_t start=0;
-            for (std::size_t i=0;i<text.size();++i) if (text[i]==u'\r' || text[i]==u'\n') {
-                result->items.push_back(values.cell(Type::string,std::u16string(text.substr(start,i-start))));
-                if (text[i]==u'\r' && i+1<text.size() && text[i+1]==u'\n') ++i;
-                start=i+1;
-            }
-            if (start<text.size()) result->items.push_back(values.cell(Type::string,std::u16string(text.substr(start))));
-            stack.emplace_back(result); break;
+            const auto encoding=instruction.operand ? std::optional<Value>{pop()} : std::nullopt;const auto path=pop();
+            stack.emplace_back(file_read_lines(values,files,instruction.type,path,encoding ? &*encoding : nullptr,options));break;
         }
         case Op::write_lines: {
-            const auto lines=std::get<std::shared_ptr<Aggregate>>(pop()); const auto path=pop();
-            if (lines->nil) trap(instruction,RuntimeError::nil_reference);
-            std::u16string text;
-            for (const auto& line:lines->items) {
-                const auto& part=string_text(line->value);
-#ifdef _WIN32
-                const auto newline=u"\r\n";
-#else
-                const auto newline=u"\n";
-#endif
-                if (part.size()>1'048'576 || text.size()>1'048'576-part.size()) trap(instruction,RuntimeError::file_limit);
-                text+=part; text+=newline;
-                if (text.size()>1'048'576) trap(instruction,RuntimeError::file_limit);
-            }
-            write_text_file(files,string_text(path),text,instruction.location); break;
+            const auto encoding=instruction.operand ? std::optional<Value>{pop()} : std::nullopt;
+            const auto source=std::get<std::shared_ptr<Aggregate>>(pop());const auto path=pop();
+            file_write_lines(values,files,path,source,encoding ? &*encoding : nullptr,options);break;
         }
         case Op::array_copy: {
             const auto original=std::get<std::shared_ptr<Aggregate>>(pop());

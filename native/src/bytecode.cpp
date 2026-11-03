@@ -296,9 +296,11 @@ private:
             for (const auto& argument : node.arguments) expression(*argument);
             emit(Op::endpoint_call,node.left->type,node.local,node.location); break;
         case hir::ExprKind::read_lines:
-            expression(*node.arguments[0]); emit(Op::read_lines,node.type,0,node.location); break;
+            for(const auto& argument:node.arguments)expression(*argument);
+            emit(Op::read_lines,node.type,node.arguments.size()==2 ? static_cast<std::size_t>(node.arguments.back()->type) : 0,node.location);break;
         case hir::ExprKind::write_lines:
-            expression(*node.arguments[0]); expression(*node.arguments[1]); emit(Op::write_lines,node.arguments[1]->type,0,node.location); break;
+            for(const auto& argument:node.arguments)expression(*argument);
+            emit(Op::write_lines,node.arguments[1]->type,node.arguments.size()==3 ? static_cast<std::size_t>(node.arguments.back()->type) : 0,node.location);break;
         case hir::ExprKind::array_copy: case hir::ExprKind::array_high: case hir::ExprKind::sequence_sort: case hir::ExprKind::sequence_fill:
             expression(*node.left);
             if (node.right) expression(*node.right);
@@ -983,8 +985,15 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             break;
         case Op::encoding_call:
             if(instruction.operand>static_cast<std::size_t>(EncodingMethod::text_append_named) || !encoding_signature_valid(program,type,static_cast<EncodingMethod>(instruction.operand)))invalid(instruction,"Invalid Encoding call metadata");break;
-        case Op::read_lines: case Op::write_lines:
-            if (!compound(type) || type_info(program,type).kind!=CompoundKind::array || type_info(program,type).rank!=1 || type_info(program,type).element!=Type::string) invalid(instruction,"File lines require string array"); break;
+        case Op::read_lines: case Op::write_lines: {
+            if(!compound(type))invalid(instruction,"File lines require string array or sequence");
+            const auto& source=type_info(program,type);
+            if((source.kind!=CompoundKind::array && (instruction.op!=Op::write_lines || source.kind!=CompoundKind::sequence))
+                || source.rank!=1 || source.element!=Type::string)invalid(instruction,"File lines require string array or sequence");
+            if(instruction.operand && (instruction.operand<64 || instruction.operand-64>=program.types.size()
+                || type_info(program,static_cast<Type>(instruction.operand)).kind!=CompoundKind::encoding))invalid(instruction,"Invalid file lines encoding type");
+            break;
+        }
         case Op::array_copy:
             if (!compound(type) || !indexed_sequence(type_info(program,type).kind) || instruction.operand) invalid(instruction,"Copy requires array or List"); break;
         case Op::array_high: case Op::sequence_sort: case Op::sequence_fill:
@@ -1371,8 +1380,8 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             for(auto parameter=parameters.rbegin();parameter!=parameters.rend();++parameter)require(*parameter);
             const auto result=encoding_result(program,instruction.type,method);if(result!=Type::unit)stack.push_back(result);break;
         }
-        case Op::read_lines: require(Type::string); stack.push_back(instruction.type); break;
-        case Op::write_lines: require(instruction.type); require(Type::string); break;
+        case Op::read_lines: if(instruction.operand)require(static_cast<Type>(instruction.operand));require(Type::string); stack.push_back(instruction.type); break;
+        case Op::write_lines: if(instruction.operand)require(static_cast<Type>(instruction.operand));require(instruction.type); require(Type::string); break;
         case Op::array_copy: require(instruction.type); stack.push_back(instruction.type); break;
         case Op::array_high: require(instruction.type); stack.push_back(Type::integer); break;
         case Op::swap_values: require(reference_type(instruction.type)); require(reference_type(instruction.type)); break;

@@ -81,6 +81,8 @@ Sleep, Milliseconds и MillisecondsDelta: examples/timing.pas.
 Encoding, CP1251/ASCII/Unicode и выбор кодировки ReadAllText/WriteAllText: examples/text-encodings.pas.
 DefaultEncoding изначально CP1251. Его смена и явные Encoding-перегрузки Text: examples/default-encoding.pas.
 Для сохранения всех Unicode-символов выберите Encoding.UTF8/Unicode; полный API Encoding ещё переносится.
+ReadAllLines/WriteAllLines с Encoding и WriteLines для последовательностей: examples/file-lines.pas.
+ReadLines и Text.Lines ещё не перенесены.
 Прямой захват управляющей переменной цикла пока не перенесён; используйте отдельную переменную-копию.
 Совместимость с PascalABC.NET частичная.
 Русские имена и НОД/НОК: examples/russian-identifiers.pas. Массивные GCD/LCM: examples/school-folds.pas.

@@ -4828,6 +4828,55 @@ void file_library() {
     };
     const auto path=directory/fs::path(u8"Текст.txt"), lines=directory/"lines.txt";
     const auto file=quote(path), linefile=quote(lines);
+    const std::string native_newline=
+#ifdef _WIN32
+        "\r\n";
+#else
+        "\n";
+#endif
+    for(const auto code:{1251,65001,1200,1201,12000,12001,20127}) {
+        const auto e="Encoding.GetEncoding("+std::to_string(code)+")";
+        const auto sample=code==1251 ? "Я??" : code==20127 ? "???" : "Я🌍";
+        result("begin PABCSystem.WriteAllLines("+file+",Arr('Я🌍','','tail'),"+e+");var a:=PABCSystem.ReadAllLines("+file+","+e+");Writeln(a.Length,' ',a);end.","3 ["+std::string(sample)+",,tail]\n");
+        result("begin WriteLines("+file+",Seq('Я🌍','','tail'),"+e+");Writeln(ReadAllLines("+file+","+e+"));end.","["+std::string(sample)+",,tail]\n");
+    }
+    result("begin var a:=new string[3];a[0]:=nil;a[1]:='';a[2]:='tail';WriteAllLines("+file+",a,Encoding.Unicode);Writeln(ReadAllLines("+file+"));end.","[,,tail]\n");
+    result("begin WriteAllLines("+file+",new string[0],Encoding.UTF8);Writeln(ReadAllLines("+file+").Length);end.","0\n");
+    {std::ifstream in(path,std::ios::binary);const std::string bytes((std::istreambuf_iterator<char>(in)),{});require(bytes=="\xef\xbb\xbf","Empty WriteAllLines emits the selected preamble");}
+    result("begin WriteLines("+file+",Arr('one','two'));Writeln(ReadAllLines("+file+"));WriteLines("+file+",Lst('aa','bb'),Encoding.UTF8);Writeln(ReadAllLines("+file+"));end.","[one,two]\n[aa,bb]\n");
+    result("function Item(n:integer):string;begin DefaultEncoding:=Encoding.ASCII;Result:='Я🌍';end;begin DefaultEncoding:=Encoding.Unicode;WriteLines("+file+",Range(1,2).Select(Item));Writeln(DefaultEncoding.CodePage,' ',ReadAllLines("+file+"));end.","20127 [Я🌍,Я🌍]\n");
+    result("function ReadAllLines(s:string):integer:=7;begin PABCSystem.WriteAllLines("+file+",Arr('one'));Writeln(ReadAllLines('x'),' ',PABCSystem.ReadAllLines("+file+")[0]);end.","7 one\n");
+    {std::ofstream out(path,std::ios::binary);out << "a\r\nb\rc\n\nlast";}
+    result("begin Writeln(ReadAllLines("+file+",Encoding.ASCII));end.","[a,b,c,,last]\n");
+    result("begin WriteLines("+file+",Seq(StringOfChar('a',1023)+'🌍'),Encoding.UTF8);end.","");
+    {std::ifstream in(path,std::ios::binary);const std::string bytes((std::istreambuf_iterator<char>(in)),{});require(bytes=="\xef\xbb\xbf"+std::string(1023,'a')+"🌍"+native_newline,"Streaming UTF8 output retains a surrogate pair crossing the writer buffer boundary");}
+    {
+        abc::ExecutionOptions limited;limited.instruction_limit=150;std::istringstream in;std::ostringstream out;
+        error([&]{abc::execute(abc::compile("begin WriteLines("+file+",SeqFill(1000,'line'));end."),in,out,limited);},"E_LIMIT");
+    }
+    result("begin WriteAllText("+file+",'old');end.","");
+    runtime_error("function Item(n:integer):string;begin if n=2 then n:=1 div 0;Result:='first';end;begin WriteLines("+file+",Range(1,2).Select(Item),Encoding.UTF8);end.","E_DIV_ZERO");
+    result("begin Write(ReadAllText("+file+"));end.","first"+native_newline);
+    result("begin WriteAllText("+file+",'preserve');end.","");
+    for(const auto& operation:{"WriteAllLines("+file+",nil,Encoding.UTF8)","WriteAllLines("+file+",Arr('xx'),nil)","WriteLines("+file+",nil,Encoding.UTF8)"})runtime_error("begin "+operation+";end.","E_NIL");
+    result("begin Writeln(ReadAllText("+file+"));end.","preserve\n");
+    runtime_error("begin WriteAllLines(nil,nil,nil);end.","E_IO");
+    runtime_error("begin ReadAllLines(nil,nil);end.","E_IO");
+    for(const auto* source:{"begin WriteLines('x',Seq(1));end.","begin WriteLines('x','abc');end.","begin WriteAllLines('x',Seq('a'));end.","begin ReadAllLines('x',1251);end.","begin WriteAllLines('x',Arr(1),Encoding.UTF8);end."})compile_error(source,"E_TYPE");
+    {
+        std::istringstream in;std::ostringstream out;
+        error([&]{abc::execute(abc::compile("begin Writeln('NEVER');WriteLines('x',Seq(1));end."),in,out);},"E_TYPE");
+        require(out.str().empty(),"Invalid WriteLines type fails before output");
+    }
+    for(const auto* source:{"begin ReadAllLines('x',Encoding.UTF8);end.","begin WriteAllLines('x',Arr('aa'),Encoding.UTF8);end.","begin WriteLines('x',Seq('aa'),Encoding.UTF8);end."}) {
+        const auto program=abc::compile(source);
+        for(unsigned mode=0;mode<3;++mode) {
+            auto bad=program;for(auto& op:bad.code)if(op.op==abc::Op::read_lines || op.op==abc::Op::write_lines){if(mode==0)op.operand=1;if(mode==1)op.operand+=65536;if(mode==2)op.type=abc::Type::integer;}
+            error([&]{abc::verify(bad);},"E_BYTECODE");
+        }
+    }
+
+    {std::error_code cleanup_error;fs::remove(path,cleanup_error);if(cleanup_error)throw std::runtime_error("Cannot reset temporary line fixture");}
     result("begin writeln(FileExists("+file+")); WriteAllText("+file+",'Привет 🌍',Encoding.UTF8); writeln(FileExists("+file+"),' ',ReadAllText("+file+")); end.", "False\nTrue Привет 🌍\n");
     result("begin var s:string:=nil; WriteAllText("+file+",s); writeln(Length(ReadAllText("+file+"))); end.","0\n");
     result("begin var a:=new string[2]; a[0]:=nil; a[1]:='tail'; WriteAllLines("+linefile+",a); var b:=ReadAllLines("+linefile+"); writeln(Length(b),' [',b[0],'] ',b[1],' ',b[0]=nil); end.","2 [] tail False\n");
@@ -5020,7 +5069,7 @@ void text_files() {
     result("begin var f:=OpenWrite("+file+",Encoding.UTF8);f.Write('Я');DefaultEncoding:=nil;f.Rewrite(nil);f.Write('🌍');f.Close;DefaultEncoding:=Encoding.ASCII;Writeln(ReadAllText("+file+"));end.","Я🌍\n");
     result("begin var f:Text;Assign(f,"+file+");f.Rewrite(Encoding.Unicode);f.Write('Я');f.Flush;f.Close;f.Reset(Encoding.ASCII);Writeln(f.ReadToEnd);f.Close;end.","Я\n");
     runtime_error("begin var f:=OpenWrite("+file+");f.Append(Encoding.ASCII);end.","E_IO");
-    for(const auto operation:{"ReadAllText("+file+")","WriteAllText("+file+",'x')","OpenRead("+file+")","OpenWrite("+file+")"})runtime_error("begin DefaultEncoding:=nil;"+operation+";end.","E_NIL");
+    for(const auto& operation:{"ReadAllText("+file+")","WriteAllText("+file+",'x')","OpenRead("+file+")","OpenWrite("+file+")"})runtime_error("begin DefaultEncoding:=nil;"+operation+";end.","E_NIL");
     runtime_error("begin var f:Text;Assign(f,"+file+");f.Reset(nil);end.","E_NIL");
     runtime_error("begin var f:Text;f.Reset(nil);end.","E_IO");
     result("begin var f:=OpenWrite("+file+",Encoding.Unicode);f.Close;var g:=OpenAppend("+file+",Encoding.Unicode);g.Write('Я');g.Close;Writeln(ReadAllText("+file+"));end.","Я\n");

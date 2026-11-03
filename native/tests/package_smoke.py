@@ -209,6 +209,7 @@ def main():
                 ("windows-characters.pas", "Привет\nКоды: 207 184\nЗамена: ?\n"),
                 ("text-encodings.pas", "Кодировки: 65001 1251\n[207,240,232,226,229,242]\nПривет\nПривет 🌍\n"),
                 ("default-encoding.pas", "По умолчанию: 1251\nОткрытый файл сохранил Unicode: Привет 🌍\nЯвная CP1251: Привет\n"),
+                ("file-lines.pas", "CP1251: [Первая строка,,Последняя строка]\nUnicode: [Строка 1,Строка 2,Строка 3]\n"),
                 ("class-properties.pas", "Свойство: 7\nЧерез метод: 14\n"),
                 ("class-methods.pas", "Значение: 5\nОбщая ссылка: 6\n"),
                 ("class-fields.pas", "Связанные объекты: 9 7\nОбщая ссылка: 11\n11 9 \n"),
@@ -344,6 +345,22 @@ def main():
                     or (folder / "default-cp1251.tmp").read_bytes() != b"\xdf??"
                     or (folder / "snapshot-unicode.tmp").read_bytes() != b"\xef\xbb\xbf" + "Я🌍".encode("utf-8")):
                 raise RuntimeError(f"{name} DefaultEncoding/Text snapshot failed: {attempted.stdout!r}, {attempted.stderr!r}")
+            line_source = folder / "Файловые строки.pas"
+            for source, expected, code, line in [
+                ("begin\nWriteln('must never run');\nWriteLines('typed-lines.tmp',Seq(1));\nend.", "", "E_TYPE", 3),
+                ("begin\nReadAllLines('typed-lines.tmp',nil);\nend.", "", "E_NIL", 2),
+                ("function Item(n:integer):string;begin\nif n=2 then n:=1 div 0;Result:='Первая';end;\n"
+                 "begin WriteLines('partial-lines.tmp',Range(1,2).Select(Item),Encoding.Unicode);end.", "", "E_DIV_ZERO", 2),
+            ]:
+                line_source.write_text(source, encoding="utf-8")
+                attempted = subprocess.run([runner, "run", str(line_source)], text=True, encoding="utf-8",
+                                           capture_output=True, cwd=folder, env=env, timeout=10)
+                if (attempted.returncode != 1 or attempted.stdout != expected or code not in attempted.stderr
+                        or "EN:" not in attempted.stderr or "RU:" not in attempted.stderr
+                        or f"{line_source}:{line}:" not in attempted.stderr):
+                    raise RuntimeError(f"{name} file lines diagnostic mismatch: {attempted.stdout!r}, {attempted.stderr!r}")
+            if (folder / "partial-lines.tmp").read_bytes() != b"\xff\xfe" + "Первая\r\n".encode("utf-16-le"):
+                raise RuntimeError(f"{name} WriteLines did not retain completed lines on a late source error")
             character = folder / "Ошибки символов.pas"
             school_error = folder / "Ошибки School.pas"
             for expression, code, english, russian in [
@@ -1176,6 +1193,7 @@ def main():
             results[-1]["native_cp1251_character_functions"] = "passed"
             results[-1]["typed_encoding_codecs_and_explicit_file_overloads"] = "passed"
             results[-1]["default_encoding_and_text_codec_snapshots"] = "passed"
+            results[-1]["file_line_encodings_and_streamed_sequence_output"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 

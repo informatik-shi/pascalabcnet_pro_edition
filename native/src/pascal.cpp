@@ -1356,6 +1356,26 @@ private:
         } else throw Error("E_UNSUPPORTED",result.location,"Encoding member is not ported yet");
         encoding_expression(result,method);return true;
     }
+    bool bind_file_lines(hir::Expr& result,std::string_view name,std::string_view unit={}) {
+        if(!unit.empty() && unit!="pabcsystem")return false;
+        const bool read=name=="readalllines",write=name=="writealllines",sequence=name=="writelines";
+        if(!read && !write && !sequence)return false;
+        const auto minimum=read ? 1U : 2U;
+        if(result.arguments.size()<minimum || result.arguments.size()>minimum+1)
+            throw Error("E_TYPE",result.location,"Wrong file lines argument count");
+        result.arguments[0]=convert(std::move(result.arguments[0]),Type::string);
+        if(write || sequence) {
+            const auto expected=sequence_type(sequence ? CompoundKind::sequence : CompoundKind::array,Type::string);
+            if(result.arguments[1]->type!=Type::nil && sequence) {
+                const auto source=sequence_source(result.arguments[1]->type,result.location);
+                if(source.element!=Type::string)throw Error("E_TYPE",result.location,"File lines require statically typed strings");
+            }
+            result.arguments[1]=convert(std::move(result.arguments[1]),expected);
+        }
+        if(result.arguments.size()>minimum)result.arguments.back()=convert(std::move(result.arguments.back()),encoding_type());
+        result.kind=read ? hir::ExprKind::read_lines : hir::ExprKind::write_lines;
+        result.type=read ? sequence_type(CompoundKind::array,Type::string) : Type::unit;return true;
+    }
     bool bind_encoding_file(hir::Expr& result,std::string_view name,std::string_view unit) {
         if(!unit.empty() && unit!="pabcsystem")return false;
         const bool read=name=="readalltext",write=name=="writealltext";
@@ -2540,18 +2560,7 @@ private:
                 if (!indexed_sequence(info(result->arguments[0]->type,result->location).kind)) throw Error("E_TYPE",result->location,"Length requires an array or list");
                 result->kind = hir::ExprKind::length; result->left = std::move(result->arguments[0]); result->arguments.clear(); result->type = Type::integer; break;
             }
-            if (source.token.text == "readalllines") {
-                if (result->arguments.size()!=1) throw Error("E_TYPE",result->location,"ReadAllLines requires one path");
-                result->arguments[0] = convert(std::move(result->arguments[0]),Type::string);
-                result->kind=hir::ExprKind::read_lines; result->type=sequence_type(CompoundKind::array,Type::string); break;
-            }
-            if (source.token.text == "writealllines") {
-                if (result->arguments.size()!=2) throw Error("E_TYPE",result->location,"WriteAllLines requires a path and string array");
-                result->arguments[0]=convert(std::move(result->arguments[0]),Type::string);
-                const auto& type=info(result->arguments[1]->type,result->location);
-                if (type.kind!=CompoundKind::array || type.rank!=1 || type.element!=Type::string) throw Error("E_TYPE",result->location,"WriteAllLines requires a string array");
-                result->kind=hir::ExprKind::write_lines; result->type=Type::unit; break;
-            }
+            if(bind_file_lines(*result,source.token.text))break;
             if (bind_sequence_library(*result,source.token.text)) break;
             bind_builtin(*result,source.token.text);
             break;
@@ -3962,6 +3971,7 @@ private:
         return true;
     }
     void bind_builtin(hir::Expr& result, std::string_view name, std::string_view unit = {}) {
+        if(bind_file_lines(result,name,unit))return;
         if(bind_encoding_file(result,name,unit))return;
         if ((unit.empty() || unit=="pabcsystem") && (name=="min" || name=="max") && result.arguments.size()>=2 && result.arguments.size()<=4
             && std::all_of(result.arguments.begin(),result.arguments.end(),[](const auto& arg){return integer_type(arg->type);})) {
