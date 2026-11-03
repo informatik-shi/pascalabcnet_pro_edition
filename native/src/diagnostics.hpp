@@ -3,7 +3,7 @@
 
 namespace abc {
 enum class RuntimeError {
-    assertion_failed, integer_overflow, division_zero, invalid_bytecode, number_format, big_integer_limit, power_exponent, school_table_variables, school_ip_address, school_ip_suffix, school_ip_mask, regex_syntax, duplicate_swap_key, missing_swap_key, sequence_empty, sequence_multiple, sequence_no_match, sequence_multiple_matches, sequence_count_range, generator_positive_count, generator_pair_count, cartesian_power_count, matrix_row_index, matrix_column_index, matrix_line_length, matrix_initializers, matrix_from_row, matrix_to_row, matrix_from_column, matrix_to_column, sequence_step_zero, partition_count, decimal_overflow, sequence_depth,
+    assertion_failed, integer_overflow, division_zero, invalid_bytecode, number_format, big_integer_limit, power_exponent, school_table_variables, school_ip_address, school_ip_suffix, school_ip_mask, regex_syntax, duplicate_swap_key, missing_swap_key, sequence_empty, sequence_multiple, sequence_no_match, sequence_multiple_matches, sequence_count_range, generator_positive_count, generator_pair_count, cartesian_power_count, matrix_row_index, matrix_column_index, matrix_line_length, matrix_initializers, list_index, list_count, list_range, matrix_from_row, matrix_to_row, matrix_from_column, matrix_to_column, sequence_step_zero, partition_count, decimal_overflow, sequence_depth,
     input_limit, input_stream, input_end, input_encoding, input_empty,
     input_boolean, input_real, input_range, output_limit, output_stream,
     instruction_limit, cancelled, string_limit, real_overflow, math_domain, round_digits, string_index,

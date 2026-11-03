@@ -10,6 +10,7 @@
 #include "../src/matrix_operations.hpp"
 #include "../src/array_operations.hpp"
 #include "../src/collection_operations.hpp"
+#include "../src/list_operations.hpp"
 
 #include <iostream>
 #include <array>
@@ -66,6 +67,53 @@ void compile_error(std::string_view source, std::string_view code) {
 
 void runtime_error(std::string_view source, std::string_view code) {
     error([&] { (void)run(source); }, code,source);
+}
+
+void list_search_and_ranges() {
+    result("begin var l:=Arr(1,2,1).ToList;l.Insert(0,4);l.Insert(l.Count,5);Writeln(l);Writeln(l.Remove(1),' ',l.Remove(9),' ',l);Writeln(l.IndexOf(1),' ',l.LastIndexOf(1),' ',l.IndexOf(2,1),' ',l.IndexOf(5,1,3));var c:=l.GetRange(1,2);Writeln(c);l.RemoveRange(1,2);Writeln(l,' ',c);end.","[4,1,2,1,5]\nTrue False [4,2,1,5]\n2 2 1 3\n[2,1]\n[4,5] [2,1]\n");
+    result("begin var l:=Arr(1,2,1,3,1).ToList;Writeln(l.IndexOf(1),' ',l.IndexOf(1,1),' ',l.IndexOf(1,1,1));Writeln(l.LastIndexOf(1),' ',l.LastIndexOf(1,3),' ',l.LastIndexOf(1,3,1),' ',l.LastIndexOf(1,2,3));Writeln(l.IndexOf(1,l.Count,0),' ',l.LastIndexOf(1,0,0));end.","0 2 -1\n4 2 -1 2\n-1 -1\n");
+    result("begin var l:=new List<integer>;Writeln(l.IndexOf(1),' ',l.LastIndexOf(1),' ',l.IndexOf(1,0),' ',l.IndexOf(1,0,0));Writeln(l.LastIndexOf(1,-1),' ',l.LastIndexOf(1,-2),' ',l.LastIndexOf(1,99,-99),' ',l.LastIndexOf(1,-2147483648,2147483647));Writeln(l.GetRange(0,0).Count,' ',l.Remove(1));l.RemoveRange(0,0);l.Insert(0,7);Writeln(l);end.","-1 -1 -1 -1\n-1 -1 -1 -1\n0 False\n[7]\n");
+    result("begin var l:=new List<string>;l.Add(nil);l.Add('abc');l.Add(nil);Writeln(l.IndexOf(nil),' ',l.LastIndexOf(nil));Writeln(l.Remove(nil),' ',l);end.","0 2\nTrue [abc,nil]\n");
+    result("type R=record n:integer;a:array of integer;end;begin var r:R;r.n:=1;r.a:=Arr(2);var l:=new List<R>;l.Insert(0,r);r.n:=9;var c:=l.GetRange(0,1);c[0].n:=7;c[0].a[0]:=8;Writeln(l[0].n,' ',c[0].n,' ',r.a[0]);Writeln(l.Remove(c[0]),' ',l.Remove(l[0]),' ',l.Count);end.","1 7 8\nFalse True 0\n");
+    result("begin var a:=Arr(1);var b:=Arr(1);var l:=new List<array of integer>;l.Add(a);Writeln(l.IndexOf(b),' ',l.IndexOf(a),' ',l.Remove(b),' ',l.Remove(a));end.","-1 0 False True\n");
+    result("begin var l:=Arr(1,2,3).ToList;foreach var x in l do begin l.Remove(9);l.RemoveRange(l.Count,0);var a:=l.GetRange(0,1);Write(x);end;end.","123");
+    for(int size=0;size<=5;++size) {
+        const auto head="begin var l:=Range(0,"+std::to_string(size-1)+").ToList;";
+        for(int start=0;start<=size;++start) for(int count=0;count<=size-start;++count) {
+            std::ostringstream expected;for(int i=start;i<start+count;++i)expected<<i<<' ';
+            result(head+"foreach var x in l.GetRange("+std::to_string(start)+","+std::to_string(count)+") do Write(x,' ');end.",expected.str());
+        }
+    }
+    for(const auto source:{
+        "begin var l:=new List<integer>;l.Insert(-1,1);end.","begin var l:=new List<integer>;l.Insert(1,1);end.",
+        "begin var l:=Arr(1).ToList;l.GetRange(-1,0);end.","begin var l:=Arr(1).ToList;l.GetRange(0,-1);end.","begin var l:=Arr(1).ToList;l.GetRange(2,0);end.",
+        "begin var l:=Arr(1).ToList;l.RemoveRange(0,2);end.","begin var l:=Arr(1).ToList;l.IndexOf(1,-1);end.","begin var l:=Arr(1).ToList;l.IndexOf(1,2);end.",
+        "begin var l:=Arr(1).ToList;l.IndexOf(1,0,2);end.","begin var l:=new List<integer>;l.LastIndexOf(1,0);end.",
+        "begin var l:=Arr(1).ToList;l.LastIndexOf(1,-1);end.","begin var l:=Arr(1).ToList;l.LastIndexOf(1,0,-1);end.","begin var l:=Arr(1).ToList;l.LastIndexOf(1,0,2);end."})runtime_error(source,"E_RANGE");
+    for(const auto source:{"begin var l:List<integer>:=nil;l.Remove(1);end.","begin var l:List<integer>:=nil;l.Insert(-1,1);end.","begin var l:List<integer>:=nil;l.GetRange(-1,-1);end.","begin var l:List<integer>:=nil;l.LastIndexOf(1,-1,-1);end."})runtime_error(source,"E_NIL");
+    for(const auto source:{"begin var l:=Arr(1).ToList;foreach var x in l do l.Remove(x);end.","begin var l:=Arr(1).ToList;foreach var x in l do l.Insert(0,2);end.","begin var l:=Arr(1).ToList;foreach var x in l do l.RemoveRange(0,1);end.","type R=record n:integer;end;begin var r:R;var l:=new List<R>;l.Add(r);var c:=l.GetRange(0,1);foreach var x in c do c[0].n:=9;end."})runtime_error(source,"E_MODIFIED");
+    for(const auto source:{"begin var l:=new List<integer>;l.Remove('abc');end.","begin var l:=new List<integer>;l.Insert(0,'abc');end.","begin var l:=new List<integer>;l.GetRange(1);end.","begin var l:=new List<integer>;l.IndexOf(1,0,1,2);end."})compile_error(source,"E_TYPE");
+    const std::array<std::string_view,6> calls{"GetRange(-1,-1)","GetRange(99,-1)","GetRange(99,0)","IndexOf(1,-1,-1)","IndexOf(1,99,-1)","LastIndexOf(1,99,-1)"};
+    const std::array<std::string_view,6> messages{"List index is outside the allowed range","List count is outside the allowed range","List index and count do not specify a valid range","List count is outside the allowed range","List index is outside the allowed range","List count is outside the allowed range"};
+    for(std::size_t i=0;i<calls.size();++i) {
+        try{(void)run("begin\n var l:=Arr(1).ToList;l."+std::string(calls[i])+";\nend.");require(false,"Expected a List range diagnostic");}
+        catch(const abc::Error& e){require(e.code=="E_RANGE" && std::string_view(e.what())==messages[i] && !e.russian.empty() && e.location.line==2,"List range error priority, bilingual text and source location");}
+    }
+    {
+        const auto p=abc::compile("function L:List<integer>;begin Write('L');Result:=nil;end;function I:integer;begin Write('I');Result:=-1;end;function V:integer;begin Write('V');Result:=1;end;begin L().Insert(I(),V());end.");std::istringstream in;std::ostringstream out;
+        error([&]{abc::execute(p,in,out);},"E_NIL");require(out.str()=="LIV","List method evaluates receiver, index and value before nil access");
+    }
+    const auto p=abc::compile("begin var l:=new List<integer>;l.Remove(1);end.");
+    const auto operation=std::find_if(p.code.begin(),p.code.end(),[](const auto& op){return op.op==abc::Op::list_operation;});
+    abc::Values values{p,10000};auto l=values.array(operation->type,1000);std::array<abc::Value,1> needle{std::int32_t{9}};abc::ExecutionOptions options;options.instruction_limit=50;
+    error([&]{(void)abc::list_operation(values,l,abc::ListOperation::index,needle,options);},"E_LIMIT");
+    const std::array<abc::Value,2> insert{std::int32_t{0},std::int32_t{7}};const auto version=l->version;
+    error([&]{(void)abc::list_operation(values,l,abc::ListOperation::insert,insert,options);},"E_LIMIT");require(l->items.size()==1000 && l->version==version,"List shift quota is checked before insertion mutates storage");
+    options={};options.cancelled=[] {return true;};error([&]{(void)abc::list_operation(values,l,abc::ListOperation::index,needle,options);},"E_CANCELLED");
+    for(const auto source:{"begin var l:=new List<integer>;l.Remove(1);end.","begin var l:=new List<integer>;l.Insert(0,1);end.","begin var l:=new List<integer>;l.GetRange(0,0);end.","begin var l:=new List<integer>;l.IndexOf(1,0,0);end.","begin var l:=new List<integer>;l.LastIndexOf(1,-1,-1);end."}) {
+        const auto good=abc::compile(source);
+        for(int kind=0;kind<4;++kind){auto bad=good;for(auto& op:bad.code)if(op.op==abc::Op::list_operation){if(kind==0)op.operand=std::numeric_limits<std::size_t>::max();if(kind==1)op.operand=(op.operand&~std::size_t{15})|15;if(kind==2)op.operand=(static_cast<std::size_t>(abc::Type::real)<<4)|(op.operand&15);if(kind==3)op.type=abc::Type::integer;}error([&]{abc::verify(bad);},"E_BYTECODE");}
+    }
 }
 
 void collection_replace_and_copy() {
@@ -5256,6 +5304,7 @@ int main() {
     matrix_construction_library();
     conditional_expressions_language();
     collection_replace_and_copy();
+    list_search_and_ranges();
     escaped_identifiers_language();
     structural_output();
     try_console_read();

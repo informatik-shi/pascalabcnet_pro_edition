@@ -202,6 +202,7 @@ def main():
                 ("sequence-prefixes.pas", "Начало: [1,2]\nОстаток: [3,1]\nПосле двух: [7,6]\n"),
                 ("callable-values.pas", "Значение: 14\nЧерез массив: 18\nЧерез параметр: 22\nПустое значение: True\n"),
                 ("library-callables.pas", "Сохранённая функция: [2,4,6]\nОтбор: [1,2]\nСуммы пар: [11,22]\nРезультат для True, True: True\n"),
+                ("list-ranges.pas", "Вставка: [1,7,2,1,3]\nПоиск: 0 3\nУдаление: True [7,2,1,3]\nДиапазон: [2,1]\nОстаток: [7,3]\n"),
                 ("replace-copy.pas", "Замена: [7,2,7]\nМассивы: [7,2,7] [9,2,7]\nСписки: [xyz,xyz] [new,xyz]\nМатрицы: [[3,4]] [[8,4]]\n"),
                 ("conditional-expressions.pas", "Модули: [3,0,4]\nШирина: 2\nВыбор: есть строки\nНеисполняемая ветвь: 7\n"),
                 ("matrix-construction.pas", "По значениям: [[1,2,3],[4,5,6]]\nПо строкам: [[1,2,3],[4,5,0]]\nПо столбцам: [[1,4],[2,5],[3,0]]\nИз последовательности: [[1,3,0],[2,4,0]]\nВложенные последовательности: [[7,8],[9,0]]\nЗначение по умолчанию: True\n"),
@@ -605,6 +606,19 @@ def main():
                                      capture_output=True, cwd=folder, env=env, timeout=10)
             if invalid.returncode != 1 or invalid.stdout or "E_TYPE" not in invalid.stderr or "RU:" not in invalid.stderr:
                 raise RuntimeError(f"{name} array equality element type was not rejected before output")
+            list_error = folder / "Диапазон списка.pas"
+            list_error.write_text("begin\n var l:=Arr(1).ToList;l.GetRange(0,2);\nend.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(list_error)], text=True, encoding="utf-8",
+                                     capture_output=True, cwd=folder, env=env, timeout=10)
+            if (invalid.returncode != 1 or "E_RANGE" not in invalid.stderr
+                    or "EN: List index and count do not specify a valid range" not in invalid.stderr
+                    or "RU: Индекс и число элементов не задают допустимый диапазон списка" not in invalid.stderr or f"{list_error}:2:" not in invalid.stderr):
+                raise RuntimeError(f"{name} bilingual List range error failed: {invalid.stderr!r}")
+            list_error.write_text("begin Writeln('must never run');var l:=new List<integer>;l.Insert(0,'abc');end.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(list_error)], text=True, encoding="utf-8",
+                                     capture_output=True, cwd=folder, env=env, timeout=10)
+            if invalid.returncode != 1 or invalid.stdout or "E_TYPE" not in invalid.stderr or "RU:" not in invalid.stderr:
+                raise RuntimeError(f"{name} List insertion element type was not checked before output")
             copy_error = folder / "Копирование массива.pas"
             copy_error.write_text("begin\n var a:array of integer:=nil; Copy(a);\nend.", encoding="utf-8")
             invalid = subprocess.run([runner, "run", str(copy_error)], text=True, encoding="utf-8",
@@ -868,6 +882,7 @@ def main():
             results[-1]["typed_matrix_construction_and_bilingual_diagnostics"] = "passed"
             results[-1]["typed_conditional_expressions_and_bilingual_diagnostics"] = "passed"
             results[-1]["typed_replace_copy_and_bilingual_diagnostics"] = "passed"
+            results[-1]["typed_list_search_and_ranges_and_bilingual_diagnostics"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 

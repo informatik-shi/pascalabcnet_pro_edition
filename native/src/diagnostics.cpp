@@ -4,6 +4,12 @@ namespace abc {
 Error runtime_error(RuntimeError id, SourceLocation location, std::string_view context) {
     const char *code, *english, *russian;
     switch (id) {
+    case RuntimeError::list_index:
+        code="E_RANGE";english="List index is outside the allowed range";russian="Индекс списка находится вне допустимого диапазона";break;
+    case RuntimeError::list_count:
+        code="E_RANGE";english="List count is outside the allowed range";russian="Число элементов списка находится вне допустимого диапазона";break;
+    case RuntimeError::list_range:
+        code="E_RANGE";english="List index and count do not specify a valid range";russian="Индекс и число элементов не задают допустимый диапазон списка";break;
     case RuntimeError::matrix_initializers:
         code="E_RANGE"; english="Initializer count must match the matrix element count"; russian="Число начальных значений должно совпадать с числом элементов матрицы"; break;
     case RuntimeError::matrix_from_row:

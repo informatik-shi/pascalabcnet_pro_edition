@@ -1,6 +1,7 @@
 #include "hir.hpp"
 #include "generators.hpp"
 #include "matrix_operations.hpp"
+#include "list_operations.hpp"
 #include "constant.hpp"
 #include "number.hpp"
 #include "stdlib.hpp"
@@ -2517,6 +2518,22 @@ private:
         result.type=sequence_type(CompoundKind::sequence,text ? Type::string : array);
         result.arguments.clear();
     }
+    bool bind_list_operation(hir::Expr& result,const SyntaxExpr& source) {
+        if (!compound(result.left->type) || info(result.left->type,result.location).kind!=CompoundKind::list) return false;
+        const auto name=source.token.text;ListOperation method;
+        const auto count=source.arguments.size();
+        if (name=="remove") method=ListOperation::remove;
+        else if (name=="insert") method=ListOperation::insert;
+        else if (name=="getrange") method=ListOperation::get_range;
+        else if (name=="removerange") method=ListOperation::remove_range;
+        else if (name=="indexof") method=count==1 ? ListOperation::index : count==2 ? ListOperation::index_from : ListOperation::index_range;
+        else if (name=="lastindexof") method=count==1 ? ListOperation::last : count==2 ? ListOperation::last_from : ListOperation::last_range;
+        else return false;
+        const auto parameters=list_operation_parameters(info(result.left->type,result.location).element,method);
+        if (count!=parameters.size()) throw Error("E_TYPE",result.location,"Wrong List operation argument count");
+        for (std::size_t i=0;i<count;++i) result.arguments.push_back(convert(expression(*source.arguments[i],parameters[i]),parameters[i]));
+        result.type=list_operation_result(result.left->type,method);result.local=static_cast<std::size_t>(method);result.kind=hir::ExprKind::list_operation;return true;
+    }
     bool bind_matrix_build(hir::Expr& result,const SyntaxExpr& source,bool member) {
         const auto name=source.token.text;
         if (member || (name!="matr" && name!="matrbyrow" && name!="matrbycol")) return false;
@@ -2776,7 +2793,7 @@ private:
         const auto name=source.token.text; const bool cartesian=name=="cartesian";
         const bool combinations=name=="combinations",permutations=name=="permutations";
         if (!unit.empty() && unit!="pabcsystem") return false;
-        if (bind_matrix_build(result,source,member) || bind_collection_operation(result,source,member) || bind_array_operation(result,source,member) || bind_matrix_operation(result,source,member) || bind_array_view(result,source,member)) return true;
+        if ((member && bind_list_operation(result,source)) || bind_matrix_build(result,source,member) || bind_collection_operation(result,source,member) || bind_array_operation(result,source,member) || bind_matrix_operation(result,source,member) || bind_array_view(result,source,member)) return true;
         if (name!="zip" && name!="ziptuple" && !cartesian && name!="cartesianpower" && !combinations && !permutations) return false;
         if (combinations || permutations) {
             const auto count=source.arguments.size()+(member ? 1U : 0U);

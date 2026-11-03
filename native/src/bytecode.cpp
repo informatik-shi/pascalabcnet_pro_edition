@@ -9,6 +9,7 @@
 #include "array_operations.hpp"
 #include "collection_operations.hpp"
 #include "matrix_construction.hpp"
+#include "list_operations.hpp"
 
 #include <deque>
 #include <algorithm>
@@ -96,6 +97,9 @@ private:
             expression(*node.left); emit(Op::sequence_aggregate,node.left->type,node.local,node.location); break;
         case hir::ExprKind::sequence_partial:
             expression(*node.left); emit(Op::sequence_partial,node.left->type,0,node.location); break;
+        case hir::ExprKind::list_operation:
+            expression(*node.left);for (const auto& argument:node.arguments) expression(*argument);
+            emit(Op::list_operation,node.left->type,(static_cast<std::size_t>(node.type)<<4)|node.local,node.location);break;
         case hir::ExprKind::matrix_build:
             for (const auto& argument:node.arguments) expression(*argument);
             emit(Op::matrix_build,node.type,(static_cast<std::size_t>(node.operation_type)<<4)|node.local,node.location); break;
@@ -609,6 +613,13 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             }
             break;
         }
+        case Op::list_operation: {
+            const auto output=instruction.operand>>4,method=instruction.operand&15U;
+            if (output>static_cast<std::size_t>(Type::first_compound)+program.types.size()
+                || !list_operation_signature_valid(program,type,static_cast<Type>(output),static_cast<ListOperation>(method)))
+                invalid(instruction,"Invalid List operation signature");
+            break;
+        }
         case Op::matrix_build: {
             const auto input=instruction.operand>>4,method=instruction.operand&15U;
             if (input<64 || input>=64+program.types.size() || method>static_cast<std::size_t>(MatrixBuild::columns_flat)
@@ -1082,6 +1093,11 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             const auto parameters=generator_parameters(element,static_cast<Type>(instruction.operand>>8),method);
             for (auto n=parameters.size();n>0;--n) require(parameters[n-1]);
             stack.push_back(instruction.type); break;
+        }
+        case Op::list_operation: {
+            const auto parameters=list_operation_parameters(type_info(program,instruction.type).element,static_cast<ListOperation>(instruction.operand&15U));
+            for (auto i=parameters.size();i>0;--i) require(parameters[i-1]);require(instruction.type);
+            const auto output=static_cast<Type>(instruction.operand>>4);if (output!=Type::unit) stack.push_back(output);break;
         }
         case Op::matrix_build: {
             const auto parameters=matrix_build_parameters(static_cast<Type>(instruction.operand>>4),static_cast<MatrixBuild>(instruction.operand&15U));

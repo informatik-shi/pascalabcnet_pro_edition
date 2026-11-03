@@ -23,6 +23,7 @@
 #include "array_operations.hpp"
 #include "collection_operations.hpp"
 #include "matrix_construction.hpp"
+#include "list_operations.hpp"
 #include "big_integer_runtime.hpp"
 
 #include <charconv>
@@ -266,6 +267,12 @@ static void execute_impl(const Program& program, std::istream& input, std::ostre
                 stack.emplace_back(instruction.operand ? sequence_range_step(values,instruction.type,first,last,step) : sequence_range(values,instruction.type,first,last));
             }
             break;
+        }
+        case Op::list_operation: {
+            const auto method=static_cast<ListOperation>(instruction.operand&15U);
+            const auto count=list_operation_parameters(type_info(program,instruction.type).element,method).size();std::vector<Value> arguments(count);
+            for (auto i=count;i>0;--i) arguments[i-1]=pop();const auto source=std::get<std::shared_ptr<Aggregate>>(pop());
+            auto result=list_operation(values,source,method,arguments,options);if (static_cast<Type>(instruction.operand>>4)!=Type::unit)stack.push_back(std::move(result));break;
         }
         case Op::matrix_build: {
             const auto method=static_cast<MatrixBuild>(instruction.operand&15U);
