@@ -208,6 +208,10 @@ static void execute_impl(const Program& program, std::istream& input, std::ostre
         if (frames.size()>options.call_limit) throw runtime_error(RuntimeError::call_limit,location);
         const auto& routine=program.routines[id];
         if (captured.size()!=routine.captures.size()) throw runtime_error(RuntimeError::invalid_bytecode,location);
+        if (routine.owner!=Type::invalid) {
+            const auto self=std::get<std::shared_ptr<Aggregate>>(stack[stack.size()-routine.parameters.size()]);
+            if (!self || self->nil) throw runtime_error(RuntimeError::nil_reference,location);
+        }
         Frame next{&routine.code,&routine,std::vector<std::shared_ptr<Cell>>(program.locals.size()),0,stack.size()-routine.parameters.size()};
         for (auto index:routine.locals) next.locals[index]=values.cell(program.locals[index].type,values.zero(program.locals[index].type));
         for (std::size_t i=routine.parameters.size();i>0;--i) {

@@ -70,6 +70,7 @@ Sleep, Milliseconds и MillisecondsDelta: examples/timing.pas.
 Явные типы и пустой Lst: examples/explicit-list-types.pas.
 Копирование списка в массив: examples/list-copy-to.pas.
 Базовые классы и взаимные ссылки: examples/class-fields.pas.
+Методы класса, Self и аргументы по умолчанию: examples/class-methods.pas.
 Прямой захват управляющей переменной цикла пока не перенесён; используйте отдельную переменную-копию.
 Совместимость с PascalABC.NET частичная.
 Русские имена и НОД/НОК: examples/russian-identifiers.pas. Массивные GCD/LCM: examples/school-folds.pas.

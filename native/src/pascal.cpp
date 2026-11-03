@@ -165,6 +165,7 @@ private:
 };
 
 enum class SyntaxExprKind { literal, literal_group, name, unary, binary, call, index, field, member_call, construction, formatted, tuple, typed_default, value_call, lambda, conditional };
+struct SyntaxRoutine;
 struct SyntaxType {
     Token token;
     std::string kind;
@@ -175,6 +176,7 @@ struct SyntaxType {
     std::vector<bool> references{}, variadics{};
     bool system_qualified=false;
     bool named=false;
+    std::vector<std::shared_ptr<SyntaxRoutine>> methods{};
 };
 struct SyntaxRoutine;
 struct SyntaxExpr {
@@ -232,6 +234,7 @@ struct SyntaxRoutine {
     std::vector<SyntaxParameter> parameters;
     SyntaxStmt body;
     bool expression_body=false, procedure_lambda=false, function_lambda=false;
+    std::string owner{};
 };
 
 bool reserved(std::string_view text) {
@@ -274,6 +277,13 @@ public:
                 do {
                     const auto type_name = name(); expect("=");
                     auto type = type_syntax(); type->token = type_name;
+                    if (type->kind=="class" && !type->named) for (const auto& method:type->methods) {
+                        if (method->parameters.size()>=16) throw Error("E_TYPE",method->name.location,"Class methods accept at most fifteen parameters");
+                        auto self_type=std::make_shared<SyntaxType>();self_type->token=type_name;self_type->kind=type_name.text;self_type->named=true;
+                        method->owner=type_name.text;
+                        method->parameters.insert(method->parameters.begin(),SyntaxParameter{Token{TokenKind::name,"self",method->name.location},self_type,false,{},true,false});
+                        root.routines.push_back(method);
+                    }
                     root.type_declarations.emplace_back(type_name, std::move(type)); expect(";");
                 } while (current_.kind == TokenKind::name && (current_.escaped || !reserved(current_.text)));
             } else if (accept("var")) {
@@ -353,8 +363,9 @@ private:
             if (object && is(";")) throw Error("E_UNSUPPORTED",current_.location,"Forward class declarations are not ported yet");
             while (!is("end")) {
                 if (object && accept("public")) continue;
-                if (object && (is("private") || is("protected") || is("internal") || is("function") || is("procedure") || is("constructor") || is("destructor") || is("property") || is("class") || is("var")))
-                    throw Error("E_UNSUPPORTED",current_.location,"Class methods, properties and nonpublic members are not ported yet");
+                if (object && (is("function") || is("procedure"))) { result->methods.push_back(routine());continue; }
+                if (object && (is("private") || is("protected") || is("internal") || is("constructor") || is("destructor") || is("property") || is("class") || is("var")))
+                    throw Error("E_UNSUPPORTED",current_.location,"Class properties, constructors and nonpublic members are not ported yet");
                 std::vector<Token> fields{name()}; while (accept(",")) fields.push_back(name());
                 expect(":"); auto type = type_syntax();
                 for (const auto& field : fields) result->fields.emplace_back(field,type);
@@ -877,7 +888,7 @@ public:
         for (const auto& [name,syntax]:source.type_declarations) if (syntax->kind=="class" && !syntax->named) {
             std::vector<Local> fields;
             for (const auto& [field,type]:syntax->fields) {
-                if (std::any_of(fields.begin(),fields.end(),[&](const auto& item){return item.name==field.text;}))
+                if (std::any_of(fields.begin(),fields.end(),[name=field.text](const auto& item){return item.name==name;}))
                     throw Error("E_DUPLICATE",field.location,"Duplicate class field");
                 fields.push_back({field.text,resolve_type(*type),false});
             }
@@ -886,9 +897,17 @@ public:
         }
         scopes_.emplace_back();
         for (const auto& routine : source.routines) {
-            if (routine_names_.contains(routine->name.text) || lookup(routine->name)) throw Error("E_DUPLICATE",routine->name.location,"Duplicate routine");
+            const auto qualified=routine->owner.empty() ? routine->name.text : routine->owner+"."+routine->name.text;
+            if (routine_names_.contains(qualified) || (routine->owner.empty() && lookup(routine->name))) throw Error("E_DUPLICATE",routine->name.location,"Duplicate routine");
+            if (module_.routines.size()>=256) throw Error("E_LIMIT",routine->name.location,"Routine limit exceeded");
             hir::RoutineBody body;
-            body.signature.name = routine->name.text;
+            body.signature.name=qualified;
+            if (!routine->owner.empty()) {
+                body.signature.owner=aliases_.at(routine->owner);
+                for (const auto& field:info(body.signature.owner,routine->name.location).fields) if (field.name==routine->name.text)
+                    throw Error("E_DUPLICATE",routine->name.location,"Class method conflicts with a field");
+                class_methods_[body.signature.owner][routine->name.text]=module_.routines.size();
+            }
             body.signature.result = routine->result ? resolve_type(*routine->result) : Type::unit;
             for (std::size_t n=0;n<routine->parameters.size();++n) {
                 const auto& parameter=routine->parameters[n]; const auto type=resolve_type(*parameter.type);
@@ -897,15 +916,15 @@ public:
                     throw Error("E_TYPE",parameter.name.location,"params requires a final rank-one array parameter");
                 body.signature.parameters.push_back({0,type,parameter.by_reference,parameter.variadic});
             }
-            routine_names_[routine->name.text] = module_.routines.size(); module_.routines.push_back(std::move(body));
+            routine_names_[qualified] = module_.routines.size(); module_.routines.push_back(std::move(body));
         }
         register_defaults(source);
         for (std::size_t i=0;i+1<source.statements.size();++i) module_.body.statements.push_back(statement(source.statements[i]));
-        for (const auto& routine:source.routines) if (lookup(routine->name)) throw Error("E_DUPLICATE",routine->name.location,"Routine conflicts with a global variable");
+        for (const auto& routine:source.routines) if (routine->owner.empty() && lookup(routine->name)) throw Error("E_DUPLICATE",routine->name.location,"Routine conflicts with a global variable");
         bind_defaults(source);
         for (std::size_t i = 0; i < source.routines.size(); ++i) {
             const auto& syntax = *source.routines[i]; auto& routine = module_.routines[i];
-            in_routine_ = true; current_result_ = routine.signature.result; current_name_ = syntax.name.text; scopes_.emplace_back();
+            in_routine_ = true; current_result_ = routine.signature.result; current_name_ = syntax.name.text; current_owner_=routine.signature.owner;scopes_.emplace_back();
             const auto first = module_.locals.size();
             for (std::size_t n = 0; n < syntax.parameters.size(); ++n) {
                 const auto& name = syntax.parameters[n].name;
@@ -922,10 +941,11 @@ public:
                 if (scopes_.back().contains(current_name_)) throw Error("E_DUPLICATE",syntax.name.location,"Parameter conflicts with function name");
                 scopes_.back()[current_name_] = routine.signature.result_local;
             }
+            if (current_owner_!=Type::invalid) current_self_=routine.signature.parameters.front().local;
             routine.body = statement(syntax.body);
             for (const auto& parameter:routine.signature.parameters) constant_parameters_.erase(parameter.local);
             for (auto n = first; n < module_.locals.size(); ++n) if (!module_.locals[n].global && !lambda_locals_.contains(n)) routine.signature.locals.push_back(n);
-            scopes_.pop_back(); in_routine_ = false; current_name_.clear();
+            scopes_.pop_back(); in_routine_ = false; current_name_.clear();current_owner_=Type::invalid;
         }
         module_.body.statements.push_back(statement(source.statements.back()));
         for (auto& statement:module_.body.statements) constant_initializers_.push_back(std::move(statement));
@@ -1368,8 +1388,67 @@ private:
         lambdas_.pop_back(); scopes_.pop_back(); in_routine_=saved_routine; current_result_=saved_result; current_name_=saved_name; loop_depth_=saved_loop;
         return routine_value(id,source.token.location,expected);
     }
+    std::unique_ptr<hir::Expr> class_member(std::unique_ptr<hir::Expr> result,const SyntaxExpr& source,Type expected) {
+        const auto receiver=result->left->type;
+        const auto& fields=info(receiver,result->location).fields;
+        for (std::size_t i=0;i<fields.size();++i) if (fields[i].name==source.token.text) {
+            result->kind=hir::ExprKind::field;result->local=i;result->type=fields[i].type;
+            if (source.kind==SyntaxExprKind::member_call || source.kind==SyntaxExprKind::call) {
+                auto call=std::make_unique<hir::Expr>();call->location=result->location;call->left=std::move(result);
+                bind_value_call(*call,source.arguments);return call;
+            }
+            return result;
+        }
+        const auto methods=class_methods_.find(receiver);
+        if (methods==class_methods_.end() || !methods->second.contains(source.token.text))
+            throw Error("E_NAME",result->location,"Unknown class member '"+source.token.text+"'");
+        const auto id=methods->second.at(source.token.text);const auto signature=module_.routines[id].signature;
+        const bool bare=source.kind==SyntaxExprKind::field || source.kind==SyntaxExprKind::name;
+        if (bare && callable_type(expected)) {
+            const auto& wanted=info(expected,result->location);
+            bool matches=wanted.element==signature.result && wanted.parameters.size()+1==signature.parameters.size();
+            for (std::size_t i=0;matches && i<wanted.parameters.size();++i)
+                matches=wanted.parameters[i].type==signature.parameters[i+1].type && wanted.parameters[i].by_reference==signature.parameters[i+1].by_reference;
+            if (matches) throw Error("E_UNSUPPORTED",result->location,"Bound method values are not ported yet");
+        }
+        if (bare) for (std::size_t i=1;i<signature.parameters.size();++i)
+            if (!signature.parameters[i].variadic && (id>=parameter_defaults_.size() || !parameter_defaults_[id][i]))
+                throw Error("E_UNSUPPORTED",result->location,"Bound method values are not ported yet");
+        result->kind=hir::ExprKind::user_call;result->local=id;result->type=signature.result;
+        result->arguments.push_back(std::move(result->left));
+        for (std::size_t i=0;i<source.arguments.size();++i) {
+            auto context=i+1<signature.parameters.size() ? signature.parameters[i+1].type : Type::invalid;
+            if (!signature.parameters.empty() && signature.parameters.back().variadic && i+2>=signature.parameters.size())
+                context=info(signature.parameters.back().type,result->location).element;
+            result->arguments.push_back(expression(*source.arguments[i],context));
+        }
+        add_default_arguments(*result,id);
+        for (std::size_t i=0;i<result->arguments.size();++i) {
+            const auto& parameter=signature.parameters[i];
+            if (parameter.by_reference) {
+                if (!lvalue(*result->arguments[i]) || result->arguments[i]->type!=parameter.type)
+                    throw Error("E_TYPE",result->location,"var argument requires an assignable value of exactly the parameter type");
+            } else result->arguments[i]=convert(std::move(result->arguments[i]),parameter.type);
+        }
+        return result;
+    }
+    std::unique_ptr<hir::Expr> implicit_class_member(const SyntaxExpr& source,Type expected) {
+        if (current_owner_==Type::invalid || (source.kind!=SyntaxExprKind::name && source.kind!=SyntaxExprKind::call)) return {};
+        const auto methods=class_methods_.find(current_owner_);
+        const bool method=methods!=class_methods_.end() && methods->second.contains(source.token.text);
+        const auto& fields=info(current_owner_,source.token.location).fields;
+        const bool field=std::any_of(fields.begin(),fields.end(),[&](const auto& item){return item.name==source.token.text;});
+        if (!method && !field) return {};
+        if (const auto local=lookup(source.token);local && !module_.locals[*local].global
+            && !(method && source.kind==SyntaxExprKind::call && module_.locals[*local].name=="result")) return {};
+        auto result=std::make_unique<hir::Expr>();result->location=source.token.location;
+        result->left=std::make_unique<hir::Expr>();result->left->kind=hir::ExprKind::local;result->left->local=current_self_;
+        result->left->type=current_owner_;result->left->location=source.token.location;capture_local(current_self_,source.token.location);
+        return class_member(std::move(result),source,expected);
+    }
     std::unique_ptr<hir::Expr> expression(const SyntaxExpr& source,Type expected=Type::invalid) {
         if (!source.type_arguments.empty()) return explicit_factory(source);
+        if (auto member=implicit_class_member(source,expected)) return member;
         if (source.kind==SyntaxExprKind::lambda) return bind_lambda(source,expected);
         if (source.kind==SyntaxExprKind::name && source.token.text=="result" && !lambdas_.empty() && (current_result_==Type::invalid || current_result_==Type::unit))
             throw Error("E_TYPE",source.token.location,"Lambda Result requires a known value type");
@@ -1630,18 +1709,7 @@ private:
                 bind_builtin(*result,source.token.text,source.left->token.text); break;
             }
             result->left = expression(*source.left); const auto receiver = result->left->type;
-            if (compound(receiver) && info(receiver,result->location).kind==CompoundKind::object_class) {
-                const auto& fields=info(receiver,result->location).fields;
-                for (std::size_t i=0;i<fields.size();++i) if (fields[i].name==source.token.text) {
-                    result->kind=hir::ExprKind::field;result->local=i;result->type=fields[i].type;
-                    if (source.kind==SyntaxExprKind::member_call) {
-                        auto call=std::make_unique<hir::Expr>();call->location=result->location;call->left=std::move(result);
-                        bind_value_call(*call,source.arguments);return call;
-                    }
-                    return result;
-                }
-                throw Error("E_NAME",result->location,"Unknown class field '"+source.token.text+"'");
-            }
+            if (compound(receiver) && info(receiver,result->location).kind==CompoundKind::object_class) return class_member(std::move(result),source,expected);
             if (bind_generators(*result,source,{},true)) break;
             if (callable_type(receiver) && source.token.text=="invoke") {
                 if (source.kind!=SyntaxExprKind::member_call) throw Error("E_TYPE",result->location,"Invoke requires a callable argument list");
@@ -3944,6 +4012,9 @@ private:
     std::map<std::string,Type> aliases_;
     std::map<const SyntaxType*,Type> resolved_types_;
     std::map<std::string,std::size_t> routine_names_;
+    std::map<Type,std::map<std::string,std::size_t>> class_methods_;
+    Type current_owner_=Type::invalid;
+    std::size_t current_self_=0;
     std::vector<std::vector<std::optional<std::size_t>>> parameter_defaults_;
     bool in_routine_ = false;
     bool collections_imported_ = false;

@@ -1543,6 +1543,10 @@ void verify(const Program& program) {
         instructions+=routine.code.size();
         if (instructions>1'000'000) throw Error("E_BYTECODE",{},"Module instruction limit exceeded");
         if (routine.parameters.size() > 16 || (routine.result != Type::unit && !valid_value_type(program,routine.result))) throw Error("E_BYTECODE",{},"Invalid routine signature");
+        if (routine.owner!=Type::invalid && (!compound(routine.owner) || !valid_value_type(program,routine.owner)
+            || type_info(program,routine.owner).kind!=CompoundKind::object_class || routine.parameters.empty()
+            || routine.parameters.front().type!=routine.owner || routine.parameters.front().by_reference || routine.parameters.front().variadic))
+            throw Error("E_BYTECODE",{},"Invalid class method receiver signature");
         std::set<std::size_t> owned;
         for (auto local : routine.locals) if (local >= program.locals.size() || program.locals[local].global || !owned.insert(local).second) throw Error("E_BYTECODE",{},"Invalid routine locals");
         if (routine.result != Type::unit && (!owned.contains(routine.result_local) || program.locals[routine.result_local].type != routine.result)) throw Error("E_BYTECODE",{},"Invalid Result local");

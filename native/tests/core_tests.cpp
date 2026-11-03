@@ -70,6 +70,32 @@ void runtime_error(std::string_view source, std::string_view code) {
     error([&] { (void)run(source); }, code,source);
 }
 
+void native_class_methods_language() {
+    result("type C=class n:integer;procedure Add(value:integer);begin n:=n+value;end;function Get:integer;begin Result:=n;end;end;begin var c:=new C;c.Add(3);c.Add(4);Writeln(c.Get(),' ',c.Get);end.","7 7\n");
+    result("var n:integer:=100;type C=class n:integer;procedure SetN(n:integer);begin Self.n:=n;end;function Get:integer;begin Result:=n;end;end;begin var c:=new C;c.SetN(7);Writeln(c.Get,' ',n);end.","7 100\n");
+    result("type C=class base:integer;function Factor(n:integer):integer;begin if n=0 then Result:=base else Result:=n*Factor(n-1);end;end;begin var c:=new C;c.base:=2;Writeln(c.Factor(4));end.","48\n");
+    result("type C=class n:integer;procedure Add(value:integer:=2);begin n:=n+value;end;function Total(params values:array of integer):integer;begin Result:=n+values.Sum;end;procedure Twice;begin Add;Self.Add(3);end;end;begin var c:=new C;c.Twice;Writeln(c.Total(),' ',c.Total(1,2),' ',c.Total(Arr(3,4)));end.","5 8 12\n");
+    result("type C=class n:integer;function First(value:integer):integer;begin Result:=Second(value)+n;end;function Second(value:integer):integer;begin Result:=value*2;end;end;begin var c:=new C;c.n:=3;Writeln(c.First(4));end.","11\n");
+    result("type C=class n:integer;procedure Bump(var value:integer);begin Inc(value);n:=value;end;end;begin var c:=new C;var n:=4;c.Bump(n);Writeln(n,' ',c.n);end.","5 5\n");
+    result("type C=class n:integer;function Mapper:integer->integer;begin Result:=x->x+n;end;function Values:array of integer;begin Result:=Seq(1,2).Select(x->x+n).ToArray;end;end;begin var c:=new C;c.n:=3;var f:=c.Mapper();Writeln(c.Values);c:=nil;Writeln(f(4));end.","[4,5]\n7\n");
+    result("type C=class n:integer;function Get:integer;begin Result:=n;end;function Mapper:integer->integer;begin Result:=x->x+Get();end;end;begin var c:=new C;c.n:=5;Writeln(c.Mapper()(2));end.","7\n");
+    result("type C=class n:integer;procedure SetN(n:integer);begin Self.n:=n;end;end;var c,d:C;function Replace:integer;begin c:=d;Result:=7;end;begin c:=new C;d:=new C;var original:=c;c.SetN(Replace());Writeln(original.n,' ',c.n);end.","7 0\n");
+    result("type C=class function Get:integer;begin Result:=3;end;end;D=class function Get:integer;begin Result:=4;end;end;begin var c:=new C;var d:=new D;Writeln(c.Get,' ',d.Get);end.","3 4\n");
+    result("type C=class n:integer;function Get:integer;begin Result:=n;end;procedure SetN(value:integer);begin var n:=value+1;Self.n:=n;end;end;begin var c:=new C;c.SetN(3);Writeln(c.Get);end.","4\n");
+    for(const auto source:{"type C=class function Get:integer;begin Result:=7;end;end;begin var c:C;Writeln(c.Get());end.","type C=class procedure P(n:integer);begin end;end;begin var c:C;c.P(1);end."})runtime_error(source,"E_NIL");
+    {
+        const auto p=abc::compile("type C=class procedure M(a,b:integer);begin Write('M');end;end;function L:C;begin Write('L');Result:=nil;end;function A:integer;begin Write('A');Result:=1;end;function B:integer;begin Write('B');Result:=2;end;begin L().M(A(),B());end.");std::istringstream in;std::ostringstream out;error([&]{abc::execute(p,in,out);},"E_NIL");require(out.str()=="LAB","Method receiver and arguments evaluate once in order before nil receiver check");
+    }
+    runtime_error("type C=class procedure P(n:integer);begin end;end;function Bad:integer;begin Assert(False);Result:=1;end;begin var c:C;c.P(Bad());end.","E_ASSERT");
+    for(const auto source:{"type C=class procedure P(n:integer);begin end;end;begin var c:=new C;c.P('abc');end.","type C=class procedure P(n:integer);begin end;end;begin var c:=new C;c.P();end.","type C=class procedure P;begin Self:=new C;end;end;begin end.","type C=class function F:integer;begin Result:='abc';end;end;begin Writeln('never');end."})compile_error(source,"E_TYPE");
+    compile_error("type C=class n:integer;procedure n;begin end;end;begin end.","E_DUPLICATE");
+    compile_error("type C=class procedure P;begin end;procedure P;begin end;end;begin end.","E_DUPLICATE");
+    for(const auto source:{"type C=class function F(n:integer):integer;begin Result:=n;end;end;begin var c:=new C;var f:integer->integer:=c.F;end.","type C=class function F(n:integer):integer;begin Result:=n;end;end;begin var c:=new C;var f:=c.F;end."})compile_error(source,"E_UNSUPPORTED");
+    abc::ExecutionOptions options;options.call_limit=2;error([&]{(void)run("type C=class function F:integer;begin Result:=F();end;end;begin new C.F();end.","",options);},"E_LIMIT");
+    auto p=abc::compile("type C=class procedure P;begin end;end;begin var c:=new C;c.P();end.");auto method=std::find_if(p.routines.begin(),p.routines.end(),[](const auto& r){return r.owner!=abc::Type::invalid;});require(method!=p.routines.end() && method->parameters.front().type==method->owner && !method->parameters.front().by_reference,"Method receiver is a known closed class type in routine metadata");
+    const auto index=static_cast<std::size_t>(method-p.routines.begin());for(int kind=0;kind<4;++kind){auto bad=p;auto& r=bad.routines[index];if(kind==0)r.owner=abc::Type::integer;if(kind==1)r.parameters[0].by_reference=true;if(kind==2)r.parameters[0].type=abc::Type::integer;if(kind==3)r.owner=static_cast<abc::Type>(64+bad.types.size());error([&]{abc::verify(bad);},"E_BYTECODE");}
+}
+
 void native_class_fields_language() {
     result("type C=class Count,Capacity:integer;Copy:integer->integer;end;begin var c:=new C;c.Count:=3;c.Capacity:=4;c.Copy:=x->x+c.Count;Writeln(c.Count,' ',c.Capacity,' ',c.Copy(2));end.","3 4 5\n");
     result("type C=class n:integer;s:string;a:array of integer;end;begin var c:C;Writeln(c=nil);c:=new C;Writeln(c.n,' ',c.s=nil,' ',c.a=nil);var d:=c;d.n:=7;Writeln(c.n,' ',c=d,' ',c=new C);end.","True\n0 True True\n7 True False\n");
@@ -84,7 +110,7 @@ void native_class_fields_language() {
     result("type A=class n:integer;end;B=A;begin var b:=new B;b.n:=4;Writeln(b.n);end.","4\n");
     result("type C=class end;begin var a:=new C;var b:=new C;Writeln(a=a,' ',a=b,' ',a<>nil);var f:=()->a=b;Writeln(f());end.","True False True\nFalse\n");
     for(const auto source:{"type C=class n:integer;end;begin var c:C;Writeln(c.n);end.","type C=class n:integer;end;begin var c:C;c.n:=1;end.","type C=class n:integer;end;procedure P(var n:integer);begin end;begin var c:C;P(c.n);end."})runtime_error(source,"E_NIL");
-    for(const auto source:{"type C=class private n:integer;end;begin end.","type A=class end;B=class(A)end;begin end.","type C=class function F:integer;begin Result:=1;end;end;begin end.","type C=class;begin end."})compile_error(source,"E_UNSUPPORTED");
+    for(const auto source:{"type C=class private n:integer;end;begin end.","type A=class end;B=class(A)end;begin end.","type C=class property X:integer read n;end;begin end.","type C=class;begin end."})compile_error(source,"E_UNSUPPORTED");
     compile_error("type C=class n:integer;n:integer;end;begin end.","E_DUPLICATE");
     compile_error("type A=class end;B=class end;begin var a:=new A;var b:=new B;a:=b;end.","E_TYPE");
     compile_error("type C=class n:integer;end;begin var c:=new C(1);end.","E_TYPE");
@@ -5555,6 +5581,7 @@ int main() {
     explicit_list_types_language();
     list_copy_to_library();
     native_class_fields_language();
+    native_class_methods_language();
     escaped_identifiers_language();
     structural_output();
     try_console_read();

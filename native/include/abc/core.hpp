@@ -438,6 +438,7 @@ struct Routine {
     std::vector<std::size_t> locals;
     std::vector<Instruction> code;
     std::vector<std::size_t> captures{};
+    Type owner=Type::invalid; // Closed receiver type for native instance method bodies.
 };
 
 inline bool callable_matches(const TypeInfo& type, const Routine& routine) {
