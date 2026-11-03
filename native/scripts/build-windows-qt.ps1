@@ -65,6 +65,7 @@ ConvertAll, Transform, Fill и ForEach: examples/collection-callbacks.pas.
 Добавление и вставка диапазонов AddRange/InsertRange: examples/list-bulk-ranges.pas.
 JoinToString, JoinIntoString и Flatten: examples/sequence-text-flatten.pas.
 Sleep, Milliseconds и MillisecondsDelta: examples/timing.pas.
+Конструкторы List, Capacity, EnsureCapacity и TrimExcess: examples/list-capacity.pas.
 Прямой захват управляющей переменной цикла пока не перенесён; используйте отдельную переменную-копию.
 Совместимость с PascalABC.NET частичная.
 Русские имена и НОД/НОК: examples/russian-identifiers.pas. Массивные GCD/LCM: examples/school-folds.pas.

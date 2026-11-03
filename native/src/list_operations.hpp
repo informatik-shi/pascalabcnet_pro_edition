@@ -3,6 +3,13 @@
 #include <span>
 
 namespace abc {
+inline Type list_capacity_result(Type list,ListCapacity method) {
+    return method==ListCapacity::construct ? list : method==ListCapacity::set || method==ListCapacity::trim ? Type::unit : Type::integer;
+}
+inline bool list_capacity_argument(ListCapacity method) {
+    return method==ListCapacity::set || method==ListCapacity::ensure || method==ListCapacity::construct;
+}
+Value list_capacity(Values& values,Type type,const std::shared_ptr<Aggregate>& source,ListCapacity method,std::int32_t capacity,const ExecutionOptions& options);
 inline Type list_operation_result(Type source,ListOperation method) {
     return method==ListOperation::remove ? Type::boolean : method==ListOperation::insert || method==ListOperation::remove_range ? Type::unit
         : method==ListOperation::get_range ? source : Type::integer;

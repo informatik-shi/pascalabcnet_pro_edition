@@ -228,6 +228,7 @@ Value sequence_collect(Values& values,const std::shared_ptr<Aggregate>& sequence
         const auto cost=iterator->sequence->provider==SequenceProvider::school_ip_hosts ? 4U : 1U;
         if (known_count && *known_count>values.remaining/cost) throw runtime_error(RuntimeError::allocation_limit,values.location);
         result=values.array(collection,0);
+        if (list && known_count && collection_sequence(iterator->sequence->provider)) values.set_list_capacity(result,static_cast<std::size_t>(*known_count));
     }
     std::uint64_t count=0;
     for (;sequence_resume(values,iterator,count,options);++count) {
@@ -237,7 +238,7 @@ Value sequence_collect(Values& values,const std::shared_ptr<Aggregate>& sequence
         auto value=sequence_at(values,iterator,static_cast<std::int64_t>(i),options);
         if (materialize) {
             auto item=values.cell(element,std::move(value));
-            if (list) values.own_list_cell(item,result);
+            if (list) { values.grow_list(result,result->items.size()+1);values.own_list_cell(item,result); }
             result->items.push_back(std::move(item));
         }
         else if (i>=INT32_MAX) throw runtime_error(RuntimeError::integer_overflow,values.location);

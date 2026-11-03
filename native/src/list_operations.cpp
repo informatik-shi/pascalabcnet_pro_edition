@@ -17,6 +17,28 @@ void range(std::int32_t index,std::int32_t count,std::int32_t size,SourceLocatio
     if (index>size || count>size-index) throw runtime_error(RuntimeError::list_range,location);
 }
 }
+Value list_capacity(Values& values,Type type,const std::shared_ptr<Aggregate>& source,ListCapacity method,std::int32_t capacity,const ExecutionOptions& options) {
+    const auto list=method==ListCapacity::construct ? values.array(type,0) : source;
+    if (!list || list->nil) throw runtime_error(RuntimeError::nil_reference,values.location);
+    if (method==ListCapacity::get) return static_cast<std::int32_t>(list->list_capacity);
+    if (list_capacity_argument(method) && capacity<0)
+        throw runtime_error(method==ListCapacity::set ? RuntimeError::list_capacity : RuntimeError::list_capacity_negative,values.location);
+    if (method==ListCapacity::trim) {
+        if (list->items.size()>=list->list_capacity*9/10) return std::int32_t{0};
+        capacity=static_cast<std::int32_t>(list->items.size());
+    }
+    if (method==ListCapacity::set && static_cast<std::size_t>(capacity)<list->items.size())
+        throw runtime_error(RuntimeError::list_capacity,values.location);
+    const bool change=method==ListCapacity::ensure ? static_cast<std::size_t>(capacity)>list->list_capacity
+        : static_cast<std::size_t>(capacity)!=list->list_capacity;
+    if (change) {
+        std::uint64_t used=0;charge(values,used,list->items.size()+1,options);
+        if (method==ListCapacity::ensure) values.grow_list(list,static_cast<std::size_t>(capacity));
+        else values.set_list_capacity(list,static_cast<std::size_t>(capacity));
+    }
+    if (method==ListCapacity::construct) return list;
+    return method==ListCapacity::ensure ? static_cast<std::int32_t>(list->list_capacity) : std::int32_t{0};
+}
 bool list_bulk_signature_valid(const Program& program,Type target,Type input) {
     if (!compound(target) || !compound(input)) return false;
     const auto& list=type_info(program,target);const auto& source=type_info(program,input);
@@ -41,6 +63,7 @@ void list_bulk(Values& values,const std::shared_ptr<Aggregate>& target,const std
         for (const auto& item:collection->items) {
             work(values,used,options);auto cell=values.cell(element,values.copy(item->value));values.own_list_cell(cell,target);added.push_back(std::move(cell));
         }
+        values.grow_list(target,target->items.size()+count);
         // Freeze source cells before insertion, including insertion into Self.
         target->items.insert(target->items.begin()+static_cast<std::ptrdiff_t>(position),added.begin(),added.end());++target->version;return;
     }
@@ -53,6 +76,7 @@ void list_bulk(Values& values,const std::shared_ptr<Aggregate>& target,const std
         if (destination>target->items.size()) throw runtime_error(RuntimeError::list_index,values.location);
         if (target->items.size()>=INT32_MAX) throw runtime_error(RuntimeError::allocation_limit,values.location);
         charge(values,used,target->items.size()-static_cast<std::size_t>(destination)+1,options);
+        values.grow_list(target,target->items.size()+1);
         auto cell=values.cell(element,values.copy(value));values.own_list_cell(cell,target);
         target->items.insert(target->items.begin()+static_cast<std::ptrdiff_t>(destination),std::move(cell));++target->version;
         if (insert) ++position;
@@ -71,6 +95,7 @@ Value list_operation(Values& values,const std::shared_ptr<Aggregate>& source,Lis
         if (index<0 || index>size) throw runtime_error(RuntimeError::list_index,values.location);
         if (size==INT32_MAX) throw runtime_error(RuntimeError::allocation_limit,values.location);
         charge(values,used,static_cast<std::size_t>(size-index)+1,options);
+        values.grow_list(source,source->items.size()+1);
         auto cell=values.cell(type_info(values.program,source->type).element,values.copy(arguments[1]));
         values.own_list_cell(cell,source);source->items.insert(source->items.begin()+index,std::move(cell));++source->version;
         return std::int32_t{0};

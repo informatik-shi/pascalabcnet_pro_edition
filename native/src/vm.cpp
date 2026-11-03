@@ -274,6 +274,13 @@ static void execute_impl(const Program& program, std::istream& input, std::ostre
             const auto delimiter=pop();const auto source=std::get<std::shared_ptr<Aggregate>>(pop());
             stack.emplace_back(sequence_join(values,source,delimiter,options));break;
         }
+        case Op::list_capacity: {
+            const auto method=static_cast<ListCapacity>(instruction.operand);
+            const auto capacity=list_capacity_argument(method) ? std::get<std::int32_t>(pop()) : 0;
+            const auto list=method==ListCapacity::construct ? std::shared_ptr<Aggregate>{} : std::get<std::shared_ptr<Aggregate>>(pop());
+            auto result=list_capacity(values,instruction.type,list,method,capacity,options);
+            if (list_capacity_result(instruction.type,method)!=Type::unit) stack.push_back(std::move(result));break;
+        }
         case Op::list_bulk: {
             const auto input=std::get<std::shared_ptr<Aggregate>>(pop());const bool insert=bool(instruction.operand&1U);
             const auto index=insert ? std::get<std::int32_t>(pop()) : 0;const auto target=std::get<std::shared_ptr<Aggregate>>(pop());
@@ -1204,6 +1211,7 @@ static void execute_impl(const Program& program, std::istream& input, std::ostre
         case Op::list_add: {
             auto value = pop(); auto list = std::get<std::shared_ptr<Aggregate>>(pop());
             if (list->nil) trap(instruction,RuntimeError::nil_reference);
+            values.grow_list(list,list->items.size()+1);
             auto item=values.cell(type_info(program,instruction.type).element,values.copy(value)); values.own_list_cell(item,list);
             list->items.push_back(std::move(item)); ++list->version; break;
         }

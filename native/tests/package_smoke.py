@@ -202,6 +202,7 @@ def main():
                 ("sequence-prefixes.pas", "Начало: [1,2]\nОстаток: [3,1]\nПосле двух: [7,6]\n"),
                 ("callable-values.pas", "Значение: 14\nЧерез массив: 18\nЧерез параметр: 22\nПустое значение: True\n"),
                 ("library-callables.pas", "Сохранённая функция: [2,4,6]\nОтбор: [1,2]\nСуммы пар: [11,22]\nРезультат для True, True: True\n"),
+                ("list-capacity.pas", "Пустой список: 0 3\nПосле роста: [1,2,3,4] 6\nПосле сжатия: 4\nИз последовательности: [1,2,3]\n1234\n"),
                 ("timing.pas", "Пауза выполнена: True\nИнтервалы неотрицательны: True True\nСчётчик доступен: True\n"),
                 ("sequence-text-flatten.pas", "Числа: 1, 2, 3\nСимволы: abc\nМассивы: [1,2,3]\nСтроки: PascalABC\nПустые значения: [|abc||]\n"),
                 ("list-bulk-ranges.pas", "Добавление: [1,2,3,4,5]\nВставка: [1,7,8,2,3,4,5]\nВставка в себя: [1,1,2,3,2,3]\nСимволы: [a,b,c]\n"),
@@ -609,6 +610,19 @@ def main():
                                      capture_output=True, cwd=folder, env=env, timeout=10)
             if invalid.returncode != 1 or invalid.stdout or "E_TYPE" not in invalid.stderr or "RU:" not in invalid.stderr:
                 raise RuntimeError(f"{name} array equality element type was not rejected before output")
+            capacity_error = folder / "Ёмкость списка.pas"
+            capacity_error.write_text("begin\n var l:=Arr(1).ToList;l.Capacity:=0;\nend.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(capacity_error)], text=True, encoding="utf-8",
+                                     capture_output=True, cwd=folder, env=env, timeout=10)
+            if (invalid.returncode != 1 or "E_RANGE" not in invalid.stderr
+                    or "EN: List capacity cannot be less than Count" not in invalid.stderr
+                    or "RU: Ёмкость списка не может быть меньше Count" not in invalid.stderr or f"{capacity_error}:2:" not in invalid.stderr):
+                raise RuntimeError(f"{name} bilingual List capacity error failed: {invalid.stderr!r}")
+            capacity_error.write_text("begin Writeln('must never run');var l:=new List<integer>(Arr(1.5));end.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(capacity_error)], text=True, encoding="utf-8",
+                                     capture_output=True, cwd=folder, env=env, timeout=10)
+            if invalid.returncode != 1 or invalid.stdout or "E_TYPE" not in invalid.stderr or "RU:" not in invalid.stderr:
+                raise RuntimeError(f"{name} List constructor source type was not checked before output")
             timing_error = folder / "Пауза.pas"
             timing_error.write_text("begin\n Sleep(-2);\nend.", encoding="utf-8")
             invalid = subprocess.run([runner, "run", str(timing_error)], text=True, encoding="utf-8",
@@ -928,6 +942,7 @@ def main():
             results[-1]["typed_list_bulk_ranges_and_bilingual_diagnostics"] = "passed"
             results[-1]["typed_sequence_join_flatten_and_bilingual_diagnostics"] = "passed"
             results[-1]["native_timing_sleep_and_bilingual_diagnostics"] = "passed"
+            results[-1]["typed_list_capacity_constructors_and_bilingual_diagnostics"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 

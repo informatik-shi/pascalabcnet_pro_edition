@@ -256,6 +256,7 @@ struct SchoolLists {
         values.remaining-=size; return std::vector<std::uint8_t>(size);
     }
     void add(const std::shared_ptr<Aggregate>& list, std::int32_t value) {
+        values.grow_list(list,list->items.size()+1);
         auto cell=values.cell(Type::integer,value); values.own_list_cell(cell,list);
         list->items.push_back(std::move(cell)); ++list->version;
     }
@@ -324,6 +325,7 @@ struct SchoolLists {
         if (count<=initial_count) {
             if (count< -1 || (count>0 && static_cast<std::size_t>(count)>primes->items.size())) throw runtime_error(RuntimeError::index_bounds,values.location);
             auto result=values.array(type,0);
+            if (count>0) values.set_list_capacity(result,static_cast<std::size_t>(count));
             for (std::int32_t i=0;i<count;++i) { check(i); add(result,std::get<std::int32_t>(primes->items[i]->value)); }
             return result;
         }
@@ -344,6 +346,7 @@ struct SchoolFactors {
     void append(const std::shared_ptr<Aggregate>& list, std::int64_t n) {
         const auto element=wide ? Type::int64 : Type::integer;
         if (!wide && (n<INT32_MIN || n>INT32_MAX)) throw runtime_error(RuntimeError::integer_overflow,service.values.location);
+        service.values.grow_list(list,list->items.size()+1);
         auto cell=service.values.cell(element,wide ? Value{n} : Value{static_cast<std::int32_t>(n)});
         service.values.own_list_cell(cell,list); list->items.push_back(std::move(cell)); ++list->version;
     }
@@ -532,7 +535,7 @@ Value invoke_school_list(Values& values, SchoolContext& context, SchoolList meth
     if (method==SchoolList::digits_big) {
         auto result=values.array(list,0); auto n=std::get<BigInteger>(arguments[0]);
         if (n.negative() || base<2) return result;
-        if (n.zero()) service.add(result,0);
+        if (n.zero()) { values.set_list_capacity(result,1);service.add(result,0); }
         const auto divisor=BigInteger::from_signed(base);
         while (!n.zero()) {
             service.check(); big_work(n.bits()/28+1,values.location,options);
@@ -544,7 +547,7 @@ Value invoke_school_list(Values& values, SchoolContext& context, SchoolList meth
     if (method==SchoolList::digits) {
         auto result=values.array(list,0); auto n=std::get<std::int64_t>(arguments[0]);
         if (n<0 || base<2) return result;
-        if (!n) service.add(result,0);
+        if (!n) { values.set_list_capacity(result,1);service.add(result,0); }
         while (n>0) { service.check(); service.add(result,static_cast<std::int32_t>(n%base)); n/=base; }
         std::reverse(result->items.begin(),result->items.end()); return result;
     }

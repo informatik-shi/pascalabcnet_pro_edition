@@ -6,6 +6,10 @@ Error runtime_error(RuntimeError id, SourceLocation location, std::string_view c
     switch (id) {
     case RuntimeError::sleep_duration:
         code="E_RANGE";english="Sleep duration must be -1 or nonnegative";russian="Длительность Sleep должна быть равна -1 или быть неотрицательной";break;
+    case RuntimeError::list_capacity:
+        code="E_RANGE";english="List capacity cannot be less than Count";russian="Ёмкость списка не может быть меньше Count";break;
+    case RuntimeError::list_capacity_negative:
+        code="E_RANGE";english="List capacity must be nonnegative";russian="Ёмкость списка должна быть неотрицательной";break;
     case RuntimeError::list_index:
         code="E_RANGE";english="List index is outside the allowed range";russian="Индекс списка находится вне допустимого диапазона";break;
     case RuntimeError::list_count:

@@ -99,6 +99,9 @@ private:
             expression(*node.left); emit(Op::sequence_partial,node.left->type,0,node.location); break;
         case hir::ExprKind::sequence_join:
             expression(*node.left);expression(*node.right);emit(Op::sequence_join,node.left->type,0,node.location);break;
+        case hir::ExprKind::list_capacity:
+            if (node.left) expression(*node.left);for (const auto& argument:node.arguments) expression(*argument);
+            emit(Op::list_capacity,node.operation_type,node.local,node.location);break;
         case hir::ExprKind::list_bulk:
             expression(*node.left);for (const auto& argument:node.arguments) expression(*argument);
             emit(Op::list_bulk,node.left->type,(static_cast<std::size_t>(node.operation_type)<<1)|node.local,node.location);break;
@@ -622,6 +625,10 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if (!compound(type) || type_info(program,type).kind!=CompoundKind::sequence || type_info(program,type).rank!=1
                 || !scalar(type_info(program,type).element) || instruction.operand) invalid(instruction,"Invalid sequence join signature");
             break;
+        case Op::list_capacity:
+            if (!compound(type) || type_info(program,type).kind!=CompoundKind::list || type_info(program,type).rank!=1
+                || instruction.operand>static_cast<std::size_t>(ListCapacity::construct)) invalid(instruction,"Invalid List capacity signature");
+            break;
         case Op::list_bulk: {
             const auto input=instruction.operand>>1;
             if (input<64 || input>=64+program.types.size() || !list_bulk_signature_valid(program,type,static_cast<Type>(input)))
@@ -1111,6 +1118,12 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         }
         case Op::sequence_join:
             require(Type::string);require(instruction.type);stack.push_back(Type::string);break;
+        case Op::list_capacity: {
+            const auto method=static_cast<ListCapacity>(instruction.operand);
+            if (list_capacity_argument(method)) require(Type::integer);
+            if (method!=ListCapacity::construct) require(instruction.type);
+            const auto result=list_capacity_result(instruction.type,method);if (result!=Type::unit) stack.push_back(result);break;
+        }
         case Op::list_bulk:
             require(static_cast<Type>(instruction.operand>>1));if (instruction.operand&1U) require(Type::integer);require(instruction.type);break;
         case Op::list_operation: {

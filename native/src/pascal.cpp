@@ -1446,6 +1446,22 @@ private:
                     for (std::size_t i=0;i<parameters.size();++i) result->arguments.push_back(convert(expression(*source.arguments[i],parameters[i]),parameters[i]));
                     break;
                 }
+                if (info(type,result->location).kind==CompoundKind::list && !source.arguments.empty()) {
+                    if (source.arguments.size()!=1) throw Error("E_TYPE",result->location,"List constructor requires zero or one argument");
+                    auto argument=expression(*source.arguments[0]);
+                    if (integer_type(argument->type)) {
+                        result->kind=hir::ExprKind::list_capacity;result->type=type;result->operation_type=type;
+                        result->local=static_cast<std::size_t>(ListCapacity::construct);
+                        result->arguments.push_back(convert(std::move(argument),Type::integer));
+                    } else {
+                        const auto element=info(type,result->location).element;
+                        if (argument->type!=Type::nil && sequence_source(argument->type,result->location).element!=element)
+                            throw Error("E_TYPE",result->location,"List constructor source element type must match exactly");
+                        result->left=convert(std::move(argument),sequence_type(CompoundKind::sequence,element));
+                        result->kind=hir::ExprKind::sequence_call;result->local=2;result->type=type;
+                    }
+                    break;
+                }
                 if (!source.arguments.empty()) {
                     if (info(type,result->location).kind != CompoundKind::dynarray || source.arguments.size() != 1)
                         throw Error("E_TYPE",result->location,"Only DynArray supports a constructor size argument");
@@ -2549,6 +2565,16 @@ private:
     bool bind_list_operation(hir::Expr& result,const SyntaxExpr& source) {
         if (!compound(result.left->type) || info(result.left->type,result.location).kind!=CompoundKind::list) return false;
         const auto name=source.token.text;
+        if (name=="capacity" || name=="ensurecapacity" || name=="trimexcess") {
+            const auto method=name=="capacity" ? ListCapacity::get : name=="ensurecapacity" ? ListCapacity::ensure : ListCapacity::trim;
+            if ((method==ListCapacity::get && source.kind!=SyntaxExprKind::field)
+                || source.arguments.size()!=(method==ListCapacity::ensure ? 1U : 0U))
+                throw Error("E_TYPE",result.location,"Wrong List capacity operation arguments");
+            result.operation_type=result.left->type;result.type=list_capacity_result(result.operation_type,method);
+            result.kind=hir::ExprKind::list_capacity;result.local=static_cast<std::size_t>(method);
+            if (method==ListCapacity::ensure) result.arguments.push_back(convert(expression(*source.arguments[0]),Type::integer));
+            return true;
+        }
         if (name=="addrange" || name=="insertrange") {
             const bool insert=name=="insertrange";const auto element=info(result.left->type,result.location).element;
             if (source.arguments.size()!=(insert ? 2U : 1U)) throw Error("E_TYPE",result.location,"Wrong List operation argument count");
@@ -3596,6 +3622,11 @@ private:
                 result.target=expression(*source.target); result.expression=std::move(initial); break;
             }
             result.target = expression(*source.target);
+            if (result.target->kind==hir::ExprKind::list_capacity && result.target->local==static_cast<std::size_t>(ListCapacity::get)) {
+                auto setter=std::move(result.target);setter->arguments.push_back(convert(expression(*source.expression),Type::integer));
+                setter->local=static_cast<std::size_t>(ListCapacity::set);setter->type=Type::unit;
+                result.kind=hir::StmtKind::call;result.expression=std::move(setter);break;
+            }
             if (result.target->kind==hir::ExprKind::school_ip && result.target->local==static_cast<std::size_t>(SchoolIPMethod::address_value)) {
                 auto setter=std::move(result.target); const auto owner=setter->operation_type;
                 setter->arguments.push_back(expression(*source.expression)); bind_school_ip(*setter,owner,SchoolIPMethod::address_set);

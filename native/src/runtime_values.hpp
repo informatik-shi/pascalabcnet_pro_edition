@@ -4,6 +4,9 @@
 #include "text_file.hpp"
 #include <span>
 #include <functional>
+#include <algorithm>
+#include <new>
+#include <stdexcept>
 
 namespace abc {
 inline const TypeInfo& type_info(const Program& program, Type type) {
@@ -21,6 +24,7 @@ struct Values {
     SourceLocation location{};
     std::shared_ptr<Aggregate> empty_integer_range{};
     std::size_t sequence_depth=0;
+    std::size_t list_storage_remaining=remaining;
     std::function<Value(std::size_t,std::span<const Value>)> invoke{};
     std::function<Value(const std::shared_ptr<Aggregate>&,std::span<const Value>)> invoke_closure{};
     std::size_t callable_target(const std::shared_ptr<Aggregate>& callable) const {
@@ -117,10 +121,30 @@ struct Values {
         }
         return left == right;
     }
+    void set_list_capacity(const std::shared_ptr<Aggregate>& list, std::size_t capacity) {
+        if (capacity<list->items.size()) throw runtime_error(RuntimeError::list_capacity,location);
+        if (capacity==list->list_capacity) return;
+        if (capacity>INT32_MAX || capacity>list_storage_remaining) throw runtime_error(RuntimeError::allocation_limit,location);
+        try {
+            // Reallocation copies cell pointers, preserving record field aliases and owners.
+            std::vector<std::shared_ptr<Cell>> storage; storage.reserve(capacity);
+            storage.insert(storage.end(),list->items.begin(),list->items.end());
+            list->items.swap(storage);
+        } catch (const std::bad_alloc&) { throw runtime_error(RuntimeError::allocation_limit,location); }
+          catch (const std::length_error&) { throw runtime_error(RuntimeError::allocation_limit,location); }
+        list_storage_remaining-=capacity; list->list_capacity=capacity;
+    }
+    void grow_list(const std::shared_ptr<Aggregate>& list, std::size_t required) {
+        if (required<=list->list_capacity) return;
+        if (required>INT32_MAX) throw runtime_error(RuntimeError::allocation_limit,location);
+        const auto doubled=list->list_capacity ? std::min<std::size_t>(INT32_MAX,list->list_capacity*2) : 4;
+        set_list_capacity(list,std::max(doubled,required));
+    }
     std::shared_ptr<Aggregate> array(Type type, std::size_t size, bool generic = false) {
         if (size > remaining) throw runtime_error(RuntimeError::allocation_limit, location);
         auto result = std::make_shared<Aggregate>(); result->type = type;
         const auto element = type_info(program, type).element;
+        if (type_info(program,type).kind==CompoundKind::list) set_list_capacity(result,size);
         for (std::size_t i = 0; i < size; ++i) result->items.push_back(cell(element, zero(element,false,generic)));
         return result;
     }

@@ -70,6 +70,42 @@ void runtime_error(std::string_view source, std::string_view code) {
     error([&] { (void)run(source); }, code,source);
 }
 
+void list_capacity_library() {
+    result("uses School;begin Writeln(FirstPrimes(5).Capacity,' ',Digits(0).Capacity,' ',Digits(0bi).Capacity,' ',Digits(123).Capacity);end.","5 1 1 4\n");
+    result("begin var l:=new List<integer>;Writeln(l.Count,' ',l.Capacity);for var i:=1 to 9 do begin l.Add(i);Write(l.Capacity,' ');end;Writeln;end.","0 0\n4 4 4 4 8 8 8 8 16 \n");
+    result("begin var l:=new List<integer>(3);Writeln(l.Count,' ',l.Capacity);l.AddRange(Arr(1,2,3));Writeln(l.Capacity);l.Insert(1,9);Writeln(l,' ',l.Capacity);l.Clear;Writeln(l.Count,' ',l.Capacity);l.Capacity:=0;Writeln(l.Capacity);end.","0 3\n3\n[1,9,2,3] 6\n0 6\n0\n");
+    result("begin var l:=new List<integer>(Arr(1,2,3));Writeln(l,' ',l.Capacity);var c:=new List<integer>(l);c[0]:=9;Writeln(l,' ',c,' ',c.Capacity);Writeln(new List<integer>(new integer[0]).Capacity);end.","[1,2,3] 3\n[1,2,3] [9,2,3] 3\n0\n");
+    result("begin var l:=new List<integer>(SeqGen(5,i->i));Writeln(l,' ',l.Capacity);Writeln(new List<char>('abc'),' ',new List<char>('abc').Capacity);Writeln(new List<integer>(Arr(1,2,3).AsEnumerable).Capacity);Writeln(new List<integer>(Seq(1,2,3)).Capacity);end.","[0,1,2,3,4] 8\n[a,b,c] 4\n3\n3\n");
+    result("begin var l:=new List<integer>;Writeln(l.EnsureCapacity(0),' ',l.EnsureCapacity(1),' ',l.Count);Writeln(l.EnsureCapacity(3),' ',l.EnsureCapacity(5));l.Capacity:=2;Writeln(l.Capacity,' ',l.EnsureCapacity(3));l.Capacity:=1;l.TrimExcess;Writeln(l.Capacity);l.Capacity:=4;l.TrimExcess;Writeln(l.Capacity);end.","0 4 0\n4 8\n2 4\n1\n0\n");
+    result("begin var l:=new List<integer>(4);l.AddRange(Arr(1,2,3));l.TrimExcess;Writeln(l.Capacity);l.RemoveAt(0);l.TrimExcess;Writeln(l.Capacity,' ',l);l.RemoveRange(0,2);Writeln(l.Capacity);l.TrimExcess;Writeln(l.Capacity);end.","4\n2 [2,3]\n2\n0\n");
+    result("begin var l:=Arr(1,2,3).ToList;foreach var x in l do begin l.Capacity:=10;l.EnsureCapacity(20);l.TrimExcess;Write(x);end;Writeln(' ',l.Capacity);end.","123 3\n");
+    result("begin var l:=new List<integer>(9);l.AddRange(Arr(1,2,3));Writeln(Copy(l).Capacity,' ',l.GetRange(1,2).Capacity,' ',l.ConvertAll(x->x+1).Capacity,' ',l.ToList.Capacity);l.AddRange(Arr(4,5,6,7,8,9,10));Writeln(l.Capacity);var m:=Arr(1,2).ToList;m.InsertRange(0,m);Writeln(m.Capacity,' ',m);end.","3 2 3 3\n18\n4 [1,2,1,2]\n");
+    result("type R=record n:integer;a:array of integer;end;begin var r:R;r.n:=1;r.a:=Arr(2);var l:=new List<R>(Arr(r));l.Capacity:=10;var c:=new List<R>(l);c[0].n:=9;c[0].a[0]:=7;Writeln(l[0].n,' ',r.a[0]);end.","1 7\n");
+    result("type R=record n:integer;end;var l:List<R>;procedure P(var n:integer);begin l.Capacity:=20;l.TrimExcess;n:=7;end;begin var r:R;l:=new List<R>(Arr(r));P(l[0].n);Writeln(l[0].n,' ',l.Capacity);end.","7 1\n");
+    result("begin var l:=new List<integer>(word(2));l.Add(7);Writeln(l.Capacity);var calls:=0;var c:=new List<integer>(SeqGen(3,i->begin Inc(calls);Result:=i;end));Writeln(c,' ',calls);end.","2\n[0,1,2] 3\n");
+    result("begin var l:=Arr(1,2,3).ToList;var c:=l.ConvertAll(x->begin if x=1 then l.RemoveAt(2);Result:=x;end);Writeln(c,' ',c.Capacity);end.","[1,2] 3\n");
+    result("begin var l:=new List<char>(#55356#57101);Writeln(l.Count,' ',Ord(l[0]),' ',Ord(l[1]));end.","2 55356 57101\n");
+    for(const auto source:{"begin var l:=new List<integer>(-1);end.","begin var l:=new List<integer>;l.EnsureCapacity(-1);end.","begin var l:=new List<integer>;l.Capacity:=-1;end.","begin var l:=Arr(1,2).ToList;l.Capacity:=1;end."})runtime_error(source,"E_RANGE");
+    for(const auto source:{"begin var l:=new List<integer>(nil);end.","begin var s:sequence of integer:=nil;var result:=new List<integer>(s);end.","begin var a:array of integer:=nil;var result:=new List<integer>(a);end.","begin var a:List<integer>:=nil;var result:=new List<integer>(a);end.","begin var s:string:=nil;var result:=new List<char>(s);end.","begin var l:List<integer>:=nil;Writeln(l.Capacity);end.","begin var l:List<integer>:=nil;l.Capacity:=-1;end.","begin var l:List<integer>:=nil;l.EnsureCapacity(-1);end.","begin var l:List<integer>:=nil;l.TrimExcess;end."})runtime_error(source,"E_NIL");
+    for(const auto source:{"begin var l:=new List<integer>(True);end.","begin new List<integer>(1,2);end.","begin new List<integer>(Arr(1.5));end.","begin new List<string>('abc');end.","begin var l:=new List<integer>;l.Capacity();end.","begin var l:=new List<integer>;l.Capacity:='abc';end.","begin var l:=new List<integer>;l.EnsureCapacity(1.5);end.","begin var l:=new List<integer>;l.TrimExcess(1);end.","procedure P(var n:integer);begin end;begin var l:=new List<integer>;P(l.Capacity);end."})compile_error(source,"E_TYPE");
+    for(const auto source:{"begin var result:=new List<integer>(2147483647);end.","begin var l:=new List<integer>;l.Capacity:=2147483647;end.","begin var l:=new List<integer>;l.EnsureCapacity(2147483647);end."})runtime_error(source,"E_LIMIT");
+    {
+        const auto p=abc::compile("function L:List<integer>;begin Write('L');Result:=nil;end;function C:integer;begin Write('C');Result:=-1;end;begin L().Capacity:=C();end.");std::istringstream in;std::ostringstream out;
+        error([&]{abc::execute(p,in,out);},"E_NIL");require(out.str()=="LC","Capacity setter evaluates receiver and value before nil access");
+    }
+    try{(void)run("begin\nvar l:=Arr(1).ToList;l.Capacity:=0;\nend.");require(false,"Expected capacity below Count");}
+    catch(const abc::Error& e){require(e.code=="E_RANGE" && std::string_view(e.what())=="List capacity cannot be less than Count" && e.russian=="Ёмкость списка не может быть меньше Count" && e.location.line==2,"Capacity error has exact English/Russian text and source location");}
+    auto p=abc::compile("begin var l:=new List<integer>(3);var n:=l.Capacity;var m:=l.EnsureCapacity(5);l.TrimExcess;l.Capacity:=0;end.");
+    require(abc::type_info(p,p.locals[0].type).kind==abc::CompoundKind::list && p.locals[1].type==abc::Type::integer && p.locals[2].type==abc::Type::integer,"Constructor and capacity results have static types");
+    const auto type=p.locals[0].type;abc::Values values{p,1000};auto l=values.array(type,100);const auto cell=l->items[0];abc::ExecutionOptions options;options.instruction_limit=10;
+    error([&]{(void)abc::list_capacity(values,type,l,abc::ListCapacity::set,200,options);},"E_LIMIT");require(l->list_capacity==100 && l->items[0]==cell,"Capacity work quota is checked before allocation and preserves cells");
+    options={};options.cancelled=[] {return true;};error([&]{(void)abc::list_capacity(values,type,l,abc::ListCapacity::ensure,200,options);},"E_CANCELLED");require(l->list_capacity==100,"Cancelled capacity change leaves storage unchanged");
+    options={};(void)abc::list_capacity(values,type,l,abc::ListCapacity::ensure,200,options);require(l->items[0]==cell && l->items.size()==100 && l->version==0 && l->list_capacity==200,"Capacity growth preserves identity, count and enumerator version");
+    abc::Values limited{p,10};auto empty=limited.array(type,0);limited.set_list_capacity(empty,6);error([&]{limited.set_list_capacity(empty,5);},"E_LIMIT");require(empty->list_capacity==6,"Every replacement buffer is charged against cumulative List storage quota");
+    options={};options.allocation_limit=10;error([&]{(void)run("begin var l:=new List<integer>(11);end.","",options);},"E_LIMIT");
+    for(int kind=0;kind<4;++kind){auto bad=p;for(auto& op:bad.code)if(op.op==abc::Op::list_capacity){if(kind==0)op.operand=std::numeric_limits<std::size_t>::max();if(kind==1)op.type=abc::Type::integer;if(kind==2)op.operand=static_cast<std::size_t>(abc::ListCapacity::trim);if(kind==3)op.type=abc::Type::unit;}error([&]{abc::verify(bad);},"E_BYTECODE");}
+}
+
 void timing_library() {
     result("begin var start:=Milliseconds;Sleep(2);Writeln(Milliseconds-start>=2,' ',MillisecondsDelta>=0);Sleep(0);end.","True True\n");
     result("function Milliseconds:integer;begin Result:=7;end;begin Writeln(Milliseconds,' ',PABCSystem.Milliseconds>=0);PABCSystem.Sleep(0);Writeln(PABCSystem.MillisecondsDelta()>=0);end.","7 True\nTrue\n");
@@ -5406,6 +5442,7 @@ int main() {
     list_bulk_ranges();
     sequence_text_and_flatten();
     timing_library();
+    list_capacity_library();
     escaped_identifiers_language();
     structural_output();
     try_console_read();
