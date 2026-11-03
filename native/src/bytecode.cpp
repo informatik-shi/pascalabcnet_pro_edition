@@ -540,7 +540,9 @@ private:
             local(Op::load,node.index_local,node.location); constant(lazy ? Value{std::int64_t{1}} : Value{std::int32_t{1}},node.location);
             emit(Op::add,index_type,0,node.location); local(Op::store,node.index_local,node.location);
             emit(Op::jump,Type::invalid,start,node.location);
-            (*code_)[done].operand=code_->size(); finish_loop(advance); break;
+            (*code_)[done].operand=code_->size(); finish_loop(advance);
+            if(lazy){local(Op::load,node.sequence_local,node.location);emit(Op::sequence_dispose,sequence,0,node.location);}
+            break;
         }
         case hir::StmtKind::for_loop: {
             for (const auto& child:node.statements) statement(child);
@@ -815,7 +817,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if (!compound(type) || type_info(program,type).kind!=CompoundKind::sequence
                 || instruction.operand>static_cast<std::size_t>(SequenceQuery::single_default)) invalid(instruction,"Invalid sequence query metadata");
             break;
-        case Op::sequence_resume: case Op::sequence_begin: case Op::sequence_count: case Op::sequence_array: case Op::sequence_list:
+        case Op::sequence_dispose: case Op::sequence_resume: case Op::sequence_begin: case Op::sequence_count: case Op::sequence_array: case Op::sequence_list:
             if (!compound(type) || type_info(program,type).kind!=CompoundKind::sequence) invalid(instruction,"Sequence instruction requires a statically typed sequence");
             if (instruction.op==Op::sequence_array || instruction.op==Op::sequence_list) {
                 if (instruction.operand<64 || instruction.operand>=64+program.types.size()) invalid(instruction,"Invalid sequence array result");
@@ -1210,6 +1212,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         case Op::next_permutation: require(instruction.type); stack.push_back(Type::boolean); break;
         case Op::combinations: case Op::permutations: case Op::partial_permutations: case Op::cartesian_power: require(Type::integer); require(instruction.type); stack.push_back(static_cast<Type>(instruction.operand>>16)); break;
         case Op::iteration_version: require(instruction.type); stack.push_back(Type::int64); break;
+        case Op::sequence_dispose: require(instruction.type);break;
         case Op::sequence_begin: require(instruction.type); stack.push_back(instruction.type); break;
         case Op::sequence_snapshot: case Op::sequence_wrap: require(instruction.type); stack.push_back(static_cast<Type>(instruction.operand)); break;
         case Op::sequence_repeat: require(type_info(program,instruction.type).element); require(Type::integer); stack.push_back(instruction.type); break;

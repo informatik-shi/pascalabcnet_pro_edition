@@ -41,34 +41,56 @@ std::shared_ptr<Aggregate> sequence_create(Values& values,Type type,const std::s
     auto result=std::make_shared<Aggregate>(); result->type=type; result->sequence=std::make_unique<SequenceState>();
     result->sequence->source=source; result->sequence->provider=provider; return result;
 }
+void sequence_dispose(const std::shared_ptr<Aggregate>& sequence) noexcept {
+    if(!sequence || !sequence->sequence || !sequence->sequence->started || sequence->sequence->disposed)return;
+    auto& state=*sequence->sequence;state.disposed=true;
+    // Close actual inner cursors even if a native operation temporarily retains their state.
+    // Input prototypes and numeric range descriptors remain available for a new traversal.
+    const auto close=[](std::shared_ptr<Aggregate>& inner){sequence_dispose(inner);inner.reset();};
+    if(state.partial)close(state.partial->iterator);
+    if(state.slice)close(state.slice->iterator);
+    if(state.concat)close(state.concat->iterator);
+    if(state.transform){close(state.transform->inner);close(state.transform->iterator);}
+    if(state.zip)for(auto& inner:state.zip->iterators)close(inner);
+    if(state.cartesian)for(auto& inner:state.cartesian->iterators)close(inner);
+    state.partial.reset();state.slice.reset();state.concat.reset();state.transform.reset();state.zip.reset();
+    state.generator.reset();state.cartesian.reset();state.power.reset();state.combinator.reset();
+    state.view.reset();state.matrix_line.reset();
+}
+namespace {
+std::shared_ptr<Aggregate> cursor_lease(std::shared_ptr<Aggregate> owner) {
+    auto* pointer=owner.get();
+    return std::shared_ptr<Aggregate>(pointer,[owner=std::move(owner)](Aggregate*) noexcept {sequence_dispose(owner);});
+}
+}
 std::shared_ptr<Aggregate> sequence_begin(Values& values,const std::shared_ptr<Aggregate>& sequence) {
     require(sequence,values.location);
     if (!sequence->sequence) throw runtime_error(RuntimeError::invalid_bytecode,values.location);
     reserve_state(values);
     auto result=std::make_shared<Aggregate>(); result->type=sequence->type;
     result->sequence=std::make_unique<SequenceState>(*sequence->sequence);
-    auto& state=*result->sequence; state.started=true; state.first=0;
-    if (state.provider==SequenceProvider::transform) { reserve_state(values); state.transform=std::make_shared<TransformState>(); return result; }
-    if (state.provider==SequenceProvider::zip) { reserve_state(values); state.zip=std::make_shared<ZipState>(); return result; }
-    if (state.provider==SequenceProvider::generated) { reserve_state(values); state.generator=std::make_shared<GeneratorState>(); return result; }
-    if (state.provider==SequenceProvider::cartesian) { reserve_state(values); state.cartesian=std::make_shared<CartesianState>(); return result; }
-    if (state.provider==SequenceProvider::cartesian_power) { reserve_state(values); state.power=std::make_shared<CartesianPowerState>(); return result; }
-    if (state.provider==SequenceProvider::combinatorics) { reserve_state(values); state.combinator=std::make_shared<CombinatorState>(); return result; }
-    if (state.provider==SequenceProvider::array_view) { reserve_state(values); state.view=std::make_shared<ArrayViewState>(); return result; }
-    if (state.provider==SequenceProvider::matrix_lines) { reserve_state(values); state.matrix_line=std::make_shared<MatrixLineState>(); return result; }
+    auto& state=*result->sequence; state.started=true;state.disposed=false; state.first=0;
+    if (state.provider==SequenceProvider::transform) { reserve_state(values); state.transform=std::make_shared<TransformState>(); return cursor_lease(std::move(result)); }
+    if (state.provider==SequenceProvider::zip) { reserve_state(values); state.zip=std::make_shared<ZipState>(); return cursor_lease(std::move(result)); }
+    if (state.provider==SequenceProvider::generated) { reserve_state(values); state.generator=std::make_shared<GeneratorState>(); return cursor_lease(std::move(result)); }
+    if (state.provider==SequenceProvider::cartesian) { reserve_state(values); state.cartesian=std::make_shared<CartesianState>(); return cursor_lease(std::move(result)); }
+    if (state.provider==SequenceProvider::cartesian_power) { reserve_state(values); state.power=std::make_shared<CartesianPowerState>(); return cursor_lease(std::move(result)); }
+    if (state.provider==SequenceProvider::combinatorics) { reserve_state(values); state.combinator=std::make_shared<CombinatorState>(); return cursor_lease(std::move(result)); }
+    if (state.provider==SequenceProvider::array_view) { reserve_state(values); state.view=std::make_shared<ArrayViewState>(); return cursor_lease(std::move(result)); }
+    if (state.provider==SequenceProvider::matrix_lines) { reserve_state(values); state.matrix_line=std::make_shared<MatrixLineState>(); return cursor_lease(std::move(result)); }
     if (state.provider==SequenceProvider::string) {
         if (!state.seed || state.seed->type!=Type::string || !std::holds_alternative<std::u16string>(state.seed->value)) throw runtime_error(RuntimeError::invalid_bytecode,values.location);
-        return result;
+        return cursor_lease(std::move(result));
     }
     if (state.provider==SequenceProvider::concat) {
-        reserve_state(values); state.concat=std::make_shared<ConcatState>(); return result;
+        reserve_state(values); state.concat=std::make_shared<ConcatState>(); return cursor_lease(std::move(result));
     }
     if (state.provider==SequenceProvider::slice) {
-        reserve_state(values); state.slice=std::make_shared<SliceState>(); return result;
+        reserve_state(values); state.slice=std::make_shared<SliceState>(); return cursor_lease(std::move(result));
     }
     if (state.provider==SequenceProvider::partial_sum) {
         reserve_state(values); state.partial=std::make_shared<PartialSumState>();
-        state.partial->total=values.zero(type_info(values.program,sequence->type).element); return result;
+        state.partial->total=values.zero(type_info(values.program,sequence->type).element); return cursor_lease(std::move(result));
     }
     if (state.provider==SequenceProvider::repeat || state.provider==SequenceProvider::range || state.provider==SequenceProvider::stepped_range || state.provider==SequenceProvider::big_range || state.provider==SequenceProvider::partition || state.provider==SequenceProvider::real_range) {
         if (!state.seed || state.seed->type!=type_info(values.program,sequence->type).element)
@@ -88,21 +110,23 @@ std::shared_ptr<Aggregate> sequence_begin(Values& values,const std::shared_ptr<A
             reserve_state(values); state.count=0;
             state.real_range=std::make_shared<RealRangeState>(RealRangeState{state.real_range->last,state.real_range->step});
         }
-        return result;
+        return cursor_lease(std::move(result));
     }
     state.count=0;
     require(state.source,values.location);
     if (collection_sequence(state.provider)) { state.count=state.source->items.size(); state.version=state.source->version; }
     else school_ip_sequence_start(state,values.location);
-    return result;
+    return cursor_lease(std::move(result));
 }
 void sequence_check(const std::shared_ptr<Aggregate>& sequence,SourceLocation location) {
     const auto& state=cursor(sequence,location);
+    if(state.disposed)return;
     if (state.provider==SequenceProvider::list && state.version!=state.source->version) throw runtime_error(RuntimeError::collection_changed,location);
 }
 bool sequence_resume(Values& values,const std::shared_ptr<Aggregate>& sequence,std::uint64_t index,const ExecutionOptions& options) {
     const auto location=values.location;
     sequence_check(sequence,location); auto& state=*sequence->sequence;
+    if(state.disposed)return false;
     if (state.provider==SequenceProvider::partial_sum) return sequence_partial_resume(values,sequence,index,options);
     if (state.provider==SequenceProvider::slice) return sequence_slice_resume(values,sequence,index,options);
     if (state.provider==SequenceProvider::concat) return sequence_concat_resume(values,sequence,index,options);
@@ -168,6 +192,7 @@ bool sequence_resume(Values& values,const std::shared_ptr<Aggregate>& sequence,s
 }
 std::optional<std::uint64_t> sequence_known_length(const std::shared_ptr<Aggregate>& sequence,SourceLocation location) {
     const auto& state=cursor(sequence,location);
+    if(state.disposed)return std::uint64_t{0};
     if (state.provider==SequenceProvider::matrix_lines || state.provider==SequenceProvider::array_view || state.provider==SequenceProvider::combinatorics || state.provider==SequenceProvider::cartesian || state.provider==SequenceProvider::cartesian_power || state.provider==SequenceProvider::generated || state.provider==SequenceProvider::zip || state.provider==SequenceProvider::transform || state.provider==SequenceProvider::concat || state.provider==SequenceProvider::slice || state.provider==SequenceProvider::partial_sum || state.provider==SequenceProvider::big_range || (state.provider==SequenceProvider::real_range && !state.real_range->initialized)) return std::nullopt;
     return state.count;
 }

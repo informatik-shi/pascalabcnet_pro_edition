@@ -6,6 +6,7 @@ struct Values;
 std::shared_ptr<Aggregate> sequence_text(Values& values,Type type,Value text);
 std::shared_ptr<Aggregate> sequence_create(Values& values,Type type,const std::shared_ptr<Aggregate>& source,SequenceProvider provider);
 std::shared_ptr<Aggregate> sequence_begin(Values& values,const std::shared_ptr<Aggregate>& sequence);
+void sequence_dispose(const std::shared_ptr<Aggregate>& cursor) noexcept;
 void sequence_check(const std::shared_ptr<Aggregate>& sequence,SourceLocation location);
 bool sequence_resume(Values& values,const std::shared_ptr<Aggregate>& sequence,std::uint64_t index,const ExecutionOptions& options);
 std::optional<std::uint64_t> sequence_known_length(const std::shared_ptr<Aggregate>& sequence,SourceLocation location);

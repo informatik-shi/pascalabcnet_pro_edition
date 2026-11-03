@@ -361,6 +361,15 @@ def main():
                     raise RuntimeError(f"{name} file lines diagnostic mismatch: {attempted.stdout!r}, {attempted.stderr!r}")
             if (folder / "partial-lines.tmp").read_bytes() != b"\xff\xfe" + "Первая\r\n".encode("utf-16-le"):
                 raise RuntimeError(f"{name} WriteLines did not retain completed lines on a late source error")
+            lifecycle_source = folder / "Завершение перебора.pas"
+            lifecycle_source.write_text(
+                "function Early:integer;begin foreach var n in Range(1,3).Select(x->x+1) do Exit(n);Result:=0;end;\n"
+                "begin var s:=Range(1,3).Select(x->x*10).Take(2);\n"
+                "foreach var n in s do begin Write(n,' ');break;end;\nWriteln(s.ToArray,' ',Early);end.", encoding="utf-8")
+            attempted = subprocess.run([runner, "run", str(lifecycle_source)], text=True, encoding="utf-8",
+                                       capture_output=True, cwd=folder, env=env, timeout=10)
+            if attempted.returncode or attempted.stdout != "10 [10,20] 2\n":
+                raise RuntimeError(f"{name} cursor cleanup/restart failed: {attempted.stdout!r}, {attempted.stderr!r}")
             character = folder / "Ошибки символов.pas"
             school_error = folder / "Ошибки School.pas"
             for expression, code, english, russian in [
@@ -1194,6 +1203,7 @@ def main():
             results[-1]["typed_encoding_codecs_and_explicit_file_overloads"] = "passed"
             results[-1]["default_encoding_and_text_codec_snapshots"] = "passed"
             results[-1]["file_line_encodings_and_streamed_sequence_output"] = "passed"
+            results[-1]["sequence_cursor_disposal_and_restart"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 

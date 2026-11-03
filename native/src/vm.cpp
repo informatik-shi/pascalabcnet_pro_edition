@@ -387,6 +387,8 @@ static void execute_impl(const Program& program, std::istream& input, std::ostre
             const auto source=std::get<std::shared_ptr<Aggregate>>(pop());
             stack.emplace_back(sequence_create(values,static_cast<Type>(instruction.operand),source,type_info(program,instruction.type).kind==CompoundKind::array ? SequenceProvider::array : SequenceProvider::list)); break;
         }
+        case Op::sequence_dispose:
+            sequence_dispose(std::get<std::shared_ptr<Aggregate>>(pop()));break;
         case Op::sequence_begin:
             stack.emplace_back(sequence_begin(values,std::get<std::shared_ptr<Aggregate>>(pop()))); break;
         case Op::sequence_aggregate: {

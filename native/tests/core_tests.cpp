@@ -97,6 +97,35 @@ void typed_encoding_language() {
     for(int kind=0;kind<5;++kind){auto bad=p;if(kind==0)bad.types[owner].key=abc::Type::integer;if(kind==1)bad.types[owner].fields.push_back({"fake",abc::Type::integer});for(auto& op:bad.code)if(op.op==abc::Op::encoding_call){if(kind==2)op.type=abc::Type::integer;if(kind==3)op.operand=999;if(kind==4 && op.operand==2){op.op=abc::Op::make_default;op.operand=1;}}error([&]{abc::verify(bad);},"E_BYTECODE");}
 }
 
+void native_sequence_disposal() {
+    const auto program=abc::compile("begin var s:sequence of integer;var r:sequence of real;end.");
+    const auto integer=static_cast<abc::Type>(64+std::distance(program.types.begin(),std::find_if(program.types.begin(),program.types.end(),[](const auto& t){return t.kind==abc::CompoundKind::sequence && t.element==abc::Type::integer;})));
+    const auto real=static_cast<abc::Type>(64+std::distance(program.types.begin(),std::find_if(program.types.begin(),program.types.end(),[](const auto& t){return t.kind==abc::CompoundKind::sequence && t.element==abc::Type::real;})));
+    abc::Values values{program,4096};const abc::ExecutionOptions options;
+    auto prototype=abc::sequence_repeat(values,integer,3,std::int32_t{7});
+    auto outer=abc::sequence_slice(values,integer,prototype,abc::SequenceSlice::take,2,options);
+    auto lease=abc::sequence_begin(values,outer);
+    require(abc::sequence_resume(values,lease,0,options),"Cursor lease starts an actual nested traversal");
+    auto state=lease->sequence->slice;auto inner=state->iterator;
+    require(inner && !inner->sequence->disposed && !prototype->sequence->started,"Inner cursor is independent from its input prototype");
+    lease.reset();
+    require(inner->sequence->disposed && !state->iterator,"Releasing an outer cursor lease closes retained inner cursor state");
+    require(!prototype->sequence->disposed && !outer->sequence->disposed,"Disposal preserves enumerable prototypes");
+    require(!abc::sequence_resume(values,inner,1,options),"MoveNext after disposal returns false");
+    abc::sequence_dispose(inner);abc::sequence_dispose(inner);
+    require(abc::sequence_known_length(inner,{})==0,"Disposed cursors report no remaining known elements");
+    auto again=abc::sequence_begin(values,outer);require(abc::sequence_resume(values,again,0,options) && std::get<std::int32_t>(abc::sequence_at(values,again,0,options))==7,"A disposed traversal does not prevent restarting its enumerable");
+    auto range=abc::sequence_range_real(values,real,0,1,0.25);auto range_cursor=abc::sequence_begin(values,range);
+    abc::sequence_dispose(range_cursor);auto range_again=abc::sequence_begin(values,range_cursor);
+    require(abc::sequence_resume(values,range_again,0,options) && std::get<double>(abc::sequence_at(values,range_again,0,options))==0,"Range descriptors survive cursor disposal and can be cloned again");
+    auto bytecode=abc::compile("begin foreach var n in Range(1,3).Take(2) do begin Writeln(n);break;end;end.");
+    require(std::any_of(bytecode.code.begin(),bytecode.code.end(),[](const auto& op){return op.op==abc::Op::sequence_dispose;}),"Lazy foreach emits explicit cleanup for normal completion and break");
+    for(auto& op:bytecode.code)if(op.op==abc::Op::sequence_dispose){op.type=abc::Type::integer;break;}
+    error([&]{abc::verify(bytecode);},"E_BYTECODE");
+    result("function F:integer;begin foreach var x in Range(1,3).Where(n->True) do Exit(x);Result:=0;end;begin Writeln(F);end.","1\n");
+    result("begin foreach var x in Range(1,2) do begin foreach var y in Range(3,4).Take(1) do begin Write(x,y,' ');break;end;end;end.","13 23 ");
+}
+
 void default_encoding_language() {
     result("begin Writeln(DefaultEncoding.CodePage,' ',DefaultEncoding=Encoding.GetEncoding(1251));DefaultEncoding:=Encoding.UTF8;Writeln(PABCSystem.DefaultEncoding.CodePage);end.","1251 True\n65001\n");
     result("var initial:Encoding:=DefaultEncoding;begin Writeln(initial.CodePage);end.","1251\n");
@@ -5973,6 +6002,7 @@ int main() {
     native_text_encoding_codecs();
     typed_encoding_language();
     default_encoding_language();
+    native_sequence_disposal();
     escaped_identifiers_language();
     structural_output();
     try_console_read();
