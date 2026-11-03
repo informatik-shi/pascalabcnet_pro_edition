@@ -205,6 +205,7 @@ def main():
                 ("class-constructors.pas", "Конструктор: Анна 18\nПараметры: Иван 25\n"),
                 ("class-external-methods.pas", "Счётчик: 6\n"),
                 ("class-field-initializers.pas", "Первый: заметка\nВторой: \n"),
+                ("short-class-bodies.pas", "Значение: 8\nЗамыкание: 8\n"),
                 ("class-properties.pas", "Свойство: 7\nЧерез метод: 14\n"),
                 ("class-methods.pas", "Значение: 5\nОбщая ссылка: 6\n"),
                 ("class-fields.pas", "Связанные объекты: 9 7\nОбщая ссылка: 11\n11 9 \n"),
@@ -631,6 +632,18 @@ def main():
                                      capture_output=True, cwd=folder, env=env, timeout=10)
             if invalid.returncode != 1 or invalid.stdout or "E_TYPE" not in invalid.stderr or "RU:" not in invalid.stderr:
                 raise RuntimeError(f"{name} constructor parameter type was not checked before output")
+            short_error = folder / "Короткое тело функции.pas"
+            short_error.write_text("function Divide(n:integer):integer :=\n1 div n;begin Writeln(Divide(0));end.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(short_error)], text=True, encoding="utf-8",
+                                     capture_output=True, cwd=folder, env=env, timeout=10)
+            if (invalid.returncode != 1 or invalid.stdout or "E_DIV_ZERO" not in invalid.stderr
+                    or "EN:" not in invalid.stderr or "RU:" not in invalid.stderr or f"{short_error}:2:" not in invalid.stderr):
+                raise RuntimeError(f"{name} short function body diagnostic failed: {invalid.stderr!r}")
+            short_error.write_text("function F:integer := 'abc';begin Writeln('must never run');end.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(short_error)], text=True, encoding="utf-8",
+                                     capture_output=True, cwd=folder, env=env, timeout=10)
+            if invalid.returncode != 1 or invalid.stdout or "E_TYPE" not in invalid.stderr or "RU:" not in invalid.stderr:
+                raise RuntimeError(f"{name} short function result type was not checked before output")
             initializer_error = folder / "Начальное значение поля.pas"
             initializer_error.write_text("type C=class denominator:integer;\nn:integer:=1 div denominator;constructor;begin Write('must never run');end;end;begin var c:=new C;end.", encoding="utf-8")
             invalid = subprocess.run([runner, "run", str(initializer_error)], text=True, encoding="utf-8",
@@ -1061,6 +1074,7 @@ def main():
             results[-1]["native_class_constructors_and_body_diagnostics"] = "passed"
             results[-1]["native_external_class_methods_and_module_visibility"] = "passed"
             results[-1]["native_class_field_initializers_and_body_order"] = "passed"
+            results[-1]["native_short_routine_bodies_and_bilingual_diagnostics"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 

@@ -70,6 +70,29 @@ void runtime_error(std::string_view source, std::string_view code) {
     error([&] { (void)run(source); }, code,source);
 }
 
+void native_short_routine_bodies_language() {
+    result("function Twice(n:integer):integer:=n*2;procedure Say(n:integer):=Writeln(Twice(n));begin Say(3);end.","6\n");
+    result("function Choose(n:integer):integer:=if n>0 then n else -n;begin Writeln(Choose(-3));end.","3\n");
+    result("function Fact(n:integer):integer:=if n=0 then 1 else n*Fact(n-1);begin Writeln(Fact(5));end.","120\n");
+    result("procedure Bump(var n:integer):=Inc(n);function Total(params n:array of integer):integer:=n.Sum;begin var n:=3;Bump(n);Writeln(n,' ',Total(1,2,3));end.","4 6\n");
+    result("procedure Skip:=exit;procedure Say(n:integer:=2):=if n>0 then Writeln(n);begin Skip;Say;end.","2\n");
+    result("procedure Several:=begin Write('A');Write('B');end;begin Several;end.","AB");
+    result("type C=class n:integer:=2;constructor(value:integer):=n:=n+value;function Get:integer:=n;procedure Add(value:integer):=n:=n+value;end;begin var c:=new C(3);c.Add(4);Writeln(c.Get);end.","9\n");
+    result("type C=class n:integer:=2;constructor:=Inc(n);end;begin Writeln(new C.n);end.","3\n");
+    result("type C=class n:integer;constructor Create(value:integer):=n:=value;end;begin Writeln(new C(7).n);end.","7\n");
+    result("type C=class n:integer:=1;constructor(value:integer);function Get:integer;procedure Add(value:integer:=2);end;constructor C.Create(value:integer):=n:=n+value;function C.Get:=n;procedure C.Add:=n:=n+value;begin var c:=new C(3);c.Add;Writeln(c.Get);end.","6\n");
+    result("type C=class n:integer;function Get:integer:=n;procedure SetN(value:integer):=n:=value;property Value:integer read Get write SetN;end;begin var c:=new C;c.Value:=7;Writeln(c.Value);end.","7\n");
+    result("type C=class n:integer;function Mapper:integer->integer:=x->x+n;end;begin var c:=new C;c.n:=3;var f:=c.Mapper;c:=nil;Writeln(f(4));end.","7\n");
+    result("type C=class n:integer:=3;constructor:=exit;end;begin Writeln(new C.n);end.","3\n");
+    compile_error("function F:integer:='abc';begin Writeln('NEVER');end.","E_TYPE");
+    compile_error("type C=class procedure SetN(n:integer):=n:='abc';end;begin end.","E_TYPE");
+    compile_error("type C=class constructor:=exit(1);end;begin end.","E_TYPE");
+    compile_error("type C=class constructor:=Self:=new C;end;begin end.","E_TYPE");
+    compile_error("procedure Bad:=1+2;begin end.","E_TYPE");
+    runtime_error("function Bad(n:integer):integer:=1 div n;begin Writeln(Bad(0));end.","E_DIV_ZERO");
+    runtime_error("type C=class function Get:integer:=7;end;begin var c:C;Writeln(c.Get);end.","E_NIL");
+}
+
 void native_class_field_initializers_language() {
     result("type C=class n:integer:=7;s:string:='abc';end;begin var c:=new C;Writeln(c.n,' ',c.s);end.","7 abc\n");
     result("type C=class n:integer:=2;a:array of integer:=Arr(1,2);end;begin var c:=new C;var d:=new C;c.a[0]:=7;Writeln(c.a,' ',d.a,' ',c=d);end.","[7,2] [1,2] False\n");
@@ -5716,6 +5739,7 @@ int main() {
     native_class_constructors_language();
     native_external_class_methods_language();
     native_class_field_initializers_language();
+    native_short_routine_bodies_language();
     escaped_identifiers_language();
     structural_output();
     try_console_read();

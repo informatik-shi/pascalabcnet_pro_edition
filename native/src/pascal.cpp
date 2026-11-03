@@ -473,7 +473,7 @@ private:
         const auto token=current_;const bool constructor=accept("constructor");
         const bool function=!constructor && accept("function");if (!constructor && !function) expect("procedure");
         auto result=std::make_shared<SyntaxRoutine>();result->constructor=constructor;result->function_header=function;
-        result->name=constructor && (is("(") || is(";")) ? Token{TokenKind::name,"create",token.location} : name();
+        result->name=constructor && (is("(") || is(";") || is(":=")) ? Token{TokenKind::name,"create",token.location} : name();
         if (accept(".")) {
             if (in_class) throw Error("E_SYNTAX",result->name.location,"Qualified method headers are only allowed outside classes");
             result->owner=result->name.text;result->name=name();
@@ -499,6 +499,13 @@ private:
         }
         if (function) {
             if (result->owner.empty() || is(":")) { expect(":");result->result=type_syntax(); }
+        }
+        if (accept(":=")) {
+            if (function) {
+                SyntaxStmt body;body.kind=SyntaxStmtKind::return_stmt;body.token=result->name;body.expression=expression();
+                result->body.statements.push_back(std::move(body));
+            } else result->body.statements.push_back(statement());
+            expect(";");return result;
         }
         expect(";");
         if (in_class && !is("begin") && !is("var") && !is("const")) { result->declaration_only=true;return result; }
