@@ -268,6 +268,10 @@ static void execute_impl(const Program& program, std::istream& input, std::ostre
             }
             break;
         }
+        case Op::sequence_join: {
+            const auto delimiter=pop();const auto source=std::get<std::shared_ptr<Aggregate>>(pop());
+            stack.emplace_back(sequence_join(values,source,delimiter,options));break;
+        }
         case Op::list_bulk: {
             const auto input=std::get<std::shared_ptr<Aggregate>>(pop());const bool insert=bool(instruction.operand&1U);
             const auto index=insert ? std::get<std::int32_t>(pop()) : 0;const auto target=std::get<std::shared_ptr<Aggregate>>(pop());

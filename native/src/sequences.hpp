@@ -11,6 +11,7 @@ bool sequence_resume(Values& values,const std::shared_ptr<Aggregate>& sequence,s
 std::optional<std::uint64_t> sequence_known_length(const std::shared_ptr<Aggregate>& sequence,SourceLocation location);
 std::uint64_t sequence_length(const std::shared_ptr<Aggregate>& sequence,SourceLocation location);
 Value sequence_at(Values& values,const std::shared_ptr<Aggregate>& sequence,std::int64_t index,const ExecutionOptions& options);
+std::u16string sequence_join(Values& values,const std::shared_ptr<Aggregate>& source,const Value& delimiter,const ExecutionOptions& options);
 Value sequence_collect(Values& values,const std::shared_ptr<Aggregate>& sequence,Type collection,const ExecutionOptions& options);
 Value sequence_query(Values& values,const std::shared_ptr<Aggregate>& sequence,SequenceQuery method,const Value& argument,const ExecutionOptions& options);
 std::shared_ptr<Aggregate> sequence_snapshot(Values& values,Type type,const std::shared_ptr<Aggregate>& array,const ExecutionOptions& options);

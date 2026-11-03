@@ -202,6 +202,7 @@ def main():
                 ("sequence-prefixes.pas", "Начало: [1,2]\nОстаток: [3,1]\nПосле двух: [7,6]\n"),
                 ("callable-values.pas", "Значение: 14\nЧерез массив: 18\nЧерез параметр: 22\nПустое значение: True\n"),
                 ("library-callables.pas", "Сохранённая функция: [2,4,6]\nОтбор: [1,2]\nСуммы пар: [11,22]\nРезультат для True, True: True\n"),
+                ("sequence-text-flatten.pas", "Числа: 1, 2, 3\nСимволы: abc\nМассивы: [1,2,3]\nСтроки: PascalABC\nПустые значения: [|abc||]\n"),
                 ("list-bulk-ranges.pas", "Добавление: [1,2,3,4,5]\nВставка: [1,7,8,2,3,4,5]\nВставка в себя: [1,1,2,3,2,3]\nСимволы: [a,b,c]\n"),
                 ("list-ranges.pas", "Вставка: [1,7,2,1,3]\nПоиск: 0 3\nУдаление: True [7,2,1,3]\nДиапазон: [2,1]\nОстаток: [7,3]\n"),
                 ("replace-copy.pas", "Замена: [7,2,7]\nМассивы: [7,2,7] [9,2,7]\nСписки: [xyz,xyz] [new,xyz]\nМатрицы: [[3,4]] [[8,4]]\n"),
@@ -607,6 +608,19 @@ def main():
                                      capture_output=True, cwd=folder, env=env, timeout=10)
             if invalid.returncode != 1 or invalid.stdout or "E_TYPE" not in invalid.stderr or "RU:" not in invalid.stderr:
                 raise RuntimeError(f"{name} array equality element type was not rejected before output")
+            join_error = folder / "Объединение строк.pas"
+            join_error.write_text("begin\n var s:sequence of integer:=nil;s.JoinToString;\nend.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(join_error)], text=True, encoding="utf-8",
+                                     capture_output=True, cwd=folder, env=env, timeout=10)
+            if (invalid.returncode != 1 or "E_NIL" not in invalid.stderr
+                    or "EN: Cannot access a nil reference" not in invalid.stderr
+                    or "RU: Нельзя обратиться к пустой ссылке nil" not in invalid.stderr or f"{join_error}:2:" not in invalid.stderr):
+                raise RuntimeError(f"{name} bilingual JoinToString nil source error failed: {invalid.stderr!r}")
+            join_error.write_text("begin Writeln('must never run');Seq(1).Flatten;end.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(join_error)], text=True, encoding="utf-8",
+                                     capture_output=True, cwd=folder, env=env, timeout=10)
+            if invalid.returncode != 1 or invalid.stdout or "E_TYPE" not in invalid.stderr or "RU:" not in invalid.stderr:
+                raise RuntimeError(f"{name} Flatten inner type was not checked before output")
             bulk_error = folder / "Вставка диапазона.pas"
             bulk_error.write_text("begin\n var l:=Arr(1).ToList;l.InsertRange(-1,nil);\nend.", encoding="utf-8")
             invalid = subprocess.run([runner, "run", str(bulk_error)], text=True, encoding="utf-8",
@@ -898,6 +912,7 @@ def main():
             results[-1]["typed_replace_copy_and_bilingual_diagnostics"] = "passed"
             results[-1]["typed_list_search_and_ranges_and_bilingual_diagnostics"] = "passed"
             results[-1]["typed_list_bulk_ranges_and_bilingual_diagnostics"] = "passed"
+            results[-1]["typed_sequence_join_flatten_and_bilingual_diagnostics"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 

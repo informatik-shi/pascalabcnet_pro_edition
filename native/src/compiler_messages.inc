@@ -1,3 +1,5 @@
+    {"Wrong sequence helper argument count","Неверное число аргументов операции над последовательностью"},
+    {"JoinToString currently requires scalar elements with native Convert text","JoinToString пока требует скалярные элементы с нативным преобразованием Convert в строку"},
     {"List range source element type must match exactly","Тип элементов источника диапазона должен точно совпадать с типом элементов List"},
     {"Wrong List operation argument count","Неверное число аргументов операции над List"},
     {"Replace requires a source and two element values","Replace требует источник и два значения типа элемента"},

@@ -2518,6 +2518,34 @@ private:
         result.type=sequence_type(CompoundKind::sequence,text ? Type::string : array);
         result.arguments.clear();
     }
+    bool bind_sequence_helpers(hir::Expr& result,const SyntaxExpr& source,bool member) {
+        const auto name=source.token.text;const bool flatten=name=="flatten";
+        if (!flatten && name!="jointostring" && name!="joinintostring") return false;
+        const auto count=source.arguments.size()+(member ? 1U : 0U);
+        if ((flatten && count!=1) || (!flatten && count!=1 && count!=2)) throw Error("E_TYPE",result.location,"Wrong sequence helper argument count");
+        auto input=member ? std::move(result.left) : expression(*source.arguments[0]);
+        const auto outer=sequence_source(input->type,result.location);const auto element=outer.element;
+        input=convert(std::move(input),sequence_type(CompoundKind::sequence,element));
+        if (flatten) {
+            const auto inner=sequence_source(element,result.location).element;
+            SyntaxExpr lambda{SyntaxExprKind::lambda,source.token,{},{},1,{},{}};lambda.lambda=std::make_shared<SyntaxRoutine>();
+            auto& body=*lambda.lambda;body.name=source.token;body.expression_body=true;
+            const Token parameter{TokenKind::name,"__flatten_element",result.location};
+            body.parameters.push_back({parameter,{},false,{},false,false});body.body.kind=SyntaxStmtKind::return_stmt;
+            body.body.expression=make_expression(SyntaxExprKind::name,parameter);
+            result.right=bind_lambda(lambda,Type::invalid,{element});result.operation="selectmany";
+            result.type=sequence_type(CompoundKind::sequence,inner);result.kind=hir::ExprKind::sequence_transform;
+        } else {
+            if (!scalar(element)) throw Error("E_UNSUPPORTED",result.location,"JoinToString currently requires scalar elements with native Convert text");
+            result.type=Type::string;result.kind=hir::ExprKind::sequence_join;
+            if (count==2) result.right=convert(expression(*source.arguments.back()),Type::string);
+            else {
+                result.right=std::make_unique<hir::Expr>();result.right->kind=hir::ExprKind::literal;result.right->type=Type::string;result.right->location=result.location;
+                result.right->value=std::u16string{element==Type::character ? u"" : u" "};
+            }
+        }
+        result.left=std::move(input);return true;
+    }
     bool bind_list_operation(hir::Expr& result,const SyntaxExpr& source) {
         if (!compound(result.left->type) || info(result.left->type,result.location).kind!=CompoundKind::list) return false;
         const auto name=source.token.text;
@@ -2807,7 +2835,7 @@ private:
         const auto name=source.token.text; const bool cartesian=name=="cartesian";
         const bool combinations=name=="combinations",permutations=name=="permutations";
         if (!unit.empty() && unit!="pabcsystem") return false;
-        if ((member && bind_list_operation(result,source)) || bind_matrix_build(result,source,member) || bind_collection_operation(result,source,member) || bind_array_operation(result,source,member) || bind_matrix_operation(result,source,member) || bind_array_view(result,source,member)) return true;
+        if (bind_sequence_helpers(result,source,member) || (member && bind_list_operation(result,source)) || bind_matrix_build(result,source,member) || bind_collection_operation(result,source,member) || bind_array_operation(result,source,member) || bind_matrix_operation(result,source,member) || bind_array_view(result,source,member)) return true;
         if (name!="zip" && name!="ziptuple" && !cartesian && name!="cartesianpower" && !combinations && !permutations) return false;
         if (combinations || permutations) {
             const auto count=source.arguments.size()+(member ? 1U : 0U);

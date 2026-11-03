@@ -69,6 +69,34 @@ void runtime_error(std::string_view source, std::string_view code) {
     error([&] { (void)run(source); }, code,source);
 }
 
+void sequence_text_and_flatten() {
+    result("begin Writeln(Seq(1,2,3).JoinToString,'|',JoinToString(Arr(1,2,3),','));Writeln(PABCSystem.JoinIntoString(Seq(1,2),nil));Writeln('abc'.JoinToString,'|',Arr('a','b').JoinIntoString('-'));Writeln(Seq(True,False).JoinToString(':'));end.","1 2 3|1,2,3\n12\nabc|a-b\nTrue:False\n");
+    result("begin var a:=Arr(nil,'abc','',nil);Writeln('[',a.JoinToString('|'),'] [',a.JoinToString,'] [',a.JoinToString(nil),']');Writeln(new integer[0].JoinToString.Length);var l:=new List<integer>;l.Add(4);l.Add(5);Writeln(l.JoinToString('/'));end.","[|abc||] [ abc  ] [abc]\n0\n4/5\n");
+    result("begin Writeln(Seq(1.5,2.0).JoinToString(','));Writeln(Seq(123bi,-456bi).JoinToString(','));var a:=Arr(uint64(18446744073709551615),uint64(0));Writeln(a.JoinToString(','));var s:=#55356#57101;Writeln(s.JoinToString=s);end.","1.5,2\n123,-456\n18446744073709551615,0\nTrue\n");
+    result("function S:sequence of integer;begin Write('S');Result:=SeqGen(3,i->begin Write(i);Result:=i;end);end;function D:string;begin Write('D');Result:='|';end;begin Writeln(JoinToString(S(),D()));end.","SD0120|1|2\n");
+    result("begin Writeln(Seq(Seq(1,2),Seq(3)).Flatten.ToArray);Writeln(Flatten(Arr(Arr(1),Arr(2,3))).ToArray);Writeln(PABCSystem.Flatten(Seq('abc','','de')).JoinToString);var a:=new List<integer>;a.Add(7);a.Add(8);var b:=new List<integer>;b.Add(9);Writeln(Arr(a,b).Flatten.ToArray);end.","[1,2,3]\n[1,2,3]\nabcde\n[7,8,9]\n");
+    result("begin var calls:=0;var s:=SeqGen(2,i->begin Inc(calls);Result:=Seq(i,i+1);end).Flatten;Writeln(s.Take(1).ToArray,' ',calls);Writeln(s.Count,' ',calls);Writeln(s.ToArray,' ',calls);end.","[0] 1\n4 3\n[0,1,1,2] 5\n");
+    result("type R=record n:integer;a:array of integer;end;begin var r:R;r.n:=1;r.a:=Arr(2);var rows:=Arr(Arr(r));var s:=rows.Flatten;var a:=s.ToArray;a[0].n:=9;a[0].a[0]:=7;Writeln(rows[0][0].n,' ',r.a[0]);end.","1 7\n");
+    result("type A=array of integer;begin var a:=new A[0];Writeln(a.Flatten.Count);var n:A:=nil;Writeln(Arr(n).Flatten.Take(0).Count);end.","0\n0\n");
+    result("begin var l:=new List<sequence of integer>;l.Add(SeqGen(2,i->begin if i=0 then l.Add(Seq(9));Result:=i;end));Writeln(l.Flatten.Take(1).ToArray,' ',l.Count);end.","[0] 2\n");
+    for(const auto source:{"begin var s:sequence of integer:=nil;s.JoinToString;end.","begin var a:array of integer:=nil;a.JoinIntoString(',');end.","begin var l:List<integer>:=nil;l.JoinToString;end.","type A=array of integer;begin var s:sequence of A:=nil;s.Flatten.Take(0).Count;end.","type A=array of integer;begin var a:A:=nil;Arr(a).Flatten.Count;end.","begin var s:string:=nil;Arr(s).Flatten.Count;end."})runtime_error(source,"E_NIL");
+    runtime_error("begin var l:=Arr(1,2).ToList;var s:=l.Select(x->begin l.Add(3);Result:=x;end);s.JoinToString;end.","E_MODIFIED");
+    runtime_error("begin Range(2147483647,2147483647,1).JoinToString;end.","E_OVERFLOW");
+    for(const auto source:{"begin Seq(1).JoinToString(1);end.","begin Seq(1).JoinToString(',',':');end.","begin Seq(1).Flatten;end.","begin new integer[1,1].Flatten;end."})compile_error(source,"E_TYPE");
+    compile_error("type R=record n:integer;end;begin var r:R;Arr(r).JoinToString;end.","E_UNSUPPORTED");
+    {
+        const auto p=abc::compile("function S:sequence of integer;begin Write('S');Result:=nil;end;function D:string;begin Write('D');Result:='|';end;begin JoinToString(S(),D());end.");std::istringstream in;std::ostringstream out;error([&]{abc::execute(p,in,out);},"E_NIL");require(out.str()=="SD","Join evaluates source and delimiter before opening a nil source");
+    }
+    abc::ExecutionOptions options;options.instruction_limit=100;
+    error([&]{(void)run("begin 0.Iterate(x->x+1).JoinToString;end.","",options);},"E_LIMIT");
+    options={};error([&]{(void)run("begin SeqFill(2,StringOfChar('x',524288)).JoinToString;end.","",options);},"E_LIMIT");
+    options={};options.call_limit=1;error([&]{(void)run("function F:integer;begin Result:=Seq(Seq(1)).Flatten.Count;end;begin F();end.","",options);},"E_LIMIT");
+    const auto p=abc::compile("begin Seq(1,2).JoinToString;end.");const auto op=std::find_if(p.code.begin(),p.code.end(),[](const auto& v){return v.op==abc::Op::sequence_join;});
+    abc::Values values{p,1000};auto s=abc::sequence_repeat(values,op->type,100,std::int32_t{1});options={};options.instruction_limit=3;
+    error([&]{(void)abc::sequence_join(values,s,std::u16string{u","},options);},"E_LIMIT");options={};options.cancelled=[] {return true;};error([&]{(void)abc::sequence_join(values,s,std::u16string{},options);},"E_CANCELLED");
+    for(int kind=0;kind<2;++kind){auto bad=p;for(auto& v:bad.code)if(v.op==abc::Op::sequence_join){if(kind==0)v.operand=1;else v.type=abc::Type::integer;}error([&]{abc::verify(bad);},"E_BYTECODE");}
+}
+
 void list_bulk_ranges() {
     result("begin var l:=Arr(1,2).ToList;l.AddRange(Arr(3,4));l.InsertRange(1,Arr(7,8));Writeln(l);var s:=SeqGen(2,i->i+5);l.AddRange(s);l.InsertRange(0,SeqGen(2,i->i+9));Writeln(l);end.","[1,7,8,2,3,4]\n[9,10,1,7,8,2,3,4,5,6]\n");
     result("begin var l:=Arr(1,2,3).ToList;l.AddRange(l);Writeln(l);var m:=Arr(1,2,3).ToList;m.InsertRange(2,m);Writeln(m);var n:=Arr(1,2,3).ToList;n.InsertRange(1,n.AsEnumerable);Writeln(n);end.","[1,2,3,1,2,3]\n[1,2,1,2,3,3]\n[1,1,2,3,2,3]\n");
@@ -5340,6 +5368,7 @@ int main() {
     collection_replace_and_copy();
     list_search_and_ranges();
     list_bulk_ranges();
+    sequence_text_and_flatten();
     escaped_identifiers_language();
     structural_output();
     try_console_read();

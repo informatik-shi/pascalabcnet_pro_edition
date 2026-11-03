@@ -37,6 +37,7 @@ add_library(abc_core
     src/sequence_concat.cpp
     src/sequence_compare.cpp
     src/sequence_transform.cpp
+    src/sequence_join.cpp
     src/sequence_predicate.cpp
     src/sequence_zip.cpp
     src/sequence_cartesian.cpp
@@ -296,6 +297,9 @@ if(BUILD_TESTING)
     add_test(NAME original_delegates6 COMMAND $<TARGET_FILE:abc> run "${CMAKE_CURRENT_SOURCE_DIR}/../TestSuite/delegates6.pas")
     add_test(NAME original_lambda_explicit_types COMMAND $<TARGET_FILE:abc> run "${CMAKE_CURRENT_SOURCE_DIR}/../TestSuite/LambdaWithExplicitType.pas")
     add_test(NAME original_lambda_local_const COMMAND $<TARGET_FILE:abc> run "${CMAKE_CURRENT_SOURCE_DIR}/../TestSuite/lambdas_closures_15_const.pas")
+    add_test(NAME sequence_text_flatten_compatibility COMMAND ${CMAKE_COMMAND}
+        -DABC_RUNNER=$<TARGET_FILE:abc> -DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures
+        -DABC_FIXTURE_NAME=sequence-text-flatten-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")
     add_test(NAME list_bulk_ranges_compatibility COMMAND ${CMAKE_COMMAND}
         -DABC_RUNNER=$<TARGET_FILE:abc> -DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures
         -DABC_FIXTURE_NAME=list-bulk-ranges-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")
