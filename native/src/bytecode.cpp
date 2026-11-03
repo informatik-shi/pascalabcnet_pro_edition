@@ -1,5 +1,6 @@
 #include "hir.hpp"
 #include "stdlib.hpp"
+#include "encoding.hpp"
 #include "runtime_values.hpp"
 #include "formatting.hpp"
 #include "school_ip.hpp"
@@ -167,6 +168,9 @@ private:
         case hir::ExprKind::sequence_query:
             expression(*node.left); if (node.right) expression(*node.right);
             emit(Op::sequence_query,node.left->type,node.local,node.location); break;
+        case hir::ExprKind::encoding_call:
+            for(const auto& argument:node.arguments)expression(*argument);
+            emit(Op::encoding_call,node.operation_type,node.local,node.location);break;
         case hir::ExprKind::school_ip:
             for (const auto& argument:node.arguments) expression(*argument);
             emit(Op::school_ip,node.operation_type,node.local,node.location); break;
@@ -977,6 +981,8 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
                 if (function!=stdlib::Function::resize_string && function!=stdlib::Function::insert_string && function!=stdlib::Function::delete_string) invalid(instruction,"Invalid mutation intrinsic");
             }
             break;
+        case Op::encoding_call:
+            if(instruction.operand>static_cast<std::size_t>(EncodingMethod::file_write) || !encoding_signature_valid(program,type,static_cast<EncodingMethod>(instruction.operand)))invalid(instruction,"Invalid Encoding call metadata");break;
         case Op::read_lines: case Op::write_lines:
             if (!compound(type) || type_info(program,type).kind!=CompoundKind::array || type_info(program,type).rank!=1 || type_info(program,type).element!=Type::string) invalid(instruction,"File lines require string array"); break;
         case Op::array_copy:
@@ -989,7 +995,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if (instruction.op==Op::make_default && instruction.operand==1 && compound(type) && type_info(program,type).kind==CompoundKind::object_class
                 && std::any_of(program.routines.begin(),program.routines.end(),[type](const auto& candidate){return candidate.constructor && candidate.owner==type;}))
                 invalid(instruction,"Class constructor cannot be bypassed");
-            if (instruction.op==Op::make_default && instruction.operand==1 && compound(type) && (node_kind(type_info(program,type).kind) || type_info(program,type).kind==CompoundKind::tuple || type_info(program,type).kind==CompoundKind::sequence || type_info(program,type).kind==CompoundKind::callable || school_ip_kind(type_info(program,type).kind)))
+            if (instruction.op==Op::make_default && instruction.operand==1 && compound(type) && (node_kind(type_info(program,type).kind) || type_info(program,type).kind==CompoundKind::tuple || type_info(program,type).kind==CompoundKind::sequence || type_info(program,type).kind==CompoundKind::callable || type_info(program,type).kind==CompoundKind::encoding || school_ip_kind(type_info(program,type).kind)))
                 invalid(instruction,"Nodes and tuples require the typed constructor");
             break;
         case Op::routine_value:
@@ -1360,6 +1366,11 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
                 require(i-1==ref ? reference_type(Type::string) : signature.parameters[i-1]);
             break;
         }
+        case Op::encoding_call: {
+            const auto method=static_cast<EncodingMethod>(instruction.operand);const auto parameters=encoding_parameters(program,instruction.type,method);
+            for(auto parameter=parameters.rbegin();parameter!=parameters.rend();++parameter)require(*parameter);
+            const auto result=encoding_result(program,instruction.type,method);if(result!=Type::unit)stack.push_back(result);break;
+        }
         case Op::read_lines: require(Type::string); stack.push_back(instruction.type); break;
         case Op::write_lines: require(instruction.type); require(Type::string); break;
         case Op::array_copy: require(instruction.type); stack.push_back(instruction.type); break;
@@ -1511,6 +1522,9 @@ void verify(const Program& program) {
                     || type_info(program,parameter.type).kind!=CompoundKind::array || type_info(program,parameter.type).rank!=1))
                     throw Error("E_BYTECODE",{},"Invalid callable params metadata");
             }
+        } else if(type.kind==CompoundKind::encoding) {
+            if(type.name!="encoding" || !type.fields.empty() || !encoding_signature_valid(program,static_cast<Type>(64+i),EncodingMethod::utf8))throw Error("E_BYTECODE",{},"Invalid Encoding type metadata");
+            prior(type.element);prior(type.key);
         } else if (type.kind==CompoundKind::sequence) {
             if (type.key!=Type::invalid || !type.fields.empty() || type.name!="sequence") throw Error("E_BYTECODE",{},"Invalid sequence type metadata");
             prior(type.element);

@@ -25,6 +25,7 @@
 #include "matrix_construction.hpp"
 #include "list_operations.hpp"
 #include "timing.hpp"
+#include "encoding.hpp"
 #include "big_integer_runtime.hpp"
 
 #include <charconv>
@@ -170,6 +171,7 @@ static void execute_impl(const Program& program, std::istream& input, std::ostre
     ReferenceObjects objects;values.observe_object=[&](const auto& object){objects.observe(object);};
     LinkedRuntime linked{values,{}};
     FileContext files;
+    EncodingContext encodings;
     RandomContext random;
     SchoolContext school;
     TimeContext timing;
@@ -443,6 +445,12 @@ static void execute_impl(const Program& program, std::istream& input, std::ostre
         case Op::sequence_count: case Op::sequence_array: case Op::sequence_list: {
             const auto sequence=std::get<std::shared_ptr<Aggregate>>(pop());
             stack.push_back(sequence_collect(values,sequence,instruction.op==Op::sequence_count ? Type::invalid : static_cast<Type>(instruction.operand),options)); break;
+        }
+        case Op::encoding_call: {
+            const auto method=static_cast<EncodingMethod>(instruction.operand);const auto count=encoding_parameters(program,instruction.type,method).size();
+            std::vector<Value> arguments(count);for(auto i=count;i>0;--i){arguments[i-1]=std::move(stack.back());stack.pop_back();}
+            auto result=encodings.invoke(values,files,instruction.type,method,arguments);
+            if(encoding_result(program,instruction.type,method)!=Type::unit)stack.push_back(std::move(result));break;
         }
         case Op::school_ip: {
             const auto method=static_cast<SchoolIPMethod>(instruction.operand&255U);

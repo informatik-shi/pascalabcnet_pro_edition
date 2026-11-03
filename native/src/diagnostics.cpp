@@ -4,6 +4,12 @@ namespace abc {
 Error runtime_error(RuntimeError id, SourceLocation location, std::string_view context) {
     const char *code, *english, *russian;
     switch (id) {
+    case RuntimeError::encoding_data:
+        code="E_ENCODING";english="Invalid data for the selected encoding";russian="Некорректные данные для выбранной кодировки";break;
+    case RuntimeError::encoding_limit:
+        code="E_LIMIT";english="Encoding conversion exceeds the native size limit";russian="Превышен допустимый размер преобразования кодировки";break;
+    case RuntimeError::encoding_kind:
+        code="E_ENCODING";english="Unsupported text encoding";russian="Неподдерживаемая кодировка текста";break;
     case RuntimeError::sleep_duration:
         code="E_RANGE";english="Sleep duration must be -1 or nonnegative";russian="Длительность Sleep должна быть равна -1 или быть неотрицательной";break;
     case RuntimeError::list_capacity:

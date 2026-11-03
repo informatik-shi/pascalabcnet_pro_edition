@@ -72,6 +72,76 @@ void runtime_error(std::string_view source, std::string_view code) {
     error([&] { (void)run(source); }, code,source);
 }
 
+void typed_encoding_language() {
+    result("uses System.Text;begin Writeln(Encoding.UTF8.CodePage,' ',Encoding.Unicode.CodePage,' ',Encoding.BigEndianUnicode.CodePage,' ',Encoding.UTF32.CodePage,' ',Encoding.ASCII.CodePage);end.","65001 1200 1201 12000 20127\n");
+    result("begin var e:Encoding:=Encoding.GetEncoding(1251);var b:array of byte:=e.GetBytes('Привет');Writeln(b);Writeln(e.GetString(b));end.","[207,240,232,226,229,242]\nПривет\n");
+    result("begin var e:System.Text.Encoding:=System.Text.Encoding.GetEncoding('WINDOWS-1251');Writeln(e.CodePage,' ',e.GetString(e.GetBytes('А')));end.","1251 А\n");
+    result("type E=Encoding;begin var e:=E.UTF8;var b:=e.GetBytes('🌍');var c:array of char:=e.GetChars(b);Writeln(b,' ',c.Length,' ',c.JoinToString);end.","[240,159,140,141] 2 🌍\n");
+    result("begin Writeln(Encoding.UTF8.GetPreamble,' ',Encoding.Unicode.GetPreamble(),' ',Encoding.GetEncoding(1251).GetPreamble);end.","[239,187,191] [255,254] []\n");
+    result("begin var e:=Encoding.GetEncoding('utf-32be');Writeln(e.CodePage,' ',e.GetBytes('А🌍'));end.","12001 [0,0,4,16,0,1,243,13]\n");
+    result("begin var chars:=Arr('А','я');var e:=Encoding.GetEncoding(1251);Writeln(e.GetBytes(chars),' ',e.GetString(e.GetBytes(chars)));end.","[192,255] Ая\n");
+    result("begin Writeln(Encoding.GetEncoding(1251).GetBytes('àＡ界🌍'),' ',Encoding.ASCII.GetBytes('àＡ界🌍'));end.","[97,65,63,63,63] [63,63,63,63,63]\n");
+    result("begin var b:=Arr(byte(237),byte(160),byte(128));Writeln(Encoding.UTF8.GetString(b).Length);end.","3\n");
+    result("begin var e:=Encoding.UTF8;Writeln(e=Encoding.GetEncoding(65001),' ',e=Encoding.Unicode,' ',default(Encoding)=nil);var a:=new Encoding[2];Writeln(a[0]=nil);end.","True False True\nTrue\n");
+    result("function E:Encoding;begin Result:=Encoding.UTF8;end;begin var f:(array of byte)->string:=b->E().GetString(b);Writeln(f(E().GetBytes('abc')));end.","abc\n");
+    for(const auto source:{"begin var e:Encoding;Writeln(e.CodePage);end.","begin var e:Encoding;Writeln(e.GetBytes('x'));end.","begin var s:string:=nil;Encoding.UTF8.GetBytes(s);end.","begin var b:array of byte;Encoding.UTF8.GetString(b);end.","begin var c:array of char;Encoding.UTF8.GetBytes(c);end.","begin Encoding.GetEncoding(nil);end."})runtime_error(source,"E_NIL");
+    for(const auto source:{"begin Writeln('NEVER');Encoding.UTF8.GetBytes(1);end.","begin Encoding.UTF8.GetString(Arr(1));end.","begin var n:integer:=Encoding.UTF8;end.","begin Encoding.UTF8.CodePage:=1;end.","begin Encoding.UTF8();end.","begin Encoding.UTF8.CodePage();end.","begin Encoding.GetEncoding(True);end.","begin Encoding.UTF8.GetBytes(nil);end.","begin var e:=new Encoding;end."})compile_error(source,"E_TYPE");
+    result("type Box=class encoding:Encoding:=System.Text.Encoding.UTF8;function Text:string;begin Result:=encoding.GetString(encoding.GetBytes('abc'));end;end;begin Writeln(new Box.Text);end.","abc\n");
+    result("function Encoding:System.Text.Encoding;begin Result:=System.Text.Encoding.UTF8;end;begin Writeln(Encoding.GetString(Encoding.GetBytes('abc')));end.","abc\n");
+    runtime_error("begin Encoding.GetEncoding(1252);end.","E_ENCODING");runtime_error("begin Encoding.GetEncoding('missing');end.","E_ENCODING");
+    {
+        const auto p=abc::compile("function Arg:string;begin Write('ARG');Result:='x';end;begin var e:Encoding;e.GetBytes(Arg());end.");std::istringstream in;std::ostringstream out;error([&]{abc::execute(p,in,out);},"E_NIL");require(out.str()=="ARG","Encoding receiver is checked for nil after argument effects");
+    }
+    auto p=abc::compile("begin var e:=Encoding.UTF8;Writeln(e.GetString(e.GetBytes('abc')));end.");const auto owner=std::find_if(p.types.begin(),p.types.end(),[](const auto& t){return t.kind==abc::CompoundKind::encoding;})-p.types.begin();
+    require(static_cast<std::size_t>(owner)<p.types.size() && p.types[owner].element!=p.types[owner].key,"Encoding metadata retains separate exact byte and char array types");
+    for(int kind=0;kind<5;++kind){auto bad=p;if(kind==0)bad.types[owner].key=abc::Type::integer;if(kind==1)bad.types[owner].fields.push_back({"fake",abc::Type::integer});for(auto& op:bad.code)if(op.op==abc::Op::encoding_call){if(kind==2)op.type=abc::Type::integer;if(kind==3)op.operand=999;if(kind==4 && op.operand==2){op.op=abc::Op::make_default;op.operand=1;}}error([&]{abc::verify(bad);},"E_BYTECODE");}
+}
+
+void native_text_encoding_codecs() {
+    using K=abc::TextEncodingKind;
+    auto decode=[](std::string_view bytes,abc::TextEncoding encoding,bool detect=false){return abc::decode_text_bytes(bytes,encoding,detect,{});};
+    auto encode=[](std::u16string_view text,abc::TextEncoding encoding){return abc::encode_text_bytes(text,encoding,{});};
+    const auto text=u"Пр🌍";
+    const std::array<std::pair<K,std::string>,5> goldens{{
+        {K::utf8,std::string{"\xd0\x9f\xd1\x80\xf0\x9f\x8c\x8d",8}},
+        {K::utf16_le,std::string{"\x1f\x04\x40\x04\x3c\xd8\x0d\xdf",8}},
+        {K::utf16_be,std::string{"\x04\x1f\x04\x40\xd8\x3c\xdf\x0d",8}},
+        {K::utf32_le,std::string{"\x1f\x04\0\0\x40\x04\0\0\x0d\xf3\x01\0",12}},
+        {K::utf32_be,std::string{"\0\0\x04\x1f\0\0\x04\x40\0\x01\xf3\x0d",12}}
+    }};
+    for(const auto& [kind,bytes]:goldens) {
+        const abc::TextEncoding encoding{kind,true,true};const std::string mark(abc::text_encoding_preamble(encoding));
+        require(encode(text,encoding)==bytes,"Encoding.GetBytes semantics exclude the preamble even when configured to emit one");
+        require(decode(bytes,encoding)==text && decode(mark+bytes,encoding)==std::u16string(u"\ufeff")+text,"Encoding.GetString decodes raw bytes and preserves a BOM as data");
+        require(decode(mark+bytes,encoding,true)==text,"File decoding removes its selected preamble");
+        require(decode(mark+bytes,{K::windows1251,false,false},true)==text,"BOM detection overrides an unrelated selected encoding");
+        require(encode(std::u16string{0xd800},{kind,false,false})==encode(u"\ufffd",{kind,false,true}),"Malformed UTF-16 input replaces one isolated surrogate for Unicode encoders");
+        error([&]{(void)encode(std::u16string{0xd800},{kind,false,true});},"E_ENCODING");
+    }
+    require(decode(std::string_view{"\xff\xfe\0\0\x41\0",6},{K::utf16_le,true,true},true)==std::u16string{0,65},"A selected UTF-16LE preamble takes priority over longer auto-detected signatures");
+    require(decode(std::string_view{"\xff\xfe\0\0\x41\0",6},{K::utf16_le,false,false},true)==u"\ufffd","Without its configured preamble, UTF-32LE detection wins the shared prefix");
+    require(decode(std::string_view{"\xed\xa0\x80",3},{K::utf8,false,false})==std::u16string(3,0xfffd),"Modern Unicode maximal-subpart replacement for UTF-8 encoded surrogates");
+    require(decode(std::string_view{"\xe1\x80" "A",3},{K::utf8,false,false})==u"\ufffdA","UTF-8 replacement retains the next noncontinuation byte");
+    require(decode(std::string_view{"\xf0\x90\x80",3},{K::utf8,false,false})==u"\ufffd","A truncated valid UTF-8 prefix is replaced once");
+    require(decode(std::string_view{"\xe0\x80\x80",3},{K::utf8,false,false})==std::u16string(3,0xfffd),"Overlong UTF-8 does not merge invalid continuation bytes");
+    for(const auto& [kind,bytes]:goldens) {
+        (void)bytes;
+        const auto malformed=kind==K::utf8 ? std::string(1,char(0xff)) : kind==K::utf16_le || kind==K::utf16_be ? std::string(1,'x') : std::string(3,'x');
+        error([&]{(void)decode(malformed,{kind,false,true});},"E_ENCODING");
+    }
+    require(encode(u"Привет",{K::windows1251,false,false})==std::string{"\xcf\xf0\xe8\xe2\xe5\xf2",6},"Independent CP1251 string encoding golden");
+    require(encode(u"àＡ界🌍",{K::windows1251,false,false})=="aA???","CP1251 best fit and two replacements for a surrogate pair match source Encoding");
+    require(encode(u"àＡ界🌍",{K::ascii,false,false})=="?????","ASCII has no best fit and preserves replacement count per UTF-16 unit");
+    require(decode(std::string_view{"A\xff",2},{K::ascii,false,false})==u"A?","ASCII byte replacement uses question mark");
+    error([&]{(void)decode(std::string(1,char(0xff)),{K::ascii,false,true});},"E_ENCODING");
+    error([&]{(void)encode(u"à",{K::windows1251,false,true});},"E_ENCODING");
+    error([&]{(void)encode(u"界",{K::ascii,false,true});},"E_ENCODING");
+    error([&]{(void)encode(std::u16string(524289,u'a'),{K::utf16_le,false,false});},"E_LIMIT");
+    error([&]{(void)decode(std::string(1'048'577,'a'),{K::utf8,false,false});},"E_LIMIT");
+    error([&]{(void)encode(u"x",{static_cast<K>(999),false,false});},"E_ENCODING");
+    try{(void)encode(std::u16string{0xdc00},{K::utf8,false,true});require(false,"Expected strict encoding diagnostic");}catch(const abc::Error& e){require(e.code=="E_ENCODING" && std::string_view(e.what())=="Invalid data for the selected encoding" && e.russian=="Некорректные данные для выбранной кодировки","Generic encoding failure is bilingual");}
+}
+
 void windows1251_standard_functions() {
     const auto fixtures=std::filesystem::path(abc::from_utf8(__FILE__)).parent_path()/"fixtures";
     auto load=[](const std::filesystem::path& file){std::ifstream input(file,std::ios::binary);return std::string(std::istreambuf_iterator<char>(input),{});};
@@ -126,6 +196,9 @@ void unicode_file_decoding() {
                 else {const auto high=0xd800+((value-0x10000)>>10),low=0xdc00+((value-0x10000)&0x3ff);expected.push_back(static_cast<char16_t>(high));expected.push_back(static_cast<char16_t>(low));append(bytes16,high,2);append(bytes16,low,2);}
             }
             require(decode(bytes16)==expected && decode(bytes32)==expected,"Exhaustive Unicode scalar corpus across UTF-16/32 byte orders");
+            require(abc::encode_text_bytes(expected,{big_endian ? abc::TextEncodingKind::utf16_be : abc::TextEncodingKind::utf16_le,false,true},{})==bytes16.substr(bom16.size())
+                && abc::encode_text_bytes(expected,{big_endian ? abc::TextEncodingKind::utf32_be : abc::TextEncodingKind::utf32_le,false,true},{})==bytes32.substr(bom32.size()),"Exhaustive Unicode encoder corpus across both byte orders");
+            const auto utf8=abc::encode_text_bytes(expected,{abc::TextEncodingKind::utf8,false,true},{});require(utf8==abc::to_utf8(expected,true) && abc::decode_text_bytes(utf8,{abc::TextEncodingKind::utf8,false,true},false,{})==expected,"Exhaustive Unicode UTF-8 encoding and decoding against the existing converter");
         }
     }
     require(decode(std::string_view{"\xff\xfe\0\0\x41\0",6})==u"\ufffd","UTF-16LE BOM followed by a NUL is detected as the longer UTF-32LE BOM, matching StreamReader");
@@ -5814,6 +5887,8 @@ int main() {
     native_short_routine_bodies_language();
     unicode_file_decoding();
     windows1251_standard_functions();
+    native_text_encoding_codecs();
+    typed_encoding_language();
     escaped_identifiers_language();
     structural_output();
     try_console_read();

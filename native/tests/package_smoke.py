@@ -207,6 +207,7 @@ def main():
                 ("class-field-initializers.pas", "Первый: заметка\nВторой: \n"),
                 ("short-class-bodies.pas", "Значение: 8\nЗамыкание: 8\n"),
                 ("windows-characters.pas", "Привет\nКоды: 207 184\nЗамена: ?\n"),
+                ("text-encodings.pas", "Кодировки: 65001 1251\n[207,240,232,226,229,242]\nПривет\nПривет 🌍\n"),
                 ("class-properties.pas", "Свойство: 7\nЧерез метод: 14\n"),
                 ("class-methods.pas", "Значение: 5\nОбщая ссылка: 6\n"),
                 ("class-fields.pas", "Связанные объекты: 9 7\nОбщая ссылка: 11\n11 9 \n"),
@@ -287,6 +288,47 @@ def main():
                                      capture_output=True, cwd=folder, env=env, timeout=10)
             if example.returncode or example.stdout != "НОД массива: 6\nНОК массива: 630\nНОД нескольких чисел: 6\nНОК нескольких чисел: 60\n":
                 raise RuntimeError(f"{name} school-folds.pas failed: {example.stdout!r}, {example.stderr!r}")
+            encoding_source = folder / "Кодировки текста.pas"
+            for code_page, codec, preamble in [
+                (1251, "cp1251", b""), (1200, "utf-16-le", b"\xff\xfe"),
+                (1201, "utf-16-be", b"\xfe\xff"), (12000, "utf-32-le", b"\xff\xfe\0\0"),
+                (65001, "utf-8", b"\xef\xbb\xbf"),
+            ]:
+                encoded_file = folder / "Кодировка.tmp"
+                sample = "Привет"
+                encoding_source.write_text(
+                    "uses System.Text;\nbegin\n"
+                    f"var e:=Encoding.GetEncoding({code_page});\n"
+                    f"WriteAllText('Кодировка.tmp','{sample}',e);\n"
+                    "Writeln(ReadAllText('Кодировка.tmp',e));\n"
+                    "Writeln(e.GetString(e.GetBytes('П')));\n"
+                    "end.", encoding="utf-8")
+                attempted = subprocess.run([runner, "run", str(encoding_source)], text=True, encoding="utf-8",
+                                           capture_output=True, cwd=folder, env=env, timeout=10)
+                if (attempted.returncode or attempted.stdout != sample + "\nП\n"
+                        or encoded_file.read_bytes() != preamble + sample.encode(codec)):
+                    raise RuntimeError(f"{name} Encoding/file byte mismatch for {code_page}: {attempted.stderr!r}")
+            encoding_source.write_text(
+                "uses System.Text;\nbegin\nvar b:=Encoding.UTF8.GetPreamble;\n"
+                "Writeln(Ord(Encoding.UTF8.GetString(b)[1]));\n"
+                "Writeln(Encoding.ASCII.GetString(Encoding.ASCII.GetBytes('🌍')));\nend.", encoding="utf-8")
+            attempted = subprocess.run([runner, "run", str(encoding_source)], text=True, encoding="utf-8",
+                                       capture_output=True, cwd=folder, env=env, timeout=10)
+            if attempted.returncode or attempted.stdout != "65279\n??\n":
+                raise RuntimeError(f"{name} raw Encoding preamble/fallback mismatch: {attempted.stdout!r}, {attempted.stderr!r}")
+            for source, expected, code, line in [
+                ("uses System.Text;\nbegin\nWriteln('must not execute');\nEncoding.UTF8.GetString(Arr(1));\nend.", "", "E_TYPE", 4),
+                ("uses System.Text;\nbegin\nEncoding.GetEncoding(1252);\nend.", "", "E_ENCODING", 3),
+                ("uses System.Text;\nfunction Argument:string; begin Writeln('argument'); Result:='x'; end;\n"
+                 "begin\nvar e:Encoding;\ne.GetBytes(Argument);\nend.", "argument\n", "E_NIL", 5),
+            ]:
+                encoding_source.write_text(source, encoding="utf-8")
+                attempted = subprocess.run([runner, "run", str(encoding_source)], text=True, encoding="utf-8",
+                                           capture_output=True, cwd=folder, env=env, timeout=10)
+                if (attempted.returncode != 1 or attempted.stdout != expected or code not in attempted.stderr
+                        or "EN:" not in attempted.stderr or "RU:" not in attempted.stderr
+                        or f"{encoding_source}:{line}:" not in attempted.stderr):
+                    raise RuntimeError(f"{name} Encoding typed/bilingual error mismatch: {attempted.stdout!r}, {attempted.stderr!r}")
             character = folder / "Ошибки символов.pas"
             school_error = folder / "Ошибки School.pas"
             for expression, code, english, russian in [
@@ -1117,6 +1159,7 @@ def main():
             results[-1]["native_short_routine_bodies_and_bilingual_diagnostics"] = "passed"
             results[-1]["unicode_bom_text_file_decoding"] = "passed"
             results[-1]["native_cp1251_character_functions"] = "passed"
+            results[-1]["typed_encoding_codecs_and_explicit_file_overloads"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 

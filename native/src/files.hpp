@@ -2,6 +2,7 @@
 #include "abc/core.hpp"
 #include <filesystem>
 namespace abc {
+struct TextEncoding;
 // Each execution owns its current directory; the editor/host cwd never changes.
 class FileContext {
 public:
@@ -16,8 +17,8 @@ private:
     std::filesystem::path current_;
     std::vector<std::weak_ptr<TextFile>> open_texts_;
 };
-std::u16string read_text_file(const FileContext& files, std::u16string_view path, SourceLocation location);
-void write_text_file(const FileContext& files, std::u16string_view path, std::u16string_view text, SourceLocation location);
+std::u16string read_text_file(const FileContext& files, std::u16string_view path, SourceLocation location,const TextEncoding* encoding=nullptr);
+void write_text_file(const FileContext& files, std::u16string_view path, std::u16string_view text, SourceLocation location,const TextEncoding* encoding=nullptr);
 bool file_exists(const FileContext& files, std::u16string_view path);
 void create_directory(const FileContext& files, std::u16string_view path, SourceLocation location);
 void remove_directory(const FileContext& files, std::u16string_view path, SourceLocation location);

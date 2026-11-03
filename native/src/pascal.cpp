@@ -5,6 +5,7 @@
 #include "constant.hpp"
 #include "number.hpp"
 #include "stdlib.hpp"
+#include "encoding.hpp"
 #include "integer_values.hpp"
 #include "formatting.hpp"
 #include "unicode.hpp"
@@ -272,9 +273,9 @@ public:
         if (accept("program")) { name(); expect(";"); }
         if (accept("uses")) {
             do {
-                const auto module = name();
+                auto module = name();while(accept("."))module.text+="."+name().text;
                 if (module.text != "pabcsystem" && module.text != "arrays" && module.text != "collections"
-                    && module.text != "filesoperations" && module.text != "events" && module.text != "pointrect" && module.text != "school")
+                    && module.text != "filesoperations" && module.text != "events" && module.text != "pointrect" && module.text != "school" && module.text != "system.text")
                     throw Error("E_UNSUPPORTED", module.location, "Unit is not ported yet: '" + module.text + "'");
                 if (module.text == "collections") root.collections_imported = true;
                 root.imported_units.insert(module.text);
@@ -430,7 +431,8 @@ private:
             result->token = name(); result->kind = result->token.text; result->named=true;
             if (result->kind=="system") {
                 result->system_qualified=true; expect("."); result->kind=name().text;
-                if (result->kind!="func" && result->kind!="action" && result->kind!="predicate")
+                if(result->kind=="text") {expect(".");result->kind=name().text;if(result->kind!="encoding")throw Error("E_UNSUPPORTED",result->token.location,"Unknown or unsupported Encoding type");}
+                else if (result->kind!="func" && result->kind!="action" && result->kind!="predicate")
                     throw Error("E_UNSUPPORTED",result->token.location,"Unknown or unsupported type 'System."+result->kind+"'");
             }
             if (result->kind=="func" || result->kind=="func0" || result->kind=="func2" || result->kind=="func3"
@@ -1282,6 +1284,70 @@ private:
         }
         return {};
     }
+    Type encoding_type() {
+        for(std::size_t i=0;i<module_.types.size();++i)if(module_.types[i].kind==CompoundKind::encoding)return static_cast<Type>(64+i);
+        const auto bytes=sequence_type(CompoundKind::array,Type::byte),characters=sequence_type(CompoundKind::array,Type::character);
+        if(module_.types.size()>=1024)throw Error("E_LIMIT",{},"Type limit exceeded");
+        module_.types.push_back({"encoding",CompoundKind::encoding,bytes,{},characters});return static_cast<Type>(63+module_.types.size());
+    }
+    bool encoding_type_name(const SyntaxExpr& source) const {
+        const auto hidden=[&](const Token& token) {
+            if(lookup(token) || routine_names_.contains(token.text))return true;
+            if(current_owner_==Type::invalid)return false;
+            const auto& fields=info(current_owner_,token.location).fields;
+            return std::any_of(fields.begin(),fields.end(),[name=token.text](const auto& field){return field.name==name;})
+                || (class_methods_.contains(current_owner_) && class_methods_.at(current_owner_).contains(token.text))
+                || (class_properties_.contains(current_owner_) && class_properties_.at(current_owner_).contains(token.text));
+        };
+        if(source.kind==SyntaxExprKind::name && !hidden(source.token)) {
+            if(const auto alias=aliases_.find(source.token.text);alias!=aliases_.end())return compound(alias->second) && info(alias->second,source.token.location).kind==CompoundKind::encoding;
+            return source.token.text=="encoding";
+        }
+        return source.kind==SyntaxExprKind::field && source.token.text=="encoding" && source.left && source.left->kind==SyntaxExprKind::field
+            && source.left->token.text=="text" && source.left->left && source.left->left->kind==SyntaxExprKind::name
+            && source.left->left->token.text=="system" && !hidden(source.left->left->token);
+    }
+    void encoding_expression(hir::Expr& result,EncodingMethod method) {
+        const auto owner=encoding_type();const auto metadata=info(owner,result.location);const auto parameters=encoding_parameters(metadata,owner,method);
+        if(result.arguments.size()!=parameters.size())throw Error("E_TYPE",result.location,"Wrong encoding argument count");
+        for(std::size_t i=0;i<parameters.size();++i)result.arguments[i]=convert(std::move(result.arguments[i]),parameters[i]);
+        result.kind=hir::ExprKind::encoding_call;result.operation_type=owner;result.local=static_cast<std::size_t>(method);result.type=encoding_result(metadata,owner,method);
+    }
+    bool bind_encoding_static(hir::Expr& result,const SyntaxExpr& source) {
+        if(!encoding_type_name(*source.left))return false;
+        const auto name=source.token.text;EncodingMethod method;
+        if(name=="getencoding") {
+            if(source.arguments.size()!=1)throw Error("E_TYPE",result.location,"Wrong encoding argument count");
+            auto value=expression(*source.arguments[0]);method=value->type==Type::string || value->type==Type::nil ? EncodingMethod::from_name : EncodingMethod::from_code_page;
+            result.arguments.push_back(std::move(value));
+        } else {
+            if(source.kind!=SyntaxExprKind::field)throw Error("E_TYPE",result.location,"Encoding property is not callable");
+            if(name=="utf8")method=EncodingMethod::utf8;else if(name=="unicode")method=EncodingMethod::utf16_le;
+            else if(name=="bigendianunicode")method=EncodingMethod::utf16_be;else if(name=="utf32")method=EncodingMethod::utf32_le;
+            else if(name=="ascii")method=EncodingMethod::ascii;else throw Error("E_UNSUPPORTED",result.location,"Encoding static member is not ported yet");
+        }
+        encoding_expression(result,method);return true;
+    }
+    bool bind_encoding_member(hir::Expr& result,const SyntaxExpr& source) {
+        if(!compound(result.left->type) || info(result.left->type,result.location).kind!=CompoundKind::encoding)return false;
+        const auto name=source.token.text;const auto metadata=info(result.left->type,result.location);EncodingMethod method;
+        result.arguments.push_back(std::move(result.left));for(const auto& argument:source.arguments)result.arguments.push_back(expression(*argument));
+        if(name=="codepage") {if(source.kind!=SyntaxExprKind::field)throw Error("E_TYPE",result.location,"Encoding property is not callable");method=EncodingMethod::code_page;}
+        else if(name=="getpreamble")method=EncodingMethod::preamble;
+        else if(name=="getstring")method=EncodingMethod::string_bytes;
+        else if(name=="getchars")method=EncodingMethod::characters_bytes;
+        else if(name=="getbytes") {
+            if(result.arguments.size()!=2 || result.arguments[1]->type==Type::nil)throw Error("E_TYPE",result.location,"Encoding overload requires a known argument type");
+            method=result.arguments[1]->type==metadata.key ? EncodingMethod::bytes_characters : EncodingMethod::bytes_string;
+        } else throw Error("E_UNSUPPORTED",result.location,"Encoding member is not ported yet");
+        encoding_expression(result,method);return true;
+    }
+    bool bind_encoding_file(hir::Expr& result,std::string_view name,std::string_view unit) {
+        if(!unit.empty() && unit!="pabcsystem")return false;
+        const bool read=name=="readalltext",write=name=="writealltext";
+        if((!read && !write) || result.arguments.size()!=(read ? 2U : 3U))return false;
+        encoding_expression(result,read ? EncodingMethod::file_read : EncodingMethod::file_write);return true;
+    }
     Type sequence_type(CompoundKind kind, Type element, unsigned rank = 1) {
         for (std::size_t i = 0; i < module_.types.size(); ++i)
             if (module_.types[i].kind == kind && module_.types[i].element == element && module_.types[i].rank==rank) return static_cast<Type>(64+i);
@@ -1397,6 +1463,7 @@ private:
             module_.types.push_back(std::move(record));
             const auto type=static_cast<Type>(63+module_.types.size()); resolved_types_[&syntax]=type; return type;
         }
+        if (syntax.kind=="encoding" && (syntax.system_qualified || !aliases_.contains(syntax.kind))) return encoding_type();
         if (auto found = find_type(syntax.kind)) return *found;
         if (auto found = aliases_.find(syntax.kind); found != aliases_.end()) return found->second;
         throw Error("E_UNSUPPORTED",syntax.token.location,"Unknown or unsupported type '"+syntax.kind+"'");
@@ -1718,6 +1785,7 @@ private:
         }
         case SyntaxExprKind::construction: {
             auto type = resolve_type(*source.constructed);
+            if(!source.array_construction && compound(type) && info(type,result->location).kind==CompoundKind::encoding)throw Error("E_TYPE",result->location,"Encoding cannot be constructed directly");
             if (type==Type::big_integer && !source.array_construction) {
                 if (source.arguments.empty()) { result->kind=hir::ExprKind::literal; result->type=type; result->value=BigInteger{}; break; }
                 result->kind=hir::ExprKind::call;
@@ -1858,6 +1926,7 @@ private:
         }
         case SyntaxExprKind::field:
         case SyntaxExprKind::member_call: {
+            if(bind_encoding_static(*result,source))break;
             if (source.left->kind==SyntaxExprKind::name && !lookup(source.left->token) && source.left->token.text=="regex" && source.token.text=="ismatch") {
                 for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
                 result->kind=hir::ExprKind::call; bind_builtin(*result,"ismatch","pabcsystem"); break;
@@ -1926,6 +1995,7 @@ private:
                 bind_builtin(*result,source.token.text,source.left->token.text); break;
             }
             result->left = expression(*source.left); const auto receiver = result->left->type;
+            if(bind_encoding_member(*result,source))break;
             if (compound(receiver) && info(receiver,result->location).kind==CompoundKind::object_class) return class_member(std::move(result),source,expected);
             if (bind_generators(*result,source,{},true)) break;
             if (callable_type(receiver) && source.token.text=="invoke") {
@@ -3855,6 +3925,7 @@ private:
         return true;
     }
     void bind_builtin(hir::Expr& result, std::string_view name, std::string_view unit = {}) {
+        if(bind_encoding_file(result,name,unit))return;
         if ((unit.empty() || unit=="pabcsystem") && (name=="min" || name=="max") && result.arguments.size()>=2 && result.arguments.size()<=4
             && std::all_of(result.arguments.begin(),result.arguments.end(),[](const auto& arg){return integer_type(arg->type);})) {
             Type context=Type::invalid;
