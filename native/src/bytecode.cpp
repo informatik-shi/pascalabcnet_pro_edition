@@ -7,6 +7,7 @@
 #include "array_views.hpp"
 #include "matrix_operations.hpp"
 #include "array_operations.hpp"
+#include "collection_operations.hpp"
 
 #include <deque>
 #include <algorithm>
@@ -88,6 +89,9 @@ private:
             expression(*node.left); emit(Op::sequence_aggregate,node.left->type,node.local,node.location); break;
         case hir::ExprKind::sequence_partial:
             expression(*node.left); emit(Op::sequence_partial,node.left->type,0,node.location); break;
+        case hir::ExprKind::collection_operation:
+            expression(*node.left); expression(*node.right);
+            emit(Op::collection_operation,node.left->type,(static_cast<std::size_t>(node.type)<<16)|((node.operation_type==Type::invalid ? 0U : static_cast<std::size_t>(node.operation_type))<<3)|node.local,node.location); break;
         case hir::ExprKind::array_operation:
             for (const auto& argument:node.arguments) expression(*argument);
             emit(Op::array_operation,node.operation_type,(static_cast<std::size_t>(node.type)<<8)|node.local,node.location); break;
@@ -595,6 +599,14 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             }
             break;
         }
+        case Op::collection_operation: {
+            const auto output=instruction.operand>>16,callback=(instruction.operand&65535U)>>3,method=instruction.operand&7U;
+            if ((output!=static_cast<std::size_t>(Type::unit) && (output<64 || output>=64+program.types.size()))
+                || (callback && (callback<64 || callback>=64+program.types.size())) || method>static_cast<std::size_t>(CollectionOperation::for_each)
+                || !collection_signature_valid(program,type,static_cast<Type>(output),callback ? static_cast<Type>(callback) : Type::invalid,static_cast<CollectionOperation>(method)))
+                invalid(instruction,"Invalid collection operation signature");
+            break;
+        }
         case Op::array_operation: {
             const auto output=instruction.operand>>8,method=instruction.operand&255U;
             if ((output!=static_cast<std::size_t>(Type::boolean) && (output<64 || output>=64+program.types.size()))
@@ -1053,6 +1065,13 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             const auto parameters=generator_parameters(element,static_cast<Type>(instruction.operand>>8),method);
             for (auto n=parameters.size();n>0;--n) require(parameters[n-1]);
             stack.push_back(instruction.type); break;
+        }
+        case Op::collection_operation: {
+            const auto method=static_cast<CollectionOperation>(instruction.operand&7U);
+            require(method==CollectionOperation::fill_value ? type_info(program,instruction.type).element : static_cast<Type>((instruction.operand&65535U)>>3));
+            require(instruction.type);
+            const auto output=static_cast<Type>(instruction.operand>>16); if (output!=Type::unit) stack.push_back(output);
+            break;
         }
         case Op::array_operation: {
             const auto parameters=array_operation_parameters(program,instruction.type,static_cast<ArrayOperation>(instruction.operand&255U));

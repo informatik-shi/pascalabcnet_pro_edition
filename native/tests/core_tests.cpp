@@ -67,6 +67,98 @@ void runtime_error(std::string_view source, std::string_view code) {
     error([&] { (void)run(source); }, code,source);
 }
 
+void collection_callbacks_library() {
+    result("begin var a:=Arr(1,2,3); Writeln(a.Transform(x->x*2),' ',a); Writeln(a.Transform((x,i)->x+i)); a.Fill(7); Writeln(a); a.Fill(i->i*3); Writeln(a); var b:array of string:=a.ConvertAll((x,i)->IntToStr(x+i)); Writeln(b); end.","[2,4,6] [2,4,6]\n[2,5,8]\n[7,7,7]\n[0,3,6]\n[0,4,8]\n");
+    result("begin var m:=MatrFill(2,2,0); m.Fill((r,c)->r*10+c); m.Transform((x,r,c)->x+r+c); Writeln(m); var a:array[,] of string:=m.ConvertAll(x->IntToStr(x)); Writeln(a,' ',a.Size); var b:=m.ConvertAll((x,r,c)->x+r+c); Writeln(b); end.","[[0,2],[11,13]]\n[[0,2],[11,13]] (2,2)\n[[0,3],[12,15]]\n");
+    result("begin var l:=new List<integer>; l.Add(2); l.Add(3); Writeln(l.Transform(x->x*2)=l,' ',l); Writeln(l.Transform((x,i)->x+i)); Writeln(l.Fill(7)=l,' ',l); Writeln(l.Fill(i->i+10)); var text:List<string>:=l.ConvertAll(x->IntToStr(x)); Writeln(text); end.","True [4,6]\n[4,7]\nTrue [7,7]\n[10,11]\n[10,11]\n");
+    result("function Twice(x:integer):integer; begin Result:=x*2; end; procedure PrintValue(x:integer); begin Write(x,' '); end; begin var a:=Arr(1,2); Transform(a,Twice); Writeln(ConvertAll(a,Twice)); Fill(a,Twice); Writeln(a); PABCSystem.ForEach(a,PrintValue); &ForEach(Seq(3,4),PrintValue); end.","[4,8]\n[0,2]\n0 2 3 4 ");
+    result("begin var sum:=0; Arr(1,2,3).ForEach(x->sum:=sum+x); Seq(1,2).ForEach((x,i)->sum:=sum+x+i); 'ab'.ForEach((c,i)->sum:=sum+Ord(c)+i); Writeln(sum); var m:=MatrGen(2,2,(r,c)->r+c); m.ForEach((x,r,c)->sum:=sum+x+r+c); Writeln(sum); end.","206\n214\n");
+    result("begin var l:=new List<integer>; l.Add(1); l.Add(2); var total:=0; l.ForEach((x,i)->total:=total+x+i); Writeln(total); end.","4\n");
+    result("begin Writeln(10+Seq(1,2).Select(x->begin Arr(0).ForEach(y->Write('x')); Result:=x*2; end).Sum*3); Writeln(7); end.","xx28\n7\n");
+    result("begin Seq(1,2).ForEach(procedure(x:integer)->begin if x=1 then Exit; Write(x); end); Writeln('done'); end.","2done\n");
+    result("begin var result:=Arr(0,0).ConvertAll(x->ReadInteger); Writeln(result); result.ForEach(x->Writeln(x)); end.","[5,7]\n5\n7\n","5 7");
+    result("begin var m:=new integer[1,2]; var action:integer->():=x->Write(x,' '); var f:(integer,integer)->integer:=(r,c)->r+c+1; m.Fill(f); m.ForEach(action); Writeln; var g:integer->integer:=x->x+10; m.Transform(g); Writeln(m); end.","1 2 \n[[11,12]]\n");
+    result("type R=record f:integer->integer; end; function Make(k:integer):integer->integer; begin Result:=x->x+k; end; begin var r:R; r.f:=Make(2); var fs:=Arr(r.f); var l:=new List<integer->integer>; l.Add(Make(3)); Writeln(Arr(1).Transform(r.f),' ',Arr(1).ConvertAll(fs[0]),' ',Arr(1).Transform(l[0]),' ',Arr(1).ConvertAll(Make(5))); end.","[3] [3] [4] [6]\n");
+    result("function Make(k:integer):integer->(); begin Result:=x->Write(x+k,' '); end; begin var a:=(x:integer)->Write(x,' '); Seq(1).ForEach(a); Seq(2).ForEach(Make(10)); var actions:=Arr(Make(20)); Seq(3).ForEach(actions[0]); end.","1 12 23 ");
+    result("begin var f:integer->integer; f:=x->begin f:=x->99; Result:=x+1; end; Writeln(Arr(1,2).Transform(f)); end.","[2,3]\n");
+    result("begin var m:=new integer[1,3]; m.Transform((x,r,c)->begin m[0,2]:=9; Result:=x+1; end); Writeln(m); end.","[[1,1,10]]\n");
+    result("begin var a:=Arr(1,2); var alias:=a; a.Transform(x->begin SetLength(a,1); Result:=x+1; end); Writeln(alias,' ',a); end.","[2,3] [1]\n");
+    result("begin var l:=new List<integer>; l.Add(1); l.Add(2); l.Transform(x->begin l.Add(9); Result:=x+1; end); Writeln(l); end.","[2,3,9,9]\n");
+    result("begin var l:=new List<integer>; l.Add(1); l.Add(2); l.Fill(i->begin l.Add(9); Result:=i; end); Writeln(l); end.","[0,1,9,9]\n");
+    runtime_error("begin var l:=new List<integer>; l.Add(1); l.Transform(x->begin l.Clear; Result:=x; end); end.","E_BOUNDS");
+    runtime_error("begin var l:=new List<integer>; l.Add(1); l.Fill(i->begin l.Clear; Result:=i; end); end.","E_BOUNDS");
+    result("begin var l:=new List<integer>; l.Add(1); l.Add(2); l.Add(3); var converted:=l.ConvertAll(x->begin if l.Count=3 then l.RemoveAt(2); Result:=x*2; end); Writeln(l,' ',converted); end.","[1,2] [2,4]\n");
+    result("begin var l:=new List<integer>; l.Add(1); l.Add(2); var converted:=l.ConvertAll(x->begin l.Clear; Result:=x; end); Writeln(l.Count,' ',converted.Count); end.","0 0\n");
+    result("begin var a:=Arr(1,2); a.ForEach(x->begin Write(x); a[1]:=9; end); end.","19");
+    for (const auto source:{
+        "begin var l:=new List<integer>; l.Add(1); l.ForEach(x->l.Add(2)); end.",
+        "begin var l:=new List<integer>; l.Add(1); l.ForEach((x,i)->l[0]:=x); end.",
+        "begin var l:=new List<integer>; l.Add(1); foreach var x in l do l.Fill(1); end."}) runtime_error(source,"E_MODIFIED");
+    result("type R=record n:integer; a:array of integer; end; begin var r:R; r.n:=2; r.a:=Arr(1); var a:=Arr(r,r); a.Fill(r); a[0].n:=9; a[0].a[0]:=7; Writeln(a[1].n,' ',r.a[0]); a.ForEach(x->x.n:=99); Writeln(a[0].n,' ',a[1].n); a.Transform(x->begin Inc(x.n); Result:=x; end); Writeln(a[0].n,' ',a[1].n); end.","2 7\n9 2\n10 3\n");
+    result("type R=record n:integer; end; begin var l:=new List<R>; var r:R; r.n:=2; l.Add(r); var a:=l.ConvertAll(x->x); a[0].n:=7; Writeln(l[0].n,' ',a[0].n); end.","2 7\n");
+    result("type F=integer->integer; begin var a:=new F[2]; a.Fill(x->x+1); Writeln(a[0](2),' ',a[1](4),' ',a[0]=a[1]); a.Fill(i->(x:integer)->x+i); Writeln(a[0](10),' ',a[1](10)); end.","3 5 True\n10 11\n");
+    result("begin var f:integer->integer; var a:=new integer[0]; a.Fill(f); Writeln(a.Length); var l:=new List<integer>; Writeln(l.Transform(f)=l); var s:string:=nil; var strings:=new string[2]; strings.Fill(s); Writeln(strings[0]=nil,' ',strings[1]=nil); end.","0\nTrue\nTrue True\n");
+    result("begin var a:=new integer[0]; a.Fill(nil); Writeln(a.Length); var m:=new integer[0,2]; m.Fill((r,c)->r+c); m.Transform(x->x); Writeln(m.ConvertAll(x->IntToStr(x)).Size); var l:=new List<integer>; Writeln(l.ConvertAll(x->IntToStr(x)).Count); end.","0\n(0,2)\n0\n");
+    for (const auto source:{
+        "begin var f:integer->integer; Writeln(new integer[0].Transform(f)); end.",
+        "begin var f:integer->integer; Writeln(new integer[0].ConvertAll(f)); end.",
+        "begin var l:=new List<integer>; var f:integer->integer; l.Fill(f); end.",
+        "begin var m:=new integer[0,2]; var f:(integer,integer)->integer; m.Fill(f); end.",
+        "begin var m:=new integer[2,0]; var f:integer->integer; m.Transform(f); end.",
+        "begin var m:=new integer[0,2]; var p:integer->(); m.ForEach(p); end.",
+        "begin var p:integer->(); SeqFill(0,1).ForEach(p); end.",
+        "begin var a:array of integer; a.Fill(1); end.",
+        "begin var f:integer->integer; Arr(1).Fill(f); end.",
+        "begin var l:List<integer>; l.Transform(x->x); end."}) runtime_error(source,"E_NIL");
+    for (const auto source:{
+        "begin Arr(1).Transform((x:real)->x); end.",
+        "begin Arr(1).Transform(x->x*1.5); end.",
+        "begin var m:=new integer[1,1]; m.Fill(x->x); end.",
+        "begin var m:=new integer[1,1]; m.Fill(7); end.",
+        "begin Arr(1).Fill((i:real)->1); end.",
+        "begin Arr(1).ConvertAll(x->Print(x)); end.",
+        "begin Seq(1).ForEach(x->x+1); end.",
+        "begin Arr(1).ForEach((var x:integer)->Inc(x)); end.",
+        "begin Writeln(Seq(1).ForEach(x->Print(x))); end.",
+        "begin var l:=new List<integer>; l.ConvertAll((x,i)->x+i); end.",
+        "begin var l:=new List<integer>; ConvertAll(l,x->x); end."}) compile_error(source,"E_TYPE");
+    const auto failed=[&](std::string_view text,std::string_view code,std::string_view expected) {
+        const auto p=abc::compile(text);std::istringstream in;std::ostringstream out;
+        error([&]{abc::execute(p,in,out);},code,text);require(out.str()==expected,"Collection operation preserves callback and failure order");
+    };
+    failed("begin var l:=new List<integer>; l.Add(1); l.ConvertAll(x->begin Write(x); l.Add(2); Result:=x; end); end.","E_BOUNDS","12");
+    failed("begin Seq(1,2).ForEach(x->begin Write(x); if x=2 then Assert(False); end); end.","E_ASSERT","12");
+    abc::ExecutionOptions options;options.instruction_limit=100;
+    error([&]{(void)run("begin Seq(1).ForEach(x->begin while True do continue; end); end.","",options);},"E_LIMIT");
+    options={};options.call_limit=4;
+    error([&]{(void)run("begin var p:integer->(); p:=x->Seq(x).ForEach(p); Seq(1).ForEach(p); end.","",options);},"E_LIMIT");
+    options={};options.cancelled=[] { return true; };
+    error([&]{(void)run("begin Seq(1).ForEach(x->Print(x)); end.","",options);},"E_CANCELLED");
+    for (const auto text:{"begin Arr(1).Transform(x->x+1); end.","begin var a:=Arr(1); a.Fill(2); end.","begin Seq(1).ForEach(x->Print(x)); end.","begin var l:=new List<integer>; l.ConvertAll(x->x); end."}) {
+        const auto good=abc::compile(text);
+        for (const auto operand:{std::size_t{0},std::numeric_limits<std::size_t>::max()}) {
+            auto bad=good;for (auto& op:bad.code) if (op.op==abc::Op::collection_operation) op.operand=operand;
+            error([&]{abc::verify(bad);},"E_BYTECODE");
+        }
+    }
+}
+void escaped_identifiers_language() {
+    result("begin var &begin:=2; var &end:=3; var &true:=9; var &not:=4; Writeln(&begin+&end,' ',&true,' ',true,' ',&not); end.","5 9 True 4\n");
+    result("type &array=integer; &record=integer; &tuple=integer; begin var a:=new &array[2]; a[0]:=7; var f:&record->&tuple:=x->x+1; Writeln(a[0],' ',f(3)); end.","7 4\n");
+    result("type &empty_result=integer; begin var f:()->&empty_result:=()->7; Writeln(f()); end.","7\n");
+    result("type R=record &end:integer; &foreach:integer->integer; end; begin var r:R; r.&end:=3; r.ForEach:=x->x+2; Writeln(r.&end,' ',r.ForEach(4)); end.","3 6\n");
+    result("procedure &ForEach(x:integer); begin Write(x); end; begin &ForEach(7); PABCSystem.ForEach(Seq(1),x->Write(x)); end.","71");
+    result("begin var &Я:=3; var &or:=5; Writeln(&я,' ',&or and 3); end.","3 1\n");
+    compile_error("begin var a:&array; end.","E_UNSUPPORTED");
+    compile_error("begin var a:&record; end.","E_UNSUPPORTED");
+    compile_error("type &record=integer; begin var a:record end; a:=1; end.","E_TYPE");
+    compile_error("begin var &1:=1; end.","E_SYNTAX");
+    compile_error("begin 1; end.","E_TYPE");
+    result("begin new integer[0].ForEach(x->Print(x)); (Seq(1)).ForEach(x->Write(x)); end.","1");
+    try { (void)abc::compile("begin Writeln(&Я); end.");require(false,"Expected an unknown escaped identifier"); }
+    catch (const abc::Error& caught) { require(caught.code=="E_NAME" && caught.location.column==15 && !caught.russian.empty(),"Escaped identifiers retain the source column of the ampersand and bilingual diagnostics"); }
+}
+
 void array_operations_library() {
     result("begin Writeln(ArrFill(3,7),' ',MatrFill(2,2,9)); Writeln(PABCSystem.ArrFill(2,'Я'),' ',PABCSystem.MatrFill(1,2,'ab')); end.","[7,7,7] [[9,9],[9,9]]\n[Я,Я] [[ab,ab]]\n");
     result("begin var m:=MatrGen(2,3,(r,c)->r*10+c); Writeln(m.Size,' ',m.Size(),' ',Size(m),' ',PABCSystem.Size(m)); Writeln(Transpose(m)); Writeln(m.Elements.ToArray,' ',Elements(m).ToArray,' ',PABCSystem.Elements(m).ToArray); end.","(2,3) (2,3) (2,3) (2,3)\n[[0,10],[1,11],[2,12]]\n[0,1,2,10,11,12] [0,1,2,10,11,12] [0,1,2,10,11,12]\n");
@@ -4943,6 +5035,8 @@ int main() {
     array_views_library();
     matrix_lines_library();
     array_operations_library();
+    collection_callbacks_library();
+    escaped_identifiers_language();
     structural_output();
     try_console_read();
     string_conversions();

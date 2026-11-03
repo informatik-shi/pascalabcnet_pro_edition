@@ -56,6 +56,7 @@ Text/TextFile: Assign, Reset, Rewrite, Append, Read/Readln, Write/Writeln, Eof, 
 Индексы массивов, списков и матриц: examples/array-views.pas.
 Строки и столбцы матриц, замена и обмен: examples/matrix-lines.pas.
 Заполнение, форма, транспонирование и сравнение массивов: examples/array-operations.pas.
+ConvertAll, Transform, Fill и ForEach: examples/collection-callbacks.pas.
 Прямой захват управляющей переменной цикла пока не перенесён; используйте отдельную переменную-копию.
 Совместимость с PascalABC.NET частичная.
 Русские имена и НОД/НОК: examples/russian-identifiers.pas. Массивные GCD/LCM: examples/school-folds.pas.

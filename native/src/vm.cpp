@@ -21,6 +21,7 @@
 #include "array_views.hpp"
 #include "matrix_operations.hpp"
 #include "array_operations.hpp"
+#include "collection_operations.hpp"
 #include "big_integer_runtime.hpp"
 
 #include <charconv>
@@ -220,13 +221,15 @@ static void execute_impl(const Program& program, std::istream& input, std::ostre
     const auto invoke_result=[&](std::size_t id,std::span<const Value> arguments,std::span<const std::shared_ptr<Cell>> captured)->Value {
         const auto location=values.location;
         struct RestoreLocation { Values& values; SourceLocation saved; ~RestoreLocation(){values.location=saved;} } restore{values,location};
-        if (id>=program.routines.size() || program.routines[id].parameters.size()!=arguments.size() || program.routines[id].result==Type::unit)
+        if (id>=program.routines.size() || program.routines[id].parameters.size()!=arguments.size())
             throw runtime_error(RuntimeError::invalid_bytecode,location);
+        const auto procedure=program.routines[id].result==Type::unit;
         const auto depth=frames.size(),base=stack.size();
         for (const auto& argument:arguments) stack.push_back(values.copy(argument));
         enter_routine(id,location,captured); run_to(depth);
-        if (frames.size()!=depth || stack.size()!=base+1) throw runtime_error(RuntimeError::invalid_bytecode,location);
-        return pop();
+        if (frames.size()!=depth || stack.size()!=base+(procedure ? 0U : 1U)) throw runtime_error(RuntimeError::invalid_bytecode,location);
+        // Procedure callbacks return no operand; callers use only their side effects.
+        return procedure ? Value{std::int32_t{0}} : pop();
     };
     values.invoke=[&](std::size_t id,std::span<const Value> arguments)->Value { return invoke_result(id,arguments,{}); };
     values.invoke_closure=[&](const std::shared_ptr<Aggregate>& callable,std::span<const Value> arguments)->Value {
@@ -262,6 +265,12 @@ static void execute_impl(const Program& program, std::istream& input, std::ostre
                 stack.emplace_back(instruction.operand ? sequence_range_step(values,instruction.type,first,last,step) : sequence_range(values,instruction.type,first,last));
             }
             break;
+        }
+        case Op::collection_operation: {
+            const auto argument=pop(); const auto source=std::get<std::shared_ptr<Aggregate>>(pop());
+            const auto output=static_cast<Type>(instruction.operand>>16);
+            auto result=collection_operation(values,output,source,static_cast<CollectionOperation>(instruction.operand&7U),argument,options);
+            if (output!=Type::unit) stack.push_back(std::move(result)); break;
         }
         case Op::array_operation: {
             const auto method=static_cast<ArrayOperation>(instruction.operand&255U);

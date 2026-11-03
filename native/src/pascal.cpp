@@ -26,6 +26,7 @@ struct Token {
     TokenKind kind;
     std::string text;
     SourceLocation location;
+    bool escaped=false;
 };
 
 bool digit(char c) { return c >= '0' && c <= '9'; }
@@ -43,6 +44,11 @@ public:
         skip();
         const auto start = position_;
         if (peek() == '\0' && position_.offset == source_.size()) return {TokenKind::eof, "", start};
+        const bool escaped=peek()=='&';
+        if (escaped) {
+            take();
+            if (!letter(point())) throw Error("E_SYNTAX",start,"Expected an identifier after &");
+        }
         if (letter(point())) {
             std::string name;
             do {
@@ -54,7 +60,7 @@ public:
                 else if (c<0x800) { name+=static_cast<char>(0xc0|(c>>6)); name+=static_cast<char>(0x80|(c&63)); }
                 else { name+=static_cast<char>(0xe0|(c>>12)); name+=static_cast<char>(0x80|((c>>6)&63)); name+=static_cast<char>(0x80|(c&63)); }
             } while (letter(point()) || digit(peek()));
-            return {TokenKind::name, std::move(name), start};
+            return {TokenKind::name, std::move(name), start, escaped};
         }
         if (digit(peek())) {
             std::string number;
@@ -166,6 +172,7 @@ struct SyntaxType {
     unsigned rank = 1;
     std::vector<bool> references{}, variadics{};
     bool system_qualified=false;
+    bool named=false;
 };
 struct SyntaxRoutine;
 struct SyntaxExpr {
@@ -258,13 +265,13 @@ public:
                     const auto type_name = name(); expect("=");
                     auto type = type_syntax(); type->token = type_name;
                     root.type_declarations.emplace_back(type_name, std::move(type)); expect(";");
-                } while (current_.kind == TokenKind::name && !reserved(current_.text));
+                } while (current_.kind == TokenKind::name && (current_.escaped || !reserved(current_.text)));
             } else if (accept("var")) {
                 do { root.statements.push_back(declaration()); expect(";"); }
-                while (current_.kind == TokenKind::name && !reserved(current_.text));
+                while (current_.kind == TokenKind::name && (current_.escaped || !reserved(current_.text)));
             } else if (accept("const")) {
                 do { root.statements.push_back(constant_declaration()); expect(";"); }
-                while (current_.kind==TokenKind::name && !reserved(current_.text));
+                while (current_.kind==TokenKind::name && (current_.escaped || !reserved(current_.text)));
             } else if (is("function") || is("procedure")) root.routines.push_back(routine());
             else fail("Expected type, var, const, function, procedure or begin");
         }
@@ -277,14 +284,14 @@ public:
 private:
     [[noreturn]] void fail(std::string message) const { throw Error("E_SYNTAX", current_.location, std::move(message)); }
     Token consume() { auto old = current_; current_ = lexer_.next(); return old; }
-    bool is(std::string_view text) const { return current_.kind != TokenKind::text && current_.text == text; }
+    bool is(std::string_view text) const { return current_.kind != TokenKind::text && !current_.escaped && current_.text == text; }
     bool accept(std::string_view text) { if (!is(text)) return false; consume(); return true; }
     Token expect(std::string_view text) {
         if (!is(text)) fail("Expected '" + std::string(text) + "', found '" + current_.text + "'");
         return consume();
     }
     Token name() {
-        if (current_.kind != TokenKind::name || reserved(current_.text)) fail("Expected an identifier");
+        if (current_.kind != TokenKind::name || (!current_.escaped && reserved(current_.text))) fail("Expected an identifier");
         return consume();
     }
     std::shared_ptr<SyntaxType> type_syntax(bool allow_empty_result=false,bool allow_arrow=true) {
@@ -339,7 +346,7 @@ private:
             }
             expect("end");
         } else {
-            result->token = name(); result->kind = result->token.text;
+            result->token = name(); result->kind = result->token.text; result->named=true;
             if (result->kind=="system") {
                 result->system_qualified=true; expect("."); result->kind=name().text;
                 if (result->kind!="func" && result->kind!="action" && result->kind!="predicate")
@@ -348,6 +355,7 @@ private:
             if (result->kind=="func" || result->kind=="func0" || result->kind=="func2" || result->kind=="func3"
                 || result->kind=="action" || result->kind=="action0" || result->kind=="action2" || result->kind=="action3"
                 || result->kind=="predicate" || result->kind=="predicate2" || result->kind=="predicate3") {
+                result->named=false;
                 if (result->kind!="action0" && !(result->system_qualified && result->kind=="action" && !is("<"))) {
                     expect("<");
                     do {
@@ -357,23 +365,23 @@ private:
                     expect(">");
                 }
             } else if (result->kind == "assocarray" && accept("<")) {
-                result->key = type_syntax(); expect(","); result->element = type_syntax(); expect(">");
+                result->named=false; result->key = type_syntax(); expect(","); result->element = type_syntax(); expect(">");
             } else if ((result->kind == "list" || result->kind == "stack" || result->kind == "queue" || result->kind == "dynarray" || result->kind == "simpleset" || result->kind == "linkedlist" || result->kind == "linkedlistnode" || result->kind == "singlenode") && accept("<")) {
-                result->element = type_syntax(); expect(">");
+                result->named=false; result->element = type_syntax(); expect(">");
             }
         }
         if (allow_arrow && accept("->")) {
-            if (result->kind=="record" || result->kind=="callable")
+            if (!result->named && (result->kind=="record" || result->kind=="callable"))
                 throw Error("E_SYNTAX",result->token.location,"Short callable input type requires parentheses");
             auto callable=std::make_shared<SyntaxType>(); callable->token=result->token; callable->kind="callable";
-            if (result->kind=="tuple") callable->fields=std::move(result->fields);
+            if (result->kind=="tuple" && !result->named) callable->fields=std::move(result->fields);
             else callable->fields.emplace_back(result->token,std::move(result));
             callable->references.assign(callable->fields.size(),false); callable->variadics.assign(callable->fields.size(),false);
             auto output=type_syntax(true);
-            if (output->kind!="empty_result") callable->element=std::move(output);
+            if (output->kind!="empty_result" || output->named) callable->element=std::move(output);
             return callable;
         }
-        if (result->kind=="tuple") {
+        if (result->kind=="tuple" && !result->named) {
             if (result->fields.empty() && allow_empty_result) result->kind="empty_result";
             else if (result->fields.size()<2) fail("A tuple type needs at least two elements");
             else if (result->fields.size()>7) throw Error("E_UNSUPPORTED",result->token.location,"Tuple arities above seven require nested Rest tuples");
@@ -405,7 +413,7 @@ private:
         while (is("var") || is("const")) {
             const bool constants=accept("const"); if (!constants) expect("var");
             do { result->body.statements.push_back(constants ? constant_declaration() : declaration()); expect(";"); }
-            while (current_.kind == TokenKind::name && !reserved(current_.text));
+            while (current_.kind == TokenKind::name && (current_.escaped || !reserved(current_.text)));
         }
         result->body.statements.push_back(block()); expect(";");
         return result;
@@ -513,7 +521,7 @@ private:
                 } while (accept(","));
                 expect(")");
             }
-        } else if (current_.kind == TokenKind::name && !reserved(current_.text)) {
+        } else if (current_.kind == TokenKind::name && (current_.escaped || !reserved(current_.text))) {
             const auto target = name();
             result.names.push_back(target);
             if ((target.text == "inc" || target.text == "dec") && accept("(")) {
@@ -539,6 +547,16 @@ private:
                     if (target_expression->kind == SyntaxExprKind::name) target_expression->kind = SyntaxExprKind::call;
                     result.expression = std::move(target_expression);
                 }
+            }
+        } else if (current_.kind==TokenKind::text || current_.kind==TokenKind::character_code || current_.kind==TokenKind::number || is("(") || is("new") || is("default")) {
+            auto target=expression();
+            if (accept(":=")) {
+                result.kind=SyntaxStmtKind::assignment; result.target=std::move(target); result.expression=expression();
+            } else {
+                if (target->kind!=SyntaxExprKind::call && target->kind!=SyntaxExprKind::member_call && target->kind!=SyntaxExprKind::value_call
+                    && target->kind!=SyntaxExprKind::field && target->kind!=SyntaxExprKind::name)
+                    throw Error("E_TYPE",result.token.location,"Expression statement requires a call");
+                result.kind=SyntaxStmtKind::call; result.expression=std::move(target);
             }
         } else {
             throw Error("E_UNSUPPORTED", current_.location, "Statement is not supported: '" + current_.text + "'");
@@ -597,7 +615,7 @@ private:
     std::unique_ptr<SyntaxExpr> expression(int minimum = 1) {
         DepthGuard guard(depth_, current_.location);
         auto left = prefix();
-        while (current_.kind != TokenKind::text && precedence(current_.text) >= minimum) {
+        while (current_.kind != TokenKind::text && !current_.escaped && precedence(current_.text) >= minimum) {
             const auto op = consume();
             auto right = expression(precedence(op.text) + 1);
             left = make_expression(SyntaxExprKind::binary, op, std::move(left), std::move(right));
@@ -707,7 +725,7 @@ private:
             }
             return postfix(std::move(result));
         }
-        if (current_.kind == TokenKind::name && !reserved(current_.text))
+        if (current_.kind == TokenKind::name && (current_.escaped || !reserved(current_.text)))
             return postfix(make_expression(SyntaxExprKind::name, consume()));
         fail("Expected an expression");
     }
@@ -736,7 +754,7 @@ private:
                 expect("]");
             } else if (accept(".")) {
                 // These standard Text methods also have statement keyword spellings.
-                const auto field = is("write") || is("writeln") || is("readln") ? consume() : name();
+                const auto field = is("write") || is("writeln") || is("readln") || is("foreach") ? consume() : name();
                 result = make_expression(SyntaxExprKind::field, field, std::move(result));
             } else if (accept("(")) {
                 if (result->kind==SyntaxExprKind::name) result->kind=SyntaxExprKind::call;
@@ -1027,8 +1045,10 @@ private:
     }
     Type resolve_type(const SyntaxType& syntax) {
         if (auto found=resolved_types_.find(&syntax); found!=resolved_types_.end()) return found->second;
-        if (!syntax.system_qualified && !syntax.element && syntax.fields.empty() && syntax.kind!="callable")
+        if (syntax.named && !syntax.system_qualified && !syntax.element && syntax.fields.empty())
             if (const auto found=aliases_.find(syntax.kind);found!=aliases_.end()) return found->second;
+        if (syntax.named && (syntax.kind=="array" || syntax.kind=="record" || syntax.kind=="sequence" || syntax.kind=="tuple" || syntax.kind=="callable" || syntax.kind=="empty_result"))
+            throw Error("E_UNSUPPORTED",syntax.token.location,"Unknown or unsupported type '"+syntax.kind+"'");
         if (syntax.kind=="callable") {
             std::vector<CallableParameter> parameters;
             for (std::size_t n=0;n<syntax.fields.size();++n) parameters.push_back({resolve_type(*syntax.fields[n].second),syntax.references[n],syntax.variadics[n]});
@@ -2453,6 +2473,72 @@ private:
         result.type=sequence_type(CompoundKind::sequence,text ? Type::string : array);
         result.arguments.clear();
     }
+    bool bind_collection_operation(hir::Expr& result,const SyntaxExpr& source,bool member) {
+        const auto name=source.token.text;
+        if (name!="fill" && name!="transform" && name!="convertall" && name!="foreach") return false;
+        if (source.arguments.size()!=(member ? 1U : 2U)) throw Error("E_TYPE",result.location,"Collection operation requires a source and one value or callback");
+        auto input=member ? std::move(result.left) : expression(*source.arguments[0]);
+        if (name=="foreach") {
+            if (input->type==Type::string) input=convert(std::move(input),sequence_type(CompoundKind::sequence,Type::character));
+            else if (compound(input->type)) {
+                const auto type=info(input->type,result.location);
+                if ((type.kind==CompoundKind::array && type.rank==1) || type.kind==CompoundKind::list)
+                    input=convert(std::move(input),sequence_type(CompoundKind::sequence,type.element));
+            }
+        }
+        if (!compound(input->type)) throw Error("E_TYPE",result.location,"Collection operation requires a typed array, List or sequence");
+        const auto type=info(input->type,result.location); const bool list=type.kind==CompoundKind::list,sequence=type.kind==CompoundKind::sequence;
+        if ((type.kind!=CompoundKind::array && !list && !sequence) || (type.rank!=1 && type.rank!=2)
+            || ((list || sequence) && type.rank!=1) || (sequence && name!="foreach"))
+            throw Error("E_TYPE",result.location,"Collection operation requires a typed array, List or sequence");
+        if (name=="convertall" && list && !member) throw Error("E_TYPE",result.location,"List ConvertAll requires a member call");
+        CollectionOperation method; Type callback_type=Type::invalid; Type output=Type::unit;
+        const auto& argument=*source.arguments.back();
+        if (name=="fill") {
+            auto value=argument.kind==SyntaxExprKind::lambda
+                ? bind_lambda(argument,Type::invalid,std::vector<Type>(type.rank,Type::integer)) : expression(argument);
+            const bool nullable=type.element==Type::string || type.element==Type::text_file
+                || (compound(type.element) && info(type.element,result.location).kind!=CompoundKind::record);
+            if (value->type==Type::nil && (type.rank==2 || !nullable)) {
+                std::vector<CallableParameter> parameters(type.rank,{Type::integer,false,false});
+                value=convert(std::move(value),function_type(type.element,std::move(parameters),result.location));
+            }
+            if (value->type==type.element || !callable_type(value->type)) {
+                if (type.rank==2) throw Error("E_TYPE",result.location,"Matrix Fill requires an integer index function");
+                result.right=convert(std::move(value),type.element); method=CollectionOperation::fill_value;
+            } else {
+                auto callback=library_callback_value(std::move(value)); const auto& signature=callback.signature;
+                if (signature.result!=type.element || signature.parameters.size()!=type.rank
+                    || std::any_of(signature.parameters.begin(),signature.parameters.end(),[](const auto& p){return p.by_reference || p.type!=Type::integer;}))
+                    throw Error("E_TYPE",result.location,"Fill function requires integer indices and the exact element result type");
+                result.right=std::move(callback.value); callback_type=result.right->type; method=CollectionOperation::fill_function;
+            }
+            output=list ? input->type : Type::unit;
+        } else {
+            std::vector<Type> hints{type.element}; for (unsigned i=0;i<type.rank;++i) hints.push_back(Type::integer);
+            auto callback=library_callback(argument,std::move(hints)); const auto& signature=callback.signature;
+            if ((signature.parameters.size()!=1 && signature.parameters.size()!=type.rank+1)
+                || signature.parameters[0].type!=type.element || (name=="convertall" && list && signature.parameters.size()!=1)
+                || std::any_of(signature.parameters.begin(),signature.parameters.end(),[](const auto& p){return p.by_reference;}))
+                throw Error("E_TYPE",result.location,"Collection callback requires the exact element and optional integer index parameters");
+            for (std::size_t i=1;i<signature.parameters.size();++i) if (signature.parameters[i].type!=Type::integer)
+                throw Error("E_TYPE",result.location,"Collection callback requires the exact element and optional integer index parameters");
+            if (name=="foreach") {
+                if (signature.result!=Type::unit) throw Error("E_TYPE",result.location,"ForEach requires a procedure callback");
+                method=CollectionOperation::for_each;
+            } else if (name=="transform") {
+                if (signature.result!=type.element) throw Error("E_TYPE",result.location,"Transform callback must return the exact element type");
+                method=CollectionOperation::transform; output=list || type.rank==1 ? input->type : Type::unit;
+            } else {
+                if (signature.result==Type::unit || signature.result==Type::nil) throw Error("E_TYPE",result.location,"ConvertAll callback requires a known value result");
+                method=CollectionOperation::convert_all; output=sequence_type(type.kind,signature.result,type.rank);
+            }
+            result.right=callback.value ? std::move(callback.value) : routine_value(*callback.named,result.location);
+            callback_type=result.right->type;
+        }
+        result.left=std::move(input); result.kind=hir::ExprKind::collection_operation; result.type=output;
+        result.local=static_cast<std::size_t>(method); result.operation_type=callback_type; return true;
+    }
     bool bind_array_operation(hir::Expr& result,const SyntaxExpr& source,bool member) {
         const auto name=source.token.text;
         const bool fill=name=="arrfill" || name=="matrfill",equal=name=="arrequal" || name=="matrequal";
@@ -2565,7 +2651,7 @@ private:
         const auto name=source.token.text; const bool cartesian=name=="cartesian";
         const bool combinations=name=="combinations",permutations=name=="permutations";
         if (!unit.empty() && unit!="pabcsystem") return false;
-        if (bind_array_operation(result,source,member) || bind_matrix_operation(result,source,member) || bind_array_view(result,source,member)) return true;
+        if (bind_collection_operation(result,source,member) || bind_array_operation(result,source,member) || bind_matrix_operation(result,source,member) || bind_array_view(result,source,member)) return true;
         if (name!="zip" && name!="ziptuple" && !cartesian && name!="cartesianpower" && !combinations && !permutations) return false;
         if (combinations || permutations) {
             const auto count=source.arguments.size()+(member ? 1U : 0U);
