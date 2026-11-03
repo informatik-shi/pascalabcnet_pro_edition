@@ -2473,6 +2473,68 @@ private:
         result.type=sequence_type(CompoundKind::sequence,text ? Type::string : array);
         result.arguments.clear();
     }
+    bool bind_matrix_build(hir::Expr& result,const SyntaxExpr& source,bool member) {
+        const auto name=source.token.text;
+        if (member || (name!="matr" && name!="matrbyrow" && name!="matrbycol")) return false;
+        for (const auto& argument:source.arguments) result.arguments.push_back(expression(*argument));
+        const bool matr=name=="matr",column=name=="matrbycol";
+        const auto size=result.arguments.size();
+        MatrixBuild method;Type input,element;
+        const bool dimensions=matr ? size>=2 && integer_type(result.arguments[0]->type) && integer_type(result.arguments[1]->type) : size==3;
+        if (dimensions) {
+            result.arguments[0]=convert(std::move(result.arguments[0]),Type::integer);
+            result.arguments[1]=convert(std::move(result.arguments[1]),Type::integer);
+            if (matr) {
+                if (size<3) throw Error("E_TYPE",result.location,"Matr requires values with a known element type");
+                std::unique_ptr<hir::Expr> data;
+                if (size==3 && compound(result.arguments[2]->type) && info(result.arguments[2]->type,result.location).kind==CompoundKind::array
+                    && info(result.arguments[2]->type,result.location).rank==1) data=std::move(result.arguments[2]);
+                else {
+                    data=std::make_unique<hir::Expr>();data->location=result.location;
+                    for (std::size_t i=2;i<size;++i) data->arguments.push_back(std::move(result.arguments[i]));
+                    bind_array_literal(*data);
+                }
+                input=data->type;element=info(input,result.location).element;
+                result.arguments.resize(2);result.arguments.push_back(std::move(data));method=MatrixBuild::flat_values;
+            } else {
+                element=sequence_source(result.arguments[2]->type,result.location).element;
+                input=sequence_type(CompoundKind::sequence,element);
+                result.arguments[2]=convert(std::move(result.arguments[2]),input);
+                method=column ? MatrixBuild::columns_flat : MatrixBuild::rows_flat;
+            }
+        } else if (matr) {
+            std::unique_ptr<hir::Expr> rows;
+            if (size==1 && compound(result.arguments[0]->type)) {
+                const auto& outer=info(result.arguments[0]->type,result.location);
+                if (outer.kind==CompoundKind::array && outer.rank==1 && compound(outer.element)) {
+                    const auto& inner=info(outer.element,result.location);
+                    if (inner.kind==CompoundKind::array && inner.rank==1) rows=std::move(result.arguments[0]);
+                }
+            }
+            if (!rows) {
+                rows=std::make_unique<hir::Expr>();rows->location=result.location;rows->arguments=std::move(result.arguments);bind_array_literal(*rows);
+            }
+            input=rows->type;const auto row=info(input,result.location).element;
+            if (!compound(row) || info(row,result.location).kind!=CompoundKind::array || info(row,result.location).rank!=1)
+                throw Error("E_TYPE",result.location,"Matr requires one-dimensional row arrays of a known element type");
+            element=info(row,result.location).element;result.arguments.clear();result.arguments.push_back(std::move(rows));method=MatrixBuild::jagged_values;
+        } else {
+            if (size!=1) throw Error("E_TYPE",result.location,"Matrix construction requires nested rows or columns, or dimensions and a sequence");
+            input=result.arguments[0]->type;
+            const auto row=sequence_source(input,result.location).element;
+            if (!compound(row) || info(row,result.location).rank!=1
+                || (info(row,result.location).kind!=CompoundKind::array && info(row,result.location).kind!=CompoundKind::sequence))
+                throw Error("E_TYPE",result.location,"Matrix construction requires arrays or sequences with known element types");
+            element=info(row,result.location).element;
+            const bool arrays=info(row,result.location).kind==CompoundKind::array;
+            if (info(input,result.location).kind!=CompoundKind::array || !arrays) {
+                input=sequence_type(CompoundKind::sequence,row);result.arguments[0]=convert(std::move(result.arguments[0]),input);
+            }
+            method=arrays ? column ? MatrixBuild::columns_arrays : MatrixBuild::rows_arrays : column ? MatrixBuild::columns_sequences : MatrixBuild::rows_sequences;
+        }
+        result.type=sequence_type(CompoundKind::array,element,2);result.operation_type=input;
+        result.local=static_cast<std::size_t>(method);result.kind=hir::ExprKind::matrix_build;return true;
+    }
     bool bind_collection_operation(hir::Expr& result,const SyntaxExpr& source,bool member) {
         const auto name=source.token.text;
         if (name!="fill" && name!="transform" && name!="convertall" && name!="foreach") return false;
@@ -2658,7 +2720,7 @@ private:
         const auto name=source.token.text; const bool cartesian=name=="cartesian";
         const bool combinations=name=="combinations",permutations=name=="permutations";
         if (!unit.empty() && unit!="pabcsystem") return false;
-        if (bind_collection_operation(result,source,member) || bind_array_operation(result,source,member) || bind_matrix_operation(result,source,member) || bind_array_view(result,source,member)) return true;
+        if (bind_matrix_build(result,source,member) || bind_collection_operation(result,source,member) || bind_array_operation(result,source,member) || bind_matrix_operation(result,source,member) || bind_array_view(result,source,member)) return true;
         if (name!="zip" && name!="ziptuple" && !cartesian && name!="cartesianpower" && !combinations && !permutations) return false;
         if (combinations || permutations) {
             const auto count=source.arguments.size()+(member ? 1U : 0U);

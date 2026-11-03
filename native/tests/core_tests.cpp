@@ -67,6 +67,77 @@ void runtime_error(std::string_view source, std::string_view code) {
     error([&] { (void)run(source); }, code,source);
 }
 
+void matrix_construction_library() {
+    result("begin Writeln(Matr(2,3,1,2,3,4,5,6)); Writeln(PABCSystem.Matr(2,2,Arr(4,5,6,7))); Writeln(Matr(Arr(1,2),Arr(3))); Writeln(Matr(Arr(Arr(7),Arr(8,9)))); Writeln(Matr(Arr(1,2))); end.","[[1,2,3],[4,5,6]]\n[[4,5],[6,7]]\n[[1,2],[3,0]]\n[[7,0],[8,9]]\n[[1,2]]\n");
+    result("begin var a:=Arr(Arr(1,2),Arr(3)); Writeln(MatrByRow(a)); Writeln(MatrByCol(a)); Writeln(MatrByRow(Seq(Arr(1,2),Arr(3)))); Writeln(PABCSystem.MatrByCol(Seq(Arr(1,2),Arr(3)))); end.","[[1,2],[3,0]]\n[[1,3],[2,0]]\n[[1,2],[3,0]]\n[[1,3],[2,0]]\n");
+    result("begin Writeln(MatrByRow(Seq(Seq(1,2),Seq(3)))); Writeln(MatrByCol(Seq(Seq(1,2),Seq(3)))); Writeln(MatrByRow(2,3,Seq(1,2,3,4))); Writeln(MatrByCol(2,3,Seq(1,2,3,4))); Writeln(MatrByRow(1,2,'abc')); end.","[[1,2],[3,0]]\n[[1,3],[2,0]]\n[[1,2,3],[4,0,0]]\n[[1,3,0],[2,4,0]]\n[[a,b]]\n");
+    result("begin var calls:=0; var s:=SeqGen(2,i->begin Inc(calls); Result:=Arr(i,i+1); end); Writeln(MatrByRow(s),' ',calls); end.","[[0,1],[1,2]] 8\n");
+    result("begin var outer:=0; var inner:=0; var s:=SeqGen(2,i->begin Inc(outer); Result:=SeqGen(2,j->begin Inc(inner); Result:=i*10+j; end); end); Writeln(MatrByCol(s),' ',outer,' ',inner); end.","[[0,10],[1,11]] 5 6\n");
+    result("begin var calls:=0; var s:=SeqGen(4,i->begin Inc(calls); Result:=i+1; end); Writeln(MatrByRow(1,2,s),' ',calls); calls:=0; Writeln(MatrByCol(0,3,s).Size,' ',calls); calls:=0; Writeln(MatrByRow(3,0,s).Size,' ',calls); end.","[[1,2]] 3\n(0,3) 1\n(3,0) 1\n");
+    result("type A=array of integer; type S=sequence of integer; begin var a:=new A[0]; var s:=new S[0]; Writeln(MatrByRow(a).Size,' ',MatrByCol(a).Size); Writeln(MatrByRow(a.AsEnumerable).Size,' ',MatrByCol(s.AsEnumerable).Size); Writeln(Matr(new integer[0]).Size,' ',Matr(0,3,new integer[0]).Size); Writeln(MatrByRow(2147483647,0,Seq(1)).Size,' ',MatrByCol(0,2147483647,Seq(1)).Size); end.","(0,0) (0,0)\n(0,0) (0,0)\n(1,0) (0,3)\n(2147483647,0) (0,2147483647)\n");
+    result("begin var m:=MatrByRow(Arr(Arr('abc'),new string[0])); Writeln(m[0,0],' ',m[1,0]=nil); var n:=MatrByCol(2,2,Seq('abc')); Writeln(n[0,0],' ',n[1,0]=nil,' ',n[0,1]=nil); end.","abc True\nabc True True\n");
+    result("type R=record n:integer; s:string; a:array of integer; end; begin var r:R; r.n:=1; r.s:='abc'; r.a:=Arr(2); var m:=MatrByRow(Arr(Arr(r,r),new R[0])); r.n:=9; m[0,0].n:=7; m[0,0].a[0]:=8; Writeln(m[0,1].n,' ',r.a[0],' ',m[1,0].n,' ',m[1,0].s=nil,' ',m[1,0].a=nil); end.","1 8 0 True True\n");
+    result("begin var a:=Arr(1); var m:=Matr(1,2,a,a); m[0,0][0]:=9; Writeln(a[0],' ',m[0,1][0]); end.","9 9\n");
+    result("begin var l:=new List<integer>; l.Add(1); l.Add(2); l.Add(3); var s:=l.Select(x->begin if x=2 then l.Add(4); Result:=x; end); Writeln(MatrByRow(1,1,s),' ',l.Count); end.","[[1]] 4\n");
+    result("type A=array of integer; begin var l:=new List<A>; l.Add(Arr(1,2)); l.Add(Arr(3)); Writeln(MatrByRow(l)); Writeln(MatrByCol(2,2,Arr(1,2,3))); end.","[[1,2],[3,0]]\n[[1,3],[2,0]]\n");
+    for (int rows=0;rows<=4;++rows) for (int cols=0;cols<=4;++cols) for (bool column:{false,true}) {
+        std::ostringstream expected;
+        for (int r=0;r<rows;++r) for (int c=0;c<cols;++c) expected<<(column ? c*rows+r : r*cols+c)<<' ';
+        const auto name=column ? "MatrByCol" : "MatrByRow";
+        result("begin var m:="+std::string(name)+"("+std::to_string(rows)+","+std::to_string(cols)+",Range(0,30)); foreach var x in m.Elements do Write(x,' '); end.",expected.str());
+    }
+    for (const auto source:{
+        "type A=array of integer; begin Matr(new A[0]); end."}) runtime_error(source,"E_EMPTY");
+    for (const auto source:{
+        "begin Matr(2,2,1,2,3); end.",
+        "begin Matr(-1,1,new integer[0]); end.",
+        "begin Matr(-1,-1,Arr(1)); end.",
+        "begin MatrByRow(-1,2,Seq(1)); end.",
+        "begin MatrByCol(2,-1,Seq(1)); end."}) runtime_error(source,"E_RANGE");
+    runtime_error("begin Matr(50000,50000,new integer[0]); end.","E_OVERFLOW");
+    runtime_error("begin var pass:=0; var s:=SeqGen(2,i->begin if i=0 then Inc(pass); Result:=Arr(i); end).Where(x->pass<>3); MatrByRow(s); end.","E_EMPTY");
+    runtime_error("begin var pass:=0; var s:=SeqGen(2,i->begin if i=0 then Inc(pass); if pass=4 then Result:=Arr(i,i) else Result:=Arr(i); end); MatrByCol(s); end.","E_BOUNDS");
+    result("begin var pass:=0; var s:=SeqGen(2,i->begin if i=0 then Inc(pass); Result:=Arr(i); end).Where(x->pass<>4); Writeln(MatrByRow(s),' ',pass); end.","[[0],[0]] 4\n");
+    runtime_error("begin var a:array of integer:=nil; Matr(-1,0,a); end.","E_NIL");
+    runtime_error("begin var s:sequence of integer:=nil; MatrByRow(-1,0,s); end.","E_RANGE");
+    for (const auto source:{
+        "type A=array of integer; begin var a:array of A:=nil; Matr(a); end.",
+        "begin var a:array of integer:=nil; Matr(1,1,a); end.",
+        "type A=array of integer; begin var a:array of A:=nil; MatrByRow(a); end.",
+        "begin var a:array of integer:=nil; MatrByCol(Arr(Arr(1),a)); end.",
+        "begin var a:array of integer:=nil; MatrByRow(Seq(a,a)); end.",
+        "begin var s:sequence of integer:=nil; MatrByRow(2,2,s); end.",
+        "begin var s:sequence of integer:=nil; MatrByCol(Seq(s)); end."}) runtime_error(source,"E_NIL");
+    for (const auto source:{
+        "begin MatrByRow(Seq(Seq(1),Seq(2,3))); end.",
+        "begin MatrByCol(Seq(Seq(1),Seq(2,3))); end."}) runtime_error(source,"E_BOUNDS");
+    runtime_error("begin var l:=new List<integer>; l.Add(1); var s:=l.Select(x->begin l.Add(2); Result:=x; end); MatrByRow(1,1,s); end.","E_MODIFIED");
+    for (const auto source:{
+        "begin Matr(); end.","begin Matr(1,1); end.","begin Matr(Arr(1),Arr('abc')); end.","begin MatrByRow(Seq(1)); end.","begin MatrByCol(Seq(Arr(1))); end.","begin MatrByCol(1,2,3); end.","begin MatrByRow(Arr(1)); end.","begin MatrByRow(1,2); end.","begin MatrByCol(new integer[1,1]); end."}) compile_error(source,"E_TYPE");
+    {
+        const auto p=abc::compile("function D(c:char;x:integer):integer; begin Write(c); Result:=x; end; function Data:array of integer; begin Write('C'); Result:=Arr(1); end; begin Matr(D('A',2),D('B',2),Data()); end.");std::istringstream in;std::ostringstream out;
+        try { abc::execute(p,in,out);require(false,"Expected matrix initializer error"); }
+        catch (const abc::Error& e) {require(e.code=="E_RANGE" && std::string_view(e.what())=="Initializer count must match the matrix element count" && e.russian=="Число начальных значений должно совпадать с числом элементов матрицы","Matr initializer mismatch has exact bilingual diagnostics");}
+        require(out.str()=="ABC","Matr evaluates dimensions and params before checking initializer length");
+    }
+    abc::ExecutionOptions options;options.allocation_limit=30;
+    error([&]{(void)run("begin MatrByRow(20,20,Seq(1)); end.","",options);},"E_LIMIT");
+    options={};options.cancelled=[] {return true;};
+    error([&]{(void)run("begin MatrByRow(Arr(Arr(1))); end.","",options);},"E_CANCELLED");
+    for (const auto source:{"begin Matr(1,1,1); end.","begin Matr(Arr(1)); end.","begin MatrByRow(Arr(Arr(1))); end.","begin MatrByCol(Seq(Arr(1),Arr(2))); end.","begin MatrByRow(Seq(Seq(1))); end.","begin MatrByCol(1,1,Seq(1)); end."}) {
+        const auto good=abc::compile(source);
+        for (int kind=0;kind<4;++kind) {
+            auto bad=good;for (auto& op:bad.code) if (op.op==abc::Op::matrix_build) {
+                if (kind==0) op.operand=std::numeric_limits<std::size_t>::max();
+                if (kind==1) op.operand=(op.operand&~std::size_t{15})|15;
+                if (kind==2) op.operand&=15U;
+                if (kind==3) op.type=abc::Type::integer;
+            }
+            error([&]{abc::verify(bad);},"E_BYTECODE");
+        }
+    }
+}
+
 void matrix_slices_library() {
     result("begin var m:=MatrGen(3,4,(r,c)->r*10+c); Writeln(m.MatrSlice(Arr(2,0,2),Arr(3,1))); Writeln(MatrSlice(m,1,2,1,3)); Writeln(PABCSystem.MatrSlice(m,Arr(1),Arr(0,2))); end.","[[23,21],[3,1],[23,21]]\n[[11,12,13],[21,22,23]]\n[[10,12]]\n");
     result("begin var m:=MatrGen(3,4,(r,c)->r*10+c); var a:=m.MatrSlice(1,0,0,3); var b:=m.MatrSlice(0,2,2,1); Writeln(a.Size,' ',b.Size); Writeln(m.MatrSlice(Arr(1,2),new integer[0]).Size); Writeln(m.MatrSlice(new integer[0],Arr(1,2,3)).Size); end.","(0,4) (3,0)\n(2,0)\n(0,3)\n");
@@ -5113,6 +5184,7 @@ int main() {
     array_operations_library();
     collection_callbacks_library();
     matrix_slices_library();
+    matrix_construction_library();
     escaped_identifiers_language();
     structural_output();
     try_console_read();

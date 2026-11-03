@@ -1,3 +1,7 @@
+    {"Matr requires values with a known element type","Matr требует значения с известным типом элемента"},
+    {"Matr requires one-dimensional row arrays of a known element type","Matr требует одномерные массивы строк с известным типом элемента"},
+    {"Matrix construction requires nested rows or columns, or dimensions and a sequence","Для создания матрицы требуются вложенные строки или столбцы либо размеры и последовательность"},
+    {"Matrix construction requires arrays or sequences with known element types","Для создания матрицы требуются массивы или последовательности с известными типами элементов"},
     {"Expression statement requires a call","Выражение-оператор должно вызывать подпрограмму"},
     {"Expected an identifier after &","После & ожидается идентификатор"},
     {"Collection operation requires a source and one value or callback","Для операции требуется источник и одно значение или подпрограмма"},

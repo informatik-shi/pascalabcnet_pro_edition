@@ -8,6 +8,7 @@
 #include "matrix_operations.hpp"
 #include "array_operations.hpp"
 #include "collection_operations.hpp"
+#include "matrix_construction.hpp"
 
 #include <deque>
 #include <algorithm>
@@ -89,6 +90,9 @@ private:
             expression(*node.left); emit(Op::sequence_aggregate,node.left->type,node.local,node.location); break;
         case hir::ExprKind::sequence_partial:
             expression(*node.left); emit(Op::sequence_partial,node.left->type,0,node.location); break;
+        case hir::ExprKind::matrix_build:
+            for (const auto& argument:node.arguments) expression(*argument);
+            emit(Op::matrix_build,node.type,(static_cast<std::size_t>(node.operation_type)<<4)|node.local,node.location); break;
         case hir::ExprKind::collection_operation:
             expression(*node.left); expression(*node.right);
             emit(Op::collection_operation,node.left->type,(static_cast<std::size_t>(node.type)<<16)|((node.operation_type==Type::invalid ? 0U : static_cast<std::size_t>(node.operation_type))<<3)|node.local,node.location); break;
@@ -599,6 +603,13 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             }
             break;
         }
+        case Op::matrix_build: {
+            const auto input=instruction.operand>>4,method=instruction.operand&15U;
+            if (input<64 || input>=64+program.types.size() || method>static_cast<std::size_t>(MatrixBuild::columns_flat)
+                || !matrix_build_signature_valid(program,type,static_cast<Type>(input),static_cast<MatrixBuild>(method)))
+                invalid(instruction,"Invalid matrix construction signature");
+            break;
+        }
         case Op::collection_operation: {
             const auto output=instruction.operand>>16,callback=(instruction.operand&65535U)>>3,method=instruction.operand&7U;
             if ((output!=static_cast<std::size_t>(Type::unit) && (output<64 || output>=64+program.types.size()))
@@ -1065,6 +1076,11 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             const auto parameters=generator_parameters(element,static_cast<Type>(instruction.operand>>8),method);
             for (auto n=parameters.size();n>0;--n) require(parameters[n-1]);
             stack.push_back(instruction.type); break;
+        }
+        case Op::matrix_build: {
+            const auto parameters=matrix_build_parameters(static_cast<Type>(instruction.operand>>4),static_cast<MatrixBuild>(instruction.operand&15U));
+            for (auto i=parameters.size();i>0;--i) require(parameters[i-1]);
+            stack.push_back(instruction.type);break;
         }
         case Op::collection_operation: {
             const auto method=static_cast<CollectionOperation>(instruction.operand&7U);

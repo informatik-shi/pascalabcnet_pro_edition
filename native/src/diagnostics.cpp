@@ -4,6 +4,8 @@ namespace abc {
 Error runtime_error(RuntimeError id, SourceLocation location, std::string_view context) {
     const char *code, *english, *russian;
     switch (id) {
+    case RuntimeError::matrix_initializers:
+        code="E_RANGE"; english="Initializer count must match the matrix element count"; russian="Число начальных значений должно совпадать с числом элементов матрицы"; break;
     case RuntimeError::matrix_from_row:
         code="E_RANGE"; english="Starting row index is outside matrix bounds"; russian="Начальный индекс строки находится за границами матрицы"; break;
     case RuntimeError::matrix_to_row:

@@ -202,6 +202,7 @@ def main():
                 ("sequence-prefixes.pas", "Начало: [1,2]\nОстаток: [3,1]\nПосле двух: [7,6]\n"),
                 ("callable-values.pas", "Значение: 14\nЧерез массив: 18\nЧерез параметр: 22\nПустое значение: True\n"),
                 ("library-callables.pas", "Сохранённая функция: [2,4,6]\nОтбор: [1,2]\nСуммы пар: [11,22]\nРезультат для True, True: True\n"),
+                ("matrix-construction.pas", "По значениям: [[1,2,3],[4,5,6]]\nПо строкам: [[1,2,3],[4,5,0]]\nПо столбцам: [[1,4],[2,5],[3,0]]\nИз последовательности: [[1,3,0],[2,4,0]]\nВложенные последовательности: [[7,8],[9,0]]\nЗначение по умолчанию: True\n"),
                 ("matrix-slices.pas", "Матрица: [[0,1,2,3],[10,11,12,13],[20,21,22,23]]\nИндексы: [[23,21],[3,1],[23,21]]\nГраницы: [[11,12,13],[21,22,23]]\nПустые строки: (0,4)\nПустые столбцы: (0,2)\n"),
                 ("collection-callbacks.pas", "Преобразование: [1,3,5]\nЗаполнение: [0,2,4]\nНовый тип: [0,2,4]\nМатрица: [[0,2],[11,13]]\nДействия: 30\nСписок: [10,11]\n"),
                 ("array-operations.pas", "Заполнение массива: [7,7,7,7]\nЗаполнение матрицы: [[5,5,5],[5,5,5]]\nРазмер: (2,3)\nТранспонирование: [[5,5],[8,5],[5,5]]\nЭлементы: [5,8,5,5,5,5]\nРавенство массивов: True\nРавенство матриц: True\n"),
@@ -602,6 +603,19 @@ def main():
                                      capture_output=True, cwd=folder, env=env, timeout=10)
             if invalid.returncode != 1 or invalid.stdout or "E_TYPE" not in invalid.stderr or "RU:" not in invalid.stderr:
                 raise RuntimeError(f"{name} array equality element type was not rejected before output")
+            build_error = folder / "Создание матрицы.pas"
+            build_error.write_text("begin\n Matr(2,2,1,2,3);\nend.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(build_error)], text=True, encoding="utf-8",
+                                     capture_output=True, cwd=folder, env=env, timeout=10)
+            if (invalid.returncode != 1 or "E_RANGE" not in invalid.stderr
+                    or "EN: Initializer count must match the matrix element count" not in invalid.stderr
+                    or "RU: Число начальных значений должно совпадать с числом элементов матрицы" not in invalid.stderr or f"{build_error}:2:" not in invalid.stderr):
+                raise RuntimeError(f"{name} bilingual Matr initializer error failed: {invalid.stderr!r}")
+            build_error.write_text("begin Writeln('must never run'); MatrByRow(Seq(1)); end.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(build_error)], text=True, encoding="utf-8",
+                                     capture_output=True, cwd=folder, env=env, timeout=10)
+            if invalid.returncode != 1 or invalid.stdout or "E_TYPE" not in invalid.stderr or "RU:" not in invalid.stderr:
+                raise RuntimeError(f"{name} matrix construction input type was not rejected before output")
             slice_error = folder / "Срез матрицы.pas"
             slice_error.write_text("begin\n var m:=new integer[1,1]; m.MatrSlice(0,0,0,2);\nend.", encoding="utf-8")
             invalid = subprocess.run([runner, "run", str(slice_error)], text=True, encoding="utf-8",
@@ -823,6 +837,7 @@ def main():
             results[-1]["typed_fill_transpose_shape_equality_and_bilingual_diagnostics"] = "passed"
             results[-1]["typed_collection_callbacks_and_bilingual_diagnostics"] = "passed"
             results[-1]["typed_matrix_slices_and_bilingual_diagnostics"] = "passed"
+            results[-1]["typed_matrix_construction_and_bilingual_diagnostics"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 

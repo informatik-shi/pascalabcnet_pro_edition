@@ -45,6 +45,7 @@ add_library(abc_core
     src/matrix_operations.cpp
     src/array_operations.cpp
     src/collection_operations.cpp
+    src/matrix_construction.cpp
     src/diagnostics.cpp
     src/compiler_diagnostics.cpp
     src/types.cpp
@@ -294,6 +295,9 @@ if(BUILD_TESTING)
     add_test(NAME original_delegates6 COMMAND $<TARGET_FILE:abc> run "${CMAKE_CURRENT_SOURCE_DIR}/../TestSuite/delegates6.pas")
     add_test(NAME original_lambda_explicit_types COMMAND $<TARGET_FILE:abc> run "${CMAKE_CURRENT_SOURCE_DIR}/../TestSuite/LambdaWithExplicitType.pas")
     add_test(NAME original_lambda_local_const COMMAND $<TARGET_FILE:abc> run "${CMAKE_CURRENT_SOURCE_DIR}/../TestSuite/lambdas_closures_15_const.pas")
+    add_test(NAME matrix_construction_compatibility COMMAND ${CMAKE_COMMAND}
+        -DABC_RUNNER=$<TARGET_FILE:abc> -DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures
+        -DABC_FIXTURE_NAME=matrix-construction-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")
     add_test(NAME matrix_slices_compatibility COMMAND ${CMAKE_COMMAND}
         -DABC_RUNNER=$<TARGET_FILE:abc> -DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures
         -DABC_FIXTURE_NAME=matrix-slices-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")
