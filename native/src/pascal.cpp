@@ -180,6 +180,7 @@ struct SyntaxType {
     std::vector<std::shared_ptr<SyntaxRoutine>> methods{};
     std::vector<std::shared_ptr<SyntaxProperty>> properties{};
     std::map<std::string,MemberAccess> field_access{};
+    std::shared_ptr<SyntaxRoutine> initializer{};
 };
 struct SyntaxProperty { Token name;std::shared_ptr<SyntaxType> type;std::optional<Token> getter,setter; };
 struct SyntaxRoutine;
@@ -285,6 +286,13 @@ public:
                 do {
                     const auto type_name = name(); expect("=");
                     auto type = type_syntax(); type->token = type_name;
+                    if (type->kind=="class" && !type->named && type->initializer) {
+                        type->methods.push_back(type->initializer);
+                        if (std::none_of(type->methods.begin(),type->methods.end(),[](const auto& method){return method->constructor;})) {
+                            auto constructor=std::make_shared<SyntaxRoutine>();constructor->name={TokenKind::name,"create",type_name.location};constructor->constructor=true;
+                            type->methods.push_back(std::move(constructor));
+                        }
+                    }
                     if (type->kind=="class" && !type->named) for (const auto& method:type->methods) {
                         if (method->parameters.size()>=16) throw Error("E_TYPE",method->name.location,"Class methods accept at most fifteen parameters");
                         auto self_type=std::make_shared<SyntaxType>();self_type->token=type_name;self_type->kind=type_name.text;self_type->named=true;
@@ -403,6 +411,17 @@ private:
                     throw Error("E_UNSUPPORTED",current_.location,"Class destructors, static members and var field sections are not ported yet");
                 std::vector<Token> fields{name()}; while (accept(",")) fields.push_back(name());
                 expect(":"); auto type = type_syntax();
+                if (accept(":=")) {
+                    if (!object) throw Error("E_UNSUPPORTED",fields.front().location,"Record field initializers are not ported yet");
+                    if (fields.size()!=1) throw Error("E_TYPE",fields.front().location,"Field initializer requires exactly one field name");
+                    if (!result->initializer) {
+                        result->initializer=std::make_shared<SyntaxRoutine>();result->initializer->name={TokenKind::name,"$initialize_fields",fields.front().location};
+                        result->initializer->access=MemberAccess::private_member;
+                    }
+                    SyntaxStmt assignment;assignment.kind=SyntaxStmtKind::assignment;assignment.token=fields.front();
+                    assignment.target=make_expression(SyntaxExprKind::name,fields.front());assignment.expression=expression();
+                    result->initializer->body.statements.push_back(std::move(assignment));
+                }
                 for (const auto& field : fields) { result->fields.emplace_back(field,type);result->field_access[field.text]=access; }
                 if (!accept(";") && !is("end")) fail("Expected ';' after record field");
             }
@@ -1041,6 +1060,13 @@ private:
         }
         for (const auto& routine:source.routines) if (routine->declaration_only)
             throw Error("E_NAME",routine->name.location,"Declared class method has no implementation");
+        for (const auto& [name,type]:source.type_declarations) if (type->initializer) {
+            for (const auto& method:type->methods) if (method->constructor) {
+                SyntaxStmt initialize;initialize.kind=SyntaxStmtKind::call;initialize.token=type->initializer->name;
+                initialize.expression=make_expression(SyntaxExprKind::call,type->initializer->name);
+                method->body.statements.insert(method->body.statements.begin(),std::move(initialize));
+            }
+        }
     }
     std::size_t field_property_accessor(Type owner,Type type,std::size_t field,bool write,SourceLocation location) {
         if (module_.routines.size()>=256) throw Error("E_LIMIT",location,"Routine limit exceeded");

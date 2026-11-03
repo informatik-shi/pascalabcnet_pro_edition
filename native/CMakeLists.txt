@@ -302,6 +302,9 @@ if(BUILD_TESTING)
     add_test(NAME original_list_factory_reverse COMMAND $<TARGET_FILE:abc> run "${CMAKE_CURRENT_SOURCE_DIR}/../TestSuite/extensionmethods25.pas")
     add_test(NAME original_person_external COMMAND $<TARGET_FILE:abc> run "${CMAKE_CURRENT_SOURCE_DIR}/../TestSuite/CompilationSamples/PersonExternal.pas")
     set_tests_properties(original_person_external PROPERTIES PASS_REGULAR_EXPRESSION "Имя: Иванов  Возраст: 20" TIMEOUT 10)
+    add_test(NAME class_field_initializers_compatibility COMMAND ${CMAKE_COMMAND}
+        "-DABC_RUNNER=$<TARGET_FILE:abc>" "-DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
+        -DABC_FIXTURE_NAME=class-field-initializers-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")
     add_test(NAME class_external_methods_compatibility COMMAND ${CMAKE_COMMAND}
         "-DABC_RUNNER=$<TARGET_FILE:abc>" "-DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
         -DABC_FIXTURE_NAME=class-external-methods-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")

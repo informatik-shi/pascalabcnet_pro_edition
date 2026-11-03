@@ -70,6 +70,36 @@ void runtime_error(std::string_view source, std::string_view code) {
     error([&] { (void)run(source); }, code,source);
 }
 
+void native_class_field_initializers_language() {
+    result("type C=class n:integer:=7;s:string:='abc';end;begin var c:=new C;Writeln(c.n,' ',c.s);end.","7 abc\n");
+    result("type C=class n:integer:=2;a:array of integer:=Arr(1,2);end;begin var c:=new C;var d:=new C;c.a[0]:=7;Writeln(c.a,' ',d.a,' ',c=d);end.","[7,2] [1,2] False\n");
+    result("type C=class n:integer:=2;constructor(value:integer);begin n:=n+value;end;end;begin Writeln(new C(3).n);end.","5\n");
+    result("type C=class n:integer:=2;constructor(value:integer);end;constructor C.Create(value:integer);begin n:=n+value;end;begin Writeln(new C(4).n);end.","6\n");
+    result("type C=class n:integer:=3;m:integer:=n+1;constructor(n:integer);begin m:=m+n;end;end;begin var c:=new C(10);Writeln(c.n,' ',c.m);end.","3 14\n");
+    result("type C=class n:integer:=Later();function Later:integer;begin Result:=3;end;end;begin Writeln(new C.n);end.","3\n");
+    result("type C=class n:integer:=Later();function Later:integer;end;function C.Later:integer;begin Result:=3;end;begin Writeln(new C.n);end.","3\n");
+    result("type C=class n:integer:=2;f:integer->integer:=x->x+n;end;begin var c:=new C;var f:=c.f;c.n:=7;c:=nil;Writeln(f(3));end.","10\n");
+    result("type C=class same:C:=Self;end;begin var c:=new C;Writeln(c.same=c);end.","True\n");
+    result("function Next:integer;begin Write('I');Result:=3;end;type C=class n:integer:=Next();constructor(value:integer);begin Write('B');end;end;function Arg:integer;begin Write('A');Result:=1;end;begin var c:=new C(Arg());Writeln(' ',c.n);end.","AIB 3\n");
+    result("var count:integer;function Next:integer;begin Inc(count);Result:=count;end;type C=class a:integer:=Next();b:integer:=Next();end;begin var c:=new C;var d:=new C;Writeln(c.a,' ',c.b,' ',d.a,' ',d.b);end.","1 2 3 4\n");
+    result("var count:integer;function Next:integer;begin Inc(count);Result:=count;end;type C=class n:integer:=Next();end;begin var c:C;var a:=new C[2];Writeln(c=nil,' ',a[0]=nil,' ',default(C)=nil,' ',count);end.","True True True 0\n");
+    result("type C=class n:integer:=3;constructor;begin Exit;n:=9;end;end;begin Writeln(new C.n);end.","3\n");
+    result("var g:integer:=7;type C=class n:integer:=g;constructor(g:integer);begin end;end;begin Writeln(new C(10).n);end.","7\n");
+    result("type C=class n:integer:=2;constructor;var before:integer:=n+1;begin Writeln(before);end;end;begin var c:=new C;end.","3\n");
+    result("type C=class n:integer:=2;f:integer->integer:=x->x+n;s:string:=nil;end;begin var c:=new C;Writeln(c.f(3),' ',c.s=nil);end.","5 True\n");
+    result("type N=class n:integer:=1;end;C=class a:N:=new N;end;begin var c:=new C;Writeln(c.a.n);end.","1\n");
+    compile_error("type C=class n:integer:='abc';end;begin Writeln('NEVER');end.","E_TYPE");
+    compile_error("type C=class n,m:integer:=1;end;begin end.","E_TYPE");
+    compile_error("type C=class n:integer:=missing;end;begin end.","E_NAME");
+    compile_error("type C=class n:integer:=value;constructor(value:integer);begin end;end;begin end.","E_NAME");
+    compile_error("type R=record n:integer:=1;end;begin end.","E_UNSUPPORTED");
+    runtime_error("function Bad:integer;begin Assert(False);Result:=1;end;type C=class n:integer:=Bad();constructor;begin Write('NEVER');end;end;begin var c:=new C;end.","E_ASSERT");
+    abc::ExecutionOptions options;options.call_limit=4;error([&]{(void)run("type N=class next:N:=new N;end;begin var n:=new N;end.","",options);},"E_LIMIT");
+    auto p=abc::compile("type C=class n:integer:=3;end;begin var c:=new C;end.");require(std::count_if(p.routines.begin(),p.routines.end(),[](const auto& r){return r.constructor;})==1,"Field initializers synthesize a verified constructor when none is declared");
+    require(std::count_if(p.routines.begin(),p.routines.end(),[](const auto& r){return r.name=="c.$initialize_fields" && r.owner!=abc::Type::invalid && r.result==abc::Type::unit;})==1,"Field initializer has its own exact Self scope rather than constructor parameters");
+    for(auto& op:p.code)if(op.op==abc::Op::construct_user){op.op=abc::Op::make_default;op.operand=1;}error([&]{abc::verify(p);},"E_BYTECODE");
+}
+
 void native_external_class_methods_language() {
     result("type C=class private n:integer;public constructor Create(value:integer);function Get:integer;procedure Add(value:integer:=2);end;constructor C.Create(value:integer);begin n:=value;end;function C.Get:integer;begin Result:=n;end;procedure C.Add(value:integer);begin n:=n+value;end;begin var c:=new C(3);c.Add;Writeln(c.Get,' ',c.n);end.","5 5\n");
     result("type C=class n:integer;constructor(value:integer);function Get(offset:integer):integer;end;constructor C.Create;begin n:=value;end;function C.Get;begin Result:=n+offset;end;begin Writeln(new C(4).Get(3));end.","7\n");
@@ -5685,6 +5715,7 @@ int main() {
     native_class_properties_language();
     native_class_constructors_language();
     native_external_class_methods_language();
+    native_class_field_initializers_language();
     escaped_identifiers_language();
     structural_output();
     try_console_read();

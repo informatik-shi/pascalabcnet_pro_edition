@@ -1,3 +1,5 @@
+    {"Record field initializers are not ported yet","Инициализаторы полей записей ещё не перенесены"},
+    {"Field initializer requires exactly one field name","Инициализатор поля требует ровно одного имени поля"},
     {"Constructor definition requires a class name","Определение конструктора требует имя класса"},
     {"Qualified method headers are only allowed outside classes","Заголовок с именем класса допустим только вне класса"},
     {"Method definition requires a declared class","Определение метода требует объявленный класс"},
