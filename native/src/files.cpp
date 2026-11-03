@@ -1,4 +1,5 @@
 #include "files.hpp"
+#include "file_encoding.hpp"
 #include "diagnostics.hpp"
 #include <filesystem>
 #include <fstream>
@@ -57,9 +58,7 @@ std::u16string read_text_file(const FileContext& files, std::u16string_view path
         if (data.size() > 1'048'576) throw runtime_error(RuntimeError::file_limit,location);
     }
     if (input.bad()) throw runtime_error(RuntimeError::file_io,location);
-    auto text = std::string_view(data); if (text.starts_with("\xef\xbb\xbf")) text.remove_prefix(3);
-    try { return from_utf8(text); }
-    catch (const std::invalid_argument&) { throw runtime_error(RuntimeError::file_encoding,location); }
+    return decode_file_bytes(data,location);
 }
 void write_text_file(const FileContext& files, std::u16string_view path, std::u16string_view text, SourceLocation location) {
     const auto data = to_utf8(text,true);

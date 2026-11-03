@@ -21,6 +21,7 @@ add_library(abc_core
     src/console_output.cpp
     src/formatting.cpp
     src/files.cpp
+    src/file_encoding.cpp
     src/file_moves.cpp
     src/file_operations.cpp
     src/text_file.cpp

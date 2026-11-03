@@ -632,6 +632,33 @@ def main():
                                      capture_output=True, cwd=folder, env=env, timeout=10)
             if invalid.returncode != 1 or invalid.stdout or "E_TYPE" not in invalid.stderr or "RU:" not in invalid.stderr:
                 raise RuntimeError(f"{name} constructor parameter type was not checked before output")
+            unicode_source = folder / "Кодировки файлов.pas"
+            for label, codec, bom in [
+                ("UTF8", "utf-8", b"\xef\xbb\xbf"),
+                ("UTF16LE", "utf-16-le", b"\xff\xfe"),
+                ("UTF16BE", "utf-16-be", b"\xfe\xff"),
+                ("UTF32LE", "utf-32-le", b"\xff\xfe\x00\x00"),
+                ("UTF32BE", "utf-32-be", b"\x00\x00\xfe\xff"),
+            ]:
+                unicode_name = f"Unicode-{label}.txt"
+                (folder / unicode_name).write_bytes(bom + "Привет 🌍\n42".encode(codec))
+                unicode_source.write_text(
+                    f"uses FilesOperations;begin var s:=ReadAllText('{unicode_name}');Writeln(s);"
+                    f"var a:=ReadAllLines('{unicode_name}');Writeln(a.Length,' ',a[0],' ',a[1]);"
+                    f"var f:=OpenRead('{unicode_name}');Writeln(ReadString(f),' ',ReadInteger(f));Close(f);"
+                    f"s:=ReadFileToEnd('{unicode_name}');Writeln(Pos('Привет',s)>0,' ',Pos('42',s)>0);end.",
+                    encoding="utf-8")
+                attempted = subprocess.run([runner, "run", str(unicode_source)], text=True, encoding="utf-8",
+                                           capture_output=True, cwd=folder, env=env, timeout=10)
+                if attempted.returncode or attempted.stdout != "Привет 🌍\n42\n2 Привет 🌍 42\nПривет 🌍 42\nTrue True\n":
+                    raise RuntimeError(f"{name} {label} file decoding failed: {attempted.stdout!r}, {attempted.stderr!r}")
+            malformed_name = "Unicode-invalid.txt"
+            (folder / malformed_name).write_bytes(b"\xff\xfe\x00\xd8x")
+            unicode_source.write_text(f"begin Writeln(ReadAllText('{malformed_name}'));end.", encoding="utf-8")
+            attempted = subprocess.run([runner, "run", str(unicode_source)], text=True, encoding="utf-8",
+                                       capture_output=True, cwd=folder, env=env, timeout=10)
+            if attempted.returncode or attempted.stdout != "\ufffd\ufffd\n":
+                raise RuntimeError(f"{name} UTF-16 surrogate/trailing-byte replacement failed: {attempted.stdout!r}, {attempted.stderr!r}")
             short_error = folder / "Короткое тело функции.pas"
             short_error.write_text("function Divide(n:integer):integer :=\n1 div n;begin Writeln(Divide(0));end.", encoding="utf-8")
             invalid = subprocess.run([runner, "run", str(short_error)], text=True, encoding="utf-8",
@@ -1075,6 +1102,7 @@ def main():
             results[-1]["native_external_class_methods_and_module_visibility"] = "passed"
             results[-1]["native_class_field_initializers_and_body_order"] = "passed"
             results[-1]["native_short_routine_bodies_and_bilingual_diagnostics"] = "passed"
+            results[-1]["unicode_bom_text_file_decoding"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 

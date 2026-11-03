@@ -12,6 +12,7 @@
 #include "../src/collection_operations.hpp"
 #include "../src/list_operations.hpp"
 #include "../src/timing.hpp"
+#include "../src/file_encoding.hpp"
 
 #include <iostream>
 #include <array>
@@ -68,6 +69,40 @@ void compile_error(std::string_view source, std::string_view code) {
 
 void runtime_error(std::string_view source, std::string_view code) {
     error([&] { (void)run(source); }, code,source);
+}
+
+void unicode_file_decoding() {
+    auto decode=[](std::string_view bytes){return abc::decode_file_bytes(bytes,{});};
+    require(decode("hello")==u"hello" && decode("\xef\xbb\xbfhello")==u"hello","UTF-8 and its optional BOM retain existing file semantics");
+    require(decode(std::string_view{"\xff\xfe\x1f\x04\x40\x04\x3c\xd8\x0d\xdf",10})==u"Пр🌍","Independent UTF-16LE golden bytes");
+    require(decode(std::string_view{"\xfe\xff\x04\x1f\x04\x40\xd8\x3c\xdf\x0d",10})==u"Пр🌍","Independent UTF-16BE golden bytes");
+    require(decode(std::string_view{"\xff\xfe\0\0\x1f\x04\0\0\x0d\xf3\x01\0",12})==u"П🌍","Independent UTF-32LE golden bytes and longer BOM priority");
+    require(decode(std::string_view{"\0\0\xfe\xff\0\0\x04\x1f\0\x01\xf3\x0d",12})==u"П🌍","Independent UTF-32BE golden bytes");
+    auto packed=[](std::initializer_list<std::uint32_t> values,unsigned width,bool big_endian) {
+        std::string bytes;for(auto value:values)for(unsigned n=0;n<width;++n)bytes.push_back(static_cast<char>(value>>((big_endian ? width-1-n : n)*8)));return bytes;
+    };
+    for(bool big_endian:{false,true}) {
+        const auto bom16=packed({0xfeff},2,big_endian),bom32=packed({0xfeff},4,big_endian);
+        require(decode(bom16).empty() && decode(bom32).empty(),"BOM-only files are empty");
+        require(decode(bom16+packed({0xfeff,0,0xffff},2,big_endian))==std::u16string{0xfeff,0,0xffff},"Only the leading BOM is stripped; NUL and noncharacters remain data");
+        require(decode(bom16+packed({0xd800,0xd800,0xdc00,0xdc00,65,0xdbff},2,big_endian))==std::u16string{0xfffd,0xd800,0xdc00,0xfffd,65,0xfffd},"UTF-16 invalid isolated surrogates use replacement without losing valid pairs");
+        require(decode(bom16+packed({0xd800},2,big_endian)+std::string(1,'x'))==std::u16string(2,0xfffd),"UTF-16 pending high surrogate and trailing byte each fall back");
+        for(unsigned remainder=1;remainder<=3;++remainder) require(decode(bom32+packed({0x41,0x10ffff,0x110000,0xd800,0xffffffffU},4,big_endian)+std::string(remainder,'x'))==std::u16string{65,0xdbff,0xdfff,0xfffd,0xfffd,0xfffd,0xfffd},"UTF-32 invalid scalars and each partial final unit use replacement");
+        for(std::uint32_t first=0;first<=0x10ffff;first+=32768) {
+            std::u16string expected=u"A";std::string bytes16=bom16+packed({65},2,big_endian),bytes32=bom32+packed({65},4,big_endian);
+            auto append=[&](std::string& bytes,std::uint32_t value,unsigned width){for(unsigned n=0;n<width;++n)bytes.push_back(static_cast<char>(value>>((big_endian ? width-1-n : n)*8)));};
+            for(auto value=first;value<std::min(first+32768,0x110000U);++value) {
+                if(value>=0xd800 && value<=0xdfff)continue;
+                append(bytes32,value,4);
+                if(value<=0xffff){expected.push_back(static_cast<char16_t>(value));append(bytes16,value,2);}
+                else {const auto high=0xd800+((value-0x10000)>>10),low=0xdc00+((value-0x10000)&0x3ff);expected.push_back(static_cast<char16_t>(high));expected.push_back(static_cast<char16_t>(low));append(bytes16,high,2);append(bytes16,low,2);}
+            }
+            require(decode(bytes16)==expected && decode(bytes32)==expected,"Exhaustive Unicode scalar corpus across UTF-16/32 byte orders");
+        }
+    }
+    require(decode(std::string_view{"\xff\xfe\0\0\x41\0",6})==u"\ufffd","UTF-16LE BOM followed by a NUL is detected as the longer UTF-32LE BOM, matching StreamReader");
+    error([&]{(void)decode(std::string(1'048'577,'a'));},"E_LIMIT");
+    error([&]{(void)decode(std::string_view{"\xff",1});},"E_ENCODING");
 }
 
 void native_short_routine_bodies_language() {
@@ -4683,6 +4718,15 @@ void file_library() {
     result("begin WriteAllLines("+linefile+",Arr('alpha','beta')); var lines:=ReadAllLines("+linefile+"); writeln(Length(lines),' ',lines[0],' ',lines[1]); end.", "2 alpha beta\n");
     { std::ofstream out(path,std::ios::binary); out << "\xef\xbb\xbf" "a\r\nb\rc\n"; }
     result("begin var lines:=ReadAllLines("+file+"); writeln(Length(lines),' ',lines[0],lines[1],lines[2]); end.", "3 abc\n");
+    for(bool big_endian:{false,true})for(unsigned width:{2U,4U}) {
+        std::string bytes;for(auto scalar:{0xfeffU,0x41fU,0x1f30dU,13U,10U,52U,50U}) {
+            auto append=[&](std::uint32_t value,unsigned unit_width){for(unsigned n=0;n<unit_width;++n)bytes.push_back(static_cast<char>(value>>((big_endian ? unit_width-1-n : n)*8)));};
+            if(width==2 && scalar>0xffff){append(0xd800+((scalar-0x10000)>>10),2);append(0xdc00+((scalar-0x10000)&0x3ff),2);}else append(scalar,width);
+        }
+        {std::ofstream out(path,std::ios::binary);out.write(bytes.data(),static_cast<std::streamsize>(bytes.size()));}
+        result("begin Writeln(ReadAllText("+file+"));var lines:=ReadAllLines("+file+");Writeln(lines.Length,' ',lines[0],' ',lines[1]);var f:=OpenRead("+file+");Writeln(ReadString(f),' ',ReadInteger(f));Close(f);end.","П🌍\r\n42\n2 П🌍 42\nП🌍 42\n");
+        result("uses FilesOperations;begin var s:=ReadFileToEnd("+file+");Writeln(Pos('П🌍',s)>0,' ',Pos('42',s)>0);end.","True True\n");
+    }
     { std::ofstream out(path,std::ios::binary); out << "\xff"; }
     runtime_error("begin writeln(ReadAllText("+file+")); end.", "E_ENCODING");
     runtime_error("begin writeln(ReadAllText("+quote(directory/"missing.txt")+")); end.", "E_IO");
@@ -5740,6 +5784,7 @@ int main() {
     native_external_class_methods_language();
     native_class_field_initializers_language();
     native_short_routine_bodies_language();
+    unicode_file_decoding();
     escaped_identifiers_language();
     structural_output();
     try_console_read();
