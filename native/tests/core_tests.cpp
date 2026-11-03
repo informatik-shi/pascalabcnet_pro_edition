@@ -70,6 +70,53 @@ void runtime_error(std::string_view source, std::string_view code) {
     error([&] { (void)run(source); }, code,source);
 }
 
+void native_external_class_methods_language() {
+    result("type C=class private n:integer;public constructor Create(value:integer);function Get:integer;procedure Add(value:integer:=2);end;constructor C.Create(value:integer);begin n:=value;end;function C.Get:integer;begin Result:=n;end;procedure C.Add(value:integer);begin n:=n+value;end;begin var c:=new C(3);c.Add;Writeln(c.Get,' ',c.n);end.","5 5\n");
+    result("type C=class n:integer;constructor(value:integer);function Get(offset:integer):integer;end;constructor C.Create;begin n:=value;end;function C.Get;begin Result:=n+offset;end;begin Writeln(new C(4).Get(3));end.","7\n");
+    result("type C=class function F(n:integer):integer;function G(n:integer):integer;end;function C.G(n:integer):integer;begin if n=0 then Result:=0 else Result:=F(n-1)+1;end;function C.F(n:integer):integer;begin Result:=G(n)+1;end;begin Writeln(new C.F(3));end.","7\n");
+    result("type N=integer;C=class function F(n:N):N;end;function C.F(n:integer):integer;begin Result:=n+1;end;begin Writeln(new C.F(2));end.","3\n");
+    result("type C=class n:integer;procedure Change(var value:integer);procedure SetN(const value:integer);function Total(params values:array of integer):integer;end;procedure C.Change(var value:integer);begin Inc(value);n:=value;end;procedure C.SetN(const value:integer);begin n:=value;end;function C.Total(params values:array of integer):integer;begin Result:=n+values.Sum;end;begin var c:=new C;var n:=3;c.Change(n);c.SetN(n);Writeln(n,' ',c.Total(1,2),' ',c.Total());end.","4 7 4\n");
+    result("type C=class private n:integer;function Get:integer;procedure SetN(value:integer);public property Value:integer read Get write SetN;end;procedure C.SetN(value:integer);begin n:=value*2;end;function C.Get:integer;begin Result:=n;end;begin var c:=new C;c.Value:=3;Writeln(c.Value,' ',c.Get);end.","6 6\n");
+    result("type C=class private n:integer;public function Mapper:integer->integer;end;function C.Mapper;begin Result:=x->x+n;end;begin var c:=new C;c.n:=5;var f:=c.Mapper;c:=nil;Writeln(f(2));end.","7\n");
+    result("type C=class private a:integer;protected b:integer;internal c:integer;public d:integer;function Total:integer;end;function C.Total;begin Result:=a+b+c+d;end;procedure Change(c:C);begin c.a:=1;c.b:=2;c.c:=3;c.d:=4;end;begin var c:=new C;Change(c);Writeln(c.Total);end.","10\n");
+    result("type C=class private function F(n:integer:=2):integer;public function G:integer;begin Result:=F;end;end;function C.F(n:integer):integer;begin Result:=n+1;end;begin Writeln(new C.G);end.","3\n");
+    result("type C=class function F:integer;end;D=class function F:integer;end;function D.F:integer;begin Result:=4;end;function C.F:integer;begin Result:=3;end;begin Writeln(new C.F,' ',new D.F);end.","3 4\n");
+    result("type C=class private function F:integer;end;function c.f:integer;begin Result:=7;end;begin Writeln(new C.F);end.","7\n");
+    runtime_error("type C=class function F:integer;end;function C.F:integer;begin Result:=7;end;begin var c:C;Writeln(c.F);end.","E_NIL");
+    for(const auto source:{
+        "type C=class function F:integer;end;begin end.",
+        "type C=class end;procedure C.F;begin end;begin end.",
+        "procedure Missing.F;begin end;begin end.",
+        "type R=record n:integer;end;procedure R.F;begin end;begin end."
+    })compile_error(source,"E_NAME");
+    for(const auto source:{
+        "type C=class function F:integer;begin Result:=1;end;end;function C.F:integer;begin Result:=2;end;begin end.",
+        "type C=class procedure F;end;procedure C.F;begin end;procedure C.F;begin end;begin end."
+    })compile_error(source,"E_DUPLICATE");
+    for(const auto source:{
+        "type C=class function F:integer;end;function C.F:real;begin Result:=1;end;begin end.",
+        "type C=class function F:integer;end;procedure C.F;begin end;begin end.",
+        "type C=class procedure F;end;function C.F:integer;begin Result:=1;end;begin end.",
+        "type C=class procedure F(n:integer);end;procedure C.F(n:real);begin end;begin end.",
+        "type C=class procedure F(n:integer);end;procedure C.F(value:integer);begin end;begin end.",
+        "type C=class procedure F(var n:integer);end;procedure C.F(n:integer);begin end;begin end.",
+        "type C=class procedure F(const n:integer);end;procedure C.F(n:integer);begin end;begin end.",
+        "type C=class procedure F(params n:array of integer);end;procedure C.F(n:array of integer);begin end;begin end.",
+        "type C=class procedure F(n:integer);end;procedure C.F();begin end;begin end.",
+        "type C=class procedure F(n:integer);end;procedure C.F(n,m:integer);begin end;begin end.",
+        "type C=class procedure F(n:integer:=1);end;procedure C.F(n:integer:=1);begin end;begin end.",
+        "type C=class constructor;end;procedure C.Create;begin end;begin end.",
+        "type C=class procedure Create;end;constructor C.Create;begin end;begin end.",
+        "constructor Create;begin end;begin end."
+    })compile_error(source,"E_TYPE");
+    compile_error("type C=class procedure C.F;begin end;end;begin end.","E_SYNTAX");
+    auto p=abc::compile("type C=class a:integer;private b:integer;protected c:integer;internal d:integer;public e:integer;procedure F;end;procedure C.F;begin a:=7;end;begin var c:=new C;c.F;end.");
+    const auto& fields=p.types.front().fields;require(fields[0].access==abc::MemberAccess::private_member && fields[1].access==abc::MemberAccess::private_member && fields[2].access==abc::MemberAccess::protected_member && fields[3].access==abc::MemberAccess::internal_member && fields[4].access==abc::MemberAccess::public_member,"Class fields retain declared visibility and default private access; all are accessible in this module");
+    const auto method=std::find_if(p.routines.begin(),p.routines.end(),[](const auto& r){return r.name=="c.f";});require(method!=p.routines.end() && method->access==abc::MemberAccess::public_member,"External bodies retain declaration visibility");
+    for(int kind=0;kind<4;++kind){auto bad=p;if(kind==0)bad.types.front().fields.front().access=static_cast<abc::MemberAccess>(99);if(kind==1)bad.routines.front().access=static_cast<abc::MemberAccess>(99);if(kind==2)bad.locals.front().access=abc::MemberAccess::private_member;if(kind==3){bad.routines.front().access=abc::MemberAccess::private_member;bad.routines.front().owner=abc::Type::invalid;}error([&]{abc::verify(bad);},"E_BYTECODE");}
+    try{(void)run("type C=class procedure F;end;begin\nWriteln('NEVER');\nend.");require(false,"Expected missing implementation");}catch(const abc::Error& e){require(e.code=="E_NAME" && e.russian=="Для объявленного метода класса нет реализации","Missing external body diagnosed before execution in Russian and English");}
+}
+
 void native_class_constructors_language() {
     result("type C=class n:integer;constructor Create(value:integer);begin n:=value;end;end;begin var c:=new C(7);Writeln(c.n);end.","7\n");
     result("type C=class n:integer;constructor(value:integer:=3);begin n:=value;end;end;begin Writeln(new C().n,' ',new C.n,' ',new C(7).n);end.","3 3 7\n");
@@ -163,7 +210,7 @@ void native_class_fields_language() {
     result("type A=class n:integer;end;B=A;begin var b:=new B;b.n:=4;Writeln(b.n);end.","4\n");
     result("type C=class end;begin var a:=new C;var b:=new C;Writeln(a=a,' ',a=b,' ',a<>nil);var f:=()->a=b;Writeln(f());end.","True False True\nFalse\n");
     for(const auto source:{"type C=class n:integer;end;begin var c:C;Writeln(c.n);end.","type C=class n:integer;end;begin var c:C;c.n:=1;end.","type C=class n:integer;end;procedure P(var n:integer);begin end;begin var c:C;P(c.n);end."})runtime_error(source,"E_NIL");
-    for(const auto source:{"type C=class private n:integer;end;begin end.","type A=class end;B=class(A)end;begin end.","type C=class property X[i:integer]:integer read n;end;begin end.","type C=class;begin end."})compile_error(source,"E_UNSUPPORTED");
+    for(const auto source:{"type A=class end;B=class(A)end;begin end.","type C=class property X[i:integer]:integer read n;end;begin end.","type C=class;begin end."})compile_error(source,"E_UNSUPPORTED");
     compile_error("type C=class n:integer;n:integer;end;begin end.","E_DUPLICATE");
     compile_error("type A=class end;B=class end;begin var a:=new A;var b:=new B;a:=b;end.","E_TYPE");
     compile_error("type C=class n:integer;end;begin var c:=new C(1);end.","E_TYPE");
@@ -5637,6 +5684,7 @@ int main() {
     native_class_methods_language();
     native_class_properties_language();
     native_class_constructors_language();
+    native_external_class_methods_language();
     escaped_identifiers_language();
     structural_output();
     try_console_read();

@@ -73,6 +73,7 @@ Sleep, Milliseconds и MillisecondsDelta: examples/timing.pas.
 Методы класса, Self и аргументы по умолчанию: examples/class-methods.pas.
 Свойства класса с read/write: examples/class-properties.pas.
 Конструкторы с параметрами: examples/class-constructors.pas.
+Секции доступа и внешние тела методов: examples/class-external-methods.pas.
 Прямой захват управляющей переменной цикла пока не перенесён; используйте отдельную переменную-копию.
 Совместимость с PascalABC.NET частичная.
 Русские имена и НОД/НОК: examples/russian-identifiers.pas. Массивные GCD/LCM: examples/school-folds.pas.

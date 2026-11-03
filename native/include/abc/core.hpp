@@ -330,10 +330,15 @@ struct Instruction {
     SourceLocation location;
 };
 
+enum class MemberAccess { public_member, private_member, protected_member, internal_member };
+inline bool valid_member_access(MemberAccess access) {
+    return access>=MemberAccess::public_member && access<=MemberAccess::internal_member;
+}
 struct Local {
     std::string name;
     Type type = Type::invalid;
     bool global = true;
+    MemberAccess access=MemberAccess::public_member;
 };
 
 enum class CompoundKind { array, record, list, stack, queue, dynarray, simple_set, association, linked_node, linked_list, single_node, tuple, school_address, school_ip, sequence, callable, object_class };
@@ -440,6 +445,7 @@ struct Routine {
     std::vector<std::size_t> captures{};
     Type owner=Type::invalid; // Closed receiver type for native instance method bodies.
     bool constructor=false;
+    MemberAccess access=MemberAccess::public_member;
 };
 
 inline bool callable_matches(const TypeInfo& type, const Routine& routine) {

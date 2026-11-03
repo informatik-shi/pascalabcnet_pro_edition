@@ -605,7 +605,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
     if (code.empty() || code.size() > 1'000'000)
         throw Error("E_BYTECODE", {}, "Invalid instruction count");
     for (const auto& local : program.locals)
-        if (!valid_value_type(program,local.type)) throw Error("E_BYTECODE", {}, "Invalid local type");
+        if (!valid_value_type(program,local.type) || local.access!=MemberAccess::public_member) throw Error("E_BYTECODE", {}, "Invalid local type");
 
     auto allowed_local = [&](std::size_t index) {
         if (!routine) return program.locals[index].global;
@@ -1493,6 +1493,9 @@ void verify(const Program& program) {
     std::vector<unsigned> depth(program.types.size());
     for (std::size_t i = 0; i < program.types.size(); ++i) {
         const auto& type = program.types[i]; unsigned level = 1;
+        for (const auto& field:type.fields) if (!valid_member_access(field.access)
+            || (type.kind!=CompoundKind::object_class && field.access!=MemberAccess::public_member))
+            throw Error("E_BYTECODE",{},"Invalid class member visibility metadata");
         if (type.rank<1 || type.rank>2 || (type.kind!=CompoundKind::array && type.rank!=1)) throw Error("E_BYTECODE",{},"Invalid array rank");
         auto prior = [&](Type t) {
             if (!valid_value_type(program,t) || (compound(t) && static_cast<unsigned>(t)-64 >= i)) throw Error("E_BYTECODE",{},"Invalid or cyclic type dependency");
@@ -1568,6 +1571,8 @@ void verify(const Program& program) {
         instructions+=routine.code.size();
         if (instructions>1'000'000) throw Error("E_BYTECODE",{},"Module instruction limit exceeded");
         if (routine.parameters.size() > 16 || (routine.result != Type::unit && !valid_value_type(program,routine.result))) throw Error("E_BYTECODE",{},"Invalid routine signature");
+        if (!valid_member_access(routine.access) || (routine.owner==Type::invalid && routine.access!=MemberAccess::public_member))
+            throw Error("E_BYTECODE",{},"Invalid class member visibility metadata");
         if (routine.constructor && (routine.owner==Type::invalid || routine.result!=Type::unit || !routine.captures.empty()))
             throw Error("E_BYTECODE",{},"Invalid class constructor signature");
         if (routine.owner!=Type::invalid && (!compound(routine.owner) || !valid_value_type(program,routine.owner)

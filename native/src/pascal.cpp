@@ -179,6 +179,7 @@ struct SyntaxType {
     bool named=false;
     std::vector<std::shared_ptr<SyntaxRoutine>> methods{};
     std::vector<std::shared_ptr<SyntaxProperty>> properties{};
+    std::map<std::string,MemberAccess> field_access{};
 };
 struct SyntaxProperty { Token name;std::shared_ptr<SyntaxType> type;std::optional<Token> getter,setter; };
 struct SyntaxRoutine;
@@ -225,6 +226,7 @@ struct SyntaxStmt {
     std::unique_ptr<SyntaxExpr> target;
     std::vector<std::pair<Token,std::shared_ptr<SyntaxType>>> type_declarations;
     std::vector<std::shared_ptr<SyntaxRoutine>> routines;
+    std::vector<std::shared_ptr<SyntaxRoutine>> method_definitions;
     std::set<std::string> imported_units;
     bool collections_imported = false;
     bool declares_control = false, descending = false;
@@ -238,7 +240,8 @@ struct SyntaxRoutine {
     SyntaxStmt body;
     bool expression_body=false, procedure_lambda=false, function_lambda=false;
     std::string owner{};
-    bool constructor=false;
+    bool constructor=false, declaration_only=false, function_header=false, explicit_parameters=false;
+    MemberAccess access=MemberAccess::public_member;
 };
 
 bool reserved(std::string_view text) {
@@ -246,6 +249,7 @@ bool reserved(std::string_view text) {
         "program", "begin", "end", "var", "if", "then", "else", "while", "do", "and", "or", "not",
         "div", "mod", "xor", "shl", "shr", "true", "false", "uses", "unit", "type", "const", "function", "procedure",
         "for", "to", "downto", "repeat", "until", "foreach", "in", "case", "of", "array", "record", "class", "nil",
+        "constructor", "property", "public", "private", "protected", "internal",
         "new", "default", "out", "params", "set", "try", "except", "finally", "raise", "break", "continue", "exit", "writeln", "write", "readln", "read"};
     return words.contains(text);
 }
@@ -296,7 +300,12 @@ public:
             } else if (accept("const")) {
                 do { root.statements.push_back(constant_declaration()); expect(";"); }
                 while (current_.kind==TokenKind::name && (current_.escaped || !reserved(current_.text)));
-            } else if (is("function") || is("procedure")) root.routines.push_back(routine());
+            } else if (is("function") || is("procedure") || is("constructor")) {
+                auto definition=routine();
+                if (!definition->owner.empty()) root.method_definitions.push_back(std::move(definition));
+                else if (definition->constructor) throw Error("E_TYPE",definition->name.location,"Constructor definition requires a class name");
+                else root.routines.push_back(std::move(definition));
+            }
             else fail("Expected type, var, const, function, procedure or begin");
         }
         root.statements.push_back(block());
@@ -365,9 +374,16 @@ private:
             result->kind=object ? "class" : "record";
             if (object && is("(")) throw Error("E_UNSUPPORTED",current_.location,"Class inheritance is not ported yet");
             if (object && is(";")) throw Error("E_UNSUPPORTED",current_.location,"Forward class declarations are not ported yet");
+            auto access=object ? MemberAccess::private_member : MemberAccess::public_member;
             while (!is("end")) {
-                if (object && accept("public")) continue;
-                if (object && (is("function") || is("procedure") || is("constructor"))) { result->methods.push_back(routine());continue; }
+                if (object && (is("public") || is("private") || is("protected") || is("internal"))) {
+                    access=is("public") ? MemberAccess::public_member : is("private") ? MemberAccess::private_member
+                        : is("protected") ? MemberAccess::protected_member : MemberAccess::internal_member;
+                    consume();continue;
+                }
+                if (object && (is("function") || is("procedure") || is("constructor"))) {
+                    auto method=routine(true);method->access=access;result->methods.push_back(std::move(method));continue;
+                }
                 if (object && accept("property")) {
                     auto property=std::make_shared<SyntaxProperty>();property->name=name();
                     if (is("[")) throw Error("E_UNSUPPORTED",current_.location,"Indexed properties are not ported yet");
@@ -383,11 +399,11 @@ private:
                     if (result->properties.size()>=256) throw Error("E_LIMIT",property->name.location,"Class property limit exceeded");
                     result->properties.push_back(std::move(property));continue;
                 }
-                if (object && (is("private") || is("protected") || is("internal") || is("destructor") || is("class") || is("var")))
-                    throw Error("E_UNSUPPORTED",current_.location,"Class destructors, nonpublic and static members are not ported yet");
+                if (object && (is("destructor") || is("class") || is("var")))
+                    throw Error("E_UNSUPPORTED",current_.location,"Class destructors, static members and var field sections are not ported yet");
                 std::vector<Token> fields{name()}; while (accept(",")) fields.push_back(name());
                 expect(":"); auto type = type_syntax();
-                for (const auto& field : fields) result->fields.emplace_back(field,type);
+                for (const auto& field : fields) { result->fields.emplace_back(field,type);result->field_access[field.text]=access; }
                 if (!accept(";") && !is("end")) fail("Expected ';' after record field");
             }
             expect("end");
@@ -434,13 +450,18 @@ private:
         }
         return result;
     }
-    std::shared_ptr<SyntaxRoutine> routine() {
+    std::shared_ptr<SyntaxRoutine> routine(bool in_class=false) {
         const auto token=current_;const bool constructor=accept("constructor");
         const bool function=!constructor && accept("function");if (!constructor && !function) expect("procedure");
-        auto result=std::make_shared<SyntaxRoutine>();result->constructor=constructor;
+        auto result=std::make_shared<SyntaxRoutine>();result->constructor=constructor;result->function_header=function;
         result->name=constructor && (is("(") || is(";")) ? Token{TokenKind::name,"create",token.location} : name();
+        if (accept(".")) {
+            if (in_class) throw Error("E_SYNTAX",result->name.location,"Qualified method headers are only allowed outside classes");
+            result->owner=result->name.text;result->name=name();
+        }
         if (constructor && result->name.text!="create") throw Error("E_TYPE",result->name.location,"Class constructor must be named Create");
         if (accept("(")) {
+            result->explicit_parameters=true;
             if (!is(")")) do {
                 const bool by_reference = accept("var") || accept("out");
                 const bool read_only = !by_reference && accept("const");
@@ -457,8 +478,11 @@ private:
             } while (accept(";"));
             expect(")");
         }
-        if (function) { expect(":"); result->result = type_syntax(); }
+        if (function) {
+            if (result->owner.empty() || is(":")) { expect(":");result->result=type_syntax(); }
+        }
         expect(";");
+        if (in_class && !is("begin") && !is("var") && !is("const")) { result->declaration_only=true;return result; }
         while (is("var") || is("const")) {
             const bool constants=accept("const"); if (!constants) expect("var");
             do { result->body.statements.push_back(constants ? constant_declaration() : declaration()); expect(";"); }
@@ -891,7 +915,7 @@ Value literal(const Token& token) {
 
 class Analyzer {
 public:
-    hir::Module analyze(const SyntaxStmt& source) {
+    hir::Module analyze(SyntaxStmt source) {
         module_.routines.reserve(256);
         collections_imported_ = source.collections_imported;
         imported_units_=source.imported_units; imported_units_.insert("pabcsystem");
@@ -912,18 +936,19 @@ public:
             for (const auto& [field,type]:syntax->fields) {
                 if (std::any_of(fields.begin(),fields.end(),[name=field.text](const auto& item){return item.name==name;}))
                     throw Error("E_DUPLICATE",field.location,"Duplicate class field");
-                fields.push_back({field.text,resolve_type(*type),false});
+                fields.push_back({field.text,resolve_type(*type),false,syntax->field_access.at(field.text)});
             }
             if (fields.size()>256) throw Error("E_LIMIT",name.location,"Class field limit exceeded");
             module_.types[static_cast<unsigned>(aliases_.at(name.text))-64].fields=std::move(fields);
         }
+        bind_method_definitions(source);
         scopes_.emplace_back();
         for (const auto& routine : source.routines) {
             const auto qualified=routine->owner.empty() ? routine->name.text : routine->owner+"."+routine->name.text;
             if (routine_names_.contains(qualified) || (routine->owner.empty() && lookup(routine->name))) throw Error("E_DUPLICATE",routine->name.location,"Duplicate routine");
             if (module_.routines.size()>=256) throw Error("E_LIMIT",routine->name.location,"Routine limit exceeded");
             hir::RoutineBody body;
-            body.signature.name=qualified;body.signature.constructor=routine->constructor;
+            body.signature.name=qualified;body.signature.constructor=routine->constructor;body.signature.access=routine->access;
             if (!routine->owner.empty()) {
                 body.signature.owner=aliases_.at(routine->owner);
                 for (const auto& field:info(body.signature.owner,routine->name.location).fields) if (field.name==routine->name.text)
@@ -986,6 +1011,37 @@ public:
     }
 
 private:
+    void bind_method_definitions(SyntaxStmt& source) {
+        for (const auto& definition:source.method_definitions) {
+            const auto owner=aliases_.find(definition->owner);
+            if (owner==aliases_.end() || !compound(owner->second) || info(owner->second,definition->name.location).kind!=CompoundKind::object_class)
+                throw Error("E_NAME",definition->name.location,"Method definition requires a declared class");
+            const auto found=std::find_if(source.routines.begin(),source.routines.end(),[&](const auto& routine) {
+                return !routine->owner.empty() && aliases_.at(routine->owner)==owner->second && routine->name.text==definition->name.text;
+            });
+            if (found==source.routines.end()) throw Error("E_NAME",definition->name.location,"Method definition has no matching declaration");
+            auto& declared=**found;
+            if (!declared.declaration_only) throw Error("E_DUPLICATE",definition->name.location,"Class method already has a body");
+            if (declared.constructor!=definition->constructor || declared.function_header!=definition->function_header
+                || (definition->result && resolve_type(*definition->result)!=resolve_type(*declared.result)))
+                throw Error("E_TYPE",definition->name.location,"Method definition does not match its declared signature");
+            if (definition->explicit_parameters) {
+                if (definition->parameters.size()+1!=declared.parameters.size())
+                    throw Error("E_TYPE",definition->name.location,"Method definition does not match its declared signature");
+                for (std::size_t i=0;i<definition->parameters.size();++i) {
+                    const auto& actual=definition->parameters[i];auto& wanted=declared.parameters[i+1];
+                    if (actual.name.text!=wanted.name.text || resolve_type(*actual.type)!=resolve_type(*wanted.type)
+                        || actual.by_reference!=wanted.by_reference || actual.read_only!=wanted.read_only || actual.variadic!=wanted.variadic)
+                        throw Error("E_TYPE",actual.name.location,"Method definition does not match its declared signature");
+                    if (actual.default_value) throw Error("E_TYPE",actual.name.location,"Default values belong only in the method declaration");
+                    wanted.name=actual.name;
+                }
+            }
+            declared.body=std::move(definition->body);declared.declaration_only=false;
+        }
+        for (const auto& routine:source.routines) if (routine->declaration_only)
+            throw Error("E_NAME",routine->name.location,"Declared class method has no implementation");
+    }
     std::size_t field_property_accessor(Type owner,Type type,std::size_t field,bool write,SourceLocation location) {
         if (module_.routines.size()>=256) throw Error("E_LIMIT",location,"Routine limit exceeded");
         hir::RoutineBody body;body.signature.name=std::string(write ? "$property_set_" : "$property_get_")+std::to_string(module_.routines.size());
@@ -4158,8 +4214,7 @@ private:
 
 hir::Module hir::analyze_pascal(std::string_view source) {
     if (source.size() > 1'048'576) throw Error("E_LIMIT", {}, "Source exceeds 1 MiB prototype limit");
-    const auto syntax = Parser(source).parse();
-    return Analyzer().analyze(syntax);
+    return Analyzer().analyze(Parser(source).parse());
 }
 
 Program compile(std::string_view source) {
