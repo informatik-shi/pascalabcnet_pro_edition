@@ -11,6 +11,7 @@
 #include "../src/array_operations.hpp"
 #include "../src/collection_operations.hpp"
 #include "../src/list_operations.hpp"
+#include "../src/timing.hpp"
 
 #include <iostream>
 #include <array>
@@ -67,6 +68,41 @@ void compile_error(std::string_view source, std::string_view code) {
 
 void runtime_error(std::string_view source, std::string_view code) {
     error([&] { (void)run(source); }, code,source);
+}
+
+void timing_library() {
+    result("begin var start:=Milliseconds;Sleep(2);Writeln(Milliseconds-start>=2,' ',MillisecondsDelta>=0);Sleep(0);end.","True True\n");
+    result("function Milliseconds:integer;begin Result:=7;end;begin Writeln(Milliseconds,' ',PABCSystem.Milliseconds>=0);PABCSystem.Sleep(0);Writeln(PABCSystem.MillisecondsDelta()>=0);end.","7 True\nTrue\n");
+    result("begin Seq(1,2).ForEach(x->Sleep(0));var f:=()->Milliseconds;Writeln(f()>=0);end.","True\n");
+    const auto p=abc::compile("begin var a:=Milliseconds;var b:=MillisecondsDelta();Sleep(0);end.");require(p.locals[0].type==abc::Type::integer && p.locals[1].type==abc::Type::integer,"Both timing counters have known integer types before execution");
+    std::uint64_t now=0;std::vector<std::uint32_t> waits;
+    abc::TimeContext time([&]{return now;},[&](std::uint32_t delay){waits.push_back(delay);now+=static_cast<std::uint64_t>(delay)*1'000'000;});
+    now=5'400'000;require(time.milliseconds({})==5,"Milliseconds truncates elapsed fractional milliseconds");
+    now=7'900'000;require(time.milliseconds({})==7,"Milliseconds reads do not reset elapsed origin");
+    now=8'400'000;require(time.delta({})==8,"Milliseconds reads do not reset the independent delta origin");
+    now=9'100'000;require(time.delta({})==0,"Delta truncates a sub-millisecond interval");
+    now=10'100'000;require(time.milliseconds({})==10,"Total remains independent of delta calls");
+    now=10'600'000;require(time.delta({})==1,"Delta uses the timestamp of its previous call including fractional remainder");
+    abc::TimeContext other([&]{return now;},[&](std::uint32_t delay){now+=static_cast<std::uint64_t>(delay)*1'000'000;});
+    now=11'000'000;require(other.milliseconds({})==0 && time.milliseconds({})==11,"Each execution context has its own time origin");
+    now=0;abc::TimeContext sleeper([&]{return now;},[&](std::uint32_t delay){waits.push_back(delay);now+=static_cast<std::uint64_t>(delay)*1'000'000;});waits.clear();
+    sleeper.sleep(25,{},{});require(waits==std::vector<std::uint32_t>{20,5} && sleeper.milliseconds({})==25,"Sleep divides long waits into cancellable bounded intervals");
+    waits.clear();sleeper.sleep(0,{},{});require(waits==std::vector<std::uint32_t>{0},"Sleep zero yields without advancing fake time");
+    require(sleeper.delta({})==25,"Sleep and total reads do not reset delta");
+    now=0;abc::TimeContext wide([&]{return now;});now=static_cast<std::uint64_t>(INT32_MAX)*1'000'000+999'999;
+    require(wide.milliseconds({})==INT32_MAX,"Largest integer millisecond value remains representable");
+    now=(static_cast<std::uint64_t>(INT32_MAX)+1)*1'000'000;error([&]{(void)wide.milliseconds({});},"E_OVERFLOW");
+    error([&]{(void)wide.delta({});},"E_OVERFLOW");require(wide.delta({})==0,"Delta stores its new timestamp before integer overflow is reported");
+    abc::ExecutionOptions options;int pauses=0;now=0;
+    abc::TimeContext cancellable([&]{return now;},[&](std::uint32_t delay){++pauses;now+=static_cast<std::uint64_t>(delay)*1'000'000;});
+    options.cancelled=[&]{return pauses>=2;};error([&]{cancellable.sleep(-1,{},options);},"E_CANCELLED");require(pauses==2 && now==40'000'000,"Infinite Sleep cooperatively observes cancellation during waiting");
+    pauses=0;now=0;options.cancelled=[&]{return pauses>=1;};error([&]{cancellable.sleep(100,{},options);},"E_CANCELLED");require(pauses==1,"Finite Sleep observes cancellation before the full delay");
+    options.cancelled=[] {return true;};error([&]{cancellable.sleep(INT32_MAX,{},options);},"E_CANCELLED");
+    for(const auto duration:{-2,INT32_MIN})error([&]{cancellable.sleep(duration,{},options);},"E_RANGE");
+    try{(void)run("begin\nSleep(-2);\nend.");require(false,"Expected invalid Sleep duration");}
+    catch(const abc::Error& e){require(e.code=="E_RANGE" && std::string_view(e.what())=="Sleep duration must be -1 or nonnegative" && e.russian=="Длительность Sleep должна быть равна -1 или быть неотрицательной" && e.location.line==2,"Sleep reports exact bilingual duration errors at its source location");}
+    for(const auto source:{"begin Sleep(1.5);end.","begin Sleep(True);end.","begin Milliseconds(1);end.","begin var a:=Sleep(0);end."})compile_error(source,"E_TYPE");
+    options={};int polls=0;options.cancelled=[&]{return ++polls>=2;};error([&]{(void)run("begin Sleep(-1);end.","",options);},"E_CANCELLED");
 }
 
 void sequence_text_and_flatten() {
@@ -5369,6 +5405,7 @@ int main() {
     list_search_and_ranges();
     list_bulk_ranges();
     sequence_text_and_flatten();
+    timing_library();
     escaped_identifiers_language();
     structural_output();
     try_console_read();

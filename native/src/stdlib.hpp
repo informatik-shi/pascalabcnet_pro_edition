@@ -2,7 +2,7 @@
 #include "abc/core.hpp"
 #include <span>
 
-namespace abc { class FileContext; class RandomContext; class ConsoleInput; struct SchoolContext; struct Values; }
+namespace abc { class FileContext; class RandomContext; class ConsoleInput; class TimeContext; struct SchoolContext; struct Values; }
 namespace abc::stdlib {
 enum class Function {
     abs, sqr, sign, minimum, maximum, sin, sinh, cos, cosh, tan, tanh,
@@ -23,7 +23,7 @@ enum class Function {
     text_assign, text_reset, text_rewrite, text_append, text_close, text_flush,
     text_eof, text_eoln, text_seek_eof, text_seek_eoln, text_open_read, text_open_write, text_open_append,
     text_read, text_read_line, text_read_word, text_skip_line, text_name, text_full_name, text_read_end, text_erase, text_rename,
-    regex_is_match, regex_match_value, assertion
+    regex_is_match, regex_match_value, assertion, milliseconds, milliseconds_delta, sleep
 };
 struct Signature {
     std::string_view name;
@@ -41,6 +41,7 @@ struct Context {
     const ExecutionOptions& options;
     SchoolContext& school;
     Values& values;
+    TimeContext& timing;
 };
 // One catalog is shared by the type checker, bytecode verifier and VM.
 std::span<const Signature> signatures();

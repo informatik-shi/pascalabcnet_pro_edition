@@ -8,6 +8,7 @@ option(ABC_SANITIZERS "Enable address and undefined behavior sanitizers" OFF)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+find_package(Threads REQUIRED)
 add_subdirectory(third_party/libtommath)
 add_subdirectory(third_party/pcre2)
 
@@ -48,6 +49,7 @@ add_library(abc_core
     src/collection_operations.cpp
     src/matrix_construction.cpp
     src/list_operations.cpp
+    src/timing.cpp
     src/diagnostics.cpp
     src/compiler_diagnostics.cpp
     src/types.cpp
@@ -56,7 +58,7 @@ add_library(abc_core
     src/bytecode.cpp
     src/vm.cpp)
 target_include_directories(abc_core PUBLIC include)
-target_link_libraries(abc_core PRIVATE abc_math abc_regex)
+target_link_libraries(abc_core PRIVATE abc_math abc_regex Threads::Threads)
 include(CheckCXXSourceCompiles)
 check_cxx_source_compiles("#include <charconv>
 int main() { const char text[] = \"1.5\"; double value; return std::from_chars(text, text + 3, value).ec == std::errc{} ? 0 : 1; }"
@@ -297,6 +299,9 @@ if(BUILD_TESTING)
     add_test(NAME original_delegates6 COMMAND $<TARGET_FILE:abc> run "${CMAKE_CURRENT_SOURCE_DIR}/../TestSuite/delegates6.pas")
     add_test(NAME original_lambda_explicit_types COMMAND $<TARGET_FILE:abc> run "${CMAKE_CURRENT_SOURCE_DIR}/../TestSuite/LambdaWithExplicitType.pas")
     add_test(NAME original_lambda_local_const COMMAND $<TARGET_FILE:abc> run "${CMAKE_CURRENT_SOURCE_DIR}/../TestSuite/lambdas_closures_15_const.pas")
+    add_test(NAME timing_compatibility COMMAND ${CMAKE_COMMAND}
+        -DABC_RUNNER=$<TARGET_FILE:abc> -DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures
+        -DABC_FIXTURE_NAME=timing-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")
     add_test(NAME sequence_text_flatten_compatibility COMMAND ${CMAKE_COMMAND}
         -DABC_RUNNER=$<TARGET_FILE:abc> -DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures
         -DABC_FIXTURE_NAME=sequence-text-flatten-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")

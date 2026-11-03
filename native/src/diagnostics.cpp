@@ -4,6 +4,8 @@ namespace abc {
 Error runtime_error(RuntimeError id, SourceLocation location, std::string_view context) {
     const char *code, *english, *russian;
     switch (id) {
+    case RuntimeError::sleep_duration:
+        code="E_RANGE";english="Sleep duration must be -1 or nonnegative";russian="Длительность Sleep должна быть равна -1 или быть неотрицательной";break;
     case RuntimeError::list_index:
         code="E_RANGE";english="List index is outside the allowed range";russian="Индекс списка находится вне допустимого диапазона";break;
     case RuntimeError::list_count:

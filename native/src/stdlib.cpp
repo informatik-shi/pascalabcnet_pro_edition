@@ -11,6 +11,7 @@
 #include "unicode.hpp"
 #include "big_integer_runtime.hpp"
 #include "regex.hpp"
+#include "timing.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -26,6 +27,9 @@ std::span<const Signature> signatures() {
         auto add = [&](std::string_view name, std::vector<Type> parameters, Type result, Function function, std::string_view unit = {}) {
             entries.push_back({name, std::move(parameters), result, function,unit});
         };
+        add("milliseconds",{},Type::integer,Function::milliseconds);
+        add("millisecondsdelta",{},Type::integer,Function::milliseconds_delta);
+        add("sleep",{Type::integer},Type::unit,Function::sleep);
         add("assert",{Type::boolean},Type::unit,Function::assertion);
         add("assert",{Type::boolean,Type::string},Type::unit,Function::assertion);
         add("assert",{Type::boolean,Type::string,Type::integer},Type::unit,Function::assertion);
@@ -352,6 +356,9 @@ Value invoke(std::size_t id, std::span<const Value> arguments, SourceLocation lo
     auto& files=context.files; auto& random=context.random;
     const auto& signature = signatures()[id]; // Verified before execution.
     const auto function = signature.function;
+    if (function==Function::milliseconds) return context.timing.milliseconds(location);
+    if (function==Function::milliseconds_delta) return context.timing.delta(location);
+    if (function==Function::sleep) {context.timing.sleep(std::get<std::int32_t>(arguments[0]),location,context.options);return std::int32_t{0};}
     if (function==Function::assertion) {
         if (std::get<bool>(arguments[0])) return false;
         std::string details;
