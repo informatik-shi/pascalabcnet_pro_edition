@@ -16,7 +16,10 @@ inline bool matrix_outer(MatrixMethod method) {
 }
 inline bool matrix_swap(MatrixMethod method) { return method==MatrixMethod::swap_rows || method==MatrixMethod::swap_columns; }
 inline bool matrix_set(MatrixMethod method) { return method==MatrixMethod::set_row || method==MatrixMethod::set_column; }
+inline bool matrix_slice(MatrixMethod method) { return method==MatrixMethod::slice_indices || method==MatrixMethod::slice_range; }
 inline std::vector<Type> matrix_parameters(Type array,MatrixMethod method) {
+    if (method==MatrixMethod::slice_indices) return {array,array};
+    if (method==MatrixMethod::slice_range) return {Type::integer,Type::integer,Type::integer,Type::integer};
     if (matrix_outer(method)) return {};
     if (matrix_swap(method)) return {Type::integer,Type::integer};
     if (matrix_set(method)) return {Type::integer,array};

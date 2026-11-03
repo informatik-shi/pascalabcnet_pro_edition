@@ -4,6 +4,14 @@ namespace abc {
 Error runtime_error(RuntimeError id, SourceLocation location, std::string_view context) {
     const char *code, *english, *russian;
     switch (id) {
+    case RuntimeError::matrix_from_row:
+        code="E_RANGE"; english="Starting row index is outside matrix bounds"; russian="Начальный индекс строки находится за границами матрицы"; break;
+    case RuntimeError::matrix_to_row:
+        code="E_RANGE"; english="Ending row index is outside matrix bounds"; russian="Конечный индекс строки находится за границами матрицы"; break;
+    case RuntimeError::matrix_from_column:
+        code="E_RANGE"; english="Starting column index is outside matrix bounds"; russian="Начальный индекс столбца находится за границами матрицы"; break;
+    case RuntimeError::matrix_to_column:
+        code="E_RANGE"; english="Ending column index is outside matrix bounds"; russian="Конечный индекс столбца находится за границами матрицы"; break;
     case RuntimeError::matrix_row_index:
         code="E_RANGE"; english="Row index is outside matrix bounds"; russian="Индекс строки находится за границами матрицы"; break;
     case RuntimeError::matrix_column_index:

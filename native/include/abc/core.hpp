@@ -165,7 +165,7 @@ struct ArrayViewState {
 };
 enum class CollectionOperation { fill_value, fill_function, transform, convert_all, for_each };
 enum class ArrayOperation { fill_array, fill_matrix, transpose, size, equal_array, equal_matrix };
-enum class MatrixMethod { row, column, row_sequence, column_sequence, rows, columns, row_sequences, column_sequences, swap_rows, swap_columns, set_row, set_column };
+enum class MatrixMethod { row, column, row_sequence, column_sequence, rows, columns, row_sequences, column_sequences, swap_rows, swap_columns, set_row, set_column, slice_indices, slice_range };
 struct MatrixLineState {
     Value current=std::int32_t{0};
     std::uint64_t index=0;

@@ -202,6 +202,7 @@ def main():
                 ("sequence-prefixes.pas", "Начало: [1,2]\nОстаток: [3,1]\nПосле двух: [7,6]\n"),
                 ("callable-values.pas", "Значение: 14\nЧерез массив: 18\nЧерез параметр: 22\nПустое значение: True\n"),
                 ("library-callables.pas", "Сохранённая функция: [2,4,6]\nОтбор: [1,2]\nСуммы пар: [11,22]\nРезультат для True, True: True\n"),
+                ("matrix-slices.pas", "Матрица: [[0,1,2,3],[10,11,12,13],[20,21,22,23]]\nИндексы: [[23,21],[3,1],[23,21]]\nГраницы: [[11,12,13],[21,22,23]]\nПустые строки: (0,4)\nПустые столбцы: (0,2)\n"),
                 ("collection-callbacks.pas", "Преобразование: [1,3,5]\nЗаполнение: [0,2,4]\nНовый тип: [0,2,4]\nМатрица: [[0,2],[11,13]]\nДействия: 30\nСписок: [10,11]\n"),
                 ("array-operations.pas", "Заполнение массива: [7,7,7,7]\nЗаполнение матрицы: [[5,5,5],[5,5,5]]\nРазмер: (2,3)\nТранспонирование: [[5,5],[8,5],[5,5]]\nЭлементы: [5,8,5,5,5,5]\nРавенство массивов: True\nРавенство матриц: True\n"),
                 ("matrix-lines.pas", "Строка: [10,11,12]\nСтолбец: [2,12]\nСтроки: [[0,1,2],[10,11,12]]\nСтолбцы: [[0,10],[1,11],[2,12]]\nЛенивые строки: [[0,1,2],[10,11,12]]\nЛенивые столбцы: [[0,10],[1,11],[2,12]]\nПосле обменов: [[12,11,10],[2,1,0]]\nПосле замены: [[7,4,9],[2,5,0]]\n"),
@@ -601,6 +602,19 @@ def main():
                                      capture_output=True, cwd=folder, env=env, timeout=10)
             if invalid.returncode != 1 or invalid.stdout or "E_TYPE" not in invalid.stderr or "RU:" not in invalid.stderr:
                 raise RuntimeError(f"{name} array equality element type was not rejected before output")
+            slice_error = folder / "Срез матрицы.pas"
+            slice_error.write_text("begin\n var m:=new integer[1,1]; m.MatrSlice(0,0,0,2);\nend.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(slice_error)], text=True, encoding="utf-8",
+                                     capture_output=True, cwd=folder, env=env, timeout=10)
+            if (invalid.returncode != 1 or "E_RANGE" not in invalid.stderr
+                    or "EN: Ending column index is outside matrix bounds" not in invalid.stderr
+                    or "RU: Конечный индекс столбца находится за границами матрицы" not in invalid.stderr or f"{slice_error}:2:" not in invalid.stderr):
+                raise RuntimeError(f"{name} bilingual MatrSlice bounds error failed: {invalid.stderr!r}")
+            slice_error.write_text("begin Writeln('must never run'); var m:=new integer[1,1]; m.MatrSlice(Seq(0),Arr(0)); end.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(slice_error)], text=True, encoding="utf-8",
+                                     capture_output=True, cwd=folder, env=env, timeout=10)
+            if invalid.returncode != 1 or invalid.stdout or "E_TYPE" not in invalid.stderr or "RU:" not in invalid.stderr:
+                raise RuntimeError(f"{name} matrix slice index type was not rejected before output")
             callback_error = folder / "Функция преобразования.pas"
             callback_error.write_text("begin\n var f: integer->integer:=nil; Arr(1).Transform(f);\nend.", encoding="utf-8")
             invalid = subprocess.run([runner, "run", str(callback_error)], text=True, encoding="utf-8",
@@ -808,6 +822,7 @@ def main():
             results[-1]["typed_matrix_lines_mutations_and_bilingual_diagnostics"] = "passed"
             results[-1]["typed_fill_transpose_shape_equality_and_bilingual_diagnostics"] = "passed"
             results[-1]["typed_collection_callbacks_and_bilingual_diagnostics"] = "passed"
+            results[-1]["typed_matrix_slices_and_bilingual_diagnostics"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 

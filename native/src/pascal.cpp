@@ -2581,19 +2581,26 @@ private:
             {"swaprows",MatrixMethod::swap_rows},{"swapcols",MatrixMethod::swap_columns},
             {"setrow",MatrixMethod::set_row},{"setcol",MatrixMethod::set_column}})
             if (source.token.text==name) { method=value; break; }
+        const bool slice=source.token.text=="matrslice";
+        const auto count=source.arguments.size()+(member ? 1U : 0U);
+        if (slice) {
+            if (count!=3 && count!=5) throw Error("E_TYPE",result.location,"MatrSlice requires two integer index arrays or four integer bounds");
+            method=count==3 ? MatrixMethod::slice_indices : MatrixMethod::slice_range;
+        }
         if (!method) return false;
-        const auto expected=matrix_outer(*method) ? 1U : matrix_swap(*method) || matrix_set(*method) ? 3U : 2U;
+        const auto expected=slice ? count : matrix_outer(*method) ? 1U : matrix_swap(*method) || matrix_set(*method) ? 3U : 2U;
         if (source.arguments.size()+(member ? 1U : 0U)!=expected)
             throw Error("E_TYPE",result.location,"Wrong matrix operation argument count");
         auto input=member ? std::move(result.left) : expression(*source.arguments[0]);
         if (!compound(input->type) || info(input->type,result.location).kind!=CompoundKind::array || info(input->type,result.location).rank!=2)
             throw Error("E_TYPE",result.location,"Matrix operation requires a rectangular matrix of known element type");
         const auto element=info(input->type,result.location).element;
-        const auto array=sequence_type(CompoundKind::array,element);
+        const auto array=sequence_type(CompoundKind::array,*method==MatrixMethod::slice_indices ? Type::integer : element);
         const auto begin=member ? 0U : 1U;
         for (std::size_t i=begin;i<source.arguments.size();++i) {
             auto value=expression(*source.arguments[i]);
-            if (matrix_set(*method) && i+1==source.arguments.size()) {
+            if (*method==MatrixMethod::slice_indices) value=convert(std::move(value),array);
+            else if (matrix_set(*method) && i+1==source.arguments.size()) {
                 if (value->type!=array) {
                     auto collected=std::make_unique<hir::Expr>(); collected->kind=hir::ExprKind::sequence_call;
                     collected->location=value->location; collected->type=array; collected->local=1;
@@ -2603,7 +2610,7 @@ private:
             } else value=convert(std::move(value),Type::integer);
             result.arguments.push_back(std::move(value));
         }
-        result.type=matrix_swap(*method) || matrix_set(*method) ? Type::unit
+        result.type=slice ? input->type : matrix_swap(*method) || matrix_set(*method) ? Type::unit
             : matrix_sequence(*method) ? sequence_type(CompoundKind::sequence,matrix_outer(*method) ? sequence_type(CompoundKind::sequence,element) : element)
             : matrix_outer(*method) ? sequence_type(CompoundKind::array,array) : array;
         result.left=std::move(input); result.kind=hir::ExprKind::matrix_operation; result.operation_type=array;

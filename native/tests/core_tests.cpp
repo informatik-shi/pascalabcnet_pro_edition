@@ -67,6 +67,82 @@ void runtime_error(std::string_view source, std::string_view code) {
     error([&] { (void)run(source); }, code,source);
 }
 
+void matrix_slices_library() {
+    result("begin var m:=MatrGen(3,4,(r,c)->r*10+c); Writeln(m.MatrSlice(Arr(2,0,2),Arr(3,1))); Writeln(MatrSlice(m,1,2,1,3)); Writeln(PABCSystem.MatrSlice(m,Arr(1),Arr(0,2))); end.","[[23,21],[3,1],[23,21]]\n[[11,12,13],[21,22,23]]\n[[10,12]]\n");
+    result("begin var m:=MatrGen(3,4,(r,c)->r*10+c); var a:=m.MatrSlice(1,0,0,3); var b:=m.MatrSlice(0,2,2,1); Writeln(a.Size,' ',b.Size); Writeln(m.MatrSlice(Arr(1,2),new integer[0]).Size); Writeln(m.MatrSlice(new integer[0],Arr(1,2,3)).Size); end.","(0,4) (3,0)\n(2,0)\n(0,3)\n");
+    result("begin var m:array[,] of integer:=nil; var z:=new integer[0]; var s:=m.MatrSlice(z,z); Writeln(s=nil,' ',s.Size); end.","False (0,0)\n");
+    result("begin var a:=new integer[2147483647,0]; var b:=new integer[0,2147483647]; Writeln(a.MatrSlice(Arr(2147483646),new integer[0]).Size); Writeln(b.MatrSlice(new integer[0],Arr(2147483646)).Size); end.","(1,0)\n(0,1)\n");
+    result("type R=record x:integer; a:array of integer; end; begin var r:R; r.x:=1; r.a:=Arr(2); var m:=MatrFill(1,1,r); var s:=m.MatrSlice(Arr(0,0),Arr(0)); s[0,0].x:=9; s[0,0].a[0]:=7; Writeln(m[0,0].x,' ',s[1,0].x,' ',m[0,0].a[0]); end.","1 1 7\n");
+    result("begin var m:=MatrFill(1,1,Arr(3)); var s:=m.MatrSlice(0,0,0,0); s[0,0][0]:=8; Writeln(m[0,0][0],' ',s=m); var text:=MatrFill(1,1,'abc'); Writeln(text.MatrSlice(Arr(0),Arr(0))); var empty:=new string[0,0]; Writeln(empty.MatrSlice(new integer[0],new integer[0]).Size); end.","8 False\n[[abc]]\n(0,0)\n");
+    for (int rows=1;rows<=4;++rows) for (int cols=1;cols<=4;++cols) {
+        const auto head="begin var m:=MatrGen("+std::to_string(rows)+","+std::to_string(cols)+",(r,c)->r*10+c); ";
+        std::ostringstream expected;
+        for (int r=rows-1;r>=0;--r) for (int c=cols-1;c>=0;--c) expected<<r*10+c<<' ';
+        result(head+"var r:=Range("+std::to_string(rows-1)+",0,-1).ToArray; var c:=Range("+std::to_string(cols-1)+",0,-1).ToArray; var s:=m.MatrSlice(r,c); foreach var x in s.Elements do Write(x,' '); end.",expected.str());
+        expected.str(""); expected.clear();
+        for (int r=0;r<rows;++r) for (int c=0;c<cols;++c) expected<<r*10+c<<' ';
+        result(head+"foreach var x in m.MatrSlice(0,"+std::to_string(rows-1)+",0,"+std::to_string(cols-1)+").Elements do Write(x,' '); end.",expected.str());
+    }
+    for (const auto source:{
+        "begin var m:=new integer[2,2]; m.MatrSlice(Arr(-1),Arr(0)); end.",
+        "begin var m:=new integer[2,2]; m.MatrSlice(Arr(0),Arr(2)); end.",
+        "begin var m:=new integer[0,0]; m.MatrSlice(Arr(0),new integer[0]); end.",
+        "begin var m:=new integer[0,0]; m.MatrSlice(new integer[0],Arr(0)); end.",
+        "begin var m:=new integer[3,3]; m.MatrSlice(2,0,0,2); end.",
+        "begin var m:=new integer[3,3]; m.MatrSlice(0,2,2,0); end."}) runtime_error(source,"E_RANGE");
+    for (const auto source:{
+        "begin var m:array[,] of integer:=nil; m.MatrSlice(Arr(-1),Arr(0)); end.",
+        "begin var m:array[,] of integer:=nil; m.MatrSlice(new integer[0],Arr(-1)); end.",
+        "begin var m:=new integer[1,1]; m.MatrSlice(nil,Arr(0)); end.",
+        "begin var m:=new integer[1,1]; m.MatrSlice(Arr(-1),nil); end.",
+        "begin var m:array[,] of integer:=nil; m.MatrSlice(-1,-1,-1,-1); end."}) runtime_error(source,"E_NIL");
+    for (const auto source:{
+        "begin MatrSlice(Arr(1),Arr(0),Arr(0)); end.",
+        "begin var m:=new integer[1,1]; m.MatrSlice(Arr(0.0),Arr(0)); end.",
+        "begin var m:=new integer[1,1]; m.MatrSlice(Seq(0),Arr(0)); end.",
+        "begin var m:=new integer[1,1]; m.MatrSlice(Arr(0),0); end.",
+        "begin var m:=new integer[1,1]; m.MatrSlice(0,0); end.",
+        "begin var m:=new integer[1,1]; m.MatrSlice(0,0,0); end.",
+        "begin var m:=new integer[1,1]; m.MatrSlice; end."}) compile_error(source,"E_TYPE");
+    const std::array<std::string_view,4> bounds{"-1,2,-1,2","0,2,-1,2","0,0,-1,2","0,0,0,2"};
+    const std::array<std::string_view,4> english{"Starting row index is outside matrix bounds","Ending row index is outside matrix bounds","Starting column index is outside matrix bounds","Ending column index is outside matrix bounds"};
+    const std::array<std::string_view,4> russian{"Начальный индекс строки находится за границами матрицы","Конечный индекс строки находится за границами матрицы","Начальный индекс столбца находится за границами матрицы","Конечный индекс столбца находится за границами матрицы"};
+    for (std::size_t i=0;i<bounds.size();++i) {
+        try { (void)run("begin\n var m:=new integer[1,1]; m.MatrSlice("+std::string(bounds[i])+");\nend."); require(false,"Expected a slice bounds error"); }
+        catch (const abc::Error& e) { require(e.code=="E_RANGE" && e.location.line==2 && std::string_view(e.what())==english[i] && e.russian==russian[i],"MatrSlice preserves distinct bilingual bound errors and row-before-column order"); }
+    }
+    {
+        const auto p=abc::compile("function B(c:char; x:integer):integer; begin Write(c); Result:=x; end; begin var m:=new integer[1,1]; m.MatrSlice(B('A',-1),B('B',2),B('C',-1),B('D',2)); end.");
+        std::istringstream in;std::ostringstream out;
+        error([&]{abc::execute(p,in,out);},"E_RANGE"); require(out.str()=="ABCD","MatrSlice evaluates every bound before validating them");
+    }
+    abc::ExecutionOptions options;options.allocation_limit=30;
+    error([&]{(void)run("begin var m:=new integer[2,2]; m.MatrSlice(Arr(0,1,0,1,0,1),Arr(0,1,0,1,0,1)); end.","",options);},"E_LIMIT");
+    options={};options.cancelled=[] {return true;};
+    error([&]{(void)run("begin var m:=new integer[1,1]; m.MatrSlice(Arr(0),Arr(0)); end.","",options);},"E_CANCELLED");
+    for (const auto source:{"begin var m:=new integer[2,2]; m.MatrSlice(Arr(0),Arr(1)); end.","begin var m:=new integer[2,2]; m.MatrSlice(0,1,0,1); end."}) {
+        const auto good=abc::compile(source);
+        for (int kind=0;kind<4;++kind) {
+            auto bad=good;
+            for (auto& op:bad.code) if (op.op==abc::Op::matrix_operation) {
+                if (kind==0) op.operand=std::numeric_limits<std::size_t>::max();
+                if (kind==1) op.operand=(op.operand&~std::size_t{15})|15;
+                if (kind==2) op.operand&=65535U;
+                if (kind==3) op.type=abc::Type::integer;
+            }
+            error([&]{abc::verify(bad);},"E_BYTECODE");
+        }
+        abc::Values values{good,1000};
+        const auto it=std::find_if(good.code.begin(),good.code.end(),[](const auto& op){return op.op==abc::Op::matrix_operation;});
+        const auto type=it->type,array=static_cast<abc::Type>((it->operand&65535U)>>4); const auto method=static_cast<abc::MatrixMethod>(it->operand&15U);
+        auto m=values.matrix(type,2,2);std::vector<abc::Value> args;
+        if (method==abc::MatrixMethod::slice_indices) { auto a=values.array(array,2);values.write(a->items[1],std::int32_t{1});args={a,a}; }
+        else args={std::int32_t{0},std::int32_t{1},std::int32_t{0},std::int32_t{1}};
+        options={};options.instruction_limit=1;
+        error([&]{(void)abc::matrix_operation(values,type,array,m,method,args,options);},"E_LIMIT");
+    }
+}
+
 void collection_callbacks_library() {
     result("begin var a:=Arr(1,2,3); Writeln(a.Transform(x->x*2),' ',a); Writeln(a.Transform((x,i)->x+i)); a.Fill(7); Writeln(a); a.Fill(i->i*3); Writeln(a); var b:array of string:=a.ConvertAll((x,i)->IntToStr(x+i)); Writeln(b); end.","[2,4,6] [2,4,6]\n[2,5,8]\n[7,7,7]\n[0,3,6]\n[0,4,8]\n");
     result("begin var m:=MatrFill(2,2,0); m.Fill((r,c)->r*10+c); m.Transform((x,r,c)->x+r+c); Writeln(m); var a:array[,] of string:=m.ConvertAll(x->IntToStr(x)); Writeln(a,' ',a.Size); var b:=m.ConvertAll((x,r,c)->x+r+c); Writeln(b); end.","[[0,2],[11,13]]\n[[0,2],[11,13]] (2,2)\n[[0,3],[12,15]]\n");
@@ -5036,6 +5112,7 @@ int main() {
     matrix_lines_library();
     array_operations_library();
     collection_callbacks_library();
+    matrix_slices_library();
     escaped_identifiers_language();
     structural_output();
     try_console_read();

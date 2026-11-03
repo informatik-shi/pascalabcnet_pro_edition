@@ -618,7 +618,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         case Op::matrix_operation: {
             const auto output=instruction.operand>>16,array=(instruction.operand&65535U)>>4,method=instruction.operand&15U;
             if ((output!=static_cast<std::size_t>(Type::unit) && (output<64 || output>=64+program.types.size()))
-                || array<64 || array>=64+program.types.size() || method>static_cast<std::size_t>(MatrixMethod::set_column)
+                || array<64 || array>=64+program.types.size() || method>static_cast<std::size_t>(MatrixMethod::slice_range)
                 || !matrix_signature_valid(program,type,static_cast<Type>(output),static_cast<Type>(array),static_cast<MatrixMethod>(method)))
                 invalid(instruction,"Invalid matrix operation signature");
             break;
