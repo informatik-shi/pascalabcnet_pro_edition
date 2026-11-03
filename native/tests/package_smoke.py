@@ -206,6 +206,7 @@ def main():
                 ("class-external-methods.pas", "Счётчик: 6\n"),
                 ("class-field-initializers.pas", "Первый: заметка\nВторой: \n"),
                 ("short-class-bodies.pas", "Значение: 8\nЗамыкание: 8\n"),
+                ("windows-characters.pas", "Привет\nКоды: 207 184\nЗамена: ?\n"),
                 ("class-properties.pas", "Свойство: 7\nЧерез метод: 14\n"),
                 ("class-methods.pas", "Значение: 5\nОбщая ссылка: 6\n"),
                 ("class-fields.pas", "Связанные объекты: 9 7\nОбщая ссылка: 11\n11 9 \n"),
@@ -632,6 +633,18 @@ def main():
                                      capture_output=True, cwd=folder, env=env, timeout=10)
             if invalid.returncode != 1 or invalid.stdout or "E_TYPE" not in invalid.stderr or "RU:" not in invalid.stderr:
                 raise RuntimeError(f"{name} constructor parameter type was not checked before output")
+            windows_error = folder / "Символы Windows.pas"
+            windows_error.write_text("begin\nvar n:=256;Writeln(ChrWindows(byte(n)));end.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(windows_error)], text=True, encoding="utf-8",
+                                     capture_output=True, cwd=folder, env=env, timeout=10)
+            if (invalid.returncode != 1 or invalid.stdout or "E_OVERFLOW" not in invalid.stderr
+                    or "EN:" not in invalid.stderr or "RU:" not in invalid.stderr or f"{windows_error}:2:" not in invalid.stderr):
+                raise RuntimeError(f"{name} CP1251 byte range diagnostic failed: {invalid.stderr!r}")
+            windows_error.write_text("begin Writeln('must never run');OrdWindows('abc');end.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(windows_error)], text=True, encoding="utf-8",
+                                     capture_output=True, cwd=folder, env=env, timeout=10)
+            if invalid.returncode != 1 or invalid.stdout or "E_TYPE" not in invalid.stderr or "RU:" not in invalid.stderr:
+                raise RuntimeError(f"{name} CP1251 char type was not checked before output")
             unicode_source = folder / "Кодировки файлов.pas"
             for label, codec, bom in [
                 ("UTF8", "utf-8", b"\xef\xbb\xbf"),
@@ -1103,6 +1116,7 @@ def main():
             results[-1]["native_class_field_initializers_and_body_order"] = "passed"
             results[-1]["native_short_routine_bodies_and_bilingual_diagnostics"] = "passed"
             results[-1]["unicode_bom_text_file_decoding"] = "passed"
+            results[-1]["native_cp1251_character_functions"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 

@@ -13,6 +13,7 @@
 #include "../src/list_operations.hpp"
 #include "../src/timing.hpp"
 #include "../src/file_encoding.hpp"
+#include "../src/cp1251.hpp"
 
 #include <iostream>
 #include <array>
@@ -69,6 +70,33 @@ void compile_error(std::string_view source, std::string_view code) {
 
 void runtime_error(std::string_view source, std::string_view code) {
     error([&] { (void)run(source); }, code,source);
+}
+
+void windows1251_standard_functions() {
+    const auto fixtures=std::filesystem::path(abc::from_utf8(__FILE__)).parent_path()/"fixtures";
+    auto load=[](const std::filesystem::path& file){std::ifstream input(file,std::ios::binary);return std::string(std::istreambuf_iterator<char>(input),{});};
+    const auto decoded=load(fixtures/"cp1251-decode-reference.bin"),encoded=load(fixtures/"cp1251-encode-reference.bin");
+    require(decoded.size()==512 && encoded.size()==65536,"Independent Windows CP1251 reference covers every byte and every single UTF-16 unit");
+    if(decoded.size()==512 && encoded.size()==65536) {
+        bool all_bytes=true,all_units=true,round_trip=true;
+        for(unsigned value=0;value<256;++value){const auto expected=static_cast<unsigned char>(decoded[value*2])+(static_cast<unsigned char>(decoded[value*2+1])<<8);const auto character=abc::windows1251_character(static_cast<std::uint8_t>(value));all_bytes=all_bytes && character==expected;round_trip=round_trip && abc::windows1251_ordinal(character)==value;}
+        for(unsigned value=0;value<65536;++value)all_units=all_units && abc::windows1251_ordinal(static_cast<char16_t>(value))==static_cast<unsigned char>(encoded[value]);
+        require(all_bytes,"All 256 CP1251 decoding entries match independent Windows reference");require(all_units,"All 65536 separately encoded UTF-16 units match Windows best-fit and replacement behavior");require(round_trip,"Every decoded byte, including 0x98, round trips exactly");
+    }
+    result("begin Writeln(ChrWindows(192),' ',ChrWindows(255),' ',ChrAnsi(168));Writeln(OrdWindows('А'),' ',OrdWindows('я'),' ',OrdAnsi('ё'));end.","А я Ё\n192 255 184\n");
+    result("begin var b:byte:=OrdWindows('Я');var c:char:=ChrWindows(b);Writeln(b,' ',c,' ',Ord(ChrWindows(152)));end.","223 Я 152\n");
+    result("begin Writeln(OrdWindows('à'),' ',OrdWindows('Ａ'),' ',OrdWindows('界'),' ',OrdWindows(#55296));end.","97 65 63 63\n");
+    result("begin Writeln(PABCSystem.ChrWindows(192),' ',PABCSystem.OrdWindows('я'),' ',PABCSystem.ChrAnsi(168),' ',PABCSystem.OrdAnsi('ё'));end.","А 255 Ё 184\n");
+    result("begin var f:byte->char:=ChrWindows;var g:char->byte:=OrdWindows;Writeln(f(192),' ',g('я'));end.","А 255\n");
+    result("function ChrWindows(n:integer):integer;begin Result:=n;end;begin Writeln(ChrWindows(192),' ',PABCSystem.ChrWindows(192));end.","192 А\n");
+    compile_error("begin Writeln('NEVER');OrdWindows('abc');end.","E_TYPE");
+    compile_error("begin Writeln('NEVER');ChrWindows(nil);end.","E_TYPE");
+    runtime_error("begin var n:=256;Writeln(ChrWindows(byte(n)));end.","E_OVERFLOW");
+    result("function Factory:byte->char;begin Result:=ChrWindows;end;begin var f:=Factory();Writeln(f(192));end.","А\n");
+    result("begin var f:=PABCSystem.ChrWindows;Writeln(f(192));end.","А\n");
+    result("begin var factory:()->byte->char:=()->ChrWindows;var f:=factory();Writeln(f(192));end.","А\n");
+    result("begin var a:byte->char:=ChrWindows;var b:byte->char:=ChrWindows;var c:byte->char:=ChrAnsi;Writeln(a=b,' ',a=c);end.","True False\n");
+    result("begin var a:=Arr(byte(192),byte(255));Writeln(a.Select(ChrWindows).JoinToString,' ',a.Select(PABCSystem.ChrWindows).JoinToString);end.","Ая Ая\n");
 }
 
 void unicode_file_decoding() {
@@ -5785,6 +5813,7 @@ int main() {
     native_class_field_initializers_language();
     native_short_routine_bodies_language();
     unicode_file_decoding();
+    windows1251_standard_functions();
     escaped_identifiers_language();
     structural_output();
     try_console_read();

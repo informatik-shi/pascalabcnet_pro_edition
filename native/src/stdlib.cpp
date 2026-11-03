@@ -12,6 +12,7 @@
 #include "big_integer_runtime.hpp"
 #include "regex.hpp"
 #include "timing.hpp"
+#include "cp1251.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -179,6 +180,8 @@ std::span<const Signature> signatures() {
             add(name,{Type::uint64},Type::character,Function::character);
         }
         add("char",{Type::character},Type::character,Function::character);
+        for (auto name:{"chrwindows","chransi"}) add(name,{Type::byte},Type::character,Function::windows_character);
+        for (auto name:{"ordwindows","ordansi"}) add(name,{Type::character},Type::byte,Function::windows_ordinal);
         for (auto name:{"ord","ordunicode"}) add(name,{Type::character},Type::word,Function::ordinal);
         for (auto type:{Type::integer,Type::int64,Type::word,Type::byte,Type::shortint,Type::smallint,Type::longword,Type::uint64}) add("ord",{type},type,Function::ordinal);
         add("ord",{Type::boolean},Type::integer,Function::ordinal);
@@ -514,6 +517,8 @@ Value invoke(std::size_t id, std::span<const Value> arguments, SourceLocation lo
     }
     if (function==Function::files_read_to_end) return file_operations_read(files,value,location);
     if (function==Function::files_write_string) { file_operations_write(files,value,arguments[1],location); return false; }
+    if (function==Function::windows_character) return windows1251_character(std::get<std::uint8_t>(value));
+    if (function==Function::windows_ordinal) return windows1251_ordinal(std::get<char16_t>(value));
     if (function==Function::ordinal) {
         if (const auto* ch=std::get_if<char16_t>(&value)) return static_cast<std::uint16_t>(*ch);
         if (const auto* flag=std::get_if<bool>(&value)) return std::int32_t(*flag);

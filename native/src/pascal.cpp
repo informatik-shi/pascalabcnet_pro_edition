@@ -1247,6 +1247,41 @@ private:
             throw Error("E_TYPE",location,"Routine does not match the callable parameter and result types");
         return value;
     }
+    std::unique_ptr<hir::Expr> windows_character_function_value(const SyntaxExpr& source,Type expected=Type::invalid,const std::vector<Type>& hints={}) {
+        std::string_view unit;
+        if (source.kind==SyntaxExprKind::name) {
+            if (lookup(source.token) || routine_names_.contains(source.token.text)) return {};
+        } else if (source.kind==SyntaxExprKind::field && source.left && source.left->kind==SyntaxExprKind::name) {
+            unit=source.left->token.text;
+            if (lookup(source.left->token) || unit!="pabcsystem") return {};
+        } else return {};
+        const auto context=callable_type(expected) ? std::optional<TypeInfo>{info(expected,source.token.location)} : std::nullopt;
+        const auto catalog=stdlib::signatures();
+        for (std::size_t id=0;id<catalog.size();++id) {
+            const auto& signature=catalog[id];
+            if (signature.name!=source.token.text || (signature.function!=stdlib::Function::windows_character && signature.function!=stdlib::Function::windows_ordinal)) continue;
+            if (context) {
+                if (context->element!=signature.result || context->parameters.size()!=1 || context->parameters[0].by_reference
+                    || context->parameters[0].variadic || context->parameters[0].type!=signature.parameters[0]) return {};
+            } else if (!hints.empty() && hints.front()!=signature.parameters[0]) return {};
+            auto found=windows_character_routines_.find(id);
+            if (found==windows_character_routines_.end()) {
+                if (module_.routines.size()>=256) throw Error("E_LIMIT",source.token.location,"Routine limit exceeded");
+                hir::RoutineBody body;body.signature.name="$windows_character_"+std::to_string(id);body.signature.result=signature.result;
+                auto local=[&](std::string name,Type type) {
+                    const auto n=module_.locals.size();module_.locals.push_back({std::move(name),type,false});body.signature.locals.push_back(n);lambda_locals_.insert(n);return n;
+                };
+                const auto argument=local("$argument",signature.parameters[0]);body.signature.parameters.push_back({argument,signature.parameters[0]});
+                body.signature.result_local=local("$result",signature.result);
+                auto call=std::make_unique<hir::Expr>();call->kind=hir::ExprKind::call;call->type=signature.result;call->local=id;call->location=source.token.location;
+                auto value=std::make_unique<hir::Expr>();value->kind=hir::ExprKind::local;value->type=signature.parameters[0];value->local=argument;value->location=source.token.location;call->arguments.push_back(std::move(value));
+                body.body.kind=hir::StmtKind::return_stmt;body.body.location=source.token.location;body.body.expression=std::move(call);
+                const auto routine=module_.routines.size();module_.routines.push_back(std::move(body));found=windows_character_routines_.emplace(id,routine).first;
+            }
+            return routine_value(found->second,source.token.location,expected);
+        }
+        return {};
+    }
     Type sequence_type(CompoundKind kind, Type element, unsigned rank = 1) {
         for (std::size_t i = 0; i < module_.types.size(); ++i)
             if (module_.types[i].kind == kind && module_.types[i].element == element && module_.types[i].rank==rank) return static_cast<Type>(64+i);
@@ -1641,6 +1676,8 @@ private:
                 return routine_value(id,source.token.location,expected);
             }
         }
+        if (callable_type(expected) || source.kind==SyntaxExprKind::field)
+            if (auto value=windows_character_function_value(source,expected)) return value;
         auto result = std::make_unique<hir::Expr>();
         result->location = source.token.location;
         result->operation = source.token.text;
@@ -2295,6 +2332,8 @@ private:
                 if (!no_arguments || signature.result==Type::unit) return routine_value(id,result->location);
                 SyntaxExpr call{SyntaxExprKind::call,source.token,{},{},1,{},{}};
                 return expression(call);
+            } else if (auto windows_value=windows_character_function_value(source)) {
+                return windows_value;
             } else if (source.token.text=="printdelimdefault") {
                 result->kind=hir::ExprKind::local; result->type=Type::string; result->local=print_delimiter();
             } else if (source.token.text=="print" || source.token.text=="println") {
@@ -2799,6 +2838,7 @@ private:
             const auto& signature=module_.routines[*callback.named].signature;
             callback.signature.result=signature.result; callback.signature.parameters=signature.parameters; return callback;
         }
+        if (auto value=windows_character_function_value(source,Type::invalid,hints)) return library_callback_value(std::move(value));
         if (source.kind==SyntaxExprKind::name && !lookup(source.token))
             throw Error("E_TYPE",source.token.location,"Library callback requires a function value with known types");
         return library_callback_value(expression(source));
@@ -3831,6 +3871,8 @@ private:
             }
             if (compatible) for (auto& arg:result.arguments) arg=convert(std::move(arg),context);
         }
+        if ((name=="chrwindows" || name=="chransi") && (unit.empty() || unit=="pabcsystem") && result.arguments.size()==1)
+            result.arguments[0]=convert(std::move(result.arguments[0]),Type::byte);
         const auto catalog=stdlib::signatures(); std::vector<std::size_t> candidates; bool known=false;
         for (std::size_t i=0;i<catalog.size();++i) {
             const auto& signature=catalog[i];
@@ -4223,6 +4265,7 @@ private:
     std::map<std::string,std::size_t> routine_names_;
     std::map<Type,std::map<std::string,std::size_t>> class_methods_;
     std::map<Type,std::size_t> class_constructors_;
+    std::map<std::size_t,std::size_t> windows_character_routines_;
     struct ClassProperty { Type type;std::optional<std::size_t> getter,setter; };
     std::map<Type,std::map<std::string,ClassProperty>> class_properties_;
     Type current_owner_=Type::invalid;

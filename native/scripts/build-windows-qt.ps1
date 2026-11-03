@@ -77,6 +77,7 @@ Sleep, Milliseconds и MillisecondsDelta: examples/timing.pas.
 Начальные значения полей: examples/class-field-initializers.pas.
 Короткие тела функций и методов: examples/short-class-bodies.pas.
 Текстовые файлы с BOM читаются как UTF-8, UTF-16LE/BE или UTF-32LE/BE.
+Символы CP1251 и ANSI-алиасы: examples/windows-characters.pas.
 Прямой захват управляющей переменной цикла пока не перенесён; используйте отдельную переменную-копию.
 Совместимость с PascalABC.NET частичная.
 Русские имена и НОД/НОК: examples/russian-identifiers.pas. Массивные GCD/LCM: examples/school-folds.pas.
