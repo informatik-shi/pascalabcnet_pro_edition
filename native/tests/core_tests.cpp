@@ -70,6 +70,34 @@ void runtime_error(std::string_view source, std::string_view code) {
     error([&] { (void)run(source); }, code,source);
 }
 
+void native_class_constructors_language() {
+    result("type C=class n:integer;constructor Create(value:integer);begin n:=value;end;end;begin var c:=new C(7);Writeln(c.n);end.","7\n");
+    result("type C=class n:integer;constructor(value:integer:=3);begin n:=value;end;end;begin Writeln(new C().n,' ',new C.n,' ',new C(7).n);end.","3 3 7\n");
+    result("type C=class n:integer;constructor;begin n:=5;end;end;begin var c:=new C;Writeln(c.n);var a:=new C[2];Writeln(a[0]=nil,' ',default(C)=nil);end.","5\nTrue True\n");
+    result("type C=class n:integer;property Value:integer read n write n;constructor(value:integer);begin Self.Value:=value;end;function Get:integer;begin Result:=Value;end;end;begin Writeln(new C(7).Get());end.","7\n");
+    result("type C=class n:integer;constructor(var value:integer);begin Inc(value);n:=value;end;end;begin var n:=4;var c:=new C(n);Writeln(c.n,' ',n);end.","5 5\n");
+    result("type C=class n:integer;constructor(params values:array of integer);begin n:=values.Sum;end;end;begin Writeln(new C().n,' ',new C(1,2,3).n,' ',new C(Arr(4,5)).n);end.","0 6 9\n");
+    result("type C=class n:integer;constructor(value:integer);begin n:=value;if value=1 then Exit;n:=value*2;end;end;begin Writeln(new C(1).n,' ',new C(2).n);end.","1 4\n");
+    result("type N=class next:N;n:integer;constructor(value:integer);begin n:=value;if value>0 then next:=new N(value-1);end;end;begin var n:=new N(2);Writeln(n.n,' ',n.next.n,' ',n.next.next.n,' ',n.next.next.next=nil);end.","2 1 0 True\n");
+    result("type C=class f:integer->integer;n:integer;constructor(value:integer);begin n:=value;f:=x->x+n;end;end;begin var c:=new C(3);Writeln(c.f(4));end.","7\n");
+    result("type C=class s:string;a:array of integer;constructor;begin Writeln(s=nil,' ',a=nil);end;end;begin var c:=new C;end.","True True\n");
+    result("type C=class n:integer;constructor(a,b:integer);begin Write('C');n:=a+b;end;end;function A:integer;begin Write('A');Result:=2;end;function B:integer;begin Write('B');Result:=3;end;begin var c:=new C(A(),B());Writeln(' ',c.n);end.","ABC 5\n");
+    {
+        const auto p=abc::compile("type C=class n:integer;constructor(value:integer);begin Write('BODY');n:=value;end;end;function Arg:integer;begin Write('ARG');Result:=7;end;begin var c:=new C(Arg());end.");std::istringstream in;std::ostringstream out;abc::ExecutionOptions limits;limits.allocation_limit=3;
+        error([&]{abc::execute(p,in,out,limits);},"E_LIMIT");require(out.str()=="ARG","Constructor argument side effects precede object allocation and allocation failure precedes its body");
+    }
+    runtime_error("type C=class constructor(n:integer);begin Assert(False);end;end;begin var c:=new C(1);end.","E_ASSERT");
+    runtime_error("type N=class next:N;constructor;begin next:=Self;Assert(False);end;end;begin var n:=new N;end.","E_ASSERT");
+    for(const auto source:{"type C=class constructor(n:integer);begin end;end;begin var c:=new C('abc');end.","type C=class constructor(n:integer);begin end;end;begin var c:=new C;end.","type C=class constructor Build;begin end;end;begin end.","type C=class constructor;begin Exit(1);end;end;begin end."})compile_error(source,"E_TYPE");
+    compile_error("type C=class constructor;begin end;constructor(n:integer);begin end;end;begin end.","E_DUPLICATE");
+    compile_error("type C=class constructor;begin end;end;begin var c:=new C;c.Create();end.","E_UNSUPPORTED");
+    abc::ExecutionOptions options;options.call_limit=2;error([&]{(void)run("type N=class next:N;constructor;begin next:=new N;end;end;begin var n:=new N;end.","",options);},"E_LIMIT");
+    auto p=abc::compile("type C=class n:integer;constructor(value:integer);begin n:=value;end;end;begin var c:=new C(7);end.");const auto ctor=std::find_if(p.routines.begin(),p.routines.end(),[](const auto& r){return r.constructor;});require(ctor!=p.routines.end() && ctor->result==abc::Type::unit && ctor->owner==ctor->parameters[0].type,"Constructor body has a closed receiver and unit signature, with a dedicated object-producing call");
+    for(int kind=0;kind<4;++kind){auto bad=p;for(auto& op:bad.code)if(op.op==abc::Op::construct_user){if(kind==0)op.type=abc::Type::integer;if(kind==1)op.operand=bad.routines.size();if(kind==2){op.op=abc::Op::call_user;op.type=abc::Type::unit;}if(kind==3){op.op=abc::Op::make_default;op.operand=1;}}error([&]{abc::verify(bad);},"E_BYTECODE");}
+    const auto id=static_cast<std::size_t>(ctor-p.routines.begin());for(int kind=0;kind<2;++kind){auto bad=p;if(kind==0)bad.routines[id].constructor=false;else bad.routines[id].owner=abc::Type::invalid;error([&]{abc::verify(bad);},"E_BYTECODE");}
+    p=abc::compile("type C=class constructor(n:integer);begin end;end;P=procedure(c:C;n:integer);procedure F(c:C;n:integer);begin end;begin var f:P:=F;end.");const auto ci=std::find_if(p.routines.begin(),p.routines.end(),[](const auto& r){return r.constructor;})-p.routines.begin();for(auto& op:p.code)if(op.op==abc::Op::routine_value)op.operand=static_cast<std::size_t>(ci);error([&]{abc::verify(p);},"E_BYTECODE");
+}
+
 void native_class_properties_language() {
     result("type C=class n:integer;property Value:integer read n write n;end;begin var c:=new C;c.Value:=7;Writeln(c.Value,' ',c.n);end.","7 7\n");
     result("type C=class n,calls:integer;property Value:integer read Get write SetN;function Get:integer;begin Inc(calls);Result:=n;end;procedure SetN(value:integer);begin n:=value*2;end;end;begin var c:=new C;c.Value:=3;Writeln(c.Value,' ',c.Value,' ',c.calls);end.","6 6 2\n");
@@ -5608,6 +5636,7 @@ int main() {
     native_class_fields_language();
     native_class_methods_language();
     native_class_properties_language();
+    native_class_constructors_language();
     escaped_identifiers_language();
     structural_output();
     try_console_read();

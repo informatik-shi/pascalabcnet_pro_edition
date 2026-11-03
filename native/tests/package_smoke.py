@@ -202,6 +202,7 @@ def main():
                 ("sequence-prefixes.pas", "Начало: [1,2]\nОстаток: [3,1]\nПосле двух: [7,6]\n"),
                 ("callable-values.pas", "Значение: 14\nЧерез массив: 18\nЧерез параметр: 22\nПустое значение: True\n"),
                 ("library-callables.pas", "Сохранённая функция: [2,4,6]\nОтбор: [1,2]\nСуммы пар: [11,22]\nРезультат для True, True: True\n"),
+                ("class-constructors.pas", "Конструктор: Анна 18\nПараметры: Иван 25\n"),
                 ("class-properties.pas", "Свойство: 7\nЧерез метод: 14\n"),
                 ("class-methods.pas", "Значение: 5\nОбщая ссылка: 6\n"),
                 ("class-fields.pas", "Связанные объекты: 9 7\nОбщая ссылка: 11\n11 9 \n"),
@@ -616,6 +617,18 @@ def main():
                                      capture_output=True, cwd=folder, env=env, timeout=10)
             if invalid.returncode != 1 or invalid.stdout or "E_TYPE" not in invalid.stderr or "RU:" not in invalid.stderr:
                 raise RuntimeError(f"{name} array equality element type was not rejected before output")
+            constructor_error = folder / "Конструктор класса.pas"
+            constructor_error.write_text("type C=class constructor;\nbegin Assert(False);end;end;begin var c:=new C;end.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(constructor_error)], text=True, encoding="utf-8",
+                                     capture_output=True, cwd=folder, env=env, timeout=10)
+            if (invalid.returncode != 1 or "E_ASSERT" not in invalid.stderr
+                    or "EN:" not in invalid.stderr or "RU:" not in invalid.stderr or f"{constructor_error}:2:" not in invalid.stderr):
+                raise RuntimeError(f"{name} bilingual constructor body error failed: {invalid.stderr!r}")
+            constructor_error.write_text("type C=class constructor(n:integer);begin end;end;begin Writeln('must never run');var c:=new C('abc');end.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(constructor_error)], text=True, encoding="utf-8",
+                                     capture_output=True, cwd=folder, env=env, timeout=10)
+            if invalid.returncode != 1 or invalid.stdout or "E_TYPE" not in invalid.stderr or "RU:" not in invalid.stderr:
+                raise RuntimeError(f"{name} constructor parameter type was not checked before output")
             property_error = folder / "Свойство класса.pas"
             property_error.write_text("type C=class n:integer;property P:integer read n;end;begin Writeln('must never run');var c:=new C;c.P:=1;end.", encoding="utf-8")
             invalid = subprocess.run([runner, "run", str(property_error)], text=True, encoding="utf-8",
@@ -1022,6 +1035,7 @@ def main():
             results[-1]["native_class_fields_and_reference_cycles"] = "passed"
             results[-1]["native_instance_methods_and_receiver_diagnostics"] = "passed"
             results[-1]["native_class_properties_and_accessor_diagnostics"] = "passed"
+            results[-1]["native_class_constructors_and_body_diagnostics"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 

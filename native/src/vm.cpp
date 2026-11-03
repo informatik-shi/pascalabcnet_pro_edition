@@ -1271,10 +1271,17 @@ static void execute_impl(const Program& program, std::istream& input, std::ostre
             stack.erase(stack.begin()+static_cast<std::ptrdiff_t>(position));
             enter_routine(values.callable_target(callable),instruction.location,callable->captures); break;
         }
+        case Op::construct_user: {
+            const auto count=program.routines[instruction.operand].parameters.size()-1;
+            auto self=values.zero(instruction.type,true);
+            stack.insert(stack.end()-static_cast<std::ptrdiff_t>(count),std::move(self));
+            enter_routine(instruction.operand,instruction.location);break;
+        }
         case Op::call_user: enter_routine(instruction.operand,instruction.location); break;
         case Op::return_user: {
             std::optional<Value> result;
-            if (frame.routine->result != Type::unit) result = values.copy(frame.locals[frame.routine->result_local]->value);
+            if (frame.routine->constructor) result=frame.locals[frame.routine->parameters.front().local]->value;
+            else if (frame.routine->result != Type::unit) result = values.copy(frame.locals[frame.routine->result_local]->value);
             stack.resize(frame.base); frames.pop_back();
             if (result) stack.push_back(std::move(*result)); break;
         }

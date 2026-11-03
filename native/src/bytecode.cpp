@@ -344,6 +344,13 @@ private:
             }
             emit(Op::call_value,node.left->type,0,node.location); break;
         }
+        case hir::ExprKind::class_construct: {
+            const auto& signature=program_.routines[node.local];
+            for (std::size_t i=0;i<node.arguments.size();++i) {
+                if (signature.parameters[i+1].by_reference) reference(*node.arguments[i]);else expression(*node.arguments[i]);
+            }
+            emit(Op::construct_user,node.type,node.local,node.location);break;
+        }
         case hir::ExprKind::property_access:
             if (!node.getter) throw Error("E_TYPE",node.location,"Property is write-only");
             expression(*node.left);emit(Op::call_user,node.type,*node.getter,node.location);break;
@@ -979,6 +986,9 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if (instruction.op==Op::sequence_sort && (!scalar(type_info(program,type).element) || type_info(program,type).rank!=1 || instruction.operand>1)) invalid(instruction,"Invalid sort"); break;
         case Op::make_default: case Op::store_ref: case Op::drop:
             if (!valid_value_type(program,type) || (instruction.op==Op::make_default && instruction.operand>2)) invalid(instruction,"Invalid value type");
+            if (instruction.op==Op::make_default && instruction.operand==1 && compound(type) && type_info(program,type).kind==CompoundKind::object_class
+                && std::any_of(program.routines.begin(),program.routines.end(),[type](const auto& candidate){return candidate.constructor && candidate.owner==type;}))
+                invalid(instruction,"Class constructor cannot be bypassed");
             if (instruction.op==Op::make_default && instruction.operand==1 && compound(type) && (node_kind(type_info(program,type).kind) || type_info(program,type).kind==CompoundKind::tuple || type_info(program,type).kind==CompoundKind::sequence || type_info(program,type).kind==CompoundKind::callable || school_ip_kind(type_info(program,type).kind)))
                 invalid(instruction,"Nodes and tuples require the typed constructor");
             break;
@@ -991,8 +1001,15 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         case Op::call_value:
             if (!compound(type) || type_info(program,type).kind!=CompoundKind::callable || instruction.operand) invalid(instruction,"Invalid callable invocation metadata");
             break;
+        case Op::construct_user:
+            if (instruction.operand>=program.routines.size() || !compound(type) || !valid_value_type(program,type)
+                || type_info(program,type).kind!=CompoundKind::object_class || !program.routines[instruction.operand].constructor
+                || program.routines[instruction.operand].owner!=type || program.routines[instruction.operand].result!=Type::unit
+                || program.routines[instruction.operand].parameters.empty() || !program.routines[instruction.operand].captures.empty())
+                invalid(instruction,"Invalid class constructor target");
+            break;
         case Op::call_user:
-            if (instruction.operand >= program.routines.size() || type != program.routines[instruction.operand].result
+            if (instruction.operand >= program.routines.size() || program.routines[instruction.operand].constructor || type != program.routines[instruction.operand].result
                 || !program.routines[instruction.operand].captures.empty()) invalid(instruction,"Invalid user call");
             break;
         case Op::return_user:
@@ -1412,6 +1429,11 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if (signature.element!=Type::unit) stack.push_back(signature.element);
             break;
         }
+        case Op::construct_user: {
+            const auto& parameters=program.routines[instruction.operand].parameters;
+            for (auto i=parameters.size();i>1;--i) require(parameters[i-1].by_reference ? reference_type(parameters[i-1].type) : parameters[i-1].type);
+            stack.push_back(instruction.type);break;
+        }
         case Op::call_user:
             for (auto parameter = program.routines[instruction.operand].parameters.rbegin(); parameter != program.routines[instruction.operand].parameters.rend(); ++parameter)
                 require(parameter->by_reference ? reference_type(parameter->type) : parameter->type);
@@ -1546,6 +1568,8 @@ void verify(const Program& program) {
         instructions+=routine.code.size();
         if (instructions>1'000'000) throw Error("E_BYTECODE",{},"Module instruction limit exceeded");
         if (routine.parameters.size() > 16 || (routine.result != Type::unit && !valid_value_type(program,routine.result))) throw Error("E_BYTECODE",{},"Invalid routine signature");
+        if (routine.constructor && (routine.owner==Type::invalid || routine.result!=Type::unit || !routine.captures.empty()))
+            throw Error("E_BYTECODE",{},"Invalid class constructor signature");
         if (routine.owner!=Type::invalid && (!compound(routine.owner) || !valid_value_type(program,routine.owner)
             || type_info(program,routine.owner).kind!=CompoundKind::object_class || routine.parameters.empty()
             || routine.parameters.front().type!=routine.owner || routine.parameters.front().by_reference || routine.parameters.front().variadic))

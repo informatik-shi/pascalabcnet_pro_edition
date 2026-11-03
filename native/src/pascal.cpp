@@ -238,6 +238,7 @@ struct SyntaxRoutine {
     SyntaxStmt body;
     bool expression_body=false, procedure_lambda=false, function_lambda=false;
     std::string owner{};
+    bool constructor=false;
 };
 
 bool reserved(std::string_view text) {
@@ -366,7 +367,7 @@ private:
             if (object && is(";")) throw Error("E_UNSUPPORTED",current_.location,"Forward class declarations are not ported yet");
             while (!is("end")) {
                 if (object && accept("public")) continue;
-                if (object && (is("function") || is("procedure"))) { result->methods.push_back(routine());continue; }
+                if (object && (is("function") || is("procedure") || is("constructor"))) { result->methods.push_back(routine());continue; }
                 if (object && accept("property")) {
                     auto property=std::make_shared<SyntaxProperty>();property->name=name();
                     if (is("[")) throw Error("E_UNSUPPORTED",current_.location,"Indexed properties are not ported yet");
@@ -382,8 +383,8 @@ private:
                     if (result->properties.size()>=256) throw Error("E_LIMIT",property->name.location,"Class property limit exceeded");
                     result->properties.push_back(std::move(property));continue;
                 }
-                if (object && (is("private") || is("protected") || is("internal") || is("constructor") || is("destructor") || is("class") || is("var")))
-                    throw Error("E_UNSUPPORTED",current_.location,"Class constructors and nonpublic members are not ported yet");
+                if (object && (is("private") || is("protected") || is("internal") || is("destructor") || is("class") || is("var")))
+                    throw Error("E_UNSUPPORTED",current_.location,"Class destructors, nonpublic and static members are not ported yet");
                 std::vector<Token> fields{name()}; while (accept(",")) fields.push_back(name());
                 expect(":"); auto type = type_syntax();
                 for (const auto& field : fields) result->fields.emplace_back(field,type);
@@ -434,8 +435,11 @@ private:
         return result;
     }
     std::shared_ptr<SyntaxRoutine> routine() {
-        const bool function = accept("function"); if (!function) expect("procedure");
-        auto result = std::make_shared<SyntaxRoutine>(); result->name = name();
+        const auto token=current_;const bool constructor=accept("constructor");
+        const bool function=!constructor && accept("function");if (!constructor && !function) expect("procedure");
+        auto result=std::make_shared<SyntaxRoutine>();result->constructor=constructor;
+        result->name=constructor && (is("(") || is(";")) ? Token{TokenKind::name,"create",token.location} : name();
+        if (constructor && result->name.text!="create") throw Error("E_TYPE",result->name.location,"Class constructor must be named Create");
         if (accept("(")) {
             if (!is(")")) do {
                 const bool by_reference = accept("var") || accept("out");
@@ -919,12 +923,13 @@ public:
             if (routine_names_.contains(qualified) || (routine->owner.empty() && lookup(routine->name))) throw Error("E_DUPLICATE",routine->name.location,"Duplicate routine");
             if (module_.routines.size()>=256) throw Error("E_LIMIT",routine->name.location,"Routine limit exceeded");
             hir::RoutineBody body;
-            body.signature.name=qualified;
+            body.signature.name=qualified;body.signature.constructor=routine->constructor;
             if (!routine->owner.empty()) {
                 body.signature.owner=aliases_.at(routine->owner);
                 for (const auto& field:info(body.signature.owner,routine->name.location).fields) if (field.name==routine->name.text)
                     throw Error("E_DUPLICATE",routine->name.location,"Class method conflicts with a field");
-                class_methods_[body.signature.owner][routine->name.text]=module_.routines.size();
+                if (routine->constructor) class_constructors_[body.signature.owner]=module_.routines.size();
+                else class_methods_[body.signature.owner][routine->name.text]=module_.routines.size();
             }
             body.signature.result = routine->result ? resolve_type(*routine->result) : Type::unit;
             for (std::size_t n=0;n<routine->parameters.size();++n) {
@@ -1023,7 +1028,7 @@ private:
             const auto owner=aliases_.at(name.text);
             for (const auto& property:syntax->properties) {
                 const auto& fields=info(owner,property->name.location).fields;
-                if (class_properties_[owner].contains(property->name.text)
+                if ((property->name.text=="create" && class_constructors_.contains(owner)) || class_properties_[owner].contains(property->name.text)
                     || (class_methods_.contains(owner) && class_methods_.at(owner).contains(property->name.text))
                     || std::any_of(fields.begin(),fields.end(),[wanted=property->name.text](const auto& field){return field.name==wanted;}))
                     throw Error("E_DUPLICATE",property->name.location,"Duplicate class property or member name");
@@ -1480,6 +1485,7 @@ private:
             }
             return result;
         }
+        if (source.token.text=="create" && class_constructors_.contains(receiver)) throw Error("E_UNSUPPORTED",result->location,"Constructors require new ClassName(...)");
         const auto methods=class_methods_.find(receiver);
         if (methods==class_methods_.end() || !methods->second.contains(source.token.text))
             throw Error("E_NAME",result->location,"Unknown class member '"+source.token.text+"'");
@@ -1521,7 +1527,8 @@ private:
         const bool field=std::any_of(fields.begin(),fields.end(),[&](const auto& item){return item.name==source.token.text;});
         const auto properties=class_properties_.find(current_owner_);
         const bool property=properties!=class_properties_.end() && properties->second.contains(source.token.text);
-        if (!method && !field && !property) return {};
+        const bool constructor=source.token.text=="create" && class_constructors_.contains(current_owner_);
+        if (!method && !field && !property && !constructor) return {};
         if (const auto local=lookup(source.token);local && !module_.locals[*local].global
             && !(method && source.kind==SyntaxExprKind::call && module_.locals[*local].name=="result")) return {};
         auto result=std::make_unique<hir::Expr>();result->location=source.token.location;
@@ -1650,8 +1657,9 @@ private:
                     for (std::size_t i=0;i<parameters.size();++i) result->arguments.push_back(convert(expression(*source.arguments[i],parameters[i]),parameters[i]));
                     break;
                 }
+                if (info(type,result->location).kind==CompoundKind::object_class && class_constructors_.contains(type)) { bind_class_constructor(*result,source,type);break; }
                 if (info(type,result->location).kind==CompoundKind::object_class && !source.arguments.empty())
-                    throw Error("E_TYPE",result->location,"Class constructor takes no arguments in this profile");
+                    throw Error("E_TYPE",result->location,"Class has no declared constructor with arguments");
                 if (info(type,result->location).kind==CompoundKind::list && !source.arguments.empty()) {
                     if (source.arguments.size()!=1) throw Error("E_TYPE",result->location,"List constructor requires zero or one argument");
                     auto argument=expression(*source.arguments[0]);
@@ -2541,6 +2549,28 @@ private:
         }
         for (auto& argument:result.arguments) argument=convert(std::move(argument),element);
         result.kind=hir::ExprKind::array_literal; result.type=sequence_type(CompoundKind::array,element);
+    }
+    void bind_class_constructor(hir::Expr& result,const SyntaxExpr& source,Type owner) {
+        const auto id=class_constructors_.at(owner);const auto signature=module_.routines[id].signature;
+        result.kind=hir::ExprKind::class_construct;result.type=owner;result.local=id;
+        auto self=std::make_unique<hir::Expr>();self->kind=hir::ExprKind::default_value;self->type=owner;self->location=result.location;
+        result.arguments.push_back(std::move(self));
+        for (std::size_t i=0;i<source.arguments.size();++i) {
+            auto context=i+1<signature.parameters.size() ? signature.parameters[i+1].type : Type::invalid;
+            if (signature.parameters.back().variadic && i+2>=signature.parameters.size())
+                context=info(signature.parameters.back().type,result.location).element;
+            result.arguments.push_back(expression(*source.arguments[i],context));
+        }
+        add_default_arguments(result,id);
+        for (std::size_t i=1;i<result.arguments.size();++i) {
+            const auto& parameter=signature.parameters[i];
+            if (parameter.by_reference) {
+                if (!lvalue(*result.arguments[i]) || result.arguments[i]->type!=parameter.type)
+                    throw Error("E_TYPE",result.location,"var argument requires an assignable value of exactly the parameter type");
+            } else result.arguments[i]=convert(std::move(result.arguments[i]),parameter.type);
+        }
+        // Self is allocated by construct_user only after all explicit/default arguments.
+        result.arguments.erase(result.arguments.begin());
     }
     std::unique_ptr<hir::Expr> explicit_factory(const SyntaxExpr& source) {
         const bool qualified=source.kind==SyntaxExprKind::member_call;
@@ -4103,6 +4133,7 @@ private:
     std::map<const SyntaxType*,Type> resolved_types_;
     std::map<std::string,std::size_t> routine_names_;
     std::map<Type,std::map<std::string,std::size_t>> class_methods_;
+    std::map<Type,std::size_t> class_constructors_;
     struct ClassProperty { Type type;std::optional<std::size_t> getter,setter; };
     std::map<Type,std::map<std::string,ClassProperty>> class_properties_;
     Type current_owner_=Type::invalid;

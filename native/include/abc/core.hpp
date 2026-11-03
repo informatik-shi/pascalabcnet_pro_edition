@@ -249,7 +249,7 @@ enum class Op {
     read_lines, write_lines, array_copy, array_high, sequence_sort, sequence_fill, mutate_string, increment, read_value,
     endpoint_call, buffer_call, association_call, linked_call, file_print, file_newline, file_read, file_skip_line, file_output,
     iteration_version, iteration_check, set_character, random_array, fill_random_array, sequence_mutate, swap_values, write_array,
-    bit_not, bit_and, bit_or, bit_xor, shift_left, shift_right, read_console, read_array, console_output, array_query, write_matrix, object_text, print_output, try_read, convert_string, try_parse, val, string_read, string_array, school_list, replace_last, replace_many, school_fold, tuple_literal, school_pair, school_minmax, school_table_print, school_table_new, school_ip, sequence_begin, sequence_count, sequence_array, sequence_wrap, swap_substrings, sequence_list, sequence_query, sequence_snapshot, sequence_repeat, sequence_range, sequence_resume, sequence_partition, sequence_aggregate, sequence_partial, sequence_slice, sequence_concat, sequence_equal, sequence_default, sequence_select, sequence_where, sequence_predicate, sequence_flatmap, sequence_zip, sequence_takewhile, sequence_skipwhile, routine_value, call_value, sequence_select_value, sequence_where_value, sequence_flatmap_value, sequence_takewhile_value, sequence_skipwhile_value, sequence_predicate_value, sequence_zip_value, fresh_local, generator, sequence_cartesian, sequence_cartesian_value, cartesian_power, combinations, permutations, partial_permutations, next_permutation, array_view, matrix_operation, array_operation, collection_operation, matrix_build, list_operation, list_bulk, list_capacity, list_copy, sequence_join
+    bit_not, bit_and, bit_or, bit_xor, shift_left, shift_right, read_console, read_array, console_output, array_query, write_matrix, object_text, print_output, try_read, convert_string, try_parse, val, string_read, string_array, school_list, replace_last, replace_many, school_fold, tuple_literal, school_pair, school_minmax, school_table_print, school_table_new, school_ip, sequence_begin, sequence_count, sequence_array, sequence_wrap, swap_substrings, sequence_list, sequence_query, sequence_snapshot, sequence_repeat, sequence_range, sequence_resume, sequence_partition, sequence_aggregate, sequence_partial, sequence_slice, sequence_concat, sequence_equal, sequence_default, sequence_select, sequence_where, sequence_predicate, sequence_flatmap, sequence_zip, sequence_takewhile, sequence_skipwhile, routine_value, call_value, sequence_select_value, sequence_where_value, sequence_flatmap_value, sequence_takewhile_value, sequence_skipwhile_value, sequence_predicate_value, sequence_zip_value, fresh_local, generator, sequence_cartesian, sequence_cartesian_value, cartesian_power, combinations, permutations, partial_permutations, next_permutation, array_view, matrix_operation, array_operation, collection_operation, matrix_build, list_operation, list_bulk, list_capacity, list_copy, construct_user, sequence_join
 };
 
 enum class SequenceQuery { any, first, last, first_default, last_default, element, element_default, contains, single, single_default };
@@ -439,10 +439,11 @@ struct Routine {
     std::vector<Instruction> code;
     std::vector<std::size_t> captures{};
     Type owner=Type::invalid; // Closed receiver type for native instance method bodies.
+    bool constructor=false;
 };
 
 inline bool callable_matches(const TypeInfo& type, const Routine& routine) {
-    if (type.kind!=CompoundKind::callable || type.element!=routine.result || type.parameters.size()!=routine.parameters.size()) return false;
+    if (routine.constructor || type.kind!=CompoundKind::callable || type.element!=routine.result || type.parameters.size()!=routine.parameters.size()) return false;
     for (std::size_t n=0;n<type.parameters.size();++n)
         if (type.parameters[n].type!=routine.parameters[n].type || type.parameters[n].by_reference!=routine.parameters[n].by_reference) return false;
     return true;
