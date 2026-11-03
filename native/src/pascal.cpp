@@ -45,6 +45,7 @@ public:
         skip();
         const auto start = position_;
         if (peek() == '\0' && position_.offset == source_.size()) return {TokenKind::eof, "", start};
+        if (peek()=='&' && peek(1)=='<') { take();return {TokenKind::symbol,"&",start}; }
         const bool escaped=peek()=='&';
         if (escaped) {
             take();
@@ -187,6 +188,7 @@ struct SyntaxExpr {
     bool initialized_array = false;
     std::vector<std::unique_ptr<SyntaxExpr>> initializers{};
     std::shared_ptr<SyntaxRoutine> lambda{};
+    std::vector<std::shared_ptr<SyntaxType>> type_arguments{};
 };
 
 std::unique_ptr<SyntaxExpr> make_expression(SyntaxExprKind kind, Token token,
@@ -760,7 +762,17 @@ private:
     }
     std::unique_ptr<SyntaxExpr> postfix(std::unique_ptr<SyntaxExpr> result) {
         for (;;) {
-            if (accept("[")) {
+            if (accept("&")) {
+                if ((result->kind!=SyntaxExprKind::name && result->kind!=SyntaxExprKind::field) || !result->type_arguments.empty())
+                    fail("Explicit type arguments require a named routine");
+                expect("<");
+                do {
+                    if (result->type_arguments.size()>=64) fail("Explicit type argument limit exceeded");
+                    result->type_arguments.push_back(type_syntax());
+                } while (accept(","));
+                expect(">");
+                if (!is("(")) result->kind=result->kind==SyntaxExprKind::name ? SyntaxExprKind::call : SyntaxExprKind::member_call;
+            } else if (accept("[")) {
                 auto index = expression();
                 const auto token = result->token;
                 result = make_expression(SyntaxExprKind::index, token, std::move(result), std::move(index));
@@ -1328,6 +1340,7 @@ private:
         return routine_value(id,source.token.location,expected);
     }
     std::unique_ptr<hir::Expr> expression(const SyntaxExpr& source,Type expected=Type::invalid) {
+        if (!source.type_arguments.empty()) return explicit_factory(source);
         if (source.kind==SyntaxExprKind::lambda) return bind_lambda(source,expected);
         if (source.kind==SyntaxExprKind::name && source.token.text=="result" && !lambdas_.empty() && (current_result_==Type::invalid || current_result_==Type::unit))
             throw Error("E_TYPE",source.token.location,"Lambda Result requires a known value type");
@@ -2334,6 +2347,36 @@ private:
         }
         for (auto& argument:result.arguments) argument=convert(std::move(argument),element);
         result.kind=hir::ExprKind::array_literal; result.type=sequence_type(CompoundKind::array,element);
+    }
+    std::unique_ptr<hir::Expr> explicit_factory(const SyntaxExpr& source) {
+        const bool qualified=source.kind==SyntaxExprKind::member_call;
+        const auto& name=source.token.text;
+        if ((source.kind!=SyntaxExprKind::call && !qualified) || name!="lst"
+            || (qualified && (!source.left || source.left->kind!=SyntaxExprKind::name || source.left->token.text!="pabcsystem" || lookup(source.left->token)))
+            || (!qualified && (lookup(source.token) || routine_names_.contains(name))))
+            throw Error("E_UNSUPPORTED",source.token.location,"Explicit generic calls are not ported for this routine");
+        if (source.type_arguments.size()!=1) throw Error("E_TYPE",source.token.location,"Lst requires exactly one explicit element type");
+        const auto element=resolve_type(*source.type_arguments[0]);
+        auto result=std::make_unique<hir::Expr>();result->location=source.token.location;
+        for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument,element));
+        std::unique_ptr<hir::Expr> input;
+        if (result->arguments.size()==1) {
+            const auto type=result->arguments[0]->type;
+            bool enumerable=type==Type::nil || (type==Type::string && element==Type::character);
+            if (compound(type)) {
+                const auto source_type=info(type,result->location);
+                enumerable=source_type.rank==1 && source_type.element==element
+                    && (source_type.kind==CompoundKind::array || source_type.kind==CompoundKind::sequence || source_type.kind==CompoundKind::list);
+            }
+            if (enumerable) { input=std::move(result->arguments[0]);result->arguments.clear(); }
+        }
+        if (!input) {
+            input=std::make_unique<hir::Expr>();input->location=result->location;input->kind=hir::ExprKind::array_literal;
+            input->type=sequence_type(CompoundKind::array,element);input->arguments=std::move(result->arguments);
+            for (auto& argument:input->arguments) argument=convert(std::move(argument),element);
+        }
+        result->left=convert(std::move(input),sequence_type(CompoundKind::sequence,element));
+        result->kind=hir::ExprKind::sequence_call;result->local=2;result->type=sequence_type(CompoundKind::list,element);return result;
     }
     bool bind_list_factory(hir::Expr& result,std::string_view name,std::string_view unit={}) {
         if ((name!="lst" && name!="lstint" && name!="lststr") || (!unit.empty() && unit!="pabcsystem")) return false;

@@ -1,3 +1,7 @@
+    {"Explicit type arguments require a named routine","Явные аргументы типа требуют имени подпрограммы"},
+    {"Explicit type argument limit exceeded","Превышен предел числа явных аргументов типа"},
+    {"Explicit generic calls are not ported for this routine","Явные generic-вызовы этой подпрограммы ещё не перенесены"},
+    {"Lst requires exactly one explicit element type","Lst требует ровно один явный тип элемента"},
     {"List factory array element type must match exactly","Тип элементов массива для фабрики List должен совпадать точно"},
     {"List factory single array must have rank one","Единственный массив в фабрике List должен быть одномерным"},
     {"Cannot infer empty Lst element type","Невозможно вывести тип элементов пустого Lst"},

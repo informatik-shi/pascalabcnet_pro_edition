@@ -202,6 +202,7 @@ def main():
                 ("sequence-prefixes.pas", "Начало: [1,2]\nОстаток: [3,1]\nПосле двух: [7,6]\n"),
                 ("callable-values.pas", "Значение: 14\nЧерез массив: 18\nЧерез параметр: 22\nПустое значение: True\n"),
                 ("library-callables.pas", "Сохранённая функция: [2,4,6]\nОтбор: [1,2]\nСуммы пар: [11,22]\nРезультат для True, True: True\n"),
+                ("explicit-list-types.pas", "Пустой типизированный: []\nДобавление: [7]\nФункция: 3\nСимволы: [a,b,c]\nСтрока: [abc]\n"),
                 ("list-factories.pas", "Целые: [1,2,3]\nСтроки: [a,bc,nil]\nПустые: [] []\nКопия массива: [1,2] [9,2]\nВложенный список: [[9,2]]\nКопия последовательности: [9,2]\n"),
                 ("list-capacity.pas", "Пустой список: 0 3\nПосле роста: [1,2,3,4] 6\nПосле сжатия: 4\nИз последовательности: [1,2,3]\n1234\n"),
                 ("timing.pas", "Пауза выполнена: True\nИнтервалы неотрицательны: True True\nСчётчик доступен: True\n"),
@@ -611,6 +612,19 @@ def main():
                                      capture_output=True, cwd=folder, env=env, timeout=10)
             if invalid.returncode != 1 or invalid.stdout or "E_TYPE" not in invalid.stderr or "RU:" not in invalid.stderr:
                 raise RuntimeError(f"{name} array equality element type was not rejected before output")
+            explicit_error = folder / "Явный тип списка.pas"
+            explicit_error.write_text("begin Writeln('must never run');var l:=Lst&<integer>('abc');end.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(explicit_error)], text=True, encoding="utf-8",
+                                     capture_output=True, cwd=folder, env=env, timeout=10)
+            if invalid.returncode != 1 or invalid.stdout or "E_TYPE" not in invalid.stderr or "RU:" not in invalid.stderr:
+                raise RuntimeError(f"{name} explicit List type was not checked before output")
+            explicit_error.write_text("begin Writeln('must never run');var l:=Abs&<integer>(1);end.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(explicit_error)], text=True, encoding="utf-8",
+                                     capture_output=True, cwd=folder, env=env, timeout=10)
+            if (invalid.returncode != 1 or invalid.stdout or "E_UNSUPPORTED" not in invalid.stderr
+                    or "EN: Explicit generic calls are not ported for this routine" not in invalid.stderr
+                    or "RU: Явные generic-вызовы этой подпрограммы ещё не перенесены" not in invalid.stderr):
+                raise RuntimeError(f"{name} unsupported explicit generic routine was silently accepted")
             capacity_error = folder / "Ёмкость списка.pas"
             capacity_error.write_text("begin\n var l:=Arr(1).ToList;l.Capacity:=0;\nend.", encoding="utf-8")
             invalid = subprocess.run([runner, "run", str(capacity_error)], text=True, encoding="utf-8",
@@ -945,6 +959,7 @@ def main():
             results[-1]["native_timing_sleep_and_bilingual_diagnostics"] = "passed"
             results[-1]["typed_list_capacity_constructors_and_bilingual_diagnostics"] = "passed"
             results[-1]["typed_list_factories_and_source_overloads"] = "passed"
+            results[-1]["explicit_list_type_arguments"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 

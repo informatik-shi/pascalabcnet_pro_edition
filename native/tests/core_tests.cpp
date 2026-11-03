@@ -70,6 +70,25 @@ void runtime_error(std::string_view source, std::string_view code) {
     error([&] { (void)run(source); }, code,source);
 }
 
+void explicit_list_types_language() {
+    result("begin var a:=Lst&<integer>();a.Add(7);Writeln(a,' ',a.Capacity);Writeln(Lst&<string>.Count,' ',PABCSystem.Lst&<byte>().Count);Lst&<byte>.Add(2);end.","[7] 4\n0 0\n");
+    result("begin Writeln(Lst&<real>(1,2.5));Writeln(Lst&<byte>(1,2,3));Writeln(Lst&<string>('a','bc'));Writeln(Lst&<char>('abc'));end.","[1,2.5]\n[1,2,3]\n[a,bc]\n[a,b,c]\n");
+    result("begin var a:=Arr(1,2);var l:=Lst&<integer>(a);l[0]:=9;Writeln(a,' ',l);var c:=Lst&<integer>(l);c[0]:=7;Writeln(l,' ',c);var nested:=Lst&<List<integer>>(l);Writeln(nested.Count,' ',nested[0]=l);end.","[1,2] [9,2]\n[9,2] [7,2]\n1 True\n");
+    result("begin var a:=Arr(1,2);var l:=Lst&<array of integer>(a);Writeln(l.Count,' ',l[0]=a);Writeln(Lst&<integer>(a.AsEnumerable));end.","1 True\n[1,2]\n");
+    result("type R=record n:integer;a:array of integer;end;begin var r:R;r.n:=1;r.a:=Arr(2);var l:=Lst&<R>(r);l[0].n:=9;l[0].a[0]:=7;Writeln(r.n,' ',r.a[0]);var e:=Lst&<R>;Writeln(e.Count);end.","1 7\n0\n");
+    result("type F=integer->integer;begin var l:=Lst&<F>(x->x+1);Writeln(l[0](2));var empty:=Lst&<F>;empty.Add(x->x*2);Writeln(empty[0](3));end.","3\n6\n");
+    result("type &array=integer;begin var l:=Lst&<&array>(1,2);Writeln(l,' ',1<2,' ',2>1);var s:string:=nil;var n:List<integer>:=nil;Writeln(Lst&<string>(s),' ',Lst&<List<integer>>(n));end.","[1,2] True True\n[nil] [nil]\n");
+    result("function Lst:integer;begin Result:=5;end;begin Writeln(Lst,' ',PABCSystem.Lst&<integer>(1,2));end.","5 [1,2]\n");
+    for(const auto source:{"begin var l:=Lst&<integer>(nil);end.","begin var s:string:=nil;var l:=Lst&<char>(s);end.","begin var n:List<integer>:=nil;var l:=Lst&<integer>(n);end.","begin var a:array of integer:=nil;var l:=Lst&<integer>(a);end."})runtime_error(source,"E_NIL");
+    for(const auto source:{"begin var l:=Lst&<integer,string>();end.","begin var l:=Lst&<integer>('abc');end.","begin var l:=Lst&<integer>(Arr(1.5));end.","begin var l:=Lst&<real>(Arr(1,2));end."})compile_error(source,"E_TYPE");
+    for(const auto source:{"begin var l:=Abs&<integer>(1);end.","begin var l:=LstInt&<integer>();end.","function Lst:integer;begin Result:=1;end;begin var l:=Lst&<integer>();end.","begin var PABCSystem:=1;var l:=PABCSystem.Lst&<integer>();end."})compile_error(source,"E_UNSUPPORTED");
+    for(const auto source:{"begin var l:=Lst&<>();end.","begin var l:=Lst&<integer();end.","begin var l:=Lst&<integer>&<integer>();end.","begin var l:=1&<integer>();end."})compile_error(source,"E_SYNTAX");
+    compile_error("begin var l:=Lst&<MissingType>();end.","E_UNSUPPORTED");
+    std::string excessive="begin var l:=Lst&<";for(int i=0;i<65;++i)excessive+=(i ? ",integer" : "integer");excessive+=">();end.";compile_error(excessive,"E_SYNTAX");
+    const auto p=abc::compile("begin var a:=Lst&<byte>();var b:=Lst&<array of integer>();end.");require(abc::type_info(p,p.locals[0].type).element==abc::Type::byte && abc::type_info(p,abc::type_info(p,p.locals[1].type).element).kind==abc::CompoundKind::array,"Explicit factory elements are closed, known byte/array types before execution");
+    abc::ExecutionOptions options;options.allocation_limit=20;error([&]{(void)run("begin var l:=Lst&<integer>(0.Iterate(x->x+1));end.","",options);},"E_LIMIT");
+}
+
 void list_factories_library() {
     result("begin Writeln(Lst(1,2,3),' ',Lst(1,2,3).Capacity);Writeln(LstInt(),' ',LstStr());Writeln(LstInt(word(2),byte(3)));Writeln(LstStr('a','bc',nil));Writeln(PABCSystem.Lst(4,5));end.","[1,2,3] 3\n[] []\n[2,3]\n[a,bc,nil]\n[4,5]\n");
     result("begin var a:=Arr(1,2);var l:=Lst(a);l[0]:=9;Writeln(a,' ',l);var s:=SeqGen(3,i->i+1);Writeln(Lst(s),' ',Lst(s).Capacity);var nested:=Lst(l);Writeln(nested.Count,' ',nested[0]=l);Writeln(Lst(l.AsEnumerable));end.","[1,2] [9,2]\n[1,2,3] 4\n1 True\n[9,2]\n");
@@ -5466,6 +5485,7 @@ int main() {
     timing_library();
     list_capacity_library();
     list_factories_library();
+    explicit_list_types_language();
     escaped_identifiers_language();
     structural_output();
     try_console_read();
