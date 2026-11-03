@@ -1561,6 +1561,7 @@ private:
                 for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
                 if (bind_print(*result,source.token.text,source.left->token.text)) break;
                 if (bind_sequence_conversion(*result,source.token.text,source.left->token.text)) break;
+                if (bind_list_factory(*result,source.token.text,source.left->token.text)) break;
                 if (bind_sequence_factory(*result,source.token.text,source.left->token.text)) break;
                 if (bind_sequence_query(*result,source.token.text,source.left->token.text)) break;
                 if (bind_sequence_numeric(*result,source.token.text,source.left->token.text)) break;
@@ -2058,6 +2059,7 @@ private:
             for (const auto& argument : source.arguments) result->arguments.push_back(expression(*argument));
             if (bind_print(*result,source.token.text)) break;
             if (bind_sequence_conversion(*result,source.token.text)) break;
+            if (bind_list_factory(*result,source.token.text)) break;
             if (bind_sequence_factory(*result,source.token.text)) break;
             if (bind_sequence_query(*result,source.token.text)) break;
             if (bind_sequence_numeric(*result,source.token.text)) break;
@@ -2332,6 +2334,34 @@ private:
         }
         for (auto& argument:result.arguments) argument=convert(std::move(argument),element);
         result.kind=hir::ExprKind::array_literal; result.type=sequence_type(CompoundKind::array,element);
+    }
+    bool bind_list_factory(hir::Expr& result,std::string_view name,std::string_view unit={}) {
+        if ((name!="lst" && name!="lstint" && name!="lststr") || (!unit.empty() && unit!="pabcsystem")) return false;
+        const auto fixed=name=="lstint" ? Type::integer : name=="lststr" ? Type::string : Type::invalid;
+        std::unique_ptr<hir::Expr> input;
+        if (result.arguments.size()==1 && compound(result.arguments[0]->type)) {
+            const auto source=info(result.arguments[0]->type,result.location);
+            if ((source.kind==CompoundKind::array && source.rank==1)
+                || (fixed==Type::invalid && source.kind==CompoundKind::sequence)) {
+                if (fixed!=Type::invalid && source.element!=fixed) throw Error("E_TYPE",result.location,"List factory array element type must match exactly");
+                input=std::move(result.arguments[0]);result.arguments.clear();
+            } else if (source.kind==CompoundKind::array && source.rank!=1)
+                throw Error("E_TYPE",result.location,"List factory single array must have rank one");
+        }
+        if (!input) {
+            auto array=std::make_unique<hir::Expr>();array->location=result.location;array->arguments=std::move(result.arguments);
+            if (fixed==Type::invalid) {
+                if (array->arguments.empty()) throw Error("E_TYPE",result.location,"Cannot infer empty Lst element type");
+                bind_array_literal(*array);
+            } else {
+                array->kind=hir::ExprKind::array_literal;array->type=sequence_type(CompoundKind::array,fixed);
+                for (auto& argument:array->arguments) argument=convert(std::move(argument),fixed);
+            }
+            input=std::move(array);
+        }
+        const auto element=info(input->type,result.location).element;
+        result.left=convert(std::move(input),sequence_type(CompoundKind::sequence,element));
+        result.kind=hir::ExprKind::sequence_call;result.local=2;result.type=sequence_type(CompoundKind::list,element);return true;
     }
     bool bind_sequence_factory(hir::Expr& result,std::string_view name,std::string_view unit={}) {
         if ((name!="seq" && name!="seqfill" && name!="range" && name!="partitionpoints" && name!="linspace") || (!unit.empty() && unit!="pabcsystem")) return false;

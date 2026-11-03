@@ -1,3 +1,6 @@
+    {"List factory array element type must match exactly","Тип элементов массива для фабрики List должен совпадать точно"},
+    {"List factory single array must have rank one","Единственный массив в фабрике List должен быть одномерным"},
+    {"Cannot infer empty Lst element type","Невозможно вывести тип элементов пустого Lst"},
     {"List constructor requires zero or one argument","Конструктор List требует ноль или один аргумент"},
     {"List constructor source element type must match exactly","Тип элементов источника конструктора должен точно совпадать с типом элементов List"},
     {"Wrong List capacity operation arguments","Неверные аргументы операции с ёмкостью List"},

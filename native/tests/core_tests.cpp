@@ -70,6 +70,28 @@ void runtime_error(std::string_view source, std::string_view code) {
     error([&] { (void)run(source); }, code,source);
 }
 
+void list_factories_library() {
+    result("begin Writeln(Lst(1,2,3),' ',Lst(1,2,3).Capacity);Writeln(LstInt(),' ',LstStr());Writeln(LstInt(word(2),byte(3)));Writeln(LstStr('a','bc',nil));Writeln(PABCSystem.Lst(4,5));end.","[1,2,3] 3\n[] []\n[2,3]\n[a,bc,nil]\n[4,5]\n");
+    result("begin var a:=Arr(1,2);var l:=Lst(a);l[0]:=9;Writeln(a,' ',l);var s:=SeqGen(3,i->i+1);Writeln(Lst(s),' ',Lst(s).Capacity);var nested:=Lst(l);Writeln(nested.Count,' ',nested[0]=l);Writeln(Lst(l.AsEnumerable));end.","[1,2] [9,2]\n[1,2,3] 4\n1 True\n[9,2]\n");
+    result("begin Writeln(Lst('abc'),' ',Lst('abc').Count);Writeln(Lst('a'),' ',LstStr('a'));var s:string:=nil;var l:List<integer>:=nil;Writeln(Lst(s),' ',Lst(l));Writeln(LstStr(nil),' ',LstStr(nil).Count);end.","[abc] 1\n[a] [a]\n[nil] [nil]\n[nil] 1\n");
+    result("begin var a:=Arr(1);var b:=Arr(2);var l:=Lst(a,b);l[0][0]:=7;Writeln(a,' ',l);var jagged:=Arr(a,b);var c:=Lst(jagged);Writeln(c.Count,' ',c[0]=a);end.","[7] [[7],[2]]\n2 True\n");
+    result("type R=record n:integer;a:array of integer;end;begin var r:R;r.n:=1;r.a:=Arr(2);var l:=Lst(r);var c:=Lst(Arr(r));l[0].n:=9;c[0].a[0]:=7;Writeln(r.n,' ',r.a[0],' ',c[0].n);end.","1 7 1\n");
+    result("begin Writeln(Lst(1,2.5));Writeln(Lst(nil,'abc',nil));var a:=Arr('a','bc');Writeln(LstStr(a),' ',LstInt(Arr(1,2)));end.","[1,2.5]\n[nil,abc,nil]\n[a,bc] [1,2]\n");
+    result("var order:string;function V(n:integer):integer;begin order:=order+Chr(Ord('0')+n);Result:=n;end;begin Writeln(Lst(V(1),V(2),V(3)),' ',order);end.","[1,2,3] 123\n");
+    result("function Lst(n:integer):integer;begin Result:=n+10;end;begin Writeln(Lst(1),' ',PABCSystem.Lst(1));end.","11 [1]\n");
+    result("begin var f:integer->integer:=x->x+1;var l:=Lst(f);Writeln(l[0](2));var records:=Lst((1,'a'),(2,'b'));Writeln(records);end.","3\n[(1,a),(2,b)]\n");
+    for(const auto source:{"begin var a:array of integer:=nil;var l:=Lst(a);end.","begin var s:sequence of integer:=nil;var l:=Lst(s);end.","begin var a:array of string:=nil;var l:=LstStr(a);end.","begin var a:array of integer:=nil;var l:=LstInt(a);end."})runtime_error(source,"E_NIL");
+    runtime_error("begin var l:=Lst(1,2);foreach var x in l do l[0]:=7;end.","E_MODIFIED");
+    for(const auto source:{"begin var l:=Lst();end.","begin var l:=Lst(nil);end.","begin var l:=LstInt(1.5);end.","begin var l:=LstStr(1);end.","begin var l:=LstInt(Seq(1,2));end.","begin var l:=LstInt(Arr(word(1),word(2)));end.","begin var l:=Lst(new integer[1,1]);end.","begin var l:=Lst(True,1);end."})compile_error(source,"E_TYPE");
+    result("begin var l:=LstInt(Arr(1,2));foreach var x in l do begin l.Capacity:=10;Write(x);end;end.","12");
+    auto p=abc::compile("begin var a:=Lst(1,2);var b:=LstStr();var c:=LstInt();var d:=Lst('abc');var e:=Lst(a);end.");
+    require(abc::type_info(p,p.locals[0].type).element==abc::Type::integer && abc::type_info(p,p.locals[1].type).element==abc::Type::string
+        && abc::type_info(p,p.locals[2].type).element==abc::Type::integer && abc::type_info(p,p.locals[3].type).element==abc::Type::string
+        && abc::type_info(p,p.locals[4].type).element==p.locals[0].type,"Factory overloads have known scalar and nested List element types before execution");
+    abc::ExecutionOptions options;options.allocation_limit=30;error([&]{(void)run("begin var l:=Lst(0.Iterate(x->x+1));end.","",options);},"E_LIMIT");
+    options={};options.instruction_limit=100;error([&]{(void)run("begin var l:=Lst(0.Iterate(x->x+1));end.","",options);},"E_LIMIT");
+}
+
 void list_capacity_library() {
     result("uses School;begin Writeln(FirstPrimes(5).Capacity,' ',Digits(0).Capacity,' ',Digits(0bi).Capacity,' ',Digits(123).Capacity);end.","5 1 1 4\n");
     result("begin var l:=new List<integer>;Writeln(l.Count,' ',l.Capacity);for var i:=1 to 9 do begin l.Add(i);Write(l.Capacity,' ');end;Writeln;end.","0 0\n4 4 4 4 8 8 8 8 16 \n");
@@ -5443,6 +5465,7 @@ int main() {
     sequence_text_and_flatten();
     timing_library();
     list_capacity_library();
+    list_factories_library();
     escaped_identifiers_language();
     structural_output();
     try_console_read();

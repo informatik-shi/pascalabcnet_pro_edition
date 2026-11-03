@@ -202,6 +202,7 @@ def main():
                 ("sequence-prefixes.pas", "Начало: [1,2]\nОстаток: [3,1]\nПосле двух: [7,6]\n"),
                 ("callable-values.pas", "Значение: 14\nЧерез массив: 18\nЧерез параметр: 22\nПустое значение: True\n"),
                 ("library-callables.pas", "Сохранённая функция: [2,4,6]\nОтбор: [1,2]\nСуммы пар: [11,22]\nРезультат для True, True: True\n"),
+                ("list-factories.pas", "Целые: [1,2,3]\nСтроки: [a,bc,nil]\nПустые: [] []\nКопия массива: [1,2] [9,2]\nВложенный список: [[9,2]]\nКопия последовательности: [9,2]\n"),
                 ("list-capacity.pas", "Пустой список: 0 3\nПосле роста: [1,2,3,4] 6\nПосле сжатия: 4\nИз последовательности: [1,2,3]\n1234\n"),
                 ("timing.pas", "Пауза выполнена: True\nИнтервалы неотрицательны: True True\nСчётчик доступен: True\n"),
                 ("sequence-text-flatten.pas", "Числа: 1, 2, 3\nСимволы: abc\nМассивы: [1,2,3]\nСтроки: PascalABC\nПустые значения: [|abc||]\n"),
@@ -943,6 +944,7 @@ def main():
             results[-1]["typed_sequence_join_flatten_and_bilingual_diagnostics"] = "passed"
             results[-1]["native_timing_sleep_and_bilingual_diagnostics"] = "passed"
             results[-1]["typed_list_capacity_constructors_and_bilingual_diagnostics"] = "passed"
+            results[-1]["typed_list_factories_and_source_overloads"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 
