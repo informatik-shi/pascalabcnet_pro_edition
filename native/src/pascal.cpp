@@ -2638,6 +2638,15 @@ private:
     bool bind_list_operation(hir::Expr& result,const SyntaxExpr& source) {
         if (!compound(result.left->type) || info(result.left->type,result.location).kind!=CompoundKind::list) return false;
         const auto name=source.token.text;
+        if (name=="copyto") {
+            const auto count=source.arguments.size();
+            if (count!=1 && count!=2 && count!=4) throw Error("E_TYPE",result.location,"List CopyTo requires one, two or four arguments");
+            const auto method=count==4 ? ListCopy::range : count==2 ? ListCopy::offset : ListCopy::all;
+            const auto array=sequence_type(CompoundKind::array,info(result.left->type,result.location).element);
+            const auto parameters=list_copy_parameters(array,method);
+            for (std::size_t i=0;i<count;++i) result.arguments.push_back(convert(expression(*source.arguments[i],parameters[i]),parameters[i]));
+            result.kind=hir::ExprKind::list_copy;result.local=static_cast<std::size_t>(method);result.operation_type=array;result.type=Type::unit;return true;
+        }
         if (name=="capacity" || name=="ensurecapacity" || name=="trimexcess") {
             const auto method=name=="capacity" ? ListCapacity::get : name=="ensurecapacity" ? ListCapacity::ensure : ListCapacity::trim;
             if ((method==ListCapacity::get && source.kind!=SyntaxExprKind::field)

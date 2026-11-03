@@ -202,6 +202,7 @@ def main():
                 ("sequence-prefixes.pas", "Начало: [1,2]\nОстаток: [3,1]\nПосле двух: [7,6]\n"),
                 ("callable-values.pas", "Значение: 14\nЧерез массив: 18\nЧерез параметр: 22\nПустое значение: True\n"),
                 ("library-callables.pas", "Сохранённая функция: [2,4,6]\nОтбор: [1,2]\nСуммы пар: [11,22]\nРезультат для True, True: True\n"),
+                ("list-copy-to.pas", "Весь список: [0,1,2,3,0]\nДиапазон: [2,3,2,3,0]\nИсходный список: [1,2,3]\n"),
                 ("explicit-list-types.pas", "Пустой типизированный: []\nДобавление: [7]\nФункция: 3\nСимволы: [a,b,c]\nСтрока: [abc]\n"),
                 ("list-factories.pas", "Целые: [1,2,3]\nСтроки: [a,bc,nil]\nПустые: [] []\nКопия массива: [1,2] [9,2]\nВложенный список: [[9,2]]\nКопия последовательности: [9,2]\n"),
                 ("list-capacity.pas", "Пустой список: 0 3\nПосле роста: [1,2,3,4] 6\nПосле сжатия: 4\nИз последовательности: [1,2,3]\n1234\n"),
@@ -612,6 +613,19 @@ def main():
                                      capture_output=True, cwd=folder, env=env, timeout=10)
             if invalid.returncode != 1 or invalid.stdout or "E_TYPE" not in invalid.stderr or "RU:" not in invalid.stderr:
                 raise RuntimeError(f"{name} array equality element type was not rejected before output")
+            copy_error = folder / "Копирование списка.pas"
+            copy_error.write_text("begin\n Lst(1).CopyTo(new integer[0]);\nend.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(copy_error)], text=True, encoding="utf-8",
+                                     capture_output=True, cwd=folder, env=env, timeout=10)
+            if (invalid.returncode != 1 or "E_RANGE" not in invalid.stderr
+                    or "EN: List copy range exceeds destination array" not in invalid.stderr
+                    or "RU: Диапазон копирования списка выходит за границы массива назначения" not in invalid.stderr or f"{copy_error}:2:" not in invalid.stderr):
+                raise RuntimeError(f"{name} bilingual CopyTo destination error failed: {invalid.stderr!r}")
+            copy_error.write_text("begin Writeln('must never run');Lst(1).CopyTo(new real[1]);end.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(copy_error)], text=True, encoding="utf-8",
+                                     capture_output=True, cwd=folder, env=env, timeout=10)
+            if invalid.returncode != 1 or invalid.stdout or "E_TYPE" not in invalid.stderr or "RU:" not in invalid.stderr:
+                raise RuntimeError(f"{name} CopyTo array element type was not checked before output")
             explicit_error = folder / "Явный тип списка.pas"
             explicit_error.write_text("begin Writeln('must never run');var l:=Lst&<integer>('abc');end.", encoding="utf-8")
             invalid = subprocess.run([runner, "run", str(explicit_error)], text=True, encoding="utf-8",
@@ -960,6 +974,7 @@ def main():
             results[-1]["typed_list_capacity_constructors_and_bilingual_diagnostics"] = "passed"
             results[-1]["typed_list_factories_and_source_overloads"] = "passed"
             results[-1]["explicit_list_type_arguments"] = "passed"
+            results[-1]["typed_list_copy_to"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 

@@ -1,5 +1,6 @@
 #include "list_operations.hpp"
 #include "sequences.hpp"
+#include <bit>
 
 namespace abc {
 namespace {
@@ -16,6 +17,34 @@ void range(std::int32_t index,std::int32_t count,std::int32_t size,SourceLocatio
     if (count<0) throw runtime_error(RuntimeError::list_count,location);
     if (index>size || count>size-index) throw runtime_error(RuntimeError::list_range,location);
 }
+}
+bool list_copy_signature_valid(const Program& program,Type list,Type array,ListCopy method) {
+    if (static_cast<unsigned>(method)>static_cast<unsigned>(ListCopy::range) || !compound(list) || !compound(array)) return false;
+    const auto& source=type_info(program,list);const auto& target=type_info(program,array);
+    return source.kind==CompoundKind::list && source.rank==1 && target.kind==CompoundKind::array && target.rank==1 && source.element==target.element;
+}
+void list_copy(Values& values,const std::shared_ptr<Aggregate>& source,ListCopy method,std::span<const Value> arguments,const ExecutionOptions& options) {
+    if (!source || source->nil) throw runtime_error(RuntimeError::nil_reference,values.location);
+    const bool range_copy=method==ListCopy::range;
+    const auto size=static_cast<std::int32_t>(source->items.size());
+    const auto index=range_copy ? std::get<std::int32_t>(arguments[0]) : 0;
+    const auto count=range_copy ? std::get<std::int32_t>(arguments[3]) : size;
+    if (range_copy) {
+        // The BCL preliminary check uses unchecked Int32 subtraction before Array.Copy.
+        const auto available=std::bit_cast<std::int32_t>(static_cast<std::uint32_t>(size)-static_cast<std::uint32_t>(index));
+        if (available<count) throw runtime_error(RuntimeError::list_range,values.location);
+    }
+    const auto target=std::get<std::shared_ptr<Aggregate>>(arguments[range_copy ? 1 : 0]);
+    if (!target || target->nil) throw runtime_error(RuntimeError::nil_reference,values.location);
+    if (count<0) throw runtime_error(RuntimeError::list_count,values.location);
+    if (index<0) throw runtime_error(RuntimeError::list_index,values.location);
+    if (index>size || count>size-index) throw runtime_error(RuntimeError::list_range,values.location);
+    const auto destination=method==ListCopy::all ? 0 : std::get<std::int32_t>(arguments[range_copy ? 2 : 1]);
+    if (destination<0) throw runtime_error(RuntimeError::list_copy_destination_index,values.location);
+    if (static_cast<std::size_t>(destination)>target->items.size() || static_cast<std::size_t>(count)>target->items.size()-static_cast<std::size_t>(destination))
+        throw runtime_error(RuntimeError::list_copy_destination_range,values.location);
+    std::uint64_t used=0;charge(values,used,static_cast<std::size_t>(count),options);
+    for (std::int32_t i=0;i<count;++i) values.write(target->items[static_cast<std::size_t>(destination)+static_cast<std::size_t>(i)],source->items[static_cast<std::size_t>(index)+static_cast<std::size_t>(i)]->value);
 }
 Value list_capacity(Values& values,Type type,const std::shared_ptr<Aggregate>& source,ListCapacity method,std::int32_t capacity,const ExecutionOptions& options) {
     const auto list=method==ListCapacity::construct ? values.array(type,0) : source;

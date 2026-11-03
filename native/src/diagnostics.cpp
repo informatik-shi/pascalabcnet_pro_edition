@@ -10,6 +10,10 @@ Error runtime_error(RuntimeError id, SourceLocation location, std::string_view c
         code="E_RANGE";english="List capacity cannot be less than Count";russian="Ёмкость списка не может быть меньше Count";break;
     case RuntimeError::list_capacity_negative:
         code="E_RANGE";english="List capacity must be nonnegative";russian="Ёмкость списка должна быть неотрицательной";break;
+    case RuntimeError::list_copy_destination_index:
+        code="E_RANGE";english="List copy destination index must be nonnegative";russian="Индекс назначения при копировании списка должен быть неотрицательным";break;
+    case RuntimeError::list_copy_destination_range:
+        code="E_RANGE";english="List copy range exceeds destination array";russian="Диапазон копирования списка выходит за границы массива назначения";break;
     case RuntimeError::list_index:
         code="E_RANGE";english="List index is outside the allowed range";russian="Индекс списка находится вне допустимого диапазона";break;
     case RuntimeError::list_count:

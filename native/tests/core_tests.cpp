@@ -70,6 +70,31 @@ void runtime_error(std::string_view source, std::string_view code) {
     error([&] { (void)run(source); }, code,source);
 }
 
+void list_copy_to_library() {
+    result("begin var l:=Lst(1,2,3);var a:=new integer[5];l.CopyTo(a);Writeln(a);l.CopyTo(a,2);Writeln(a);l.CopyTo(1,a,0,2);Writeln(a);Writeln(l,' ',l.Capacity);end.","[1,2,3,0,0]\n[1,2,1,2,3]\n[2,3,1,2,3]\n[1,2,3] 3\n");
+    result("begin var l:=Lst&<integer>;var a:=new integer[0];l.CopyTo(a);l.CopyTo(a,0);l.CopyTo(0,a,0,0);Writeln(a);var n:=Lst(1);n.CopyTo(1,a,0,0);Writeln(a);end.","[]\n[]\n");
+    result("type R=record n:integer;a:array of integer;end;var l:List<R>;var a:array of R;procedure P(var n:integer);begin l.CopyTo(a);Writeln(n);n:=9;end;begin var r:R;r.n:=1;r.a:=Arr(2);l:=Lst(r);a:=new R[1];P(a[0].n);a[0].a[0]:=7;Writeln(a[0].n,' ',l[0].n,' ',r.a[0]);end.","1\n9 1 7\n");
+    result("begin var l:=Lst(1,2);var a:=new integer[2];foreach var x in l do begin l.CopyTo(a);Write(x);end;Writeln(' ',a);end.","12 [1,2]\n");
+    result("type A=array of integer;begin var l:=LstStr(nil,'abc');var a:=new string[3];l.CopyTo(a,1);Writeln(a);var b:=Arr(1);var refs:=Lst(b,b);var outp:=new A[2];refs.CopyTo(outp);outp[1][0]:=7;Writeln(b,' ',outp[0]=b);end.","[,nil,abc]\n[7] True\n");
+    for(int size=0;size<=5;++size)for(int index=0;index<=size;++index)for(int count=0;count<=size-index;++count)for(int offset=0;offset<=2;++offset) {
+        std::ostringstream expected;expected<<'[';for(int i=0;i<offset+count+1;++i){if(i)expected<<',';expected<<(i>=offset && i<offset+count ? index+i-offset+1 : 0);}expected<<"]\n";
+        result("begin var l:=Range(1,"+std::to_string(size)+").ToList;var a:=new integer["+std::to_string(offset+count+1)+"];l.CopyTo("+std::to_string(index)+",a,"+std::to_string(offset)+","+std::to_string(count)+");Writeln(a);end.",expected.str());
+    }
+    for(const auto source:{"begin Lst(1).CopyTo(nil);end.","begin Lst(1).CopyTo(nil,-1);end.","begin Lst(1).CopyTo(-1,nil,-1,-1);end.","begin var l:List<integer>:=nil;l.CopyTo(nil);end."})runtime_error(source,"E_NIL");
+    const std::array<std::string_view,8> calls{"CopyTo(2,nil,-1,0)","CopyTo(-1,new integer[0],-1,-1)","CopyTo(-1,new integer[0],-1,0)","CopyTo(0,new integer[0],-1,0)","CopyTo(0,new integer[0],1,0)","CopyTo(new integer[0])","CopyTo(-2147483648,nil,0,0)","CopyTo(0,new integer[0],0,1)"};
+    const std::array<std::string_view,8> messages{"List index and count do not specify a valid range","List count is outside the allowed range","List index is outside the allowed range","List copy destination index must be nonnegative","List copy range exceeds destination array","List copy range exceeds destination array","List index and count do not specify a valid range","List copy range exceeds destination array"};
+    for(std::size_t i=0;i<calls.size();++i){try{(void)run("begin\nLst(1)."+std::string(calls[i])+";\nend.");require(false,"Expected List CopyTo bounds error");}catch(const abc::Error& e){require(e.code=="E_RANGE" && std::string_view(e.what())==messages[i] && !e.russian.empty() && e.location.line==2,"CopyTo retains source check priority, Int32 subtraction, bilingual errors and location");}}
+    for(const auto source:{"begin Lst(1).CopyTo();end.","begin Lst(1).CopyTo(new integer[1],0,1);end.","begin Lst(1).CopyTo(new real[1]);end.","begin Lst(1).CopyTo(new integer[1,1]);end.","begin Lst(1).CopyTo(new integer[1],1.5);end."})compile_error(source,"E_TYPE");
+    {
+        const auto p=abc::compile("function L:List<integer>;begin Write('L');Result:=nil;end;function I:integer;begin Write('I');Result:=0;end;function A:array of integer;begin Write('A');Result:=nil;end;function D:integer;begin Write('D');Result:=0;end;function C:integer;begin Write('C');Result:=0;end;begin L().CopyTo(I(),A(),D(),C());end.");std::istringstream in;std::ostringstream out;error([&]{abc::execute(p,in,out);},"E_NIL");require(out.str()=="LIADC","CopyTo evaluates receiver and all arguments in declared order before nil receiver");
+    }
+    const auto p=abc::compile("begin Lst(1).CopyTo(new integer[1]);end.");const auto op=std::find_if(p.code.begin(),p.code.end(),[](const auto& x){return x.op==abc::Op::list_copy;});
+    abc::Values values{p,1000};const auto source=values.array(op->type,100),target=values.array(static_cast<abc::Type>(op->operand>>2),100);source->items[0]->value=std::int32_t{7};const std::array<abc::Value,1> args{target};abc::ExecutionOptions options;options.instruction_limit=10;
+    error([&]{abc::list_copy(values,source,abc::ListCopy::all,args,options);},"E_LIMIT");require(std::get<std::int32_t>(target->items[0]->value)==0 && source->version==0,"CopyTo precharges work before changing existing target cells");
+    options={};options.cancelled=[] {return true;};error([&]{abc::list_copy(values,source,abc::ListCopy::all,args,options);},"E_CANCELLED");
+    for(int kind=0;kind<4;++kind){auto bad=p;for(auto& v:bad.code)if(v.op==abc::Op::list_copy){if(kind==0)v.operand=std::numeric_limits<std::size_t>::max();if(kind==1)v.operand=(v.operand&~std::size_t{3})|3;if(kind==2)v.type=abc::Type::integer;if(kind==3)v.operand=0;}error([&]{abc::verify(bad);},"E_BYTECODE");}
+}
+
 void explicit_list_types_language() {
     result("begin var a:=Lst&<integer>();a.Add(7);Writeln(a,' ',a.Capacity);Writeln(Lst&<string>.Count,' ',PABCSystem.Lst&<byte>().Count);Lst&<byte>.Add(2);end.","[7] 4\n0 0\n");
     result("begin Writeln(Lst&<real>(1,2.5));Writeln(Lst&<byte>(1,2,3));Writeln(Lst&<string>('a','bc'));Writeln(Lst&<char>('abc'));end.","[1,2.5]\n[1,2,3]\n[a,bc]\n[a,b,c]\n");
@@ -5486,6 +5511,7 @@ int main() {
     list_capacity_library();
     list_factories_library();
     explicit_list_types_language();
+    list_copy_to_library();
     escaped_identifiers_language();
     structural_output();
     try_console_read();

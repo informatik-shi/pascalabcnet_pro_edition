@@ -1,3 +1,4 @@
+    {"List CopyTo requires one, two or four arguments","CopyTo для List требует один, два или четыре аргумента"},
     {"Explicit type arguments require a named routine","Явные аргументы типа требуют имени подпрограммы"},
     {"Explicit type argument limit exceeded","Превышен предел числа явных аргументов типа"},
     {"Explicit generic calls are not ported for this routine","Явные generic-вызовы этой подпрограммы ещё не перенесены"},

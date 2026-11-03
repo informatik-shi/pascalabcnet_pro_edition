@@ -68,6 +68,7 @@ Sleep, Milliseconds и MillisecondsDelta: examples/timing.pas.
 Конструкторы List, Capacity, EnsureCapacity и TrimExcess: examples/list-capacity.pas.
 Фабрики Lst, LstInt и LstStr: examples/list-factories.pas.
 Явные типы и пустой Lst: examples/explicit-list-types.pas.
+Копирование списка в массив: examples/list-copy-to.pas.
 Прямой захват управляющей переменной цикла пока не перенесён; используйте отдельную переменную-копию.
 Совместимость с PascalABC.NET частичная.
 Русские имена и НОД/НОК: examples/russian-identifiers.pas. Массивные GCD/LCM: examples/school-folds.pas.

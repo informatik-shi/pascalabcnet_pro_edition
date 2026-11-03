@@ -3,6 +3,12 @@
 #include <span>
 
 namespace abc {
+inline std::vector<Type> list_copy_parameters(Type array,ListCopy method) {
+    if (method==ListCopy::range) return {Type::integer,array,Type::integer,Type::integer};
+    return method==ListCopy::offset ? std::vector<Type>{array,Type::integer} : std::vector<Type>{array};
+}
+bool list_copy_signature_valid(const Program& program,Type list,Type array,ListCopy method);
+void list_copy(Values& values,const std::shared_ptr<Aggregate>& source,ListCopy method,std::span<const Value> arguments,const ExecutionOptions& options);
 inline Type list_capacity_result(Type list,ListCapacity method) {
     return method==ListCapacity::construct ? list : method==ListCapacity::set || method==ListCapacity::trim ? Type::unit : Type::integer;
 }

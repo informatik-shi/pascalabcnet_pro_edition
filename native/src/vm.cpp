@@ -274,6 +274,12 @@ static void execute_impl(const Program& program, std::istream& input, std::ostre
             const auto delimiter=pop();const auto source=std::get<std::shared_ptr<Aggregate>>(pop());
             stack.emplace_back(sequence_join(values,source,delimiter,options));break;
         }
+        case Op::list_copy: {
+            const auto method=static_cast<ListCopy>(instruction.operand&3U);
+            const auto count=list_copy_parameters(static_cast<Type>(instruction.operand>>2),method).size();std::vector<Value> arguments(count);
+            for (auto i=count;i>0;--i) arguments[i-1]=pop();const auto source=std::get<std::shared_ptr<Aggregate>>(pop());
+            list_copy(values,source,method,arguments,options);break;
+        }
         case Op::list_capacity: {
             const auto method=static_cast<ListCapacity>(instruction.operand);
             const auto capacity=list_capacity_argument(method) ? std::get<std::int32_t>(pop()) : 0;

@@ -99,6 +99,9 @@ private:
             expression(*node.left); emit(Op::sequence_partial,node.left->type,0,node.location); break;
         case hir::ExprKind::sequence_join:
             expression(*node.left);expression(*node.right);emit(Op::sequence_join,node.left->type,0,node.location);break;
+        case hir::ExprKind::list_copy:
+            expression(*node.left);for (const auto& argument:node.arguments) expression(*argument);
+            emit(Op::list_copy,node.left->type,(static_cast<std::size_t>(node.operation_type)<<2)|node.local,node.location);break;
         case hir::ExprKind::list_capacity:
             if (node.left) expression(*node.left);for (const auto& argument:node.arguments) expression(*argument);
             emit(Op::list_capacity,node.operation_type,node.local,node.location);break;
@@ -625,6 +628,12 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if (!compound(type) || type_info(program,type).kind!=CompoundKind::sequence || type_info(program,type).rank!=1
                 || !scalar(type_info(program,type).element) || instruction.operand) invalid(instruction,"Invalid sequence join signature");
             break;
+        case Op::list_copy: {
+            const auto array=instruction.operand>>2;
+            if (array<64 || array>=64+program.types.size() || !list_copy_signature_valid(program,type,static_cast<Type>(array),static_cast<ListCopy>(instruction.operand&3U)))
+                invalid(instruction,"Invalid List copy signature");
+            break;
+        }
         case Op::list_capacity:
             if (!compound(type) || type_info(program,type).kind!=CompoundKind::list || type_info(program,type).rank!=1
                 || instruction.operand>static_cast<std::size_t>(ListCapacity::construct)) invalid(instruction,"Invalid List capacity signature");
@@ -1118,6 +1127,10 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         }
         case Op::sequence_join:
             require(Type::string);require(instruction.type);stack.push_back(Type::string);break;
+        case Op::list_copy: {
+            const auto parameters=list_copy_parameters(static_cast<Type>(instruction.operand>>2),static_cast<ListCopy>(instruction.operand&3U));
+            for (auto i=parameters.size();i>0;--i) require(parameters[i-1]);require(instruction.type);break;
+        }
         case Op::list_capacity: {
             const auto method=static_cast<ListCapacity>(instruction.operand);
             if (list_capacity_argument(method)) require(Type::integer);
