@@ -70,6 +70,31 @@ void runtime_error(std::string_view source, std::string_view code) {
     error([&] { (void)run(source); }, code,source);
 }
 
+void native_class_properties_language() {
+    result("type C=class n:integer;property Value:integer read n write n;end;begin var c:=new C;c.Value:=7;Writeln(c.Value,' ',c.n);end.","7 7\n");
+    result("type C=class n,calls:integer;property Value:integer read Get write SetN;function Get:integer;begin Inc(calls);Result:=n;end;procedure SetN(value:integer);begin n:=value*2;end;end;begin var c:=new C;c.Value:=3;Writeln(c.Value,' ',c.Value,' ',c.calls);end.","6 6 2\n");
+    result("type C=class n:integer;property ReadOnly:integer read n;property WriteOnly:integer write n;procedure Change;begin WriteOnly:=ReadOnly+1;end;end;begin var c:=new C;c.WriteOnly:=7;c.Change;Writeln(c.ReadOnly);end.","8\n");
+    result("type C=class a:array of integer;property Values:array of integer read a;end;begin var c:=new C;c.a:=Arr(1,2);c.Values[0]:=7;Writeln(c.a);end.","[7,2]\n");
+    result("type D=class n:integer;end;C=class child:D;property Value:D read child;end;begin var c:=new C;c.child:=new D;c.Value.n:=7;Writeln(c.child.n);end.","7\n");
+    result("type F=integer->integer;C=class f:F;property Callback:F read f write f;end;begin var c:=new C;c.Callback:=x->x+1;Writeln(c.Callback(2));end.","3\n");
+    result("type R=record n:integer;a:array of integer;end;C=class r:R;property Value:R read r write r;end;var c:C;procedure Change(var n:integer);begin var r:R;r.n:=9;r.a:=Arr(2);c.Value:=r;Writeln(n);end;begin c:=new C;Change(c.r.n);var r:=c.Value;r.n:=4;r.a[0]:=7;Writeln(c.r.n,' ',r.n,' ',c.r.a[0]);end.","9\n9 4 7\n");
+    result("type C=class n:integer;property P:integer read n write n;procedure Bump;begin P:=P+1;end;function Getter:()->integer;begin Result:=()->P;end;end;begin var c:=new C;c.Bump();var f:=c.Getter();c.P:=7;c:=nil;Writeln(f());end.","7\n");
+    result("type C=class n:integer;property P:integer read n write n;end;var c,d:C;function Replace:integer;begin c:=d;Result:=7;end;begin c:=new C;d:=new C;var original:=c;c.P:=Replace();Writeln(original.n,' ',c.n);end.","7 0\n");
+    for(const auto source:{"type C=class n:integer;property P:integer read n;end;begin var c:C;Writeln(c.P);end.","type C=class n:integer;property P:integer write n;end;begin var c:C;c.P:=1;end."})runtime_error(source,"E_NIL");
+    {
+        const auto p=abc::compile("type C=class n:integer;property P:integer write n;end;function V:integer;begin Write('V');Result:=7;end;begin var c:C;c.P:=V();end.");std::istringstream in;std::ostringstream out;error([&]{abc::execute(p,in,out);},"E_NIL");require(out.str()=="V","Property setter evaluates value before nil receiver and does not invoke a missing getter");
+    }
+    for(const auto source:{"type C=class n:integer;property P:integer read n;end;begin var c:=new C;c.P:=1;end.","type C=class n:integer;property P:integer write n;end;begin var c:=new C;Writeln(c.P);end.","type C=class n:integer;property P:integer read n write n;end;procedure F(var n:integer);begin end;begin var c:=new C;F(c.P);end.","type C=class n:byte;property P:integer read n;end;begin end.","type C=class function Get(n:integer):integer;begin Result:=n;end;property P:integer read Get;end;begin end.","type C=class procedure SetN(var n:integer);begin end;property P:integer write SetN;end;begin end.","type C=class function SetN(n:integer):integer;begin Result:=n;end;property P:integer write SetN;end;begin end.","type C=class property P:integer;end;begin end.","type C=class n:integer;property P:integer read n write n;end;begin var c:=new C;c.P:='abc';end.","type C=class n:integer;property P:integer read n;end;begin var c:=new C;c.P();end."})compile_error(source,"E_TYPE");
+    compile_error("type C=class property P:integer read Missing;end;begin end.","E_NAME");
+    for(const auto source:{"type C=class n:integer;property n:integer read n;end;begin end.","type C=class n:integer;property P:integer read n;property P:integer write n;end;begin end.","type C=class function P:integer;begin Result:=1;end;property P:integer read P;end;begin end."})compile_error(source,"E_DUPLICATE");
+    compile_error("type C=class n:integer;property P:integer read n read n;end;begin end.","E_SYNTAX");
+    abc::ExecutionOptions options;options.call_limit=2;error([&]{(void)run("type C=class property P:integer read Get;function Get:integer;begin Result:=P;end;end;begin var c:=new C;Writeln(c.P);end.","",options);},"E_LIMIT");
+    const auto p=abc::compile("type C=class n:integer;property P:integer read n write n;end;begin var c:=new C;c.P:=7;Writeln(c.P);end.");
+    require(std::count_if(p.routines.begin(),p.routines.end(),[](const auto& r){return r.name.starts_with("$property_");})==2,"Field properties lower to typed native getter/setter routines before execution");
+    for(int kind=0;kind<2;++kind){auto bad=p;for(auto& r:bad.routines)if(r.name.starts_with("$property_set_")){if(kind==0)r.owner=abc::Type::integer;else r.parameters[1].type=abc::Type::real;}error([&]{abc::verify(bad);},"E_BYTECODE");}
+    try{(void)run("type C=class n:integer;property P:integer read n;end;begin\nvar c:=new C;c.P:=1;\nend.");require(false,"Expected read-only property error");}catch(const abc::Error& e){require(e.code=="E_TYPE" && std::string_view(e.what())=="Property is read-only" && e.russian=="Свойство доступно только для чтения" && e.location.line==2,"Read-only property diagnostics retain English/Russian text and source location");}
+}
+
 void native_class_methods_language() {
     result("type C=class n:integer;procedure Add(value:integer);begin n:=n+value;end;function Get:integer;begin Result:=n;end;end;begin var c:=new C;c.Add(3);c.Add(4);Writeln(c.Get(),' ',c.Get);end.","7 7\n");
     result("var n:integer:=100;type C=class n:integer;procedure SetN(n:integer);begin Self.n:=n;end;function Get:integer;begin Result:=n;end;end;begin var c:=new C;c.SetN(7);Writeln(c.Get,' ',n);end.","7 100\n");
@@ -110,7 +135,7 @@ void native_class_fields_language() {
     result("type A=class n:integer;end;B=A;begin var b:=new B;b.n:=4;Writeln(b.n);end.","4\n");
     result("type C=class end;begin var a:=new C;var b:=new C;Writeln(a=a,' ',a=b,' ',a<>nil);var f:=()->a=b;Writeln(f());end.","True False True\nFalse\n");
     for(const auto source:{"type C=class n:integer;end;begin var c:C;Writeln(c.n);end.","type C=class n:integer;end;begin var c:C;c.n:=1;end.","type C=class n:integer;end;procedure P(var n:integer);begin end;begin var c:C;P(c.n);end."})runtime_error(source,"E_NIL");
-    for(const auto source:{"type C=class private n:integer;end;begin end.","type A=class end;B=class(A)end;begin end.","type C=class property X:integer read n;end;begin end.","type C=class;begin end."})compile_error(source,"E_UNSUPPORTED");
+    for(const auto source:{"type C=class private n:integer;end;begin end.","type A=class end;B=class(A)end;begin end.","type C=class property X[i:integer]:integer read n;end;begin end.","type C=class;begin end."})compile_error(source,"E_UNSUPPORTED");
     compile_error("type C=class n:integer;n:integer;end;begin end.","E_DUPLICATE");
     compile_error("type A=class end;B=class end;begin var a:=new A;var b:=new B;a:=b;end.","E_TYPE");
     compile_error("type C=class n:integer;end;begin var c:=new C(1);end.","E_TYPE");
@@ -5582,6 +5607,7 @@ int main() {
     list_copy_to_library();
     native_class_fields_language();
     native_class_methods_language();
+    native_class_properties_language();
     escaped_identifiers_language();
     structural_output();
     try_console_read();

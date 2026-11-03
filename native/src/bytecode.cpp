@@ -344,6 +344,9 @@ private:
             }
             emit(Op::call_value,node.left->type,0,node.location); break;
         }
+        case hir::ExprKind::property_access:
+            if (!node.getter) throw Error("E_TYPE",node.location,"Property is write-only");
+            expression(*node.left);emit(Op::call_user,node.type,*node.getter,node.location);break;
         case hir::ExprKind::user_call: {
             const auto& signature = program_.routines[node.local];
             for (std::size_t n = 0; n < node.arguments.size(); ++n) {

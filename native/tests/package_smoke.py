@@ -202,6 +202,7 @@ def main():
                 ("sequence-prefixes.pas", "Начало: [1,2]\nОстаток: [3,1]\nПосле двух: [7,6]\n"),
                 ("callable-values.pas", "Значение: 14\nЧерез массив: 18\nЧерез параметр: 22\nПустое значение: True\n"),
                 ("library-callables.pas", "Сохранённая функция: [2,4,6]\nОтбор: [1,2]\nСуммы пар: [11,22]\nРезультат для True, True: True\n"),
+                ("class-properties.pas", "Свойство: 7\nЧерез метод: 14\n"),
                 ("class-methods.pas", "Значение: 5\nОбщая ссылка: 6\n"),
                 ("class-fields.pas", "Связанные объекты: 9 7\nОбщая ссылка: 11\n11 9 \n"),
                 ("list-copy-to.pas", "Весь список: [0,1,2,3,0]\nДиапазон: [2,3,2,3,0]\nИсходный список: [1,2,3]\n"),
@@ -615,6 +616,21 @@ def main():
                                      capture_output=True, cwd=folder, env=env, timeout=10)
             if invalid.returncode != 1 or invalid.stdout or "E_TYPE" not in invalid.stderr or "RU:" not in invalid.stderr:
                 raise RuntimeError(f"{name} array equality element type was not rejected before output")
+            property_error = folder / "Свойство класса.pas"
+            property_error.write_text("type C=class n:integer;property P:integer read n;end;begin Writeln('must never run');var c:=new C;c.P:=1;end.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(property_error)], text=True, encoding="utf-8",
+                                     capture_output=True, cwd=folder, env=env, timeout=10)
+            if (invalid.returncode != 1 or invalid.stdout or "E_TYPE" not in invalid.stderr
+                    or "EN: Property is read-only" not in invalid.stderr
+                    or "RU: Свойство доступно только для чтения" not in invalid.stderr):
+                raise RuntimeError(f"{name} bilingual read-only property check failed: {invalid.stderr!r}")
+            property_error.write_text("type C=class n:integer;property P:integer write n;end;begin Writeln('must never run');var c:=new C;Writeln(c.P);end.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(property_error)], text=True, encoding="utf-8",
+                                     capture_output=True, cwd=folder, env=env, timeout=10)
+            if (invalid.returncode != 1 or invalid.stdout or "E_TYPE" not in invalid.stderr
+                    or "EN: Property is write-only" not in invalid.stderr
+                    or "RU: Свойство доступно только для записи" not in invalid.stderr):
+                raise RuntimeError(f"{name} bilingual write-only property check failed: {invalid.stderr!r}")
             method_error = folder / "Метод класса.pas"
             method_error.write_text("type C=class function Value:integer;begin Result:=7;end;end;begin\n var c:C;Writeln(c.Value());\nend.", encoding="utf-8")
             invalid = subprocess.run([runner, "run", str(method_error)], text=True, encoding="utf-8",
@@ -1005,6 +1021,7 @@ def main():
             results[-1]["typed_list_copy_to"] = "passed"
             results[-1]["native_class_fields_and_reference_cycles"] = "passed"
             results[-1]["native_instance_methods_and_receiver_diagnostics"] = "passed"
+            results[-1]["native_class_properties_and_accessor_diagnostics"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 

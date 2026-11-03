@@ -166,6 +166,7 @@ private:
 
 enum class SyntaxExprKind { literal, literal_group, name, unary, binary, call, index, field, member_call, construction, formatted, tuple, typed_default, value_call, lambda, conditional };
 struct SyntaxRoutine;
+struct SyntaxProperty;
 struct SyntaxType {
     Token token;
     std::string kind;
@@ -177,7 +178,9 @@ struct SyntaxType {
     bool system_qualified=false;
     bool named=false;
     std::vector<std::shared_ptr<SyntaxRoutine>> methods{};
+    std::vector<std::shared_ptr<SyntaxProperty>> properties{};
 };
+struct SyntaxProperty { Token name;std::shared_ptr<SyntaxType> type;std::optional<Token> getter,setter; };
 struct SyntaxRoutine;
 struct SyntaxExpr {
     SyntaxExprKind kind;
@@ -364,8 +367,23 @@ private:
             while (!is("end")) {
                 if (object && accept("public")) continue;
                 if (object && (is("function") || is("procedure"))) { result->methods.push_back(routine());continue; }
-                if (object && (is("private") || is("protected") || is("internal") || is("constructor") || is("destructor") || is("property") || is("class") || is("var")))
-                    throw Error("E_UNSUPPORTED",current_.location,"Class properties, constructors and nonpublic members are not ported yet");
+                if (object && accept("property")) {
+                    auto property=std::make_shared<SyntaxProperty>();property->name=name();
+                    if (is("[")) throw Error("E_UNSUPPORTED",current_.location,"Indexed properties are not ported yet");
+                    expect(":");property->type=type_syntax();
+                    while (is("read") || is("write")) {
+                        const bool get=accept("read");if (!get) expect("write");
+                        auto& accessor=get ? property->getter : property->setter;
+                        if (accessor) throw Error("E_SYNTAX",current_.location,"Duplicate property accessor");
+                        accessor=name();
+                    }
+                    if (!property->getter && !property->setter) throw Error("E_TYPE",property->name.location,"Property requires a getter or setter");
+                    if (!accept(";") && !is("end")) fail("Expected ';' after property");
+                    if (result->properties.size()>=256) throw Error("E_LIMIT",property->name.location,"Class property limit exceeded");
+                    result->properties.push_back(std::move(property));continue;
+                }
+                if (object && (is("private") || is("protected") || is("internal") || is("constructor") || is("destructor") || is("class") || is("var")))
+                    throw Error("E_UNSUPPORTED",current_.location,"Class constructors and nonpublic members are not ported yet");
                 std::vector<Token> fields{name()}; while (accept(",")) fields.push_back(name());
                 expect(":"); auto type = type_syntax();
                 for (const auto& field : fields) result->fields.emplace_back(field,type);
@@ -918,6 +936,7 @@ public:
             }
             routine_names_[qualified] = module_.routines.size(); module_.routines.push_back(std::move(body));
         }
+        register_properties(source);
         register_defaults(source);
         for (std::size_t i=0;i+1<source.statements.size();++i) module_.body.statements.push_back(statement(source.statements[i]));
         for (const auto& routine:source.routines) if (routine->owner.empty() && lookup(routine->name)) throw Error("E_DUPLICATE",routine->name.location,"Routine conflicts with a global variable");
@@ -962,6 +981,59 @@ public:
     }
 
 private:
+    std::size_t field_property_accessor(Type owner,Type type,std::size_t field,bool write,SourceLocation location) {
+        if (module_.routines.size()>=256) throw Error("E_LIMIT",location,"Routine limit exceeded");
+        hir::RoutineBody body;body.signature.name=std::string(write ? "$property_set_" : "$property_get_")+std::to_string(module_.routines.size());
+        body.signature.owner=owner;body.signature.result=write ? Type::unit : type;
+        auto local=[&](std::string name,Type value_type) {
+            const auto id=module_.locals.size();module_.locals.push_back({std::move(name),value_type,false});body.signature.locals.push_back(id);return id;
+        };
+        const auto self=local("$self",owner);body.signature.parameters.push_back({self,owner});
+        auto value=[&](std::size_t id,Type value_type) {
+            auto node=std::make_unique<hir::Expr>();node->kind=hir::ExprKind::local;node->type=value_type;node->local=id;node->location=location;return node;
+        };
+        auto access=std::make_unique<hir::Expr>();access->kind=hir::ExprKind::field;access->type=type;access->local=field;access->location=location;access->left=value(self,owner);
+        body.body.location=location;
+        if (write) {
+            const auto argument=local("$value",type);body.signature.parameters.push_back({argument,type});
+            body.body.kind=hir::StmtKind::assign;body.body.target=std::move(access);body.body.expression=value(argument,type);
+        } else {
+            body.signature.result_local=local("$property_result",type);
+            body.body.kind=hir::StmtKind::return_stmt;body.body.expression=std::move(access);
+        }
+        const auto id=module_.routines.size();module_.routines.push_back(std::move(body));return id;
+    }
+    std::size_t property_accessor(Type owner,Type type,const Token& accessor,bool write) {
+        const auto& fields=info(owner,accessor.location).fields;
+        for (std::size_t i=0;i<fields.size();++i) if (fields[i].name==accessor.text) {
+            if (fields[i].type!=type) throw Error("E_TYPE",accessor.location,"Property accessor type must match exactly");
+            return field_property_accessor(owner,type,i,write,accessor.location);
+        }
+        const auto methods=class_methods_.find(owner);
+        if (methods==class_methods_.end() || !methods->second.contains(accessor.text))
+            throw Error("E_NAME",accessor.location,"Unknown property accessor '"+accessor.text+"'");
+        const auto id=methods->second.at(accessor.text);const auto& signature=module_.routines[id].signature;
+        if (signature.result!=(write ? Type::unit : type) || signature.parameters.size()!=(write ? 2U : 1U)
+            || (write && (signature.parameters[1].type!=type || signature.parameters[1].by_reference || signature.parameters[1].variadic)))
+            throw Error("E_TYPE",accessor.location,"Property method accessor has an incompatible signature");
+        return id;
+    }
+    void register_properties(const SyntaxStmt& source) {
+        for (const auto& [name,syntax]:source.type_declarations) if (syntax->kind=="class" && !syntax->named) {
+            const auto owner=aliases_.at(name.text);
+            for (const auto& property:syntax->properties) {
+                const auto& fields=info(owner,property->name.location).fields;
+                if (class_properties_[owner].contains(property->name.text)
+                    || (class_methods_.contains(owner) && class_methods_.at(owner).contains(property->name.text))
+                    || std::any_of(fields.begin(),fields.end(),[wanted=property->name.text](const auto& field){return field.name==wanted;}))
+                    throw Error("E_DUPLICATE",property->name.location,"Duplicate class property or member name");
+                ClassProperty bound{resolve_type(*property->type),{},{}};
+                if (property->getter) bound.getter=property_accessor(owner,bound.type,*property->getter,false);
+                if (property->setter) bound.setter=property_accessor(owner,bound.type,*property->setter,true);
+                class_properties_[owner][property->name.text]=bound;
+            }
+        }
+    }
     void register_defaults(const SyntaxStmt& source) {
         parameter_defaults_.resize(source.routines.size());
         for (std::size_t i=0;i<source.routines.size();++i) {
@@ -1399,6 +1471,15 @@ private:
             }
             return result;
         }
+        if (const auto properties=class_properties_.find(receiver);properties!=class_properties_.end() && properties->second.contains(source.token.text)) {
+            const auto& property=properties->second.at(source.token.text);
+            result->kind=hir::ExprKind::property_access;result->type=property.type;result->getter=property.getter;result->setter=property.setter;
+            if (source.kind==SyntaxExprKind::member_call || source.kind==SyntaxExprKind::call) {
+                auto call=std::make_unique<hir::Expr>();call->location=result->location;call->left=std::move(result);
+                bind_value_call(*call,source.arguments);return call;
+            }
+            return result;
+        }
         const auto methods=class_methods_.find(receiver);
         if (methods==class_methods_.end() || !methods->second.contains(source.token.text))
             throw Error("E_NAME",result->location,"Unknown class member '"+source.token.text+"'");
@@ -1438,7 +1519,9 @@ private:
         const bool method=methods!=class_methods_.end() && methods->second.contains(source.token.text);
         const auto& fields=info(current_owner_,source.token.location).fields;
         const bool field=std::any_of(fields.begin(),fields.end(),[&](const auto& item){return item.name==source.token.text;});
-        if (!method && !field) return {};
+        const auto properties=class_properties_.find(current_owner_);
+        const bool property=properties!=class_properties_.end() && properties->second.contains(source.token.text);
+        if (!method && !field && !property) return {};
         if (const auto local=lookup(source.token);local && !module_.locals[*local].global
             && !(method && source.kind==SyntaxExprKind::call && module_.locals[*local].name=="result")) return {};
         auto result=std::make_unique<hir::Expr>();result->location=source.token.location;
@@ -3815,6 +3898,13 @@ private:
                 result.target=expression(*source.target); result.expression=std::move(initial); break;
             }
             result.target = expression(*source.target);
+            if (result.target->kind==hir::ExprKind::property_access) {
+                auto property=std::move(result.target);
+                if (!property->setter) throw Error("E_TYPE",property->location,"Property is read-only");
+                auto setter=std::make_unique<hir::Expr>();setter->kind=hir::ExprKind::user_call;setter->type=Type::unit;setter->location=property->location;setter->local=*property->setter;
+                setter->arguments.push_back(std::move(property->left));setter->arguments.push_back(convert(expression(*source.expression,property->type),property->type));
+                result.kind=hir::StmtKind::call;result.expression=std::move(setter);break;
+            }
             if (result.target->kind==hir::ExprKind::list_capacity && result.target->local==static_cast<std::size_t>(ListCapacity::get)) {
                 auto setter=std::move(result.target);setter->arguments.push_back(convert(expression(*source.expression),Type::integer));
                 setter->local=static_cast<std::size_t>(ListCapacity::set);setter->type=Type::unit;
@@ -4013,6 +4103,8 @@ private:
     std::map<const SyntaxType*,Type> resolved_types_;
     std::map<std::string,std::size_t> routine_names_;
     std::map<Type,std::map<std::string,std::size_t>> class_methods_;
+    struct ClassProperty { Type type;std::optional<std::size_t> getter,setter; };
+    std::map<Type,std::map<std::string,ClassProperty>> class_properties_;
     Type current_owner_=Type::invalid;
     std::size_t current_self_=0;
     std::vector<std::vector<std::optional<std::size_t>>> parameter_defaults_;

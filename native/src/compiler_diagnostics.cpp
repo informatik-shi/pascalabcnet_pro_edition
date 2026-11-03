@@ -23,6 +23,7 @@ constexpr Translation prefixes[]={
     {"Unknown record field '","Неизвестное поле записи '"},
     {"Unknown class field '","Неизвестное поле класса '"},
     {"Unknown class member '","Неизвестный член класса '"},
+    {"Unknown property accessor '","Неизвестный метод доступа к свойству '"},
     {"Variable is not callable: '","Переменную нельзя вызывать как функцию: '"},
     {"Invalid operand for '","Недопустимый операнд для '"},
     {"Wrong random array/matrix arguments for '","Неверные аргументы случайного массива или матрицы для '"},
