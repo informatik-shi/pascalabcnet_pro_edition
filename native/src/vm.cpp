@@ -26,6 +26,7 @@
 #include "list_operations.hpp"
 #include "timing.hpp"
 #include "encoding.hpp"
+#include "file_encoding.hpp"
 #include "big_integer_runtime.hpp"
 
 #include <charconv>
@@ -198,6 +199,10 @@ static void execute_impl(const Program& program, std::istream& input, std::ostre
         if (!big) return;
         for (const auto& input:inputs) if (const auto* source=std::get_if<BigInteger>(&input); source && big->shares_storage(*source)) return;
         values.number(result);
+    };
+    const TextEncoding initial_encoding{TextEncodingKind::windows1251,false,false};
+    files.default_encoding=[&](SourceLocation location)->const TextEncoding* {
+        return program.default_encoding ? &encoding_value(globals[*program.default_encoding]->value,location) : &initial_encoding;
     };
     const Value default_delimiter=std::u16string{u" "};
     auto delimiter_value=[&]()->const Value& { return program.print_delimiter ? globals[*program.print_delimiter]->value : default_delimiter; };

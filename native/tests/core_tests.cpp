@@ -97,6 +97,21 @@ void typed_encoding_language() {
     for(int kind=0;kind<5;++kind){auto bad=p;if(kind==0)bad.types[owner].key=abc::Type::integer;if(kind==1)bad.types[owner].fields.push_back({"fake",abc::Type::integer});for(auto& op:bad.code)if(op.op==abc::Op::encoding_call){if(kind==2)op.type=abc::Type::integer;if(kind==3)op.operand=999;if(kind==4 && op.operand==2){op.op=abc::Op::make_default;op.operand=1;}}error([&]{abc::verify(bad);},"E_BYTECODE");}
 }
 
+void default_encoding_language() {
+    result("begin Writeln(DefaultEncoding.CodePage,' ',DefaultEncoding=Encoding.GetEncoding(1251));DefaultEncoding:=Encoding.UTF8;Writeln(PABCSystem.DefaultEncoding.CodePage);end.","1251 True\n65001\n");
+    result("var initial:Encoding:=DefaultEncoding;begin Writeln(initial.CodePage);end.","1251\n");
+    result("procedure Change(var e:Encoding);begin e:=Encoding.Unicode;end;begin Change(DefaultEncoding);Writeln(DefaultEncoding.CodePage);end.","1200\n");
+    result("begin var DefaultEncoding:=7;Writeln(DefaultEncoding,' ',PABCSystem.DefaultEncoding.CodePage);end.","7 1251\n");
+    result("function DefaultEncoding:integer:=8;begin Writeln(DefaultEncoding,' ',PABCSystem.DefaultEncoding.CodePage);end.","8 1251\n");
+    result("type C=class DefaultEncoding:integer:=9;function F:integer:=DefaultEncoding;end;begin Writeln(new C.F);end.","9\n");
+    result("procedure Change;begin DefaultEncoding:=Encoding.ASCII;end;begin Change;Writeln(DefaultEncoding.CodePage);end.","20127\n");
+    result("begin DefaultEncoding:=nil;Writeln(DefaultEncoding=nil);end.","True\n");
+    compile_error("begin Writeln('NEVER');DefaultEncoding:=1251;end.","E_TYPE");
+    compile_error("begin var f:Text;Reset(f,nil);end.","E_TYPE");
+    auto program=abc::compile("begin Writeln(DefaultEncoding.CodePage);end.");
+    for(unsigned n=0;n<3;++n){auto bad=program;if(n==0)bad.default_encoding=bad.locals.size();if(n==1)bad.locals[*bad.default_encoding].global=false;if(n==2)bad.locals[*bad.default_encoding].type=abc::Type::string;error([&]{abc::verify(bad);},"E_BYTECODE");}
+}
+
 void native_text_encoding_codecs() {
     using K=abc::TextEncodingKind;
     auto decode=[](std::string_view bytes,abc::TextEncoding encoding,bool detect=false){return abc::decode_text_bytes(bytes,encoding,detect,{});};
@@ -4813,7 +4828,7 @@ void file_library() {
     };
     const auto path=directory/fs::path(u8"Текст.txt"), lines=directory/"lines.txt";
     const auto file=quote(path), linefile=quote(lines);
-    result("begin writeln(FileExists("+file+")); WriteAllText("+file+",'Привет 🌍'); writeln(FileExists("+file+"),' ',ReadAllText("+file+")); end.", "False\nTrue Привет 🌍\n");
+    result("begin writeln(FileExists("+file+")); WriteAllText("+file+",'Привет 🌍',Encoding.UTF8); writeln(FileExists("+file+"),' ',ReadAllText("+file+")); end.", "False\nTrue Привет 🌍\n");
     result("begin var s:string:=nil; WriteAllText("+file+",s); writeln(Length(ReadAllText("+file+"))); end.","0\n");
     result("begin var a:=new string[2]; a[0]:=nil; a[1]:='tail'; WriteAllLines("+linefile+",a); var b:=ReadAllLines("+linefile+"); writeln(Length(b),' [',b[0],'] ',b[1],' ',b[0]=nil); end.","2 [] tail False\n");
     result("begin WriteAllLines("+linefile+",Arr('alpha','beta')); var lines:=ReadAllLines("+linefile+"); writeln(Length(lines),' ',lines[0],' ',lines[1]); end.", "2 alpha beta\n");
@@ -4829,7 +4844,8 @@ void file_library() {
         result("uses FilesOperations;begin var s:=ReadFileToEnd("+file+");Writeln(Pos('П🌍',s)>0,' ',Pos('42',s)>0);end.","True True\n");
     }
     { std::ofstream out(path,std::ios::binary); out << "\xff"; }
-    runtime_error("begin writeln(ReadAllText("+file+")); end.", "E_ENCODING");
+    result("begin Writeln(ReadAllText("+file+"));end.","я\n");
+    result("begin DefaultEncoding:=Encoding.UTF8;Writeln(ReadAllText("+file+"));end.","�\n");
     runtime_error("begin writeln(ReadAllText("+quote(directory/"missing.txt")+")); end.", "E_IO");
     runtime_error("begin WriteAllText("+quote(directory/"missing"/"file.txt")+",'x'); end.", "E_IO");
     { std::ofstream out(path,std::ios::binary); out << std::string(1'048'577,'x'); }
@@ -4881,7 +4897,7 @@ void file_library() {
     result("begin ChDir("+moves+"); writeln(RenameFile('missing.txt','new.txt'),' ',RenameFile('missing.txt','missing.txt'),' ',RenameFile('renamed.txt','missing/target.txt')); writeln(FileExists('renamed.txt')); end.","False False False\nTrue\n");
     result("begin ChDir("+moves+"); MkDir('from-dir/child'); WriteAllText('from-dir/child/note.txt','inside'); writeln(RenameFile('from-dir','bad-dir')); writeln(RenameDirectory('from-dir','renamed-dir'),' ',ReadAllText('renamed-dir/child/note.txt')); writeln(RenameDirectory('renamed-dir','renamed-dir'),' ',RenameDirectory('renamed-dir','occupied-dir'),' ',RenameDirectory('renamed-dir','occupied.txt')); writeln(ReadAllText('renamed-dir/child/note.txt'),' ',ReadAllText('occupied.txt')); end.","False\nTrue inside\nFalse False False\ninside target\n");
     result("begin ChDir("+moves+"); writeln(RenameDirectory('renamed-dir','renamed-dir/child/subdir'),' ',RenameDirectory('missing-dir','new-dir'),' ',RenameDirectory('renamed-dir','missing-parent/new-dir')); writeln(RenameDirectory('renamed.txt','via-directory.txt'),' ',ReadAllText('via-directory.txt')); end.","False False False\nTrue source\n");
-    result("begin ChDir("+moves+"); WriteAllText('имя''файла.txt','данные 🌍'); writeln(RenameFile('имя''файла.txt','новое имя.txt'),' ',ReadAllText('новое имя.txt')); MkDir('старое имя'); writeln(RenameDirectory('старое имя','новое имя')); end.","True данные 🌍\nTrue\n");
+    result("begin ChDir("+moves+"); WriteAllText('имя''файла.txt','данные 🌍',Encoding.UTF8); writeln(RenameFile('имя''файла.txt','новое имя.txt'),' ',ReadAllText('новое имя.txt')); MkDir('старое имя'); writeln(RenameDirectory('старое имя','новое имя')); end.","True данные 🌍\nTrue\n");
     result("begin ChDir("+moves+"); WriteAllText('case.txt','case'); MkDir('case-dir'); writeln(RenameFile('case.txt','CASE.txt'),' ',RenameDirectory('case-dir','CASE-DIR')); end.","True True\n");
     bool file_case=false, directory_case=false;
     for (const auto& entry:fs::directory_iterator(directory/"moves")) {
@@ -4991,6 +5007,24 @@ void text_files() {
         return result+"'";
     };
     const auto file=quote(directory/"text.txt"), other=quote(directory/"other.txt");
+    result("begin WriteAllText("+file+",'Привет 🌍');Writeln(ReadAllText("+file+"));end.","Привет ??\n");
+    {std::ifstream in(directory/"text.txt",std::ios::binary);const std::string bytes((std::istreambuf_iterator<char>(in)),{});require(bytes=="\xcf\xf0\xe8\xe2\xe5\xf2 ??","DefaultEncoding initializes native text files to CP1251");}
+    result("begin DefaultEncoding:=Encoding.Unicode;WriteAllText("+file+",'Привет 🌍');DefaultEncoding:=Encoding.ASCII;Writeln(ReadAllText("+file+"));end.","Привет 🌍\n");
+    for(const auto code:{1251,65001,1200,1201,12000,12001,20127}) {
+        const auto e="Encoding.GetEncoding("+std::to_string(code)+")";
+        const auto text=code==1251 || code==20127 ? "abc" : "Я🌍";
+        result("begin var f:=OpenWrite("+file+","+e+");f.Write('"+text+"');f.Close;var g:=OpenRead("+file+","+e+");Writeln(g.ReadToEnd);g.Close;end.",std::string(text)+"\n");
+        result("begin var f:Text;Rewrite(f,"+file+","+e+");Write(f,'"+text+"');Close(f);Reset(f,"+file+","+e+");Writeln(f.ReadToEnd);f.Close;Append(f,"+file+","+e+");f.Write('!');f.Close;f.Reset("+e+");Writeln(f.ReadToEnd);f.Close;end.",std::string(text)+"\n"+text+"!\n");
+    }
+    result("begin DefaultEncoding:=Encoding.UTF8;var f:=OpenWrite("+file+");DefaultEncoding:=Encoding.ASCII;f.Write('Я🌍');f.Close;Writeln(ReadAllText("+file+"));end.","Я🌍\n");
+    result("begin var f:=OpenWrite("+file+",Encoding.UTF8);f.Write('Я');DefaultEncoding:=nil;f.Rewrite(nil);f.Write('🌍');f.Close;DefaultEncoding:=Encoding.ASCII;Writeln(ReadAllText("+file+"));end.","Я🌍\n");
+    result("begin var f:Text;Assign(f,"+file+");f.Rewrite(Encoding.Unicode);f.Write('Я');f.Flush;f.Close;f.Reset(Encoding.ASCII);Writeln(f.ReadToEnd);f.Close;end.","Я\n");
+    runtime_error("begin var f:=OpenWrite("+file+");f.Append(Encoding.ASCII);end.","E_IO");
+    for(const auto operation:{"ReadAllText("+file+")","WriteAllText("+file+",'x')","OpenRead("+file+")","OpenWrite("+file+")"})runtime_error("begin DefaultEncoding:=nil;"+operation+";end.","E_NIL");
+    runtime_error("begin var f:Text;Assign(f,"+file+");f.Reset(nil);end.","E_NIL");
+    runtime_error("begin var f:Text;f.Reset(nil);end.","E_IO");
+    result("begin var f:=OpenWrite("+file+",Encoding.Unicode);f.Close;var g:=OpenAppend("+file+",Encoding.Unicode);g.Write('Я');g.Close;Writeln(ReadAllText("+file+"));end.","Я\n");
+    {std::ifstream in(directory/"text.txt",std::ios::binary);const std::string bytes((std::istreambuf_iterator<char>(in)),{});require(bytes=="\xff\xfe\x2f\x04","Text emits one Unicode preamble even for empty initial write and later append");}
     const std::string unit_newline=
 #ifdef _WIN32
         "\r\n";
@@ -5000,14 +5034,14 @@ void text_files() {
     result("uses Events,PointRect,FilesOperations; begin WriteStringToFile("+file+",'one'#13'two'#10'three'#13#10'four'); Write(ReadFileToEnd("+file+")); end.","one"+unit_newline+"two"+unit_newline+"three"+unit_newline+"four"+unit_newline);
     result("uses FilesOperations; begin FilesOperations.WriteStringToFile("+file+",'abc'); Write(FilesOperations.ReadFileToEnd("+file+")); end.","abc"+unit_newline);
     result("uses FilesOperations; begin WriteStringToFile("+file+",''); Writeln(ReadFileToEnd("+file+")=''); WriteStringToFile("+file+",#13#10); Write(ReadFileToEnd("+file+")); end.","True\n"+unit_newline);
-    result("uses FilesOperations; begin var s:string:=nil; WriteStringToFile("+file+",s); Writeln(ReadAllText("+file+")); WriteStringToFile("+file+",'Я🌍'); Writeln(ReadAllText("+file+")); end.","nil\nЯ🌍\n");
+    result("uses FilesOperations; begin DefaultEncoding:=Encoding.UTF8; var s:string:=nil; WriteStringToFile("+file+",s); Writeln(ReadAllText("+file+")); WriteStringToFile("+file+",'Я🌍'); Writeln(ReadAllText("+file+")); end.","nil\nЯ🌍\n");
     result("uses FilesOperations; function ReadFileToEnd(name:string):string; begin Result:='local'; end; begin WriteStringToFile("+file+",'native'); Writeln(ReadFileToEnd("+file+"),' ',Pos('native',FilesOperations.ReadFileToEnd("+file+"))=1); end.","local True\n");
     result("uses FilesOperations; type R=record ReadFileToEnd:string; end; begin var FilesOperations:R; FilesOperations.ReadFileToEnd:='field'; Writeln(FilesOperations.ReadFileToEnd); end.","field\n");
     result("uses FilesOperations; begin MkDir("+quote(directory/"unit-child")+"); ChDir("+quote(directory/"unit-child")+"); WriteStringToFile('relative.txt','local'); Writeln(ReadAllText('relative.txt')); end.","local\n");
     runtime_error("uses FilesOperations; begin Writeln(ReadFileToEnd("+quote(directory/"missing-unit.txt")+")); end.","E_IO");
     runtime_error("uses FilesOperations; begin WriteStringToFile(nil,'bad'); end.","E_IO");
     runtime_error("uses FilesOperations; begin Writeln(ReadFileToEnd(nil)); end.","E_IO");
-    runtime_error("uses FilesOperations; begin WriteStringToFile("+file+",StringOfChar('Я',1048576)); end.","E_LIMIT");
+    runtime_error("uses FilesOperations; begin DefaultEncoding:=Encoding.UTF8; WriteStringToFile("+file+",StringOfChar('Я',1048576)); end.","E_LIMIT");
     result("uses FilesOperations; begin WriteStringToFile("+file+",StringOfChar(#10,524288)); Writeln(Length(ReadFileToEnd("+file+"))); end.",std::to_string(524288*unit_newline.size())+"\n");
 #ifdef _WIN32
     runtime_error("uses FilesOperations; begin WriteStringToFile("+file+",StringOfChar(#10,1048576)); ReadFileToEnd("+file+"); end.","E_LIMIT");
@@ -5029,10 +5063,10 @@ void text_files() {
         error([&]{abc::execute(abc::compile("begin Writeln('must not run'); WriteStringToFile('x','y'); end."),input,output);},"E_NAME");
         require(output.str().empty(),"Unit imports are checked before execution");
     }
-    result("begin var f:=OpenWrite("+file+"); f.Write(' ',#13,#10,'Я','🌍'); f.Close; f.Reset; Writeln(Ord(ReadChar(f)),' ',Ord(f.ReadChar),' ',Ord(f.ReadChar),' ',f.ReadChar); Writeln(Ord(f.ReadChar),' ',Ord(f.ReadChar),' ',Ord(f.ReadChar),' ',f.Eof); f.Close; end.","32 13 10 Я\n55356 57101 65535 True\n");
+    result("begin DefaultEncoding:=Encoding.UTF8; var f:=OpenWrite("+file+"); f.Write(' ',#13,#10,'Я','🌍'); f.Close; f.Reset; Writeln(Ord(ReadChar(f)),' ',Ord(f.ReadChar),' ',Ord(f.ReadChar),' ',f.ReadChar); Writeln(Ord(f.ReadChar),' ',Ord(f.ReadChar),' ',Ord(f.ReadChar),' ',f.Eof); f.Close; end.","32 13 10 Я\n55356 57101 65535 True\n");
     result("begin var f:=OpenWrite("+file+"); f.Writeln('ax'); f.Writeln('by'); f.Close; f.Reset; Writeln(ReadlnChar(f),' ',f.ReadlnChar,' ',f.Eof); f.Close; end.","a b True\n");
     result("begin var f:=OpenWrite("+file+"); f.Write('Яx 65535'); f.Close; f.Reset; var c:char; var w:word; Read(f,c); Writeln(c); Read(f,c); Read(f,w); Writeln(c,' ',w); f.Close; end.","Я\nx 65535\n");
-    result("begin var f:=OpenWrite("+file+"); f.Write(#55356,#57101); f.Close; Writeln(ReadAllText("+file+")); end.","🌍\n");
+    result("begin DefaultEncoding:=Encoding.UTF8; var f:=OpenWrite("+file+"); f.Write(#55356,#57101); f.Close; Writeln(ReadAllText("+file+")); end.","🌍\n");
     result("begin var f:=OpenWrite("+file+"); f.Writeln(byte(255),' ',shortint(-128),' ',smallint(-32768)); f.Close; f.Reset; var b:byte; var s:shortint; var n:smallint; Read(f,b,s,n); Writeln(b,' ',s,' ',n); f.Close; end.","255 -128 -32768\n");
     runtime_error("begin WriteAllText("+file+",'256'); var f:=OpenRead("+file+"); var b:byte; Read(f,b); end.","E_OVERFLOW");
     runtime_error("begin WriteAllText("+file+",'-129'); var f:=OpenRead("+file+"); var s:shortint; Read(f,s); end.","E_OVERFLOW");
@@ -5042,7 +5076,7 @@ void text_files() {
     runtime_error("begin WriteAllText("+file+",'-1'); var f:=OpenRead("+file+"); var u:uint64; Read(f,u); end.","E_OVERFLOW");
     runtime_error("begin WriteAllText("+file+",'4294967296'); var f:=OpenRead("+file+"); var w:longword; Read(f,w); end.","E_OVERFLOW");
     result("begin var f:Text; Assign(f,"+file+"); Rewrite(f); Writeln(f,12,' ',34,' tail'); Close(f); Reset(f); var a,b:integer; var s:string; Read(f,a,b); Read(f,s); Writeln(a,' ',b,' [',s,'] ',Eoln(f),' ',Eof(f)); Readln(f,s); Writeln('[',s,'] ',Eof(f)); Readln(f,s); Writeln('[',s,']'); Close(f); end.","12 34 [ tail] True False\n[] True\n[]\n");
-    result("procedure Add(f:Text); begin Writeln(f,'добавлено 🌍'); end; begin var f:=OpenAppend("+file+"); var alias:=f; Add(alias); Close(alias); var g:=OpenRead("+file+"); Readln(g); Writeln(ReadString(g)); Close(g); end.","добавлено 🌍\n");
+    result("procedure Add(f:Text); begin Writeln(f,'добавлено 🌍'); end; begin DefaultEncoding:=Encoding.UTF8; var f:=OpenAppend("+file+"); var alias:=f; Add(alias); Close(alias); var g:=OpenRead("+file+"); Readln(g); Writeln(ReadString(g)); Close(g); end.","добавлено 🌍\n");
     result("begin var f:=new TextFile; Rewrite(f,"+file+"); Write(f,'abc'); Rewrite(f); Write(f,'X'); Close(f); Writeln(ReadAllText("+file+")); Rewrite(f); Write(f,'abcdef'); Flush(f); Rewrite(f); Write(f,'XY'); Close(f); Writeln(ReadAllText("+file+")); end.","abcX\nXYcdef\n");
     result("begin var f:Text; Write(f); Read(f); Flush(f); AssignFile(f,"+file+"); Rewrite(f); Writeln(f,1,' ',2147483648,' ',1.5,' ',True,' word'); CloseFile(f); Reset(f); Writeln(ReadInteger(f),' ',ReadInt64(f),' ',ReadReal(f),' ',ReadBoolean(f),' ',ReadLexem(f)); Writeln(SeekEoln(f)); Readln(f); Writeln(SeekEof(f)); Close(f); end.","1 2147483648 1.5 True word\nTrue\nTrue\n");
     result("begin var f:=OpenWrite("+file+"); Writeln(f,'a'); Writeln(f,'b'); Close(f); Reset(f); var s,t:string; Readln(f,s,t); Writeln('[',s,'] [',t,']'); Writeln(ReadlnString(f)); Close(f); end.","[a] []\nb\n");
@@ -5057,7 +5091,7 @@ void text_files() {
     { std::ofstream out(path,std::ios::binary); out << "  \t\r\n42  \t\n"; }
     result("begin var f:=OpenRead("+file+"); Writeln(SeekEoln(f),' ',Eof(f)); Readln(f); Writeln(ReadlnInteger(f),' ',Eof(f)); Close(f); end.","True False\n42 True\n");
     { std::ofstream out(path,std::ios::binary); out << "\xe3\x80\x80" "42 9223372036854775807 -1.5e2 FALSE"; }
-    result("begin var f:=OpenRead("+file+"); var n:integer; var big:int64; var r:real; var b:boolean; Read(f,n,big,r,b); Writeln(n,' ',big,' ',r,' ',b); Close(f); end.","42 9223372036854775807 -150 False\n");
+    result("begin var f:=OpenRead("+file+",Encoding.UTF8); var n:integer; var big:int64; var r:real; var b:boolean; Read(f,n,big,r,b); Writeln(n,' ',big,' ',r,' ',b); Close(f); end.","42 9223372036854775807 -150 False\n");
     { std::ofstream out(path,std::ios::binary); out.write("42\0\0\n",5); }
     result("begin var f:=OpenRead("+file+"); Writeln(ReadInteger(f)); Close(f); end.","42\n");
     { std::ofstream out(path,std::ios::binary); out << "2147483648"; }
@@ -5076,13 +5110,13 @@ void text_files() {
     runtime_error("begin var f:=OpenWrite("+file+"); var n:integer; Read(f,n); end.","E_IO");
     runtime_error("begin var f:=OpenRead("+file+"); Writeln(f,'bad'); end.","E_IO");
     { std::ofstream out(path,std::ios::binary); out << "\xff"; }
-    runtime_error("begin var f:=OpenRead("+file+"); end.","E_ENCODING");
+    result("begin var f:=OpenRead("+file+");Writeln(f.ReadToEnd);f.Close;end.","я\n");
     { std::ofstream out(path,std::ios::binary); out << std::string(1'048'577,'x'); }
     runtime_error("begin var f:=OpenRead("+file+"); end.","E_LIMIT");
     runtime_error("begin var f:=OpenAppend("+file+"); end.","E_LIMIT");
     runtime_error("begin var f:=OpenWrite("+file+"); var s:string:='x'; var i:=0; while i<20 do begin s:=s+s; Inc(i); end; Write(f,s); Writeln(f); end.","E_LIMIT");
     result("begin var f:=OpenWrite("+file+"); var s:string:='a'; var i:=0; while i<11 do begin s:=s+s; Inc(i); end; Write(f,s); Flush(f); Close(f); Writeln(Length(ReadAllText("+file+"))); end.","2048\n");
-    result("begin var f:=OpenWrite("+file+"); Write(f,Copy('🌍',1,1)); Write(f,Copy('🌍',2,1)); Close(f); Writeln(ReadAllText("+file+")); end.","🌍\n");
+    result("begin DefaultEncoding:=Encoding.UTF8; var f:=OpenWrite("+file+"); Write(f,Copy('🌍',1,1)); Write(f,Copy('🌍',2,1)); Close(f); Writeln(ReadAllText("+file+")); end.","🌍\n");
     runtime_error("begin var files:=new List<Text>; var i:=0; while i<65 do begin files.Add(OpenRead("+file+")); Inc(i); end; end.","E_LIMIT");
     result("begin var files:=new List<Text>; var i:=0; while i<200 do begin var f:=OpenRead("+file+"); Close(f); files.Add(f); Inc(i); end; Writeln(files.Count); end.","200\n");
     runtime_error("uses Collections; begin var m:=new AssocArray<string,Text>; Reset(m['absent']); end.","E_NIL");
@@ -5106,7 +5140,7 @@ void text_files() {
     }
     result("begin var f:Text; f.Write; f.Print(); f.Flush; end.","");
     result("begin var f:=OpenWrite("+file+"); f.Write(1,' ',2); f.Writeln; f.Print(3,4); f.Println('a','b'); f.Println(); f.Writeln('last'); f.Flush(); f.Close; f.Reset(); Writeln('[',f.ReadString,']'); Writeln('[',f.ReadlnString(),']'); Writeln('[',f.ReadlnString,']'); Writeln('[',f.ReadString(),'] ',f.Eof()); f.Close(); end.","[1 2]\n[3 4 a b]\n[]\n[last] True\n");
-    result("begin var f:=OpenWrite("+file+"); f.Writeln(' 42 rest'); f.Writeln('1.5'); f.Writeln('TRUE'); f.Writeln('word tail'); f.Close; f.Reset; Writeln(f.ReadInteger,' [',f.ReadString,']'); Writeln(f.ReadlnReal(),' ',f.ReadlnBoolean); Writeln(f.ReadWord); Writeln('[',f.ReadlnString,'] ',f.SeekEof); f.Close; f.Append; f.Println('добавлено','🌍'); f.Close; f.Reset; f.Readln; f.Readln(); f.Readln; f.Readln; Writeln(f.ReadString); f.Close; end.","42 [ rest]\n1.5 True\nword\n[ tail] True\nдобавлено 🌍\n");
+    result("begin DefaultEncoding:=Encoding.UTF8; var f:=OpenWrite("+file+"); f.Writeln(' 42 rest'); f.Writeln('1.5'); f.Writeln('TRUE'); f.Writeln('word tail'); f.Close; f.Reset; Writeln(f.ReadInteger,' [',f.ReadString,']'); Writeln(f.ReadlnReal(),' ',f.ReadlnBoolean); Writeln(f.ReadWord); Writeln('[',f.ReadlnString,'] ',f.SeekEof); f.Close; f.Append; f.Println('добавлено','🌍'); f.Close; f.Reset; f.Readln; f.Readln(); f.Readln; f.Readln; Writeln(f.ReadString); f.Close; end.","42 [ rest]\n1.5 True\nword\n[ tail] True\nдобавлено 🌍\n");
     result("begin var f:Text; Assign(f,"+quote(directory/"missing.txt")+"); Writeln(f.Name,' ',f.FullName()="+quote(directory/"missing.txt",true)+"); ChDir("+quote(directory/"child")+"); Writeln(f.FullName="+quote(directory/"missing.txt",true)+"); end.","missing.txt True\nTrue\n");
     { std::ofstream out(path,std::ios::binary); out << "12 rest\r\nnext\rtail\n"; }
     result("begin var f:=OpenRead("+file+"); Writeln(f.ReadInteger); Writeln('[',f.ReadToEnd(),']'); Writeln(f.Eof,' [',f.ReadToEnd,']'); f.Close; Writeln(f.Name); end.","12\n[ rest\r\nnext\rtail\n]\nTrue []\ntext.txt\n");
@@ -5889,6 +5923,7 @@ int main() {
     windows1251_standard_functions();
     native_text_encoding_codecs();
     typed_encoding_language();
+    default_encoding_language();
     escaped_identifiers_language();
     structural_output();
     try_console_read();

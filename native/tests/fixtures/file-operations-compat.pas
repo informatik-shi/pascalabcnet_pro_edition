@@ -2,6 +2,7 @@ uses FilesOperations, Events, PointRect;
 function ReadFileToEnd(name:string):string;
 begin Result:='user'; end;
 begin
+  DefaultEncoding:=Encoding.UTF8;
   WriteStringToFile('native-file-operations.txt','one'#13'two'#10'three'#13#10'four');
   Write(FilesOperations.ReadFileToEnd('native-file-operations.txt'));
   FilesOperations.WriteStringToFile('native-file-operations.txt','');

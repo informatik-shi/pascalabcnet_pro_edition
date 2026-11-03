@@ -208,6 +208,7 @@ def main():
                 ("short-class-bodies.pas", "Значение: 8\nЗамыкание: 8\n"),
                 ("windows-characters.pas", "Привет\nКоды: 207 184\nЗамена: ?\n"),
                 ("text-encodings.pas", "Кодировки: 65001 1251\n[207,240,232,226,229,242]\nПривет\nПривет 🌍\n"),
+                ("default-encoding.pas", "По умолчанию: 1251\nОткрытый файл сохранил Unicode: Привет 🌍\nЯвная CP1251: Привет\n"),
                 ("class-properties.pas", "Свойство: 7\nЧерез метод: 14\n"),
                 ("class-methods.pas", "Значение: 5\nОбщая ссылка: 6\n"),
                 ("class-fields.pas", "Связанные объекты: 9 7\nОбщая ссылка: 11\n11 9 \n"),
@@ -329,6 +330,20 @@ def main():
                         or "EN:" not in attempted.stderr or "RU:" not in attempted.stderr
                         or f"{encoding_source}:{line}:" not in attempted.stderr):
                     raise RuntimeError(f"{name} Encoding typed/bilingual error mismatch: {attempted.stdout!r}, {attempted.stderr!r}")
+            encoding_source.write_text(
+                "uses System.Text;begin\nWriteln(DefaultEncoding.CodePage);\n"
+                "WriteAllText('default-cp1251.tmp','Я🌍');\n"
+                "DefaultEncoding:=Encoding.Unicode;var f:=OpenWrite('snapshot-unicode.tmp');\n"
+                "DefaultEncoding:=Encoding.ASCII;f.Write('Привет 🌍');f.Close;\n"
+                "Writeln(ReadAllText('snapshot-unicode.tmp'));\n"
+                "f.Rewrite(Encoding.UTF8);f.Write('Я🌍');f.Close;\n"
+                "f.Reset(Encoding.ASCII);Writeln(f.ReadToEnd);f.Close;\nend.", encoding="utf-8")
+            attempted = subprocess.run([runner, "run", str(encoding_source)], text=True, encoding="utf-8",
+                                       capture_output=True, cwd=folder, env=env, timeout=10)
+            if (attempted.returncode or attempted.stdout != "1251\nПривет 🌍\nЯ🌍\n"
+                    or (folder / "default-cp1251.tmp").read_bytes() != b"\xdf??"
+                    or (folder / "snapshot-unicode.tmp").read_bytes() != b"\xef\xbb\xbf" + "Я🌍".encode("utf-8")):
+                raise RuntimeError(f"{name} DefaultEncoding/Text snapshot failed: {attempted.stdout!r}, {attempted.stderr!r}")
             character = folder / "Ошибки символов.pas"
             school_error = folder / "Ошибки School.pas"
             for expression, code, english, russian in [
@@ -1160,6 +1175,7 @@ def main():
             results[-1]["unicode_bom_text_file_decoding"] = "passed"
             results[-1]["native_cp1251_character_functions"] = "passed"
             results[-1]["typed_encoding_codecs_and_explicit_file_overloads"] = "passed"
+            results[-1]["default_encoding_and_text_codec_snapshots"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 

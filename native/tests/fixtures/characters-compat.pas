@@ -20,7 +20,7 @@ begin
   Writeln;
   var w:word:=65534; Inc(w); Writeln(w,' ',w+1,' ',word('Я'));
   Writeln(Ord(#0),' ',Ord(#65535),' ',ChrUnicode(1071));
-  var f:=OpenWrite('native-characters.txt');
+  var f:=OpenWrite('native-characters.txt',Encoding.UTF8);
   f.Write(' ',#13,#10,'Я',#55356,#57101); f.Close; f.Reset;
   Writeln(Ord(f.ReadChar),' ',Ord(f.ReadChar),' ',Ord(f.ReadChar),' ',f.ReadChar);
   Writeln(Ord(f.ReadChar),' ',Ord(f.ReadChar),' ',Ord(f.ReadChar),' ',f.Eof);

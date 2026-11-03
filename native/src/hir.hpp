@@ -46,6 +46,7 @@ struct Module {
     std::vector<TypeInfo> types;
     std::vector<RoutineBody> routines;
     std::optional<std::size_t> print_delimiter;
+    std::optional<std::size_t> default_encoding;
 };
 
 Module analyze_pascal(std::string_view source);

@@ -1,6 +1,7 @@
 #include "text_file.hpp"
 #include "big_integer_runtime.hpp"
 #include "files.hpp"
+#include "encoding.hpp"
 #include "diagnostics.hpp"
 #include "stdlib.hpp"
 #include "integer_values.hpp"
@@ -24,6 +25,11 @@ constexpr std::size_t file_limit=1'048'576;
 bool whitespace(char16_t c) {
     return c==u' ' || (c>=9 && c<=13) || c==0x85 || c==0xa0 || c==0x1680
         || (c>=0x2000 && c<=0x200a) || c==0x2028 || c==0x2029 || c==0x202f || c==0x205f || c==0x3000;
+}
+std::string encoded(const TextFile& file,std::u16string_view text,SourceLocation location) {
+    auto bytes=file.encoding ? encode_text_bytes(text,*file.encoding,location) : to_utf8(text,true);
+    if(file.preamble_pending && file.encoding)bytes.insert(0,text_encoding_preamble(*file.encoding));
+    return bytes;
 }
 void assigned(const TextFile& file, SourceLocation location) {
     if (file.filename.empty()) throw runtime_error(RuntimeError::file_unassigned,location);
@@ -82,11 +88,11 @@ bool FileContext::text_file_locked(const std::filesystem::path& path, bool subtr
 }
 void TextFile::flush(SourceLocation location) {
     if (!writer.is_open()) return;
-    const auto bytes=to_utf8(pending,true);
+    const auto bytes=encoded(*this,pending,location);
     if (position>file_limit || bytes.size()>file_limit-position) throw runtime_error(RuntimeError::file_limit,location);
     writer.write(bytes.data(),static_cast<std::streamsize>(bytes.size())); writer.flush();
     if (!writer) throw runtime_error(RuntimeError::file_io,location);
-    position+=bytes.size(); size=std::max(size,position); pending.clear();
+    position+=bytes.size(); size=std::max(size,position); pending.clear();preamble_pending=false;
 }
 void TextFile::close(SourceLocation location) {
     assigned(*this,location);
@@ -100,7 +106,7 @@ void TextFile::close(SourceLocation location) {
 void text_assign(FileContext& files, TextFile& file, const Value& name, SourceLocation location) {
     file.filename=files.resolve(string_text(name),location);
 }
-void text_open(FileContext& files, const std::shared_ptr<TextFile>& pointer, unsigned mode, SourceLocation location) {
+void text_open(FileContext& files, const std::shared_ptr<TextFile>& pointer, unsigned mode, SourceLocation location,const Value* explicit_encoding) {
     auto& file=text_file(Value{pointer},location); assigned(file,location);
     files.prepare_text_open(pointer,location);
     if (mode==1 && file.writer.is_open()) {
@@ -109,9 +115,11 @@ void text_open(FileContext& files, const std::shared_ptr<TextFile>& pointer, uns
         file.position=0; return;
     }
     if (mode==2 && file.writer.is_open()) throw runtime_error(RuntimeError::file_io,location);
+    const auto selected=explicit_encoding ? &encoding_value(*explicit_encoding,location) : files.encoding(location);
+    const auto snapshot=selected ? std::optional<TextEncoding>{*selected} : std::nullopt;
     if (file.is_open()) file.close(location);
     if (mode==0) {
-        file.content=read_text_file(files,file.filename.u16string(),location);
+        file.content=read_text_file(files,file.filename.u16string(),location,snapshot ? &*snapshot : nullptr);
         file.cursor=0; file.reading=true; file.opened_filename=file.filename; return;
     }
     std::error_code error;
@@ -128,6 +136,7 @@ void text_open(FileContext& files, const std::shared_ptr<TextFile>& pointer, uns
         if (file.writer) file.position=file.size=static_cast<std::size_t>(file.writer.tellp());
     }
     if (!file.writer) { file.writer.close(); file.writer.clear(); throw runtime_error(RuntimeError::file_io,location); }
+    file.encoding=snapshot;file.preamble_pending=file.position==0 && snapshot && !text_encoding_preamble(*snapshot).empty();
     file.pending.clear(); file.opened_filename=file.filename;
 }
 void text_erase(const FileContext& files, const TextFile& file, SourceLocation location) {
@@ -150,16 +159,16 @@ void text_write(TextFile& file, std::u16string_view value, SourceLocation locati
     if (!file.writer.is_open()) throw runtime_error(RuntimeError::file_write_mode,location);
     if (value.size()>file_limit || file.pending.size()>file_limit-value.size()) throw runtime_error(RuntimeError::file_limit,location);
     auto next=file.pending; next+=value;
-    const auto bytes=to_utf8(next,true);
+    const auto bytes=encoded(file,next,location);
     if (file.position>file_limit || bytes.size()>file_limit-file.position) throw runtime_error(RuntimeError::file_limit,location);
     std::size_t offset=0;
     while (next.size()-offset>=1024) {
         std::size_t count=1024;
         if (next[offset+count-1]>=0xd800 && next[offset+count-1]<=0xdbff) --count;
-        const auto chunk=to_utf8(std::u16string_view(next).substr(offset,count),true);
+        const auto chunk=encoded(file,std::u16string_view(next).substr(offset,count),location);
         file.writer.write(chunk.data(),static_cast<std::streamsize>(chunk.size()));
         if (!file.writer) throw runtime_error(RuntimeError::file_io,location);
-        file.position+=chunk.size(); file.size=std::max(file.size,file.position); offset+=count;
+        file.position+=chunk.size(); file.size=std::max(file.size,file.position); offset+=count;file.preamble_pending=false;
     }
     file.pending=next.substr(offset);
 }

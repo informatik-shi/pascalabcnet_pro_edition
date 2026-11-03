@@ -25,7 +25,7 @@ class Generator {
 public:
     Program generate(hir::Module module) {
         program_.locals = std::move(module.locals); program_.types = std::move(module.types);
-        program_.print_delimiter=module.print_delimiter;
+        program_.print_delimiter=module.print_delimiter;program_.default_encoding=module.default_encoding;
         for (auto& routine : module.routines) {
             for (auto local:routine.signature.captures) captured_.insert(local);
             program_.routines.push_back(std::move(routine.signature));
@@ -982,7 +982,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             }
             break;
         case Op::encoding_call:
-            if(instruction.operand>static_cast<std::size_t>(EncodingMethod::file_write) || !encoding_signature_valid(program,type,static_cast<EncodingMethod>(instruction.operand)))invalid(instruction,"Invalid Encoding call metadata");break;
+            if(instruction.operand>static_cast<std::size_t>(EncodingMethod::text_append_named) || !encoding_signature_valid(program,type,static_cast<EncodingMethod>(instruction.operand)))invalid(instruction,"Invalid Encoding call metadata");break;
         case Op::read_lines: case Op::write_lines:
             if (!compound(type) || type_info(program,type).kind!=CompoundKind::array || type_info(program,type).rank!=1 || type_info(program,type).element!=Type::string) invalid(instruction,"File lines require string array"); break;
         case Op::array_copy:
@@ -1499,6 +1499,12 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
 void verify(const Program& program) {
     if (program.print_delimiter && (*program.print_delimiter>=program.locals.size() || !program.locals[*program.print_delimiter].global
         || program.locals[*program.print_delimiter].type!=Type::string)) throw Error("E_BYTECODE",{},"Invalid PrintDelimDefault global");
+    if(program.default_encoding) {
+        const auto slot=*program.default_encoding;
+        if(slot>=program.locals.size() || !program.locals[slot].global || !valid_value_type(program,program.locals[slot].type)
+            || !compound(program.locals[slot].type) || type_info(program,program.locals[slot].type).kind!=CompoundKind::encoding)
+            throw Error("E_BYTECODE",{},"Invalid DefaultEncoding global");
+    }
     if (program.types.size() > 1024 || program.locals.size() > 4096 || program.routines.size() > 256)
         throw Error("E_BYTECODE",{},"Module metadata limit exceeded");
     std::vector<unsigned> depth(program.types.size());

@@ -1033,6 +1033,13 @@ public:
             initial.expression->type=Type::string; initial.expression->value=std::u16string{u" "};
             module_.body.statements.insert(module_.body.statements.begin(),std::move(initial));
         }
+        if(module_.default_encoding) {
+            hir::Stmt initial;initial.kind=hir::StmtKind::assign;initial.local=*module_.default_encoding;
+            initial.expression=std::make_unique<hir::Expr>();
+            auto code=std::make_unique<hir::Expr>();code->kind=hir::ExprKind::literal;code->type=Type::integer;code->value=std::int32_t{1251};
+            initial.expression->arguments.push_back(std::move(code));encoding_expression(*initial.expression,EncodingMethod::from_code_page);
+            module_.body.statements.insert(module_.body.statements.begin(),std::move(initial));
+        }
         scopes_.pop_back();
         if (module_.locals.size() > 4096) throw Error("E_LIMIT",{},"Local variable limit exceeded");
         return std::move(module_);
@@ -1207,6 +1214,13 @@ private:
         }
         return *module_.print_delimiter;
     }
+    std::size_t default_encoding() {
+        if(!module_.default_encoding) {
+            const auto type=encoding_type();module_.default_encoding=module_.locals.size();
+            module_.locals.push_back({"$defaultencoding",type,true});
+        }
+        return *module_.default_encoding;
+    }
     Type tuple_type(const std::vector<Type>& elements,SourceLocation location) {
         if (elements.size()<2 || elements.size()>7) throw Error("E_TYPE",location,"Tuple requires two to seven statically typed elements");
         for (auto element:elements) if (element==Type::nil || element==Type::unit || element==Type::invalid)
@@ -1345,8 +1359,22 @@ private:
     bool bind_encoding_file(hir::Expr& result,std::string_view name,std::string_view unit) {
         if(!unit.empty() && unit!="pabcsystem")return false;
         const bool read=name=="readalltext",write=name=="writealltext";
-        if((!read && !write) || result.arguments.size()!=(read ? 2U : 3U))return false;
-        encoding_expression(result,read ? EncodingMethod::file_read : EncodingMethod::file_write);return true;
+        if((read || write) && result.arguments.size()==(read ? 2U : 3U)) {
+            encoding_expression(result,read ? EncodingMethod::file_read : EncodingMethod::file_write);return true;
+        }
+        if((name=="openread" || name=="openwrite" || name=="openappend") && result.arguments.size()==2) {
+            encoding_expression(result,name=="openread" ? EncodingMethod::text_open_read : name=="openwrite" ? EncodingMethod::text_open_write : EncodingMethod::text_open_append);return true;
+        }
+        if(name=="reset" || name=="rewrite" || name=="append") {
+            const auto count=result.arguments.size();
+            if(count==2 && result.arguments.back()->type==Type::nil)throw Error("E_TYPE",result.location,"Encoding overload requires a known argument type");
+            if(count==3 || (count==2 && compound(result.arguments.back()->type) && info(result.arguments.back()->type,result.location).kind==CompoundKind::encoding)) {
+                encoding_expression(result,name=="reset" ? count==3 ? EncodingMethod::text_reset_named : EncodingMethod::text_reset
+                    : name=="rewrite" ? count==3 ? EncodingMethod::text_rewrite_named : EncodingMethod::text_rewrite
+                    : count==3 ? EncodingMethod::text_append_named : EncodingMethod::text_append);return true;
+            }
+        }
+        return false;
     }
     Type sequence_type(CompoundKind kind, Type element, unsigned rank = 1) {
         for (std::size_t i = 0; i < module_.types.size(); ++i)
@@ -1953,6 +1981,9 @@ private:
             }
             if (source.left->kind==SyntaxExprKind::name && !lookup(source.left->token) && imported_units_.contains(source.left->token.text)) {
                 if (source.kind==SyntaxExprKind::field && source.left->token.text=="pabcsystem") {
+                    if(source.token.text=="defaultencoding") {
+                        result->local=default_encoding();result->kind=hir::ExprKind::local;result->type=module_.locals[result->local].type;break;
+                    }
                     if (source.token.text=="printdelimdefault") {
                         result->kind=hir::ExprKind::local; result->type=Type::string; result->local=print_delimiter(); break;
                     }
@@ -2160,6 +2191,10 @@ private:
                         result->arguments.push_back(std::move(value));
                     }
                     break;
+                }
+                if((name=="reset" || name=="rewrite" || name=="append") && source.arguments.size()==1) {
+                    result->arguments.push_back(std::move(result->left));result->arguments.push_back(expression(*source.arguments[0]));
+                    encoding_expression(*result,name=="reset" ? EncodingMethod::text_reset : name=="rewrite" ? EncodingMethod::text_rewrite : EncodingMethod::text_append);break;
                 }
                 static const std::set<std::string> methods={"readinteger","readreal","readstring","readboolean","readword","readchar","readbiginteger",
                     "readlninteger","readlnreal","readlnstring","readlnboolean","readlnchar","readlnbiginteger","readln","reset","rewrite","append",
@@ -2404,6 +2439,8 @@ private:
                 return expression(call);
             } else if (auto windows_value=windows_character_function_value(source)) {
                 return windows_value;
+            } else if(source.token.text=="defaultencoding") {
+                result->local=default_encoding();result->kind=hir::ExprKind::local;result->type=module_.locals[result->local].type;
             } else if (source.token.text=="printdelimdefault") {
                 result->kind=hir::ExprKind::local; result->type=Type::string; result->local=print_delimiter();
             } else if (source.token.text=="print" || source.token.text=="println") {

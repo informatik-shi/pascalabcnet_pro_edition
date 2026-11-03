@@ -37,7 +37,7 @@ F8 — проверить программу. F9 — запустить.
 Поддерживаются integer, int64, real/double, boolean, char, byte, shortint, smallint, word, longword, uint64, string,
 динамические и двумерные прямоугольные массивы, записи, пользовательские функции и процедуры с var-параметрами,
 условия if, циклы while/for/repeat и foreach по строкам/массивам/List<T>, break/continue, базовая математика, строки, List<T>, Stack<T>, Queue<T>,
-DynArray<T>, SimpleSet<T>, AssocArray<K,V>, LinkedList<T>, LinkedListNode<T>, SingleNode<T> и текстовые файлы UTF-8.
+DynArray<T>, SimpleSet<T>, AssocArray<K,V>, LinkedList<T>, LinkedListNode<T>, SingleNode<T> и текстовые файлы с выбором кодировки.
 Для классов Collections добавьте uses Collections; Для ReadFileToEnd/WriteStringToFile — uses FilesOperations;
 Примеры: examples/structures.pas, examples/files.pas, examples/collections.pas, examples/buffers.pas,
 examples/associations.pas, examples/linked-lists.pas, examples/single-nodes.pas, examples/standard-library.pas,
@@ -79,7 +79,8 @@ Sleep, Milliseconds и MillisecondsDelta: examples/timing.pas.
 Текстовые файлы с BOM читаются как UTF-8, UTF-16LE/BE или UTF-32LE/BE.
 Символы CP1251 и ANSI-алиасы: examples/windows-characters.pas.
 Encoding, CP1251/ASCII/Unicode и выбор кодировки ReadAllText/WriteAllText: examples/text-encodings.pas.
-DefaultEncoding, перегрузки Text и полный API Encoding ещё не перенесены.
+DefaultEncoding изначально CP1251. Его смена и явные Encoding-перегрузки Text: examples/default-encoding.pas.
+Для сохранения всех Unicode-символов выберите Encoding.UTF8/Unicode; полный API Encoding ещё переносится.
 Прямой захват управляющей переменной цикла пока не перенесён; используйте отдельную переменную-копию.
 Совместимость с PascalABC.NET частичная.
 Русские имена и НОД/НОК: examples/russian-identifiers.pas. Массивные GCD/LCM: examples/school-folds.pas.

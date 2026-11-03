@@ -464,6 +464,7 @@ struct Program {
     std::vector<TypeInfo> types;
     std::vector<Routine> routines;
     std::optional<std::size_t> print_delimiter;
+    std::optional<std::size_t> default_encoding;
 };
 
 // compile never executes user code; no module is returned on any diagnostic.

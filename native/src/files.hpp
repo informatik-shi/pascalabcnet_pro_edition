@@ -1,12 +1,15 @@
 #pragma once
 #include "abc/core.hpp"
 #include <filesystem>
+#include <functional>
 namespace abc {
 struct TextEncoding;
 // Each execution owns its current directory; the editor/host cwd never changes.
 class FileContext {
 public:
     FileContext();
+    std::function<const TextEncoding*(SourceLocation)> default_encoding;
+    const TextEncoding* encoding(SourceLocation location) const { return default_encoding ? default_encoding(location) : nullptr; }
     std::filesystem::path resolve(std::u16string_view path, SourceLocation location) const;
     std::u16string directory(SourceLocation location) const;
     void change_directory(std::u16string_view path, SourceLocation location);
