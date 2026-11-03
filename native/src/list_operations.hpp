@@ -14,6 +14,8 @@ inline std::vector<Type> list_operation_parameters(Type element,ListOperation me
     if (method==ListOperation::index_from || method==ListOperation::last_from) return {element,Type::integer};
     return {element};
 }
+bool list_bulk_signature_valid(const Program& program,Type target,Type input);
+void list_bulk(Values& values,const std::shared_ptr<Aggregate>& target,const std::shared_ptr<Aggregate>& input,bool insert,std::int32_t index,const ExecutionOptions& options);
 bool list_operation_signature_valid(const Program& program,Type source,Type result,ListOperation method);
 Value list_operation(Values& values,const std::shared_ptr<Aggregate>& source,ListOperation method,std::span<const Value> arguments,const ExecutionOptions& options);
 }

@@ -1,4 +1,5 @@
 #include "list_operations.hpp"
+#include "sequences.hpp"
 
 namespace abc {
 namespace {
@@ -15,6 +16,47 @@ void range(std::int32_t index,std::int32_t count,std::int32_t size,SourceLocatio
     if (count<0) throw runtime_error(RuntimeError::list_count,location);
     if (index>size || count>size-index) throw runtime_error(RuntimeError::list_range,location);
 }
+}
+bool list_bulk_signature_valid(const Program& program,Type target,Type input) {
+    if (!compound(target) || !compound(input)) return false;
+    const auto& list=type_info(program,target);const auto& source=type_info(program,input);
+    return list.kind==CompoundKind::list && list.rank==1 && source.rank==1 && source.element==list.element
+        && (source.kind==CompoundKind::array || source.kind==CompoundKind::list || source.kind==CompoundKind::sequence);
+}
+void list_bulk(Values& values,const std::shared_ptr<Aggregate>& target,const std::shared_ptr<Aggregate>& input,bool insert,std::int32_t index,const ExecutionOptions& options) {
+    if (!target || target->nil || !input || input->nil) throw runtime_error(RuntimeError::nil_reference,values.location);
+    if (insert && (index<0 || static_cast<std::size_t>(index)>target->items.size())) throw runtime_error(RuntimeError::list_index,values.location);
+    std::uint64_t used=0;const auto element=type_info(values.program,target->type).element;
+    std::shared_ptr<Aggregate> collection;
+    const auto kind=type_info(values.program,input->type).kind;
+    if (kind==CompoundKind::array || kind==CompoundKind::list) collection=input;
+    else if (input->sequence && collection_sequence(input->sequence->provider)) collection=input->sequence->source;
+    if (collection) {
+        const auto count=collection->items.size();if (!count) return;
+        if (target->items.size()>INT32_MAX || count>static_cast<std::size_t>(INT32_MAX)-target->items.size() || count>values.remaining)
+            throw runtime_error(RuntimeError::allocation_limit,values.location);
+        const auto position=insert ? static_cast<std::size_t>(index) : target->items.size();
+        charge(values,used,target->items.size()-position,options);
+        std::vector<std::shared_ptr<Cell>> added;added.reserve(count);
+        for (const auto& item:collection->items) {
+            work(values,used,options);auto cell=values.cell(element,values.copy(item->value));values.own_list_cell(cell,target);added.push_back(std::move(cell));
+        }
+        // Freeze source cells before insertion, including insertion into Self.
+        target->items.insert(target->items.begin()+static_cast<std::ptrdiff_t>(position),added.begin(),added.end());++target->version;return;
+    }
+    auto cursor=sequence_begin(values,input);std::uint64_t position=static_cast<std::uint32_t>(index);
+    for (std::uint64_t i=0;sequence_resume(values,cursor,i,options);++i) {
+        work(values,used,options);
+        if (i>static_cast<std::uint64_t>(INT64_MAX)) throw runtime_error(RuntimeError::integer_overflow,values.location);
+        auto value=sequence_at(values,cursor,static_cast<std::int64_t>(i),options);
+        const auto destination=insert ? position : target->items.size();
+        if (destination>target->items.size()) throw runtime_error(RuntimeError::list_index,values.location);
+        if (target->items.size()>=INT32_MAX) throw runtime_error(RuntimeError::allocation_limit,values.location);
+        charge(values,used,target->items.size()-static_cast<std::size_t>(destination)+1,options);
+        auto cell=values.cell(element,values.copy(value));values.own_list_cell(cell,target);
+        target->items.insert(target->items.begin()+static_cast<std::ptrdiff_t>(destination),std::move(cell));++target->version;
+        if (insert) ++position;
+    }
 }
 bool list_operation_signature_valid(const Program& program,Type source,Type result,ListOperation method) {
     if (static_cast<unsigned>(method)>static_cast<unsigned>(ListOperation::last_range) || !compound(source)) return false;

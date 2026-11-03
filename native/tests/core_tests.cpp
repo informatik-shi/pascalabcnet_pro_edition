@@ -69,6 +69,40 @@ void runtime_error(std::string_view source, std::string_view code) {
     error([&] { (void)run(source); }, code,source);
 }
 
+void list_bulk_ranges() {
+    result("begin var l:=Arr(1,2).ToList;l.AddRange(Arr(3,4));l.InsertRange(1,Arr(7,8));Writeln(l);var s:=SeqGen(2,i->i+5);l.AddRange(s);l.InsertRange(0,SeqGen(2,i->i+9));Writeln(l);end.","[1,7,8,2,3,4]\n[9,10,1,7,8,2,3,4,5,6]\n");
+    result("begin var l:=Arr(1,2,3).ToList;l.AddRange(l);Writeln(l);var m:=Arr(1,2,3).ToList;m.InsertRange(2,m);Writeln(m);var n:=Arr(1,2,3).ToList;n.InsertRange(1,n.AsEnumerable);Writeln(n);end.","[1,2,3,1,2,3]\n[1,2,1,2,3,3]\n[1,1,2,3,2,3]\n");
+    result("begin var l:=new List<char>;l.AddRange('abc');l.InsertRange(1,'XY');Writeln(l);var s:=#55356#57101;l.AddRange(s);Writeln(l.Count,' ',Ord(l[5]),' ',Ord(l[6]));end.","[a,X,Y,b,c]\n7 55356 57101\n");
+    result("begin var calls:=0;var l:=new List<integer>;l.AddRange(SeqGen(3,i->begin Inc(calls);Result:=i;end));Writeln(l,' ',calls);var m:=Arr(9).ToList;m.InsertRange(0,SeqGen(2,i->begin m.Add(100+i);Result:=i+1;end));Writeln(m);end.","[0,1,2] 3\n[1,2,9,100,101]\n");
+    result("begin var l:=Arr(9).ToList;l.AddRange(SeqGen(2,i->begin if i=1 then l.Clear;Result:=i;end));Writeln(l);end.","[1]\n");
+    result("type R=record n:integer;a:array of integer;end;begin var r:R;r.n:=1;r.a:=Arr(2);var a:=Arr(r);var l:=new List<R>;l.AddRange(a);l.InsertRange(0,l);l[0].n:=9;l[0].a[0]:=7;Writeln(l[1].n,' ',a[0].n,' ',r.a[0]);end.","1 1 7\n");
+    result("begin var l:=Arr(1,2).ToList;foreach var x in l do begin l.AddRange(new integer[0]);l.InsertRange(0,Seq(1).Where(v->False));Write(x);end;end.","12");
+    for(int size=0;size<=5;++size)for(int index=0;index<=size;++index) {
+        std::ostringstream expected;for(int i=1;i<=index;++i)expected<<i<<' ';for(int i=1;i<=size;++i)expected<<i<<' ';for(int i=index+1;i<=size;++i)expected<<i<<' ';
+        result("begin var l:=Range(1,"+std::to_string(size)+").ToList;l.InsertRange("+std::to_string(index)+",l);foreach var x in l do Write(x,' ');end.",expected.str());
+    }
+    for(const auto source:{"begin var l:=new List<integer>;l.AddRange(nil);end.","begin var l:=new List<integer>;l.InsertRange(-1,nil);end.","begin var l:List<integer>:=nil;l.AddRange(Arr(1));end.","begin var l:=new List<char>;var s:string:=nil;l.InsertRange(-1,s);end."})runtime_error(source,"E_NIL");
+    for(const auto source:{"begin var l:=new List<integer>;l.InsertRange(-1,new integer[0]);end.","begin var l:=new List<integer>;l.InsertRange(1,Seq(1));end.","begin var l:=Arr(9).ToList;l.InsertRange(1,SeqGen(2,i->begin if i=1 then l.Clear;Result:=i;end));end."})runtime_error(source,"E_RANGE");
+    for(const auto source:{"begin var l:=Arr(1).ToList;foreach var x in l do l.AddRange(Arr(2));end.","begin var l:=Arr(1).ToList;foreach var x in l do l.InsertRange(0,Arr(2));end.","begin var l:=Arr(1,2).ToList;l.AddRange(l.Where(x->True));end.","type R=record n:integer;end;begin var r:R;var l:=new List<R>;l.AddRange(Arr(r));foreach var x in l do l[0].n:=1;end."})runtime_error(source,"E_MODIFIED");
+    for(const auto source:{"begin var l:=new List<integer>;l.AddRange(Arr(1.5));end.","begin var l:=new List<string>;l.AddRange('abc');end.","begin var l:=new List<integer>;l.InsertRange(0,1);end.","begin var l:=new List<integer>;l.AddRange;end.","begin var l:=new List<integer>;l.InsertRange(0);end."})compile_error(source,"E_TYPE");
+    {
+        const auto p=abc::compile("begin var l:=new List<integer>;l.AddRange(SeqGen(3,i->begin if i=2 then begin Writeln(l);Assert(False);end;Result:=i;end));end.");std::istringstream in;std::ostringstream out;
+        error([&]{abc::execute(p,in,out);},"E_ASSERT");require(out.str()=="[0,1]\n","AddRange streams and keeps prior additions before a later source failure");
+    }
+    {
+        const auto p=abc::compile("function L:List<integer>;begin Write('L');Result:=nil;end;function I:integer;begin Write('I');Result:=-1;end;function S:sequence of integer;begin Write('S');Result:=Seq(1);end;begin L().InsertRange(I(),S());end.");std::istringstream in;std::ostringstream out;
+        error([&]{abc::execute(p,in,out);},"E_NIL");require(out.str()=="LIS","InsertRange evaluates receiver, index and source before instance nil check");
+    }
+    const auto p=abc::compile("begin var l:=new List<integer>;l.InsertRange(0,Arr(1,2));end.");const auto op=std::find_if(p.code.begin(),p.code.end(),[](const auto& v){return v.op==abc::Op::list_bulk;});
+    abc::Values values{p,1000};auto target=values.array(op->type,3),input=values.array(static_cast<abc::Type>(op->operand>>1),2);abc::ExecutionOptions options;options.instruction_limit=1;
+    error([&]{abc::list_bulk(values,target,input,true,0,options);},"E_LIMIT");require(target->items.size()==3 && target->version==0,"Optimized range shift work is checked before mutating target");
+    options={};options.cancelled=[] {return true;};error([&]{abc::list_bulk(values,target,input,false,0,options);},"E_CANCELLED");
+    options={};options.allocation_limit=50;error([&]{(void)run("begin var l:=new List<integer>;l.AddRange(0.Iterate(x->x+1));end.","",options);},"E_LIMIT");
+    for(const auto source:{"begin var l:=new List<integer>;l.AddRange(Arr(1));end.","begin var l:=new List<integer>;l.InsertRange(0,SeqGen(2,i->i));end."}) {
+        const auto good=abc::compile(source);for(int kind=0;kind<3;++kind){auto bad=good;for(auto& instruction:bad.code)if(instruction.op==abc::Op::list_bulk){if(kind==0)instruction.operand=std::numeric_limits<std::size_t>::max();if(kind==1)instruction.operand&=1;if(kind==2)instruction.type=abc::Type::integer;}error([&]{abc::verify(bad);},"E_BYTECODE");}
+    }
+}
+
 void list_search_and_ranges() {
     result("begin var l:=Arr(1,2,1).ToList;l.Insert(0,4);l.Insert(l.Count,5);Writeln(l);Writeln(l.Remove(1),' ',l.Remove(9),' ',l);Writeln(l.IndexOf(1),' ',l.LastIndexOf(1),' ',l.IndexOf(2,1),' ',l.IndexOf(5,1,3));var c:=l.GetRange(1,2);Writeln(c);l.RemoveRange(1,2);Writeln(l,' ',c);end.","[4,1,2,1,5]\nTrue False [4,2,1,5]\n2 2 1 3\n[2,1]\n[4,5] [2,1]\n");
     result("begin var l:=Arr(1,2,1,3,1).ToList;Writeln(l.IndexOf(1),' ',l.IndexOf(1,1),' ',l.IndexOf(1,1,1));Writeln(l.LastIndexOf(1),' ',l.LastIndexOf(1,3),' ',l.LastIndexOf(1,3,1),' ',l.LastIndexOf(1,2,3));Writeln(l.IndexOf(1,l.Count,0),' ',l.LastIndexOf(1,0,0));end.","0 2 -1\n4 2 -1 2\n-1 -1\n");
@@ -5305,6 +5339,7 @@ int main() {
     conditional_expressions_language();
     collection_replace_and_copy();
     list_search_and_ranges();
+    list_bulk_ranges();
     escaped_identifiers_language();
     structural_output();
     try_console_read();

@@ -2520,7 +2520,21 @@ private:
     }
     bool bind_list_operation(hir::Expr& result,const SyntaxExpr& source) {
         if (!compound(result.left->type) || info(result.left->type,result.location).kind!=CompoundKind::list) return false;
-        const auto name=source.token.text;ListOperation method;
+        const auto name=source.token.text;
+        if (name=="addrange" || name=="insertrange") {
+            const bool insert=name=="insertrange";const auto element=info(result.left->type,result.location).element;
+            if (source.arguments.size()!=(insert ? 2U : 1U)) throw Error("E_TYPE",result.location,"Wrong List operation argument count");
+            if (insert) result.arguments.push_back(convert(expression(*source.arguments[0]),Type::integer));
+            auto input=expression(*source.arguments.back());
+            if (input->type==Type::nil) input=convert(std::move(input),sequence_type(CompoundKind::sequence,element));
+            else {
+                if (sequence_source(input->type,result.location).element!=element) throw Error("E_TYPE",result.location,"List range source element type must match exactly");
+                if (input->type==Type::string) input=convert(std::move(input),sequence_type(CompoundKind::sequence,Type::character));
+            }
+            result.operation_type=input->type;result.arguments.push_back(std::move(input));result.local=insert ? 1U : 0U;
+            result.type=Type::unit;result.kind=hir::ExprKind::list_bulk;return true;
+        }
+        ListOperation method;
         const auto count=source.arguments.size();
         if (name=="remove") method=ListOperation::remove;
         else if (name=="insert") method=ListOperation::insert;

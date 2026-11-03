@@ -1,3 +1,4 @@
+    {"List range source element type must match exactly","Тип элементов источника диапазона должен точно совпадать с типом элементов List"},
     {"Wrong List operation argument count","Неверное число аргументов операции над List"},
     {"Replace requires a source and two element values","Replace требует источник и два значения типа элемента"},
     {"Replace requires a rank-one typed array or List","Replace требует одномерный типизированный массив или List"},

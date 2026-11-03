@@ -268,6 +268,11 @@ static void execute_impl(const Program& program, std::istream& input, std::ostre
             }
             break;
         }
+        case Op::list_bulk: {
+            const auto input=std::get<std::shared_ptr<Aggregate>>(pop());const bool insert=bool(instruction.operand&1U);
+            const auto index=insert ? std::get<std::int32_t>(pop()) : 0;const auto target=std::get<std::shared_ptr<Aggregate>>(pop());
+            list_bulk(values,target,input,insert,index,options);break;
+        }
         case Op::list_operation: {
             const auto method=static_cast<ListOperation>(instruction.operand&15U);
             const auto count=list_operation_parameters(type_info(program,instruction.type).element,method).size();std::vector<Value> arguments(count);

@@ -97,6 +97,9 @@ private:
             expression(*node.left); emit(Op::sequence_aggregate,node.left->type,node.local,node.location); break;
         case hir::ExprKind::sequence_partial:
             expression(*node.left); emit(Op::sequence_partial,node.left->type,0,node.location); break;
+        case hir::ExprKind::list_bulk:
+            expression(*node.left);for (const auto& argument:node.arguments) expression(*argument);
+            emit(Op::list_bulk,node.left->type,(static_cast<std::size_t>(node.operation_type)<<1)|node.local,node.location);break;
         case hir::ExprKind::list_operation:
             expression(*node.left);for (const auto& argument:node.arguments) expression(*argument);
             emit(Op::list_operation,node.left->type,(static_cast<std::size_t>(node.type)<<4)|node.local,node.location);break;
@@ -613,6 +616,12 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             }
             break;
         }
+        case Op::list_bulk: {
+            const auto input=instruction.operand>>1;
+            if (input<64 || input>=64+program.types.size() || !list_bulk_signature_valid(program,type,static_cast<Type>(input)))
+                invalid(instruction,"Invalid List range source signature");
+            break;
+        }
         case Op::list_operation: {
             const auto output=instruction.operand>>4,method=instruction.operand&15U;
             if (output>static_cast<std::size_t>(Type::first_compound)+program.types.size()
@@ -1094,6 +1103,8 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             for (auto n=parameters.size();n>0;--n) require(parameters[n-1]);
             stack.push_back(instruction.type); break;
         }
+        case Op::list_bulk:
+            require(static_cast<Type>(instruction.operand>>1));if (instruction.operand&1U) require(Type::integer);require(instruction.type);break;
         case Op::list_operation: {
             const auto parameters=list_operation_parameters(type_info(program,instruction.type).element,static_cast<ListOperation>(instruction.operand&15U));
             for (auto i=parameters.size();i>0;--i) require(parameters[i-1]);require(instruction.type);

@@ -62,6 +62,7 @@ ConvertAll, Transform, Fill и ForEach: examples/collection-callbacks.pas.
 Условные выражения if/then/else и ?: examples/conditional-expressions.pas.
 Замена элементов и независимые копии массивов/List: examples/replace-copy.pas.
 Поиск, вставка, удаление и диапазоны List: examples/list-ranges.pas.
+Добавление и вставка диапазонов AddRange/InsertRange: examples/list-bulk-ranges.pas.
 Прямой захват управляющей переменной цикла пока не перенесён; используйте отдельную переменную-копию.
 Совместимость с PascalABC.NET частичная.
 Русские имена и НОД/НОК: examples/russian-identifiers.pas. Массивные GCD/LCM: examples/school-folds.pas.
