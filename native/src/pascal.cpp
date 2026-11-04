@@ -717,7 +717,7 @@ private:
         return result;
     }
     static int precedence(std::string_view op) {
-        if (op == "=" || op == "<>" || op == "<" || op == "<=" || op == ">" || op == ">=") return 1;
+        if (op == "=" || op == "<>" || op == "<" || op == "<=" || op == ">" || op == ">=" || op=="in" || op=="not") return 1;
         if (op == "+" || op == "-" || op == "or" || op == "xor") return 2;
         if (op == "*" || op == "/" || op == "div" || op == "mod" || op == "and" || op=="shl" || op=="shr") return 3;
         return 0;
@@ -775,9 +775,11 @@ private:
         }
         auto left = prefix();
         while (current_.kind != TokenKind::text && !current_.escaped && precedence(current_.text) >= minimum) {
-            const auto op = consume();
+            auto op = consume();const bool negated=op.text=="not";const auto original=op;
+            if(negated){expect("in");op.text="in";}
             auto right = expression(precedence(op.text) + 1);
             left = make_expression(SyntaxExprKind::binary, op, std::move(left), std::move(right));
+            if(negated)left=make_expression(SyntaxExprKind::unary,original,std::move(left));
         }
         if (minimum==1 && is("?")) {
             const auto token=consume();auto yes=expression();expect(":");auto no=expression();
@@ -2321,6 +2323,10 @@ private:
             }
 
             if (compound(receiver) && info(receiver,result->location).kind==CompoundKind::object_class) return class_member(std::move(result),source,expected);
+            if(receiver==Type::string && source.token.text=="contains"){
+                if(source.arguments.size()!=1)throw Error("E_TYPE",result->location,"String.Contains requires one substring");
+                return compound_expression(Type::string,CompoundMethod::string_contains,std::move(result->left),expression(*source.arguments[0],Type::string),result->location);
+            }
             if (bind_generators(*result,source,{},true)) break;
             if (callable_type(receiver) && source.token.text=="invoke") {
                 if (source.kind!=SyntaxExprKind::member_call) throw Error("E_TYPE",result->location,"Invoke requires a callable argument list");
@@ -2859,8 +2865,15 @@ private:
             break;
         case SyntaxExprKind::binary: {
             result->kind = hir::ExprKind::binary;
-            result->left = expression(*source.left);
-            result->right = expression(*source.right,callable_type(result->left->type) ? result->left->type : Type::invalid);
+            if(source.token.text=="in"){
+                result->right=expression(*source.right);const auto owner=result->right->type;Type element=Type::invalid;
+                if(owner==Type::string || owner==Type::character)element=Type::string;
+                else if(compound(owner)){const auto shape=info(owner,result->location);if(shape.kind==CompoundKind::sequence || indexed_sequence(shape.kind))element=shape.element;}
+                result->left=expression(*source.left,element);
+            }else{
+                result->left = expression(*source.left);
+                result->right = expression(*source.right,callable_type(result->left->type) ? result->left->type : Type::invalid);
+            }
             return bind_binary(std::move(result));
         }
         }
@@ -2870,6 +2883,18 @@ private:
             auto left = result->left->type;
             auto right = result->right->type;
             const auto& op = result->operation;
+            if(op=="in"){
+                if(right==Type::string || right==Type::character || (right==Type::nil && (left==Type::string || left==Type::character)))
+                    return compound_expression(Type::string,CompoundMethod::string_in,std::move(result->left),std::move(result->right),result->location);
+                if(compound(right)){
+                    const auto shape=info(right,result->location);
+                    if(shape.kind==CompoundKind::array && shape.rank==2)
+                        return compound_expression(right,CompoundMethod::matrix_in,std::move(result->left),std::move(result->right),result->location);
+                    if(shape.kind==CompoundKind::sequence || (indexed_sequence(shape.kind) && shape.rank==1))
+                        return compound_expression(sequence_type(CompoundKind::sequence,shape.element),CompoundMethod::sequence_in,std::move(result->left),std::move(result->right),result->location);
+                }
+                throw Error("E_TYPE",result->location,"Membership requires string, array, List or sequence");
+            }
             const auto is_array=[&](Type type){return compound(type) && info(type,result->location).kind==CompoundKind::array && info(type,result->location).rank==1;};
             if(op=="+" && ((is_array(left) && (right==left || right==Type::nil)) || (is_array(right) && left==Type::nil)))
                 return compound_expression(is_array(left) ? left : right,CompoundMethod::array_concat,std::move(result->left),std::move(result->right),result->location);

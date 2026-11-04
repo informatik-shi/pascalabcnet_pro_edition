@@ -4360,6 +4360,41 @@ void sequence_mutations() {
     error([&]{(void)run("begin var a:=new integer[2000]; Reverse(a); end.","",options);},"E_CANCELLED");
 }
 
+void membership_library() {
+    result("begin var a:=Arr(1,2,3);Writeln(2 in a,' ',4 in a,' ',4 not in a,' ',not (2 not in a));Writeln(1+1 in a = True,' ',(2 in a) and (4 not in a));var l:=Lst(4,5);Writeln(4 in l,' ',2 not in l);end.","True False True True\nTrue True\nTrue True\n");
+    result("begin Writeln('bc' in 'abcd',' ','BC' not in 'abcd',' ','' in 'abcd');Writeln('abcd'.Contains('bc'),' ','abcd'.Contains('BC'),' ',''.Contains(''));Writeln('b' in 'abc',' ','abc'.Contains('b'));Writeln('é' in 'é',' ',#55357 in '😀',' ',#0 in 'a'#0'b');end.","True True True\nTrue False True\nTrue True\nFalse True True\n");
+    result("begin var a:=new string[2];a[0]:=nil;a[1]:='';Writeln(nil in a,' ','' in a,' ','abc' not in a);var l:=LstStr(nil,'abc');Writeln(nil in l,' ','' not in l);end.","True True True\nTrue True\n");
+    for(const auto type:{"byte","shortint","smallint","word","integer","longword","int64","uint64","real","BigInteger"})result("begin var a:=new "+std::string(type)+"[2];a[1]:=7;Writeln(7 in a,' ',8 not in a);end.","True True\n");
+    result("type E=(A,B,C);R=record x:integer;s:string;end;begin Writeln(B in Arr(A,B),' ',C not in Lst(A,B));var r:R;r.x:=1;var a:=Arr(r);Writeln(r in a);r.x:=2;Writeln(r not in a);var t:=Rec(1,'abc');Writeln(t in Arr(t));end.","True True\nTrue\nTrue\nTrue\n");
+    result("type IntArray=array of integer;C=class public x:integer;end;begin var c:=new C;var other:=new C;var a:=Arr(c);Writeln(c in a,' ',other not in a);var x:=Arr(1);var y:=Arr(1);var nested:=new IntArray[1];nested[0]:=x;Writeln(x in nested,' ',y not in nested);end.","True True\nTrue True\n");
+    result("function F(x:integer):integer:=x+1;begin var f1:integer->integer:=F;Writeln(F in Arr(f1));end.","True\n");
+    result("begin var m:=new integer[2,3]((1,2,3),(4,5,6));Writeln(5 in m,' ',9 not in m);var empty:=new integer[3,0];Writeln(1 not in empty);var text:=new string[1,2];text[0,0]:=nil;Writeln(nil in text,' ','' in text);end.","True True\nTrue\nTrue True\n");
+    result("begin var calls:=0;var s:=SeqGen(10,i->begin Inc(calls);Result:=i;end);Writeln(3 in s,' ',calls);calls:=0;Writeln(20 not in s,' ',calls);Writeln('b' in 'abc'.AsEnumerable);end.","True 4\nTrue 10\nTrue\n");
+    result("var trace:string;n:integer:=1;function Item:integer;begin trace+='I';Result:=n;end;function Items:array of integer;begin trace+='C';n:=2;Result:=Arr(1);end;begin Writeln(Item in Items,' ',n,' ',trace);end.","True 2 IC\n");
+    result("var trace:string;function Item:string;begin trace+='I';Result:='bc';end;function Text:string;begin trace+='C';Result:='abcd';end;begin Writeln(Item in Text,' ',trace);trace:='';Writeln(Text.Contains(Item),' ',trace);end.","True IC\nTrue CI\n");
+    result("type R=record x:integer;end;var item:R;function Items:array of R;begin var old:=item;item.x:=9;Result:=Arr(old);end;begin item.x:=1;Writeln(item in Items,' ',item.x);end.","True 9\n");
+    result("begin var a:array of integer;Writeln(False and (1 in a),' ',True or (1 in a));end.","False True\n");
+    for(const auto source:{"begin Writeln(1 in 2);end.","begin Writeln(1 in 'abc');end.","begin Writeln('abc' in Arr(1,2));end.","begin Writeln(1.5 in Arr(1,2));end.","type E1=(A,B);E2=(C,D);begin Writeln(A in Arr(C,D));end.","begin Writeln('abc'.Contains(1));end.","begin Writeln('abc'.Contains());end.","begin Writeln(nil in nil);end.","uses Collections;begin var set1:=new SimpleSet<integer>;Writeln(1 in set1);end."})compile_error(source,"E_TYPE");
+    compile_error("begin Writeln(2 not Arr(1,2));end.","E_SYNTAX");
+    for(const auto source:{"begin var a:array of integer;Writeln(1 in a);end.","begin var a:array[,] of integer;Writeln(1 not in a);end.","begin var l:List<integer>;Writeln(1 in l);end.","begin var s:sequence of integer;Writeln(1 in s);end.","begin var s:string:=nil;Writeln('abc' in s);end.","begin Writeln(nil in 'abc');end.","begin Writeln('abc'.Contains(nil));end."})runtime_error(source,"E_NIL");
+    {
+        const auto p=abc::compile("function Item:integer;begin Write('I');Result:=1;end;function Items:array of integer;begin Write('C');Result:=nil;end;begin\nWriteln(Item in Items);end.");std::istringstream in;std::ostringstream out;
+        try{abc::execute(p,in,out);require(false,"Expected membership nil failure");}catch(const abc::Error& e){require(e.code=="E_NIL" && e.location.line==2 && !e.russian.empty(),"Membership nil error is bilingual and located at the operator");}require(out.str()=="IC","Membership evaluates item then collection before nil validation");
+    }
+    {
+        const auto p=abc::compile("function Item:string;begin Write('I');Result:=nil;end;function Text:string;begin Write('C');Result:=nil;end;begin\nWriteln(Text.Contains(Item));end.");std::istringstream in;std::ostringstream out;
+        try{abc::execute(p,in,out);require(false,"Expected string nil receiver failure");}catch(const abc::Error& e){require(e.code=="E_NIL" && std::string_view(e.what())=="Cannot access a nil reference" && !e.russian.empty(),"String receiver nil takes precedence over nil substring");}require(out.str()=="CI","Contains evaluates receiver and substring once before validation");
+    }
+    {
+        auto p=abc::compile("begin var m:=new integer[1,1];Writeln(1 in m,' ','bc' in 'abc',' ',1 in Arr(1));end.");
+        for(unsigned mode=0;mode<4;++mode){auto bad=p;for(auto& op:bad.code)if(op.op==abc::Op::compound_call){if(mode==0)op.operand=999;if(mode==1)op.type=abc::Type::integer;if(mode==2 && op.operand==static_cast<std::size_t>(abc::CompoundMethod::matrix_in))op.operand=static_cast<std::size_t>(abc::CompoundMethod::sequence_in);if(mode==3 && op.operand==static_cast<std::size_t>(abc::CompoundMethod::sequence_in))op.operand=static_cast<std::size_t>(abc::CompoundMethod::matrix_in);}error([&]{abc::verify(bad);},"E_BYTECODE");}
+    }
+    {
+        abc::Program p;abc::Values values{p,100};const std::array<abc::Value,2> args{std::u16string(1000,u'a')+u'b',std::u16string(2000,u'a')};abc::ExecutionOptions options;options.instruction_limit=100;
+        error([&]{(void)abc::compound_invoke(values,abc::Type::string,abc::CompoundMethod::string_in,args,options);},"E_LIMIT");options.instruction_limit=10000;options.cancelled=[] {return true;};error([&]{(void)abc::compound_invoke(values,abc::Type::string,abc::CompoundMethod::string_in,args,options);},"E_CANCELLED");
+    }
+}
+
 void array_operator_library() {
     result("begin var a:=Arr(1,2);var b:=Arr(3,4);var c:=a+b;c[0]:=9;Writeln(a,' ',b,' ',c,' ',c=a);Writeln(a*3,' ',2*a,' ',a*0);end.","[1,2] [3,4] [9,2,3,4] False\n[1,2,1,2,1,2] [1,2,1,2] []\n");
     result("begin var a:=new integer[0];var b:=a+a;var c:=a*0;Writeln(b=nil,' ',c=nil,' ',a=b,' ',b=c,' ',b.Length);end.","False False False False 0\n");
@@ -6657,7 +6692,7 @@ void characters() {
 
 int main() {
     language();
-    enumerations(); comparable_ranges(); compound_assignments(); array_operator_library();
+    enumerations(); comparable_ranges(); compound_assignments(); array_operator_library(); membership_library();
     structured_loops();
     foreach_loops();
     characters();

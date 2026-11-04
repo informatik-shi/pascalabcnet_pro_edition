@@ -3,21 +3,27 @@
 #include "big_integer_runtime.hpp"
 #include "list_operations.hpp"
 #include "stdlib.hpp"
+#include "sequences.hpp"
 #include <array>
 
 namespace abc {
 bool compound_reference(CompoundMethod method){return method<=CompoundMethod::big_multiply;}
 bool compound_signature(const Program& program,Type owner,CompoundMethod method) {
-    if(method>CompoundMethod::array_repeat_reverse)return false;
+    if(method>CompoundMethod::matrix_in)return false;
+    if(method==CompoundMethod::string_in || method==CompoundMethod::string_contains)return owner==Type::string;
     if(method<=CompoundMethod::text_repeat)return owner==Type::string;
     if(method<=CompoundMethod::big_multiply)return owner==Type::big_integer;
     if(!compound(owner) || static_cast<unsigned>(owner)-64U>=program.types.size())return false;
     const auto kind=type_info(program,owner).kind;
+    if(method==CompoundMethod::sequence_in)return kind==CompoundKind::sequence;
+    if(method==CompoundMethod::matrix_in)return kind==CompoundKind::array && type_info(program,owner).rank==2;
     if(method>=CompoundMethod::array_concat)return kind==CompoundKind::array && type_info(program,owner).rank==1;
     return method==CompoundMethod::endpoint_add ? endpoint_collection(kind) : kind==CompoundKind::list;
 }
 std::vector<Type> compound_parameters(const Program& program,Type owner,CompoundMethod method) {return compound_parameters(program.types,owner,method);}
 std::vector<Type> compound_parameters(const std::vector<TypeInfo>& types,Type owner,CompoundMethod method) {
+    if(method==CompoundMethod::string_in || method==CompoundMethod::string_contains)return {Type::string,Type::string};
+    if(method==CompoundMethod::sequence_in || method==CompoundMethod::matrix_in)return {types.at(static_cast<unsigned>(owner)-64U).element,owner};
     if(method==CompoundMethod::text_add)return {reference_type(owner),Type::string};
     if(method==CompoundMethod::text_integer || method==CompoundMethod::text_repeat)return {reference_type(owner),Type::integer};
     if(method==CompoundMethod::text_real)return {reference_type(owner),Type::real};
@@ -27,6 +33,7 @@ std::vector<Type> compound_parameters(const std::vector<TypeInfo>& types,Type ow
     return {owner,method==CompoundMethod::list_add || method==CompoundMethod::endpoint_add ? types.at(static_cast<unsigned>(owner)-64U).element : owner};
 }
 Type compound_result(Type owner,CompoundMethod method) {
+    if(method>=CompoundMethod::string_in)return Type::boolean;
     return method==CompoundMethod::list_concat || method==CompoundMethod::list_repeat || method==CompoundMethod::list_repeat_reverse || method>=CompoundMethod::array_concat ? owner : Type::unit;
 }
 namespace {
@@ -44,6 +51,36 @@ std::shared_ptr<Aggregate> copy_list(Values& values,const std::shared_ptr<Aggreg
 Value compound_invoke(Values& values,Type owner,CompoundMethod method,std::span<const Value> arguments,const ExecutionOptions& options) {
     if(!compound_signature(values.program,owner,method) || arguments.size()!=2)throw runtime_error(RuntimeError::invalid_bytecode,values.location);
     try {
+        if(method==CompoundMethod::string_in || method==CompoundMethod::string_contains){
+            const auto receiver=method==CompoundMethod::string_in ? 1U : 0U;
+            if(std::holds_alternative<NilString>(arguments[receiver]))throw runtime_error(RuntimeError::nil_reference,values.location);
+            if(std::holds_alternative<NilString>(arguments[1U-receiver]))throw runtime_error(RuntimeError::search_value_nil,values.location);
+            const auto& text=string_text(arguments[receiver]);const auto& needle=string_text(arguments[1U-receiver]);
+            if(needle.empty())return true;
+            if(needle.size()>text.size())return false;
+            std::uint64_t work=0;
+            for(std::size_t i=0;i<=text.size()-needle.size();++i){
+                std::size_t j=0;
+                for(;j<needle.size();++j){
+                    if(work>=options.instruction_limit)throw runtime_error(RuntimeError::instruction_limit,values.location);
+                    if((work++&255U)==0 && options.cancelled && options.cancelled())throw runtime_error(RuntimeError::cancelled,values.location);
+                    if(text[i+j]!=needle[j])break;
+                }
+                if(j==needle.size())return true;
+            }
+            return false;
+        }
+        if(method==CompoundMethod::sequence_in || method==CompoundMethod::matrix_in){
+            const auto source=std::get<std::shared_ptr<Aggregate>>(arguments[1]);require(source,values.location);
+            if(method==CompoundMethod::sequence_in)return sequence_query(values,source,SequenceQuery::contains,arguments[0],options);
+            std::uint64_t work=0;
+            for(const auto& item:source->items){
+                if(work>=options.instruction_limit)throw runtime_error(RuntimeError::instruction_limit,values.location);
+                if((work++&255U)==0 && options.cancelled && options.cancelled())throw runtime_error(RuntimeError::cancelled,values.location);
+                if(values.equal(item->value,arguments[0]))return true;
+            }
+            return false;
+        }
         if(compound_reference(method)) {
             const auto& target=std::get<std::shared_ptr<Cell>>(arguments[0]);
             if(!target || target->type!=owner)throw runtime_error(RuntimeError::invalid_bytecode,values.location);

@@ -82,6 +82,8 @@ Sleep, Milliseconds и MillisecondsDelta: examples/timing.pas.
 Перечисления проверяются до запуска; HasFlag и форматы G/D/X/F имеют двуязычные ошибки.
 System.Enum как объект, reflection и поддиапазоны ещё не перенесены.
 InRange, Between, Clamp и методы ClampTop/ClampBottom: examples/comparable-ranges.pas.
+Проверка принадлежности in и not in, поиск подстроки Contains: examples/membership.pas.
+Работают строки, одномерные массивы, матрицы, List и последовательности.
 Объединение массивов через + и повторение через *: examples/array-operators.pas.
 Результат — новый массив; записи копируются, вложенные ссылки сохраняются.
 Составные присваивания +=, -=, *=, /=: examples/compound-assignments.pas.

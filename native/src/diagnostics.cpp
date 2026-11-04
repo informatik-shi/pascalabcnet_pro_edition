@@ -4,6 +4,8 @@ namespace abc {
 Error runtime_error(RuntimeError id, SourceLocation location, std::string_view context) {
     const char *code, *english, *russian;
     switch (id) {
+    case RuntimeError::search_value_nil:
+        code="E_NIL";english="Search substring cannot be nil";russian="Искомая подстрока не может быть nil";break;
     case RuntimeError::array_repeat_range:
         code="E_RANGE";english="Array cannot be multiplied by a negative count";russian="Массив нельзя умножать на отрицательное число";break;
     case RuntimeError::list_repeat_range:

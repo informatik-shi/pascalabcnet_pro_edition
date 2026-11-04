@@ -434,3 +434,5 @@
     {"Ambiguous nil collection compound argument","Неоднозначный аргумент nil в составной операции коллекции"},
     {"Compound arithmetic requires a numeric target","Для составной арифметики требуется числовая цель"},
     {"Integer division assignment is not allowed in Pascal","В Pascal запрещено целочисленное присваивание с делением /="},
+    {"Membership requires string, array, List or sequence","Для операции принадлежности требуется строка, массив, List или последовательность"},
+    {"String.Contains requires one substring","Для String.Contains требуется одна подстрока"},
