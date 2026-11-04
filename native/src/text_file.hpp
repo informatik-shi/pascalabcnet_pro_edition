@@ -5,16 +5,19 @@
 #include <fstream>
 
 namespace abc {
-class FileContext;
+class FileContext;class LineReader;
 struct TextFile {
     std::filesystem::path filename, opened_filename;
-    std::u16string content, pending;
-    std::size_t cursor=0, position=0, size=0;
-    bool reading=false,preamble_pending=false;
+    std::u16string pending;
+    std::size_t position=0, size=0;
+    bool preamble_pending=false;
+    std::shared_ptr<LineReader> reader;
+    const ExecutionOptions* execution_options=nullptr;
     std::optional<TextEncoding> encoding;
     std::fstream writer;
     ~TextFile();
-    bool is_open() const { return reading || writer.is_open(); }
+    bool is_open() const;
+    const ExecutionOptions& options() const;
     void flush(SourceLocation location);
     void close(SourceLocation location);
 };

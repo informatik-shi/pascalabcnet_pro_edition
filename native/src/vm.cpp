@@ -172,7 +172,7 @@ static void execute_impl(const Program& program, std::istream& input, std::ostre
     } closures;
     ReferenceObjects objects;values.observe_object=[&](const auto& object){objects.observe(object);};
     LinkedRuntime linked{values,{}};
-    FileContext files;
+    FileContext files;files.execution_options=&options;
     EncodingContext encodings;
     RandomContext random;
     SchoolContext school;

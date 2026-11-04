@@ -70,6 +70,20 @@ std::optional<char16_t> LineReader::peek(SourceLocation location,const Execution
     }
     return buffer_[position_];
 }
+std::optional<char16_t> LineReader::peek_character(SourceLocation location,const ExecutionOptions& options) {return peek(location,options);}
+std::optional<char16_t> LineReader::read_character(SourceLocation location,const ExecutionOptions& options) {
+    const auto next=peek(location,options);
+    if(next){checkpoint(location,options);++position_;}
+    return next;
+}
+std::u16string LineReader::read_to_end(SourceLocation location,const ExecutionOptions& options) {
+    std::u16string result;
+    while(const auto next=read_character(location,options)) {
+        if(result.size()>=1'048'576)throw runtime_error(RuntimeError::file_limit,location);
+        result.push_back(*next);
+    }
+    return result;
+}
 std::optional<std::u16string> LineReader::read_line(SourceLocation location,const ExecutionOptions& options) {
     std::u16string line;
     while(const auto next=peek(location,options)) {

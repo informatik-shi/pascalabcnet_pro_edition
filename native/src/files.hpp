@@ -8,6 +8,7 @@ struct TextEncoding;class LineReader;
 class FileContext {
 public:
     FileContext();
+    const ExecutionOptions* execution_options=nullptr;
     std::function<const TextEncoding*(SourceLocation)> default_encoding;
     const TextEncoding* encoding(SourceLocation location) const { return default_encoding ? default_encoding(location) : nullptr; }
     std::filesystem::path resolve(std::u16string_view path, SourceLocation location) const;

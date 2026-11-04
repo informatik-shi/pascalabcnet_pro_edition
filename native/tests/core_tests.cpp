@@ -5205,6 +5205,27 @@ void text_files() {
     runtime_error("begin var f:Text;f.Reset(nil);end.","E_IO");
     result("begin var f:=OpenWrite("+file+",Encoding.Unicode);f.Close;var g:=OpenAppend("+file+",Encoding.Unicode);g.Write('Я');g.Close;Writeln(ReadAllText("+file+"));end.","Я\n");
     {std::ifstream in(directory/"text.txt",std::ios::binary);const std::string bytes((std::istreambuf_iterator<char>(in)),{});require(bytes=="\xff\xfe\x2f\x04","Text emits one Unicode preamble even for empty initial write and later append");}
+    {std::ofstream out(directory/"text.txt",std::ios::binary);out << "17 word rest\r\nnext\n" << std::string(1'048'577,'x');}
+    result("begin var f:=OpenRead("+file+");Writeln(f.ReadInteger,' [',f.ReadWord,'] [',f.ReadlnString,'] ',f.ReadlnString);f.Close;end.","17 [word] [ rest] next\n");
+    runtime_error("begin var f:=OpenRead("+file+");Writeln(f.ReadToEnd);end.","E_LIMIT");
+    {std::ofstream out(directory/"text.txt",std::ios::binary);out << "\xef\xbb\xbf" << std::string(1019,'a');constexpr char tail[]="🌍\r\n42\0\0\n";out.write(tail,sizeof tail-1);}
+    result("begin var f:=OpenRead("+file+",Encoding.UTF8);var s:string;Read(f,s);Writeln(s.Length,' ',RightStr(s,2),' ',f.Eoln);f.Readln;Writeln(f.ReadlnInteger,' ',f.Eof);f.Close;f.Reset(Encoding.UTF8);Writeln(f.ReadString.Length,' ',f.ReadlnInteger,' ',f.Eof);f.Close;end.","1021 🌍 True\n42 True\n1021 42 True\n");
+    result("begin WriteAllText("+file+",'a'#13#10'b'#0'c',Encoding.Unicode);var f:=OpenRead("+file+");Writeln(f.ReadChar);var rest:=f.ReadToEnd;Writeln(rest.Length,' ',Ord(rest[4]),' ',f.Eof);f.Close;end.","a\n5 0 True\n");
+    result("begin WriteAllText("+file+",'Я');var f:=OpenRead("+file+");Writeln(f.ReadString);DefaultEncoding:=Encoding.ASCII;f.Reset;Writeln(f.ReadString);f.Close;end.","Я\n?\n");
+    {
+        abc::FileContext files;auto text=std::make_shared<abc::TextFile>();abc::text_assign(files,*text,abc::Value{(directory/"text.txt").u16string()},{});abc::text_open(files,text,0,{});
+        const auto original=text->reader;require(original && original->is_open(),"Text owns a real open incremental reader");
+        auto nil=std::make_shared<abc::Aggregate>();nil->type=abc::Type::invalid;nil->nil=true;const abc::Value encoding{nil};
+        error([&]{abc::text_open(files,text,0,{},&encoding);},"E_NIL");
+        require(!original->is_open(),"Reset closes the old reader before validating its replacement encoding");
+        error([&]{abc::text_read_end(*text,{});},"E_IO");
+        text->close({});require(!text->reader,"Close clears a retained already-closed reader after failed Reset");
+    }
+#ifdef _WIN32
+    runtime_error("begin var f:=OpenWrite("+file+");f.Write('abc');f.Reset;end.","E_IO");
+#else
+    result("begin var f:=OpenWrite("+file+");f.Write('abc');f.Reset;Writeln(f.ReadToEnd);f.Close;end.","abc\n");
+#endif
     const std::string unit_newline=
 #ifdef _WIN32
         "\r\n";
@@ -5292,7 +5313,7 @@ void text_files() {
     { std::ofstream out(path,std::ios::binary); out << "\xff"; }
     result("begin var f:=OpenRead("+file+");Writeln(f.ReadToEnd);f.Close;end.","я\n");
     { std::ofstream out(path,std::ios::binary); out << std::string(1'048'577,'x'); }
-    runtime_error("begin var f:=OpenRead("+file+"); end.","E_LIMIT");
+    runtime_error("begin var f:=OpenRead("+file+"); f.ReadToEnd; end.","E_LIMIT");
     runtime_error("begin var f:=OpenAppend("+file+"); end.","E_LIMIT");
     runtime_error("begin var f:=OpenWrite("+file+"); var s:string:='x'; var i:=0; while i<20 do begin s:=s+s; Inc(i); end; Write(f,s); Writeln(f); end.","E_LIMIT");
     result("begin var f:=OpenWrite("+file+"); var s:string:='a'; var i:=0; while i<11 do begin s:=s+s; Inc(i); end; Write(f,s); Flush(f); Close(f); Writeln(Length(ReadAllText("+file+"))); end.","2048\n");

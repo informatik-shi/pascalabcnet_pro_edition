@@ -25,6 +25,9 @@ public:
     bool is_open() const noexcept;
     const std::filesystem::path& path() const noexcept{return path_;}
     void close() noexcept;
+    std::optional<char16_t> peek_character(SourceLocation location,const ExecutionOptions& options);
+    std::optional<char16_t> read_character(SourceLocation location,const ExecutionOptions& options);
+    std::u16string read_to_end(SourceLocation location,const ExecutionOptions& options);
     std::optional<std::u16string> read_line(SourceLocation location,const ExecutionOptions& options);
 };
 }

@@ -37,26 +37,35 @@ void assigned(const TextFile& file, SourceLocation location) {
 }
 void readable(const TextFile& file, SourceLocation location) {
     assigned(file,location);
-    if (!file.reading) throw runtime_error(RuntimeError::file_read_mode,location);
+    if (!file.reader) throw runtime_error(RuntimeError::file_read_mode,location);
 }
-std::u16string read_remaining_line(TextFile& file, SourceLocation location) {
-    readable(file,location);
-    const auto start=file.cursor;
-    while (file.cursor<file.content.size() && file.content[file.cursor]!=u'\r' && file.content[file.cursor]!=u'\n') ++file.cursor;
-    return file.content.substr(start,file.cursor-start);
+std::u16string read_remaining_line(TextFile& file,SourceLocation location) {
+    readable(file,location);std::u16string result;
+    while(const auto next=file.reader->peek_character(location,file.options())) {
+        if(*next==u'\r' || *next==u'\n')break;
+        result.push_back(*file.reader->read_character(location,file.options()));
+    }
+    return result;
 }
-std::u16string read_token(TextFile& file, SourceLocation location) {
+std::u16string read_token(TextFile& file,SourceLocation location) {
     readable(file,location);
-    while (file.cursor<file.content.size() && whitespace(file.content[file.cursor])) ++file.cursor;
-    if (file.cursor==file.content.size()) throw runtime_error(RuntimeError::file_end,location);
-    const auto start=file.cursor;
-    while (file.cursor<file.content.size() && !whitespace(file.content[file.cursor])) ++file.cursor;
-    return file.content.substr(start,file.cursor-start);
+    auto next=file.reader->peek_character(location,file.options());
+    while(next && whitespace(*next)){(void)file.reader->read_character(location,file.options());next=file.reader->peek_character(location,file.options());}
+    if(!next)throw runtime_error(RuntimeError::file_end,location);
+    std::u16string result;
+    while(next && !whitespace(*next)) {
+        result.push_back(*file.reader->read_character(location,file.options()));
+        next=file.reader->peek_character(location,file.options());
+    }
+    return result;
 }
 }
 
+bool TextFile::is_open() const{return (reader && reader->is_open()) || writer.is_open();}
+const ExecutionOptions& TextFile::options() const{static const ExecutionOptions defaults;return execution_options ? *execution_options : defaults;}
 TextFile::~TextFile() {
     try { if (writer.is_open()) { flush({}); writer.close(); } } catch (...) {}
+    if(reader)reader->close();
 }
 TextFile& text_file(const Value& value, SourceLocation location) {
     const auto& file=std::get<std::shared_ptr<TextFile>>(value);
@@ -98,12 +107,13 @@ void TextFile::flush(SourceLocation location) {
 }
 void TextFile::close(SourceLocation location) {
     assigned(*this,location);
-    if (!is_open()) throw runtime_error(RuntimeError::file_closed,location);
+    if (!reader && !writer.is_open()) throw runtime_error(RuntimeError::file_closed,location);
     if (writer.is_open()) {
         flush(location); writer.close();
         if (writer.fail()) throw runtime_error(RuntimeError::file_io,location);
     }
-    reading=false; std::u16string{}.swap(content); cursor=0; opened_filename.clear();
+    if(reader){reader->close();reader.reset();}
+    opened_filename.clear();
 }
 void text_assign(FileContext& files, TextFile& file, const Value& name, SourceLocation location) {
     file.filename=files.resolve(string_text(name),location);
@@ -117,13 +127,20 @@ void text_open(FileContext& files, const std::shared_ptr<TextFile>& pointer, uns
         file.position=0; return;
     }
     if (mode==2 && file.writer.is_open()) throw runtime_error(RuntimeError::file_io,location);
+    if(mode==0 && file.reader)file.reader->close();
     const auto selected=explicit_encoding ? &encoding_value(*explicit_encoding,location) : files.encoding(location);
     const auto snapshot=selected ? std::optional<TextEncoding>{*selected} : std::nullopt;
-    if (file.is_open()) file.close(location);
-    if (mode==0) {
-        file.content=read_text_file(files,file.filename.u16string(),location,snapshot ? &*snapshot : nullptr);
-        file.cursor=0; file.reading=true; file.opened_filename=file.filename; return;
+    file.execution_options=files.execution_options;
+    if(mode==0) {
+        auto next=std::make_shared<LineReader>(file.filename,snapshot.value_or(TextEncoding{TextEncodingKind::utf8,true,true}),location);
+        file.reader=std::move(next);
+        if(file.writer.is_open()) {
+            file.flush(location);file.writer.close();
+            if(file.writer.fail())throw runtime_error(RuntimeError::file_io,location);
+        }
+        file.opened_filename=file.filename;return;
     }
+    if(file.is_open())file.close(location);
     std::error_code error;
     const auto existing=std::filesystem::file_size(file.filename,error);
     if (mode==2 && !error && existing>file_limit) throw runtime_error(RuntimeError::file_limit,location);
@@ -178,8 +195,8 @@ Value text_read(TextFile& file, Type type, SourceLocation location) {
     if (type==Type::string) return read_remaining_line(file,location);
     if (type==Type::character) {
         readable(file,location);
-        if (file.cursor==file.content.size()) return char16_t{65535}; // StreamReader.Read() returns -1, cast to char by PABCSystem.
-        return file.content[file.cursor++];
+        const auto next=file.reader->read_character(location,file.options());
+        return next ? *next : char16_t{65535}; // StreamReader.Read() returns -1, cast to char by PABCSystem.
     }
     auto token=read_token(file,location);
     if (type==Type::big_integer) return parse_big(token,location);
@@ -219,22 +236,24 @@ std::u16string text_name(const TextFile& file, bool full, SourceLocation locatio
     try { return (full ? file.filename : file.filename.filename()).u16string(); }
     catch (const std::filesystem::filesystem_error&) { throw runtime_error(RuntimeError::file_io,location); }
 }
-std::u16string text_read_end(TextFile& file, SourceLocation location) {
-    if (!file.reading) throw runtime_error(RuntimeError::nil_reference,location);
-    auto result=file.content.substr(file.cursor); file.cursor=file.content.size(); return result;
+std::u16string text_read_end(TextFile& file,SourceLocation location) {
+    if(!file.reader)throw runtime_error(RuntimeError::nil_reference,location);
+    return file.reader->read_to_end(location,file.options());
 }
-void text_skip_line(TextFile& file, SourceLocation location) {
+void text_skip_line(TextFile& file,SourceLocation location) {
     (void)read_remaining_line(file,location);
-    if (file.cursor<file.content.size()) {
-        const auto c=file.content[file.cursor++];
-        if (c==u'\r' && file.cursor<file.content.size() && file.content[file.cursor]==u'\n') ++file.cursor;
+    auto next=file.reader->read_character(location,file.options());
+    if(next && *next==u'\r') {
+        const auto following=file.reader->peek_character(location,file.options());
+        if(following && *following==u'\n')(void)file.reader->read_character(location,file.options());
     }
 }
-bool text_eof(TextFile& file, bool line, bool skip_space, SourceLocation location) {
-    if (!file.is_open()) throw runtime_error(RuntimeError::file_closed,location);
-    readable(file,location);
-    if (skip_space) while (file.cursor<file.content.size()
-        && (line ? file.content[file.cursor]==u' ' || file.content[file.cursor]==u'\t' : whitespace(file.content[file.cursor]))) ++file.cursor;
-    return file.cursor==file.content.size() || (line && (file.content[file.cursor]==u'\r' || file.content[file.cursor]==u'\n'));
+bool text_eof(TextFile& file,bool line,bool skip_space,SourceLocation location) {
+    if(!file.reader)throw runtime_error(file.writer.is_open() ? RuntimeError::file_read_mode : RuntimeError::file_closed,location);
+    auto next=file.reader->peek_character(location,file.options());
+    while(skip_space && next && (line ? *next==u' ' || *next==u'\t' : whitespace(*next))) {
+        (void)file.reader->read_character(location,file.options());next=file.reader->peek_character(location,file.options());
+    }
+    return !next || (line && (*next==u'\r' || *next==u'\n'));
 }
 } // namespace abc

@@ -211,6 +211,7 @@ def main():
                 ("default-encoding.pas", "По умолчанию: 1251\nОткрытый файл сохранил Unicode: Привет 🌍\nЯвная CP1251: Привет\n"),
                 ("file-lines.pas", "CP1251: [Первая строка,,Последняя строка]\nUnicode: [Строка 1,Строка 2,Строка 3]\n"),
                 ("streaming-lines.pas", "Первые две: [Первая строка,]\nПовторный обход: [Первая строка,Последняя строка]\nОстановка на строке: Первая строка\nПосле break файл закрыт: True\n"),
+                ("streaming-text.pas", "Число: 17\nСлово: слово\nОстаток строки: [ остаток 🌍]\nНулевой символ: 0\nОстаток файла: конец\nКонец файла: True\n"),
                 ("class-properties.pas", "Свойство: 7\nЧерез метод: 14\n"),
                 ("class-methods.pas", "Значение: 5\nОбщая ссылка: 6\n"),
                 ("class-fields.pas", "Связанные объекты: 9 7\nОбщая ссылка: 11\n11 9 \n"),
@@ -389,6 +390,13 @@ def main():
                                        capture_output=True, cwd=folder, env=env, timeout=10)
             if attempted.returncode or attempted.stdout != "first\n":
                 raise RuntimeError(f"{name} ReadLines prefix was loaded eagerly: {attempted.stdout!r}, {attempted.stderr!r}")
+            (folder / "large-text.tmp").write_bytes(b"17 word rest\r\nnext\n" + b"x" * 1048577)
+            streaming_source.write_text(
+                "begin var f:=OpenRead('large-text.tmp');Writeln(f.ReadInteger,' [',f.ReadWord,'] [',f.ReadlnString,'] ',f.ReadlnString);f.Close;end.", encoding="utf-8")
+            attempted = subprocess.run([runner, "run", str(streaming_source)], text=True, encoding="utf-8",
+                                       capture_output=True, cwd=folder, env=env, timeout=10)
+            if attempted.returncode or attempted.stdout != "17 [word] [ rest] next\n":
+                raise RuntimeError(f"{name} Text prefix was loaded eagerly: {attempted.stdout!r}, {attempted.stderr!r}")
             character = folder / "Ошибки символов.pas"
             school_error = folder / "Ошибки School.pas"
             for expression, code, english, russian in [
@@ -1224,6 +1232,7 @@ def main():
             results[-1]["file_line_encodings_and_streamed_sequence_output"] = "passed"
             results[-1]["sequence_cursor_disposal_and_restart"] = "passed"
             results[-1]["native_streaming_readlines_and_shared_reader_cleanup"] = "passed"
+            results[-1]["native_streaming_text_scalar_line_and_end_reads"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 

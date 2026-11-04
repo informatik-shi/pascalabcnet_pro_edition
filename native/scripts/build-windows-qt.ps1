@@ -84,6 +84,8 @@ DefaultEncoding изначально CP1251. Его смена и явные Enc
 ReadAllLines/WriteAllLines с Encoding и WriteLines для последовательностей: examples/file-lines.pas.
 ReadLines с поточным чтением, повторным обходом и break: examples/streaming-lines.pas.
 Одновременные обходы одного ReadLines разделяют читателя, как в исходной библиотеке; закрытие одного закрывает поток другого.
+OpenRead/Reset и Read/Readln/ReadToEnd читают Text по блокам: examples/streaming-text.pas.
+ReadString(f) переходит на новую строку; Read(f,s) оставляет перевод строки.
 Text.Lines и полный интерфейс перечислителя ещё не перенесены.
 Прямой захват управляющей переменной цикла пока не перенесён; используйте отдельную переменную-копию.
 Совместимость с PascalABC.NET частичная.
