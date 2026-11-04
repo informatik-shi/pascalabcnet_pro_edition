@@ -27,8 +27,7 @@ bool comparable_signature(const Program& program,Type type,ComparableMethod meth
     if(method==ComparableMethod::clamp_top || method==ComparableMethod::clamp_bottom)return type==Type::integer || type==Type::real;
     return true;
 }
-namespace {
-int culture_compare(std::u16string_view a,std::u16string_view b,SourceLocation location,const ExecutionOptions& options) {
+int compare_culture_strings(std::u16string_view a,std::u16string_view b,SourceLocation location,const ExecutionOptions& options) {
     big_work((a.size()+b.size())/64+1,location,options);
     if(a.size()>INT32_MAX || b.size()>INT32_MAX)throw runtime_error(RuntimeError::string_limit,location);
 #ifdef _WIN32
@@ -49,12 +48,13 @@ int culture_compare(std::u16string_view a,std::u16string_view b,SourceLocation l
     return static_cast<int>(ucol_strcoll(collator.value,reinterpret_cast<const UChar*>(a.data()),static_cast<int32_t>(a.size()),reinterpret_cast<const UChar*>(b.data()),static_cast<int32_t>(b.size())));
 #endif
 }
+namespace {
 int compare(const Value& a,const Value& b,bool ordinal_strings,SourceLocation location,const ExecutionOptions& options) {
     if(value_type(a)==Type::string) {
         if(ordinal_strings)return compare_strings(a,b);
         if(std::holds_alternative<NilString>(a))throw runtime_error(RuntimeError::nil_reference,location);
         if(std::holds_alternative<NilString>(b))return 1;
-        return culture_compare(string_text(a),string_text(b),location,options);
+        return compare_culture_strings(string_text(a),string_text(b),location,options);
     }
     if(const auto* value=std::get_if<BigInteger>(&a))big_work((value->bits()+std::get<BigInteger>(b).bits())/28+1,location,options);
     return std::visit([&](const auto& left)->int {

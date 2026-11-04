@@ -215,6 +215,7 @@ def main():
                 ("for-step.pas", "По возрастанию: 1 3 5 \nПо убыванию: 5 3 1 \nСимволы: 53\n"),
                 ("enumerations.pas", "Начало: Ready\nПосле Inc: Running / 1\nПрава: CanRead, CanWrite\nЗапись: True\nСписок: [Ready,Running,Done]\nШаг: Ready\nШаг: Done\n"),
                 ("comparable-ranges.pas", "Границы: True / False\nПорядок границ: True / False\nОграничение: 0 5 9\nМетоды: 9 0\nПеречисление: Tue / True\nСтрока: True / False\n"),
+                ("ini-files.pas", "Файл: example-settings.ini\nИмя: ABC Native\nШирина: 1000\nНочная тема: True\nНет ключа: По умолчанию\n"),
                 ("numeric-literals.pas", "Маска: 16711935\n64 бита: 18446744073709551615\nРазделители: 1000000 12.5 1001\n"),
                 ("text-writer.pas", "buffered\nXYcdef\nXYcdefZ\nTrue\n"),
                 ("text-lines.pas", "Массив: [Первая строка,Вторая строка]\nСтрока: Первая строка\nСтрока: Вторая строка\nКонец файла: True\nПосле Close: True\n"),
@@ -511,6 +512,21 @@ def main():
                         or "EN:" not in attempted.stderr or "RU:" not in attempted.stderr
                         or f"{comparison_source}:{line}:" not in attempted.stderr):
                     raise RuntimeError(f"{name} Comparison diagnostic mismatch: {attempted.stdout!r}, {attempted.stderr!r}")
+            ini_source = folder / "Ошибки настроек.pas"
+            for source, expected, code, line in [
+                ("uses IniFile;begin\nWriteln('must never run');var f:=new TIniFile(1);end.", "", "E_TYPE", 2),
+                ("uses IniFile;begin\nWriteln('must never run');var f:TIniFile;Writeln(f.fname);end.", "", "E_ACCESS", 2),
+                ("uses IniFile;function Arg:string;begin Writeln('argument');Result:='s';end;\nbegin var f:TIniFile;f.ReadString(Arg,Arg,Arg);end.", "argument\nargument\nargument\n", "E_NIL", 2),
+                ("uses IniFile;begin\nWriteln('before');var f:=new TIniFile('');end.", "before\n", "E_IO", 2),
+                ("uses IniFile;begin\nWriteln('before');var f:=new TIniFile('example-settings.ini');f.WriteString('s','k',nil);f.ReadInteger('s','k',99);end.", "before\n", "E_NIL", 2),
+            ]:
+                ini_source.write_text(source, encoding="utf-8")
+                attempted = subprocess.run([runner, "run", str(ini_source)], text=True, encoding="utf-8",
+                                           capture_output=True, cwd=folder, env=env, timeout=10)
+                if (attempted.returncode != 1 or attempted.stdout != expected or code not in attempted.stderr
+                        or "EN:" not in attempted.stderr or "RU:" not in attempted.stderr
+                        or f"{ini_source}:{line}:" not in attempted.stderr):
+                    raise RuntimeError(f"{name} IniFile diagnostic mismatch: {attempted.stdout!r}, {attempted.stderr!r}")
             character = folder / "Ошибки символов.pas"
             school_error = folder / "Ошибки School.pas"
             for expression, code, english, russian in [
@@ -1354,6 +1370,7 @@ def main():
             results[-1]["typed_for_step_loops_and_bilingual_zero_guard"] = "passed"
             results[-1]["nominal_enumerations_flags_and_bilingual_errors"] = "passed"
             results[-1]["typed_comparison_ranges_culture_and_bilingual_errors"] = "passed"
+            results[-1]["native_inifile_roundtrip_types_and_bilingual_errors"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 

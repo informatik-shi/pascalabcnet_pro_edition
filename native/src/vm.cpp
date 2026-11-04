@@ -28,6 +28,7 @@
 #include "encoding.hpp"
 #include "enumeration.hpp"
 #include "comparable.hpp"
+#include "ini_file.hpp"
 #include "file_encoding.hpp"
 #include "file_lines.hpp"
 #include "big_integer_runtime.hpp"
@@ -1085,6 +1086,12 @@ static void execute_impl(const Program& program, std::istream& input, std::ostre
             for (std::size_t i=arguments.size();i>0;--i) arguments[i-1]=pop();
             auto target=std::get<std::shared_ptr<Cell>>(arguments[ref]); arguments[ref]=target->value;
             const auto result=stdlib::invoke(instruction.operand,arguments,instruction.location,services); values.write(target,result); break;
+        }
+        case Op::ini_call: {
+            const auto method=static_cast<IniMethod>(instruction.operand);std::vector<Value> arguments(ini_parameters(instruction.type,method).size());
+            for(std::size_t i=arguments.size();i>0;--i)arguments[i-1]=pop();
+            auto result=ini_invoke(values,files,instruction.type,method,arguments,options);
+            if(ini_result(instruction.type,method)!=Type::unit)stack.push_back(std::move(result));break;
         }
         case Op::comparable_call: {
             const auto method=static_cast<ComparableMethod>(instruction.operand);std::vector<Value> arguments(comparable_parameters(instruction.type,method).size());

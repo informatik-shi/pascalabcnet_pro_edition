@@ -8,6 +8,7 @@
 #include "encoding.hpp"
 #include "enumeration.hpp"
 #include "comparable.hpp"
+#include "ini_file.hpp"
 #include "integer_values.hpp"
 #include "formatting.hpp"
 #include "unicode.hpp"
@@ -191,6 +192,7 @@ struct SyntaxExpr;
 struct SyntaxType {
     Token token;
     std::string kind;
+    std::string unit{};
     std::shared_ptr<SyntaxType> element;
     std::vector<std::pair<Token, std::shared_ptr<SyntaxType>>> fields;
     std::shared_ptr<SyntaxType> key;
@@ -298,7 +300,7 @@ public:
             do {
                 auto module = name();while(accept("."))module.text+="."+name().text;
                 if (module.text != "pabcsystem" && module.text != "arrays" && module.text != "collections"
-                    && module.text != "filesoperations" && module.text != "events" && module.text != "pointrect" && module.text != "school" && module.text != "system.text")
+                    && module.text != "filesoperations" && module.text != "events" && module.text != "pointrect" && module.text != "school" && module.text != "system.text" && module.text != "inifile")
                     throw Error("E_UNSUPPORTED", module.location, "Unit is not ported yet: '" + module.text + "'");
                 if (module.text == "collections") root.collections_imported = true;
                 root.imported_units.insert(module.text);
@@ -463,6 +465,10 @@ private:
             expect("end");
         } else {
             result->token = name(); result->kind = result->token.text; result->named=true;
+            if(result->kind=="inifile" && is(".")) {
+                result->unit="inifile";expect(".");result->kind=name().text;
+                if(result->kind!="tinifile")throw Error("E_UNSUPPORTED",result->token.location,"Unknown IniFile type");
+            }
             if (result->kind=="system") {
                 result->system_qualified=true; expect("."); result->kind=name().text;
                 if(result->kind=="text") {expect(".");result->kind=name().text;if(result->kind!="encoding")throw Error("E_UNSUPPORTED",result->token.location,"Unknown or unsupported Encoding type");}
@@ -502,7 +508,7 @@ private:
         if(result->kind=="tuple" && !result->named && !result->fields.empty()
             && std::all_of(result->fields.begin(),result->fields.end(),[](const auto& field) {
                 const auto& type=*field.second;
-                return type.named && !type.system_qualified && !type.element && type.fields.empty();
+                return type.named && !type.system_qualified && type.unit.empty() && !type.element && type.fields.empty();
             }))result->kind="enum_or_tuple";
         if (result->kind=="tuple" && !result->named) {
             if (result->fields.empty() && allow_empty_result) result->kind="empty_result";
@@ -1365,6 +1371,57 @@ private:
         }
         return {};
     }
+    Type inifile_type(SourceLocation location) {
+        if(!imported_units_.contains("inifile"))throw Error("E_UNSUPPORTED",location,"TIniFile requires uses IniFile");
+        for(std::size_t i=0;i<module_.types.size();++i)if(module_.types[i].kind==CompoundKind::ini_file)return static_cast<Type>(64+i);
+        if(module_.types.size()>=1024)throw Error("E_LIMIT",location,"Type limit exceeded");
+        module_.types.push_back({"tinifile",CompoundKind::ini_file,Type::invalid,{}});return static_cast<Type>(63+module_.types.size());
+    }
+    bool inifile_type_name(const SyntaxExpr& source) const {
+        const auto hidden=[&](const Token& token) {
+            if(lookup(token) || routine_names_.contains(token.text))return true;
+            if(current_owner_==Type::invalid)return false;
+            const auto& fields=info(current_owner_,token.location).fields;
+            return std::any_of(fields.begin(),fields.end(),[&](const auto& field){return field.name==token.text;})
+                || (class_methods_.contains(current_owner_) && class_methods_.at(current_owner_).contains(token.text))
+                || (class_properties_.contains(current_owner_) && class_properties_.at(current_owner_).contains(token.text));
+        };
+        if(source.kind==SyntaxExprKind::name && !hidden(source.token)) {
+            if(const auto alias=aliases_.find(source.token.text);alias!=aliases_.end())return compound(alias->second) && info(alias->second,source.token.location).kind==CompoundKind::ini_file;
+            return source.token.text=="tinifile" && imported_units_.contains("inifile");
+        }
+        return imported_units_.contains("inifile") && source.kind==SyntaxExprKind::field && source.token.text=="tinifile"
+            && source.left && source.left->kind==SyntaxExprKind::name && source.left->token.text=="inifile" && !hidden(source.left->token);
+    }
+    void ini_expression(hir::Expr& result,Type owner,IniMethod method) {
+        const auto parameters=ini_parameters(owner,method);
+        if(result.arguments.size()!=parameters.size())throw Error("E_TYPE",result.location,"Wrong TIniFile argument count");
+        for(std::size_t i=0;i<parameters.size();++i)result.arguments[i]=convert(std::move(result.arguments[i]),parameters[i]);
+        result.kind=hir::ExprKind::ini_call;result.operation_type=owner;result.local=static_cast<std::size_t>(method);result.type=ini_result(owner,method);
+    }
+    bool bind_inifile_static(hir::Expr& result,const SyntaxExpr& source) {
+        if(!inifile_type_name(*source.left))return false;
+        if(source.token.text!="create")throw Error("E_NAME",result.location,"Unknown TIniFile constructor");
+        for(const auto& argument:source.arguments)result.arguments.push_back(expression(*argument));
+        ini_expression(result,inifile_type(result.location),IniMethod::construct);return true;
+    }
+    bool bind_inifile_member(hir::Expr& result,const SyntaxExpr& source) {
+        const auto owner=result.left->type;
+        if(!compound(owner) || info(owner,result.location).kind!=CompoundKind::ini_file)return false;
+        const auto& name=source.token.text;IniMethod method;
+        if(name=="fname" || name=="sl" || name=="indexofsection" || name=="indexofident")throw Error("E_ACCESS",result.location,"TIniFile member is private");
+        if(name=="filename") {if(source.kind!=SyntaxExprKind::field)throw Error("E_TYPE",result.location,"TIniFile property is not callable");method=IniMethod::file_name;}
+        else if(name=="save")method=IniMethod::save;
+        else if(name=="writestring")method=IniMethod::write_string;
+        else if(name=="readstring")method=IniMethod::read_string;
+        else if(name=="writeinteger")method=IniMethod::write_integer;
+        else if(name=="readinteger")method=IniMethod::read_integer;
+        else if(name=="writeboolean")method=IniMethod::write_boolean;
+        else if(name=="readboolean")method=IniMethod::read_boolean;
+        else throw Error("E_NAME",result.location,"Unknown TIniFile member");
+        result.arguments.push_back(std::move(result.left));for(const auto& argument:source.arguments)result.arguments.push_back(expression(*argument));
+        ini_expression(result,owner,method);return true;
+    }
     Type encoding_type() {
         for(std::size_t i=0;i<module_.types.size();++i)if(module_.types[i].kind==CompoundKind::encoding)return static_cast<Type>(64+i);
         const auto bytes=sequence_type(CompoundKind::array,Type::byte),characters=sequence_type(CompoundKind::array,Type::character);
@@ -1595,7 +1652,7 @@ private:
     }
     Type resolve_type(const SyntaxType& syntax) {
         if (auto found=resolved_types_.find(&syntax); found!=resolved_types_.end()) return found->second;
-        if (syntax.named && !syntax.system_qualified && !syntax.element && syntax.fields.empty())
+        if (syntax.named && !syntax.system_qualified && syntax.unit.empty() && !syntax.element && syntax.fields.empty())
             if (const auto found=aliases_.find(syntax.kind);found!=aliases_.end()) {
                 if(syntax.enum_flags){if(!enumeration(found->second))throw Error("E_TYPE",syntax.token.location,"FlagsAttribute requires an enumeration");module_.types[static_cast<unsigned>(found->second)-64U].enum_flags=true;}
                 return found->second;
@@ -1604,7 +1661,8 @@ private:
             throw Error("E_UNSUPPORTED",syntax.token.location,"Unknown or unsupported type '"+syntax.kind+"'");
         if(syntax.kind=="enum_or_tuple") {
             const bool all_types=std::all_of(syntax.fields.begin(),syntax.fields.end(),[&](const auto& field) {
-                return aliases_.contains(field.second->kind) || find_type(field.second->kind).has_value();
+                return aliases_.contains(field.second->kind) || find_type(field.second->kind).has_value()
+                    || (field.second->kind=="tinifile" && imported_units_.contains("inifile"));
             });
             if(!all_types)return resolve_enumeration(syntax);
             if(syntax.enum_flags || std::any_of(syntax.enum_values.begin(),syntax.enum_values.end(),[](const auto& value){return bool(value);}))
@@ -1684,6 +1742,7 @@ private:
             module_.types.push_back(std::move(record));
             const auto type=static_cast<Type>(63+module_.types.size()); resolved_types_[&syntax]=type; return type;
         }
+        if(syntax.kind=="tinifile" && (syntax.unit=="inifile" || !aliases_.contains(syntax.kind)))return inifile_type(syntax.token.location);
         if (syntax.kind=="encoding" && (syntax.system_qualified || !aliases_.contains(syntax.kind))) return encoding_type();
         if (auto found = find_type(syntax.kind)) return *found;
         if (auto found = aliases_.find(syntax.kind); found != aliases_.end()) return found->second;
@@ -2063,6 +2122,10 @@ private:
                     if (source.arguments.size()!=1) throw Error("E_TYPE",result->location,"Callable constructor requires one matching routine value");
                     return convert(expression(*source.arguments[0],type),type);
                 }
+                if(info(type,result->location).kind==CompoundKind::ini_file) {
+                    for(const auto& argument:source.arguments)result->arguments.push_back(expression(*argument));
+                    ini_expression(*result,type,IniMethod::construct);break;
+                }
                 if (info(type,result->location).kind==CompoundKind::sequence) throw Error("E_TYPE",result->location,"Sequences require a typed producer");
                 if (school_ip_kind(info(type,result->location).kind)) {
                     for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
@@ -2158,6 +2221,7 @@ private:
         }
         case SyntaxExprKind::field:
         case SyntaxExprKind::member_call: {
+            if(bind_inifile_static(*result,source))break;
             if(bind_encoding_static(*result,source))break;
             if (source.left->kind==SyntaxExprKind::name && !lookup(source.left->token) && source.left->token.text=="regex" && source.token.text=="ismatch") {
                 for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
@@ -2231,6 +2295,7 @@ private:
             }
             if(enum_static_member(*result,source))break;
             result->left = expression(*source.left); const auto receiver = result->left->type;
+            if(bind_inifile_member(*result,source))break;
             if(bind_encoding_member(*result,source))break;
             if((receiver==Type::string || receiver==Type::character || (numeric(receiver) && receiver!=Type::big_integer))
                 && (source.token.text=="inrange" || source.token.text=="between" || ((source.token.text=="clamp" || source.token.text=="clamptop" || source.token.text=="clampbottom") && receiver!=Type::character && receiver!=Type::string))) {

@@ -1,0 +1,47 @@
+{
+  "trim_cases": [
+    {
+      "input": "  [section]  ",
+      "trim_spaces": "[section]"
+    },
+    {
+      "input": "\t[section]\t",
+      "trim_spaces": "\t[section]\t"
+    },
+    {
+      "input": "\t  x= y  \t",
+      "trim_spaces": "\t  x= y  \t"
+    },
+    {
+      "input": " [openX ",
+      "trim_spaces": "[openX"
+    },
+    {
+      "input": " [] ",
+      "trim_spaces": "[]"
+    },
+    {
+      "input": " [ ",
+      "trim_spaces": "["
+    }
+  ],
+  "nil_key_error": "ArgumentNullException",
+  "canonical_duplicate_count": 6,
+  "keys": [
+    "",
+    "a",
+    "A",
+    "é",
+    "nil-value",
+    "z"
+  ],
+  "values": [
+    "empty",
+    "a",
+    "A",
+    "second",
+    null,
+    "z"
+  ],
+  "origin": "Independent .NET Framework SortedList/en-US/string API probe; original Pascal compiler not executed"
+}

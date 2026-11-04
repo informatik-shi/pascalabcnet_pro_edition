@@ -5145,6 +5145,80 @@ void aggregate_semantics() {
     error([&] { abc::verify(program); }, "E_BYTECODE");
 }
 
+void ini_files() {
+    namespace fs=std::filesystem;
+    const auto root=fs::temp_directory_path();
+    const auto directory=root/fs::path("ABC native ini "+std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    if(!fs::create_directory(directory))throw std::runtime_error("Cannot create IniFile test directory");
+    struct Cleanup {fs::path path,root;~Cleanup(){std::error_code e;const auto parent=fs::weakly_canonical(root,e),target=fs::weakly_canonical(path,e);if(!e && target.parent_path()==parent && target.filename().generic_u8string().starts_with(u8"ABC native ini "))fs::remove_all(target,e);}} cleanup{directory,root};
+    auto quote=[](const fs::path& p){std::string result="'";for(auto c:p.generic_u8string()){result+=static_cast<char>(c);if(c==u8'\'')result+='\'';}return result+"'";};
+    const auto path=directory/fs::path(u8"Настройки.ini"),other=directory/"other.ini";const auto file=quote(path),second=quote(other),folder=quote(directory);
+    const std::string nl=
+#ifdef _WIN32
+        "\r\n";
+#else
+        "\n";
+#endif
+    result("uses IniFile;begin var f:=new TIniFile("+file+");Writeln(FileExists("+file+"),' ',f.FileName="+file+");Writeln(f.ReadString('s','k','fallback'),' ',f.ReadInteger('s','n',42),' ',f.ReadBoolean('s','b',True));f.WriteString('s','k','hello');f.WriteInteger('s','n',-123);f.WriteBoolean('s','b',True);Writeln(f.ReadString('s','k','?'),' ',f.ReadInteger('s','n',0),' ',f.ReadBoolean('s','b',False));f.Save;end.","True True\nfallback 42 True\nhello -123 True\n");
+    require(abc::to_utf8(abc::read_text_file(abc::FileContext{},path.u16string(),{}))=="[s]"+nl+"b=True"+nl+"k=hello"+nl+"n=-123"+nl+nl,"IniFile Save preserves sorted entries and blank section separator");
+    result("uses IniFile;type Config=IniFile.TIniFile;begin var f:=Config.Create("+file+");var alias1:=f;alias1.WriteInteger('s','n',7);Writeln(f=alias1,' ',f.ReadInteger('s','n',0),' ',default(Config)=nil);var a:=new Config[2];Writeln(a[0]=nil);a[0]:=f;var g:=new IniFile.TIniFile("+file+");Writeln(f<>g,' ',g.ReadInteger('s','n',0),' ',a[0]=f);end.","True 7 True\nTrue\nTrue -123 True\n");
+    result("uses IniFile;type R=record config:TIniFile;end;procedure Put(var f:TIniFile);begin f.WriteString('s','k','shared');end;function Make(name:string):TIniFile:=new TIniFile(name);begin var r:R;r.config:=Make("+file+");var copy1:=r;Put(copy1.config);Writeln(r.config.ReadString('s','k','?'),' ',r.config=copy1.config);var values:=Lst(r.config);Writeln(values[0]=r.config);end.","shared True\nTrue\n");
+    result("uses IniFile;begin var f:=new TIniFile("+file+");f.WriteString('s','bad','not a number');f.WriteString('s','large','2147483648');f.WriteString('s','min','-2147483648');f.WriteString('s','white',#160'+42'#8192);Writeln(f.ReadInteger('s','bad',99),' ',f.ReadInteger('s','large',99),' ',f.ReadInteger('s','min',0),' ',f.ReadInteger('s','white',0));f.WriteString('s','b','TrUe');Writeln(f.ReadBoolean('s','b',False));f.WriteString('s','b',' True');Writeln(f.ReadBoolean('s','b',True));f.WriteString('s','b','True ');Writeln(f.ReadBoolean('s','b',True));f.WriteString('s','b','yes');Writeln(f.ReadBoolean('s','b',True));end.","0 0 -2147483648 42\nTrue\nFalse\nFalse\nFalse\n");
+    result("uses IniFile;begin var f:=new TIniFile("+file+");Writeln(f.ReadString('missing',nil,nil)=nil);f.WriteString('s','null',nil);Writeln(f.ReadString('s','null','fallback')=nil);f.Save;var g:=new TIniFile("+file+");Writeln(g.ReadString('s','null',nil)=nil,' ',g.ReadString('s','null','fallback')='');end.","True\nTrue\nFalse True\n");
+    for(const auto& expression:{"f.ReadInteger('s','nil',99)","f.ReadBoolean('s','nil',True)"})runtime_error("uses IniFile;begin var f:=new TIniFile("+file+");f.WriteString('s','nil',nil);"+std::string(expression)+";end.","E_NIL");
+    for(const auto& expression:{"f.WriteString(nil,'k','v')","f.WriteString('s',nil,'v')","f.ReadString(nil,'k','fallback')","f.ReadString('s',nil,'fallback')"})runtime_error("uses IniFile;begin var f:=new TIniFile("+file+");f.WriteString('s','k','v');"+std::string(expression)+";end.","E_NIL");
+    {std::ofstream out(path,std::ios::binary);out<<"\xef\xbb\xbf"<<"outside=ignored\n  [main]  \n key = value  \n=empty-key\n;comment=literal\n[main]\nanswer=first\nanswer=second\n[openX\nx=malformed-header\n[]\nignored=x\n\t[tabs]\nlast=still-empty\n";}
+    result("uses IniFile;begin var f:=new TIniFile("+file+");Writeln('[',f.ReadString('main','key ','?'),'] ',f.ReadString('main','','?'),' ',f.ReadString('main',';comment','?'),' ',f.ReadString('main','answer','?'));Writeln(f.ReadString('open','x','?'),' ',f.ReadString('','ignored','fallback'),' ',f.ReadString('tabs','last','fallback'));end.","[ value] empty-key literal second\nmalformed-header fallback fallback\n");
+    result("uses IniFile;begin DefaultEncoding:=Encoding.UTF8;var f:=new TIniFile("+second+");f.WriteString('main','é','first');f.WriteString('main','e'#769,'second');f.WriteString('main','z','z');f.WriteString('main','a','a');f.WriteString('main','A','A');f.WriteString('main','','empty');f.WriteString('main','nil-value',nil);Writeln(f.ReadString('main','é','?'),' ',f.ReadString('main','e'#769,'?'),' ',f.ReadString('main','nil-value','?')=nil);f.Save;end.","second second True\n");
+    require(abc::to_utf8(abc::read_text_file(abc::FileContext{},other.u16string(),{}))=="[main]"+nl+"=empty"+nl+"a=a"+nl+"A=A"+nl+"é=second"+nl+"nil-value="+nl+"z=z"+nl+nl,"IniFile order, canonical-key equality and original key spelling match independent SortedList golden");
+    for(const auto code:{1251,65001,1200,1201,12000,12001}) {
+        const auto text=code==1251 ? "Я" : "Я🌍";
+        result("uses IniFile;begin DefaultEncoding:=Encoding.GetEncoding("+std::to_string(code)+");var f:=new TIniFile("+file+");f.WriteString('русский','ключ','"+text+"');f.Save;DefaultEncoding:=Encoding.ASCII;var g:=new TIniFile("+file+");Writeln(g.ReadString('русский','ключ','missing'));end.",code==1251 ? "missing\n" : std::string(text)+"\n");
+    }
+    result("uses IniFile;begin ChDir("+folder+");var f:=new TIniFile('relative.ini');f.WriteString('s','k','value');MkDir('sub');ChDir('sub');f.Save;Writeln(f.FileName,' ',ReadAllLines('relative.ini'));end.","relative.ini [[s],k=value,]\n");
+    runtime_error("uses IniFile;begin var f:=new TIniFile("+quote(directory/"missing"/"bad.ini")+");end.","E_IO");
+    runtime_error("uses IniFile;begin var f:=new TIniFile('');end.","E_IO");
+    runtime_error("uses IniFile;begin var f:TIniFile;f.Save;end.","E_NIL");
+#ifdef _WIN32
+    runtime_error("uses IniFile;begin var writer:=OpenWrite("+file+");writer.Write('[s]');writer.Flush;var f:=new TIniFile("+file+");end.","E_IO");
+    runtime_error("uses IniFile;begin var f:=new TIniFile("+file+");var reader:=OpenRead("+file+");f.Save;end.","E_IO");
+#endif
+    {
+        const auto program=abc::compile("uses IniFile;function Arg:string;begin Write('ARG');Result:='s';end;begin var f:TIniFile;\nf.ReadString(Arg,Arg,Arg);end.");std::istringstream in;std::ostringstream out;
+        try{abc::execute(program,in,out);require(false,"Expected nil IniFile");}catch(const abc::Error& e){require(e.code=="E_NIL" && e.location.line==2 && !e.russian.empty(),"IniFile nil error preserves source and both languages");}require(out.str()=="ARGARGARG","IniFile arguments execute before nil receiver failure");
+    }
+    result("uses IniFile;type Pair=(TIniFile,integer);begin var f:TIniFile;var pair:Pair:=(f,7);Writeln(pair.Item1=nil,' ',pair.Item2);end.","True 7\n");
+    result("uses IniFile;type Box=class public config:TIniFile:=new TIniFile("+file+");end;begin var box:=new Box;box.config.WriteInteger('s','n',42);Writeln(box.config.ReadInteger('s','n',0));end.","42\n");
+    result("uses IniFile;begin var f:=new TIniFile("+file+");f.WriteString('','ephemeral','memory');Writeln(f.ReadString('','ephemeral','fallback'));f.Save;var g:=new TIniFile("+file+");Writeln(g.ReadString('','ephemeral','fallback'));end.","memory\nfallback\n");
+    compile_error("begin var f:TIniFile;end.","E_UNSUPPORTED");
+    for(const auto& statement:{"var f:=new TIniFile","var f:=new TIniFile(1)","var f:TIniFile;f.FileName()","var f:TIniFile;f.FileName:='x'","var f:TIniFile;f.ReadString('s','k')","var f:TIniFile;f.WriteInteger('s','k','bad')","var f:TIniFile;var n:integer:=f.Save"})compile_error("uses IniFile;begin "+std::string(statement)+";end.","E_TYPE");
+    for(const auto& member:{"fname","sl","IndexOfSection('s')","IndexOfIdent(0,'k')"})compile_error("uses IniFile;begin var f:TIniFile;Writeln(f."+std::string(member)+");end.","E_ACCESS");
+    result("uses IniFile;type TIniFile=class public x:integer;end;begin var f:=new TIniFile;f.x:=7;var other:IniFile.TIniFile:=new IniFile.TIniFile("+file+");Writeln(f.x,' ',other.FileName="+file+");end.","7 True\n");
+    {
+        const auto p=abc::compile("uses IniFile;begin var f:TIniFile;Writeln(f.FileName);end.");
+        for(unsigned mode=0;mode<8;++mode){auto bad=p;
+            if(mode==0)bad.types[0].name="bad";
+            if(mode==1)bad.types[0].element=abc::Type::string;
+            if(mode==2)bad.types[0].key=abc::Type::integer;
+            if(mode==3)bad.types[0].fields.push_back({"field",abc::Type::integer});
+            if(mode==4)bad.types[0].rank=2;
+            if(mode==5)for(auto& op:bad.code)if(op.op==abc::Op::ini_call)op.operand=999;
+            if(mode==6)for(auto& op:bad.code)if(op.op==abc::Op::ini_call)op.type=abc::Type::integer;
+            if(mode==7)for(auto& op:bad.code)if(op.op==abc::Op::make_default)op.operand=1;
+            error([&]{abc::verify(bad);},"E_BYTECODE");
+        }
+    }
+    {
+        abc::ExecutionOptions options;options.allocation_limit=20;
+        error([&]{(void)run("uses IniFile;begin var f:=new TIniFile("+quote(directory/"budget.ini")+");end.","",options);},"E_LIMIT");
+        require(!fs::exists(directory/"budget.ini"),"IniFile checks constructor storage budget before creating a file");
+        {std::ofstream out(path);for(int i=100;i>0;--i)out<<'['<<i<<"]\nk=v\n";}
+        options.allocation_limit=100000;options.instruction_limit=1000;
+        error([&]{(void)run("uses IniFile;begin var f:=new TIniFile("+file+");end.","",options);},"E_LIMIT");
+        std::error_code ec;fs::rename(path,directory/"released.ini",ec);require(!ec,"IniFile closes its reader after a native resource guard");
+    }
+}
+
 void file_library() {
     namespace fs=std::filesystem;
     const auto folder=fs::temp_directory_path()/fs::path(std::u8string(u8"ABC native файлы ")+std::u8string{});
@@ -6597,7 +6671,7 @@ int main() {
     nullable_strings();
     language_foundations();
     aggregate_semantics();
-    file_library();
+    ini_files(); file_library();
     file_extensions();
     text_files();
     text_file_changes();

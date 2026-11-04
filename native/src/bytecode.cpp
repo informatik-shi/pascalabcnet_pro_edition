@@ -3,6 +3,7 @@
 #include "encoding.hpp"
 #include "enumeration.hpp"
 #include "comparable.hpp"
+#include "ini_file.hpp"
 #include "runtime_values.hpp"
 #include "formatting.hpp"
 #include "school_ip.hpp"
@@ -297,6 +298,9 @@ private:
             expression(*node.left);
             for (const auto& argument : node.arguments) expression(*argument);
             emit(Op::endpoint_call,node.left->type,node.local,node.location); break;
+        case hir::ExprKind::ini_call:
+            for(const auto& argument:node.arguments)expression(*argument);
+            emit(Op::ini_call,node.operation_type,node.local,node.location);break;
         case hir::ExprKind::comparable_call:
             for(const auto& argument:node.arguments)expression(*argument);
             emit(Op::comparable_call,node.operation_type,node.local,node.location);break;
@@ -1002,6 +1006,8 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             break;
         case Op::encoding_call:
             if(instruction.operand>static_cast<std::size_t>(EncodingMethod::text_append_named) || !encoding_signature_valid(program,type,static_cast<EncodingMethod>(instruction.operand)))invalid(instruction,"Invalid Encoding call metadata");break;
+        case Op::ini_call:
+            if(instruction.operand>static_cast<std::size_t>(IniMethod::read_boolean) || !ini_signature(program,type,static_cast<IniMethod>(instruction.operand)))invalid(instruction,"Invalid TIniFile call metadata");break;
         case Op::comparable_call:
             if(instruction.operand>static_cast<std::size_t>(ComparableMethod::clamp_bottom) || !comparable_signature(program,type,static_cast<ComparableMethod>(instruction.operand)))invalid(instruction,"Invalid comparable call metadata");break;
         case Op::enum_call: {
@@ -1036,7 +1042,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if (instruction.op==Op::make_default && instruction.operand==1 && compound(type) && type_info(program,type).kind==CompoundKind::object_class
                 && std::any_of(program.routines.begin(),program.routines.end(),[type](const auto& candidate){return candidate.constructor && candidate.owner==type;}))
                 invalid(instruction,"Class constructor cannot be bypassed");
-            if (instruction.op==Op::make_default && instruction.operand==1 && compound(type) && (node_kind(type_info(program,type).kind) || type_info(program,type).kind==CompoundKind::tuple || type_info(program,type).kind==CompoundKind::sequence || type_info(program,type).kind==CompoundKind::callable || type_info(program,type).kind==CompoundKind::encoding || school_ip_kind(type_info(program,type).kind)))
+            if (instruction.op==Op::make_default && instruction.operand==1 && compound(type) && (node_kind(type_info(program,type).kind) || type_info(program,type).kind==CompoundKind::tuple || type_info(program,type).kind==CompoundKind::sequence || type_info(program,type).kind==CompoundKind::callable || type_info(program,type).kind==CompoundKind::encoding || type_info(program,type).kind==CompoundKind::ini_file || school_ip_kind(type_info(program,type).kind)))
                 invalid(instruction,"Nodes and tuples require the typed constructor");
             break;
         case Op::routine_value:
@@ -1423,6 +1429,10 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             const auto method=static_cast<ComparableMethod>(instruction.operand);const auto parameters=comparable_parameters(instruction.type,method);
             for(auto p=parameters.rbegin();p!=parameters.rend();++p)require(*p);stack.push_back(comparable_result(instruction.type,method));break;
         }
+        case Op::ini_call: {
+            const auto method=static_cast<IniMethod>(instruction.operand);const auto parameters=ini_parameters(instruction.type,method);
+            for(auto p=parameters.rbegin();p!=parameters.rend();++p)require(*p);const auto result=ini_result(instruction.type,method);if(result!=Type::unit)stack.push_back(result);break;
+        }
         case Op::for_step_check: require(Type::integer);break;
         case Op::text_lines: require(Type::text_file);stack.push_back(instruction.type);break;
         case Op::read_lines: if(instruction.operand)require(static_cast<Type>(instruction.operand));require(Type::string); stack.push_back(instruction.type); break;
@@ -1595,6 +1605,8 @@ void verify(const Program& program) {
                 enum_text_bytes+=member.name.size()+member.text.size();
                 try{(void)from_utf8(member.name);(void)from_utf8(member.text);}catch(const std::invalid_argument&){throw Error("E_BYTECODE",{},"Invalid enumeration member metadata");}
             }
+        } else if(type.kind==CompoundKind::ini_file) {
+            if(type.name!="tinifile" || type.element!=Type::invalid || type.key!=Type::invalid || !type.fields.empty())throw Error("E_BYTECODE",{},"Invalid TIniFile type metadata");
         } else if(type.kind==CompoundKind::encoding) {
             if(type.name!="encoding" || !type.fields.empty() || !encoding_signature_valid(program,static_cast<Type>(64+i),EncodingMethod::utf8))throw Error("E_BYTECODE",{},"Invalid Encoding type metadata");
             prior(type.element);prior(type.key);

@@ -28,6 +28,7 @@ add_library(abc_core
     src/encoding.cpp
     src/enumeration.cpp
     src/comparable.cpp
+    src/ini_file.cpp
     src/cp1251.cpp
     src/file_moves.cpp
     src/file_operations.cpp
@@ -323,6 +324,9 @@ if(BUILD_TESTING)
     add_test(NAME original_enum9 COMMAND $<TARGET_FILE:abc> run "${CMAKE_CURRENT_SOURCE_DIR}/../TestSuite/enum9.pas")
     add_test(NAME original_foreachenum1 COMMAND $<TARGET_FILE:abc> run "${CMAKE_CURRENT_SOURCE_DIR}/../TestSuite/foreachenum1.pas")
     add_test(NAME original_for_step1 COMMAND $<TARGET_FILE:abc> run "${CMAKE_CURRENT_SOURCE_DIR}/../TestSuite/for_step1.pas")
+    add_test(NAME ini_files_compatibility COMMAND ${CMAKE_COMMAND}
+        -DABC_RUNNER=$<TARGET_FILE:abc> -DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures
+        -DABC_FIXTURE_NAME=ini-files-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")
     add_test(NAME comparable_ranges_compatibility COMMAND ${CMAKE_COMMAND}
         -DABC_RUNNER=$<TARGET_FILE:abc> -DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures
         -DABC_FIXTURE_NAME=comparable-ranges-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")
