@@ -4358,6 +4358,9 @@ void sequence_mutations() {
 void language() {
     result("begin Writeln($0,' ',$ff,' ',$ABCDEF,' ',$FADE,' ',$1e2);end.","0 255 11259375 64222 482\n");
     result("begin Writeln($7FFFFFFF,' ',$80000000,' ',$FFFFFFFF);Writeln($7FFFFFFFFFFFFFFF,' ',$8000000000000000,' ',$FFFFFFFFFFFFFFFF);end.","2147483647 2147483648 4294967295\n9223372036854775807 9223372036854775808 18446744073709551615\n");
+    result("begin Writeln(-$8000000000000000,' ',-($80000000),' ',-(2147483648));end.","-9223372036854775808 -2147483648 -2147483648\n");
+    compile_error("begin Writeln('NEVER');Writeln(-$8000000000000001);end.","E_RANGE");
+    compile_error("begin Writeln(-($FFFFFFFFFFFFFFFF));end.","E_RANGE");
     result("begin Writeln(not $FF,' ',not $FFFFFFFF,' ',not $FFFFFFFFFFFFFFFF);Writeln(-$80000000,' ',+$80000000);end.","-256 -4294967296 0\n-2147483648 2147483648\n");
     result("begin Writeln(1_000_000,' ',2_147_483_648,' ',18_446_744_073_709_551_615);Writeln(-2_147_483_648,' ',-9_223_372_036_854_775_808);end.","1000000 2147483648 18446744073709551615\n-2147483648 -9223372036854775808\n");
     result("begin Writeln($FF_FF,' ',$00000000000000000000000000000000FF,' ',1_000bi+1_bi);Writeln(1_2.5_0,' ',1_2e-0_1,' ',1_.2,' ',1_e2,' ',1.2_e1);end.","65535 255 1001\n12.5 1.2 1.2 100 12\n");
@@ -4366,7 +4369,7 @@ void language() {
     for(const auto& [text,type]:std::initializer_list<std::pair<std::string_view,abc::Type>>{
         {"$0",abc::Type::integer},{"$7FFFFFFF",abc::Type::integer},{"$80000000",abc::Type::int64},
         {"$FFFFFFFF",abc::Type::int64},{"$7FFFFFFFFFFFFFFF",abc::Type::int64},{"$8000000000000000",abc::Type::uint64},
-        {"$FFFFFFFFFFFFFFFF",abc::Type::uint64},{"-$80000000",abc::Type::int64},{"+$80000000",abc::Type::int64},
+        {"$FFFFFFFFFFFFFFFF",abc::Type::uint64},{"-$80000000",abc::Type::integer},{"+$80000000",abc::Type::int64},{"-$8000000000000000",abc::Type::int64},{"-($80000000)",abc::Type::integer},{"-(2147483648)",abc::Type::integer},
         {"-2_147_483_648",abc::Type::integer},{"1_0bi",abc::Type::big_integer},{"1_0.5",abc::Type::real}}) {
         const auto p=abc::compile("begin var x:="+std::string(text)+";end.");
         require(p.locals[0].type==type,"Numeric literal has its source type before execution: "+std::string(text));

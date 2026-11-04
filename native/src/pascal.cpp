@@ -31,6 +31,8 @@ struct Token {
     bool escaped=false;
 };
 
+Value literal(const Token& token);
+
 bool digit(char c) { return c >= '0' && c <= '9'; }
 bool hex_digit(char c) { return digit(c) || (c>='a' && c<='f') || (c>='A' && c<='F'); }
 bool letter(char32_t c) { return c==U'_' || (c<=0xffff && unicode::is_letter(static_cast<char16_t>(c))); }
@@ -206,6 +208,7 @@ struct SyntaxExpr {
     std::shared_ptr<SyntaxType> constructed{};
     std::vector<std::unique_ptr<SyntaxExpr>> arguments{};
     bool array_construction = false;
+    bool signed_literal=false;
     bool initialized_array = false;
     std::vector<std::unique_ptr<SyntaxExpr>> initializers{};
     std::shared_ptr<SyntaxRoutine> lambda{};
@@ -760,9 +763,23 @@ private:
                 auto token = consume();
                 if (op.text == "-") token.text.insert(token.text.begin(), '-');
                 token.location = op.location;
-                return make_expression(SyntaxExprKind::literal, token);
+                auto result=make_expression(SyntaxExprKind::literal,token);result->signed_literal=true;return result;
             }
-            return make_expression(SyntaxExprKind::unary, op, prefix());
+            auto operand=prefix();
+            if(op.text=="-" && operand->kind==SyntaxExprKind::literal && operand->token.kind==TokenKind::number && !operand->token.text.ends_with("bi")) {
+                const auto value=literal(operand->token);
+                const auto* wide=std::get_if<std::uint64_t>(&value);
+                const auto* signed_wide=std::get_if<std::int64_t>(&value);
+                if((signed_wide && *signed_wide==std::int64_t{INT32_MAX}+1) || (wide && *wide==std::uint64_t{INT64_MAX}+1)) {
+                    auto token=operand->token;token.location=op.location;
+                    token.text=wide ? "-9223372036854775808" : "-2147483648";
+                    auto result=make_expression(SyntaxExprKind::literal,token);result->signed_literal=true;return result;
+                }
+                if(wide && *wide>std::uint64_t{INT64_MAX}+1)
+                    throw Error("E_RANGE",op.location,"Integer literal is outside the supported integer range");
+            }
+            return make_expression(SyntaxExprKind::unary,op,std::move(operand));
+
         }
         if (is("function") || is("procedure")) {
             const bool function=is("function"); const auto token=consume();

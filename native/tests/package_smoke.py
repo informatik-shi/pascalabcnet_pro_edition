@@ -444,6 +444,7 @@ def main():
             literal_source = folder / "Числовые литералы.pas"
             for expression, code in [
                 ("$10000000000000000", "E_RANGE"),
+                ("-$8000000000000001", "E_RANGE"),
                 ("$G", "E_SYNTAX"),
                 ("1__000", "E_SYNTAX"),
             ]:
