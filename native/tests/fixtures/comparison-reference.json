@@ -1,0 +1,103 @@
+{
+  "zero_rows": [
+    {
+      "second_negative": false,
+      "max_negative": false,
+      "min_negative": false,
+      "first_negative": false
+    },
+    {
+      "second_negative": true,
+      "max_negative": true,
+      "min_negative": true,
+      "first_negative": false
+    },
+    {
+      "second_negative": false,
+      "max_negative": false,
+      "min_negative": false,
+      "first_negative": true
+    },
+    {
+      "second_negative": true,
+      "max_negative": true,
+      "min_negative": true,
+      "first_negative": true
+    }
+  ],
+  "rows": [
+    {
+      "left": "a",
+      "right": "A",
+      "culture_order": -1,
+      "ordinal_order": 1
+    },
+    {
+      "left": "A",
+      "right": "z",
+      "culture_order": -1,
+      "ordinal_order": -1
+    },
+    {
+      "left": "é",
+      "right": "z",
+      "culture_order": -1,
+      "ordinal_order": 1
+    },
+    {
+      "left": "é",
+      "right": "é",
+      "culture_order": 0,
+      "ordinal_order": 1
+    },
+    {
+      "left": "ä",
+      "right": "z",
+      "culture_order": -1,
+      "ordinal_order": 1
+    },
+    {
+      "left": "alpha",
+      "right": "beta",
+      "culture_order": -1,
+      "ordinal_order": -1
+    },
+    {
+      "left": "",
+      "right": "a",
+      "culture_order": -1,
+      "ordinal_order": -1
+    },
+    {
+      "left": "a",
+      "right": "",
+      "culture_order": 1,
+      "ordinal_order": 1
+    },
+    {
+      "left": "same",
+      "right": "same",
+      "culture_order": 0,
+      "ordinal_order": 0
+    },
+    {
+      "left": "10",
+      "right": "2",
+      "culture_order": -1,
+      "ordinal_order": -1
+    },
+    {
+      "left": "abc",
+      "right": "abcd",
+      "culture_order": -1,
+      "ordinal_order": -1
+    },
+    {
+      "left": "abcd",
+      "right": "abc",
+      "culture_order": 1,
+      "ordinal_order": 1
+    }
+  ],
+  "origin": "Independent .NET Framework CompareInfo en-US, String.CompareOrdinal and Math.Min/Max API probe; original Pascal compiler not executed"
+}

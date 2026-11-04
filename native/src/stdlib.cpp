@@ -599,7 +599,8 @@ Value invoke(std::size_t id, std::span<const Value> arguments, SourceLocation lo
     if (function == Function::minimum || function == Function::maximum) {
         Value result = value;
         for (const auto& next : arguments.subspan(1))
-            if (function == Function::minimum ? next < result : next > result) result = next;
+            if ((function == Function::minimum ? next < result : next > result)
+                || (arguments.size()==2 && value_type(result)==Type::real && next==result)) result = next;
         return result;
     }
     if (function == Function::sign) {

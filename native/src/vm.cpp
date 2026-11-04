@@ -27,6 +27,7 @@
 #include "timing.hpp"
 #include "encoding.hpp"
 #include "enumeration.hpp"
+#include "comparable.hpp"
 #include "file_encoding.hpp"
 #include "file_lines.hpp"
 #include "big_integer_runtime.hpp"
@@ -1084,6 +1085,11 @@ static void execute_impl(const Program& program, std::istream& input, std::ostre
             for (std::size_t i=arguments.size();i>0;--i) arguments[i-1]=pop();
             auto target=std::get<std::shared_ptr<Cell>>(arguments[ref]); arguments[ref]=target->value;
             const auto result=stdlib::invoke(instruction.operand,arguments,instruction.location,services); values.write(target,result); break;
+        }
+        case Op::comparable_call: {
+            const auto method=static_cast<ComparableMethod>(instruction.operand);std::vector<Value> arguments(comparable_parameters(instruction.type,method).size());
+            for(std::size_t i=arguments.size();i>0;--i)arguments[i-1]=pop();
+            stack.emplace_back(comparable_invoke(program,instruction.type,method,arguments,instruction.location,options));break;
         }
         case Op::enum_call: {
             const auto method=static_cast<EnumMethod>(instruction.operand&255U);const auto other=method==EnumMethod::has_flag ? static_cast<Type>(instruction.operand>>8U) : Type::invalid;

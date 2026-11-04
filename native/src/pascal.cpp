@@ -7,6 +7,7 @@
 #include "stdlib.hpp"
 #include "encoding.hpp"
 #include "enumeration.hpp"
+#include "comparable.hpp"
 #include "integer_values.hpp"
 #include "formatting.hpp"
 #include "unicode.hpp"
@@ -2231,6 +2232,12 @@ private:
             if(enum_static_member(*result,source))break;
             result->left = expression(*source.left); const auto receiver = result->left->type;
             if(bind_encoding_member(*result,source))break;
+            if((receiver==Type::string || receiver==Type::character || (numeric(receiver) && receiver!=Type::big_integer))
+                && (source.token.text=="inrange" || source.token.text=="between" || ((source.token.text=="clamp" || source.token.text=="clamptop" || source.token.text=="clampbottom") && receiver!=Type::character && receiver!=Type::string))) {
+                result->arguments.push_back(std::move(result->left));
+                for(const auto& argument:source.arguments)result->arguments.push_back(expression(*argument));
+                (void)bind_comparable(*result,source.token.text,{},Type::invalid,true);break;
+            }
             if(enumeration(receiver) && (source.token.text=="tostring" || source.token.text=="hasflag")) {
                 auto arguments=std::vector<std::unique_ptr<hir::Expr>>{};arguments.push_back(std::move(result->left));
                 for(const auto& argument:source.arguments)arguments.push_back(expression(*argument));
@@ -2896,6 +2903,47 @@ private:
         }
         return result;
     }
+    bool bind_comparable(hir::Expr& result,std::string_view name,std::string_view unit={},Type explicit_type=Type::invalid,bool member=false) {
+        const bool between=name=="between",range=name=="inrange",clamp=name=="clamp",top=name=="clamptop",bottom=name=="clampbottom";
+        if((!between && !range && !clamp && !top && !bottom) || (!unit.empty() && unit!="pabcsystem"))return false;
+        const auto count=result.arguments.size();const auto values=top || bottom ? 2U : 3U;
+        if((between && count!=3 && count!=4) || (!between && count!=values))throw Error("E_TYPE",result.location,"Wrong comparison argument count");
+        Type type=explicit_type;
+        if(member || top || bottom) {
+            if(count==0)return false;
+            const auto receiver=result.arguments[0]->type;
+            if(member && (between || range) && (receiver==Type::character || receiver==Type::string))type=receiver;
+            else {
+                if(receiver==Type::big_integer || !numeric(receiver))throw Error("E_TYPE",result.location,"ClampTop/ClampBottom require integer or real values");
+                const auto accepts=[&](Type candidate){for(std::size_t i=0;i<values;++i)if(!can_widen(result.arguments[i]->type,candidate))return false;return true;};
+                type=accepts(Type::integer) ? Type::integer : Type::real;
+            }
+        }
+        if(type==Type::invalid) {
+            for(std::size_t i=0;i<values;++i)if(result.arguments[i]->type!=Type::nil){type=result.arguments[i]->type;break;}
+            if(type==Type::invalid)throw Error("E_TYPE",result.location,"Cannot infer comparison value type");
+            for(std::size_t i=0;i<values;++i) {
+                const auto other=result.arguments[i]->type;if(other==Type::nil)continue;
+                if(can_widen(type,other))type=other;
+                else if(!can_widen(other,type)) {
+                    bool joined=false;
+                    if(numeric(type) && numeric(other))for(const auto candidate:{Type::byte,Type::shortint,Type::smallint,Type::word,Type::integer,Type::int64,Type::longword,Type::uint64,Type::real})
+                        if(can_widen(type,candidate) && can_widen(other,candidate)){type=candidate;joined=true;break;}
+                    if(!joined)throw Error("E_TYPE",result.location,"Comparison values require compatible static types");
+                }
+            }
+        }
+        if(!comparable_type(module_.types,type))throw Error("E_UNSUPPORTED",result.location,"Comparison requires a supported statically comparable type");
+        auto method=between ? ComparableMethod::between : range ? ComparableMethod::in_range : top ? ComparableMethod::clamp_top : bottom ? ComparableMethod::clamp_bottom : ComparableMethod::clamp;
+        if(member && type==Type::string)method=between ? ComparableMethod::ordinal_between : ComparableMethod::ordinal_in_range;
+        if((top || bottom) && type!=Type::integer && type!=Type::real)throw Error("E_TYPE",result.location,"ClampTop/ClampBottom require integer or real values");
+        for(std::size_t i=0;i<values;++i)result.arguments[i]=convert(std::move(result.arguments[i]),type);
+        if(between) {
+            if(count==3){auto yes=std::make_unique<hir::Expr>();yes->kind=hir::ExprKind::literal;yes->type=Type::boolean;yes->value=true;yes->location=result.location;result.arguments.push_back(std::move(yes));}
+            else result.arguments[3]=convert(std::move(result.arguments[3]),Type::boolean);
+        }
+        result.kind=hir::ExprKind::comparable_call;result.operation_type=type;result.local=static_cast<std::size_t>(method);result.type=comparable_result(type,method);return true;
+    }
     bool bind_sequence_library(hir::Expr& result, std::string_view name, std::string_view unit = {}) {
         const bool sort=name=="sort" || name=="sortdescending", fill=name=="fillbyvalue";
         if ((!sort && !fill && name!="copy" && name!="high") || result.arguments.empty() || !compound(result.arguments[0]->type) || enumeration(result.arguments[0]->type)) return false;
@@ -3029,6 +3077,14 @@ private:
     std::unique_ptr<hir::Expr> explicit_factory(const SyntaxExpr& source) {
         const bool qualified=source.kind==SyntaxExprKind::member_call;
         const auto& name=source.token.text;
+        if((name=="inrange" || name=="between" || name=="clamp")
+            && ((source.kind==SyntaxExprKind::call && !lookup(source.token) && !routine_names_.contains(name))
+                || (qualified && source.left && source.left->kind==SyntaxExprKind::name && source.left->token.text=="pabcsystem" && !lookup(source.left->token)))) {
+            if(source.type_arguments.size()!=1)throw Error("E_TYPE",source.token.location,"Comparison requires exactly one explicit value type");
+            const auto type=resolve_type(*source.type_arguments[0]);auto result=std::make_unique<hir::Expr>();result->location=source.token.location;
+            for(const auto& argument:source.arguments)result->arguments.push_back(expression(*argument));
+            (void)bind_comparable(*result,name,{},type);return result;
+        }
         if ((source.kind!=SyntaxExprKind::call && !qualified) || name!="lst"
             || (qualified && (!source.left || source.left->kind!=SyntaxExprKind::name || source.left->token.text!="pabcsystem" || lookup(source.left->token)))
             || (!qualified && (lookup(source.token) || routine_names_.contains(name))))
@@ -4181,6 +4237,7 @@ private:
         return true;
     }
     void bind_builtin(hir::Expr& result, std::string_view name, std::string_view unit = {}) {
+        if(bind_comparable(result,name,unit))return;
         if(bind_enumeration(result,name,unit))return;
         if(bind_file_lines(result,name,unit))return;
         if(bind_encoding_file(result,name,unit))return;

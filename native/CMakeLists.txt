@@ -27,6 +27,7 @@ add_library(abc_core
     src/file_encoding.cpp
     src/encoding.cpp
     src/enumeration.cpp
+    src/comparable.cpp
     src/cp1251.cpp
     src/file_moves.cpp
     src/file_operations.cpp
@@ -66,6 +67,10 @@ add_library(abc_core
     src/vm.cpp)
 target_include_directories(abc_core PUBLIC include)
 target_link_libraries(abc_core PRIVATE abc_math abc_regex Threads::Threads)
+if(NOT WIN32)
+    find_package(ICU 60 REQUIRED COMPONENTS i18n uc data)
+    target_link_libraries(abc_core PRIVATE ICU::i18n ICU::uc ICU::data)
+endif()
 include(CheckCXXSourceCompiles)
 check_cxx_source_compiles("#include <charconv>
 int main() { const char text[] = \"1.5\"; double value; return std::from_chars(text, text + 3, value).ec == std::errc{} ? 0 : 1; }"
@@ -318,6 +323,9 @@ if(BUILD_TESTING)
     add_test(NAME original_enum9 COMMAND $<TARGET_FILE:abc> run "${CMAKE_CURRENT_SOURCE_DIR}/../TestSuite/enum9.pas")
     add_test(NAME original_foreachenum1 COMMAND $<TARGET_FILE:abc> run "${CMAKE_CURRENT_SOURCE_DIR}/../TestSuite/foreachenum1.pas")
     add_test(NAME original_for_step1 COMMAND $<TARGET_FILE:abc> run "${CMAKE_CURRENT_SOURCE_DIR}/../TestSuite/for_step1.pas")
+    add_test(NAME comparable_ranges_compatibility COMMAND ${CMAKE_COMMAND}
+        -DABC_RUNNER=$<TARGET_FILE:abc> -DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures
+        -DABC_FIXTURE_NAME=comparable-ranges-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")
     add_test(NAME enumerations_compatibility COMMAND ${CMAKE_COMMAND}
         -DABC_RUNNER=$<TARGET_FILE:abc> -DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures
         -DABC_FIXTURE_NAME=enumerations-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")

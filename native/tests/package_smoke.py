@@ -214,6 +214,7 @@ def main():
                 ("streaming-text.pas", "Число: 17\nСлово: слово\nОстаток строки: [ остаток 🌍]\nНулевой символ: 0\nОстаток файла: конец\nКонец файла: True\n"),
                 ("for-step.pas", "По возрастанию: 1 3 5 \nПо убыванию: 5 3 1 \nСимволы: 53\n"),
                 ("enumerations.pas", "Начало: Ready\nПосле Inc: Running / 1\nПрава: CanRead, CanWrite\nЗапись: True\nСписок: [Ready,Running,Done]\nШаг: Ready\nШаг: Done\n"),
+                ("comparable-ranges.pas", "Границы: True / False\nПорядок границ: True / False\nОграничение: 0 5 9\nМетоды: 9 0\nПеречисление: Tue / True\nСтрока: True / False\n"),
                 ("numeric-literals.pas", "Маска: 16711935\n64 бита: 18446744073709551615\nРазделители: 1000000 12.5 1001\n"),
                 ("text-writer.pas", "buffered\nXYcdef\nXYcdefZ\nTrue\n"),
                 ("text-lines.pas", "Массив: [Первая строка,Вторая строка]\nСтрока: Первая строка\nСтрока: Вторая строка\nКонец файла: True\nПосле Close: True\n"),
@@ -496,6 +497,20 @@ def main():
                         or "EN:" not in attempted.stderr or "RU:" not in attempted.stderr
                         or f"{enum_source}:{line}:" not in attempted.stderr):
                     raise RuntimeError(f"{name} Enumeration diagnostic mismatch: {attempted.stdout!r}, {attempted.stderr!r}")
+            comparison_source = folder / "Сравнение границ.pas"
+            for source, expected, code, line in [
+                ("begin\nWriteln('must never run');Clamp(1,False,3);end.", "", "E_TYPE", 2),
+                ("begin\nWriteln('before');Clamp(1,9,0);end.", "before\n", "E_RANGE", 2),
+                ("begin\nWriteln('before');var value:string:=nil;InRange(value,'a','z');end.", "before\n", "E_NIL", 2),
+                ("function Bound(x:integer):integer;begin Writeln(x);Result:=x;end;\nbegin Clamp(Bound(1),Bound(9),Bound(0));end.", "1\n9\n0\n", "E_RANGE", 2),
+            ]:
+                comparison_source.write_text(source, encoding="utf-8")
+                attempted = subprocess.run([runner, "run", str(comparison_source)], text=True, encoding="utf-8",
+                                           capture_output=True, cwd=folder, env=env, timeout=10)
+                if (attempted.returncode != 1 or attempted.stdout != expected or code not in attempted.stderr
+                        or "EN:" not in attempted.stderr or "RU:" not in attempted.stderr
+                        or f"{comparison_source}:{line}:" not in attempted.stderr):
+                    raise RuntimeError(f"{name} Comparison diagnostic mismatch: {attempted.stdout!r}, {attempted.stderr!r}")
             character = folder / "Ошибки символов.pas"
             school_error = folder / "Ошибки School.pas"
             for expression, code, english, russian in [
@@ -1338,6 +1353,7 @@ def main():
             results[-1]["native_whole_file_io_sharing"] = "passed"
             results[-1]["typed_for_step_loops_and_bilingual_zero_guard"] = "passed"
             results[-1]["nominal_enumerations_flags_and_bilingual_errors"] = "passed"
+            results[-1]["typed_comparison_ranges_culture_and_bilingual_errors"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 

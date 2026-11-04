@@ -2,6 +2,7 @@
 #include "stdlib.hpp"
 #include "encoding.hpp"
 #include "enumeration.hpp"
+#include "comparable.hpp"
 #include "runtime_values.hpp"
 #include "formatting.hpp"
 #include "school_ip.hpp"
@@ -296,6 +297,9 @@ private:
             expression(*node.left);
             for (const auto& argument : node.arguments) expression(*argument);
             emit(Op::endpoint_call,node.left->type,node.local,node.location); break;
+        case hir::ExprKind::comparable_call:
+            for(const auto& argument:node.arguments)expression(*argument);
+            emit(Op::comparable_call,node.operation_type,node.local,node.location);break;
         case hir::ExprKind::enum_call: {
             for(const auto& argument:node.arguments)expression(*argument);
             const auto extra=node.local==static_cast<std::size_t>(EnumMethod::has_flag) ? static_cast<std::size_t>(node.arguments[1]->type)<<8U : 0U;
@@ -998,6 +1002,8 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             break;
         case Op::encoding_call:
             if(instruction.operand>static_cast<std::size_t>(EncodingMethod::text_append_named) || !encoding_signature_valid(program,type,static_cast<EncodingMethod>(instruction.operand)))invalid(instruction,"Invalid Encoding call metadata");break;
+        case Op::comparable_call:
+            if(instruction.operand>static_cast<std::size_t>(ComparableMethod::clamp_bottom) || !comparable_signature(program,type,static_cast<ComparableMethod>(instruction.operand)))invalid(instruction,"Invalid comparable call metadata");break;
         case Op::enum_call: {
             const auto method=static_cast<EnumMethod>(instruction.operand&255U);const auto raw_other=instruction.operand>>8U;
             if(!enumeration(program,type) || method>EnumMethod::has_flag_nil)invalid(instruction,"Invalid enumeration call metadata");
@@ -1412,6 +1418,10 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             const auto method=static_cast<EnumMethod>(instruction.operand&255U);const auto other=method==EnumMethod::has_flag ? static_cast<Type>(instruction.operand>>8U) : Type::invalid;
             const auto parameters=enum_parameters(instruction.type,method,other);
             for(auto p=parameters.rbegin();p!=parameters.rend();++p)require(*p);stack.push_back(enum_result(instruction.type,method));break;
+        }
+        case Op::comparable_call: {
+            const auto method=static_cast<ComparableMethod>(instruction.operand);const auto parameters=comparable_parameters(instruction.type,method);
+            for(auto p=parameters.rbegin();p!=parameters.rend();++p)require(*p);stack.push_back(comparable_result(instruction.type,method));break;
         }
         case Op::for_step_check: require(Type::integer);break;
         case Op::text_lines: require(Type::text_file);stack.push_back(instruction.type);break;

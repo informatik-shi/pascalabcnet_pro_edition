@@ -14,6 +14,9 @@
 #include "../src/timing.hpp"
 #include "../src/file_encoding.hpp"
 #include "../src/enumeration.hpp"
+#include "../src/comparable.hpp"
+#include "../src/constant.hpp"
+#include <cmath>
 #include "../src/file_reader.hpp"
 #include "../src/file_lines.hpp"
 #include "../src/files.hpp"
@@ -4356,6 +4359,88 @@ void sequence_mutations() {
     error([&]{(void)run("begin var a:=new integer[2000]; Reverse(a); end.","",options);},"E_CANCELLED");
 }
 
+void comparable_ranges() {
+    for(const auto& [expression,negative]:std::initializer_list<std::pair<std::string_view,bool>>{
+        {"Min(-0.0,0.0)",false},{"Max(-0.0,0.0)",false},{"Min(0.0,-0.0)",true},{"Max(0.0,-0.0)",true},
+        {"Min(-0.0,0.0,0.0)",true},{"Max(-0.0,0.0,0.0)",true},{"(-0.0).ClampTop(0.0)",false},{"(-0.0).ClampBottom(0.0)",false},
+        {"0.0.ClampTop(-0.0)",true},{"0.0.ClampBottom(-0.0)",true},{"Clamp(-0.0,-0.0,0.0)",true},{"Clamp(-0.0,0.0,0.0)",true}}) {
+        const auto program=abc::compile("var answer:real;begin answer:="+std::string(expression)+";end.");
+        require(std::signbit(std::get<double>(abc::execute_scalar_constant(program)))==negative,"Real range/min/max zero sign follows source overload");
+    }
+    result("begin Writeln(InRange(5,1,9),' ',InRange(5,9,1),' ',Between(5,9,1),' ',Between(1,1,9,False));Writeln(Clamp(-2,0,9),' ',Clamp(5,0,9),' ',Clamp(20,0,9));end.","True False True False\n0 5 9\n");
+    result("begin Writeln(5.InRange(1,9),' ',5.Between(9,1),' ',1.Between(1,9,False));Writeln((-2).Clamp(0,9),' ',20.ClampTop(9),' ',(-2).ClampBottom(0));Writeln(ClampTop(5,3),' ',ClampBottom(5,8));end.","True True False\n0 9 0\n3 8\n");
+    result("begin var value:byte:=5;Writeln(Clamp&<byte>(value,0,3),' ',Between&<byte>(value,0,9),' ',InRange&<byte>(value,0,9));var r:=Clamp(value,byte(0),byte(3));Writeln(r);end.","3 True True\n3\n");
+    result("begin var v:uint64:=18446744073709551615;var low:uint64:=18446744073709551614;Writeln(InRange(v,low,v),' ',Between(v,v,low),' ',Clamp(v,low,low));end.","True True 18446744073709551614\n");
+    result("begin var a:=1bi shl 1024;Writeln(InRange(a,0bi,a),' ',Between(a,a,0bi,False),' ',Clamp(a+1,a,a)=a);end.","True False True\n");
+    result("type E=(A,B,C);begin var v:=Clamp(C,A,B);Writeln(v,' ',InRange(B,A,C),' ',Between(B,C,A,False));Writeln(PABCSystem.Clamp&<E>(C,A,B));end.","B True True\nB\n");
+    result("begin Writeln(Clamp(False,False,True),' ',Between(True,False,True),' ',Between(False,False,True,False));Writeln(Clamp('z','a','m'),' ','e'.InRange('a','z'));end.","False True False\nm True\n");
+    result("begin Writeln(InRange(1.5,1,2),' ',Clamp(2.5,0,2),' ',Between(2,3.5,1));Writeln(5.Clamp(0.0,3.5),' ',5.ClampTop(3.5));end.","True 2 True\n3.5 3.5\n");
+    result("begin var s:string:='é';Writeln(InRange(s,'a','z'),' ',s.InRange('a','z'));Writeln(Between(s,'z','a'),' ',s.Between('z','a'));Writeln(Clamp(s,'a','z'));end.","True False\nTrue False\né\n");
+    result("begin var s:string:=nil;Writeln(s.InRange(nil,'abc'),' ',s.Between(nil,'abc'),' ',s.Between(nil,nil,False));var a:string:='abc';Writeln(InRange(a,nil,'z'));end.","True True False\nTrue\n");
+    result("var trace:string;function Arg(tag:string;value:integer):integer;begin trace:=trace+tag;Result:=value;end;begin Writeln(Clamp(Arg('x',5),Arg('l',0),Arg('h',3)),' ',trace);trace:='';Writeln(Between(Arg('x',5),Arg('a',9),Arg('b',1)),' ',trace);end.","3 xlh\nTrue xab\n");
+    result("function Clamp(a,b,c:integer):integer:=99;begin Writeln(Clamp(5,0,3),' ',PABCSystem.Clamp(5,0,3));var Between:integer->boolean:=x->x=5;Writeln(Between(5),' ',PABCSystem.Between(5,1,9));end.","99 3\nTrue True\n");
+    for(const auto source:{"begin Clamp(1,9,0);end.","begin 1.Clamp(9,0);end.","begin Clamp(1.0,9.0,0.0);end.","type E=(A,B);begin Clamp(A,B,A);end.","begin var s:string:='abc';Clamp(s,'z','a');end."})runtime_error(source,"E_RANGE");
+    for(const auto source:{"begin var s:string:=nil;InRange(s,'a','z');end.","begin var s:string:='a';Between(s,nil,'z');end.","begin var s:string:=nil;Clamp(s,'a','z');end.","begin var s:string:='abc';Clamp(s,nil,'z');end."})runtime_error(source,"E_NIL");
+    for(const auto source:{"begin InRange(1,0);end.","begin Between(1,0,3,1);end.","begin Clamp(1,False,3);end.","type E1=(A,B);E2=(C,D);begin InRange(A,A,D);end.","begin Clamp&<byte>(2,0,256);end.","begin Between&<integer,real>(1,0,2);end.","begin InRange(nil,nil,nil);end."})compile_error(source,source==std::string_view{"begin Clamp&<byte>(2,0,256);end."} ? "E_RANGE" : "E_TYPE");
+    compile_error("type R=record x:integer;end;begin var r:R;Clamp(r,r,r);end.","E_UNSUPPORTED");
+    for(const auto type:{"byte","shortint","word","smallint","integer","longword","int64","uint64","real","BigInteger"}) {
+        const std::string source="begin var x:"+std::string(type)+":=5;var lo:"+type+":=0;var hi:"+type+":=3;var result1:=Clamp(x,lo,hi);Writeln(result1);end.";
+        const auto program=abc::compile(source);require(program.locals.back().type==abc::find_type(type==std::string_view{"BigInteger"} ? "biginteger" : type),"Clamp result retains inferred scalar type");result(source,"3\n");
+    }
+    {
+        const auto program=abc::compile("type E=(A,B);begin Writeln(Between(A,A,B));end.");
+        for(unsigned mode=0;mode<5;++mode) {
+            auto bad=program;for(auto& op:bad.code)if(op.op==abc::Op::comparable_call){
+                if(mode==0)op.operand=999;
+                if(mode==1)op.type=abc::Type::text_file;
+                if(mode==2)op.operand=static_cast<std::size_t>(abc::ComparableMethod::ordinal_between);
+                if(mode==3)op.operand=static_cast<std::size_t>(abc::ComparableMethod::clamp_top);
+                if(mode==4)op.type=abc::Type::integer;break;
+            }
+            error([&]{abc::verify(bad);},"E_BYTECODE");
+        }
+    }
+    {
+        std::istringstream in;std::ostringstream out;
+        const auto program=abc::compile("function Bound(x:integer):integer;begin Writeln(x);Result:=x;end;begin\nClamp(Bound(1),Bound(9),Bound(0));end.");
+        try{abc::execute(program,in,out);require(false,"Expected reversed clamp bounds");}
+        catch(const abc::Error& e){require(e.code=="E_RANGE" && e.location.line==2 && e.russian=="Минимальное значение не может превышать максимальное","Clamp error is bilingual and located after arguments");}
+        require(out.str()=="1\n9\n0\n","Clamp evaluates arguments before rejecting bounds");
+    }
+    {
+        struct Row {const char* a;const char* b;int culture;int ordinal;};
+        const Row rows[]={
+            {"a","A",-1,1},
+            {"A","z",-1,-1},
+            {"é","z",-1,1},
+            {"é","é",0,1},
+            {"ä","z",-1,1},
+            {"alpha","beta",-1,-1},
+            {"","a",-1,-1},
+            {"a","",1,1},
+            {"same","same",0,0},
+            {"10","2",-1,-1},
+            {"abc","abcd",-1,-1},
+            {"abcd","abc",1,1},
+        };
+        abc::Program program;
+        for(const auto& row:rows){
+            const auto a=abc::from_utf8(row.a),b=abc::from_utf8(row.b);
+            const std::array<abc::Value,3> lower{a,b,a},upper{a,a,b};
+            const auto check=[&](abc::ComparableMethod method,const auto& arguments){return std::get<bool>(abc::comparable_invoke(program,abc::Type::string,method,arguments,{},{}));};
+            require(check(abc::ComparableMethod::in_range,lower)==(row.culture>=0),"Generic lower comparison matches independent en-US API golden");
+            require(check(abc::ComparableMethod::in_range,upper)==(row.culture<=0),"Generic upper comparison matches independent en-US API golden");
+            require(check(abc::ComparableMethod::ordinal_in_range,lower)==(row.ordinal>=0),"Extension lower comparison matches independent ordinal API golden");
+            require(check(abc::ComparableMethod::ordinal_in_range,upper)==(row.ordinal<=0),"Extension upper comparison matches independent ordinal API golden");
+        }
+        const std::array<abc::Value,3> long_values{std::u16string(1000,u'x'),std::u16string(1000,u'a'),std::u16string(1000,u'z')};
+        abc::ExecutionOptions options;options.instruction_limit=1;
+        error([&]{(void)abc::comparable_invoke(program,abc::Type::string,abc::ComparableMethod::in_range,long_values,{},options);},"E_LIMIT");
+        options.instruction_limit=1000;options.cancelled=[] {return true;};
+        error([&]{(void)abc::comparable_invoke(program,abc::Type::string,abc::ComparableMethod::in_range,long_values,{},options);},"E_CANCELLED");
+    }
+}
+
 void enumerations() {
     result("type State=(Ready,Running,Done);begin var value:State;Writeln(value,' ',Ord(value),' ',State.Done);Inc(value);Writeln(value,' ',Succ(value),' ',Pred(value));end.","Ready 0 Done\nRunning Done Ready\n");
     result("type E=(First,Second,Third);begin Writeln(Ord(Low(E)),' ',Ord(High(E)),' ',Low(E),' ',High(Second));Writeln(default(E),' ',new E);end.","0 2 First Third\nFirst First\n");
@@ -4399,7 +4484,7 @@ void enumerations() {
     {
         abc::Program program;abc::TypeInfo type{"probe",abc::CompoundKind::enumeration,abc::Type::integer,{}};
         type.enum_members={{"zero","Zero",0},{"read","Read",1},{"write","Write",2},{"both","Both",3},{"exec","Exec",4},{"sign","Sign",INT32_MIN},{"all","All",-1}};
-        program.types.push_back(type);program.code.push_back({abc::Op::halt});const auto owner=static_cast<abc::Type>(64);
+        program.types.push_back(type);program.code.push_back({abc::Op::halt,abc::Type::unit,0,{}});const auto owner=static_cast<abc::Type>(64);
         struct Row{bool flags;std::int32_t value;const char *general,*decimal,*hex,*forced;};
         for(const auto& row:std::initializer_list<Row>{
             {false,0,"Zero","0","00000000","Zero"},
@@ -6399,7 +6484,7 @@ void characters() {
 
 int main() {
     language();
-    enumerations();
+    enumerations(); comparable_ranges();
     structured_loops();
     foreach_loops();
     characters();

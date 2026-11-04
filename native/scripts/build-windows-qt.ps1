@@ -81,6 +81,8 @@ Sleep, Milliseconds и MillisecondsDelta: examples/timing.pas.
 Перечисления, флаги, Ord/Inc/Low/High и типизированные коллекции: examples/enumerations.pas.
 Перечисления проверяются до запуска; HasFlag и форматы G/D/X/F имеют двуязычные ошибки.
 System.Enum как объект, reflection и поддиапазоны ещё не перенесены.
+InRange, Between, Clamp и методы ClampTop/ClampBottom: examples/comparable-ranges.pas.
+Обобщённые строковые проверки используют en-US, строковые методы InRange/Between — порядок UTF-16.
 Для явного шага используйте to; downto step и нулевой шаг дают двуязычные ошибки.
 Текстовые файлы с BOM читаются как UTF-8, UTF-16LE/BE или UTF-32LE/BE.
 Символы CP1251 и ANSI-алиасы: examples/windows-characters.pas.

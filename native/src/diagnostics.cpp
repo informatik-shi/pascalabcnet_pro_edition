@@ -4,6 +4,10 @@ namespace abc {
 Error runtime_error(RuntimeError id, SourceLocation location, std::string_view context) {
     const char *code, *english, *russian;
     switch (id) {
+    case RuntimeError::clamp_range:
+        code="E_RANGE";english="Minimum cannot be greater than maximum";russian="Минимальное значение не может превышать максимальное";break;
+    case RuntimeError::collation_unavailable:
+        code="E_LOCALE";english="Cannot initialize or use en-US string comparison";russian="Не удалось создать или использовать сравнение строк en-US";break;
     case RuntimeError::enum_format:
         code="E_FORMAT";english="Enumeration format must be G, D, X or F";russian="Формат перечисления должен быть G, D, X или F";break;
     case RuntimeError::enum_flag_type:
