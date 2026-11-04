@@ -5199,7 +5199,9 @@ void text_files() {
     result("begin DefaultEncoding:=Encoding.UTF8;var f:=OpenWrite("+file+");DefaultEncoding:=Encoding.ASCII;f.Write('Я🌍');f.Close;Writeln(ReadAllText("+file+"));end.","Я🌍\n");
     result("begin var f:=OpenWrite("+file+",Encoding.UTF8);f.Write('Я');DefaultEncoding:=nil;f.Rewrite(nil);f.Write('🌍');f.Close;DefaultEncoding:=Encoding.ASCII;Writeln(ReadAllText("+file+"));end.","Я🌍\n");
     result("begin var f:Text;Assign(f,"+file+");f.Rewrite(Encoding.Unicode);f.Write('Я');f.Flush;f.Close;f.Reset(Encoding.ASCII);Writeln(f.ReadToEnd);f.Close;end.","Я\n");
+#ifdef _WIN32
     runtime_error("begin var f:=OpenWrite("+file+");f.Append(Encoding.ASCII);end.","E_IO");
+#endif
     for(const auto& operation:{"ReadAllText("+file+")","WriteAllText("+file+",'x')","OpenRead("+file+")","OpenWrite("+file+")"})runtime_error("begin DefaultEncoding:=nil;"+operation+";end.","E_NIL");
     runtime_error("begin var f:Text;Assign(f,"+file+");f.Reset(nil);end.","E_NIL");
     runtime_error("begin var f:Text;f.Reset(nil);end.","E_IO");
@@ -5267,6 +5269,69 @@ void text_files() {
         first.reset();require(reader->is_open(),"Disposing Text.Lines leaves the Text reader open");
         require(abc::sequence_resume(values,second,1,options) && std::get<std::u16string>(abc::sequence_at(values,second,1,options))==u"cc","Disposing one Text.Lines cursor does not invalidate another");
         second.reset();text->close({});require(!reader->is_open(),"Only Text.Close disposes its owned reader");
+    }
+    result("begin WriteAllText("+other+",'seed');var f:=OpenWrite("+file+",Encoding.ASCII);f.Write('lost');Append(f,"+other+",Encoding.ASCII);f.Write('kept');f.Close;Writeln(ReadAllText("+file+")='',' ',ReadAllText("+other+"));end.","True seedkept\n");
+    result("begin WriteAllText("+file+",'reader');WriteAllText("+other+",'seed');var f:=OpenRead("+file+");Append(f,"+other+",Encoding.ASCII);Writeln(f.ReadString);f.Write('lost');f.Close;Writeln(ReadAllText("+other+"));end.","reader\nseed\n");
+#ifdef _WIN32
+    result("begin WriteAllText("+file+",'reader');WriteAllText("+other+",'seed');var f:=OpenRead("+file+");Append(f,"+other+");Writeln(DeleteFile("+file+"),' ',DeleteFile("+other+"));f.Close;Writeln(DeleteFile("+file+"),' ',DeleteFile("+other+"));end.","False False\nTrue True\n");
+    result("begin WriteAllText("+other+",'other');var f:=OpenWrite("+file+");Assign(f,"+other+");f.Rewrite;Writeln(DeleteFile("+file+"),' ',DeleteFile("+other+"));f.Close;Writeln(DeleteFile("+file+"));end.","False True\nTrue\n");
+#endif
+    // Independent StreamWriter/FileStream reference boundaries: 1024 UTF16 units over 4096 bytes.
+    for(const auto count:{0U,1023U,1024U,1025U,4096U,4097U,5120U,5121U}) {
+        abc::FileContext files;auto text=std::make_shared<abc::TextFile>();
+        abc::text_assign(files,*text,abc::Value{(directory/"text.txt").u16string()},{});abc::text_open(files,text,1,{});
+        const auto writer=text->writer;abc::text_write(*text,std::u16string(count,u'a'),{});
+        const auto emitted=count ? ((count-1)/1024)*1024 : 0;
+        const auto visible=emitted>4096 ? 4096U : 0U;
+        require(fs::file_size(directory/"text.txt")==visible,"Text preserves character and byte buffer boundaries before Flush");
+        abc::text_open(files,text,1,{});
+        require(fs::file_size(directory/"text.txt")==emitted,"Rewrite flushes byte buffers while retaining the character buffer");
+        abc::text_write(*text,u"Z",{});text->close({});
+        const auto retained=count-emitted;
+        std::string expected(std::max<std::size_t>(emitted,retained+1),'a');expected[retained]='Z';
+        std::ifstream in(directory/"text.txt",std::ios::binary);const std::string bytes((std::istreambuf_iterator<char>(in)),{});
+        require(bytes==expected,"Rewrite preserves retained characters and existing file tail");
+        require(!writer->is_open(),"Text Close closes an observed native writer handle");
+    }
+    for(const auto code:{1251,65001,1200,1201,12000,12001,20127})for(const auto prefix:{1023,1024,2047,4095}) {
+        const auto e="Encoding.GetEncoding("+std::to_string(code)+")";
+        result("begin var f:=OpenWrite("+file+","+e+");f.Write(StringOfChar('a',"+std::to_string(prefix)+"),#55356);f.Write(#57101);f.Close;var s:=ReadAllText("+file+","+e+");Writeln(s.Length,' ',RightStr(s,2));end.",
+            std::to_string(prefix+2)+" "+(code==1251 || code==20127 ? "??" : "🌍")+"\n");
+    }
+    result("begin var f:=OpenWrite("+file+",Encoding.UTF8);f.Write(#55356);f.Flush;f.Write(#57101);f.Close;Writeln(ReadAllText("+file+"));end.","��\n");
+    result("begin WriteAllText("+file+",'abc');var f:=OpenAppend("+file+");f.Write('Z');f.Close;Writeln(ReadAllText("+file+"));end.","abcZ\n");
+    runtime_error("begin WriteAllText("+file+",'abc');var f:=OpenAppend("+file+");f.Write('Z');f.Rewrite;end.","E_IO");
+    result("begin WriteAllText("+file+",'');var f:=OpenAppend("+file+");f.Write('abc');f.Rewrite;f.Write('Z');f.Close;Writeln(ReadAllText("+file+"));end.","abcZ\n");
+#ifdef _WIN32
+    runtime_error("begin WriteAllText("+file+",'abc');var f:=OpenRead("+file+");f.Rewrite;end.","E_IO");
+    runtime_error("begin WriteAllText("+file+",'abc');var f:=OpenRead("+file+");f.Append;end.","E_IO");
+    runtime_error("begin var f:=OpenWrite("+file+");var g:=OpenWrite("+file+");end.","E_IO");
+    runtime_error("begin var f:=OpenWrite("+file+");f.Write('abc');f.Flush;var g:=OpenRead("+file+");end.","E_IO");
+#else
+    result("begin WriteAllText("+file+",'abc');var f:=OpenRead("+file+");f.Rewrite;f.Write('XYZ');f.Close;Writeln(ReadAllText("+file+"));end.","XYZ\n");
+    result("begin var f:=OpenWrite("+file+");f.Write('lost');f.Append(Encoding.ASCII);f.Write('kept');f.Close;Writeln(ReadAllText("+file+"));end.","kept\n");
+    result("begin WriteAllText("+file+",'abc');var f:=OpenRead("+file+");f.Append;Writeln(f.ReadString);f.Write('lost');f.Close;Writeln(ReadAllText("+file+"));end.","abc\nabc\n");
+    runtime_error("begin WriteAllText("+file+",'abc');var f:=OpenRead("+file+");f.Append;f.SeekEof;end.","E_IO");
+    runtime_error("begin WriteAllText("+file+",'abc');var f:=OpenRead("+file+");f.Append;f.SeekEoln;end.","E_IO");
+    result("begin WriteAllText("+file+",'abc');var f:=OpenRead("+file+");f.Append;Writeln(f.Eof,' ',f.Eoln);f.Write('Z');f.Flush;f.Close;Writeln(ReadAllText("+file+"));end.","False False\nabcZ\n");
+    result("begin WriteAllText("+file+",'abc');var f:=OpenRead("+file+");f.Append;f.Reset;f.Write('Z');f.Flush;Writeln(f.ReadToEnd);f.Close;Writeln(ReadAllText("+file+"));end.","abcZ\nabcZ\n");
+#endif
+    {
+        abc::FileContext files;auto text=std::make_shared<abc::TextFile>();
+        abc::text_assign(files,*text,abc::Value{(directory/"text.txt").u16string()},{});abc::text_open(files,text,0,{});
+        const auto reader=text->reader;
+#ifdef _WIN32
+        error([&]{abc::text_open(files,text,1,{});},"E_IO");
+        require(reader->is_open() && text->reader==reader,"Failed Rewrite retains the original reader");
+        error([&]{abc::text_open(files,text,2,{});},"E_IO");
+        require(reader->is_open() && text->reader==reader && !text->writer,"Failed Append retains the original reader");
+#else
+        abc::text_open(files,text,2,{});const auto writer=text->writer;
+        require(reader->is_open() && writer->is_open(),"Append retains simultaneous native reader and writer on Unix");
+        abc::text_write(*text,u"unflushed",{});text->close({});
+        require(!reader->is_open() && !writer->is_open(),"Reader-priority Close releases both native handles on Unix");
+#endif
+        if(text->reader)text->close({});
     }
     const std::string unit_newline=
 #ifdef _WIN32

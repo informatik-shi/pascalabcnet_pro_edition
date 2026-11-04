@@ -212,6 +212,7 @@ def main():
                 ("file-lines.pas", "CP1251: [Первая строка,,Последняя строка]\nUnicode: [Строка 1,Строка 2,Строка 3]\n"),
                 ("streaming-lines.pas", "Первые две: [Первая строка,]\nПовторный обход: [Первая строка,Последняя строка]\nОстановка на строке: Первая строка\nПосле break файл закрыт: True\n"),
                 ("streaming-text.pas", "Число: 17\nСлово: слово\nОстаток строки: [ остаток 🌍]\nНулевой символ: 0\nОстаток файла: конец\nКонец файла: True\n"),
+                ("text-writer.pas", "buffered\nXYcdef\nXYcdefZ\nTrue\n"),
                 ("text-lines.pas", "Массив: [Первая строка,Вторая строка]\nСтрока: Первая строка\nСтрока: Вторая строка\nКонец файла: True\nПосле Close: True\n"),
                 ("class-properties.pas", "Свойство: 7\nЧерез метод: 14\n"),
                 ("class-methods.pas", "Значение: 5\nОбщая ссылка: 6\n"),
@@ -417,6 +418,28 @@ def main():
                         or "EN:" not in attempted.stderr or "RU:" not in attempted.stderr
                         or f"{streaming_source}:{line}:" not in attempted.stderr):
                     raise RuntimeError(f"{name} Text.Lines lazy/static diagnostic mismatch: {attempted.stdout!r}, {attempted.stderr!r}")
+            writer_source = folder / "Запись Text.pas"
+            writer_source.write_text(
+                "begin var f:=OpenWrite('writer-unicode.tmp',Encoding.UTF8);\n"
+                "f.Write(StringOfChar('a',1023),#55356);f.Write(#57101);f.Close;end.", encoding="utf-8")
+            attempted = subprocess.run([runner, "run", str(writer_source)], text=True, encoding="utf-8",
+                                       capture_output=True, cwd=folder, env=env, timeout=10)
+            if (attempted.returncode or attempted.stdout
+                    or (folder / "writer-unicode.tmp").read_bytes() != b"\xef\xbb\xbf" + b"a" * 1023 + "🌍".encode("utf-8")):
+                raise RuntimeError(f"{name} Text writer split-surrogate bytes mismatch: {attempted.stdout!r}, {attempted.stderr!r}")
+            for source, expected, line in [
+                ("begin WriteAllText('writer-append.tmp','abc');var f:=OpenAppend('writer-append.tmp');\n"
+                 "Writeln('before');\nf.Rewrite;end.", "before\n", 3),
+                ("begin WriteAllText('writer-sharing.tmp','abc');var f:=OpenRead('writer-sharing.tmp');\n"
+                 "f.Rewrite;end.", "", 2),
+            ]:
+                writer_source.write_text(source, encoding="utf-8")
+                attempted = subprocess.run([runner, "run", str(writer_source)], text=True, encoding="utf-8",
+                                           capture_output=True, cwd=folder, env=env, timeout=10)
+                if (attempted.returncode != 1 or attempted.stdout != expected or "E_IO" not in attempted.stderr
+                        or "EN:" not in attempted.stderr or "RU:" not in attempted.stderr
+                        or f"{writer_source}:{line}:" not in attempted.stderr):
+                    raise RuntimeError(f"{name} Text writer bilingual diagnostic mismatch: {attempted.stdout!r}, {attempted.stderr!r}")
             character = folder / "Ошибки символов.pas"
             school_error = folder / "Ошибки School.pas"
             for expression, code, english, russian in [
@@ -1254,6 +1277,7 @@ def main():
             results[-1]["native_streaming_readlines_and_shared_reader_cleanup"] = "passed"
             results[-1]["native_streaming_text_scalar_line_and_end_reads"] = "passed"
             results[-1]["typed_text_lines_buffer_seek_and_reader_ownership"] = "passed"
+            results[-1]["native_text_writer_buffers_sharing_and_append_floor"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 

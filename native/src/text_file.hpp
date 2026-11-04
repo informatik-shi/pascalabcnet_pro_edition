@@ -2,19 +2,19 @@
 #include "abc/core.hpp"
 #include "file_encoding.hpp"
 #include <filesystem>
-#include <fstream>
+#include "file_writer.hpp"
 
 namespace abc {
 class FileContext;class LineReader;
 struct TextFile {
-    std::filesystem::path filename, opened_filename;
+    std::filesystem::path filename;
     std::u16string pending;
-    std::size_t position=0, size=0;
+    char16_t encoder_carry=0;
     bool preamble_pending=false;
     std::shared_ptr<LineReader> reader;
     const ExecutionOptions* execution_options=nullptr;
     std::optional<TextEncoding> encoding;
-    std::fstream writer;
+    std::shared_ptr<FileWriter> writer;
     ~TextFile();
     bool is_open() const;
     const ExecutionOptions& options() const;

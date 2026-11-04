@@ -32,6 +32,18 @@ std::string encoded(const TextFile& file,std::u16string_view text,SourceLocation
     if(file.preamble_pending && file.encoding)bytes.insert(0,text_encoding_preamble(*file.encoding));
     return bytes;
 }
+void emit_pending(TextFile& file,bool final,SourceLocation location) {
+    std::u16string text;
+    if(file.encoder_carry)text.push_back(file.encoder_carry);
+    text+=file.pending;char16_t carry=0;
+    const auto kind=file.encoding ? file.encoding->kind : TextEncodingKind::utf8;
+    if(!final && kind!=TextEncodingKind::windows1251 && kind!=TextEncodingKind::ascii && !text.empty() && text.back()>=0xd800 && text.back()<=0xdbff) {
+        carry=text.back();text.pop_back();
+    }
+    const auto bytes=encoded(file,text,location);
+    file.writer->write(bytes,location);
+    file.pending.clear();file.encoder_carry=carry;file.preamble_pending=false;
+}
 void assigned(const TextFile& file, SourceLocation location) {
     if (file.filename.empty()) throw runtime_error(RuntimeError::file_unassigned,location);
 }
@@ -61,10 +73,11 @@ std::u16string read_token(TextFile& file,SourceLocation location) {
 }
 }
 
-bool TextFile::is_open() const{return (reader && reader->is_open()) || writer.is_open();}
+bool TextFile::is_open() const{return (reader && reader->is_open()) || (writer && writer->is_open());}
 const ExecutionOptions& TextFile::options() const{static const ExecutionOptions defaults;return execution_options ? *execution_options : defaults;}
 TextFile::~TextFile() {
-    try { if (writer.is_open()) { flush({}); writer.close(); } } catch (...) {}
+    try { if(writer && writer->is_open())flush({}); } catch (...) {}
+    if(writer)writer->close();
     if(reader)reader->close();
 }
 TextFile& text_file(const Value& value, SourceLocation location) {
@@ -90,7 +103,7 @@ bool FileContext::text_file_locked(const std::filesystem::path& path, bool subtr
         }
         return false;
     };
-    for(const auto& weak:open_texts_)if(const auto file=weak.lock();file && file->is_open() && locked(file->opened_filename))return true;
+    for(const auto& weak:open_texts_)if(const auto file=weak.lock();file && ((file->reader && file->reader->is_open() && locked(file->reader->path())) || (file->writer && file->writer->is_open() && locked(file->writer->path()))))return true;
     for(const auto& weak:open_readers_)if(const auto reader=weak.lock();reader && reader->is_open() && locked(reader->path()))return true;
 #else
     (void)path;(void)subtree;
@@ -98,65 +111,52 @@ bool FileContext::text_file_locked(const std::filesystem::path& path, bool subtr
     return false;
 }
 void TextFile::flush(SourceLocation location) {
-    if (!writer.is_open()) return;
-    const auto bytes=encoded(*this,pending,location);
-    if (position>file_limit || bytes.size()>file_limit-position) throw runtime_error(RuntimeError::file_limit,location);
-    writer.write(bytes.data(),static_cast<std::streamsize>(bytes.size())); writer.flush();
-    if (!writer) throw runtime_error(RuntimeError::file_io,location);
-    position+=bytes.size(); size=std::max(size,position); pending.clear();preamble_pending=false;
+    if(!writer)return;
+    emit_pending(*this,true,location);writer->flush(location);
 }
 void TextFile::close(SourceLocation location) {
     assigned(*this,location);
-    if (!reader && !writer.is_open()) throw runtime_error(RuntimeError::file_closed,location);
-    if (writer.is_open()) {
-        flush(location); writer.close();
-        if (writer.fail()) throw runtime_error(RuntimeError::file_io,location);
+    if(!reader && !writer)throw runtime_error(RuntimeError::file_closed,location);
+    if(reader) {
+        reader->close();reader.reset();
+        // Source Close takes the reader branch and drops an accompanying writer without flushing its character buffer.
+        if(writer){writer->close();writer.reset();}
+    } else if(writer) {
+        try{flush(location);}catch(...){writer->close();throw;}
+        writer->close();writer.reset();
     }
-    if(reader){reader->close();reader.reset();}
-    opened_filename.clear();
+    pending.clear();encoder_carry=0;preamble_pending=false;
 }
 void text_assign(FileContext& files, TextFile& file, const Value& name, SourceLocation location) {
     file.filename=files.resolve(string_text(name),location);
 }
-void text_open(FileContext& files, const std::shared_ptr<TextFile>& pointer, unsigned mode, SourceLocation location,const Value* explicit_encoding) {
-    auto& file=text_file(Value{pointer},location); assigned(file,location);
+void text_open(FileContext& files,const std::shared_ptr<TextFile>& pointer,unsigned mode,SourceLocation location,const Value* explicit_encoding) {
+    auto& file=text_file(Value{pointer},location);assigned(file,location);
     files.prepare_text_open(pointer,location);
-    if (mode==1 && file.writer.is_open()) {
-        // Original Rewrite seeks the underlying writer without discarding its buffer.
-        file.writer.seekp(0); if (!file.writer) throw runtime_error(RuntimeError::file_io,location);
-        file.position=0; return;
+    if(mode==1 && file.writer) {
+        // Rewrite seeks the byte stream without flushing the character buffer or changing its codec.
+        file.writer->seek_begin(location);return;
     }
-    if (mode==2 && file.writer.is_open()) throw runtime_error(RuntimeError::file_io,location);
     if(mode==0 && file.reader)file.reader->close();
     const auto selected=explicit_encoding ? &encoding_value(*explicit_encoding,location) : files.encoding(location);
     const auto snapshot=selected ? std::optional<TextEncoding>{*selected} : std::nullopt;
     file.execution_options=files.execution_options;
     if(mode==0) {
         auto next=std::make_shared<LineReader>(file.filename,snapshot.value_or(TextEncoding{TextEncodingKind::utf8,true,true}),location);
-        file.reader=std::move(next);
-        if(file.writer.is_open()) {
-            file.flush(location);file.writer.close();
-            if(file.writer.fail())throw runtime_error(RuntimeError::file_io,location);
+        const bool had_reader=static_cast<bool>(file.reader);file.reader=std::move(next);
+        if(!had_reader && file.writer) {
+            try{file.flush(location);}catch(...){file.writer->close();throw;}
+            file.writer->close();file.writer.reset();file.pending.clear();file.encoder_carry=0;
         }
-        file.opened_filename=file.filename;return;
+        return;
     }
-    if(file.is_open())file.close(location);
-    std::error_code error;
-    const auto existing=std::filesystem::file_size(file.filename,error);
-    if (mode==2 && !error && existing>file_limit) throw runtime_error(RuntimeError::file_limit,location);
-    if (mode==1) {
-        file.writer.open(file.filename,std::ios::binary|std::ios::out|std::ios::trunc);
-        file.position=0; file.size=0;
-    } else {
-        // Ensure append creates an absent file, then retain an explicitly seekable writer.
-        { std::ofstream create(file.filename,std::ios::binary|std::ios::app); if (!create) throw runtime_error(RuntimeError::file_io,location); }
-        file.writer.open(file.filename,std::ios::binary|std::ios::in|std::ios::out);
-        file.writer.seekp(0,std::ios::end);
-        if (file.writer) file.position=file.size=static_cast<std::size_t>(file.writer.tellp());
-    }
-    if (!file.writer) { file.writer.close(); file.writer.clear(); throw runtime_error(RuntimeError::file_io,location); }
-    file.encoding=snapshot;file.preamble_pending=file.position==0 && snapshot && !text_encoding_preamble(*snapshot).empty();
-    file.pending.clear(); file.opened_filename=file.filename;
+    auto next=std::make_shared<FileWriter>(file.filename,mode==2,location);
+    // Open first: a conflicting reader/writer must stay intact if the new open fails.
+    if(mode==1 && file.reader){file.reader->close();file.reader.reset();}
+    if(file.writer)file.writer->close();
+    file.writer=std::move(next);file.encoding=snapshot;
+    file.preamble_pending=file.writer->position()==0 && snapshot && !text_encoding_preamble(*snapshot).empty();
+    file.pending.clear();file.encoder_carry=0;
 }
 void text_erase(const FileContext& files, const TextFile& file, SourceLocation location) {
     assigned(file,location);
@@ -173,23 +173,21 @@ void text_rename(FileContext& files, const TextFile& file, const Value& name, So
     if (!files.rename(file.filename.u16string(),string_text(name),false)) throw runtime_error(RuntimeError::file_rename,location);
     // PABCSystem calls File.Move rather than FileInfo.MoveTo: keep the assigned name.
 }
-void text_write(TextFile& file, std::u16string_view value, SourceLocation location) {
+void text_write(TextFile& file,std::u16string_view value,SourceLocation location) {
     assigned(file,location);
-    if (!file.writer.is_open()) throw runtime_error(RuntimeError::file_write_mode,location);
-    if (value.size()>file_limit || file.pending.size()>file_limit-value.size()) throw runtime_error(RuntimeError::file_limit,location);
-    auto next=file.pending; next+=value;
-    const auto bytes=encoded(file,next,location);
-    if (file.position>file_limit || bytes.size()>file_limit-file.position) throw runtime_error(RuntimeError::file_limit,location);
-    std::size_t offset=0;
-    while (next.size()-offset>=1024) {
-        std::size_t count=1024;
-        if (next[offset+count-1]>=0xd800 && next[offset+count-1]<=0xdbff) --count;
-        const auto chunk=encoded(file,std::u16string_view(next).substr(offset,count),location);
-        file.writer.write(chunk.data(),static_cast<std::streamsize>(chunk.size()));
-        if (!file.writer) throw runtime_error(RuntimeError::file_io,location);
-        file.position+=chunk.size(); file.size=std::max(file.size,file.position); offset+=count;file.preamble_pending=false;
+    if(!file.writer)throw runtime_error(RuntimeError::file_write_mode,location);
+    if(!file.writer->is_open())throw runtime_error(RuntimeError::file_io,location);
+    if(value.size()>file_limit || file.pending.size()>file_limit-value.size())throw runtime_error(RuntimeError::file_limit,location);
+    std::u16string check;
+    if(file.encoder_carry)check.push_back(file.encoder_carry);
+    check+=file.pending;check+=value;
+    const auto bytes=encoded(file,check,location);
+    if(file.writer->position()>file_limit || bytes.size()>file_limit-file.writer->position())throw runtime_error(RuntimeError::file_limit,location);
+    while(!value.empty()) {
+        if(file.pending.size()==1024)emit_pending(file,false,location);
+        const auto count=std::min<std::size_t>(1024-file.pending.size(),value.size());
+        file.pending.append(value.substr(0,count));value.remove_prefix(count);
     }
-    file.pending=next.substr(offset);
 }
 Value text_read(TextFile& file, Type type, SourceLocation location) {
     if (type==Type::string) return read_remaining_line(file,location);
@@ -249,7 +247,8 @@ void text_skip_line(TextFile& file,SourceLocation location) {
     }
 }
 bool text_eof(TextFile& file,bool line,bool skip_space,SourceLocation location) {
-    if(!file.reader)throw runtime_error(file.writer.is_open() ? RuntimeError::file_read_mode : RuntimeError::file_closed,location);
+    if(skip_space && file.writer)throw runtime_error(RuntimeError::file_read_mode,location);
+    if(!file.reader)throw runtime_error(file.writer ? RuntimeError::file_read_mode : RuntimeError::file_closed,location);
     auto next=file.reader->peek_character(location,file.options());
     while(skip_space && next && (line ? *next==u' ' || *next==u'\t' : whitespace(*next))) {
         (void)file.reader->read_character(location,file.options());next=file.reader->peek_character(location,file.options());

@@ -1,0 +1,71 @@
+{
+  "origin": "Windows System.IO.StreamWriter and BaseStream API probe; original Pascal compiler not executed",
+  "boundaries": [
+    {
+      "last": 90,
+      "visible": 0,
+      "after_seek": 0,
+      "first": 90,
+      "count": 0,
+      "final_length": 1
+    },
+    {
+      "last": 90,
+      "visible": 0,
+      "after_seek": 0,
+      "first": 97,
+      "count": 1023,
+      "final_length": 1024
+    },
+    {
+      "last": 90,
+      "visible": 0,
+      "after_seek": 0,
+      "first": 97,
+      "count": 1024,
+      "final_length": 1025
+    },
+    {
+      "last": 97,
+      "visible": 0,
+      "after_seek": 1024,
+      "first": 97,
+      "count": 1025,
+      "final_length": 1024
+    },
+    {
+      "last": 97,
+      "visible": 0,
+      "after_seek": 3072,
+      "first": 97,
+      "count": 4096,
+      "final_length": 3072
+    },
+    {
+      "last": 97,
+      "visible": 0,
+      "after_seek": 4096,
+      "first": 97,
+      "count": 4097,
+      "final_length": 4096
+    },
+    {
+      "last": 97,
+      "visible": 0,
+      "after_seek": 4096,
+      "first": 97,
+      "count": 5120,
+      "final_length": 4096
+    },
+    {
+      "last": 97,
+      "visible": 4096,
+      "after_seek": 5120,
+      "first": 97,
+      "count": 5121,
+      "final_length": 5120
+    }
+  ],
+  "append_result": "abcZ",
+  "append_seek_rejected": true
+}
