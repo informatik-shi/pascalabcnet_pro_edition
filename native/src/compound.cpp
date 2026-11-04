@@ -8,11 +8,12 @@
 namespace abc {
 bool compound_reference(CompoundMethod method){return method<=CompoundMethod::big_multiply;}
 bool compound_signature(const Program& program,Type owner,CompoundMethod method) {
-    if(method>CompoundMethod::list_repeat_reverse)return false;
+    if(method>CompoundMethod::array_repeat_reverse)return false;
     if(method<=CompoundMethod::text_repeat)return owner==Type::string;
     if(method<=CompoundMethod::big_multiply)return owner==Type::big_integer;
     if(!compound(owner) || static_cast<unsigned>(owner)-64U>=program.types.size())return false;
     const auto kind=type_info(program,owner).kind;
+    if(method>=CompoundMethod::array_concat)return kind==CompoundKind::array && type_info(program,owner).rank==1;
     return method==CompoundMethod::endpoint_add ? endpoint_collection(kind) : kind==CompoundKind::list;
 }
 std::vector<Type> compound_parameters(const Program& program,Type owner,CompoundMethod method) {return compound_parameters(program.types,owner,method);}
@@ -21,12 +22,12 @@ std::vector<Type> compound_parameters(const std::vector<TypeInfo>& types,Type ow
     if(method==CompoundMethod::text_integer || method==CompoundMethod::text_repeat)return {reference_type(owner),Type::integer};
     if(method==CompoundMethod::text_real)return {reference_type(owner),Type::real};
     if(method<=CompoundMethod::big_multiply)return {reference_type(owner),owner};
-    if(method==CompoundMethod::list_repeat)return {owner,Type::integer};
-    if(method==CompoundMethod::list_repeat_reverse)return {Type::integer,owner};
+    if(method==CompoundMethod::list_repeat || method==CompoundMethod::array_repeat)return {owner,Type::integer};
+    if(method==CompoundMethod::list_repeat_reverse || method==CompoundMethod::array_repeat_reverse)return {Type::integer,owner};
     return {owner,method==CompoundMethod::list_add || method==CompoundMethod::endpoint_add ? types.at(static_cast<unsigned>(owner)-64U).element : owner};
 }
 Type compound_result(Type owner,CompoundMethod method) {
-    return method==CompoundMethod::list_concat || method==CompoundMethod::list_repeat || method==CompoundMethod::list_repeat_reverse ? owner : Type::unit;
+    return method==CompoundMethod::list_concat || method==CompoundMethod::list_repeat || method==CompoundMethod::list_repeat_reverse || method>=CompoundMethod::array_concat ? owner : Type::unit;
 }
 namespace {
 void require(const std::shared_ptr<Aggregate>& value,SourceLocation location) {if(!value || value->nil)throw runtime_error(RuntimeError::nil_reference,location);}
@@ -63,9 +64,32 @@ Value compound_invoke(Values& values,Type owner,CompoundMethod method,std::span<
             }
             values.write(target,result);return false;
         }
-        const auto reversed=method==CompoundMethod::list_repeat_reverse;
+        const auto reversed=method==CompoundMethod::list_repeat_reverse || method==CompoundMethod::array_repeat_reverse;
         const auto object=std::get<std::shared_ptr<Aggregate>>(arguments[reversed ? 1 : 0]);require(object,values.location);
         const auto element=type_info(values.program,owner).element;
+        if(method>=CompoundMethod::array_concat){
+            // PABCSystem array operators validate references after both operands.
+            const auto concat=method==CompoundMethod::array_concat;
+            const auto right=concat ? std::get<std::shared_ptr<Aggregate>>(arguments[1]) : object;
+            if(concat)require(right,values.location);
+            const auto count=concat ? std::int32_t{1} : std::get<std::int32_t>(arguments[reversed ? 0 : 1]);
+            if(count<0)throw runtime_error(RuntimeError::array_repeat_range,values.location);
+            const auto first=object->items.size(),last=right->items.size();
+            const auto maximum=static_cast<std::size_t>(INT32_MAX);
+            if(first>maximum || last>maximum || (concat ? last>maximum-first : count!=0 && first>maximum/static_cast<std::uint32_t>(count)))
+                throw runtime_error(RuntimeError::integer_overflow,values.location);
+            const auto total=concat ? first+last : first*static_cast<std::uint32_t>(count);
+            // Even empty repeated arrays execute the source's n CopyTo calls.
+            const auto copies=concat || first==1 ? std::size_t{1} : static_cast<std::uint32_t>(count);
+            big_work(total+copies,values.location,options);
+            auto result=values.array(owner,total,true);
+            for(std::size_t i=0;i<total;++i){
+                if((i&255U)==0 && options.cancelled && options.cancelled())throw runtime_error(RuntimeError::cancelled,values.location);
+                const auto& item=concat ? (i<first ? object->items[i] : right->items[i-first]) : object->items[i%first];
+                values.write(result->items[i],item->value);
+            }
+            return result;
+        }
         if(method==CompoundMethod::endpoint_add){
             if(!object->ends)throw runtime_error(RuntimeError::invalid_bytecode,values.location);
             object->ends->push_back(values.cell(element,values.copy(arguments[1])));return false;

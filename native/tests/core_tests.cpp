@@ -4360,6 +4360,44 @@ void sequence_mutations() {
     error([&]{(void)run("begin var a:=new integer[2000]; Reverse(a); end.","",options);},"E_CANCELLED");
 }
 
+void array_operator_library() {
+    result("begin var a:=Arr(1,2);var b:=Arr(3,4);var c:=a+b;c[0]:=9;Writeln(a,' ',b,' ',c,' ',c=a);Writeln(a*3,' ',2*a,' ',a*0);end.","[1,2] [3,4] [9,2,3,4] False\n[1,2,1,2,1,2] [1,2,1,2] []\n");
+    result("begin var a:=new integer[0];var b:=a+a;var c:=a*0;Writeln(b=nil,' ',c=nil,' ',a=b,' ',b=c,' ',b.Length);end.","False False False False 0\n");
+    for(const auto type:{"byte","shortint","smallint","word","integer","longword","int64","uint64","real","BigInteger"}) {
+        result("begin var a:=new "+std::string(type)+"[1];a[0]:=2;var b:=a+a;var c:=3*a;Writeln(b,' ',c);end.","[2,2] [2,2,2]\n");
+        const auto p=abc::compile("begin var a:=new "+std::string(type)+"[1];var b:=a+a;var c:=a*2;end.");
+        require(p.locals[p.locals.size()-1].type==p.locals[p.locals.size()-2].type,"Array repetition and concatenation retain their exact array type");
+    }
+    result("type E=(A,B);begin Writeln(Arr(A,B)*2,' ',Arr(True)+Arr(False),' ',Arr('a','b')*2);var a:=new string[2];a[0]:=nil;a[1]:='';var b:=a+a;Writeln(b[0]=nil,' ',b[1]=nil,' ',b[2]=nil,' ',b[3].Length);end.","[A,B,A,B] [True,False] [a,b,a,b]\nTrue False True 0\n");
+    result("type Inner=record x:integer;end;R=record n:Inner;a:array of integer;end;begin var r:R;r.n.x:=1;r.a:=Arr(2);var a:=Arr(r);var b:=a*2;var c:=a+a;b[0].n.x:=9;c[1].n.x:=8;b[0].a[0]:=7;Writeln(a[0].n.x,' ',b[1].n.x,' ',c[0].n.x,' ',a[0].a[0],' ',c[1].a[0]);end.","1 1 1 7 7\n");
+    result("type C=class public x:integer;end;begin var c:=new C;c.x:=1;var a:=Arr(c);var b:=a*2;var d:=a+a;b[0].x:=8;Writeln(c.x,' ',b[1]=c,' ',d[1]=c);b[0]:=nil;Writeln(a[0]=c,' ',b[1]=c);end.","8 True True\nTrue True\n");
+    result("begin var a:=Arr(Rec(1,'abc'));var b:=a+a;var c:=2*a;Writeln(b,' ',c);var f:integer->integer:=x->x+1;var callbacks:=Arr(f)*2;Writeln(callbacks[1](4));end.","[(1,abc),(1,abc)] [(1,abc),(1,abc)]\n5\n");
+    result("begin var a:=Arr(Encoding.UTF8);var b:=a+a;var c:=a*2;Writeln(b[1]=c[0],' ',c[1].CodePage);end.","True 65001\n");
+    result("var a:array of integer;trace:string;function Left:array of integer;begin trace+='L';Result:=a;end;function Right:array of integer;begin trace+='R';a[0]:=7;a:=Arr(9);Result:=Arr(2);end;begin a:=Arr(1);var c:=Left+Right;Writeln(c,' ',a,' ',trace);end.","[7,2] [9] LR\n");
+    result("var a:array of integer;trace:string;function Items:array of integer;begin trace+='A';Result:=a;end;function Count:integer;begin trace+='C';a[0]:=7;Result:=2;end;begin a:=Arr(1);Writeln(Items*Count,' ',trace);trace:='';Writeln(Count*Items,' ',trace);end.","[7,7] AC\n[7,7] CA\n");
+    result("type C=class public a:array of integer;property Items:array of integer read a write a;end;begin var c:=new C;c.a:=Arr(1);var old:=c.a;c.Items+=Arr(2);c.Items*=2;Writeln(old,' ',c.a);var l:=new List<array of integer>;l.Add(Arr(3));l[0]+=Arr(4);Writeln(l[0]);end.","[1] [1,2,1,2]\n[3,4]\n");
+    result("procedure Extend(var a:array of integer);begin a:=a+Arr(3);end;function F(a:array of integer):array of integer:=a*2;begin var a:=Arr(1,2);Extend(a);Writeln(F(a));Writeln(SeqGen(2,i->a*2).Select(x->x.Length).ToArray);end.","[1,2,3,1,2,3]\n[6,6]\n");
+    for(const auto source:{"begin var a:=Arr(1);a+=Arr(2);end.","begin var a:=Arr(1);a*=2;end.","begin Writeln(Arr(1)+Arr(1.5));end.","begin Writeln(Arr(1)+Lst(2));end.","begin Writeln(Arr(1)*1.5);end.","begin Writeln(True*Arr(1));end.","begin var m:=new integer[1,1];Writeln(m+m);end.","begin var m:=new integer[1,1];Writeln(m*2);end.","begin Writeln(nil+nil);end."})compile_error(source,"E_TYPE");
+    for(const auto source:{"begin var a:array of integer;Writeln(a+Arr(1));end.","begin var a:array of integer;Writeln(Arr(1)+a);end.","begin var a:=Arr(1);Writeln(a+nil);end.","begin var a:=Arr(1);Writeln(nil+a);end.","begin var a:array of integer;Writeln(a*0);end.","begin var a:array of integer;Writeln((-1)*a);end."})runtime_error(source,"E_NIL");
+    runtime_error("begin Writeln(Arr(1)*(-1));end.","E_RANGE");runtime_error("begin Writeln((-1)*Arr(1,2));end.","E_RANGE");
+    runtime_error("begin Writeln(Arr(1,2)*MaxInt);end.","E_OVERFLOW");runtime_error("begin var a:=new integer[0];Writeln(a*MaxInt);end.","E_LIMIT");
+    {
+        const auto p=abc::compile("function Left:array of integer;begin Write('L');Result:=nil;end;function Right:array of integer;begin Write('R');Result:=Arr(1);end;begin\nWriteln(Left+Right);end.");std::istringstream in;std::ostringstream out;
+        try{abc::execute(p,in,out);require(false,"Expected array concat nil failure");}catch(const abc::Error& e){require(e.code=="E_NIL" && e.location.line==2 && !e.russian.empty(),"Array nil error retains location and both languages");}require(out.str()=="LR","Both concatenation operands run before nil validation");
+    }
+    {
+        auto p=abc::compile("begin var m:=new integer[0,0];Writeln(Arr(1)+Arr(2));end.");const auto matrix=static_cast<abc::Type>(64+std::distance(p.types.begin(),std::find_if(p.types.begin(),p.types.end(),[](const auto& t){return t.kind==abc::CompoundKind::array && t.rank==2;})));
+        for(unsigned mode=0;mode<4;++mode){auto bad=p;for(auto& op:bad.code)if(op.op==abc::Op::compound_call){if(mode==0)op.operand=999;if(mode==1)op.type=matrix;if(mode==2)op.type=abc::Type::integer;if(mode==3)op.operand=static_cast<std::size_t>(abc::CompoundMethod::list_concat);}error([&]{abc::verify(bad);},"E_BYTECODE");}
+    }
+    {
+        const auto p=abc::compile("begin var a:=Arr(1);end.");const auto owner=static_cast<abc::Type>(64+std::distance(p.types.begin(),std::find_if(p.types.begin(),p.types.end(),[](const auto& t){return t.kind==abc::CompoundKind::array && t.element==abc::Type::integer;})));
+        abc::Values values{p,20};auto a=values.array(owner,2);values.write(a->items[0],std::int32_t{7});const std::array<abc::Value,2> repeat{a,std::int32_t{100}};
+        error([&]{(void)abc::compound_invoke(values,owner,abc::CompoundMethod::array_repeat,repeat,{});},"E_LIMIT");require(std::get<std::int32_t>(a->items[0]->value)==7 && a->items.size()==2,"Failed repeat leaves source cells intact");
+        abc::ExecutionOptions options;options.instruction_limit=1;error([&]{(void)abc::compound_invoke(values,owner,abc::CompoundMethod::array_repeat,repeat,options);},"E_LIMIT");options.instruction_limit=10000;options.cancelled=[] {return true;};const auto before=values.remaining;
+        error([&]{(void)abc::compound_invoke(values,owner,abc::CompoundMethod::array_repeat,repeat,options);},"E_CANCELLED");require(values.remaining==before,"Canceled repeat does not allocate result cells");
+    }
+}
+
 void compound_assignments() {
     result("begin var i:=5;i+=2;i-=1;i*=3;var r:=9.0;r/=2;r+=1;r-=0.5;r*=2;Writeln(i,' ',r);end.","18 10\n");
     for(const auto name:{"byte","shortint","smallint","word","integer","longword","int64","uint64"}) {
@@ -6619,7 +6657,7 @@ void characters() {
 
 int main() {
     language();
-    enumerations(); comparable_ranges(); compound_assignments();
+    enumerations(); comparable_ranges(); compound_assignments(); array_operator_library();
     structured_loops();
     foreach_loops();
     characters();

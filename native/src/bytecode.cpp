@@ -1020,7 +1020,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         case Op::encoding_call:
             if(instruction.operand>static_cast<std::size_t>(EncodingMethod::text_append_named) || !encoding_signature_valid(program,type,static_cast<EncodingMethod>(instruction.operand)))invalid(instruction,"Invalid Encoding call metadata");break;
         case Op::compound_call:
-            if(instruction.operand>static_cast<std::size_t>(CompoundMethod::list_repeat_reverse) || !compound_signature(program,type,static_cast<CompoundMethod>(instruction.operand)))invalid(instruction,"Invalid compound call metadata");break;
+            if(instruction.operand>static_cast<std::size_t>(CompoundMethod::array_repeat_reverse) || !compound_signature(program,type,static_cast<CompoundMethod>(instruction.operand)))invalid(instruction,"Invalid compound call metadata");break;
         case Op::store_index:
             if(!compound(type) || !indexed_sequence(type_info(program,type).kind) || instruction.operand)invalid(instruction,"Invalid deferred index store");break;
         case Op::store_field:

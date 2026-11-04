@@ -2870,6 +2870,11 @@ private:
             auto left = result->left->type;
             auto right = result->right->type;
             const auto& op = result->operation;
+            const auto is_array=[&](Type type){return compound(type) && info(type,result->location).kind==CompoundKind::array && info(type,result->location).rank==1;};
+            if(op=="+" && ((is_array(left) && (right==left || right==Type::nil)) || (is_array(right) && left==Type::nil)))
+                return compound_expression(is_array(left) ? left : right,CompoundMethod::array_concat,std::move(result->left),std::move(result->right),result->location);
+            if(op=="*" && (is_array(left) || is_array(right)))
+                return compound_expression(is_array(left) ? left : right,is_array(left) ? CompoundMethod::array_repeat : CompoundMethod::array_repeat_reverse,std::move(result->left),std::move(result->right),result->location);
             const auto is_list=[&](Type type){return compound(type) && info(type,result->location).kind==CompoundKind::list;};
             if(op=="+" && ((is_list(left) && (right==left || right==Type::nil)) || (is_list(right) && left==Type::nil)))
                 return compound_expression(is_list(left) ? left : right,CompoundMethod::list_concat,std::move(result->left),std::move(result->right),result->location);

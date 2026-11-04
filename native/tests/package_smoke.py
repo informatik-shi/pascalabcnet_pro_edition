@@ -215,6 +215,7 @@ def main():
                 ("for-step.pas", "По возрастанию: 1 3 5 \nПо убыванию: 5 3 1 \nСимволы: 53\n"),
                 ("enumerations.pas", "Начало: Ready\nПосле Inc: Running / 1\nПрава: CanRead, CanWrite\nЗапись: True\nСписок: [Ready,Running,Done]\nШаг: Ready\nШаг: Done\n"),
                 ("comparable-ranges.pas", "Границы: True / False\nПорядок границ: True / False\nОграничение: 0 5 9\nМетоды: 9 0\nПеречисление: Tue / True\nСтрока: True / False\n"),
+                ("array-operators.pas", "[1,2,3,4,5]\n[1,2,3,1,2,3]\n[4,5,4,5]\n[]\n7 9 7\n[20] [20]\n"),
                 ("compound-assignments.pas", "20 4.5\nPascal 42Pascal 42\n300000000000000000006\n[1,12,3]\n[1,2,3,4]\n[1,2,3,4,1,2,3,4]\n10 20\n5\n"),
                 ("ini-files.pas", "Файл: example-settings.ini\nИмя: ABC Native\nШирина: 1000\nНочная тема: True\nНет ключа: По умолчанию\n"),
                 ("numeric-literals.pas", "Маска: 16711935\n64 бита: 18446744073709551615\nРазделители: 1000000 12.5 1001\n"),
@@ -513,6 +514,22 @@ def main():
                         or "EN:" not in attempted.stderr or "RU:" not in attempted.stderr
                         or f"{comparison_source}:{line}:" not in attempted.stderr):
                     raise RuntimeError(f"{name} Comparison diagnostic mismatch: {attempted.stdout!r}, {attempted.stderr!r}")
+            array_source = folder / "Операции массивов.pas"
+            for source, expected, code, line in [
+                ("begin\nWriteln('must never run');Writeln(Arr(1)+Arr(1.5));end.", "", "E_TYPE", 2),
+                ("begin\nWriteln('must never run');var a:=Arr(1);a*=2;end.", "", "E_TYPE", 2),
+                ("begin\nWriteln('before');Writeln(Arr(1)*(-1));end.", "before\n", "E_RANGE", 2),
+                ("begin\nWriteln('before');var a:array of integer;Writeln((-1)*a);end.", "before\n", "E_NIL", 2),
+                ("begin\nWriteln('before');Writeln(Arr(1,2)*MaxInt);end.", "before\n", "E_OVERFLOW", 2),
+                ("function Left:array of integer;begin Write('L');Result:=nil;end;function Right:array of integer;begin Write('R');Result:=Arr(1);end;begin\nWriteln(Left+Right);end.", "LR", "E_NIL", 2),
+            ]:
+                array_source.write_text(source, encoding="utf-8")
+                attempted = subprocess.run([runner, "run", str(array_source)], text=True, encoding="utf-8",
+                                           capture_output=True, cwd=folder, env=env, timeout=10)
+                if (attempted.returncode != 1 or attempted.stdout != expected or code not in attempted.stderr
+                        or "EN:" not in attempted.stderr or "RU:" not in attempted.stderr
+                        or f"{array_source}:{line}:" not in attempted.stderr):
+                    raise RuntimeError(f"{name} array operator diagnostic mismatch: {attempted.stdout!r}, {attempted.stderr!r}")
             compound_source = folder / "Составное присваивание.pas"
             for source, expected, code, line in [
                 ("begin\nWriteln('must never run');var i:=1;i/=2;end.", "", "E_TYPE", 2),
@@ -1390,6 +1407,7 @@ def main():
             results[-1]["typed_comparison_ranges_culture_and_bilingual_errors"] = "passed"
             results[-1]["native_inifile_roundtrip_types_and_bilingual_errors"] = "passed"
             results[-1]["typed_compound_assignments_evaluation_and_bilingual_errors"] = "passed"
+            results[-1]["typed_array_operators_copy_identity_and_bilingual_errors"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 

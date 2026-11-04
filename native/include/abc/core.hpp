@@ -394,7 +394,7 @@ struct CallableParameter {
     auto operator<=>(const CallableParameter&) const = default;
 };
 struct EnumMember {std::string name,text;std::int32_t value=0;};
-enum class CompoundMethod {text_add,text_integer,text_real,text_repeat,big_add,big_subtract,big_multiply,list_add,list_range,endpoint_add,list_concat,list_repeat,list_repeat_reverse};
+enum class CompoundMethod {text_add,text_integer,text_real,text_repeat,big_add,big_subtract,big_multiply,list_add,list_range,endpoint_add,list_concat,list_repeat,list_repeat_reverse,array_concat,array_repeat,array_repeat_reverse};
 enum class IniMethod {construct,save,file_name,write_string,read_string,write_integer,read_integer,write_boolean,read_boolean};
 enum class ComparableMethod {in_range,between,clamp,ordinal_in_range,ordinal_between,clamp_top,clamp_bottom};
 enum class EnumMethod {construct,ordinal,successor,predecessor,has_flag,to_string,bit_and,bit_or,bit_xor,low,high,low_value,high_value,format,has_flag_nil};
