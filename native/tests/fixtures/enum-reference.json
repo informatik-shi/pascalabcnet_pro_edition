@@ -1,0 +1,149 @@
+{
+  "origin": "Independent System.Enum Reflection.Emit API probe; original Pascal compiler not executed",
+  "rows": [
+    {
+      "flags": false,
+      "general": "Zero",
+      "hex": "00000000",
+      "value": 0,
+      "decimal": "0",
+      "forced_flags": "Zero"
+    },
+    {
+      "flags": false,
+      "general": "Read",
+      "hex": "00000001",
+      "value": 1,
+      "decimal": "1",
+      "forced_flags": "Read"
+    },
+    {
+      "flags": false,
+      "general": "Both",
+      "hex": "00000003",
+      "value": 3,
+      "decimal": "3",
+      "forced_flags": "Both"
+    },
+    {
+      "flags": false,
+      "general": "5",
+      "hex": "00000005",
+      "value": 5,
+      "decimal": "5",
+      "forced_flags": "Read, Exec"
+    },
+    {
+      "flags": false,
+      "general": "7",
+      "hex": "00000007",
+      "value": 7,
+      "decimal": "7",
+      "forced_flags": "Both, Exec"
+    },
+    {
+      "flags": false,
+      "general": "All",
+      "hex": "FFFFFFFF",
+      "value": -1,
+      "decimal": "-1",
+      "forced_flags": "All"
+    },
+    {
+      "flags": false,
+      "general": "-2",
+      "hex": "FFFFFFFE",
+      "value": -2,
+      "decimal": "-2",
+      "forced_flags": "-2"
+    },
+    {
+      "flags": false,
+      "general": "Sign",
+      "hex": "80000000",
+      "value": -2147483648,
+      "decimal": "-2147483648",
+      "forced_flags": "Sign"
+    },
+    {
+      "flags": false,
+      "general": "-2147483645",
+      "hex": "80000003",
+      "value": -2147483645,
+      "decimal": "-2147483645",
+      "forced_flags": "Both, Sign"
+    },
+    {
+      "flags": true,
+      "general": "Zero",
+      "hex": "00000000",
+      "value": 0,
+      "decimal": "0",
+      "forced_flags": "Zero"
+    },
+    {
+      "flags": true,
+      "general": "Read",
+      "hex": "00000001",
+      "value": 1,
+      "decimal": "1",
+      "forced_flags": "Read"
+    },
+    {
+      "flags": true,
+      "general": "Both",
+      "hex": "00000003",
+      "value": 3,
+      "decimal": "3",
+      "forced_flags": "Both"
+    },
+    {
+      "flags": true,
+      "general": "Read, Exec",
+      "hex": "00000005",
+      "value": 5,
+      "decimal": "5",
+      "forced_flags": "Read, Exec"
+    },
+    {
+      "flags": true,
+      "general": "Both, Exec",
+      "hex": "00000007",
+      "value": 7,
+      "decimal": "7",
+      "forced_flags": "Both, Exec"
+    },
+    {
+      "flags": true,
+      "general": "All",
+      "hex": "FFFFFFFF",
+      "value": -1,
+      "decimal": "-1",
+      "forced_flags": "All"
+    },
+    {
+      "flags": true,
+      "general": "-2",
+      "hex": "FFFFFFFE",
+      "value": -2,
+      "decimal": "-2",
+      "forced_flags": "-2"
+    },
+    {
+      "flags": true,
+      "general": "Sign",
+      "hex": "80000000",
+      "value": -2147483648,
+      "decimal": "-2147483648",
+      "forced_flags": "Sign"
+    },
+    {
+      "flags": true,
+      "general": "Both, Sign",
+      "hex": "80000003",
+      "value": -2147483645,
+      "decimal": "-2147483645",
+      "forced_flags": "Both, Sign"
+    }
+  ]
+}

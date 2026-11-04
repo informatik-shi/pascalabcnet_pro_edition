@@ -13,6 +13,7 @@
 #include "../src/list_operations.hpp"
 #include "../src/timing.hpp"
 #include "../src/file_encoding.hpp"
+#include "../src/enumeration.hpp"
 #include "../src/file_reader.hpp"
 #include "../src/file_lines.hpp"
 #include "../src/files.hpp"
@@ -4355,6 +4356,103 @@ void sequence_mutations() {
     error([&]{(void)run("begin var a:=new integer[2000]; Reverse(a); end.","",options);},"E_CANCELLED");
 }
 
+void enumerations() {
+    result("type State=(Ready,Running,Done);begin var value:State;Writeln(value,' ',Ord(value),' ',State.Done);Inc(value);Writeln(value,' ',Succ(value),' ',Pred(value));end.","Ready 0 Done\nRunning Done Ready\n");
+    result("type E=(First,Second,Third);begin Writeln(Ord(Low(E)),' ',Ord(High(E)),' ',Low(E),' ',High(Second));Writeln(default(E),' ',new E);end.","0 2 First Third\nFirst First\n");
+    result("type E=(A=5,B=A+1,C=B or 8);begin var value:E;Writeln(value,' ',Ord(A),' ',Ord(B),' ',Ord(C),' ',Ord(High(E)));end.","0 5 6 14 2\n");
+    result("const base=4;type E=(A=base,B=A+1);begin Writeln(Ord(A),' ',Ord(B));end.","4 5\n");
+    result("type E=(A=1,B=A);begin Writeln(A=B,' ',Ord(B));end.","True 1\n");
+    result("type E=(A,B,C);const last:E=C; mask=A or C;begin Writeln(last,' ',Ord(mask));end.","C 2\n");
+    result("type E=(A,B,C);begin var value:=E(7);Writeln(value,' ',integer(value),' ',int64(C),' ',smallint(B),' ',byte(C));value:=E(-1);Writeln(value,' ',Ord(value));end.","7 7 2 1 2\n-1 -1\n");
+    result("type E=(A,B,C);begin Writeln(Pred(A),' ',Succ(C));var value:=C;Inc(value,2);Writeln(value);Dec(value,5);Writeln(value);end.","-1 3\n4\n-1\n");
+    result("type E=(A,B,C);begin Writeln(A<B,' ',C>=B,' ',A<>C,' ',B=B);for var value:=A to C do Write(value,' ');Writeln;for var value:=C downto A do Write(Ord(value));Writeln;end.","True True True True\nA B C \n210\n");
+    result("type E=(A,B,C,D,Ee);begin for var value:=A to Ee step 2 do Write(value,' ');Writeln;for var value:=Ee to A step -2 do Write(Ord(value));Writeln;end.","A C Ee \n420\n");
+    result("type E=(A,B,C);R=record status:E;end;begin var original:R;original.status:=B;var copied:=original;copied.status:=C;Writeln(original,' ',copied);var values:=Arr(C,A,B);values.Sort;Writeln(values,' ',values.Contains(B),' ',values.JoinToString('|'));end.","(B) (C)\n[A,B,C] True A|B|C\n");
+    result("type E=(A,B,C);procedure Next(var value:E);begin Inc(value);end;function Previous(value:E):E:=Pred(value);procedure Show(value:E:=C);begin Writeln(value);end;begin var value:=A;Next(value);Writeln(value,' ',Previous(value));Show;end.","B A\nC\n");
+    result("type E=(A,B,C);begin var values:=new E[2];Writeln(values);var list:=new List<E>;list.Add(C);list.Add(A);list.Sort;Writeln(list,' ',list.ToArray,' ',list.First);end.","[A,A]\n[A,C] [A,C] A\n");
+    result("uses Collections;type E=(A,B,C);begin var stack:=new Stack<E>;stack.Push(B);Writeln(stack.ToString.Contains('B'));var set1:=new SimpleSet<E>;set1.Add(C);Writeln(set1.Contains(C),' ',set1.ToString.Contains('C'));var map:=new AssocArray<E,string>;map[A]:='alpha';Writeln(map[A],' ',map.ToString.Contains('A'));end.","True\nTrue True\nalpha True\n");
+    result("type E=(A,B,C);begin var values:=Seq(A,C);Writeln(values.Where(x->x<>B).ToArray,' ',values.Select(x->Ord(x)).ToArray);Writeln(SeqFill(2,B).ToArray,' ',Rec(A,C));end.","[A,C] [0,2]\n[B,B] (A,C)\n");
+    result("type E=(A,B);begin var value:=B;Writeln(value:5,'|',FormatValue(value,4),'|',value.ToString);end.","    B|   B|B\n");
+    result("type Цвет=(Красный,Зелёный,Синий);begin Writeln(ЗЕЛЁНЫЙ,' ',Цвет.СИНИЙ,' ',Ord(Красный));end.","Зелёный Синий 0\n");
+    result("type [System.FlagsAttribute] Access=(None=0,CanRead=1,CanWrite=2,Both=3,CanExecute=4);begin var rights:=CanRead or CanExecute;Writeln(rights,' ',rights.ToString('D'),' ',rights.ToString('x'));Writeln(rights.HasFlag(CanRead),' ',rights.HasFlag(CanWrite),' ',rights.HasFlag(None));Writeln(rights and Both,' ',rights xor CanRead);end.","CanRead, CanExecute 5 00000005\nTrue False True\nCanRead CanExecute\n");
+    result("type E=(Zero=0,A=1,B=2,C=4);begin var value:=A or C;var empty:string:=nil;Writeln(value,'|',value.ToString('F'),'|',value.ToString(''),'|',value.ToString(empty));end.","5|A, C|5|5\n");
+    result("type [Flags] E=(Zero=0,A=1,B=2,C=4,Sign=-2147483648,All=-1);begin var value:=Sign or A;Writeln(value,'|',E(-1).ToString('D'),'|',E(-1).ToString('X'));end.","A, Sign|-1|FFFFFFFF\n");
+    result("type E1=(A,B);E2=(C,D);begin Writeln(E1(integer(D))=B,' ',E1(D)=B);end.","True True\n");
+    result("begin var value:(One,Two);value:=Two;Writeln(value,' ',Ord(value));end.","Two 1\n");
+    for(const auto source:{"type E=(A,B);begin var value:E:=1;end.","type E=(A,B);begin var value:integer:=B;end.",
+        "type E1=(A,B);E2=(C,D);begin var value:E1:=C;end.","type E1=(A,B);E2=(C,D);begin Writeln(A=C);end.",
+        "type E=(A,B);begin var value:E:=nil;end.",
+        "type E=(A,B);begin A:=B;end.","type E=(A,B);begin Writeln(A+A);end.","type E=(A,B);begin Writeln(not A);end.",
+        "type E=(A=1,B);begin end.","type E=(A=1.5);begin end.","type E=(A=1);begin E(1.5);end.",
+        "type E=(A,B);begin A.HasFlag(1);end.","type E=(A,B);begin A.ToString('G','D');end."})compile_error(source,"E_TYPE");
+    compile_error("type E=(A,B);begin var value:=if True then A else nil;end.","E_UNSUPPORTED");
+    result("type E=(A,B);[Flags] F=(Zero=0,C=1,D=2);begin Writeln((C or D).ToString,' ',B);end.","C, D B\n");
+    compile_error("type E=(A,A);begin end.","E_DUPLICATE");
+    compile_error("type E=(A=B,B=1);begin end.","E_NAME");
+    compile_error("type E=(A=E.B,B=1);begin end.","E_NAME");
+    compile_error("type E=(A,B);begin Writeln(E.Missing);end.","E_NAME");
+    runtime_error("type E=(A,B);begin A.ToString('bad');end.","E_FORMAT");
+    runtime_error("type E=(A,B);begin A.ToString('Q');end.","E_FORMAT");
+    runtime_error("type E=(A,B);begin A.HasFlag(nil);end.","E_NIL");
+    runtime_error("type E1=(A,B);E2=(C,D);begin A.HasFlag(C);end.","E_TYPE");
+    runtime_error("type E=(A);begin var value:=E(MaxInt);Inc(value);end.","E_OVERFLOW");
+    {
+        abc::Program program;abc::TypeInfo type{"probe",abc::CompoundKind::enumeration,abc::Type::integer,{}};
+        type.enum_members={{"zero","Zero",0},{"read","Read",1},{"write","Write",2},{"both","Both",3},{"exec","Exec",4},{"sign","Sign",INT32_MIN},{"all","All",-1}};
+        program.types.push_back(type);program.code.push_back({abc::Op::halt});const auto owner=static_cast<abc::Type>(64);
+        struct Row{bool flags;std::int32_t value;const char *general,*decimal,*hex,*forced;};
+        for(const auto& row:std::initializer_list<Row>{
+            {false,0,"Zero","0","00000000","Zero"},
+            {false,1,"Read","1","00000001","Read"},
+            {false,3,"Both","3","00000003","Both"},
+            {false,5,"5","5","00000005","Read, Exec"},
+            {false,7,"7","7","00000007","Both, Exec"},
+            {false,-1,"All","-1","FFFFFFFF","All"},
+            {false,-2,"-2","-2","FFFFFFFE","-2"},
+            {false,-2147483648,"Sign","-2147483648","80000000","Sign"},
+            {false,-2147483645,"-2147483645","-2147483645","80000003","Both, Sign"},
+            {true,0,"Zero","0","00000000","Zero"},
+            {true,1,"Read","1","00000001","Read"},
+            {true,3,"Both","3","00000003","Both"},
+            {true,5,"Read, Exec","5","00000005","Read, Exec"},
+            {true,7,"Both, Exec","7","00000007","Both, Exec"},
+            {true,-1,"All","-1","FFFFFFFF","All"},
+            {true,-2,"-2","-2","FFFFFFFE","-2"},
+            {true,-2147483648,"Sign","-2147483648","80000000","Sign"},
+            {true,-2147483645,"Both, Sign","-2147483645","80000003","Both, Sign"}
+        }) {
+            program.types[0].enum_flags=row.flags;abc::verify(program);
+            const std::array<abc::Value,1> plain{abc::EnumValue{owner,row.value}};
+            require(std::get<std::u16string>(abc::enum_invoke(program,owner,abc::EnumMethod::to_string,plain,{}))==abc::from_utf8(row.general),"Enum general text matches independent System.Enum API golden");
+            const std::array<const char*,4> formats{"G","D","x","F"},expected{row.general,row.decimal,row.hex,row.forced};
+            for(std::size_t i=0;i<formats.size();++i){const std::array<abc::Value,2> args{abc::EnumValue{owner,row.value},abc::from_utf8(formats[i])};require(std::get<std::u16string>(abc::enum_invoke(program,owner,abc::EnumMethod::format,args,{}))==abc::from_utf8(expected[i]),"Enum format matches independent System.Enum API golden");}
+        }
+    }
+
+    {
+        const auto program=abc::compile("type E=(A,B);E2=(C,D);begin var value:=B;Writeln(value.ToString);end.");
+        const auto type=program.locals.back().type;
+        require(abc::type_info(program,type).kind==abc::CompoundKind::enumeration && std::get<abc::EnumValue>(program.constants.front()).type!=abc::Type::integer,"Enums have nominal metadata and tagged values before execution");
+        for(unsigned mode=0;mode<8;++mode) {
+            auto bad=program;
+            if(mode==0)bad.types[0].enum_members.clear();
+            if(mode==1)bad.types[0].element=abc::Type::int64;
+            if(mode==2)bad.types[0].enum_members[1].name=bad.types[0].enum_members[0].name;
+            if(mode==3)bad.types[0].enum_members[0].text=std::string(1,char(0xff));
+            if(mode==4)bad.types[0].fields.push_back({"field",abc::Type::integer,false});
+            if(mode==5)for(auto& op:bad.code)if(op.op==abc::Op::enum_call){op.operand=255;break;}
+            if(mode==6)for(auto& op:bad.code)if(op.op==abc::Op::enum_call){op.type=abc::Type::integer;break;}
+            if(mode==7)for(auto& op:bad.code)if(op.op==abc::Op::push && std::holds_alternative<abc::EnumValue>(bad.constants[op.operand])){std::get<abc::EnumValue>(bad.constants[op.operand]).type=abc::Type::integer;op.type=abc::Type::integer;break;}
+            error([&]{abc::verify(bad);},"E_BYTECODE");
+        }
+        std::istringstream in;std::ostringstream out;
+        const auto p=abc::compile("type E1=(A,B);E2=(C,D);function Flag:E2;begin Writeln('argument');Result:=D;end;begin\nA.HasFlag(Flag);\nend.");
+        try{abc::execute(p,in,out);require(false,"Expected HasFlag type mismatch");}
+        catch(const abc::Error& e){require(e.code=="E_TYPE" && e.location.line==2 && e.russian=="Флаг перечисления должен иметь тот же тип","HasFlag mismatch remains a located bilingual runtime error");}
+        require(out.str()=="argument\n","HasFlag evaluates flag arguments before a type mismatch");
+    }
+}
+
 void language() {
     result("begin Writeln($0,' ',$ff,' ',$ABCDEF,' ',$FADE,' ',$1e2);end.","0 255 11259375 64222 482\n");
     result("begin Writeln($7FFFFFFF,' ',$80000000,' ',$FFFFFFFF);Writeln($7FFFFFFFFFFFFFFF,' ',$8000000000000000,' ',$FFFFFFFFFFFFFFFF);end.","2147483647 2147483648 4294967295\n9223372036854775807 9223372036854775808 18446744073709551615\n");
@@ -6301,6 +6399,7 @@ void characters() {
 
 int main() {
     language();
+    enumerations();
     structured_loops();
     foreach_loops();
     characters();

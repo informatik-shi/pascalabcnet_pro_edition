@@ -81,6 +81,7 @@ struct Values {
         case Type::text_file: return generic ? Value{std::shared_ptr<TextFile>{}} : Value{std::make_shared<TextFile>()};
         default: {
             const auto& info = type_info(program, type);
+            if(info.kind==CompoundKind::enumeration)return EnumValue{type,0};
             if (buffer_collection(info.kind) && constructed) return buffer(type,0);
             const bool object=info.kind==CompoundKind::object_class;
             if (object && constructed) {

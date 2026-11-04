@@ -52,6 +52,7 @@ bool can_widen(Type from, Type to) {
 }
 
 Type value_type(const Value& value) {
+    if(const auto* member=std::get_if<EnumValue>(&value))return member->type;
     if (std::holds_alternative<BigInteger>(value)) return Type::big_integer;
     if (std::holds_alternative<char16_t>(value)) return Type::character;
     if (std::holds_alternative<std::uint16_t>(value)) return Type::word;

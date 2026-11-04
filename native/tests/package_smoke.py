@@ -213,6 +213,7 @@ def main():
                 ("streaming-lines.pas", "Первые две: [Первая строка,]\nПовторный обход: [Первая строка,Последняя строка]\nОстановка на строке: Первая строка\nПосле break файл закрыт: True\n"),
                 ("streaming-text.pas", "Число: 17\nСлово: слово\nОстаток строки: [ остаток 🌍]\nНулевой символ: 0\nОстаток файла: конец\nКонец файла: True\n"),
                 ("for-step.pas", "По возрастанию: 1 3 5 \nПо убыванию: 5 3 1 \nСимволы: 53\n"),
+                ("enumerations.pas", "Начало: Ready\nПосле Inc: Running / 1\nПрава: CanRead, CanWrite\nЗапись: True\nСписок: [Ready,Running,Done]\nШаг: Ready\nШаг: Done\n"),
                 ("numeric-literals.pas", "Маска: 16711935\n64 бита: 18446744073709551615\nРазделители: 1000000 12.5 1001\n"),
                 ("text-writer.pas", "buffered\nXYcdef\nXYcdefZ\nTrue\n"),
                 ("text-lines.pas", "Массив: [Первая строка,Вторая строка]\nСтрока: Первая строка\nСтрока: Вторая строка\nКонец файла: True\nПосле Close: True\n"),
@@ -481,6 +482,20 @@ def main():
                         or "EN:" not in attempted.stderr or "RU:" not in attempted.stderr
                         or f"{stepped_source}:{line}:" not in attempted.stderr):
                     raise RuntimeError(f"{name} For step diagnostic mismatch: {attempted.stdout!r}, {attempted.stderr!r}")
+            enum_source = folder / "Перечисления.pas"
+            for source, expected, code, line in [
+                ("type E=(A,B);\nbegin Writeln('must never run');var value:E:=1;end.", "", "E_TYPE", 2),
+                ("type E=(A,B);\nbegin Writeln('before');A.ToString('Q');end.", "before\n", "E_FORMAT", 2),
+                ("type E=(A,B);\nbegin Writeln('before');A.HasFlag(nil);end.", "before\n", "E_NIL", 2),
+                ("type E1=(A,B);E2=(C,D);\nfunction Flag:E2;begin Writeln('argument');Result:=C;end;\nbegin Writeln('before');A.HasFlag(Flag);end.", "before\nargument\n", "E_TYPE", 3),
+            ]:
+                enum_source.write_text(source, encoding="utf-8")
+                attempted = subprocess.run([runner, "run", str(enum_source)], text=True, encoding="utf-8",
+                                           capture_output=True, cwd=folder, env=env, timeout=10)
+                if (attempted.returncode != 1 or attempted.stdout != expected or code not in attempted.stderr
+                        or "EN:" not in attempted.stderr or "RU:" not in attempted.stderr
+                        or f"{enum_source}:{line}:" not in attempted.stderr):
+                    raise RuntimeError(f"{name} Enumeration diagnostic mismatch: {attempted.stdout!r}, {attempted.stderr!r}")
             character = folder / "Ошибки символов.pas"
             school_error = folder / "Ошибки School.pas"
             for expression, code, english, russian in [
@@ -1322,6 +1337,7 @@ def main():
             results[-1]["typed_hexadecimal_literals_and_numeric_separators"] = "passed"
             results[-1]["native_whole_file_io_sharing"] = "passed"
             results[-1]["typed_for_step_loops_and_bilingual_zero_guard"] = "passed"
+            results[-1]["nominal_enumerations_flags_and_bilingual_errors"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 

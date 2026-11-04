@@ -1,6 +1,7 @@
 #include "hir.hpp"
 #include "stdlib.hpp"
 #include "encoding.hpp"
+#include "enumeration.hpp"
 #include "runtime_values.hpp"
 #include "formatting.hpp"
 #include "school_ip.hpp"
@@ -295,6 +296,11 @@ private:
             expression(*node.left);
             for (const auto& argument : node.arguments) expression(*argument);
             emit(Op::endpoint_call,node.left->type,node.local,node.location); break;
+        case hir::ExprKind::enum_call: {
+            for(const auto& argument:node.arguments)expression(*argument);
+            const auto extra=node.local==static_cast<std::size_t>(EnumMethod::has_flag) ? static_cast<std::size_t>(node.arguments[1]->type)<<8U : 0U;
+            emit(Op::enum_call,node.operation_type,node.local|extra,node.location);break;
+        }
         case hir::ExprKind::text_lines:
             expression(*node.left);emit(Op::text_lines,node.type,0,node.location);break;
         case hir::ExprKind::read_lines:
@@ -564,7 +570,7 @@ private:
             // Stop at the bound before incrementing, including MaxInt/MinInt64.
             compare(node.newline ? Op::greater : Op::less);
             const auto done=emit(Op::jump_false,Type::invalid,0,node.location);
-            if (type==Type::character || type==Type::boolean || small_integer(type) || wide_unsigned(type)) {
+            if (type==Type::character || type==Type::boolean || small_integer(type) || wide_unsigned(type) || enumeration(program_,type)) {
                 reference(*node.target);
                 if (type!=Type::boolean) constant(increment_step_type(type)==Type::int64 ? Value{std::int64_t{1}} : Value{std::int32_t{1}},node.location);
                 emit(Op::increment,type,node.newline ? 1 : 0,node.location);
@@ -598,6 +604,7 @@ private:
 }
 
 bool valid_type(Type type) { return scalar(type); }
+bool text_scalar(const Program& program,Type type){return scalar(type) || enumeration(program,type);}
 bool value_transform(Op op) {
     return op==Op::sequence_select_value || op==Op::sequence_where_value || op==Op::sequence_flatmap_value
         || op==Op::sequence_takewhile_value || op==Op::sequence_skipwhile_value;
@@ -649,7 +656,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         }
         case Op::sequence_join:
             if (!compound(type) || type_info(program,type).kind!=CompoundKind::sequence || type_info(program,type).rank!=1
-                || !scalar(type_info(program,type).element) || instruction.operand) invalid(instruction,"Invalid sequence join signature");
+                || !text_scalar(program,type_info(program,type).element) || instruction.operand) invalid(instruction,"Invalid sequence join signature");
             break;
         case Op::list_copy: {
             const auto array=instruction.operand>>2;
@@ -951,25 +958,25 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         case Op::linked_call:
             if (!compound(type) || instruction.operand > static_cast<std::size_t>(LinkedMethod::set_next)
                 || !linked_method_allowed(type_info(program,type).kind,static_cast<LinkedMethod>(instruction.operand))) invalid(instruction,"Invalid linked instruction");
-            if (linked_text_method(static_cast<LinkedMethod>(instruction.operand)) && !scalar(type_info(program,type).element)) invalid(instruction,"Linked text output requires scalar elements");
+            if (linked_text_method(static_cast<LinkedMethod>(instruction.operand)) && !text_scalar(program,type_info(program,type).element)) invalid(instruction,"Linked text output requires scalar elements");
             break;
         case Op::association_call:
             if (!compound(type) || type_info(program,type).kind != CompoundKind::association
                 || instruction.operand > static_cast<std::size_t>(AssociationMethod::println)) invalid(instruction,"Invalid AssocArray instruction");
             if (instruction.operand >= static_cast<std::size_t>(AssociationMethod::to_string)
-                && (!scalar(type_info(program,type).key) || !scalar(type_info(program,type).element))) invalid(instruction,"AssocArray text output requires scalar types");
+                && (!text_scalar(program,type_info(program,type).key) || !text_scalar(program,type_info(program,type).element))) invalid(instruction,"AssocArray text output requires scalar types");
             break;
         case Op::buffer_call:
             if (!compound(type) || instruction.operand > static_cast<std::size_t>(BufferMethod::println)
                 || !buffer_method_allowed(type_info(program,type).kind,static_cast<BufferMethod>(instruction.operand)))
                 invalid(instruction,"Invalid buffer collection instruction");
-            if (instruction.operand >= static_cast<std::size_t>(BufferMethod::to_string) && !scalar(type_info(program,type).element))
+            if (instruction.operand >= static_cast<std::size_t>(BufferMethod::to_string) && !text_scalar(program,type_info(program,type).element))
                 invalid(instruction,"Collection text output requires scalar elements");
             break;
         case Op::endpoint_call:
             if (!compound(type) || !endpoint_collection(type_info(program,type).kind)
                 || instruction.operand > static_cast<std::size_t>(EndpointMethod::println)) invalid(instruction,"Invalid stack or queue instruction");
-            if (instruction.operand >= static_cast<std::size_t>(EndpointMethod::to_string) && !scalar(type_info(program,type).element))
+            if (instruction.operand >= static_cast<std::size_t>(EndpointMethod::to_string) && !text_scalar(program,type_info(program,type).element))
                 invalid(instruction,"Collection text output requires scalar elements");
             break;
         case Op::read_value:
@@ -981,7 +988,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         case Op::file_output:
             if (type!=Type::text_file || instruction.operand/4>4096) invalid(instruction,"Invalid Text output method"); break;
         case Op::increment:
-            if (!ordinal(type) || instruction.operand>1) invalid(instruction,"Invalid increment"); break;
+            if ((!ordinal(type) && !enumeration(program,type)) || instruction.operand>1) invalid(instruction,"Invalid increment"); break;
         case Op::mutate_string:
             if (type!=Type::string || instruction.operand>=stdlib::signatures().size()) invalid(instruction,"Invalid string mutation");
             {
@@ -991,6 +998,15 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             break;
         case Op::encoding_call:
             if(instruction.operand>static_cast<std::size_t>(EncodingMethod::text_append_named) || !encoding_signature_valid(program,type,static_cast<EncodingMethod>(instruction.operand)))invalid(instruction,"Invalid Encoding call metadata");break;
+        case Op::enum_call: {
+            const auto method=static_cast<EnumMethod>(instruction.operand&255U);const auto raw_other=instruction.operand>>8U;
+            if(!enumeration(program,type) || method>EnumMethod::has_flag_nil)invalid(instruction,"Invalid enumeration call metadata");
+            if(method==EnumMethod::has_flag) {
+                if(raw_other<64U || raw_other-64U>=program.types.size() || !enumeration(program,static_cast<Type>(raw_other)))
+                    invalid(instruction,"Invalid enumeration flag type");
+            } else if(raw_other)invalid(instruction,"Invalid enumeration call metadata");
+            break;
+        }
         case Op::for_step_check:
             if(type!=Type::integer || instruction.operand)invalid(instruction,"Invalid for step check");break;
         case Op::text_lines:
@@ -1008,7 +1024,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if (!compound(type) || !indexed_sequence(type_info(program,type).kind) || instruction.operand) invalid(instruction,"Copy requires array or List"); break;
         case Op::array_high: case Op::sequence_sort: case Op::sequence_fill:
             if (!compound(type) || !indexed_sequence(type_info(program,type).kind)) invalid(instruction,"Indexed sequence required");
-            if (instruction.op==Op::sequence_sort && (!scalar(type_info(program,type).element) || type_info(program,type).rank!=1 || instruction.operand>1)) invalid(instruction,"Invalid sort"); break;
+            if (instruction.op==Op::sequence_sort && (!text_scalar(program,type_info(program,type).element) || type_info(program,type).rank!=1 || instruction.operand>1)) invalid(instruction,"Invalid sort"); break;
         case Op::make_default: case Op::store_ref: case Op::drop:
             if (!valid_value_type(program,type) || (instruction.op==Op::make_default && instruction.operand>2)) invalid(instruction,"Invalid value type");
             if (instruction.op==Op::make_default && instruction.operand==1 && compound(type) && type_info(program,type).kind==CompoundKind::object_class
@@ -1067,8 +1083,9 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
                 || type != stdlib::signatures()[instruction.operand].result) invalid(instruction, "Invalid standard function");
             break;
         case Op::push:
-            if (!valid_type(type) || instruction.operand >= program.constants.size()
+            if ((!valid_type(type) && !enumeration(program,type)) || instruction.operand >= program.constants.size()
                 || type != value_type(program.constants[instruction.operand])) invalid(instruction, "Invalid constant");
+            if(std::holds_alternative<EnumValue>(program.constants[instruction.operand]) && !enumeration(program,type))invalid(instruction,"Invalid enumeration constant");
             if (const auto* value = std::get_if<double>(&program.constants[instruction.operand]); value && !std::isfinite(*value))
                 invalid(instruction, "Non-finite real constant");
             break;
@@ -1118,7 +1135,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         case Op::print:
             if (!valid_type(type)) invalid(instruction, "Invalid value type"); break;
         case Op::less: case Op::less_equal: case Op::greater: case Op::greater_equal:
-            if (!numeric(type) && type != Type::string && type!=Type::character && type!=Type::boolean) invalid(instruction, "Invalid ordered comparison");
+            if (!numeric(type) && type != Type::string && type!=Type::character && type!=Type::boolean && !enumeration(program,type)) invalid(instruction, "Invalid ordered comparison");
             break;
         case Op::newline: break;
         case Op::halt: if (routine) invalid(instruction,"Routine cannot halt module"); break;
@@ -1391,6 +1408,11 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             for(auto parameter=parameters.rbegin();parameter!=parameters.rend();++parameter)require(*parameter);
             const auto result=encoding_result(program,instruction.type,method);if(result!=Type::unit)stack.push_back(result);break;
         }
+        case Op::enum_call: {
+            const auto method=static_cast<EnumMethod>(instruction.operand&255U);const auto other=method==EnumMethod::has_flag ? static_cast<Type>(instruction.operand>>8U) : Type::invalid;
+            const auto parameters=enum_parameters(instruction.type,method,other);
+            for(auto p=parameters.rbegin();p!=parameters.rend();++p)require(*p);stack.push_back(enum_result(instruction.type,method));break;
+        }
         case Op::for_step_check: require(Type::integer);break;
         case Op::text_lines: require(Type::text_file);stack.push_back(instruction.type);break;
         case Op::read_lines: if(instruction.operand)require(static_cast<Type>(instruction.operand));require(Type::string); stack.push_back(instruction.type); break;
@@ -1529,7 +1551,7 @@ void verify(const Program& program) {
     }
     if (program.types.size() > 1024 || program.locals.size() > 4096 || program.routines.size() > 256)
         throw Error("E_BYTECODE",{},"Module metadata limit exceeded");
-    std::vector<unsigned> depth(program.types.size());
+    std::vector<unsigned> depth(program.types.size());std::size_t enum_text_bytes=0;
     for (std::size_t i = 0; i < program.types.size(); ++i) {
         const auto& type = program.types[i]; unsigned level = 1;
         for (const auto& field:type.fields) if (!valid_member_access(field.access)
@@ -1540,6 +1562,8 @@ void verify(const Program& program) {
             if (!valid_value_type(program,t) || (compound(t) && static_cast<unsigned>(t)-64 >= i)) throw Error("E_BYTECODE",{},"Invalid or cyclic type dependency");
             if (compound(t)) level = std::max(level,depth[static_cast<unsigned>(t)-64]+1);
         };
+        if(type.kind!=CompoundKind::enumeration && (!type.enum_members.empty() || type.enum_flags))
+            throw Error("E_BYTECODE",{},"Enumeration metadata on a non-enumeration type");
         if (type.kind!=CompoundKind::callable && !type.parameters.empty()) throw Error("E_BYTECODE",{},"Parameters on a non-callable type");
         if (type.kind==CompoundKind::callable) {
             if (type.name!="callable" || type.key!=Type::invalid || !type.fields.empty() || type.parameters.size()>16) throw Error("E_BYTECODE",{},"Invalid callable type metadata");
@@ -1549,6 +1573,17 @@ void verify(const Program& program) {
                 if (parameter.variadic && (n+1!=type.parameters.size() || parameter.by_reference || !compound(parameter.type)
                     || type_info(program,parameter.type).kind!=CompoundKind::array || type_info(program,parameter.type).rank!=1))
                     throw Error("E_BYTECODE",{},"Invalid callable params metadata");
+            }
+        } else if(type.kind==CompoundKind::enumeration) {
+            if(type.name.empty() || type.element!=Type::integer || type.key!=Type::invalid || !type.fields.empty() || type.enum_members.empty() || type.enum_members.size()>4096)
+                throw Error("E_BYTECODE",{},"Invalid enumeration type metadata");
+            std::set<std::string> names;
+            for(const auto& member:type.enum_members) {
+                if(member.name.empty() || member.text.empty() || !names.insert(member.name).second
+                    || member.name.size()>1'048'576-enum_text_bytes || member.text.size()>1'048'576-enum_text_bytes-member.name.size())
+                    throw Error("E_BYTECODE",{},"Invalid enumeration member metadata");
+                enum_text_bytes+=member.name.size()+member.text.size();
+                try{(void)from_utf8(member.name);(void)from_utf8(member.text);}catch(const std::invalid_argument&){throw Error("E_BYTECODE",{},"Invalid enumeration member metadata");}
             }
         } else if(type.kind==CompoundKind::encoding) {
             if(type.name!="encoding" || !type.fields.empty() || !encoding_signature_valid(program,static_cast<Type>(64+i),EncodingMethod::utf8))throw Error("E_BYTECODE",{},"Invalid Encoding type metadata");

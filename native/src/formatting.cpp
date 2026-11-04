@@ -3,6 +3,7 @@
 #include "stdlib.hpp"
 #include "big_integer_runtime.hpp"
 #include "school_ip.hpp"
+#include "enumeration.hpp"
 #include <array>
 #include <charconv>
 #include <type_traits>
@@ -16,7 +17,7 @@ bool supports(const std::vector<TypeInfo>& types, Type type, unsigned depth) {
     const auto index=static_cast<std::size_t>(type)-static_cast<std::size_t>(Type::first_compound);
     if (index>=types.size()) return false;
     const auto& info=types[index];
-    if (school_ip_kind(info.kind)) return true;
+    if (school_ip_kind(info.kind) || info.kind==CompoundKind::enumeration) return true;
     if (info.kind==CompoundKind::record || info.kind==CompoundKind::tuple) {
         for (const auto& field:info.fields) if (!supports(types,field.type,depth+1)) return false;
         return true;
@@ -36,6 +37,7 @@ class ObjectWriter {
     void value(const Value& data, Type type) {
         if (options.cancelled && options.cancelled()) throw runtime_error(RuntimeError::cancelled,location);
         if (!compound(type)) { append(type==Type::nil ? u"nil" : format_field(data,0,std::nullopt,location)); return; }
+        if(enumeration(program,type)){append(enum_text(program,std::get<EnumValue>(data),location));return;}
         const auto& object=std::get<std::shared_ptr<Aggregate>>(data);
         if (!object || object->nil) { append(u"nil"); return; }
         if (std::find(path.begin(),path.end(),object.get())!=path.end()) { append(u"(...)"); return; }

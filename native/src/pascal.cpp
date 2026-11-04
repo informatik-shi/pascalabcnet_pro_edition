@@ -6,6 +6,7 @@
 #include "number.hpp"
 #include "stdlib.hpp"
 #include "encoding.hpp"
+#include "enumeration.hpp"
 #include "integer_values.hpp"
 #include "formatting.hpp"
 #include "unicode.hpp"
@@ -29,6 +30,7 @@ struct Token {
     std::string text;
     SourceLocation location;
     bool escaped=false;
+    std::string spelling{};
 };
 
 Value literal(const Token& token);
@@ -66,7 +68,8 @@ public:
                 else if (c<0x800) { name+=static_cast<char>(0xc0|(c>>6)); name+=static_cast<char>(0x80|(c&63)); }
                 else { name+=static_cast<char>(0xe0|(c>>12)); name+=static_cast<char>(0x80|((c>>6)&63)); name+=static_cast<char>(0x80|(c&63)); }
             } while (letter(point()) || digit(peek()));
-            return {TokenKind::name, std::move(name), start, escaped};
+            const auto begin=start.offset+(escaped ? 1U : 0U);
+            return {TokenKind::name,std::move(name),start,escaped,std::string(source_.substr(begin,position_.offset-begin))};
         }
         if(peek()=='$') {
             std::string number(1,take());
@@ -183,6 +186,7 @@ private:
 enum class SyntaxExprKind { literal, literal_group, name, unary, binary, call, index, field, member_call, construction, formatted, tuple, typed_default, value_call, lambda, conditional };
 struct SyntaxRoutine;
 struct SyntaxProperty;
+struct SyntaxExpr;
 struct SyntaxType {
     Token token;
     std::string kind;
@@ -192,6 +196,8 @@ struct SyntaxType {
     unsigned rank = 1;
     std::vector<bool> references{}, variadics{};
     bool system_qualified=false;
+    bool enum_flags=false;
+    std::vector<std::unique_ptr<SyntaxExpr>> enum_values{};
     bool named=false;
     std::vector<std::shared_ptr<SyntaxRoutine>> methods{};
     std::vector<std::shared_ptr<SyntaxProperty>> properties{};
@@ -301,8 +307,16 @@ public:
         while (!is("begin")) {
             if (accept("type")) {
                 do {
+                    bool flags=false;
+                    if(accept("[")) {
+                        auto attribute=name();std::string full=attribute.text;
+                        while(accept("."))full+="."+name().text;
+                        if(full!="flags" && full!="flagsattribute" && full!="system.flags" && full!="system.flagsattribute")
+                            throw Error("E_UNSUPPORTED",attribute.location,"Only FlagsAttribute is ported for enumerations");
+                        flags=true;expect("]");
+                    }
                     const auto type_name = name(); expect("=");
-                    auto type = type_syntax(); type->token = type_name;
+                    auto type = type_syntax(); type->token = type_name;type->enum_flags=flags;
                     if (type->kind=="class" && !type->named && type->initializer) {
                         type->methods.push_back(type->initializer);
                         if (std::none_of(type->methods.begin(),type->methods.end(),[](const auto& method){return method->constructor;})) {
@@ -318,7 +332,7 @@ public:
                         root.routines.push_back(method);
                     }
                     root.type_declarations.emplace_back(type_name, std::move(type)); expect(";");
-                } while (current_.kind == TokenKind::name && (current_.escaped || !reserved(current_.text)));
+                } while (is("[") || (current_.kind == TokenKind::name && (current_.escaped || !reserved(current_.text))));
             } else if (accept("var")) {
                 do { root.statements.push_back(declaration()); expect(";"); }
                 while (current_.kind == TokenKind::name && (current_.escaped || !reserved(current_.text)));
@@ -376,9 +390,12 @@ private:
         } else if (accept("(")) {
             result->kind="tuple";
             if (!is(")")) do {
-                if (result->fields.size()>=16) fail("Too many routine parameters");
+                if(result->fields.size()>=4096)throw Error("E_LIMIT",current_.location,"Enumeration member limit exceeded");
                 auto element=type_syntax();
+                std::unique_ptr<SyntaxExpr> value;
+                if(accept("="))value=expression();
                 result->fields.emplace_back(Token{TokenKind::name,"item"+std::to_string(result->fields.size()+1),result->token.location},std::move(element));
+                result->enum_values.push_back(std::move(value));
             } while (accept(","));
             expect(")");
         } else if (accept("array")) {
@@ -475,11 +492,17 @@ private:
             auto callable=std::make_shared<SyntaxType>(); callable->token=result->token; callable->kind="callable";
             if (result->kind=="tuple" && !result->named) callable->fields=std::move(result->fields);
             else callable->fields.emplace_back(result->token,std::move(result));
+            if(callable->fields.size()>16)fail("Too many routine parameters");
             callable->references.assign(callable->fields.size(),false); callable->variadics.assign(callable->fields.size(),false);
             auto output=type_syntax(true);
             if (output->kind!="empty_result" || output->named) callable->element=std::move(output);
             return callable;
         }
+        if(result->kind=="tuple" && !result->named && !result->fields.empty()
+            && std::all_of(result->fields.begin(),result->fields.end(),[](const auto& field) {
+                const auto& type=*field.second;
+                return type.named && !type.system_qualified && !type.element && type.fields.empty();
+            }))result->kind="enum_or_tuple";
         if (result->kind=="tuple" && !result->named) {
             if (result->fields.empty() && allow_empty_result) result->kind="empty_result";
             else if (result->fields.size()<2) fail("A tuple type needs at least two elements");
@@ -986,6 +1009,8 @@ public:
         module_.routines.reserve(256);
         collections_imported_ = source.collections_imported;
         imported_units_=source.imported_units; imported_units_.insert("pabcsystem");
+        scopes_.emplace_back();
+        for(const auto& node:source.statements)if(node.kind==SyntaxStmtKind::constant_declaration)enum_prior_constants_.push_back(&node);
         std::set<std::string> declared_types;
         for (const auto& [name,syntax]:source.type_declarations) {
             if (!declared_types.insert(name.text).second || find_type(name.text)) throw Error("E_DUPLICATE",name.location,"Duplicate type");
@@ -1009,7 +1034,6 @@ public:
             module_.types[static_cast<unsigned>(aliases_.at(name.text))-64].fields=std::move(fields);
         }
         bind_method_definitions(source);
-        scopes_.emplace_back();
         for (const auto& routine : source.routines) {
             const auto qualified=routine->owner.empty() ? routine->name.text : routine->owner+"."+routine->name.text;
             if (routine_names_.contains(qualified) || (routine->owner.empty() && lookup(routine->name))) throw Error("E_DUPLICATE",routine->name.location,"Duplicate routine");
@@ -1035,7 +1059,10 @@ public:
         }
         register_properties(source);
         register_defaults(source);
-        for (std::size_t i=0;i+1<source.statements.size();++i) module_.body.statements.push_back(statement(source.statements[i]));
+        for (std::size_t i=0;i+1<source.statements.size();++i)if(!enum_bound_constants_.contains(&source.statements[i])) {
+            module_.body.statements.push_back(statement(source.statements[i]));
+            if(source.statements[i].kind==SyntaxStmtKind::constant_declaration)enum_bound_constants_.insert(&source.statements[i]);
+        }
         for (const auto& routine:source.routines) if (routine->owner.empty() && lookup(routine->name)) throw Error("E_DUPLICATE",routine->name.location,"Routine conflicts with a global variable");
         bind_defaults(source);
         for (std::size_t i = 0; i < source.routines.size(); ++i) {
@@ -1461,6 +1488,101 @@ private:
         if (!compound(type)) throw Error("E_TYPE",location,"Compound type required");
         return module_.types.at(static_cast<unsigned>(type)-64);
     }
+    bool enumeration(Type type) const {return abc::enumeration(module_.types,type);}
+    bool ordinal(Type type) const {return abc::ordinal(type) || enumeration(type);}
+    bool text_scalar(Type type) const {return scalar(type) || enumeration(type);}
+    Type resolve_enumeration(const SyntaxType& syntax) {
+        for(const auto* constant:enum_prior_constants_)if(constant->token.location.offset<syntax.token.location.offset && !enum_bound_constants_.contains(constant)) {
+            (void)statement(*constant);enum_bound_constants_.insert(constant);
+        }
+        if(module_.types.size()>=1024)throw Error("E_LIMIT",syntax.token.location,"Type limit exceeded");
+        const auto owner=static_cast<Type>(64+module_.types.size());
+        TypeInfo type{syntax.token.kind==TokenKind::name ? syntax.token.text : "$enum_"+std::to_string(module_.types.size()),CompoundKind::enumeration,Type::integer,{}};
+        type.enum_flags=syntax.enum_flags;
+        std::set<std::string> names;bool explicit_value=false;
+        for(std::size_t index=0;index<syntax.fields.size();++index) {
+            const auto& member=syntax.fields[index].second->token;
+            if(!names.insert(member.text).second || scopes_.back().contains(member.text))
+                throw Error("E_DUPLICATE",member.location,"Duplicate enumeration member");
+            if(syntax.enum_values[index])explicit_value=true;
+            else if(explicit_value)throw Error("E_TYPE",member.location,"All enumeration values after an explicit value must be explicit");
+            type.enum_members.push_back({member.text,member.spelling.empty() ? member.text : member.spelling,0});
+        }
+        module_.types.push_back(std::move(type));resolved_types_[&syntax]=owner;
+        if(syntax.token.kind==TokenKind::name)aliases_[syntax.token.text]=owner;
+        enum_ready_members_[owner]=0;
+        std::int32_t next=0;const bool previous=enum_initializing_;enum_initializing_=true;
+        for(std::size_t index=0;index<syntax.fields.size();++index) {
+            const auto& member=syntax.fields[index].second->token;
+            std::int32_t value=next;
+            if(syntax.enum_values[index]) {
+                auto expression_value=expression(*syntax.enum_values[index]);
+                if(expression_value->type!=Type::integer || !constant_initializer(*expression_value))
+                    throw Error("E_TYPE",member.location,"Enumeration value must be an integer constant");
+                const auto known=hir::constant_value(*expression_value,module_.types);
+                if(!known || !std::holds_alternative<std::int32_t>(*known))
+                    throw Error("E_TYPE",member.location,"Enumeration value must be an integer constant");
+                value=std::get<std::int32_t>(*known);
+            } else ++next;
+            module_.types[static_cast<unsigned>(owner)-64U].enum_members[index].value=value;
+            if(module_.locals.size()>=4096)throw Error("E_LIMIT",member.location,"Local and constant limit exceeded");
+            const auto local=module_.locals.size();module_.locals.push_back({member.text,owner,true});
+            scopes_.back()[member.text]=local;constant_locals_.insert(local);constant_values_[local]=EnumValue{owner,value};
+            enum_ready_members_[owner]=index+1;
+        }
+        enum_initializing_=previous;return owner;
+    }
+    std::unique_ptr<hir::Expr> enum_expression(Type owner,EnumMethod method,std::vector<std::unique_ptr<hir::Expr>> arguments,SourceLocation location) {
+        auto result=std::make_unique<hir::Expr>();result->kind=hir::ExprKind::enum_call;result->location=location;
+        result->type=enum_result(owner,method);result->operation_type=owner;result->local=static_cast<std::size_t>(method);
+        const auto other=method==EnumMethod::has_flag && arguments.size()==2 ? arguments[1]->type : Type::invalid;
+        const auto parameters=enum_parameters(owner,method,other);
+        if(arguments.size()!=parameters.size())throw Error("E_TYPE",location,"Wrong enumeration argument count");
+        for(std::size_t i=0;i<arguments.size();++i)arguments[i]=convert(std::move(arguments[i]),parameters[i]);
+        result->arguments=std::move(arguments);return result;
+    }
+    bool enum_static_member(hir::Expr& result,const SyntaxExpr& source) {
+        if(source.left->kind!=SyntaxExprKind::name || lookup(source.left->token))return false;
+        const auto alias=aliases_.find(source.left->token.text);
+        if(alias==aliases_.end() || !enumeration(alias->second))return false;
+        const auto owner=alias->second;const auto& members=info(owner,result.location).enum_members;
+        const auto found=std::find_if(members.begin(),members.end(),[&](const auto& member){return member.name==source.token.text;});
+        if(found==members.end() || static_cast<std::size_t>(found-members.begin())>=enum_ready_members_.at(owner))
+            throw Error("E_NAME",result.location,"Unknown enumeration member");
+        if(source.kind==SyntaxExprKind::member_call)throw Error("E_TYPE",result.location,"Enumeration member is not callable");
+        result.kind=hir::ExprKind::literal;
+        result.type=enum_initializing_ ? Type::integer : owner;
+        result.value=enum_initializing_ ? Value{found->value} : Value{EnumValue{owner,found->value}};return true;
+    }
+    bool bind_enumeration(hir::Expr& result,std::string_view name,std::string_view unit={}) {
+        if(!unit.empty() && unit!="pabcsystem")return false;
+        const auto alias=aliases_.find(std::string(name));
+        if(unit.empty() && alias!=aliases_.end() && enumeration(alias->second)) {
+            if(result.arguments.size()!=1)throw Error("E_TYPE",result.location,"Wrong enumeration argument count");
+            auto& value=result.arguments[0];
+            if(enumeration(value->type)) {
+                std::vector<std::unique_ptr<hir::Expr>> input;const auto owner=value->type;input.push_back(std::move(value));
+                value=enum_expression(owner,EnumMethod::ordinal,std::move(input),result.location);
+            } else if(!integer_type(value->type))throw Error("E_TYPE",result.location,"Enumeration conversion requires an integer");
+            if(value->type!=Type::integer) {
+                auto cast=std::make_unique<hir::Expr>();cast->kind=hir::ExprKind::call;cast->location=result.location;
+                cast->arguments.push_back(std::move(value));bind_builtin(*cast,"integer","pabcsystem");value=std::move(cast);
+            }
+            auto bound=enum_expression(alias->second,EnumMethod::construct,std::move(result.arguments),result.location);
+            result=std::move(*bound);return true;
+        }
+        if(result.arguments.size()!=1 || !enumeration(result.arguments[0]->type))return false;
+        const auto owner=result.arguments[0]->type;
+        const auto method=name=="ord" ? std::optional{EnumMethod::ordinal} : name=="succ" ? std::optional{EnumMethod::successor}
+            : name=="pred" ? std::optional{EnumMethod::predecessor} : name=="low" ? std::optional{EnumMethod::low_value}
+            : name=="high" ? std::optional{EnumMethod::high_value} : std::nullopt;
+        if(method) {auto bound=enum_expression(owner,*method,std::move(result.arguments),result.location);result=std::move(*bound);return true;}
+        if(const auto target=find_type(name);target && integer_type(*target)) {
+            std::vector<std::unique_ptr<hir::Expr>> input;input.push_back(std::move(result.arguments[0]));
+            result.arguments[0]=enum_expression(owner,EnumMethod::ordinal,std::move(input),result.location);
+        }
+        return false;
+    }
     Type association_type(Type key, Type element) {
         for (std::size_t i=0;i<module_.types.size();++i) {
             const auto& type = module_.types[i];
@@ -1473,9 +1595,20 @@ private:
     Type resolve_type(const SyntaxType& syntax) {
         if (auto found=resolved_types_.find(&syntax); found!=resolved_types_.end()) return found->second;
         if (syntax.named && !syntax.system_qualified && !syntax.element && syntax.fields.empty())
-            if (const auto found=aliases_.find(syntax.kind);found!=aliases_.end()) return found->second;
+            if (const auto found=aliases_.find(syntax.kind);found!=aliases_.end()) {
+                if(syntax.enum_flags){if(!enumeration(found->second))throw Error("E_TYPE",syntax.token.location,"FlagsAttribute requires an enumeration");module_.types[static_cast<unsigned>(found->second)-64U].enum_flags=true;}
+                return found->second;
+            }
         if (syntax.named && (syntax.kind=="array" || syntax.kind=="record" || syntax.kind=="class" || syntax.kind=="sequence" || syntax.kind=="tuple" || syntax.kind=="callable" || syntax.kind=="empty_result"))
             throw Error("E_UNSUPPORTED",syntax.token.location,"Unknown or unsupported type '"+syntax.kind+"'");
+        if(syntax.kind=="enum_or_tuple") {
+            const bool all_types=std::all_of(syntax.fields.begin(),syntax.fields.end(),[&](const auto& field) {
+                return aliases_.contains(field.second->kind) || find_type(field.second->kind).has_value();
+            });
+            if(!all_types)return resolve_enumeration(syntax);
+            if(syntax.enum_flags || std::any_of(syntax.enum_values.begin(),syntax.enum_values.end(),[](const auto& value){return bool(value);}))
+                throw Error("E_TYPE",syntax.token.location,"Tuple types cannot have enumeration values or FlagsAttribute");
+        } else if(syntax.enum_flags)throw Error("E_TYPE",syntax.token.location,"FlagsAttribute requires an enumeration");
         if (syntax.kind=="callable") {
             std::vector<CallableParameter> parameters;
             for (std::size_t n=0;n<syntax.fields.size();++n) parameters.push_back({resolve_type(*syntax.fields[n].second),syntax.references[n],syntax.variadics[n]});
@@ -1534,7 +1667,7 @@ private:
                 : syntax.kind == "dynarray" ? CompoundKind::dynarray : CompoundKind::simple_set;
             return sequence_type(kind,resolve_type(*syntax.element));
         }
-        if (syntax.kind=="tuple") {
+        if (syntax.kind=="tuple" || syntax.kind=="enum_or_tuple") {
             std::vector<Type> elements;
             for (const auto& field:syntax.fields) elements.push_back(resolve_type(*field.second));
             return tuple_type(elements,syntax.token.location);
@@ -1618,7 +1751,7 @@ private:
             expression->type=type; return expression;
         }
         if (integer_type(type) && integer_type(expression->type) && expression->kind!=hir::ExprKind::literal && !can_widen(expression->type,type)) {
-            if (const auto value=hir::constant_value(*expression)) {
+            if (const auto value=hir::constant_value(*expression,module_.types)) {
                 const auto location=expression->location; const auto original_type=expression->type;
                 expression=std::make_unique<hir::Expr>(); expression->kind=hir::ExprKind::literal;
                 expression->type=original_type; expression->location=location; expression->value=*value;
@@ -1642,7 +1775,7 @@ private:
         if (expression->type==Type::nil && type==Type::text_file) {
             expression->type=type; expression->kind=hir::ExprKind::default_value; expression->operation="default"; return expression;
         }
-        if (expression->type == Type::nil && compound(type) && info(type,expression->location).kind!=CompoundKind::record) {
+        if (expression->type == Type::nil && compound(type) && info(type,expression->location).kind!=CompoundKind::record && !enumeration(type)) {
             expression->type=type; expression->kind=hir::ExprKind::default_value; return expression;
         }
         if (expression->type == type) return expression;
@@ -1816,6 +1949,16 @@ private:
     }
     std::unique_ptr<hir::Expr> expression(const SyntaxExpr& source,Type expected=Type::invalid) {
         if (!source.type_arguments.empty()) return explicit_factory(source);
+        if((source.token.text=="low" || source.token.text=="high") && source.arguments.size()==1
+            && source.arguments[0]->kind==SyntaxExprKind::name && !lookup(source.arguments[0]->token)
+            && ((source.kind==SyntaxExprKind::call && !lookup(source.token) && !routine_names_.contains(source.token.text))
+                || (source.kind==SyntaxExprKind::member_call && source.left->kind==SyntaxExprKind::name
+                    && source.left->token.text=="pabcsystem" && !lookup(source.left->token)))) {
+            const auto alias=aliases_.find(source.arguments[0]->token.text);
+            if(alias!=aliases_.end() && enumeration(alias->second))
+                return enum_expression(alias->second,source.token.text=="low" ? EnumMethod::low : EnumMethod::high,{},source.token.location);
+        }
+
         if (auto member=implicit_class_member(source,expected)) return member;
         if (source.kind==SyntaxExprKind::lambda) return bind_lambda(source,expected);
         if (source.kind==SyntaxExprKind::name && source.token.text=="result" && !lambdas_.empty() && (current_result_==Type::invalid || current_result_==Type::unit))
@@ -1843,7 +1986,7 @@ private:
             const auto a=yes->type,b=no->type;
             if (a==Type::unit || b==Type::unit || (a==Type::nil && b==Type::nil))
                 throw Error("E_TYPE",result->location,"Conditional branches require known value types");
-            const auto reference=[&](Type type) {return type==Type::string || type==Type::text_file || (compound(type) && info(type,result->location).kind!=CompoundKind::record);};
+            const auto reference=[&](Type type) {return type==Type::string || type==Type::text_file || (compound(type) && info(type,result->location).kind!=CompoundKind::record && !enumeration(type));};
             auto type=Type::invalid;
             if (a==b) type=a;
             else if (a==Type::nil || b==Type::nil) {
@@ -1872,6 +2015,7 @@ private:
         }
         case SyntaxExprKind::construction: {
             auto type = resolve_type(*source.constructed);
+            if(!source.array_construction && enumeration(type)) {if(!source.arguments.empty())throw Error("E_TYPE",result->location,"Enumeration constructor takes no arguments");result->kind=hir::ExprKind::default_value;result->type=type;break;}
             if(!source.array_construction && compound(type) && info(type,result->location).kind==CompoundKind::encoding)throw Error("E_TYPE",result->location,"Encoding cannot be constructed directly");
             if (type==Type::big_integer && !source.array_construction) {
                 if (source.arguments.empty()) { result->kind=hir::ExprKind::literal; result->type=type; result->value=BigInteger{}; break; }
@@ -1885,7 +2029,7 @@ private:
                 if (source.initialized_array) {
                     std::vector<std::int32_t> sizes;
                     for (const auto& dimension:result->arguments) {
-                        const auto value=hir::constant_value(*dimension);
+                        const auto value=hir::constant_value(*dimension,module_.types);
                         const auto size=value ? std::optional<std::int32_t>{std::get<std::int32_t>(*value)} : std::nullopt;
                         if (!size) throw Error("E_UNSUPPORTED",dimension->location,"Array initializer size requires a constant integer expression");
                         if (*size<0) throw Error("E_RANGE",dimension->location,"Array initializer size cannot be negative");
@@ -2084,8 +2228,19 @@ private:
                 if (bind_object_text(*result,source.token.text,source.left->token.text)) break;
                 bind_builtin(*result,source.token.text,source.left->token.text); break;
             }
+            if(enum_static_member(*result,source))break;
             result->left = expression(*source.left); const auto receiver = result->left->type;
             if(bind_encoding_member(*result,source))break;
+            if(enumeration(receiver) && (source.token.text=="tostring" || source.token.text=="hasflag")) {
+                auto arguments=std::vector<std::unique_ptr<hir::Expr>>{};arguments.push_back(std::move(result->left));
+                for(const auto& argument:source.arguments)arguments.push_back(expression(*argument));
+                auto method=source.token.text=="hasflag" ? EnumMethod::has_flag : arguments.size()==1 ? EnumMethod::to_string : EnumMethod::format;
+                if(method==EnumMethod::has_flag && arguments.size()==2 && arguments[1]->type==Type::nil){method=EnumMethod::has_flag_nil;arguments.pop_back();}
+                if(method==EnumMethod::has_flag && arguments.size()==2 && !enumeration(arguments[1]->type))
+                    throw Error("E_TYPE",result->location,"Enumeration flag requires an enumeration");
+                result=enum_expression(receiver,method,std::move(arguments),result->location);break;
+            }
+
             if (compound(receiver) && info(receiver,result->location).kind==CompoundKind::object_class) return class_member(std::move(result),source,expected);
             if (bind_generators(*result,source,{},true)) break;
             if (callable_type(receiver) && source.token.text=="invoke") {
@@ -2179,11 +2334,12 @@ private:
                 result->right=std::make_unique<hir::Expr>(); result->right->kind=hir::ExprKind::literal; result->right->type=Type::integer;
                 result->right->value=std::int32_t{source.token.text=="rowcount" ? 0 : 1}; result->right->location=result->location; break;
             }
-            if (compound(receiver) && info(receiver,result->location).kind==CompoundKind::array
+            if (compound(receiver) && (info(receiver,result->location).kind==CompoundKind::array
+                || (info(receiver,result->location).kind==CompoundKind::list && (source.token.text=="sort" || source.token.text=="sortdescending")))
                 && (source.token.text=="copy" || source.token.text=="high" || source.token.text=="sort" || source.token.text=="sortdescending")) {
                 const bool sort=source.token.text=="sort" || source.token.text=="sortdescending";
                 const auto& type=info(receiver,result->location);
-                if (!source.arguments.empty() || (sort && (type.rank!=1 || !scalar(type.element)))) throw Error("E_TYPE",result->location,"Wrong array operation arguments");
+                if (!source.arguments.empty() || (sort && (type.rank!=1 || !text_scalar(type.element)))) throw Error("E_TYPE",result->location,"Wrong array operation arguments");
                 result->kind=source.token.text=="copy" ? hir::ExprKind::array_copy : source.token.text=="high" ? hir::ExprKind::array_high : hir::ExprKind::sequence_sort;
                 result->type=source.token.text=="copy" ? receiver : source.token.text=="high" ? Type::integer : Type::unit;
                 result->local=source.token.text=="sortdescending" ? 1U : 0U; break;
@@ -2369,7 +2525,7 @@ private:
                     else throw Error("E_NAME",result->location,"Unknown linked list member '"+name+"'");
                 }
                 if (property && source.kind == SyntaxExprKind::member_call) throw Error("E_TYPE",result->location,"Linked property is not callable");
-                if (linked_text_method(method) && !scalar(type.element)) throw Error("E_UNSUPPORTED",result->location,"Linked list text output currently requires scalar elements");
+                if (linked_text_method(method) && !text_scalar(type.element)) throw Error("E_UNSUPPORTED",result->location,"Linked list text output currently requires scalar elements");
                 const auto parameters = linked_parameters(receiver,type,method);
                 result->kind = hir::ExprKind::linked_call; result->local = static_cast<std::size_t>(method);
                 result->type = linked_result(receiver,type,method);
@@ -2385,7 +2541,7 @@ private:
                 else if (name == "println") method = AssociationMethod::println;
                 else throw Error("E_NAME",result->location,"Unknown AssocArray member '"+name+"'");
                 if (!source.arguments.empty()) throw Error("E_TYPE",result->location,"AssocArray text output takes no arguments");
-                if (!scalar(type.key) || !scalar(type.element)) throw Error("E_UNSUPPORTED",result->location,"AssocArray text output currently requires scalar keys and values");
+                if (!text_scalar(type.key) || !text_scalar(type.element)) throw Error("E_UNSUPPORTED",result->location,"AssocArray text output currently requires scalar keys and values");
                 result->kind = hir::ExprKind::association_call; result->local = static_cast<std::size_t>(method);
                 result->type = association_result(type,method); break;
             }
@@ -2410,7 +2566,7 @@ private:
                     throw Error("E_TYPE",result->location,"Collection property is not callable");
                 const auto parameters = buffer_parameters(kind,element,method);
                 if (parameters.size() != source.arguments.size()) throw Error("E_TYPE",result->location,"Wrong collection argument count");
-                if (method >= BufferMethod::to_string && !scalar(element)) throw Error("E_UNSUPPORTED",result->location,"Collection text output currently requires scalar elements");
+                if (method >= BufferMethod::to_string && !text_scalar(element)) throw Error("E_UNSUPPORTED",result->location,"Collection text output currently requires scalar elements");
                 result->kind = hir::ExprKind::buffer_call; result->local = static_cast<std::size_t>(method);
                 result->type = buffer_result(receiver,element,method);
                 for (std::size_t i=0;i<parameters.size();++i) result->arguments.push_back(convert(expression(*source.arguments[i],parameters[i]),parameters[i]));
@@ -2430,7 +2586,7 @@ private:
                 else throw Error("E_NAME",result->location,"Unknown stack or queue method '"+name+"'");
                 const auto count = method == EndpointMethod::add ? 1U : 0U;
                 if (source.arguments.size() != count) throw Error("E_TYPE",result->location,"Wrong collection method argument count");
-                if (method >= EndpointMethod::to_string && !scalar(element))
+                if (method >= EndpointMethod::to_string && !text_scalar(element))
                     throw Error("E_UNSUPPORTED",result->location,"Collection text output currently requires scalar elements");
                 result->kind = hir::ExprKind::endpoint_call; result->local = static_cast<std::size_t>(method);
                 result->type = endpoint_result(element,method);
@@ -2490,6 +2646,7 @@ private:
                 result->type = module_.locals[*local].type;
                 if (const auto found=constant_values_.find(*local); found!=constant_values_.end()) {
                     result->kind=hir::ExprKind::literal; result->value=found->second;
+                    if(enum_initializing_ && std::holds_alternative<EnumValue>(result->value)){result->value=std::get<EnumValue>(result->value).value;result->type=Type::integer;}
                 }
             } else if (auto routine = routine_names_.find(source.token.text); routine != routine_names_.end()) {
                 const auto& signature=module_.routines[routine->second].signature;
@@ -2642,6 +2799,16 @@ private:
                 result->arguments.push_back(std::move(result->left)); result->arguments.push_back(std::move(result->right));
                 (void)bind_sequence_concat(*result,"concat","pabcsystem"); break;
             }
+            if(enumeration(left) || enumeration(right)) {
+                if(left!=right)throw Error("E_TYPE",result->location,"Enumeration operands must have the same type");
+                if(op=="and" || op=="or" || op=="xor") {
+                    std::vector<std::unique_ptr<hir::Expr>> arguments;arguments.push_back(std::move(result->left));arguments.push_back(std::move(result->right));
+                    result=enum_expression(left,op=="and" ? EnumMethod::bit_and : op=="or" ? EnumMethod::bit_or : EnumMethod::bit_xor,std::move(arguments),result->location);
+                    break;
+                }
+                if(op=="=" || op=="<>" || op=="<" || op=="<=" || op==">" || op==">="){result->type=Type::boolean;break;}
+                throw Error("E_TYPE",result->location,"Invalid operand for '"+op+"'");
+            }
             const auto address_type=[&](Type type) { return compound(type) && info(type,result->location).kind==CompoundKind::school_address; };
             if ((op=="and" || op=="or" || op=="+") && (address_type(left) || address_type(right))) {
                 const auto owner=address_type(left) ? left : right;
@@ -2731,12 +2898,12 @@ private:
     }
     bool bind_sequence_library(hir::Expr& result, std::string_view name, std::string_view unit = {}) {
         const bool sort=name=="sort" || name=="sortdescending", fill=name=="fillbyvalue";
-        if ((!sort && !fill && name!="copy" && name!="high") || result.arguments.empty() || !compound(result.arguments[0]->type)) return false;
+        if ((!sort && !fill && name!="copy" && name!="high") || result.arguments.empty() || !compound(result.arguments[0]->type) || enumeration(result.arguments[0]->type)) return false;
         if (!unit.empty() && !(unit=="pabcsystem" && !fill) && !(unit=="arrays" && (sort || fill))) return false;
         const auto sequence=result.arguments[0]->type; const auto& type=info(sequence,result.location);
         if (!indexed_sequence(type.kind) || (unit=="arrays" && type.kind!=CompoundKind::array))
             throw Error("E_TYPE",result.location,"Operation requires an array or list");
-        if (result.arguments.size()!=(fill ? 2U : 1U) || (sort && (type.rank!=1 || !scalar(type.element))))
+        if (result.arguments.size()!=(fill ? 2U : 1U) || (sort && (type.rank!=1 || !text_scalar(type.element))))
             throw Error("E_TYPE",result.location,"Wrong sequence arguments");
         result.left=std::move(result.arguments[0]);
         if (name=="copy") { result.kind=hir::ExprKind::array_copy; result.type=sequence; }
@@ -3137,7 +3304,7 @@ private:
             result.right=bind_lambda(lambda,Type::invalid,{element});result.operation="selectmany";
             result.type=sequence_type(CompoundKind::sequence,inner);result.kind=hir::ExprKind::sequence_transform;
         } else {
-            if (!scalar(element)) throw Error("E_UNSUPPORTED",result.location,"JoinToString currently requires scalar elements with native Convert text");
+            if (!text_scalar(element)) throw Error("E_UNSUPPORTED",result.location,"JoinToString currently requires scalar elements with native Convert text");
             result.type=Type::string;result.kind=hir::ExprKind::sequence_join;
             if (count==2) result.right=convert(expression(*source.arguments.back()),Type::string);
             else {
@@ -3295,7 +3462,7 @@ private:
             auto value=argument.kind==SyntaxExprKind::lambda
                 ? bind_lambda(argument,Type::invalid,std::vector<Type>(type.rank,Type::integer)) : expression(argument);
             const bool nullable=type.element==Type::string || type.element==Type::text_file
-                || (compound(type.element) && info(type.element,result.location).kind!=CompoundKind::record);
+                || (compound(type.element) && info(type.element,result.location).kind!=CompoundKind::record && !enumeration(type.element));
             if (value->type==Type::nil && (type.rank==2 || !nullable)) {
                 std::vector<CallableParameter> parameters(type.rank,{Type::integer,false,false});
                 value=convert(std::move(value),function_type(type.element,std::move(parameters),result.location));
@@ -4014,6 +4181,7 @@ private:
         return true;
     }
     void bind_builtin(hir::Expr& result, std::string_view name, std::string_view unit = {}) {
+        if(bind_enumeration(result,name,unit))return;
         if(bind_file_lines(result,name,unit))return;
         if(bind_encoding_file(result,name,unit))return;
         if ((unit.empty() || unit=="pabcsystem") && (name=="min" || name=="max") && result.arguments.size()>=2 && result.arguments.size()<=4
@@ -4077,9 +4245,9 @@ private:
             result.arguments[n]=convert(std::move(result.arguments[n]),signature.parameters[n]);
     }
     bool constant_initializer(const hir::Expr& node) const {
-        if (compound(node.type) || node.type==Type::unit || node.type==Type::text_file || node.type==Type::nil) return false;
+        if ((compound(node.type) && !enumeration(node.type)) || node.type==Type::unit || node.type==Type::text_file || node.type==Type::nil) return false;
         switch (node.kind) {
-        case hir::ExprKind::literal: case hir::ExprKind::convert: case hir::ExprKind::unary:
+        case hir::ExprKind::enum_call: case hir::ExprKind::literal: case hir::ExprKind::convert: case hir::ExprKind::unary:
         case hir::ExprKind::binary: case hir::ExprKind::default_value: case hir::ExprKind::length: case hir::ExprKind::conditional: break;
         case hir::ExprKind::local: return constant_locals_.contains(node.local);
         case hir::ExprKind::call:
@@ -4201,11 +4369,11 @@ private:
                 throw Error("E_DUPLICATE",name.location,"Duplicate constant name '"+name.text+"'");
             auto initial=expression(*source.expression);
             const auto type=source.annotation ? resolve_type(*source.annotation) : initial->type;
-            if (compound(type) || type==Type::text_file || type==Type::nil || type==Type::unit)
+            if ((compound(type) && !enumeration(type)) || type==Type::text_file || type==Type::nil || type==Type::unit)
                 throw Error("E_UNSUPPORTED",name.location,"Only scalar const declarations are ported");
             initial=convert(std::move(initial),type);
             if (!constant_initializer(*initial)) throw Error("E_TYPE",name.location,"Constant initializer cannot read a variable or call a user routine");
-            const auto value=hir::constant_value(*initial);
+            const auto value=hir::constant_value(*initial,module_.types);
             if (module_.locals.size()>=4096) throw Error("E_LIMIT",name.location,"Local and constant limit exceeded");
             const auto local=module_.locals.size();
             module_.locals.push_back({name.text,type,true}); scopes_.back()[name.text]=local; constant_locals_.insert(local);
@@ -4512,6 +4680,10 @@ private:
     }
     hir::Module module_;
     std::map<std::string,Type> aliases_;
+    std::vector<const SyntaxStmt*> enum_prior_constants_;
+    std::set<const SyntaxStmt*> enum_bound_constants_;
+    std::map<Type,std::size_t> enum_ready_members_;
+    bool enum_initializing_=false;
     std::map<const SyntaxType*,Type> resolved_types_;
     std::map<std::string,std::size_t> routine_names_;
     std::map<Type,std::map<std::string,std::size_t>> class_methods_;

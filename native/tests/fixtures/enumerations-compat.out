@@ -1,0 +1,7 @@
+Начало: Ready
+После Inc: Running / 1
+Права: CanRead, CanWrite
+Запись: True
+Список: [Ready,Running,Done]
+Шаг: Ready
+Шаг: Done

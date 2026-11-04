@@ -4,6 +4,10 @@ namespace abc {
 Error runtime_error(RuntimeError id, SourceLocation location, std::string_view context) {
     const char *code, *english, *russian;
     switch (id) {
+    case RuntimeError::enum_format:
+        code="E_FORMAT";english="Enumeration format must be G, D, X or F";russian="Формат перечисления должен быть G, D, X или F";break;
+    case RuntimeError::enum_flag_type:
+        code="E_TYPE";english="Enumeration flag must have the same type";russian="Флаг перечисления должен иметь тот же тип";break;
     case RuntimeError::for_step_zero:
         code="E_RANGE";english="Loop step cannot be zero";russian="Шаг цикла не может быть равен нулю";break;
     case RuntimeError::encoding_data:

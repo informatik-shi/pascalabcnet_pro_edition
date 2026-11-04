@@ -26,6 +26,7 @@
 #include "list_operations.hpp"
 #include "timing.hpp"
 #include "encoding.hpp"
+#include "enumeration.hpp"
 #include "file_encoding.hpp"
 #include "file_lines.hpp"
 #include "big_integer_runtime.hpp"
@@ -145,9 +146,10 @@ constexpr std::u16string_view file_newline=
     u"\n";
 #endif
 
-void append_collection_text(std::u16string& text, const Value& value, const Instruction& instruction, bool concatenate = false) {
+void append_collection_text(const Program& program,std::u16string& text, const Value& value, const Instruction& instruction, bool concatenate = false) {
     if (!concatenate && std::holds_alternative<NilString>(value)) trap(instruction,RuntimeError::nil_reference);
-    auto part = value_type(value) == Type::string ? string_text(value)
+    auto part = enumeration(program,value_type(value)) ? enum_text(program,std::get<EnumValue>(value),instruction.location)
+        : value_type(value) == Type::string ? string_text(value)
         : value_type(value)==Type::character ? std::u16string(1,std::get<char16_t>(value)) : from_utf8(format(value,instruction));
     if (part.size() >= 1'048'576 || text.size() > 1'048'576 - part.size() - 1) trap(instruction,RuntimeError::string_limit);
     text += part; text += u' ';
@@ -872,7 +874,7 @@ static void execute_impl(const Program& program, std::istream& input, std::ostre
                     if (steps++ >= options.instruction_limit) trap(instruction,RuntimeError::instruction_limit);
                     if (options.cancelled && options.cancelled()) trap(instruction,RuntimeError::cancelled);
                     // Original Collections.LinkedList.ToString replaces the result on each node.
-                    text.clear(); append_collection_text(text,node->items[0]->value,instruction);
+                    text.clear(); append_collection_text(program,text,node->items[0]->value,instruction);
                 }
                 if (method==LinkedMethod::to_string) stack.emplace_back(std::move(text));
                 else { write(text,instruction); if (method==LinkedMethod::println) write(u"\n",instruction); }
@@ -910,8 +912,8 @@ static void execute_impl(const Program& program, std::istream& input, std::ostre
             } else {
                 std::u16string text;
                 for (std::size_t i=0;i<target->items.size();i+=2) {
-                    append_collection_text(text,target->items[i]->value,instruction);
-                    append_collection_text(text,target->items[i+1]->value,instruction);
+                    append_collection_text(program,text,target->items[i]->value,instruction);
+                    append_collection_text(program,text,target->items[i+1]->value,instruction);
                     // Original AssocArray uses CRLF, including on non-Windows hosts.
                     text.back() = u'\r';
                     if (text.size() == 1'048'576) trap(instruction,RuntimeError::string_limit);
@@ -974,7 +976,7 @@ static void execute_impl(const Program& program, std::istream& input, std::ostre
             case BufferMethod::set: values.write(target->items[index()],arguments[1]); break;
             case BufferMethod::to_string: case BufferMethod::print: case BufferMethod::println: {
                 std::u16string text;
-                for (std::size_t i=0;i<target->count;++i) append_collection_text(text,target->items[i]->value,instruction);
+                for (std::size_t i=0;i<target->count;++i) append_collection_text(program,text,target->items[i]->value,instruction);
                 if (method == BufferMethod::to_string) stack.emplace_back(std::move(text));
                 else { write(text,instruction); if (method == BufferMethod::println) write(u"\n",instruction); }
                 break;
@@ -1004,7 +1006,7 @@ static void execute_impl(const Program& program, std::istream& input, std::ostre
             } else {
                 std::u16string text;
                 auto append = [&](const std::shared_ptr<Cell>& item) {
-                    append_collection_text(text,item->value,instruction,!lifo);
+                    append_collection_text(program,text,item->value,instruction,!lifo);
                 };
                 if (lifo) for (auto item = items.rbegin(); item != items.rend(); ++item) append(*item);
                 else for (const auto& item : items) append(item);
@@ -1061,7 +1063,8 @@ static void execute_impl(const Program& program, std::istream& input, std::ostre
             }
             const auto step=pop(); auto target=std::get<std::shared_ptr<Cell>>(pop()); auto operation=instruction;
             operation.op=instruction.operand ? Op::subtract : Op::add;
-            if (wide_unsigned(instruction.type)) values.write(target,shifted_unsigned(instruction.type,target->value,integral_number(step,instruction.location),instruction.operand!=0,instruction.location));
+            if(enumeration(program,instruction.type)) {const auto delta=std::int64_t(std::get<std::int32_t>(step));values.write(target,enum_advance(std::get<EnumValue>(target->value),instruction.operand ? -delta : delta,instruction.location));}
+            else if (wide_unsigned(instruction.type)) values.write(target,shifted_unsigned(instruction.type,target->value,integral_number(step,instruction.location),instruction.operand!=0,instruction.location));
             else if (instruction.type==Type::integer) values.write(target,integer_operation(std::get<std::int32_t>(target->value),std::get<std::int32_t>(step),operation));
             else if (instruction.type==Type::int64) values.write(target,integer_operation(std::get<std::int64_t>(target->value),std::get<std::int64_t>(step),operation));
             else {
@@ -1081,6 +1084,12 @@ static void execute_impl(const Program& program, std::istream& input, std::ostre
             for (std::size_t i=arguments.size();i>0;--i) arguments[i-1]=pop();
             auto target=std::get<std::shared_ptr<Cell>>(arguments[ref]); arguments[ref]=target->value;
             const auto result=stdlib::invoke(instruction.operand,arguments,instruction.location,services); values.write(target,result); break;
+        }
+        case Op::enum_call: {
+            const auto method=static_cast<EnumMethod>(instruction.operand&255U);const auto other=method==EnumMethod::has_flag ? static_cast<Type>(instruction.operand>>8U) : Type::invalid;
+            std::vector<Value> arguments(enum_parameters(instruction.type,method,other).size());
+            for(std::size_t i=arguments.size();i>0;--i)arguments[i-1]=pop();
+            stack.emplace_back(enum_invoke(program,instruction.type,method,arguments,instruction.location));break;
         }
         case Op::for_step_check:
             if(!std::get<std::int32_t>(pop()))throw runtime_error(RuntimeError::for_step_zero,instruction.location);break;
@@ -1430,7 +1439,7 @@ void execute(const Program& program, std::istream& input, std::ostream& output, 
 
 Value execute_scalar_constant(const Program& program) {
     if (!program.routines.empty() || program.locals.size()!=1 || !program.locals[0].global
-        || compound(program.locals[0].type) || program.locals[0].type==Type::text_file)
+        || (compound(program.locals[0].type) && !enumeration(program,program.locals[0].type)) || program.locals[0].type==Type::text_file)
         throw Error("E_HIR",{},"Invalid scalar constant program");
     std::istringstream input; std::ostringstream output; Value result;
     ExecutionOptions options; options.instruction_limit=100'000; options.allocation_limit=1'048'576;
