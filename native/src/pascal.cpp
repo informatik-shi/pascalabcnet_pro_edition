@@ -1358,7 +1358,7 @@ private:
     }
     bool bind_file_lines(hir::Expr& result,std::string_view name,std::string_view unit={}) {
         if(!unit.empty() && unit!="pabcsystem")return false;
-        const bool read=name=="readalllines",write=name=="writealllines",sequence=name=="writelines";
+        const bool read=name=="readalllines" || name=="readlines",write=name=="writealllines",sequence=name=="writelines";
         if(!read && !write && !sequence)return false;
         const auto minimum=read ? 1U : 2U;
         if(result.arguments.size()<minimum || result.arguments.size()>minimum+1)
@@ -1374,7 +1374,7 @@ private:
         }
         if(result.arguments.size()>minimum)result.arguments.back()=convert(std::move(result.arguments.back()),encoding_type());
         result.kind=read ? hir::ExprKind::read_lines : hir::ExprKind::write_lines;
-        result.type=read ? sequence_type(CompoundKind::array,Type::string) : Type::unit;return true;
+        result.type=read ? sequence_type(name=="readlines" ? CompoundKind::sequence : CompoundKind::array,Type::string) : Type::unit;return true;
     }
     bool bind_encoding_file(hir::Expr& result,std::string_view name,std::string_view unit) {
         if(!unit.empty() && unit!="pabcsystem")return false;

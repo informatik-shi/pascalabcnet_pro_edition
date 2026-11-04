@@ -865,7 +865,7 @@ Sleep(ms) принимает integer: ноль уступает выполнен
 | AssocArray | `AssocArray<K,V>`, чтение и запись по ключу через индекс/`Elem`, `ToString`, `Print`, `Println` |
 | LinkedList | `LinkedList<T>`, `LinkedListNode<T>`, `First/Last`, `Value/Prev/Next`, вставка и удаление узлов, текстовый вывод |
 | SingleNode | `SingleNode<T>(data,next)`, изменяемые свойства `Data/Next`, перепривязка цепочек |
-| Текстовые файлы | `ReadAllText`, `WriteAllText`, `ReadAllLines`, `WriteAllLines`, `FileExists` |
+| Текстовые файлы | `ReadAllText`, `WriteAllText`, `ReadAllLines`, `ReadLines`, `WriteAllLines`, `WriteLines`, `FileExists` |
 | Файловые переменные | `Text`, `TextFile`, `Assign/AssignFile`, `Reset`, `Rewrite`, `Append`, `Close/CloseFile`, `Flush`, `Read/Readln`, `Write/Writeln`, `Eof/Eoln`, `SeekEof/SeekEoln`, `OpenRead/OpenWrite/OpenAppend`, типизированные `Read*`, `Erase`, `Rename` |
 | Методы Text | Чтение скалярных значений, `ReadWord`, `ReadToEnd`, `Name/FullName`, `Write/Writeln`, `Print/Println`, управление режимом, позицией чтения и закрытием |
 | Каталоги и имена | `GetDir`, `GetCurrentDir`, `ChDir`, `SetCurrentDir`, `MkDir`, `CreateDir`, `RmDir`, `RemoveDir`, `DeleteFile`, `RenameFile`, `RenameDirectory`, `ChangeFileNameExtension` |
@@ -2770,7 +2770,7 @@ src/cp1251_data.inc. Обычная сборка не требует генер�
 
 ## Unicode BOM в текстовых файлах
 
-Общий нативный декодер используется в ReadAllText, ReadAllLines,
+Общий нативный декодер используется в ReadAllText, ReadAllLines/ReadLines,
 OpenRead/Reset/Text и ReadFileToEnd. Снимается только начальная сигнатура;
 внутренний U+FEFF, нулевые символы и допустимые несимволы остаются данными.
 UTF-32LE распознаётся раньше UTF-16LE. Поэтому UTF-16LE с первым NUL имеет
@@ -2814,7 +2814,7 @@ ED A0 80 даёт три U+FFFD. Старый .NET Framework давал два; 
 Преобразования и файлы ограничены 1 МиБ; ошибки содержат EN, RU и позицию.
 Пример: [text-encodings.pas](examples/text-encodings.pas).
 
-Это часть API Encoding. ReadLines, Text.Lines, классы
+Это часть API Encoding. Text.Lines, классы
 UTF8Encoding/UnicodeEncoding/UTF32Encoding, смещения/длины, настраиваемые
 fallback-объекты и остальные кодовые страницы ещё не перенесены.
 
@@ -2838,7 +2838,7 @@ Nil-кодировка при новом открытии даёт двуязы�
 файла; Append в непустой файл повторную преамбулу не добавляет.
 
 Пример: [default-encoding.pas](examples/default-encoding.pas). Полный потоковый
-доступ, межпроцессное совместное открытие, dual-mode Text, ReadLines и Text.Lines
+доступ, межпроцессное совместное открытие, dual-mode Text и Text.Lines
 остаются в работе. Консоль и файлы исходников продолжают использовать UTF-8.
 
 ## Построчные файлы с Encoding
@@ -2862,16 +2862,28 @@ WriteLines открывает писателя перед обходом пос�
 Сохраняются проверки изменения List, ограничения размера/работы и отмена.
 Пример: [file-lines.pas](examples/file-lines.pas).
 
-ReadLines пока не реализован. В исходном
-[ReadLinesIterator](https://raw.githubusercontent.com/dotnet/runtime/v10.0.0/src/libraries/System.Private.CoreLib/src/System/IO/ReadLinesIterator.cs)
-читатель открывается сразу, строки читаются при обходе, а перечислители
-разделяют читателя. Его перенос требует управления потоковым чтением и
-освобождением перечислителей; чтение в массив не обеспечивает эти правила.
+`ReadLines(path[,en]):sequence of string` открывает файл сразу: неверный путь
+даёт ошибку при вызове. Строки читаются при обходе блоками по 1024 байта,
+с отдельным состоянием декодера. Неполные UTF-8-последовательности, UTF-16-пары,
+UTF-32-единицы и BOM сохраняются между блоками; кодировка фиксируется при вызове.
 
-Основа освобождения уже реализована: завершение ленивого foreach и break
-явно закрывают его перечислитель. Внутренние операции освобождают вложенные
-перечислители при возврате и ошибке, сохраняя исходную последовательность для
-повторного обхода. Сам потоковый файловый читатель пока не подключён.
+Перенесены особенности исходного
+[ReadLinesIterator](https://raw.githubusercontent.com/dotnet/runtime/v10.0.0/src/libraries/System.Private.CoreLib/src/System/IO/ReadLinesIterator.cs):
+первый обход использует исходный перечислитель, одновременные обходы разделяют
+читателя. Завершение одного закрывает читателя другого; следующий шаг другого
+даёт двуязычный E_IO. После завершения первого новый обход открывает путь заново,
+с прежней кодировкой и относительно текущей папки программы.
+
+First, Take, break, возврат и ошибки освобождают начатые вложенные обходы.
+Не начатый обход сохраняет открытый читатель, пока жив объект последовательности.
+Общий предел Text и таких читателей — 64; обработанный вход каждого читателя
+ограничен 1 МиБ. Поэтому First может прочитать начало файла, превышающего 1 МиБ,
+а полный обход такого файла завершится E_LIMIT. На Windows используется реальный
+дескриптор с FileShare.Read; на Unix файл можно удалить во время чтения.
+
+Пример: [streaming-lines.pas](examples/streaming-lines.pas). Потоковое чтение
+самого Text, полный API IEnumerator, специальные устройства и все правила
+межпроцессного совместного доступа ещё требуют переноса или проверки.
 
 ## Что ещё не перенесено
 
@@ -2914,14 +2926,14 @@ cmake --build native/build/default --config Release
 ctest --test-dir native/build/default -C Release --output-on-failure
 ```
 
-Проверка от 4 ноября 2026 года: MSVC Release — 6517 проверок ядра и 137 тестов
-CTest вместе с Qt; Clang 22 без санитайзера — 6517 проверок. Дополнительный локальный
+Проверка от 4 ноября 2026 года: MSVC Release — 6761 проверка ядра и 138 тестов
+CTest вместе с Qt; Clang 22 без санитайзера — 6761 проверка. Дополнительный локальный
 прогон Clang 22/AddressSanitizer на Windows не завершён: обработчик исключений
 аварийно останавливается, в том числе в отдельной минимальной программе с
 `catch` и выбрасыванием нового исключения без вызовов интерпретатора.
-Обычная сборка этого примера проходит. В GitHub Actions для коммита 898387828 успешны Linux Release, Ubuntu ASan/UBSan,
+Обычная сборка этого примера проходит. В GitHub Actions для коммита 51e9a97db успешны Linux Release, Ubuntu ASan/UBSan,
 Windows Release, macOS Intel (macos-15-intel) и macOS ARM64 (macos-14).
-Текущий этап освобождения перечислителей проверен локально; его CI выполняется после отправки.
+Текущий этап ReadLines проверен локально; его CI выполняется после отправки.
 Проблема субнормальных real в резервном разборе libc++ устранена и покрыта
 отдельным принудительным тестом. Задания проверяют ядро без Qt; переносимые
 редакторы Linux/macOS ещё не проверены. Успешная проверка ASan на Windows пока

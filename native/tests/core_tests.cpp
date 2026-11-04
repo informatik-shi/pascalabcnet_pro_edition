@@ -13,6 +13,9 @@
 #include "../src/list_operations.hpp"
 #include "../src/timing.hpp"
 #include "../src/file_encoding.hpp"
+#include "../src/file_reader.hpp"
+#include "../src/file_lines.hpp"
+#include "../src/files.hpp"
 #include "../src/cp1251.hpp"
 
 #include <iostream>
@@ -139,6 +142,48 @@ void default_encoding_language() {
     compile_error("begin var f:Text;Reset(f,nil);end.","E_TYPE");
     auto program=abc::compile("begin Writeln(DefaultEncoding.CodePage);end.");
     for(unsigned n=0;n<3;++n){auto bad=program;if(n==0)bad.default_encoding=bad.locals.size();if(n==1)bad.locals[*bad.default_encoding].global=false;if(n==2)bad.locals[*bad.default_encoding].type=abc::Type::string;error([&]{abc::verify(bad);},"E_BYTECODE");}
+}
+
+void incremental_text_decoding() {
+    using K=abc::TextEncodingKind;
+    struct Golden{K kind;std::string bytes;std::u16string text;bool bom=false;};
+    const std::vector<Golden> cases{
+        {K::utf8,"A\xf0\x9f\x8c\x8d" "Z",u"A🌍Z"},
+        {K::utf8,"\xed\xa0\x80",u"\ufffd\ufffd\ufffd"},
+        {K::utf8,"\xe1\x80" "A",u"\ufffdA"},
+        {K::utf8,"\xf0\x90\x80",u"\ufffd"},
+        {K::utf8,"\xe0\x80\x80",u"\ufffd\ufffd\ufffd"},
+        {K::utf8,"\xf4\x90\x80\x80",u"\ufffd\ufffd\ufffd\ufffd"},
+        {K::utf8,"\xe2\x82\xac\xc2\xa3",u"€£"},
+        {K::utf16_le,std::string("\x2f\x04\x3c\xd8\x0d\xdf",6),u"Я🌍"},
+        {K::utf16_be,std::string("\x04\x2f\xd8\x3c\xdf\x0d",6),u"Я🌍"},
+        {K::utf16_le,std::string("\0\xd8x",3),u"\ufffd\ufffd"},
+        {K::utf32_be,std::string("\0\0\x04\x2f\0\x01\xf3\x0d",8),u"Я🌍"},
+        {K::utf32_le,std::string("\x2f\x04\0\0\x0d\xf3\x01\0",8),u"Я🌍"},
+        {K::utf32_le,std::string("\0\0\x11\0x",5),u"\ufffd\ufffd"},
+        {K::windows1251,"\xcf\xf0\xe8\xe2\xe5\xf2",u"Привет"},
+        {K::ascii,"A\xffZ",u"A?Z"},
+        {K::windows1251,"\xef\xbb\xbf" "Я🌍",u"Я🌍",true},
+        {K::windows1251,std::string("\xff\xfe\0\0\x2f\x04\0\0",8),u"Я",true},
+        {K::utf16_le,std::string("\xff\xfe\0\0",4),std::u16string(1,0),true},
+    };
+    for(const auto& sample:cases)for(std::size_t chunk=1;chunk<=9;++chunk) {
+        abc::TextDecoder decoder({sample.kind,sample.bom,false},sample.bom);std::u16string result;
+        for(std::size_t i=0;i<sample.bytes.size();i+=chunk)result+=decoder.decode(std::string_view(sample.bytes).substr(i,chunk),false,{});
+        result+=decoder.decode({},true,{});result+=decoder.decode({},true,{});
+        require(result==sample.text,"Incremental codec preserves independent Unicode/invalid-unit/BOM goldens across arbitrary blocks");
+    }
+    for(const auto kind:{K::utf8,K::utf16_le,K::utf16_be,K::utf32_le,K::utf32_be}) {
+        const std::u16string text(u"Я🌍\r\n\0Z",7);
+        const auto bytes=abc::encode_text_bytes(text,{kind,true,false},{});
+        for(std::size_t chunk=1;chunk<=7;++chunk) {
+            abc::TextDecoder decoder({kind,false,true},false);std::u16string decoded;
+            for(std::size_t i=0;i<bytes.size();i+=chunk)decoded+=decoder.decode(std::string_view(bytes).substr(i,chunk),false,{});
+            decoded+=decoder.decode({},true,{});require(decoded==text,"Incremental strict Unicode conversion retains scalar/surrogate/line boundaries");
+        }
+    }
+    {abc::TextDecoder strict({K::utf8,false,true},false);strict.decode("\xe1\x80",false,{});error([&]{strict.decode({},true,{});},"E_ENCODING");}
+    {abc::TextDecoder limited({K::windows1251,false,false},false);limited.decode(std::string(1'048'576,'a'),false,{});error([&]{limited.decode("a",true,{});},"E_LIMIT");}
 }
 
 void native_text_encoding_codecs() {
@@ -4868,6 +4913,7 @@ void file_library() {
         const auto sample=code==1251 ? "Я??" : code==20127 ? "???" : "Я🌍";
         result("begin PABCSystem.WriteAllLines("+file+",Arr('Я🌍','','tail'),"+e+");var a:=PABCSystem.ReadAllLines("+file+","+e+");Writeln(a.Length,' ',a);end.","3 ["+std::string(sample)+",,tail]\n");
         result("begin WriteLines("+file+",Seq('Я🌍','','tail'),"+e+");Writeln(ReadAllLines("+file+","+e+"));end.","["+std::string(sample)+",,tail]\n");
+        result("begin WriteAllLines("+file+",Arr('Я🌍','','tail'),"+e+");var s:sequence of string:=ReadLines("+file+","+e+");Writeln(s.ToArray);end.","["+std::string(sample)+",,tail]\n");
     }
     result("begin var a:=new string[3];a[0]:=nil;a[1]:='';a[2]:='tail';WriteAllLines("+file+",a,Encoding.Unicode);Writeln(ReadAllLines("+file+"));end.","[,,tail]\n");
     result("begin WriteAllLines("+file+",new string[0],Encoding.UTF8);Writeln(ReadAllLines("+file+").Length);end.","0\n");
@@ -4897,7 +4943,7 @@ void file_library() {
         error([&]{abc::execute(abc::compile("begin Writeln('NEVER');WriteLines('x',Seq(1));end."),in,out);},"E_TYPE");
         require(out.str().empty(),"Invalid WriteLines type fails before output");
     }
-    for(const auto* source:{"begin ReadAllLines('x',Encoding.UTF8);end.","begin WriteAllLines('x',Arr('aa'),Encoding.UTF8);end.","begin WriteLines('x',Seq('aa'),Encoding.UTF8);end."}) {
+    for(const auto* source:{"begin ReadLines('x',Encoding.UTF8);end.","begin ReadAllLines('x',Encoding.UTF8);end.","begin WriteAllLines('x',Arr('aa'),Encoding.UTF8);end.","begin WriteLines('x',Seq('aa'),Encoding.UTF8);end."}) {
         const auto program=abc::compile(source);
         for(unsigned mode=0;mode<3;++mode) {
             auto bad=program;for(auto& op:bad.code)if(op.op==abc::Op::read_lines || op.op==abc::Op::write_lines){if(mode==0)op.operand=1;if(mode==1)op.operand+=65536;if(mode==2)op.type=abc::Type::integer;}
@@ -4905,6 +4951,62 @@ void file_library() {
         }
     }
 
+    result("begin WriteAllLines("+file+",Arr('one','','three'),Encoding.Unicode);var lines:=ReadLines("+file+",Encoding.ASCII);Writeln(lines.Take(2).ToArray);Writeln(lines.ToArray);end.","[one,]\n[one,,three]\n");
+    result("begin var s:sequence of string:=PABCSystem.ReadLines("+file+");Writeln(s.Where(line->line<>'').ToArray);end.","[one,three]\n");
+    result("begin WriteAllText("+file+",'Привет');var s:=ReadLines("+file+");DefaultEncoding:=Encoding.ASCII;Writeln(s.First,' ',s.First);end.","Привет Привет\n");
+    result("begin WriteAllText("+file+",'first'#10'second');var s:=ReadLines("+file+");foreach var line in s do begin Writeln(line);break;end;Writeln(DeleteFile("+file+"));end.","first\nTrue\n");
+    result("begin WriteAllText("+file+",'first');var s:=ReadLines("+file+");Writeln(s.Take(0).Count,' ',DeleteFile("+file+"));end.",
+#ifdef _WIN32
+        "0 False\n"
+#else
+        "0 True\n"
+#endif
+    );
+    result("function FirstLine:string;begin foreach var line in ReadLines("+file+") do Exit(line);Result:='';end;begin WriteAllText("+file+",'first');Writeln(FirstLine,' ',DeleteFile("+file+"));end.","first True\n");
+    result("begin WriteAllText("+file+",'first');for var i:=1 to 200 do Assert(ReadLines("+file+").First='first');Writeln(DeleteFile("+file+"));end.","True\n");
+    runtime_error("begin ReadLines("+quote(directory/"missing-lines.txt")+");Writeln('NEVER');end.","E_IO");
+    runtime_error("begin ReadLines("+quote(directory)+");end.","E_IO");
+    runtime_error("begin ReadLines("+file+",nil);end.","E_NIL");
+    for(const auto* source:{"begin Writeln('NEVER');ReadLines(1);end.","begin ReadLines('x',1251);end.","begin var a:array of string:=ReadLines('x');end."})compile_error(source,"E_TYPE");
+    {std::ofstream output(path,std::ios::binary);output << "first\n" << std::string(1'048'577,'x');}
+    result("begin Writeln(ReadLines("+file+").First);end.","first\n");
+    runtime_error("begin Writeln(ReadLines("+file+").Count);end.","E_LIMIT");
+    {std::ofstream output(path,std::ios::binary);output << std::string(1022,'a') << "🌍\r\nlast";}
+    result("begin var s:=ReadLines("+file+",Encoding.UTF8);Writeln(s.First.Length,' ',RightStr(s.First,2),' ',s.Last);end.","1024 🌍 last\n");
+    {std::ofstream output(path,std::ios::binary);output << std::string(1023,'a') << "\r\nlast";}
+    result("begin var s:=ReadLines("+file+",Encoding.ASCII);Writeln(s.First.Length,' ',s.Count,' ',s.Last);end.","1023 2 last\n");
+    {std::ofstream output(path,std::ios::binary);output << "one\ntwo\nthree";}
+    {
+        const auto p=abc::compile("function F(value:string):string;begin Result:=value;end;begin var s:sequence of string;end.");
+        const auto type=static_cast<abc::Type>(64+std::distance(p.types.begin(),std::find_if(p.types.begin(),p.types.end(),[](const auto& t){return t.kind==abc::CompoundKind::sequence && t.element==abc::Type::string;})));
+        abc::Values values{p,4096};abc::FileContext files;const abc::ExecutionOptions options;
+        auto source=std::get<std::shared_ptr<abc::Aggregate>>(abc::file_read_lines(values,files,type,abc::Value{path.u16string()},nullptr,options));
+        auto reader=source->sequence->file_line->reader;require(reader->is_open() && !source->sequence->started,"ReadLines opens its reader eagerly without advancing a cursor");
+        auto first=abc::sequence_begin(values,source),second=abc::sequence_begin(values,source);
+        require(first.get()==source.get() && second.get()!=source.get(),"First file traversal uses the enumerable instance while another clones it");
+        require(abc::sequence_resume(values,first,0,options) && std::get<std::u16string>(abc::sequence_at(values,first,0,options))==u"one","First shared-reader cursor reads the first line");
+        require(abc::sequence_resume(values,second,0,options) && std::get<std::u16string>(abc::sequence_at(values,second,0,options))==u"two","Overlapping file cursors consume one shared reader");
+        require(std::get<std::u16string>(abc::sequence_at(values,first,0,options))==u"one","File Current is cached independently of another cursor");
+        second.reset();require(!reader->is_open(),"Disposing a clone closes the shared native file handle");
+        error([&]{abc::sequence_resume(values,first,1,options);},"E_IO");first.reset();
+        auto restarted=abc::sequence_begin(values,source);
+        require(abc::sequence_resume(values,restarted,0,options) && std::get<std::u16string>(abc::sequence_at(values,restarted,0,options))==u"one","Disposed original ReadLines can reopen its path for a fresh traversal");
+        restarted.reset();require(!source->sequence->file_line->reader,"Reopened clones do not reinstall a reader in the disposed original");
+        auto exceptional_source=std::get<std::shared_ptr<abc::Aggregate>>(abc::file_read_lines(values,files,type,abc::Value{path.u16string()},nullptr,options));
+        auto exceptional_reader=exceptional_source->sequence->file_line->reader;
+        auto mapped=abc::sequence_transform(values,type,exceptional_source,0,abc::SequenceTransform::select,options);
+        values.invoke=[](std::size_t,std::span<const abc::Value>)->abc::Value{throw abc::runtime_error(abc::RuntimeError::division_zero,{});};
+        error([&]{abc::sequence_query(values,mapped,abc::SequenceQuery::first,std::int32_t{0},options);},"E_DIV_ZERO");
+        require(!exceptional_reader->is_open(),"A late query callback exception closes the real reader despite retained enumerable aliases");
+    }
+    runtime_error("begin foreach var line in ReadLines("+file+").Where(s->1 div 0=0) do Writeln(line);end.","E_DIV_ZERO");
+    require(fs::remove(path),"VM exception cleanup closes real file handles before execution returns to the host");
+    {std::ofstream output(path,std::ios::binary);output << "one\ntwo\nthree";}
+    runtime_error("type Lines=sequence of string;begin var all:=new List<Lines>;for var i:=1 to 65 do all.Add(ReadLines("+file+"));end.","E_LIMIT");
+    runtime_error("type Lines=sequence of string;begin var f:=OpenRead("+file+");var all:=new List<Lines>;for var i:=1 to 64 do all.Add(ReadLines("+file+"));end.","E_LIMIT");
+    result("function ReadLines(path:string):integer:=5;begin Writeln(ReadLines('x'),' ',PABCSystem.ReadLines("+file+").First);end.","5 one\n");
+    result("begin ChDir("+quote(directory)+");WriteAllText('relative.txt','root');MkDir('reader-cwd');WriteAllText('reader-cwd/relative.txt','child');var lines:=ReadLines('relative.txt');Writeln(lines.First);ChDir('reader-cwd');Writeln(lines.First);end.","root\nchild\n");
+    result("begin for var i:=1 to 200 do Assert(ReadLines("+file+").First='one');Writeln(DeleteFile("+file+"));end.","True\n");
     {std::error_code cleanup_error;fs::remove(path,cleanup_error);if(cleanup_error)throw std::runtime_error("Cannot reset temporary line fixture");}
     result("begin writeln(FileExists("+file+")); WriteAllText("+file+",'Привет 🌍',Encoding.UTF8); writeln(FileExists("+file+"),' ',ReadAllText("+file+")); end.", "False\nTrue Привет 🌍\n");
     result("begin var s:string:=nil; WriteAllText("+file+",s); writeln(Length(ReadAllText("+file+"))); end.","0\n");
@@ -6000,6 +6102,7 @@ int main() {
     unicode_file_decoding();
     windows1251_standard_functions();
     native_text_encoding_codecs();
+    incremental_text_decoding();
     typed_encoding_language();
     default_encoding_language();
     native_sequence_disposal();

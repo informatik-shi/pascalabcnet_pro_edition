@@ -158,6 +158,8 @@ Error runtime_error(RuntimeError id, SourceLocation location, std::string_view c
         code = "E_IO"; english = "Cannot open, read or write the file"; russian = "Не удалось открыть, прочитать или записать файл"; break;
     case RuntimeError::file_unassigned:
         code="E_IO"; english="Text file has not been assigned a filename"; russian="Текстовому файлу не назначено имя"; break;
+    case RuntimeError::reader_closed:
+        code="E_IO";english="Text reader is closed";russian="Читатель текстового файла закрыт";break;
     case RuntimeError::file_closed:
         code="E_IO"; english="Text file is not open"; russian="Текстовый файл не открыт"; break;
     case RuntimeError::file_read_mode:

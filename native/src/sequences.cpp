@@ -6,6 +6,7 @@
 #include "generators.hpp"
 #include "array_views.hpp"
 #include "matrix_operations.hpp"
+#include "file_lines.hpp"
 #include <cmath>
 
 namespace abc {
@@ -44,6 +45,7 @@ std::shared_ptr<Aggregate> sequence_create(Values& values,Type type,const std::s
 void sequence_dispose(const std::shared_ptr<Aggregate>& sequence) noexcept {
     if(!sequence || !sequence->sequence || !sequence->sequence->started || sequence->sequence->disposed)return;
     auto& state=*sequence->sequence;state.disposed=true;
+    if(state.file_line)file_sequence_dispose(*state.file_line);
     // Close actual inner cursors even if a native operation temporarily retains their state.
     // Input prototypes and numeric range descriptors remain available for a new traversal.
     const auto close=[](std::shared_ptr<Aggregate>& inner){sequence_dispose(inner);inner.reset();};
@@ -67,6 +69,7 @@ std::shared_ptr<Aggregate> sequence_begin(Values& values,const std::shared_ptr<A
     require(sequence,values.location);
     if (!sequence->sequence) throw runtime_error(RuntimeError::invalid_bytecode,values.location);
     reserve_state(values);
+    if(sequence->sequence->provider==SequenceProvider::file_lines)return cursor_lease(file_sequence_begin(values,sequence));
     auto result=std::make_shared<Aggregate>(); result->type=sequence->type;
     result->sequence=std::make_unique<SequenceState>(*sequence->sequence);
     auto& state=*result->sequence; state.started=true;state.disposed=false; state.first=0;
@@ -127,6 +130,7 @@ bool sequence_resume(Values& values,const std::shared_ptr<Aggregate>& sequence,s
     const auto location=values.location;
     sequence_check(sequence,location); auto& state=*sequence->sequence;
     if(state.disposed)return false;
+    if(state.provider==SequenceProvider::file_lines)return file_sequence_resume(values,sequence,index,options);
     if (state.provider==SequenceProvider::partial_sum) return sequence_partial_resume(values,sequence,index,options);
     if (state.provider==SequenceProvider::slice) return sequence_slice_resume(values,sequence,index,options);
     if (state.provider==SequenceProvider::concat) return sequence_concat_resume(values,sequence,index,options);
@@ -193,7 +197,7 @@ bool sequence_resume(Values& values,const std::shared_ptr<Aggregate>& sequence,s
 std::optional<std::uint64_t> sequence_known_length(const std::shared_ptr<Aggregate>& sequence,SourceLocation location) {
     const auto& state=cursor(sequence,location);
     if(state.disposed)return std::uint64_t{0};
-    if (state.provider==SequenceProvider::matrix_lines || state.provider==SequenceProvider::array_view || state.provider==SequenceProvider::combinatorics || state.provider==SequenceProvider::cartesian || state.provider==SequenceProvider::cartesian_power || state.provider==SequenceProvider::generated || state.provider==SequenceProvider::zip || state.provider==SequenceProvider::transform || state.provider==SequenceProvider::concat || state.provider==SequenceProvider::slice || state.provider==SequenceProvider::partial_sum || state.provider==SequenceProvider::big_range || (state.provider==SequenceProvider::real_range && !state.real_range->initialized)) return std::nullopt;
+    if (state.provider==SequenceProvider::file_lines || state.provider==SequenceProvider::matrix_lines || state.provider==SequenceProvider::array_view || state.provider==SequenceProvider::combinatorics || state.provider==SequenceProvider::cartesian || state.provider==SequenceProvider::cartesian_power || state.provider==SequenceProvider::generated || state.provider==SequenceProvider::zip || state.provider==SequenceProvider::transform || state.provider==SequenceProvider::concat || state.provider==SequenceProvider::slice || state.provider==SequenceProvider::partial_sum || state.provider==SequenceProvider::big_range || (state.provider==SequenceProvider::real_range && !state.real_range->initialized)) return std::nullopt;
     return state.count;
 }
 std::uint64_t sequence_length(const std::shared_ptr<Aggregate>& sequence,SourceLocation location) {
@@ -212,6 +216,7 @@ Value sequence_at(Values& values,const std::shared_ptr<Aggregate>& sequence,std:
         volatile double offset=static_cast<double>(index)*range.step;
         return finite_partition(first+finite_partition(offset,values.location),values.location);
     }
+    if(state.provider==SequenceProvider::file_lines)return state.file_line->current;
     if (state.provider==SequenceProvider::string) return std::get<std::u16string>(state.seed->value)[static_cast<std::size_t>(index)];
     if (state.provider==SequenceProvider::transform) return values.copy(state.transform->current);
     if (state.provider==SequenceProvider::zip) return values.copy(state.zip->current);

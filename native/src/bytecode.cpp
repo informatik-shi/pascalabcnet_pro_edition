@@ -990,7 +990,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         case Op::read_lines: case Op::write_lines: {
             if(!compound(type))invalid(instruction,"File lines require string array or sequence");
             const auto& source=type_info(program,type);
-            if((source.kind!=CompoundKind::array && (instruction.op!=Op::write_lines || source.kind!=CompoundKind::sequence))
+            if((source.kind!=CompoundKind::array && source.kind!=CompoundKind::sequence)
                 || source.rank!=1 || source.element!=Type::string)invalid(instruction,"File lines require string array or sequence");
             if(instruction.operand && (instruction.operand<64 || instruction.operand-64>=program.types.size()
                 || type_info(program,static_cast<Type>(instruction.operand)).kind!=CompoundKind::encoding))invalid(instruction,"Invalid file lines encoding type");

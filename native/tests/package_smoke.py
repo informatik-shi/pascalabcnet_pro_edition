@@ -210,6 +210,7 @@ def main():
                 ("text-encodings.pas", "Кодировки: 65001 1251\n[207,240,232,226,229,242]\nПривет\nПривет 🌍\n"),
                 ("default-encoding.pas", "По умолчанию: 1251\nОткрытый файл сохранил Unicode: Привет 🌍\nЯвная CP1251: Привет\n"),
                 ("file-lines.pas", "CP1251: [Первая строка,,Последняя строка]\nUnicode: [Строка 1,Строка 2,Строка 3]\n"),
+                ("streaming-lines.pas", "Первые две: [Первая строка,]\nПовторный обход: [Первая строка,Последняя строка]\nОстановка на строке: Первая строка\nПосле break файл закрыт: True\n"),
                 ("class-properties.pas", "Свойство: 7\nЧерез метод: 14\n"),
                 ("class-methods.pas", "Значение: 5\nОбщая ссылка: 6\n"),
                 ("class-fields.pas", "Связанные объекты: 9 7\nОбщая ссылка: 11\n11 9 \n"),
@@ -370,6 +371,24 @@ def main():
                                        capture_output=True, cwd=folder, env=env, timeout=10)
             if attempted.returncode or attempted.stdout != "10 [10,20] 2\n":
                 raise RuntimeError(f"{name} cursor cleanup/restart failed: {attempted.stdout!r}, {attempted.stderr!r}")
+            streaming_source = folder / "Потоковое чтение.pas"
+            streaming_source.write_text(
+                "begin\nWriteAllLines('reader-sharing.tmp',Arr('one','two','three'),Encoding.UTF8);\n"
+                "var lines:=ReadLines('reader-sharing.tmp');\nforeach var x in lines do\n"
+                "begin\nWriteln(x);\nforeach var y in lines do begin Writeln(y);break;end;\nend;end.", encoding="utf-8")
+            attempted = subprocess.run([runner, "run", str(streaming_source)], text=True, encoding="utf-8",
+                                       capture_output=True, cwd=folder, env=env, timeout=10)
+            if (attempted.returncode != 1 or attempted.stdout != "one\ntwo\n" or "E_IO" not in attempted.stderr
+                    or "EN: Text reader is closed" not in attempted.stderr
+                    or "RU: Читатель текстового файла закрыт" not in attempted.stderr
+                    or f"{streaming_source}:4:" not in attempted.stderr):
+                raise RuntimeError(f"{name} ReadLines shared-reader diagnostic failed: {attempted.stdout!r}, {attempted.stderr!r}")
+            (folder / "large-stream.tmp").write_bytes(b"first\n" + b"x" * 1048577)
+            streaming_source.write_text("begin Writeln(ReadLines('large-stream.tmp').First);end.", encoding="utf-8")
+            attempted = subprocess.run([runner, "run", str(streaming_source)], text=True, encoding="utf-8",
+                                       capture_output=True, cwd=folder, env=env, timeout=10)
+            if attempted.returncode or attempted.stdout != "first\n":
+                raise RuntimeError(f"{name} ReadLines prefix was loaded eagerly: {attempted.stdout!r}, {attempted.stderr!r}")
             character = folder / "Ошибки символов.pas"
             school_error = folder / "Ошибки School.pas"
             for expression, code, english, russian in [
@@ -1204,6 +1223,7 @@ def main():
             results[-1]["default_encoding_and_text_codec_snapshots"] = "passed"
             results[-1]["file_line_encodings_and_streamed_sequence_output"] = "passed"
             results[-1]["sequence_cursor_disposal_and_restart"] = "passed"
+            results[-1]["native_streaming_readlines_and_shared_reader_cleanup"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 

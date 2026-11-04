@@ -12,6 +12,15 @@ struct TextEncoding {
 std::string_view text_encoding_preamble(TextEncoding encoding);
 std::u16string decode_text_bytes(std::string_view bytes,TextEncoding encoding,bool detect_preamble,SourceLocation location);
 std::string encode_text_bytes(std::u16string_view text,TextEncoding encoding,SourceLocation location);
-// File readers retain the current strict UTF-8 profile until DefaultEncoding is bound.
+class TextDecoder {
+    TextEncoding encoding_;
+    bool detect_,finished_=false;
+    std::string carry_;
+    std::size_t received_=0,produced_=0;
+public:
+    explicit TextDecoder(TextEncoding encoding,bool detect_preamble=true):encoding_(encoding),detect_(detect_preamble){}
+    std::u16string decode(std::string_view bytes,bool final,SourceLocation location);
+};
+// Legacy internal default; execution-bound file calls use FileContext DefaultEncoding.
 std::u16string decode_file_bytes(std::string_view bytes,SourceLocation location);
 }

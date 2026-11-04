@@ -2,6 +2,7 @@
 #include "big_integer_runtime.hpp"
 #include "files.hpp"
 #include "encoding.hpp"
+#include "file_reader.hpp"
 #include "diagnostics.hpp"
 #include "stdlib.hpp"
 #include "integer_values.hpp"
@@ -65,24 +66,25 @@ TextFile& text_file(const Value& value, SourceLocation location) {
 void FileContext::prepare_text_open(const std::shared_ptr<TextFile>& file, SourceLocation location) {
     if (file->is_open()) return;
     std::erase_if(open_texts_,[](const auto& weak) { const auto file=weak.lock(); return !file || !file->is_open(); });
-    if (open_texts_.size()>=64) throw runtime_error(RuntimeError::file_open_limit,location);
+    std::erase_if(open_readers_,[](const auto& weak){const auto reader=weak.lock();return !reader || !reader->is_open();});
+    if (open_texts_.size()+open_readers_.size()>=64) throw runtime_error(RuntimeError::file_open_limit,location);
     open_texts_.push_back(file);
 }
 bool FileContext::text_file_locked(const std::filesystem::path& path, bool subtree) const {
 #ifdef _WIN32
-    for (const auto& weak:open_texts_) if (const auto file=weak.lock(); file && file->is_open()) {
-        auto cursor=file->opened_filename;
-        while (!cursor.empty()) {
-            if (cursor==path) return true;
+    const auto locked=[&](std::filesystem::path cursor) {
+        while(!cursor.empty()) {
+            if(cursor==path)return true;
             std::error_code error;
-            if (std::filesystem::equivalent(cursor,path,error) && !error) return true;
-            const auto parent=cursor.parent_path();
-            if (!subtree || parent==cursor) break;
-            cursor=parent;
+            if(std::filesystem::equivalent(cursor,path,error) && !error)return true;
+            const auto parent=cursor.parent_path();if(!subtree || parent==cursor)break;cursor=parent;
         }
-    }
+        return false;
+    };
+    for(const auto& weak:open_texts_)if(const auto file=weak.lock();file && file->is_open() && locked(file->opened_filename))return true;
+    for(const auto& weak:open_readers_)if(const auto reader=weak.lock();reader && reader->is_open() && locked(reader->path()))return true;
 #else
-    (void)path; (void)subtree;
+    (void)path;(void)subtree;
 #endif
     return false;
 }

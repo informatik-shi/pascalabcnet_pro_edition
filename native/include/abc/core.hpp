@@ -82,7 +82,7 @@ struct GeneratorState {
     std::uint64_t index=0;
     bool positioned=false, available=false;
 };
-enum class SequenceProvider { school_ip_hosts, school_ip_binary, array, list, repeat, range, stepped_range, big_range, partition, real_range, partial_sum, slice, concat, string, transform, zip, generated, cartesian, cartesian_power, combinatorics, array_view, matrix_lines };
+enum class SequenceProvider { school_ip_hosts, school_ip_binary, array, list, repeat, range, stepped_range, big_range, partition, real_range, partial_sum, slice, concat, string, transform, zip, generated, cartesian, cartesian_power, combinatorics, array_view, matrix_lines, file_lines };
 inline bool collection_sequence(SequenceProvider provider) { return provider==SequenceProvider::array || provider==SequenceProvider::list; }
 struct BigRangeState {
     BigInteger last,step,current;
@@ -177,6 +177,7 @@ struct MatrixLineState {
     std::size_t bound=0;
     bool initialized=false,positioned=false,available=false;
 };
+struct FileLineState;
 struct SequenceState {
     std::shared_ptr<Aggregate> source;
     SequenceProvider provider=SequenceProvider::school_ip_hosts;
@@ -216,6 +217,7 @@ struct SequenceState {
     MatrixMethod matrix_method=MatrixMethod::row_sequence;
     std::int32_t matrix_index=0;
     std::shared_ptr<MatrixLineState> matrix_line;
+    std::shared_ptr<FileLineState> file_line;
 };
 struct Aggregate {
     Type type;

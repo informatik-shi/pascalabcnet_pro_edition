@@ -94,17 +94,20 @@ std::string_view text_encoding_preamble(TextEncoding encoding) {
     default:return {};
     }
 }
+namespace {
+void detect_encoding(std::string_view& bytes,TextEncoding& encoding) {
+    const auto expected=text_encoding_preamble(encoding);
+    if(!expected.empty() && bytes.starts_with(expected))bytes.remove_prefix(expected.size());
+    else for(auto kind:{TextEncodingKind::utf32_le,TextEncodingKind::utf32_be,TextEncodingKind::utf16_le,TextEncodingKind::utf16_be,TextEncodingKind::utf8}) {
+        const auto mark=text_encoding_preamble({kind,true,false});
+        if(bytes.starts_with(mark)){encoding={kind,true,false};bytes.remove_prefix(mark.size());break;}
+    }
+}
+}
 std::u16string decode_text_bytes(std::string_view bytes,TextEncoding encoding,bool detect_preamble,SourceLocation location) {
     validate(encoding,location);
     if(bytes.size()>data_limit)throw runtime_error(RuntimeError::encoding_limit,location);
-    if(detect_preamble) {
-        const auto expected=text_encoding_preamble(encoding);
-        if(!expected.empty() && bytes.starts_with(expected))bytes.remove_prefix(expected.size());
-        else for(auto kind:{TextEncodingKind::utf32_le,TextEncodingKind::utf32_be,TextEncodingKind::utf16_le,TextEncodingKind::utf16_be,TextEncodingKind::utf8}) {
-            const auto mark=text_encoding_preamble({kind,true,false});
-            if(bytes.starts_with(mark)){encoding={kind,true,false};bytes.remove_prefix(mark.size());break;}
-        }
-    }
+    if(detect_preamble)detect_encoding(bytes,encoding);
     if(encoding.kind==TextEncodingKind::utf8)return decode_utf8(bytes,encoding,location);
     if(encoding.kind==TextEncodingKind::utf16_le || encoding.kind==TextEncodingKind::utf16_be)return decode_utf16(bytes,encoding,encoding.kind==TextEncodingKind::utf16_be,location);
     if(encoding.kind==TextEncodingKind::utf32_le || encoding.kind==TextEncodingKind::utf32_be)return decode_utf32(bytes,encoding,encoding.kind==TextEncodingKind::utf32_be,location);
@@ -112,6 +115,42 @@ std::u16string decode_text_bytes(std::string_view bytes,TextEncoding encoding,bo
     for(unsigned char value:bytes)result.push_back(encoding.kind==TextEncodingKind::windows1251 ? windows1251_character(value)
         : value<128 ? static_cast<char16_t>(value) : encoding.strict ? invalid(encoding,location) : char16_t{u'?'});
     return result;
+}
+std::u16string TextDecoder::decode(std::string_view bytes,bool final,SourceLocation location) {
+    validate(encoding_,location);
+    if(finished_) {
+        if(!bytes.empty())throw runtime_error(RuntimeError::invalid_bytecode,location);
+        return {};
+    }
+    if(bytes.size()>data_limit-received_)throw runtime_error(RuntimeError::encoding_limit,location);
+    received_+=bytes.size();std::string data=std::move(carry_);data.append(bytes);carry_.clear();
+    if(detect_ && data.size()<4 && !final){carry_=std::move(data);return {};}
+    std::string_view view=data;
+    if(detect_){detect_encoding(view,encoding_);detect_=false;}
+    auto end=view.size();
+    if(!final) {
+        if(encoding_.kind==TextEncodingKind::utf8) {
+            for(std::size_t length=1;length<=3 && length<=view.size();++length) {
+                const auto pos=view.size()-length;const auto lead=byte(view,pos);
+                if(lead>=0x80 && lead<=0xbf)continue;
+                const unsigned width=lead>=0xc2 && lead<=0xdf ? 2U : lead>=0xe0 && lead<=0xef ? 3U : lead>=0xf0 && lead<=0xf4 ? 4U : 0U;
+                bool prefix=width && length<width;
+                for(std::size_t n=1;prefix && n<length;++n) {
+                    const auto next=byte(view,pos+n);
+                    prefix=next>=0x80 && next<=0xbf && !(n==1 && ((lead==0xe0 && next<0xa0) || (lead==0xed && next>0x9f)
+                        || (lead==0xf0 && next<0x90) || (lead==0xf4 && next>0x8f)));
+                }
+                if(prefix)end=pos;
+                break;
+            }
+        } else if(encoding_.kind==TextEncodingKind::utf16_le || encoding_.kind==TextEncodingKind::utf16_be) {
+            end-=end%2;
+            if(end>=2){const auto last=unit(view,end-2,2,encoding_.kind==TextEncodingKind::utf16_be);if(last>=0xd800 && last<=0xdbff)end-=2;}
+        } else if(encoding_.kind==TextEncodingKind::utf32_le || encoding_.kind==TextEncodingKind::utf32_be)end-=end%4;
+    }
+    auto result=decode_text_bytes(view.substr(0,end),encoding_,false,location);
+    if(result.size()>data_limit-produced_)throw runtime_error(RuntimeError::encoding_limit,location);
+    produced_+=result.size();carry_.assign(view.substr(end));finished_=final;return result;
 }
 std::string encode_text_bytes(std::u16string_view text,TextEncoding encoding,SourceLocation location) {
     validate(encoding,location);

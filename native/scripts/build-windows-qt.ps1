@@ -82,7 +82,9 @@ Encoding, CP1251/ASCII/Unicode и выбор кодировки ReadAllText/Writ
 DefaultEncoding изначально CP1251. Его смена и явные Encoding-перегрузки Text: examples/default-encoding.pas.
 Для сохранения всех Unicode-символов выберите Encoding.UTF8/Unicode; полный API Encoding ещё переносится.
 ReadAllLines/WriteAllLines с Encoding и WriteLines для последовательностей: examples/file-lines.pas.
-ReadLines и Text.Lines ещё не перенесены.
+ReadLines с поточным чтением, повторным обходом и break: examples/streaming-lines.pas.
+Одновременные обходы одного ReadLines разделяют читателя, как в исходной библиотеке; закрытие одного закрывает поток другого.
+Text.Lines и полный интерфейс перечислителя ещё не перенесены.
 Прямой захват управляющей переменной цикла пока не перенесён; используйте отдельную переменную-копию.
 Совместимость с PascalABC.NET частичная.
 Русские имена и НОД/НОК: examples/russian-identifiers.pas. Массивные GCD/LCM: examples/school-folds.pas.
