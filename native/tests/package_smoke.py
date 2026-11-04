@@ -212,6 +212,7 @@ def main():
                 ("file-lines.pas", "CP1251: [Первая строка,,Последняя строка]\nUnicode: [Строка 1,Строка 2,Строка 3]\n"),
                 ("streaming-lines.pas", "Первые две: [Первая строка,]\nПовторный обход: [Первая строка,Последняя строка]\nОстановка на строке: Первая строка\nПосле break файл закрыт: True\n"),
                 ("streaming-text.pas", "Число: 17\nСлово: слово\nОстаток строки: [ остаток 🌍]\nНулевой символ: 0\nОстаток файла: конец\nКонец файла: True\n"),
+                ("text-lines.pas", "Массив: [Первая строка,Вторая строка]\nСтрока: Первая строка\nСтрока: Вторая строка\nКонец файла: True\nПосле Close: True\n"),
                 ("class-properties.pas", "Свойство: 7\nЧерез метод: 14\n"),
                 ("class-methods.pas", "Значение: 5\nОбщая ссылка: 6\n"),
                 ("class-fields.pas", "Связанные объекты: 9 7\nОбщая ссылка: 11\n11 9 \n"),
@@ -397,6 +398,25 @@ def main():
                                        capture_output=True, cwd=folder, env=env, timeout=10)
             if attempted.returncode or attempted.stdout != "17 [word] [ rest] next\n":
                 raise RuntimeError(f"{name} Text prefix was loaded eagerly: {attempted.stdout!r}, {attempted.stderr!r}")
+            streaming_source.write_text(
+                "begin WriteAllText('text-lines.tmp','a'#10'b'#10'c'#10);var f:=OpenRead('text-lines.tmp');\n"
+                "Writeln(f.ReadChar);Writeln(f.Lines.ToArray);\n"
+                "Writeln(DeleteFile('text-lines.tmp'));f.Close;Writeln(DeleteFile('text-lines.tmp'));end.", encoding="utf-8")
+            attempted = subprocess.run([runner, "run", str(streaming_source)], text=True, encoding="utf-8",
+                                       capture_output=True, cwd=folder, env=env, timeout=10)
+            if attempted.returncode or attempted.stdout != "a\n[,b,c,a,b,c]\nFalse\nTrue\n":
+                raise RuntimeError(f"{name} Text.Lines buffer/ownership mismatch: {attempted.stdout!r}, {attempted.stderr!r}")
+            for source, expected, code, line in [
+                ("begin var f:Text;var s:=f.Lines;Writeln(s.Take(0).Count);\ns.First;end.", "0\n", "E_NIL", 2),
+                ("begin Writeln('must never run');var f:Text;f.Lines(1);end.", "", "E_TYPE", 1),
+            ]:
+                streaming_source.write_text(source, encoding="utf-8")
+                attempted = subprocess.run([runner, "run", str(streaming_source)], text=True, encoding="utf-8",
+                                           capture_output=True, cwd=folder, env=env, timeout=10)
+                if (attempted.returncode != 1 or attempted.stdout != expected or code not in attempted.stderr
+                        or "EN:" not in attempted.stderr or "RU:" not in attempted.stderr
+                        or f"{streaming_source}:{line}:" not in attempted.stderr):
+                    raise RuntimeError(f"{name} Text.Lines lazy/static diagnostic mismatch: {attempted.stdout!r}, {attempted.stderr!r}")
             character = folder / "Ошибки символов.pas"
             school_error = folder / "Ошибки School.pas"
             for expression, code, english, russian in [
@@ -1233,6 +1253,7 @@ def main():
             results[-1]["sequence_cursor_disposal_and_restart"] = "passed"
             results[-1]["native_streaming_readlines_and_shared_reader_cleanup"] = "passed"
             results[-1]["native_streaming_text_scalar_line_and_end_reads"] = "passed"
+            results[-1]["typed_text_lines_buffer_seek_and_reader_ownership"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 

@@ -10,6 +10,13 @@ struct FileLineState {
     Value current=NilString{};
     std::uint64_t next=0;bool ready=false,done=false;
 };
+struct TextLineState {
+    std::shared_ptr<TextFile> file;
+    Value current=NilString{};
+    std::uint64_t next=0;bool initialized=false,ready=false,done=false;
+};
+Value text_lines_sequence(Values& values,Type result,const Value& file);
+bool text_lines_resume(Values& values,const std::shared_ptr<Aggregate>& cursor,std::uint64_t index);
 std::shared_ptr<Aggregate> file_sequence_begin(Values& values,const std::shared_ptr<Aggregate>& prototype);
 bool file_sequence_resume(Values& values,const std::shared_ptr<Aggregate>& cursor,std::uint64_t index,const ExecutionOptions& options);
 void file_sequence_dispose(FileLineState& state) noexcept;

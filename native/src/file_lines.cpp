@@ -71,6 +71,24 @@ Value file_read_lines(Values& values,FileContext& files,Type result,const Value&
     if(start<text.size())output->items.push_back(values.cell(Type::string,text.substr(start)));
     return output;
 }
+Value text_lines_sequence(Values& values,Type result,const Value& file) {
+    (void)text_file(file,values.location);reserve(values,1);
+    auto output=std::make_shared<Aggregate>();output->type=result;output->sequence=std::make_unique<SequenceState>();
+    output->sequence->provider=SequenceProvider::text_lines;output->sequence->text_input=std::get<std::shared_ptr<TextFile>>(file);return output;
+}
+bool text_lines_resume(Values& values,const std::shared_ptr<Aggregate>& cursor,std::uint64_t index) {
+    auto& state=*cursor->sequence->text_line;const auto location=values.location;
+    if(state.done)return false;
+    if(state.ready && state.next && index==state.next-1)return true;
+    if(index!=state.next || !state.file)throw runtime_error(RuntimeError::invalid_bytecode,location);
+    if(!state.initialized) {
+        if(!state.file->reader)throw runtime_error(RuntimeError::nil_reference,location);
+        state.file->reader->seek_begin_preserving_buffer(location);state.initialized=true;
+    }
+    if(text_eof(*state.file,false,false,location)){state.done=true;state.ready=false;state.current=NilString{};return false;}
+    state.current=text_read(*state.file,Type::string,location);text_skip_line(*state.file,location);
+    state.ready=true;++state.next;cursor->sequence->count=state.next;return true;
+}
 void file_write_lines(Values& values,FileContext& files,const Value& path,const std::shared_ptr<Aggregate>& source,const Value* encoding,const ExecutionOptions& options) {
     const auto location=values.location;(void)selected(files,path,encoding,location);
     if(!source || source->nil)throw runtime_error(RuntimeError::nil_reference,location);

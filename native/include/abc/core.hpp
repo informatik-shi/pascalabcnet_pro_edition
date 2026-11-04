@@ -82,7 +82,7 @@ struct GeneratorState {
     std::uint64_t index=0;
     bool positioned=false, available=false;
 };
-enum class SequenceProvider { school_ip_hosts, school_ip_binary, array, list, repeat, range, stepped_range, big_range, partition, real_range, partial_sum, slice, concat, string, transform, zip, generated, cartesian, cartesian_power, combinatorics, array_view, matrix_lines, file_lines };
+enum class SequenceProvider { school_ip_hosts, school_ip_binary, array, list, repeat, range, stepped_range, big_range, partition, real_range, partial_sum, slice, concat, string, transform, zip, generated, cartesian, cartesian_power, combinatorics, array_view, matrix_lines, file_lines, text_lines };
 inline bool collection_sequence(SequenceProvider provider) { return provider==SequenceProvider::array || provider==SequenceProvider::list; }
 struct BigRangeState {
     BigInteger last,step,current;
@@ -177,7 +177,7 @@ struct MatrixLineState {
     std::size_t bound=0;
     bool initialized=false,positioned=false,available=false;
 };
-struct FileLineState;
+struct FileLineState;struct TextLineState;
 struct SequenceState {
     std::shared_ptr<Aggregate> source;
     SequenceProvider provider=SequenceProvider::school_ip_hosts;
@@ -218,6 +218,8 @@ struct SequenceState {
     std::int32_t matrix_index=0;
     std::shared_ptr<MatrixLineState> matrix_line;
     std::shared_ptr<FileLineState> file_line;
+    std::shared_ptr<TextFile> text_input;
+    std::shared_ptr<TextLineState> text_line;
 };
 struct Aggregate {
     Type type;
@@ -253,7 +255,7 @@ enum class Op {
     read_lines, write_lines, array_copy, array_high, sequence_sort, sequence_fill, mutate_string, increment, read_value,
     endpoint_call, buffer_call, association_call, linked_call, file_print, file_newline, file_read, file_skip_line, file_output,
     iteration_version, iteration_check, set_character, random_array, fill_random_array, sequence_mutate, swap_values, write_array,
-    bit_not, bit_and, bit_or, bit_xor, shift_left, shift_right, read_console, read_array, console_output, array_query, write_matrix, object_text, print_output, try_read, convert_string, try_parse, val, string_read, string_array, school_list, replace_last, replace_many, school_fold, tuple_literal, school_pair, school_minmax, school_table_print, school_table_new, school_ip, sequence_begin, sequence_count, sequence_array, sequence_wrap, swap_substrings, sequence_list, sequence_query, sequence_snapshot, sequence_repeat, sequence_range, sequence_resume, sequence_partition, sequence_aggregate, sequence_partial, sequence_slice, sequence_concat, sequence_equal, sequence_default, sequence_select, sequence_where, sequence_predicate, sequence_flatmap, sequence_zip, sequence_takewhile, sequence_skipwhile, routine_value, call_value, sequence_select_value, sequence_where_value, sequence_flatmap_value, sequence_takewhile_value, sequence_skipwhile_value, sequence_predicate_value, sequence_zip_value, fresh_local, generator, sequence_cartesian, sequence_cartesian_value, cartesian_power, combinations, permutations, partial_permutations, next_permutation, array_view, matrix_operation, array_operation, collection_operation, matrix_build, list_operation, list_bulk, list_capacity, list_copy, construct_user, encoding_call, sequence_dispose, sequence_join
+    bit_not, bit_and, bit_or, bit_xor, shift_left, shift_right, read_console, read_array, console_output, array_query, write_matrix, object_text, print_output, try_read, convert_string, try_parse, val, string_read, string_array, school_list, replace_last, replace_many, school_fold, tuple_literal, school_pair, school_minmax, school_table_print, school_table_new, school_ip, sequence_begin, sequence_count, sequence_array, sequence_wrap, swap_substrings, sequence_list, sequence_query, sequence_snapshot, sequence_repeat, sequence_range, sequence_resume, sequence_partition, sequence_aggregate, sequence_partial, sequence_slice, sequence_concat, sequence_equal, sequence_default, sequence_select, sequence_where, sequence_predicate, sequence_flatmap, sequence_zip, sequence_takewhile, sequence_skipwhile, routine_value, call_value, sequence_select_value, sequence_where_value, sequence_flatmap_value, sequence_takewhile_value, sequence_skipwhile_value, sequence_predicate_value, sequence_zip_value, fresh_local, generator, sequence_cartesian, sequence_cartesian_value, cartesian_power, combinations, permutations, partial_permutations, next_permutation, array_view, matrix_operation, array_operation, collection_operation, matrix_build, list_operation, list_bulk, list_capacity, list_copy, construct_user, encoding_call, sequence_dispose, text_lines, sequence_join
 };
 
 enum class SequenceQuery { any, first, last, first_default, last_default, element, element_default, contains, single, single_default };

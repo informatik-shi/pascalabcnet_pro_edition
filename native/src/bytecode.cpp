@@ -295,6 +295,8 @@ private:
             expression(*node.left);
             for (const auto& argument : node.arguments) expression(*argument);
             emit(Op::endpoint_call,node.left->type,node.local,node.location); break;
+        case hir::ExprKind::text_lines:
+            expression(*node.left);emit(Op::text_lines,node.type,0,node.location);break;
         case hir::ExprKind::read_lines:
             for(const auto& argument:node.arguments)expression(*argument);
             emit(Op::read_lines,node.type,node.arguments.size()==2 ? static_cast<std::size_t>(node.arguments.back()->type) : 0,node.location);break;
@@ -987,6 +989,8 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             break;
         case Op::encoding_call:
             if(instruction.operand>static_cast<std::size_t>(EncodingMethod::text_append_named) || !encoding_signature_valid(program,type,static_cast<EncodingMethod>(instruction.operand)))invalid(instruction,"Invalid Encoding call metadata");break;
+        case Op::text_lines:
+            if(!compound(type) || type_info(program,type).kind!=CompoundKind::sequence || type_info(program,type).element!=Type::string || instruction.operand)invalid(instruction,"File lines require string array or sequence");break;
         case Op::read_lines: case Op::write_lines: {
             if(!compound(type))invalid(instruction,"File lines require string array or sequence");
             const auto& source=type_info(program,type);
@@ -1383,6 +1387,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             for(auto parameter=parameters.rbegin();parameter!=parameters.rend();++parameter)require(*parameter);
             const auto result=encoding_result(program,instruction.type,method);if(result!=Type::unit)stack.push_back(result);break;
         }
+        case Op::text_lines: require(Type::text_file);stack.push_back(instruction.type);break;
         case Op::read_lines: if(instruction.operand)require(static_cast<Type>(instruction.operand));require(Type::string); stack.push_back(instruction.type); break;
         case Op::write_lines: if(instruction.operand)require(static_cast<Type>(instruction.operand));require(instruction.type); require(Type::string); break;
         case Op::array_copy: require(instruction.type); stack.push_back(instruction.type); break;

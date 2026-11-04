@@ -20,6 +20,7 @@ class TextDecoder {
 public:
     explicit TextDecoder(TextEncoding encoding,bool detect_preamble=true):encoding_(encoding),detect_(detect_preamble){}
     std::u16string decode(std::string_view bytes,bool final,SourceLocation location);
+    void resume_after_final() noexcept{finished_=false;}
 };
 // Legacy internal default; execution-bound file calls use FileContext DefaultEncoding.
 std::u16string decode_file_bytes(std::string_view bytes,SourceLocation location);

@@ -1082,6 +1082,8 @@ static void execute_impl(const Program& program, std::istream& input, std::ostre
             auto target=std::get<std::shared_ptr<Cell>>(arguments[ref]); arguments[ref]=target->value;
             const auto result=stdlib::invoke(instruction.operand,arguments,instruction.location,services); values.write(target,result); break;
         }
+        case Op::text_lines:
+            stack.emplace_back(text_lines_sequence(values,instruction.type,pop()));break;
         case Op::read_lines: {
             const auto encoding=instruction.operand ? std::optional<Value>{pop()} : std::nullopt;const auto path=pop();
             stack.emplace_back(file_read_lines(values,files,instruction.type,path,encoding ? &*encoding : nullptr,options));break;

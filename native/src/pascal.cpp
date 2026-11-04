@@ -2199,6 +2199,10 @@ private:
             }
             if (receiver==Type::text_file) {
                 const auto& name=source.token.text;
+                if(name=="lines") {
+                    if(!source.arguments.empty())throw Error("E_TYPE",result->location,"Wrong Text method argument count");
+                    result->kind=hir::ExprKind::text_lines;result->type=sequence_type(CompoundKind::sequence,Type::string);break;
+                }
                 if (name=="write" || name=="writeln" || name=="print" || name=="println") {
                     if (name=="print" || name=="println") (void)print_delimiter();
                     result->kind=hir::ExprKind::file_output; result->type=Type::unit;

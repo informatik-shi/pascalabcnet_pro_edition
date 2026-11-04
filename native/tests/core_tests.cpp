@@ -5226,6 +5226,48 @@ void text_files() {
 #else
     result("begin var f:=OpenWrite("+file+");f.Write('abc');f.Reset;Writeln(f.ReadToEnd);f.Close;end.","abc\n");
 #endif
+    result("begin WriteAllText("+file+",'aa'#10'bb'#10'cc'#10);var f:=OpenRead("+file+");var s:sequence of string:=f.Lines;Writeln(s.ToArray);Writeln(s.First,' ',s.First,' ',f.ReadString);f.Close;end.","[aa,bb,cc]\naa bb cc\n");
+    result("begin WriteAllText("+file+",'a'#10'b'#10'c'#10);var f:=OpenRead("+file+");Writeln(f.ReadChar);Writeln(f.Lines().ToArray);f.Close;end.","a\n[,b,c,a,b,c]\n");
+    result("begin WriteAllText("+file+",'hello',Encoding.UTF8);var f:=OpenRead("+file+",Encoding.UTF8);Writeln(f.Lines.Single);var replay:=f.Lines.First;Writeln(Ord(replay[1]),' ',replay.Length);f.Close;end.","hello\n65279 6\n");
+    result("begin var f:Text;var s:=f.Lines;Writeln(s.Take(0).Count);end.","0\n");
+    runtime_error("begin var f:Text;f.Lines.First;end.","E_NIL");
+    runtime_error("begin var f:Text:=nil;var s:=f.Lines;end.","E_NIL");
+    result("begin WriteAllText("+file+",'abc'#10'def'#10);var f:=OpenRead("+file+");Writeln(f.ReadChar);Writeln(f.Lines.Take(0).Count,' ',f.ReadChar);f.Close;end.","a\n0 b\n");
+    result("begin WriteAllText("+file+",'one'#10'two'#10);var f:=OpenRead("+file+");var alias:=f;var lines:=f.Lines;f:=new Text;Writeln(lines.First);alias.Close;end.","one\n");
+    result("begin WriteAllText("+file+",'one'#10);var f:=OpenRead("+file+");var s:=f.Lines;Reset(f,"+file+");Writeln(s.First);f.Close;end.","one\n");
+    result("begin WriteAllText("+file+",'first'#10'stale'#10);WriteAllText("+other+",'fresh'#10);var f:=OpenRead("+file+");foreach var line in f.Lines do begin Writeln(line);if line='first' then Reset(f,"+other+");end;f.Close;end.","first\nfresh\n");
+    runtime_error("begin WriteAllText("+file+",'one');var f:=OpenRead("+file+");var s:=f.Lines;f.Close;s.First;end.","E_NIL");
+    runtime_error("begin WriteAllText("+file+",'one'#10'two');var f:=OpenRead("+file+");foreach var line in f.Lines do f.Close;end.","E_IO");
+    result("begin WriteAllText("+file+",'one'#10'two');var f:=OpenRead("+file+");foreach var line in f.Lines do break;Writeln(DeleteFile("+file+"));f.Close;Writeln(DeleteFile("+file+"));end.",
+#ifdef _WIN32
+        "False\nTrue\n"
+#else
+        "True\nFalse\n"
+#endif
+    );
+    result("begin WriteAllText("+file+",'one'#10'two');var f:=OpenRead("+file+");Writeln(f.Lines.First);Writeln(f.ReadString);f.Close;end.","one\ntwo\n");
+    result("begin WriteAllText("+file+",'');var f:=OpenRead("+file+");Writeln(f.Lines.FirstOrDefault=nil,' ',f.Lines.Count);f.Close;end.","True 0\n");
+    result("var f:Text;var calls:integer;function SelectFile:Text;begin Inc(calls);Result:=f;end;begin WriteAllText("+file+",'one'#10);f:=OpenRead("+file+");var s:=SelectFile().Lines;Writeln(calls,' ',s.First,' ',calls);f.Close;end.","1 one 1\n");
+    compile_error("begin Writeln('NEVER');var f:Text;f.Lines(1);end.","E_TYPE");
+    compile_error("begin var f:Text;var a:array of integer:=f.Lines;end.","E_TYPE");
+    {
+        const auto p=abc::compile("begin var f:Text;var s:=f.Lines;end.");
+        for(unsigned mode=0;mode<3;++mode){auto bad=p;for(auto& op:bad.code)if(op.op==abc::Op::text_lines){if(mode==0)op.type=abc::Type::integer;if(mode==1)op.operand=1;if(mode==2)bad.types[static_cast<unsigned>(op.type)-64].element=abc::Type::integer;}error([&]{abc::verify(bad);},"E_BYTECODE");}
+    }
+    {
+        const auto p=abc::compile("begin var s:sequence of string;end.");
+        const auto type=static_cast<abc::Type>(64+std::distance(p.types.begin(),std::find_if(p.types.begin(),p.types.end(),[](const auto& t){return t.kind==abc::CompoundKind::sequence && t.element==abc::Type::string;})));
+        {std::ofstream out(directory/"text.txt",std::ios::binary);out << "aa\nbb\ncc\n";}
+        abc::FileContext files;auto text=std::make_shared<abc::TextFile>();abc::text_assign(files,*text,abc::Value{(directory/"text.txt").u16string()},{});abc::text_open(files,text,0,{});
+        abc::Values values{p,4096};const abc::ExecutionOptions options;
+        auto source=std::get<std::shared_ptr<abc::Aggregate>>(abc::text_lines_sequence(values,type,abc::Value{text}));
+        auto first=abc::sequence_begin(values,source),second=abc::sequence_begin(values,source);const auto reader=text->reader;
+        require(abc::sequence_resume(values,first,0,options) && std::get<std::u16string>(abc::sequence_at(values,first,0,options))==u"aa","Text.Lines starts from the existing reader");
+        require(abc::sequence_resume(values,second,0,options) && std::get<std::u16string>(abc::sequence_at(values,second,0,options))==u"bb","Overlapping Text.Lines cursors share the retained character buffer");
+        first.reset();require(reader->is_open(),"Disposing Text.Lines leaves the Text reader open");
+        require(abc::sequence_resume(values,second,1,options) && std::get<std::u16string>(abc::sequence_at(values,second,1,options))==u"cc","Disposing one Text.Lines cursor does not invalidate another");
+        second.reset();text->close({});require(!reader->is_open(),"Only Text.Close disposes its owned reader");
+    }
     const std::string unit_newline=
 #ifdef _WIN32
         "\r\n";
@@ -5356,7 +5398,7 @@ void text_files() {
         "begin var f:Text; f.Reset('x'); end.","begin var f:Text; f.Name:='bad'; end.",
         "begin var f:Text; Writeln(f.FullName(1)); end.","begin var f:Text; f.ReadWord(1); end.",
         "begin var f:Text; f.Eof:=true; end."}) compile_error(source,"E_TYPE");
-    for (const auto* method:{"Lines","ReadInt64","Missing"})
+    for (const auto* method:{"ReadInt64","Missing"})
         compile_error(std::string("begin var f:Text; f.")+method+"; end.","E_NAME");
     runtime_error("begin var f:Text; Writeln(f.Name); end.","E_NIL");
     runtime_error("begin var f:Text; Writeln(f.FullName); end.","E_NIL");

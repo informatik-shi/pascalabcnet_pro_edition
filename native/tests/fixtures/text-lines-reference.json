@@ -1,0 +1,17 @@
+{
+  "origin": "Windows System.IO.StreamReader API probe; source Pascal compiler was not executed",
+  "input_without_bom": "a\nb\nc\n",
+  "first_character": 97,
+  "seek_to_zero_preserving_character_buffer": [
+    "",
+    "b",
+    "c",
+    "a",
+    "b",
+    "c"
+  ],
+  "utf8_bom_after_read_to_end_and_raw_seek": {
+    "first_utf16_unit": 65279,
+    "length": 6
+  }
+}

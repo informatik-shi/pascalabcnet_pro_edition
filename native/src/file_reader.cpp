@@ -44,6 +44,16 @@ void LineReader::close() noexcept {
     if(descriptor_>=0){::close(descriptor_);descriptor_=-1;}
 #endif
 }
+void LineReader::seek_begin_preserving_buffer(SourceLocation location) {
+    if(!is_open())throw runtime_error(RuntimeError::reader_closed,location);
+#ifdef _WIN32
+    LARGE_INTEGER offset{};
+    if(!::SetFilePointerEx(static_cast<HANDLE>(handle_),offset,nullptr,FILE_BEGIN))throw runtime_error(RuntimeError::file_io,location);
+#else
+    if(::lseek(descriptor_,0,SEEK_SET)<0)throw runtime_error(RuntimeError::file_io,location);
+#endif
+    eof_=false;decoder_.resume_after_final();
+}
 void LineReader::checkpoint(SourceLocation location,const ExecutionOptions& options) {
     if(work_>=options.instruction_limit)throw runtime_error(RuntimeError::instruction_limit,location);
     if((work_&255U)==0 && options.cancelled && options.cancelled())throw runtime_error(RuntimeError::cancelled,location);
