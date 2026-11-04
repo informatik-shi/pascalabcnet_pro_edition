@@ -17,6 +17,7 @@
 #include "../src/comparable.hpp"
 #include "../src/compound.hpp"
 #include "../src/hash_set.hpp"
+#include "../src/new_set.hpp"
 #include "../src/constant.hpp"
 #include <cmath>
 #include "../src/file_reader.hpp"
@@ -4361,6 +4362,43 @@ void sequence_mutations() {
     error([&]{(void)run("begin var a:=new integer[2000]; Reverse(a); end.","",options);},"E_CANCELLED");
 }
 
+void new_set_library() {
+    result("type R=record s:NewSet<integer>;end;begin var a:R;a.s:=SetOf(1);var b:=a;b.s.Add(2);Writeln(a.s,' ',b.s);b.s:=SetOf(9);Writeln(a.s,' ',b.s);end.","{1,2} {1,2}\n{1,2} {9}\n");
+    result("begin var s:=SetOf(1);var l:=new List<NewSet<integer>>;l.Add(s);l[0].Add(2);Writeln(s,' ',l[0]);var t:=SetOf(9);l[0]:=t;l[0].Add(10);Writeln(t,' ',l[0]);var a:=new NewSet<integer>[1];a[0]:=s;var b:=a.Copy;b[0].Add(3);Writeln(a[0],' ',b[0],' ',s);end.","{1,2} {1,2}\n{9,10} {9,10}\n{1,2,3} {1,2,3} {1,2}\n");
+    result("var l:List<NewSet<integer>>;function Right:integer;begin l[0]:=SetOf(9);Result:=2;end;begin var s:=SetOf(1);l:=new List<NewSet<integer>>;l.Add(s);l[0].Add(Right);Writeln(s,' ',l[0]);end.","{1,2} {9}\n");
+    result("begin var s:=SetOf(1,2);s*=s;Writeln(s);s+=s;Writeln(s);s-=s;Writeln(s);end.","{1,2}\n{1,2}\n{}\n");
+    result("begin var s:=default(NewSet<integer>);s._hs:=nil;Writeln(s._hs=nil);var h:=s.ToHashSet;Writeln(s._hs=nil,' ',h.Count);var q:sequence of integer:=s;Writeln(q.Count,' ',s._hs=nil);Writeln(s.Count,' ',s._hs=nil);end.","True\nTrue 0\n0 True\n0 False\n");
+    for(const auto type:{"byte","shortint","smallint","word","integer","longword","int64","uint64","real","BigInteger"})result("begin var s:=new NewSet<"+std::string(type)+">(7);s+=7;Writeln(s.Count,' ',7 in s);end.","1 True\n");
+    result("type E=(A,B);begin var s:=SetOf(B,A,B);Writeln(s,' ',B in s);var text:=new string[2];text[0]:=nil;text[1]:='';var t:NewSet<string>:=text;Writeln(t.Count,' ',nil in t,' ','' in t);end.","{B,A} True\n2 True True\n");
+    runtime_error("begin var s:HashSet<integer>;var t:NewSet<integer>:=s;end.","E_NIL");
+    runtime_error("begin var a:array of integer;var s:NewSet<integer>:=a;end.","E_NIL");
+    {
+        const auto p=abc::compile("begin var s:NewSet<integer>;end.");const auto it=std::find_if(p.types.begin(),p.types.end(),[](const auto& t){return t.kind==abc::CompoundKind::new_set;});const auto owner=static_cast<abc::Type>(64+std::distance(p.types.begin(),it));
+        abc::Values values{p,100};auto value=values.zero(owner);const std::array<abc::Value,2> args{value,std::int32_t{1}};abc::ExecutionOptions options;options.cancelled=[] {return true;};error([&]{(void)abc::new_set_invoke(values,owner,abc::NewSetMethod::add,false,args,options);},"E_CANCELLED");require(abc::new_set_hash(values,std::get<abc::NewSetValue>(value))->count==0,"Canceled NewSet insertion preserves the set");
+        abc::Values limited{p,0};error([&]{(void)limited.zero(owner);},"E_LIMIT");
+    }
+    result("begin var s:NewSet<integer>;Writeln(s,' ',s.Count,' ',s.Add(1),' ',s.Add(1),' ',s.Contains(1),' ',s.Remove(9));s+=2;s+=SetOf(2,3);s-=1;s-=SetOf(3);Writeln(s);s*=SetOf(2,9);s.AddRange(Seq(4,5));Writeln(s.ToString,' ',s.Count());end.","{1} 0 True False True False\n{2}\n{5,2,4} 3\n");
+    result("begin var a:=SetOf(1,2,3);var b:=SetOf(3,4);Writeln(a+b,' ',a-b,' ',a*b);Writeln(a=SetOf(3,2,1),' ',a<>b,' ',a<a+b,' ',a<=a,' ',a+b>a,' ',a>=a,' ',2 in a,' ',9 not in a);Writeln(a,' ',b);end.","{1,2,3,4} {1,2} {3}\nTrue True True True True True True True\n{1,2,3} {3,4}\n");
+    result("begin var a:=SetOf(1,2);var b:=a;b.Add(3);var c:NewSet<integer>;c:=a;c.Remove(1);Writeln(a,' ',b,' ',c);a:=a;a.Add(4);Writeln(a);end.","{1,2} {1,2,3} {2}\n{1,2,4}\n");
+    result("procedure Add(s:NewSet<integer>);begin s+=2;s:=SetOf(9);s+=10;end;procedure Replace(var s:NewSet<integer>);begin s:=SetOf(7);end;function Make:NewSet<integer>;begin Result+=4;end;begin var s:=SetOf(1);Add(s);Writeln(s);Replace(s);Writeln(s,' ',Make);end.","{1,2}\n{7} {4}\n");
+    result("var s:NewSet<integer>;function Right:integer;begin s:=SetOf(9);Result:=2;end;begin s:=SetOf(1);var old:=s.hs;s+=Right;Writeln(old,' ',s);s:=SetOf(1);old:=s.hs;s.Add(Right);Writeln(old,' ',s);end.","{1,2} {9}\n{1} {9,2}\n");
+    result("begin var s:=new NewSet<integer>(1,2,3,4);s.Remove(2);var a:=s;var b:=s.Clone;var c:HashSet<integer>:=s;var d:NewSet<integer>:=s.hs;a.Add(5);b.Add(5);c.Add(5);d.Add(5);Writeln(s,' ',a,' ',b,' ',c,' ',d);end.","{1,3,4} {1,5,3,4} {1,3,4,5} {1,3,4,5} {1,3,4,5}\n");
+    result("begin var s:set of integer:=Arr(1,2,2);var a:HashSet<integer>:=Arr(3,3,4);var t:NewSet<integer>:=a;a.Add(5);Writeln(s,' ',a,' ',t,' ',s+Arr(7),' ',Arr(8)+s);Writeln(PABCSystem.SetOf('a','b','a'));end.","{1,2} {3,4,5} {3,4} {1,2,7} {8,1,2}\n{a,b}\n");
+    result("begin var s:=SetOf(1);s._hs:=nil;Writeln(s._hs=nil);Writeln(s.Count,' ',s._hs=nil);s.hs.Add(2);Writeln(s);end.","True\n0 False\n{2}\n");
+    result("var s:NewSet<integer>;procedure Alias(var h:HashSet<integer>);begin s:=SetOf(9);h.Add(2);end;begin s:=SetOf(1);Alias(s._hs);Writeln(s);end.","{9,2}\n");
+    result("type Box=class public s:NewSet<integer>;property Value:NewSet<integer> read s write s;end;begin var b:=new Box;b.s:=SetOf(1);b.Value+=SetOf(2);Writeln(b.Value);var a:=new NewSet<integer>[1];a[0]:=b.s;a[0].Add(3);Writeln(b.s,' ',a[0]);end.","{1,2}\n{1,2} {1,2,3}\n");
+    result("begin var s:=SetOf(1,2,3);Writeln(s.Where(x->x>1).Select(x->x*2).ToArray,' ',s.Reverse.ToArray,' ',s.Sum);var l:=new List<integer>(s);Writeln(l,' ',l.Capacity);var total:=0;foreach var x in s do total+=x;Writeln(total);end.","[4,6] [3,2,1] 6\n[1,2,3] 4\n6\n");
+    result("begin var a:=SetOf(1);var b:=a;var h:=new HashSet<NewSet<integer>>;h.Add(a);Writeln(a in h,' ',b in h,' ',a=b);a.Add(2);Writeln(a in h);end.","True False True\nTrue\n");
+    result("begin var s:=SetOf(1,2);foreach var x in s do begin s.Add(x);s.Remove(9);Write(x);end;Writeln;end.","12\n");
+    for(const auto source:{"begin var s:=SetOf(1);foreach var x in s do s.Add(2);end.","begin var s:=SetOf(1,2);foreach var x in s do s.Remove(x);end."})runtime_error(source,"E_MODIFIED");
+    for(const auto source:{"begin var s:NewSet<integer>:=nil;end.","begin var s:=SetOf(1);s.Add('abc');end.","begin var s:=SetOf(1);s.Count:=2;end.","begin var s:=SetOf(1);s/=s;end.","begin var s:=SetOf(1);s._hs();end.","begin var s:NewSet<integer>:=SetOf('a');end."})compile_error(source,"E_TYPE");
+    {
+        auto p=abc::compile("begin var s:=SetOf(1);s.Add(2);s:=s.Clone;end.");
+        for(unsigned mode=0;mode<4;++mode){auto bad=p;for(auto& op:bad.code)if(op.op==abc::Op::new_set_call){if(mode==0)op.operand=127;if(mode==1)op.type=abc::Type::integer;if(mode==2)op.operand|=256U;if(mode==3)op.operand^=128U;}error([&]{abc::verify(bad);},"E_BYTECODE");}
+        for(unsigned mode=0;mode<3;++mode){auto bad=p;for(auto& t:bad.types)if(t.kind==abc::CompoundKind::new_set){if(mode==0)t.key=abc::Type::integer;if(mode==1)t.fields.clear();if(mode==2)t.fields[0].type=abc::Type::string;}error([&]{abc::verify(bad);},"E_BYTECODE");}
+    }
+}
+
 void hash_set_library() {
     {
         const auto p=abc::compile("begin var s:HashSet<integer>;end.");const auto owner=static_cast<abc::Type>(64+std::distance(p.types.begin(),std::find_if(p.types.begin(),p.types.end(),[](const auto& t){return t.kind==abc::CompoundKind::hash_set;})));const auto seq=abc::type_info(p,owner).key;
@@ -6731,7 +6769,7 @@ void characters() {
 
 int main() {
     language();
-    enumerations(); comparable_ranges(); compound_assignments(); array_operator_library(); membership_library(); hash_set_library();
+    enumerations(); comparable_ranges(); compound_assignments(); array_operator_library(); membership_library(); hash_set_library(); new_set_library();
     structured_loops();
     foreach_loops();
     characters();

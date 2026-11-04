@@ -555,4 +555,28 @@ Membership shares the typed compound_call contract: string_in/item-first and str
 
 HashSet is a closed native reference kind with a statically registered element and a prior sequence-adapter key. hash_set_call encodes a bounded HashSetMethod plus an exact sequence type when required; shared metadata validates constructor/method/operator argument and result stacks. A native hash index maps cached hashes to stable slot positions; separate free-slot metadata preserves .NET Framework LIFO reuse, CopyFrom density/prime-capacity rules and enumeration order without depending on unordered_map iteration order. Inserted records receive value copies while nested references retain identity. Default native equality/hash cover supported scalar, enum, record, tuple, callable and reference values, including ordinal string/nil and numeric zero behavior. Opaque storage is initialized only through the verified constructor, and mutable var operators receive typed cells so they observe the current reference after RHS evaluation. Instance calls capture their receiver before arguments; property compound lowering keeps getter/binary/setter behavior.
 
-A distinct HashSet sequence provider snapshots the source version and count, scans live slots monotonically, caches Current and supports repeated reads of the same logical position. Mutation/version checks follow source successful Add/Remove and unconditional Clear rules; duplicate Add and failed Remove do not invalidate traversal. Cursor leases preserve cleanup across lazy transforms and file-fed constructors. Count and List materialization use known collection counts without treating HashSet as an indexable IList. Native set methods preserve empty/known-collection shortcuts and bit-marking phases for generic intersection, symmetric difference and unique-element relation checks, including partial mutation on deferred input failure. Work, allocation and cancellation are bounded. Object text renders ISet-style braces and source 100/101 truncation. Development-only direct framework API probes validate slots/copy/version behavior; application execution remains native. Custom comparers, remaining HashSet APIs/general enumerator access and NewSet/TypedSet/SortedSet remain pending; the complete standard-library goal is unchanged.
+A distinct HashSet sequence provider snapshots the source version and count, scans live slots monotonically, caches Current and supports repeated reads of the same logical position. Mutation/version checks follow source successful Add/Remove and unconditional Clear rules; duplicate Add and failed Remove do not invalidate traversal. Cursor leases preserve cleanup across lazy transforms and file-fed constructors. Count and List materialization use known collection counts without treating HashSet as an indexable IList. Native set methods preserve empty/known-collection shortcuts and bit-marking phases for generic intersection, symmetric difference and unique-element relation checks, including partial mutation on deferred input failure. Work, allocation and cancellation are bounded. Object text renders ISet-style braces and source 100/101 truncation. Development-only direct framework API probes validate slots/copy/version behavior; application execution remains native. Custom comparers, remaining HashSet APIs/general enumerator access and the remaining NewSet/TypedSet/SortedSet features remain pending; the complete standard-library goal is unchanged.
+
+
+NewSet is a distinct native value alternative, not a HashSet alias. Its typed field cell
+holds the backing HashSet reference; ordinary value copies fork the field cell and share
+that reference, while the Pascal custom assignment instruction constructs a HashSet copy.
+Writes preserve the field address so an outstanding typed var alias of _hs remains valid.
+Closed type metadata registers the matching HashSet, array and sequence before NewSet.
+The verified new_set_call instruction shares argument/result metadata with the binder;
+its reference-receiver bit distinguishes addressable instance calls from by-value operators.
+Addressable instance methods resolve the field after argument evaluation; List item
+receivers use temporary value copies, matching source compiled property getters. +=/-=/*= receive a value
+snapshot, matching the shipped record operators. The internal field-access instruction
+supports separate read and typed-reference forms. Default generic storage can be nil;
+only hs-based access lazily initializes it.
+
+A separate NewSet sequence provider boxes the record and initializes its HashSet cursor
+on enumeration. It deliberately does not advertise ICollection/IList counts or HashSet
+CopyFrom identity: ToHashSet and List construction must enumerate and preserve their
+respective compaction and capacity behavior. Direct hs relations and compound methods
+use the HashSet adapter, whereas binary operations enumerate the record as in PABCSystem.
+NewSet default equality inside generic containers compares its backing reference; Pascal
+operators perform set relations. The initial typed profile excludes bracket literals,
+EmptyCollection, range/constant sets and cross-element conversions; these remain required
+work toward the full library objective.

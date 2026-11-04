@@ -83,7 +83,8 @@ Sleep, Milliseconds и MillisecondsDelta: examples/timing.pas.
 System.Enum как объект, reflection и поддиапазоны ещё не перенесены.
 InRange, Between, Clamp и методы ClampTop/ClampBottom: examples/comparable-ranges.pas.
 Нативный HashSet<T>, операции множеств и проверки включения: examples/hash-sets.pas.
-NewSet, SortedSet, пользовательские компараторы и остальные API множеств ещё переносятся.
+Типизированный NewSet<T>, SetOf, копирование и процедуры: examples/new-sets.pas.
+Литералы NewSet, EmptyCollection, SortedSet, компараторы и остальные API множеств ещё переносятся.
 Проверка принадлежности in и not in, поиск подстроки Contains: examples/membership.pas.
 Работают строки, одномерные массивы, матрицы, List и последовательности.
 Объединение массивов через + и повторение через *: examples/array-operators.pas.

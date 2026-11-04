@@ -31,6 +31,7 @@
 #include "ini_file.hpp"
 #include "compound.hpp"
 #include "hash_set.hpp"
+#include "new_set.hpp"
 #include "file_encoding.hpp"
 #include "file_lines.hpp"
 #include "big_integer_runtime.hpp"
@@ -389,6 +390,7 @@ static void execute_impl(const Program& program, std::istream& input, std::ostre
             stack.emplace_back(sequence_resume(values,sequence,static_cast<std::uint64_t>(index),options)); break;
         }
         case Op::sequence_wrap: {
+            if(compound(instruction.type) && type_info(program,instruction.type).kind==CompoundKind::new_set){stack.emplace_back(new_set_sequence(values,static_cast<Type>(instruction.operand),std::get<NewSetValue>(pop())));break;}
             if (instruction.type==Type::string) { stack.emplace_back(sequence_text(values,static_cast<Type>(instruction.operand),pop())); break; }
             const auto source=std::get<std::shared_ptr<Aggregate>>(pop());
             stack.emplace_back(sequence_create(values,static_cast<Type>(instruction.operand),source,type_info(program,instruction.type).kind==CompoundKind::array ? SequenceProvider::array : type_info(program,instruction.type).kind==CompoundKind::hash_set ? SequenceProvider::hash_set : SequenceProvider::list)); break;
@@ -1088,6 +1090,11 @@ static void execute_impl(const Program& program, std::istream& input, std::ostre
             for (std::size_t i=arguments.size();i>0;--i) arguments[i-1]=pop();
             auto target=std::get<std::shared_ptr<Cell>>(arguments[ref]); arguments[ref]=target->value;
             const auto result=stdlib::invoke(instruction.operand,arguments,instruction.location,services); values.write(target,result); break;
+        }
+        case Op::new_set_call: {
+            const auto method=static_cast<NewSetMethod>(instruction.operand&127U);const bool ref=(instruction.operand&128U)!=0;const auto parameters=new_set_parameters(program.types,instruction.type,method,ref);
+            std::vector<Value> arguments(parameters.size());for(std::size_t i=arguments.size();i>0;--i)arguments[i-1]=pop();auto result=new_set_invoke(values,instruction.type,method,ref,arguments,options);
+            if(new_set_result(program.types,instruction.type,method)!=Type::unit)stack.push_back(std::move(result));break;
         }
         case Op::hash_set_call: {
             const auto method=static_cast<HashSetMethod>(instruction.operand&255U);const auto sequence=static_cast<Type>(instruction.operand>>8U);const auto parameters=hash_set_parameters(program.types,instruction.type,sequence,method);

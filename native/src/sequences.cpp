@@ -8,6 +8,7 @@
 #include "matrix_operations.hpp"
 #include "file_lines.hpp"
 #include "hash_set.hpp"
+#include "new_set.hpp"
 #include <cmath>
 
 namespace abc {
@@ -118,8 +119,9 @@ std::shared_ptr<Aggregate> sequence_begin(Values& values,const std::shared_ptr<A
         return cursor_lease(std::move(result));
     }
     state.count=0;
+    if(state.provider==SequenceProvider::new_set){if(!state.seed)throw runtime_error(RuntimeError::invalid_bytecode,values.location);state.source=new_set_hash(values,std::get<NewSetValue>(state.seed->value));}
     require(state.source,values.location);
-    if(state.provider==SequenceProvider::hash_set){reserve_state(values);state.count=state.source->count;state.version=state.source->version;state.hash_cursor=std::make_shared<HashSetCursor>();}
+    if(state.provider==SequenceProvider::hash_set || state.provider==SequenceProvider::new_set){reserve_state(values);state.count=state.source->count;state.version=state.source->version;state.hash_cursor=std::make_shared<HashSetCursor>();}
     else if (collection_sequence(state.provider)) { state.count=state.source->items.size(); state.version=state.source->version; }
     else school_ip_sequence_start(state,values.location);
     return cursor_lease(std::move(result));
@@ -127,13 +129,13 @@ std::shared_ptr<Aggregate> sequence_begin(Values& values,const std::shared_ptr<A
 void sequence_check(const std::shared_ptr<Aggregate>& sequence,SourceLocation location) {
     const auto& state=cursor(sequence,location);
     if(state.disposed)return;
-    if ((state.provider==SequenceProvider::list || state.provider==SequenceProvider::hash_set) && state.version!=state.source->version) throw runtime_error(RuntimeError::collection_changed,location);
+    if ((state.provider==SequenceProvider::list || state.provider==SequenceProvider::hash_set || state.provider==SequenceProvider::new_set) && state.version!=state.source->version) throw runtime_error(RuntimeError::collection_changed,location);
 }
 bool sequence_resume(Values& values,const std::shared_ptr<Aggregate>& sequence,std::uint64_t index,const ExecutionOptions& options) {
     const auto location=values.location;
     sequence_check(sequence,location); auto& state=*sequence->sequence;
     if(state.disposed)return false;
-    if(state.provider==SequenceProvider::hash_set)return hash_set_resume(values,sequence,index,options);
+    if(state.provider==SequenceProvider::hash_set || state.provider==SequenceProvider::new_set)return hash_set_resume(values,sequence,index,options);
     if(state.provider==SequenceProvider::file_lines)return file_sequence_resume(values,sequence,index,options);
     if(state.provider==SequenceProvider::text_lines)return text_lines_resume(values,sequence,index);
     if (state.provider==SequenceProvider::partial_sum) return sequence_partial_resume(values,sequence,index,options);
@@ -221,7 +223,7 @@ Value sequence_at(Values& values,const std::shared_ptr<Aggregate>& sequence,std:
         volatile double offset=static_cast<double>(index)*range.step;
         return finite_partition(first+finite_partition(offset,values.location),values.location);
     }
-    if(state.provider==SequenceProvider::hash_set)return values.copy(state.hash_cursor->current);
+    if(state.provider==SequenceProvider::hash_set || state.provider==SequenceProvider::new_set)return values.copy(state.hash_cursor->current);
     if(state.provider==SequenceProvider::file_lines)return state.file_line->current;
     if(state.provider==SequenceProvider::text_lines)return state.text_line->current;
     if (state.provider==SequenceProvider::string) return std::get<std::u16string>(state.seed->value)[static_cast<std::size_t>(index)];

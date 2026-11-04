@@ -71,10 +71,11 @@ struct HashSetCursor;
 struct LinkedLinks { std::weak_ptr<Aggregate> prev, next; };
 // A null string keeps its static string type and differs from an empty string.
 struct NilString { auto operator<=>(const NilString&) const = default; };
+struct NewSetValue {Type type=Type::invalid;std::shared_ptr<Cell> storage;bool operator==(const NewSetValue& other) const;std::strong_ordering operator<=>(const NewSetValue& other) const;};
 struct EnumValue {Type type=Type::invalid;std::int32_t value=0;auto operator<=>(const EnumValue&) const=default;};
 using Value = std::variant<std::int32_t, std::int64_t, double, bool, std::u16string,
     std::shared_ptr<Aggregate>, std::shared_ptr<Cell>, NilString, std::shared_ptr<TextFile>, char16_t, std::uint16_t,
-    std::uint8_t, std::int8_t, std::int16_t, std::uint32_t, std::uint64_t, BigInteger, EnumValue>;
+    std::uint8_t, std::int8_t, std::int16_t, std::uint32_t, std::uint64_t, BigInteger, EnumValue, NewSetValue>;
 struct Cell { Type type; Value value; std::weak_ptr<Aggregate> list_owner{}; };
 enum class SequenceTransform { select, where, flatmap, take_while, skip_while };
 inline bool predicate_transform(SequenceTransform method) {
@@ -86,7 +87,7 @@ struct GeneratorState {
     std::uint64_t index=0;
     bool positioned=false, available=false;
 };
-enum class SequenceProvider { school_ip_hosts, school_ip_binary, array, list, repeat, range, stepped_range, big_range, partition, real_range, partial_sum, slice, concat, string, transform, zip, generated, cartesian, cartesian_power, combinatorics, array_view, matrix_lines, file_lines, text_lines, hash_set };
+enum class SequenceProvider { school_ip_hosts, school_ip_binary, array, list, repeat, range, stepped_range, big_range, partition, real_range, partial_sum, slice, concat, string, transform, zip, generated, cartesian, cartesian_power, combinatorics, array_view, matrix_lines, file_lines, text_lines, hash_set, new_set };
 inline bool collection_sequence(SequenceProvider provider) { return provider==SequenceProvider::array || provider==SequenceProvider::list; }
 struct BigRangeState {
     BigInteger last,step,current;
@@ -262,7 +263,7 @@ enum class Op {
     read_lines, write_lines, array_copy, array_high, sequence_sort, sequence_fill, mutate_string, increment, read_value,
     endpoint_call, buffer_call, association_call, linked_call, file_print, file_newline, file_read, file_skip_line, file_output,
     iteration_version, iteration_check, set_character, random_array, fill_random_array, sequence_mutate, swap_values, write_array,
-    bit_not, bit_and, bit_or, bit_xor, shift_left, shift_right, read_console, read_array, console_output, array_query, write_matrix, object_text, print_output, try_read, convert_string, try_parse, val, string_read, string_array, school_list, replace_last, replace_many, school_fold, tuple_literal, school_pair, school_minmax, school_table_print, school_table_new, school_ip, sequence_begin, sequence_count, sequence_array, sequence_wrap, swap_substrings, sequence_list, sequence_query, sequence_snapshot, sequence_repeat, sequence_range, sequence_resume, sequence_partition, sequence_aggregate, sequence_partial, sequence_slice, sequence_concat, sequence_equal, sequence_default, sequence_select, sequence_where, sequence_predicate, sequence_flatmap, sequence_zip, sequence_takewhile, sequence_skipwhile, routine_value, call_value, sequence_select_value, sequence_where_value, sequence_flatmap_value, sequence_takewhile_value, sequence_skipwhile_value, sequence_predicate_value, sequence_zip_value, fresh_local, generator, sequence_cartesian, sequence_cartesian_value, cartesian_power, combinations, permutations, partial_permutations, next_permutation, array_view, matrix_operation, array_operation, collection_operation, matrix_build, list_operation, list_bulk, list_capacity, list_copy, construct_user, encoding_call, sequence_dispose, text_lines, for_step_check, enum_call, comparable_call, ini_call, compound_call, store_index, store_field, hash_set_call, sequence_join
+    bit_not, bit_and, bit_or, bit_xor, shift_left, shift_right, read_console, read_array, console_output, array_query, write_matrix, object_text, print_output, try_read, convert_string, try_parse, val, string_read, string_array, school_list, replace_last, replace_many, school_fold, tuple_literal, school_pair, school_minmax, school_table_print, school_table_new, school_ip, sequence_begin, sequence_count, sequence_array, sequence_wrap, swap_substrings, sequence_list, sequence_query, sequence_snapshot, sequence_repeat, sequence_range, sequence_resume, sequence_partition, sequence_aggregate, sequence_partial, sequence_slice, sequence_concat, sequence_equal, sequence_default, sequence_select, sequence_where, sequence_predicate, sequence_flatmap, sequence_zip, sequence_takewhile, sequence_skipwhile, routine_value, call_value, sequence_select_value, sequence_where_value, sequence_flatmap_value, sequence_takewhile_value, sequence_skipwhile_value, sequence_predicate_value, sequence_zip_value, fresh_local, generator, sequence_cartesian, sequence_cartesian_value, cartesian_power, combinations, permutations, partial_permutations, next_permutation, array_view, matrix_operation, array_operation, collection_operation, matrix_build, list_operation, list_bulk, list_capacity, list_copy, construct_user, encoding_call, sequence_dispose, text_lines, for_step_check, enum_call, comparable_call, ini_call, compound_call, store_index, store_field, hash_set_call, new_set_call, sequence_join
 };
 
 enum class SequenceQuery { any, first, last, first_default, last_default, element, element_default, contains, single, single_default };
@@ -354,10 +355,10 @@ struct Local {
     MemberAccess access=MemberAccess::public_member;
 };
 
-enum class CompoundKind { array, record, list, stack, queue, dynarray, simple_set, association, linked_node, linked_list, single_node, tuple, school_address, school_ip, sequence, callable, object_class, encoding, enumeration, ini_file, hash_set };
+enum class CompoundKind { array, record, list, stack, queue, dynarray, simple_set, association, linked_node, linked_list, single_node, tuple, school_address, school_ip, sequence, callable, object_class, encoding, enumeration, ini_file, hash_set, new_set };
 inline bool node_kind(CompoundKind kind) { return kind == CompoundKind::linked_node || kind == CompoundKind::single_node; }
 inline bool indexed_sequence(CompoundKind kind) { return kind == CompoundKind::array || kind == CompoundKind::list; }
-inline bool enumerable_collection(CompoundKind kind) { return indexed_sequence(kind) || kind==CompoundKind::hash_set; }
+inline bool enumerable_collection(CompoundKind kind) { return indexed_sequence(kind) || kind==CompoundKind::hash_set || kind==CompoundKind::new_set; }
 inline bool endpoint_collection(CompoundKind kind) { return kind == CompoundKind::stack || kind == CompoundKind::queue; }
 inline bool buffer_collection(CompoundKind kind) { return kind == CompoundKind::dynarray || kind == CompoundKind::simple_set; }
 enum class BufferMethod { construct, add, insert, remove, find, contains, reserve, resize, count, capacity, get, set, to_string, print, println };

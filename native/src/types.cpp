@@ -3,6 +3,17 @@
 #include <array>
 
 namespace abc {
+bool NewSetValue::operator==(const NewSetValue& other) const {
+    if(type!=other.type || !storage || !other.storage)return false;
+    const auto a=std::get<std::shared_ptr<Aggregate>>(storage->value),b=std::get<std::shared_ptr<Aggregate>>(other.storage->value);
+    const bool an=!a || a->nil,bn=!b || b->nil;return an || bn ? an==bn : a==b;
+}
+
+std::strong_ordering NewSetValue::operator<=>(const NewSetValue& other) const {
+    if(type!=other.type)return static_cast<unsigned>(type)<=>static_cast<unsigned>(other.type);
+    const auto object=[](const std::shared_ptr<Cell>& cell)->const Aggregate*{if(!cell)return nullptr;const auto value=std::get<std::shared_ptr<Aggregate>>(cell->value);return value && !value->nil ? value.get() : nullptr;};
+    return std::compare_three_way{}(object(storage),object(other.storage));
+}
 
 std::string_view type_name(Type type) {
     switch (type) {
@@ -52,6 +63,7 @@ bool can_widen(Type from, Type to) {
 }
 
 Type value_type(const Value& value) {
+    if(const auto* set=std::get_if<NewSetValue>(&value))return set->type;
     if(const auto* member=std::get_if<EnumValue>(&value))return member->type;
     if (std::holds_alternative<BigInteger>(value)) return Type::big_integer;
     if (std::holds_alternative<char16_t>(value)) return Type::character;

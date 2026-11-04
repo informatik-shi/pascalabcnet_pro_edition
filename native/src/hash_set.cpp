@@ -60,6 +60,7 @@ std::size_t hash(Work& work,const Value& value){
     return std::visit([&](const auto& v)->std::size_t{
         using T=std::decay_t<decltype(v)>;
         if constexpr(std::is_same_v<T,std::u16string>){std::size_t result=1469598103934665603ULL;for(const auto c:v){work.step();result=mix(result,c);}return result;}
+        else if constexpr(std::is_same_v<T,NewSetValue>)return hash(work,v.storage->value);
         else if constexpr(std::is_same_v<T,NilString>)return 0;
         else if constexpr(std::is_same_v<T,EnumValue>)return std::hash<std::int32_t>{}(v.value);
         else if constexpr(std::is_same_v<T,BigInteger>){big_work(v.bits()/16+1,work.values.location,work.options);std::size_t result=0;for(const auto c:v.text(16)){work.step();result=mix(result,static_cast<unsigned char>(c));}return result;}

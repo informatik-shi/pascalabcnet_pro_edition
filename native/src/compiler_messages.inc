@@ -442,3 +442,8 @@
     {"HashSet compound operator requires += or -=","Для HashSet требуется составной оператор += или -="},
     {"HashSet member is not ported yet","Этот член HashSet ещё не перенесён"},
     {"HashSet constructor requires a typed collection","Для конструктора HashSet требуется типизированная коллекция"},
+    {"Wrong NewSet argument count","Неверное число аргументов NewSet"},
+    {"NewSet conversion requires matching element types","Для преобразования NewSet требуются одинаковые типы элементов"},
+    {"NewSet field is not callable","Поле NewSet нельзя вызывать как функцию"},
+    {"NewSet output requires supported element types","Для вывода NewSet требуется поддерживаемый тип элементов"},
+    {"Unsupported NewSet operator","Неподдерживаемый оператор NewSet"},

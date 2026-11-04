@@ -11,6 +11,7 @@
 #include "ini_file.hpp"
 #include "compound.hpp"
 #include "hash_set.hpp"
+#include "new_set.hpp"
 #include "integer_values.hpp"
 #include "formatting.hpp"
 #include "unicode.hpp"
@@ -406,6 +407,7 @@ private:
                 result->enum_values.push_back(std::move(value));
             } while (accept(","));
             expect(")");
+        } else if(accept("set")){result->kind="newset";expect("of");result->element=type_syntax();
         } else if (accept("array")) {
             result->kind = "array";
             if (accept("[")) {
@@ -494,7 +496,7 @@ private:
                 }
             } else if (result->kind == "assocarray" && accept("<")) {
                 result->named=false; result->key = type_syntax(); expect(","); result->element = type_syntax(); expect(">");
-            } else if ((result->kind == "list" || result->kind == "hashset" || result->kind == "stack" || result->kind == "queue" || result->kind == "dynarray" || result->kind == "simpleset" || result->kind == "linkedlist" || result->kind == "linkedlistnode" || result->kind == "singlenode") && accept("<")) {
+            } else if ((result->kind == "list" || result->kind == "hashset" || result->kind=="newset" || result->kind == "stack" || result->kind == "queue" || result->kind == "dynarray" || result->kind == "simpleset" || result->kind == "linkedlist" || result->kind == "linkedlistnode" || result->kind == "singlenode") && accept("<")) {
                 result->named=false; result->element = type_syntax(); expect(">");
             }
         }
@@ -1543,6 +1545,12 @@ private:
         module_.types.push_back({name,kind,element,{},key,rank});
         return static_cast<Type>(63+module_.types.size());
     }
+    Type new_set_type(Type element){
+        for(std::size_t i=0;i<module_.types.size();++i)if(module_.types[i].kind==CompoundKind::new_set && module_.types[i].element==element)return static_cast<Type>(64+i);
+        const auto hash=sequence_type(CompoundKind::hash_set,element);(void)sequence_type(CompoundKind::array,element);
+        if(module_.types.size()>=1024)throw Error("E_LIMIT",{},"Type limit exceeded");
+        module_.types.push_back({"newset",CompoundKind::new_set,element,{{"_hs",hash,false}},hash});return static_cast<Type>(63+module_.types.size());
+    }
     Type school_ip_type(CompoundKind kind) {
         for (std::size_t i=0;i<module_.types.size();++i) if (module_.types[i].kind==kind) return static_cast<Type>(64+i);
         const auto address=kind==CompoundKind::school_ip ? school_ip_type(CompoundKind::school_address) : Type::invalid;
@@ -1710,6 +1718,7 @@ private:
             return school_ip_type(syntax.kind=="addr32" ? CompoundKind::school_address : CompoundKind::school_ip);
         }
         if (syntax.kind=="sequence" && syntax.element) return sequence_type(CompoundKind::sequence,resolve_type(*syntax.element));
+        if(syntax.kind=="newset" && syntax.element)return new_set_type(resolve_type(*syntax.element));
         if (syntax.kind == "array" || ((syntax.kind == "list" || syntax.kind=="hashset") && syntax.element))
             return sequence_type(syntax.kind == "array" ? CompoundKind::array : syntax.kind=="hashset" ? CompoundKind::hash_set : CompoundKind::list,resolve_type(*syntax.element),syntax.rank);
         if (syntax.kind == "assocarray" && syntax.key && syntax.element) {
@@ -1772,6 +1781,7 @@ private:
     }
     bool lvalue(const hir::Expr& expression) const {
         if (constant_parameter_target(expression)) return false;
+        if(expression.kind==hir::ExprKind::new_set_hash)return new_set_addressable(*expression.left);
         if (expression.kind==hir::ExprKind::index && expression.left->type==Type::string) return false;
         if (expression.kind==hir::ExprKind::field && compound(expression.left->type) && info(expression.left->type,expression.location).kind==CompoundKind::object_class) return true;
         if (expression.kind==hir::ExprKind::field && compound(expression.left->type) && info(expression.left->type,expression.location).kind==CompoundKind::tuple) return false;
@@ -1779,6 +1789,12 @@ private:
             && indexed_sequence(info(expression.left->type,expression.location).kind)) return true;
         return (expression.kind == hir::ExprKind::local && !for_controls_.contains(expression.local))
             || ((expression.kind == hir::ExprKind::index || expression.kind == hir::ExprKind::field) && lvalue(*expression.left));
+    }
+    bool new_set_addressable(const hir::Expr& expression) const {
+        if(!lvalue(expression))return false;
+        if(expression.kind==hir::ExprKind::index && info(expression.left->type,expression.location).kind==CompoundKind::list)return false;
+        if(expression.kind==hir::ExprKind::field && info(expression.left->type,expression.location).kind!=CompoundKind::object_class)return new_set_addressable(*expression.left);
+        return true;
     }
     std::optional<std::size_t> lookup(const Token& token) const {
         for (auto scope = scopes_.rbegin(); scope != scopes_.rend(); ++scope) {
@@ -1805,6 +1821,14 @@ private:
             && info(to,location).kind==CompoundKind::sequence && info(from,location).element==info(to,location).element;
     }
     std::unique_ptr<hir::Expr> convert(std::unique_ptr<hir::Expr> expression, Type type) {
+        if(expression->type!=type && compound(type) && info(type,expression->location).kind==CompoundKind::new_set){
+            const auto target=info(type,expression->location);const auto from=expression->type;const auto location=expression->location;
+            if(compound(from)){const auto source=info(from,location);const auto method=source.kind==CompoundKind::array && source.rank==1 && source.element==target.element ? NewSetMethod::cast_array : from==target.key ? NewSetMethod::cast_hash : NewSetMethod::construct;
+                if(method!=NewSetMethod::construct){std::vector<std::unique_ptr<hir::Expr>> arguments;arguments.push_back(std::move(expression));return new_set_expression(type,method,std::move(arguments),location);}}
+            throw Error("E_TYPE",location,"NewSet conversion requires matching element types");
+        }
+        if(compound(expression->type) && info(expression->type,expression->location).kind==CompoundKind::new_set && type==info(expression->type,expression->location).key){const auto owner=expression->type;const auto location=expression->location;std::vector<std::unique_ptr<hir::Expr>> arguments;arguments.push_back(std::move(expression));return new_set_expression(owner,NewSetMethod::to_hash,std::move(arguments),location);}
+        if(compound(type) && info(type,expression->location).kind==CompoundKind::hash_set && compound(expression->type) && info(expression->type,expression->location).kind==CompoundKind::array && info(expression->type,expression->location).rank==1 && info(expression->type,expression->location).element==info(type,expression->location).element){const auto location=expression->location;std::vector<std::unique_ptr<hir::Expr>> arguments;arguments.push_back(std::move(expression));return hash_set_expression(type,HashSetMethod::construct_sequence,std::move(arguments),location);}
         if (expression->type==Type::string && sequence_view(Type::string,type,expression->location)) {
             auto result=std::make_unique<hir::Expr>(); result->kind=hir::ExprKind::sequence_wrap; result->type=type;
             result->location=expression->location; result->left=std::move(expression); return result;
@@ -2134,6 +2158,14 @@ private:
                     if (source.arguments.size()!=1) throw Error("E_TYPE",result->location,"Callable constructor requires one matching routine value");
                     return convert(expression(*source.arguments[0],type),type);
                 }
+                if(info(type,result->location).kind==CompoundKind::new_set){
+                    const auto element=info(type,result->location).element;std::vector<std::unique_ptr<hir::Expr>> arguments;
+                    if(source.arguments.empty())return new_set_expression(type,NewSetMethod::construct,{},result->location);
+                    auto array=std::make_unique<hir::Expr>();array->kind=hir::ExprKind::array_literal;array->type=sequence_type(CompoundKind::array,element);array->location=result->location;
+                    if(source.arguments.size()==1){auto first=expression(*source.arguments[0],element);if(first->type==array->type)array=std::move(first);else array->arguments.push_back(convert(std::move(first),element));}
+                    else for(const auto& argument:source.arguments)array->arguments.push_back(convert(expression(*argument,element),element));
+                    arguments.push_back(std::move(array));return new_set_expression(type,NewSetMethod::construct_array,std::move(arguments),result->location);
+                }
                 if(info(type,result->location).kind==CompoundKind::hash_set){
                     std::vector<std::unique_ptr<hir::Expr>> arguments;for(const auto& argument:source.arguments)arguments.push_back(expression(*argument));
                     if(arguments.size()==1 && arguments[0]->type==Type::nil)throw Error("E_TYPE",result->location,"HashSet constructor requires a typed collection");
@@ -2287,6 +2319,7 @@ private:
                 for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
                 if (bind_print(*result,source.token.text,source.left->token.text)) break;
                 if (bind_sequence_conversion(*result,source.token.text,source.left->token.text)) break;
+                if (bind_new_set_factory(*result,source.token.text,source.left->token.text)) break;
                 if (bind_list_factory(*result,source.token.text,source.left->token.text)) break;
                 if (bind_sequence_factory(*result,source.token.text,source.left->token.text)) break;
                 if (bind_sequence_query(*result,source.token.text,source.left->token.text)) break;
@@ -2530,6 +2563,16 @@ private:
                 break;
             }
             const auto& type = info(receiver,result->location);
+            if(type.kind==CompoundKind::new_set){
+                if(source.token.text=="_hs"){if(source.kind==SyntaxExprKind::member_call)throw Error("E_TYPE",result->location,"NewSet field is not callable");result->kind=hir::ExprKind::new_set_hash;result->type=type.key;return result;}
+                static const std::map<std::string,NewSetMethod> methods{{"count",NewSetMethod::count},{"add",NewSetMethod::add},{"remove",NewSetMethod::remove},{"contains",NewSetMethod::contains},{"addrange",NewSetMethod::add_range},{"clone",NewSetMethod::clone},{"hs",NewSetMethod::hash},{"tohashset",NewSetMethod::to_hash},{"tostring",NewSetMethod::to_string}};
+                if(const auto found=methods.find(source.token.text);found!=methods.end()){
+                    const auto method=found->second;if(method==NewSetMethod::to_string && !object_text_supported(module_.types,receiver))throw Error("E_UNSUPPORTED",result->location,"NewSet output requires supported element types");
+                    const bool ref=method!=NewSetMethod::to_hash && new_set_addressable(*result->left);const auto parameters=new_set_parameters(module_.types,receiver,method,ref);
+                    if(parameters.size()!=source.arguments.size()+1)throw Error("E_TYPE",result->location,"Wrong NewSet argument count");
+                    std::vector<std::unique_ptr<hir::Expr>> arguments;arguments.push_back(std::move(result->left));for(std::size_t i=0;i<source.arguments.size();++i)arguments.push_back(expression(*source.arguments[i],parameters[i+1]));return new_set_expression(receiver,method,std::move(arguments),result->location,ref);
+                }
+            }
             if(type.kind==CompoundKind::hash_set){
                 static const std::map<std::string,HashSetMethod> methods{{"count",HashSetMethod::count},{"add",HashSetMethod::add},{"remove",HashSetMethod::remove},{"contains",HashSetMethod::contains},{"clear",HashSetMethod::clear},{"unionwith",HashSetMethod::union_with},{"exceptwith",HashSetMethod::except_with},{"intersectwith",HashSetMethod::intersect_with},{"symmetricexceptwith",HashSetMethod::symmetric_with},{"setequals",HashSetMethod::set_equals},{"issubsetof",HashSetMethod::subset},{"ispropersubsetof",HashSetMethod::proper_subset},{"issupersetof",HashSetMethod::superset},{"ispropersupersetof",HashSetMethod::proper_superset},{"overlaps",HashSetMethod::overlaps}};
                 if(const auto found=methods.find(source.token.text);found!=methods.end()){
@@ -2550,7 +2593,7 @@ private:
                 (void)bind_sequence_concat(*result,source.token.text,"pabcsystem"); break;
             }
             if ((type.kind==CompoundKind::sequence || enumerable_collection(type.kind)) && sequence_slice_method(source.token.text)
-                && (source.token.text!="reverse" || type.kind==CompoundKind::sequence || type.kind==CompoundKind::hash_set)) {
+                && (source.token.text!="reverse" || type.kind==CompoundKind::sequence || type.kind==CompoundKind::hash_set || type.kind==CompoundKind::new_set)) {
                 result->arguments.push_back(std::move(result->left));
                 for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
                 (void)bind_sequence_slice(*result,source.token.text,"pabcsystem"); break;
@@ -2833,6 +2876,7 @@ private:
             for (const auto& argument : source.arguments) result->arguments.push_back(expression(*argument));
             if (bind_print(*result,source.token.text)) break;
             if (bind_sequence_conversion(*result,source.token.text)) break;
+            if (bind_new_set_factory(*result,source.token.text)) break;
             if (bind_list_factory(*result,source.token.text)) break;
             if (bind_sequence_factory(*result,source.token.text)) break;
             if (bind_sequence_query(*result,source.token.text)) break;
@@ -2903,6 +2947,7 @@ private:
             auto right = result->right->type;
             const auto& op = result->operation;
             if(op=="in"){
+                if(compound(right) && info(right,result->location).kind==CompoundKind::new_set){std::vector<std::unique_ptr<hir::Expr>> arguments;arguments.push_back(std::move(result->left));arguments.push_back(std::move(result->right));return new_set_expression(right,NewSetMethod::membership,std::move(arguments),result->location);}
                 if(compound(right) && info(right,result->location).kind==CompoundKind::hash_set){std::vector<std::unique_ptr<hir::Expr>> arguments;arguments.push_back(std::move(result->left));arguments.push_back(std::move(result->right));return hash_set_expression(right,HashSetMethod::membership,std::move(arguments),result->location);}
                 if(right==Type::string || right==Type::character || (right==Type::nil && (left==Type::string || left==Type::character)))
                     return compound_expression(Type::string,CompoundMethod::string_in,std::move(result->left),std::move(result->right),result->location);
@@ -2914,6 +2959,12 @@ private:
                         return compound_expression(sequence_type(CompoundKind::sequence,shape.element),CompoundMethod::sequence_in,std::move(result->left),std::move(result->right),result->location);
                 }
                 throw Error("E_TYPE",result->location,"Membership requires string, array, List or sequence");
+            }
+            if((compound(left) && info(left,result->location).kind==CompoundKind::new_set) || (compound(right) && info(right,result->location).kind==CompoundKind::new_set)){
+                const auto owner=compound(left) && info(left,result->location).kind==CompoundKind::new_set ? left : right;NewSetMethod method;
+                if(op=="+")method=NewSetMethod::unite;else if(op=="-")method=NewSetMethod::subtract;else if(op=="*")method=NewSetMethod::intersect;
+                else if(op=="=")method=NewSetMethod::equal;else if(op=="<>")method=NewSetMethod::not_equal;else if(op=="<")method=NewSetMethod::less;else if(op=="<=")method=NewSetMethod::less_equal;else if(op==">")method=NewSetMethod::greater;else if(op==">=")method=NewSetMethod::greater_equal;else throw Error("E_TYPE",result->location,"Unsupported NewSet operator");
+                std::vector<std::unique_ptr<hir::Expr>> arguments;arguments.push_back(std::move(result->left));arguments.push_back(std::move(result->right));return new_set_expression(owner,method,std::move(arguments),result->location);
             }
             const auto is_set=[&](Type type){return compound(type) && info(type,result->location).kind==CompoundKind::hash_set;};
             if(is_set(left) || is_set(right)){
@@ -3101,8 +3152,25 @@ private:
                 }
             }
             if (!lvalue(*result.target)) throw Error("E_TYPE",result.location,"Assignment target must be assignable");
+            if(compound(result.target->type) && info(result.target->type,location).kind==CompoundKind::new_set && !(result.target->kind==hir::ExprKind::index && info(result.target->left->type,location).kind==CompoundKind::list)){
+                const auto owner=result.target->type;std::vector<std::unique_ptr<hir::Expr>> arguments;arguments.push_back(std::move(result.target));arguments.push_back(value(owner));result.kind=hir::StmtKind::call;result.expression=new_set_expression(owner,NewSetMethod::assign,std::move(arguments),location,true);return result;
+            }
             result.expression = convert(value(result.target->type), result.target->type);
             return result;
+    }
+    std::unique_ptr<hir::Expr> new_set_expression(Type owner,NewSetMethod method,std::vector<std::unique_ptr<hir::Expr>> arguments,SourceLocation location,bool ref=false){
+        const auto parameters=new_set_parameters(module_.types,owner,method,ref);
+        if(arguments.size()!=parameters.size())throw Error("E_TYPE",location,"Wrong NewSet argument count");
+        auto result=std::make_unique<hir::Expr>();result->kind=hir::ExprKind::new_set_call;result->type=new_set_result(module_.types,owner,method);result->location=location;result->operation_type=owner;result->local=static_cast<std::size_t>(method)|(ref ? 128U : 0U);
+        for(std::size_t i=0;i<arguments.size();++i)result->arguments.push_back(i==0 && ref ? std::move(arguments[i]) : convert(std::move(arguments[i]),parameters[i]));return result;
+    }
+    std::unique_ptr<hir::Expr> new_set_copy(std::unique_ptr<hir::Expr> value,SourceLocation location){const auto owner=value->type;std::vector<std::unique_ptr<hir::Expr>> arguments;arguments.push_back(std::move(value));return new_set_expression(owner,NewSetMethod::copy_value,std::move(arguments),location);}
+    bool bind_new_set_factory(hir::Expr& result,std::string_view name,std::string_view unit={}){
+        if(name!="setof" || (!unit.empty() && unit!="pabcsystem"))return false;
+        std::unique_ptr<hir::Expr> array;
+        if(result.arguments.size()==1 && compound(result.arguments[0]->type) && info(result.arguments[0]->type,result.location).kind==CompoundKind::array && info(result.arguments[0]->type,result.location).rank==1)array=std::move(result.arguments[0]);
+        else{array=std::make_unique<hir::Expr>();array->location=result.location;array->arguments=std::move(result.arguments);bind_array_literal(*array);}
+        const auto owner=new_set_type(info(array->type,result.location).element);std::vector<std::unique_ptr<hir::Expr>> arguments;arguments.push_back(std::move(array));result=std::move(*new_set_expression(owner,NewSetMethod::construct_array,std::move(arguments),result.location));return true;
     }
     std::unique_ptr<hir::Expr> hash_set_expression(Type owner,HashSetMethod method,std::vector<std::unique_ptr<hir::Expr>> arguments,SourceLocation location){
         const auto sequence=hash_set_sequence_method(method) ? info(owner,location).key : Type::invalid;
@@ -3148,6 +3216,13 @@ private:
             value->left=expression(*source.target);value->right=initial ? std::move(initial) : expression(*source.expression);
             value=bind_binary(std::move(value));value=checked_compound_cast(std::move(value),type,location);
             return bind_assignment(std::move(target),[&](Type){return std::move(value);},location,true);
+        }
+        if(compound(type) && info(type,location).kind==CompoundKind::new_set){
+            if(!lvalue(*target))throw Error("E_TYPE",location,"Assignment target must be assignable");
+            auto right=initial ? std::move(initial) : expression(*source.expression,info(type,location).element);NewSetMethod method;
+            if(right->type==type)method=op=="+" ? NewSetMethod::union_assign : op=="-" ? NewSetMethod::except_assign : op=="*" ? NewSetMethod::intersect_assign : throw Error("E_TYPE",location,"Unsupported NewSet operator");
+            else method=op=="+" ? NewSetMethod::item_add : op=="-" ? NewSetMethod::item_remove : throw Error("E_TYPE",location,"Unsupported NewSet operator");
+            std::vector<std::unique_ptr<hir::Expr>> arguments;arguments.push_back(std::move(target));arguments.push_back(std::move(right));hir::Stmt result;result.kind=hir::StmtKind::call;result.location=location;result.expression=new_set_expression(type,method,std::move(arguments),location);return result;
         }
         if(compound(type) && info(type,location).kind==CompoundKind::hash_set){
             if(!lvalue(*target))throw Error("E_TYPE",location,"Assignment target must be assignable");
@@ -4130,7 +4205,7 @@ private:
         const auto method=sequence_slice_method(name);
         if (!method || (!unit.empty() && unit!="pabcsystem")) return false;
         if (*method==SequenceSlice::reverse) {
-            if (result.arguments.empty() || !compound(result.arguments[0]->type) || (info(result.arguments[0]->type,result.location).kind!=CompoundKind::sequence && info(result.arguments[0]->type,result.location).kind!=CompoundKind::hash_set)) return false;
+            if (result.arguments.empty() || !compound(result.arguments[0]->type) || (info(result.arguments[0]->type,result.location).kind!=CompoundKind::sequence && info(result.arguments[0]->type,result.location).kind!=CompoundKind::hash_set && info(result.arguments[0]->type,result.location).kind!=CompoundKind::new_set)) return false;
             if (result.arguments.size()!=1) throw Error("E_TYPE",result.location,"Sequence Reverse takes no extra arguments");
             auto count=std::make_unique<hir::Expr>(); count->kind=hir::ExprKind::literal; count->type=Type::integer; count->value=std::int32_t{0}; count->location=result.location;
             result.arguments.push_back(std::move(count));
@@ -4745,6 +4820,7 @@ private:
             if (type==Type::invalid && initial) type=initial->type;
             if (type == Type::unit || type == Type::nil) throw Error("E_TYPE",source.token.location,"Procedure has no value");
             if (initial) initial = convert(std::move(initial), type);
+            if(initial && compound(type) && info(type,result.location).kind==CompoundKind::new_set)initial=new_set_copy(std::move(initial),result.location);
             for (const auto& token : source.names) {
                 if (scopes_.back().contains(token.text))
                     throw Error("E_DUPLICATE", token.location, "Duplicate name '" + token.text + "'");
@@ -4850,7 +4926,7 @@ private:
             break;
         case SyntaxStmtKind::foreach_loop: {
             result.kind=hir::StmtKind::foreach_loop; result.expression=expression(*source.expression);
-            if(compound(result.expression->type) && info(result.expression->type,result.location).kind==CompoundKind::hash_set){const auto target=info(result.expression->type,result.location).key;result.expression=convert(std::move(result.expression),target);}
+            if(compound(result.expression->type)){const auto shape=info(result.expression->type,result.location);if(shape.kind==CompoundKind::hash_set || shape.kind==CompoundKind::new_set){const auto target=shape.kind==CompoundKind::new_set ? info(shape.key,result.location).key : shape.key;result.expression=convert(std::move(result.expression),target);}}
             const auto sequence=result.expression->type;
             const bool lazy=compound(sequence) && info(sequence,result.location).kind==CompoundKind::sequence;
             if (sequence!=Type::string && (!compound(sequence) || (!indexed_sequence(info(sequence,result.location).kind) && !lazy)))

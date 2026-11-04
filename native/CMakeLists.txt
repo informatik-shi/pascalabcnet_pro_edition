@@ -31,6 +31,7 @@ add_library(abc_core
     src/ini_file.cpp
     src/compound.cpp
     src/hash_set.cpp
+    src/new_set.cpp
     src/cp1251.cpp
     src/file_moves.cpp
     src/file_operations.cpp
@@ -307,6 +308,9 @@ if(BUILD_TESTING)
     add_test(NAME original_in1 COMMAND $<TARGET_FILE:abc> run "${CMAKE_CURRENT_SOURCE_DIR}/../TestSuite/in1.pas")
     add_test(NAME original_notin COMMAND $<TARGET_FILE:abc> run "${CMAKE_CURRENT_SOURCE_DIR}/../TestSuite/notin.pas")
     add_test(NAME original_arithm7 COMMAND $<TARGET_FILE:abc> run "${CMAKE_CURRENT_SOURCE_DIR}/../TestSuite/arithm7.pas")
+    add_test(NAME new_sets_compatibility COMMAND ${CMAKE_COMMAND}
+        -DABC_RUNNER=$<TARGET_FILE:abc> -DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures
+        -DABC_FIXTURE_NAME=new-sets-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")
     add_test(NAME hash_sets_compatibility COMMAND ${CMAKE_COMMAND}
         -DABC_RUNNER=$<TARGET_FILE:abc> -DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures
         -DABC_FIXTURE_NAME=hash-sets-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")

@@ -6,6 +6,7 @@
 #include "ini_file.hpp"
 #include "compound.hpp"
 #include "hash_set.hpp"
+#include "new_set.hpp"
 #include "runtime_values.hpp"
 #include "formatting.hpp"
 #include "school_ip.hpp"
@@ -71,7 +72,8 @@ private:
         } else if (node.kind == hir::ExprKind::field) {
             if (type_info(program_,node.left->type).kind==CompoundKind::object_class) expression(*node.left);else reference(*node.left);
             emit(Op::ref_field,node.left->type,node.local,node.location);
-        } else throw Error("E_HIR",node.location,"Expression is not assignable");
+        } else if(node.kind==hir::ExprKind::new_set_hash){reference(*node.left);emit(Op::new_set_call,node.left->type,static_cast<std::size_t>(NewSetMethod::raw_reference)|128U,node.location);}
+        else throw Error("E_HIR",node.location,"Expression is not assignable");
     }
     void expression(const hir::Expr& node) {
         if (node.type == Type::invalid) throw Error("E_HIR", node.location, "Unresolved expression type");
@@ -302,6 +304,13 @@ private:
             emit(Op::endpoint_call,node.left->type,node.local,node.location); break;
         case hir::ExprKind::cache_value:
             expression(*node.left);local(Op::store,node.local,node.location);local(Op::load,node.local,node.location);break;
+        case hir::ExprKind::new_set_hash:
+            expression(*node.left);emit(Op::new_set_call,node.left->type,static_cast<std::size_t>(NewSetMethod::raw_hash),node.location);break;
+        case hir::ExprKind::new_set_call: {
+            const bool ref=(node.local&128U)!=0;
+            for(std::size_t i=0;i<node.arguments.size();++i)if(i==0 && ref)reference(*node.arguments[i]);else expression(*node.arguments[i]);
+            emit(Op::new_set_call,node.operation_type,node.local,node.location);break;
+        }
         case hir::ExprKind::hash_set_call: {
             const auto method=static_cast<HashSetMethod>(node.local&255U);
             for(std::size_t i=0;i<node.arguments.size();++i)if(i==0 && hash_set_reference(method))reference(*node.arguments[i]);else expression(*node.arguments[i]);
@@ -1025,6 +1034,8 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             break;
         case Op::encoding_call:
             if(instruction.operand>static_cast<std::size_t>(EncodingMethod::text_append_named) || !encoding_signature_valid(program,type,static_cast<EncodingMethod>(instruction.operand)))invalid(instruction,"Invalid Encoding call metadata");break;
+        case Op::new_set_call:
+            if((instruction.operand>>8U) || !new_set_signature(program,type,static_cast<NewSetMethod>(instruction.operand&127U),(instruction.operand&128U)!=0))invalid(instruction,"Invalid NewSet call metadata");break;
         case Op::hash_set_call:
             if((instruction.operand>>8U)>65535U || !hash_set_signature(program,type,static_cast<Type>(instruction.operand>>8U),static_cast<HashSetMethod>(instruction.operand&255U)))invalid(instruction,"Invalid HashSet call metadata");break;
         case Op::compound_call:
@@ -1460,6 +1471,10 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             const auto method=static_cast<IniMethod>(instruction.operand);const auto parameters=ini_parameters(instruction.type,method);
             for(auto p=parameters.rbegin();p!=parameters.rend();++p)require(*p);const auto result=ini_result(instruction.type,method);if(result!=Type::unit)stack.push_back(result);break;
         }
+        case Op::new_set_call: {
+            const auto method=static_cast<NewSetMethod>(instruction.operand&127U);const auto parameters=new_set_parameters(program.types,instruction.type,method,(instruction.operand&128U)!=0);
+            for(auto it=parameters.rbegin();it!=parameters.rend();++it)require(*it);const auto result=new_set_result(program.types,instruction.type,method);if(result!=Type::unit)stack.push_back(result);break;
+        }
         case Op::hash_set_call: {
             const auto method=static_cast<HashSetMethod>(instruction.operand&255U);const auto parameters=hash_set_parameters(program.types,instruction.type,static_cast<Type>(instruction.operand>>8U),method);
             for(auto it=parameters.rbegin();it!=parameters.rend();++it)require(*it);const auto result=hash_set_result(instruction.type,method);if(result!=Type::unit)stack.push_back(result);break;
@@ -1643,6 +1658,9 @@ void verify(const Program& program) {
                 enum_text_bytes+=member.name.size()+member.text.size();
                 try{(void)from_utf8(member.name);(void)from_utf8(member.text);}catch(const std::invalid_argument&){throw Error("E_BYTECODE",{},"Invalid enumeration member metadata");}
             }
+        } else if(type.kind==CompoundKind::new_set) {
+            if(type.name!="newset" || type.fields.size()!=1 || type.fields[0].name!="_hs" || type.fields[0].type!=type.key || type.fields[0].global)throw Error("E_BYTECODE",{},"Invalid NewSet type metadata");prior(type.element);prior(type.key);
+            if(!compound(type.key) || type_info(program,type.key).kind!=CompoundKind::hash_set || type_info(program,type.key).element!=type.element)throw Error("E_BYTECODE",{},"Invalid NewSet storage type");
         } else if(type.kind==CompoundKind::hash_set) {
             if(type.name!="hashset" || !type.fields.empty())throw Error("E_BYTECODE",{},"Invalid HashSet type metadata");prior(type.element);prior(type.key);
             if(!compound(type.key) || type_info(program,type.key).kind!=CompoundKind::sequence || type_info(program,type.key).element!=type.element)throw Error("E_BYTECODE",{},"Invalid HashSet sequence type");

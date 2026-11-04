@@ -82,6 +82,7 @@ struct Values {
         case Type::text_file: return generic ? Value{std::shared_ptr<TextFile>{}} : Value{std::make_shared<TextFile>()};
         default: {
             const auto& info = type_info(program, type);
+            if(info.kind==CompoundKind::new_set)return NewSetValue{type,cell(info.key,zero(info.key,!generic,generic))};
             if(info.kind==CompoundKind::enumeration)return EnumValue{type,0};
             if (buffer_collection(info.kind) && constructed) return buffer(type,0);
             const bool object=info.kind==CompoundKind::object_class;
@@ -103,6 +104,7 @@ struct Values {
         }
     }
     Value copy(const Value& value) {
+        if(const auto* set=std::get_if<NewSetValue>(&value)){if(!set->storage)throw runtime_error(RuntimeError::invalid_bytecode,location);return NewSetValue{set->type,cell(set->storage->type,set->storage->value)};}
         if (const auto* aggregate = std::get_if<std::shared_ptr<Aggregate>>(&value);
             aggregate && type_info(program, (*aggregate)->type).kind == CompoundKind::record) {
             auto result = std::make_shared<Aggregate>(); result->type = (*aggregate)->type;
@@ -113,11 +115,13 @@ struct Values {
     }
     void own_list_cell(const std::shared_ptr<Cell>& cell, const std::shared_ptr<Aggregate>& list) {
         cell->list_owner=list;
+        if(const auto* set=std::get_if<NewSetValue>(&cell->value))own_list_cell(set->storage,list);
         if (compound(cell->type) && type_info(program,cell->type).kind==CompoundKind::record)
             for (const auto& field:std::get<std::shared_ptr<Aggregate>>(cell->value)->items) own_list_cell(field,list);
     }
     void write(const std::shared_ptr<Cell>& target, const Value& value) {
         if (const auto owner=target->list_owner.lock()) ++owner->version;
+        if(const auto* set=std::get_if<NewSetValue>(&target->value)){const auto& source=std::get<NewSetValue>(value);write(set->storage,source.storage->value);return;}
         if (compound(target->type) && type_info(program,target->type).kind == CompoundKind::record) {
             const auto original = std::get<std::shared_ptr<Aggregate>>(target->value);
             const auto source = std::get<std::shared_ptr<Aggregate>>(value);

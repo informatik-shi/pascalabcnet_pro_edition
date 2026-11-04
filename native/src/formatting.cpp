@@ -22,7 +22,7 @@ bool supports(const std::vector<TypeInfo>& types, Type type, unsigned depth) {
         for (const auto& field:info.fields) if (!supports(types,field.type,depth+1)) return false;
         return true;
     }
-    return (info.kind==CompoundKind::array || info.kind==CompoundKind::list || info.kind==CompoundKind::hash_set) && supports(types,info.element,depth+1);
+    return (info.kind==CompoundKind::array || info.kind==CompoundKind::list || info.kind==CompoundKind::hash_set || info.kind==CompoundKind::new_set) && supports(types,info.element,depth+1);
 }
 class ObjectWriter {
     const Program& program;
@@ -38,6 +38,10 @@ class ObjectWriter {
         if (options.cancelled && options.cancelled()) throw runtime_error(RuntimeError::cancelled,location);
         if (!compound(type)) { append(type==Type::nil ? u"nil" : format_field(data,0,std::nullopt,location)); return; }
         if(enumeration(program,type)){append(enum_text(program,std::get<EnumValue>(data),location));return;}
+        if(program.types[static_cast<std::size_t>(type)-64U].kind==CompoundKind::new_set){
+            const auto& set=std::get<NewSetValue>(data);const auto& hash=std::get<std::shared_ptr<Aggregate>>(set.storage->value);
+            if(!hash || hash->nil)append(u"{}");else value(set.storage->value,set.storage->type);return;
+        }
         const auto& object=std::get<std::shared_ptr<Aggregate>>(data);
         if (!object || object->nil) { append(u"nil"); return; }
         if (std::find(path.begin(),path.end(),object.get())!=path.end()) { append(u"(...)"); return; }
