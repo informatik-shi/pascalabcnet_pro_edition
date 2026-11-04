@@ -5,6 +5,7 @@
 #include "comparable.hpp"
 #include "ini_file.hpp"
 #include "compound.hpp"
+#include "hash_set.hpp"
 #include "runtime_values.hpp"
 #include "formatting.hpp"
 #include "school_ip.hpp"
@@ -301,6 +302,11 @@ private:
             emit(Op::endpoint_call,node.left->type,node.local,node.location); break;
         case hir::ExprKind::cache_value:
             expression(*node.left);local(Op::store,node.local,node.location);local(Op::load,node.local,node.location);break;
+        case hir::ExprKind::hash_set_call: {
+            const auto method=static_cast<HashSetMethod>(node.local&255U);
+            for(std::size_t i=0;i<node.arguments.size();++i)if(i==0 && hash_set_reference(method))reference(*node.arguments[i]);else expression(*node.arguments[i]);
+            emit(Op::hash_set_call,node.operation_type,node.local,node.location);break;
+        }
         case hir::ExprKind::compound_call:
             if(compound_reference(static_cast<CompoundMethod>(node.local)))reference(*node.left);else expression(*node.left);
             for(const auto& argument:node.arguments)expression(*argument);
@@ -755,7 +761,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         }
         case Op::sequence_snapshot: case Op::sequence_wrap: {
             const bool text=type==Type::string && instruction.op==Op::sequence_wrap;
-            if ((!text && (!compound(type) || !indexed_sequence(type_info(program,type).kind) || type_info(program,type).rank!=1))
+            if ((!text && (!compound(type) || !enumerable_collection(type_info(program,type).kind) || type_info(program,type).rank!=1))
                 || instruction.operand<64 || instruction.operand>=64+program.types.size()) invalid(instruction,"Invalid sequence view source");
             const auto& target=type_info(program,static_cast<Type>(instruction.operand));
             if (target.kind!=CompoundKind::sequence || target.element!=(text ? Type::character : type_info(program,type).element)) invalid(instruction,"Invalid sequence view element type");
@@ -1019,6 +1025,8 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             break;
         case Op::encoding_call:
             if(instruction.operand>static_cast<std::size_t>(EncodingMethod::text_append_named) || !encoding_signature_valid(program,type,static_cast<EncodingMethod>(instruction.operand)))invalid(instruction,"Invalid Encoding call metadata");break;
+        case Op::hash_set_call:
+            if((instruction.operand>>8U)>65535U || !hash_set_signature(program,type,static_cast<Type>(instruction.operand>>8U),static_cast<HashSetMethod>(instruction.operand&255U)))invalid(instruction,"Invalid HashSet call metadata");break;
         case Op::compound_call:
             if(instruction.operand>static_cast<std::size_t>(CompoundMethod::matrix_in) || !compound_signature(program,type,static_cast<CompoundMethod>(instruction.operand)))invalid(instruction,"Invalid compound call metadata");break;
         case Op::store_index:
@@ -1061,7 +1069,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if (instruction.op==Op::make_default && instruction.operand==1 && compound(type) && type_info(program,type).kind==CompoundKind::object_class
                 && std::any_of(program.routines.begin(),program.routines.end(),[type](const auto& candidate){return candidate.constructor && candidate.owner==type;}))
                 invalid(instruction,"Class constructor cannot be bypassed");
-            if (instruction.op==Op::make_default && instruction.operand==1 && compound(type) && (node_kind(type_info(program,type).kind) || type_info(program,type).kind==CompoundKind::tuple || type_info(program,type).kind==CompoundKind::sequence || type_info(program,type).kind==CompoundKind::callable || type_info(program,type).kind==CompoundKind::encoding || type_info(program,type).kind==CompoundKind::ini_file || school_ip_kind(type_info(program,type).kind)))
+            if (instruction.op==Op::make_default && instruction.operand==1 && compound(type) && (node_kind(type_info(program,type).kind) || type_info(program,type).kind==CompoundKind::tuple || type_info(program,type).kind==CompoundKind::sequence || type_info(program,type).kind==CompoundKind::callable || type_info(program,type).kind==CompoundKind::encoding || type_info(program,type).kind==CompoundKind::ini_file || type_info(program,type).kind==CompoundKind::hash_set || school_ip_kind(type_info(program,type).kind)))
                 invalid(instruction,"Nodes and tuples require the typed constructor");
             break;
         case Op::routine_value:
@@ -1452,6 +1460,10 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             const auto method=static_cast<IniMethod>(instruction.operand);const auto parameters=ini_parameters(instruction.type,method);
             for(auto p=parameters.rbegin();p!=parameters.rend();++p)require(*p);const auto result=ini_result(instruction.type,method);if(result!=Type::unit)stack.push_back(result);break;
         }
+        case Op::hash_set_call: {
+            const auto method=static_cast<HashSetMethod>(instruction.operand&255U);const auto parameters=hash_set_parameters(program.types,instruction.type,static_cast<Type>(instruction.operand>>8U),method);
+            for(auto it=parameters.rbegin();it!=parameters.rend();++it)require(*it);const auto result=hash_set_result(instruction.type,method);if(result!=Type::unit)stack.push_back(result);break;
+        }
         case Op::compound_call: {
             const auto method=static_cast<CompoundMethod>(instruction.operand);const auto parameters=compound_parameters(program,instruction.type,method);
             for(auto p=parameters.rbegin();p!=parameters.rend();++p)require(*p);const auto result=compound_result(instruction.type,method);if(result!=Type::unit)stack.push_back(result);break;
@@ -1631,6 +1643,9 @@ void verify(const Program& program) {
                 enum_text_bytes+=member.name.size()+member.text.size();
                 try{(void)from_utf8(member.name);(void)from_utf8(member.text);}catch(const std::invalid_argument&){throw Error("E_BYTECODE",{},"Invalid enumeration member metadata");}
             }
+        } else if(type.kind==CompoundKind::hash_set) {
+            if(type.name!="hashset" || !type.fields.empty())throw Error("E_BYTECODE",{},"Invalid HashSet type metadata");prior(type.element);prior(type.key);
+            if(!compound(type.key) || type_info(program,type.key).kind!=CompoundKind::sequence || type_info(program,type.key).element!=type.element)throw Error("E_BYTECODE",{},"Invalid HashSet sequence type");
         } else if(type.kind==CompoundKind::ini_file) {
             if(type.name!="tinifile" || type.element!=Type::invalid || type.key!=Type::invalid || !type.fields.empty())throw Error("E_BYTECODE",{},"Invalid TIniFile type metadata");
         } else if(type.kind==CompoundKind::encoding) {

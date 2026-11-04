@@ -7,6 +7,7 @@
 #include "array_views.hpp"
 #include "matrix_operations.hpp"
 #include "file_lines.hpp"
+#include "hash_set.hpp"
 #include <cmath>
 
 namespace abc {
@@ -57,7 +58,7 @@ void sequence_dispose(const std::shared_ptr<Aggregate>& sequence) noexcept {
     if(state.cartesian)for(auto& inner:state.cartesian->iterators)close(inner);
     state.partial.reset();state.slice.reset();state.concat.reset();state.transform.reset();state.zip.reset();
     state.generator.reset();state.cartesian.reset();state.power.reset();state.combinator.reset();
-    state.view.reset();state.matrix_line.reset();state.text_line.reset();
+    state.view.reset();state.matrix_line.reset();state.text_line.reset();state.hash_cursor.reset();
 }
 namespace {
 std::shared_ptr<Aggregate> cursor_lease(std::shared_ptr<Aggregate> owner) {
@@ -118,19 +119,21 @@ std::shared_ptr<Aggregate> sequence_begin(Values& values,const std::shared_ptr<A
     }
     state.count=0;
     require(state.source,values.location);
-    if (collection_sequence(state.provider)) { state.count=state.source->items.size(); state.version=state.source->version; }
+    if(state.provider==SequenceProvider::hash_set){reserve_state(values);state.count=state.source->count;state.version=state.source->version;state.hash_cursor=std::make_shared<HashSetCursor>();}
+    else if (collection_sequence(state.provider)) { state.count=state.source->items.size(); state.version=state.source->version; }
     else school_ip_sequence_start(state,values.location);
     return cursor_lease(std::move(result));
 }
 void sequence_check(const std::shared_ptr<Aggregate>& sequence,SourceLocation location) {
     const auto& state=cursor(sequence,location);
     if(state.disposed)return;
-    if (state.provider==SequenceProvider::list && state.version!=state.source->version) throw runtime_error(RuntimeError::collection_changed,location);
+    if ((state.provider==SequenceProvider::list || state.provider==SequenceProvider::hash_set) && state.version!=state.source->version) throw runtime_error(RuntimeError::collection_changed,location);
 }
 bool sequence_resume(Values& values,const std::shared_ptr<Aggregate>& sequence,std::uint64_t index,const ExecutionOptions& options) {
     const auto location=values.location;
     sequence_check(sequence,location); auto& state=*sequence->sequence;
     if(state.disposed)return false;
+    if(state.provider==SequenceProvider::hash_set)return hash_set_resume(values,sequence,index,options);
     if(state.provider==SequenceProvider::file_lines)return file_sequence_resume(values,sequence,index,options);
     if(state.provider==SequenceProvider::text_lines)return text_lines_resume(values,sequence,index);
     if (state.provider==SequenceProvider::partial_sum) return sequence_partial_resume(values,sequence,index,options);
@@ -218,6 +221,7 @@ Value sequence_at(Values& values,const std::shared_ptr<Aggregate>& sequence,std:
         volatile double offset=static_cast<double>(index)*range.step;
         return finite_partition(first+finite_partition(offset,values.location),values.location);
     }
+    if(state.provider==SequenceProvider::hash_set)return values.copy(state.hash_cursor->current);
     if(state.provider==SequenceProvider::file_lines)return state.file_line->current;
     if(state.provider==SequenceProvider::text_lines)return state.text_line->current;
     if (state.provider==SequenceProvider::string) return std::get<std::u16string>(state.seed->value)[static_cast<std::size_t>(index)];
@@ -246,11 +250,11 @@ Value sequence_at(Values& values,const std::shared_ptr<Aggregate>& sequence,std:
 }
 Value sequence_collect(Values& values,const std::shared_ptr<Aggregate>& sequence,Type collection,const ExecutionOptions& options) {
     const auto iterator=sequence_begin(values,sequence);
-    (void)sequence_resume(values,iterator,0,options);
+    if(iterator->sequence->provider!=SequenceProvider::hash_set)(void)sequence_resume(values,iterator,0,options);
     const auto known_count=sequence_known_length(iterator,values.location);
     const bool materialize=collection!=Type::invalid;
     const bool list=materialize && type_info(values.program,collection).kind==CompoundKind::list;
-    if (!materialize && collection_sequence(iterator->sequence->provider)) {
+    if (!materialize && (collection_sequence(iterator->sequence->provider) || iterator->sequence->provider==SequenceProvider::hash_set)) {
         const auto count=*known_count;
         if (count>INT32_MAX) throw runtime_error(RuntimeError::integer_overflow,values.location);
         return static_cast<std::int32_t>(count);
@@ -261,7 +265,7 @@ Value sequence_collect(Values& values,const std::shared_ptr<Aggregate>& sequence
         const auto cost=iterator->sequence->provider==SequenceProvider::school_ip_hosts ? 4U : 1U;
         if (known_count && *known_count>values.remaining/cost) throw runtime_error(RuntimeError::allocation_limit,values.location);
         result=values.array(collection,0);
-        if (list && known_count && collection_sequence(iterator->sequence->provider)) values.set_list_capacity(result,static_cast<std::size_t>(*known_count));
+        if (list && known_count && (collection_sequence(iterator->sequence->provider) || iterator->sequence->provider==SequenceProvider::hash_set)) values.set_list_capacity(result,static_cast<std::size_t>(*known_count));
     }
     std::uint64_t count=0;
     for (;sequence_resume(values,iterator,count,options);++count) {

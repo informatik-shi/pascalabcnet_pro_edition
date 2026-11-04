@@ -30,6 +30,7 @@
 #include "comparable.hpp"
 #include "ini_file.hpp"
 #include "compound.hpp"
+#include "hash_set.hpp"
 #include "file_encoding.hpp"
 #include "file_lines.hpp"
 #include "big_integer_runtime.hpp"
@@ -390,7 +391,7 @@ static void execute_impl(const Program& program, std::istream& input, std::ostre
         case Op::sequence_wrap: {
             if (instruction.type==Type::string) { stack.emplace_back(sequence_text(values,static_cast<Type>(instruction.operand),pop())); break; }
             const auto source=std::get<std::shared_ptr<Aggregate>>(pop());
-            stack.emplace_back(sequence_create(values,static_cast<Type>(instruction.operand),source,type_info(program,instruction.type).kind==CompoundKind::array ? SequenceProvider::array : SequenceProvider::list)); break;
+            stack.emplace_back(sequence_create(values,static_cast<Type>(instruction.operand),source,type_info(program,instruction.type).kind==CompoundKind::array ? SequenceProvider::array : type_info(program,instruction.type).kind==CompoundKind::hash_set ? SequenceProvider::hash_set : SequenceProvider::list)); break;
         }
         case Op::sequence_dispose:
             sequence_dispose(std::get<std::shared_ptr<Aggregate>>(pop()));break;
@@ -1087,6 +1088,11 @@ static void execute_impl(const Program& program, std::istream& input, std::ostre
             for (std::size_t i=arguments.size();i>0;--i) arguments[i-1]=pop();
             auto target=std::get<std::shared_ptr<Cell>>(arguments[ref]); arguments[ref]=target->value;
             const auto result=stdlib::invoke(instruction.operand,arguments,instruction.location,services); values.write(target,result); break;
+        }
+        case Op::hash_set_call: {
+            const auto method=static_cast<HashSetMethod>(instruction.operand&255U);const auto sequence=static_cast<Type>(instruction.operand>>8U);const auto parameters=hash_set_parameters(program.types,instruction.type,sequence,method);
+            std::vector<Value> arguments(parameters.size());for(std::size_t i=arguments.size();i>0;--i)arguments[i-1]=pop();auto result=hash_set_invoke(values,instruction.type,sequence,method,arguments,options);
+            if(hash_set_result(instruction.type,method)!=Type::unit)stack.push_back(std::move(result));break;
         }
         case Op::compound_call: {
             const auto method=static_cast<CompoundMethod>(instruction.operand);std::vector<Value> arguments(compound_parameters(program,instruction.type,method).size());

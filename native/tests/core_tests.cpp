@@ -16,6 +16,7 @@
 #include "../src/enumeration.hpp"
 #include "../src/comparable.hpp"
 #include "../src/compound.hpp"
+#include "../src/hash_set.hpp"
 #include "../src/constant.hpp"
 #include <cmath>
 #include "../src/file_reader.hpp"
@@ -4360,6 +4361,44 @@ void sequence_mutations() {
     error([&]{(void)run("begin var a:=new integer[2000]; Reverse(a); end.","",options);},"E_CANCELLED");
 }
 
+void hash_set_library() {
+    {
+        const auto p=abc::compile("begin var s:HashSet<integer>;end.");const auto owner=static_cast<abc::Type>(64+std::distance(p.types.begin(),std::find_if(p.types.begin(),p.types.end(),[](const auto& t){return t.kind==abc::CompoundKind::hash_set;})));const auto seq=abc::type_info(p,owner).key;
+        abc::Values values{p,100};const auto set=std::get<std::shared_ptr<abc::Aggregate>>(abc::hash_set_invoke(values,owner,abc::Type::invalid,abc::HashSetMethod::construct,{},{}));auto source=abc::sequence_create(values,seq,set,abc::SequenceProvider::hash_set);auto cursor=abc::sequence_begin(values,source);
+        const std::array<abc::Value,1> args{set};(void)abc::hash_set_invoke(values,owner,abc::Type::invalid,abc::HashSetMethod::clear,args,{});error([&]{(void)abc::sequence_resume(values,cursor,0,{});},"E_MODIFIED");
+        const std::array<abc::Value,2> add{set,std::int32_t{1}};abc::ExecutionOptions options;options.cancelled=[] {return true;};error([&]{(void)abc::hash_set_invoke(values,owner,abc::Type::invalid,abc::HashSetMethod::add,add,options);},"E_CANCELLED");require(set->count==0,"Canceled HashSet insertion preserves the set");
+        abc::Values limited{p,2};const auto bounded=std::get<std::shared_ptr<abc::Aggregate>>(abc::hash_set_invoke(limited,owner,abc::Type::invalid,abc::HashSetMethod::construct,{},{}));const std::array<abc::Value,2> first{bounded,std::int32_t{1}},second{bounded,std::int32_t{2}};
+        (void)abc::hash_set_invoke(limited,owner,abc::Type::invalid,abc::HashSetMethod::add,first,{});error([&]{(void)abc::hash_set_invoke(limited,owner,abc::Type::invalid,abc::HashSetMethod::add,second,{});},"E_LIMIT");require(bounded->count==1 && bounded->items.size()==1,"Failed HashSet allocation leaves existing elements intact");
+    }
+    result("begin var s:=new HashSet<integer>;Writeln(s.Count,' ',s.Add(1),' ',s.Add(1),' ',s.Add(2),' ',s.Remove(9),' ',s.Remove(1),' ',s.Count);Writeln(s,' ',2 in s,' ',1 not in s);s.Clear;Writeln(s.Count,' ',s);end.","0 True False True False True 1\n{2} True True\n0 {}\n");
+    result("begin var s:=new HashSet<integer>(Arr(1,2,3,4));s.Remove(2);s.Remove(4);s.Add(5);s.Add(6);Writeln(s.ToArray);s:=new HashSet<integer>(Arr(1,2,3,4));s.Remove(2);var c:=new HashSet<integer>(s);c.Add(5);Writeln(c.ToArray);c:=new HashSet<integer>(s.Select(x->x));c.Add(5);Writeln(c.ToArray);s:=new HashSet<integer>(Range(1,20));for var i:=1 to 19 do s.Remove(i);c:=new HashSet<integer>(s);c.Add(99);Writeln(c.ToArray);end.","[1,6,3,5]\n[1,5,3,4]\n[1,3,4,5]\n[20,99]\n");
+    result("begin var a:=new HashSet<integer>(Arr(1,2,3));var b:=new HashSet<integer>(Arr(3,4));Writeln(a+b,' ',a-b,' ',a*b,' ',a+4,' ',a-2);Writeln(a=new HashSet<integer>(Arr(3,1,2,2)),' ',a<>b,' ',a<a+b,' ',a<=a,' ',a+b>a,' ',a>=a);Writeln(a,' ',b);end.","{1,2,3,4} {1,2} {3} {1,2,3,4} {1,3}\nTrue True True True True True\n{1,2,3} {3,4}\n");
+    result("begin var s:=new HashSet<integer>(Arr(1));var alias1:=s;s+=2;s+=Seq(2,3,4);s-=3;s-=Arr(1,9);Writeln(s,' ',alias1);s.UnionWith(Arr(1,2));s.IntersectWith(Seq(1,2,2));Writeln(s);s.ExceptWith(s.AsEnumerable);Writeln(s);s.UnionWith(Arr(1,2,3));s.SymmetricExceptWith(Arr(2,2,4,4));Writeln(s);s.SymmetricExceptWith(s);Writeln(s);end.","{2,4} {2,4}\n{1,2}\n{}\n{1,3,4}\n{}\n");
+    result("begin var a:HashSet<integer>;var b:HashSet<integer>;var c:=new HashSet<integer>;Writeln(a=b,' ',a=nil,' ',nil=b,' ',a<>c,' ',c<>nil,' ',c=new HashSet<integer>);end.","True True True True True True\n");
+    for(const auto type:{"byte","shortint","smallint","word","integer","longword","int64","uint64","real","BigInteger"})result("begin var a:=new HashSet<"+std::string(type)+">;a.Add(7);a.Add(7);Writeln(a.Count,' ',7 in a,' ',8 not in a);end.","1 True True\n");
+    result("type E=(A,B);begin var e:=new HashSet<E>;e.Add(B);e.Add(A);e.Add(B);Writeln(e,' ',e.Contains(A));var s:=new HashSet<string>(Arr('é','é'));s.Add(nil);s.Add('');Writeln(s.Count,' ',nil in s,' ',s.Contains('É'));var r:=new HashSet<real>;r.Add(0.0);r.Add(-0.0);Writeln(r.Count);end.","{B,A} True\n4 True False\n1\n");
+    result("type R=record x:integer;s:string;end;begin var r:R;r.x:=1;var set1:=new HashSet<R>;set1.Add(r);r.x:=2;Writeln(set1.Contains(r));r.x:=1;Writeln(set1.Contains(r),' ',set1.Count);var copy1:=set1.First;copy1.x:=9;Writeln(set1.First.x);end.","False\nTrue 1\n1\n");
+    result("type C=class public x:integer;end;begin var a:=new C;var b:=new C;var set1:=new HashSet<C>;Writeln(set1.Add(a),' ',set1.Add(a),' ',set1.Contains(b));var x:=Arr(1);var y:=Arr(1);var refs:=new HashSet<array of integer>;refs.Add(x);x[0]:=9;Writeln(refs.Contains(x),' ',refs.Contains(y),' ',refs);end.","True False False\nTrue False {[9]}\n");
+    result("function F(x:integer):integer:=x+1;begin var s:=new HashSet<integer->integer>;s.Add(F);var f2:=s.First;Writeln(F in s,' ',s.Add(F),' ',f2(3));var a:=new HashSet<integer>(Arr(1));var b:=new HashSet<integer>(Arr(1));var sets:=new HashSet<HashSet<integer>>;sets.Add(a);Writeln(a in sets,' ',b not in sets,' ',a=b);end.","True False 4\nTrue True True\n");
+    result("begin var s:=new HashSet<integer>(Arr(1,2,3));Writeln(s.Where(x->x>1).Select(x->x*2).ToArray,' ',s.Reverse.ToArray);Writeln(s.Sum,' ',s.Count,' ',s.AsEnumerable.Count);var l:=new List<integer>(s);Writeln(l,' ',l.Capacity,' ',Lst(s.AsEnumerable));var total:=0;foreach var x in s do total+=x;Writeln(total);end.","[4,6] [3,2,1]\n6 3 3\n[1,2,3] 3 [1,2,3]\n6\n");
+    result("begin var s:=new HashSet<integer>(Arr(1));var nested:=Lst(s);s.Add(2);Writeln(nested.Count,' ',nested[0].Count);end.","1 2\n");
+    result("begin var a:=new HashSet<integer>(Arr(1,2));Writeln(a.IsSubsetOf(Seq(1,1,2,3)),' ',a.IsProperSubsetOf(Arr(1,2,3)),' ',a.IsSupersetOf(Seq(1,1)),' ',a.IsProperSupersetOf(Arr(1)),' ',a.SetEquals(Arr(2,1,1)),' ',a.Overlaps(Seq(9,2)));end.","True True True True True True\n");
+    result("begin var empty:=new HashSet<integer>;var calls:=0;var s:=SeqGen(3,i->begin Inc(calls);Result:=i;end);Writeln(empty.IsSubsetOf(s),' ',calls);calls:=0;Writeln(empty.IsProperSubsetOf(s),' ',calls);calls:=0;Writeln(empty.IsSupersetOf(s),' ',calls);calls:=0;Writeln(empty.IsProperSupersetOf(s),' ',calls);calls:=0;Writeln(empty.Overlaps(s),' ',calls);calls:=0;Writeln(empty.SetEquals(s),' ',calls);end.","True 0\nTrue 1\nFalse 1\nFalse 0\nFalse 0\nFalse 1\n");
+    result("var s:HashSet<integer>;function Right:integer;begin s:=new HashSet<integer>(Arr(9));Result:=2;end;begin s:=new HashSet<integer>(Arr(1));var old:=s;s+=Right;Writeln(old,' ',s);s:=new HashSet<integer>(Arr(1));old:=s;s.Add(Right);Writeln(old,' ',s);end.","{1} {9,2}\n{1,2} {9}\n");
+    result("type C=class public s:HashSet<integer>;property Items:HashSet<integer> read s write s;end;begin var c:=new C;c.s:=new HashSet<integer>(Arr(1));var old:=c.s;c.Items+=2;Writeln(old,' ',c.s);c.Items*=new HashSet<integer>(Arr(2));Writeln(c.s);end.","{1} {1,2}\n{2}\n");
+    result("begin var s:=new HashSet<integer>(Arr(1,2));foreach var x in s do begin s.Add(x);s.Remove(99);Write(x);end;Writeln;end.","12\n");
+    for(const auto source:{"begin var s:=new HashSet<integer>(Arr(1));foreach var x in s do s.Add(9);end.","begin var s:=new HashSet<integer>(Arr(1,2));foreach var x in s do s.Remove(x);end.","begin var s:=new HashSet<integer>(Arr(1));foreach var x in s do s.Clear;end.","begin var s:=new HashSet<integer>(Arr(1,2));s.ExceptWith(s.Where(x->True));end."})runtime_error(source,"E_MODIFIED");
+    for(const auto source:{"begin var s:HashSet<integer>;s.Add(1);end.","begin var s:HashSet<integer>;s+=1;end.","begin var s:sequence of integer;var a:=new HashSet<integer>(s);end.","begin var s:=new HashSet<integer>;var other:sequence of integer;s.UnionWith(other);end.","begin var a:HashSet<integer>;var b:=new HashSet<integer>;Writeln(a+b);end.","begin var a:=new HashSet<integer>;var b:HashSet<integer>;Writeln(a<b);end."})runtime_error(source,"E_NIL");
+    for(const auto source:{"begin var s:=new HashSet<integer>;s.Add('abc');end.","begin var s:=new HashSet<integer>;s.Count:=1;end.","begin var s:=new HashSet<integer>;Writeln(s.Count());end.","begin var s:=new HashSet<integer>;s*=s;end.","begin var s:=new HashSet<integer>(nil);end.","begin var s:=new HashSet<integer>(Arr('a','b'));end.","begin var s:=new HashSet<integer>;s.UnionWith(Arr(1.5));end."})compile_error(source,"E_TYPE");
+    {
+        auto p=abc::compile("begin var a:=new HashSet<integer>;a.Add(1);a.UnionWith(Seq(2));end.");
+        for(unsigned mode=0;mode<3;++mode){auto bad=p;for(auto& op:bad.code)if(op.op==abc::Op::hash_set_call){if(mode==0)op.operand=255;if(mode==1)op.type=abc::Type::integer;if(mode==2)op.operand=(op.operand&255U)|(static_cast<std::size_t>(abc::Type::integer)<<8U);}error([&]{abc::verify(bad);},"E_BYTECODE");}
+        p=abc::compile("begin var s:HashSet<integer>;end.");for(auto& op:p.code)if(op.op==abc::Op::make_default && abc::compound(op.type) && abc::type_info(p,op.type).kind==abc::CompoundKind::hash_set)op.operand=1;error([&]{abc::verify(p);},"E_BYTECODE");
+        p=abc::compile("begin var s:HashSet<integer>;end.");
+        for(unsigned mode=0;mode<2;++mode){auto bad=p;for(auto& type:bad.types)if(type.kind==abc::CompoundKind::hash_set){if(mode==0)type.key=abc::Type::integer;else type.fields.push_back({"bad",abc::Type::integer});}error([&]{abc::verify(bad);},"E_BYTECODE");}
+    }
+}
+
 void membership_library() {
     result("begin var a:=Arr(1,2,3);Writeln(2 in a,' ',4 in a,' ',4 not in a,' ',not (2 not in a));Writeln(1+1 in a = True,' ',(2 in a) and (4 not in a));var l:=Lst(4,5);Writeln(4 in l,' ',2 not in l);end.","True False True True\nTrue True\nTrue True\n");
     result("begin Writeln('bc' in 'abcd',' ','BC' not in 'abcd',' ','' in 'abcd');Writeln('abcd'.Contains('bc'),' ','abcd'.Contains('BC'),' ',''.Contains(''));Writeln('b' in 'abc',' ','abc'.Contains('b'));Writeln('é' in 'é',' ',#55357 in '😀',' ',#0 in 'a'#0'b');end.","True True True\nTrue False True\nTrue True\nFalse True True\n");
@@ -6692,7 +6731,7 @@ void characters() {
 
 int main() {
     language();
-    enumerations(); comparable_ranges(); compound_assignments(); array_operator_library(); membership_library();
+    enumerations(); comparable_ranges(); compound_assignments(); array_operator_library(); membership_library(); hash_set_library();
     structured_loops();
     foreach_loops();
     characters();

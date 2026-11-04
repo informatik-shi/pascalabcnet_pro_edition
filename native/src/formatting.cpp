@@ -22,7 +22,7 @@ bool supports(const std::vector<TypeInfo>& types, Type type, unsigned depth) {
         for (const auto& field:info.fields) if (!supports(types,field.type,depth+1)) return false;
         return true;
     }
-    return (info.kind==CompoundKind::array || info.kind==CompoundKind::list) && supports(types,info.element,depth+1);
+    return (info.kind==CompoundKind::array || info.kind==CompoundKind::list || info.kind==CompoundKind::hash_set) && supports(types,info.element,depth+1);
 }
 class ObjectWriter {
     const Program& program;
@@ -56,6 +56,10 @@ class ObjectWriter {
             else sequence(object->rows,99,[&](std::size_t row) {
                 sequence(object->columns,99,[&](std::size_t column) { value(object->items[row*object->columns+column]->value,info.element); });
             });
+        } else if(info.kind==CompoundKind::hash_set){
+            append(u"{");const auto count=object->count>101 ? 100 : object->count;std::size_t shown=0;
+            for(std::size_t i=0;i<object->items.size() && shown<count;++i){if(i>=options.instruction_limit)throw runtime_error(RuntimeError::instruction_limit,location);if((i&255U)==0 && options.cancelled && options.cancelled())throw runtime_error(RuntimeError::cancelled,location);if(object->items[i]){if(shown++)append(u",");value(object->items[i]->value,info.element);}}
+            if(object->count>101)append(u",...");append(u"}");
         } else sequence(object->items.size(),info.kind==CompoundKind::list ? 100 : 99,
             [&](std::size_t i) { value(object->items[i]->value,info.element); });
         path.pop_back();
