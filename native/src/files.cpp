@@ -1,8 +1,9 @@
 #include "files.hpp"
 #include "file_encoding.hpp"
+#include "file_reader.hpp"
+#include "file_writer.hpp"
 #include "diagnostics.hpp"
 #include <filesystem>
-#include <fstream>
 #include <cstdio>
 #ifndef _WIN32
 #include <unistd.h>
@@ -49,27 +50,18 @@ void FileContext::change_directory(std::u16string_view path, SourceLocation loca
     if (error) throw runtime_error(RuntimeError::directory_io,location);
     current_=std::move(absolute);
 }
-std::u16string read_text_file(const FileContext& files, std::u16string_view path, SourceLocation location,const TextEncoding* encoding) {
+std::u16string read_text_file(const FileContext& files,std::u16string_view path,SourceLocation location,const TextEncoding* encoding) {
     const auto target=files.resolve(path,location);if(!encoding)encoding=files.encoding(location);
-    std::ifstream input(target,std::ios::binary);
-    if (!input) throw runtime_error(RuntimeError::file_io,location);
-    std::string data; char buffer[8192];
-    while (input.read(buffer,sizeof buffer) || input.gcount()) {
-        data.append(buffer,static_cast<std::size_t>(input.gcount()));
-        if (data.size() > 1'048'576) throw runtime_error(RuntimeError::file_limit,location);
-    }
-    if (input.bad()) throw runtime_error(RuntimeError::file_io,location);
-    return encoding ? decode_text_bytes(data,*encoding,true,location) : decode_file_bytes(data,location);
+    LineReader input(target,encoding ? *encoding : TextEncoding{TextEncodingKind::utf8,false,true},location);
+    static const ExecutionOptions defaults;
+    return input.read_to_end(location,files.execution_options ? *files.execution_options : defaults);
 }
 void write_text_file(const FileContext& files, std::u16string_view path, std::u16string_view text, SourceLocation location,const TextEncoding* encoding) {
     const auto target=files.resolve(path,location);if(!encoding)encoding=files.encoding(location);
     auto data = encoding ? encode_text_bytes(text,*encoding,location) : to_utf8(text,true);
     if(encoding){const auto mark=text_encoding_preamble(*encoding);if(!mark.empty())data.insert(0,mark);}
     if (data.size() > 1'048'576) throw runtime_error(RuntimeError::file_limit,location);
-    std::ofstream output(target,std::ios::binary|std::ios::trunc);
-    if (!output || !output.write(data.data(),static_cast<std::streamsize>(data.size())) || !output.flush())
-        throw runtime_error(RuntimeError::file_io,location);
-    output.close(); if (!output) throw runtime_error(RuntimeError::file_io,location);
+    FileWriter output(target,false,location);output.write(data,location);output.flush(location);output.close();
 }
 bool file_exists(const FileContext& files, std::u16string_view path) {
     if (path.empty() || path.find(char16_t{0}) != std::u16string_view::npos) return false;

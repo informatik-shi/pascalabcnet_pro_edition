@@ -454,6 +454,17 @@ def main():
                         or "EN:" not in attempted.stderr or "RU:" not in attempted.stderr
                         or f"{literal_source}:3:" not in attempted.stderr):
                     raise RuntimeError(f"{name} Numeric literal diagnostic mismatch: {attempted.stdout!r}, {attempted.stderr!r}")
+            whole_file_source = folder / "Совместный доступ.pas"
+            for operation in ["ReadAllText('shared-whole.tmp')", "ReadAllLines('shared-whole.tmp')"]:
+                whole_file_source.write_text(
+                    "begin var f:=OpenWrite('shared-whole.tmp');f.Write('abc');f.Flush;\n"
+                    "Writeln(" + operation + ");end.", encoding="utf-8")
+                attempted = subprocess.run([runner, "run", str(whole_file_source)], text=True, encoding="utf-8",
+                                           capture_output=True, cwd=folder, env=env, timeout=10)
+                if (attempted.returncode != 1 or attempted.stdout or "E_IO" not in attempted.stderr
+                        or "EN:" not in attempted.stderr or "RU:" not in attempted.stderr
+                        or f"{whole_file_source}:2:" not in attempted.stderr):
+                    raise RuntimeError(f"{name} Native whole-file sharing mismatch: {attempted.stdout!r}, {attempted.stderr!r}")
             character = folder / "Ошибки символов.pas"
             school_error = folder / "Ошибки School.pas"
             for expression, code, english, russian in [
@@ -1293,6 +1304,7 @@ def main():
             results[-1]["typed_text_lines_buffer_seek_and_reader_ownership"] = "passed"
             results[-1]["native_text_writer_buffers_sharing_and_append_floor"] = "passed"
             results[-1]["typed_hexadecimal_literals_and_numeric_separators"] = "passed"
+            results[-1]["native_whole_file_io_sharing"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 

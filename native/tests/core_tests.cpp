@@ -5361,6 +5361,44 @@ void text_files() {
 #endif
         if(text->reader)text->close({});
     }
+#ifdef _WIN32
+    runtime_error("begin var f:=OpenWrite("+file+");f.Write('abc');f.Flush;Writeln(ReadAllText("+file+"));end.","E_IO");
+    runtime_error("begin var f:=OpenWrite("+file+");f.Write('abc');f.Flush;Writeln(ReadAllLines("+file+"));end.","E_IO");
+    {
+        struct NativeHandle {HANDLE value;~NativeHandle(){if(value!=INVALID_HANDLE_VALUE)::CloseHandle(value);}};
+        abc::FileContext files;
+        NativeHandle writer{::CreateFileW((directory/"text.txt").c_str(),GENERIC_WRITE,FILE_SHARE_READ|FILE_SHARE_WRITE,nullptr,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,nullptr)};
+        require(writer.value!=INVALID_HANDLE_VALUE,"Create independent native writer for whole-file sharing test");
+        if(writer.value!=INVALID_HANDLE_VALUE) {
+            error([&]{abc::read_text_file(files,(directory/"text.txt").u16string(),{});},"E_IO");
+            error([&]{abc::write_text_file(files,(directory/"text.txt").u16string(),u"blocked",{});},"E_IO");
+        }
+    }
+    {
+        struct NativeHandle {HANDLE value;~NativeHandle(){if(value!=INVALID_HANDLE_VALUE)::CloseHandle(value);}};
+        abc::FileContext files;
+        NativeHandle reader{::CreateFileW((directory/"text.txt").c_str(),GENERIC_READ,FILE_SHARE_READ|FILE_SHARE_WRITE,nullptr,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,nullptr)};
+        require(reader.value!=INVALID_HANDLE_VALUE,"Create independent shareable native reader");
+        if(reader.value!=INVALID_HANDLE_VALUE) {
+            abc::write_text_file(files,(directory/"text.txt").u16string(),u"updated",{});
+            require(abc::read_text_file(files,(directory/"text.txt").u16string(),{})==u"updated","Native whole-file calls respect compatible external read sharing");
+        }
+    }
+#endif
+    {
+        {std::ofstream out(directory/"text.txt",std::ios::binary);out << std::string(4096,'a');}
+        abc::FileContext files;abc::ExecutionOptions options;std::size_t polls=0;
+        options.cancelled=[&]{return ++polls>2;};files.execution_options=&options;
+        error([&]{abc::read_text_file(files,(directory/"text.txt").u16string(),{3,4,5});},"E_CANCELLED");
+        require(polls==3,"Whole-file decoding observes execution cancellation during native reads");
+        files.execution_options=nullptr;
+        require(abc::delete_file(files,(directory/"text.txt").u16string()),"Interrupted whole-file reading closes its native handle");
+        {std::ofstream out(directory/"text.txt",std::ios::binary);out << std::string(4096,'a');}
+        options={};options.instruction_limit=8;files.execution_options=&options;
+        error([&]{abc::read_text_file(files,(directory/"text.txt").u16string(),{});},"E_LIMIT");
+        files.execution_options=nullptr;
+        require(abc::read_text_file(files,(directory/"text.txt").u16string(),{}).size()==4096,"Whole-file work-limit errors release the native reader for later calls");
+    }
     const std::string unit_newline=
 #ifdef _WIN32
         "\r\n";
