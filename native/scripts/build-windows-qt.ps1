@@ -76,6 +76,7 @@ Sleep, Milliseconds и MillisecondsDelta: examples/timing.pas.
 Секции доступа и внешние тела методов: examples/class-external-methods.pas.
 Начальные значения полей: examples/class-field-initializers.pas.
 Короткие тела функций и методов: examples/short-class-bodies.pas.
+Шестнадцатеричные числа `$FF, `$FF_FF и разделители 1_000_000: examples/numeric-literals.pas.
 Текстовые файлы с BOM читаются как UTF-8, UTF-16LE/BE или UTF-32LE/BE.
 Символы CP1251 и ANSI-алиасы: examples/windows-characters.pas.
 Encoding, CP1251/ASCII/Unicode и выбор кодировки ReadAllText/WriteAllText: examples/text-encodings.pas.

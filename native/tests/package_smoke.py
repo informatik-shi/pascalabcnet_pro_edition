@@ -212,6 +212,7 @@ def main():
                 ("file-lines.pas", "CP1251: [Первая строка,,Последняя строка]\nUnicode: [Строка 1,Строка 2,Строка 3]\n"),
                 ("streaming-lines.pas", "Первые две: [Первая строка,]\nПовторный обход: [Первая строка,Последняя строка]\nОстановка на строке: Первая строка\nПосле break файл закрыт: True\n"),
                 ("streaming-text.pas", "Число: 17\nСлово: слово\nОстаток строки: [ остаток 🌍]\nНулевой символ: 0\nОстаток файла: конец\nКонец файла: True\n"),
+                ("numeric-literals.pas", "Маска: 16711935\n64 бита: 18446744073709551615\nРазделители: 1000000 12.5 1001\n"),
                 ("text-writer.pas", "buffered\nXYcdef\nXYcdefZ\nTrue\n"),
                 ("text-lines.pas", "Массив: [Первая строка,Вторая строка]\nСтрока: Первая строка\nСтрока: Вторая строка\nКонец файла: True\nПосле Close: True\n"),
                 ("class-properties.pas", "Свойство: 7\nЧерез метод: 14\n"),
@@ -440,6 +441,19 @@ def main():
                         or "EN:" not in attempted.stderr or "RU:" not in attempted.stderr
                         or f"{writer_source}:{line}:" not in attempted.stderr):
                     raise RuntimeError(f"{name} Text writer bilingual diagnostic mismatch: {attempted.stdout!r}, {attempted.stderr!r}")
+            literal_source = folder / "Числовые литералы.pas"
+            for expression, code in [
+                ("$10000000000000000", "E_RANGE"),
+                ("$G", "E_SYNTAX"),
+                ("1__000", "E_SYNTAX"),
+            ]:
+                literal_source.write_text("begin\nWriteln('must never run');\nWriteln(" + expression + ");\nend.", encoding="utf-8")
+                attempted = subprocess.run([runner, "run", str(literal_source)], text=True, encoding="utf-8",
+                                           capture_output=True, cwd=folder, env=env, timeout=10)
+                if (attempted.returncode != 1 or attempted.stdout or code not in attempted.stderr
+                        or "EN:" not in attempted.stderr or "RU:" not in attempted.stderr
+                        or f"{literal_source}:3:" not in attempted.stderr):
+                    raise RuntimeError(f"{name} Numeric literal diagnostic mismatch: {attempted.stdout!r}, {attempted.stderr!r}")
             character = folder / "Ошибки символов.pas"
             school_error = folder / "Ошибки School.pas"
             for expression, code, english, russian in [
@@ -1278,6 +1292,7 @@ def main():
             results[-1]["native_streaming_text_scalar_line_and_end_reads"] = "passed"
             results[-1]["typed_text_lines_buffer_seek_and_reader_ownership"] = "passed"
             results[-1]["native_text_writer_buffers_sharing_and_append_floor"] = "passed"
+            results[-1]["typed_hexadecimal_literals_and_numeric_separators"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 

@@ -58,6 +58,12 @@ protected:
             const auto match=action_calls.next();
             setFormat(match.capturedStart(),match.capturedLength(),QColor("#c6a8ff"));
         }
+        const QRegularExpression numbers(QStringLiteral("\\$[0-9a-f][0-9a-f_]*"),QRegularExpression::CaseInsensitiveOption);
+        auto numeric_tokens=numbers.globalMatch(text);
+        while(numeric_tokens.hasNext()) {
+            const auto match=numeric_tokens.next();
+            setFormat(match.capturedStart(),match.capturedLength(),QColor("#e6b673"));
+        }
         // A single pass keeps comment delimiters inside strings inert.
         int state = previousBlockState() > 0 ? previousBlockState() : 0;
         for (qsizetype i = 0; i < text.size();) {

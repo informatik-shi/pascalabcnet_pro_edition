@@ -392,3 +392,6 @@
     {"Procedure lambda expression must return no value","Выражение процедурной лямбды не должно возвращать значение"},
     {"Function lambda must return a value","Лямбда-функция должна возвращать значение"},
     {"Lambda Result requires a known value type","Для Result лямбды требуется известный тип значения"},
+    {"Expected a hexadecimal digit after $","После $ ожидается шестнадцатеричная цифра"},
+    {"Malformed numeric separator","Неверное положение разделителя в числовом литерале"},
+    {"Hexadecimal literal is outside the UInt64 range","Шестнадцатеричный литерал находится вне диапазона UInt64"},

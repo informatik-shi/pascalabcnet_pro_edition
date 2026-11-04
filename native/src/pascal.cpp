@@ -32,6 +32,7 @@ struct Token {
 };
 
 bool digit(char c) { return c >= '0' && c <= '9'; }
+bool hex_digit(char c) { return digit(c) || (c>='a' && c<='f') || (c>='A' && c<='F'); }
 bool letter(char32_t c) { return c==U'_' || (c<=0xffff && unicode::is_letter(static_cast<char16_t>(c))); }
 
 class Lexer {
@@ -65,21 +66,27 @@ public:
             } while (letter(point()) || digit(peek()));
             return {TokenKind::name, std::move(name), start, escaped};
         }
+        if(peek()=='$') {
+            std::string number(1,take());
+            if(!hex_digit(peek()))throw Error("E_SYNTAX",start,"Expected a hexadecimal digit after $");
+            while(hex_digit(peek()) || peek()=='_')number+=take();
+            return numeric(std::move(number),start);
+        }
         if (digit(peek())) {
             std::string number;
-            while (digit(peek())) number += take();
+            while (digit(peek()) || peek()=='_') number += take();
             if (peek() == '.' && digit(peek(1))) {
                 number += take();
-                while (digit(peek())) number += take();
+                while (digit(peek()) || peek()=='_') number += take();
             }
             if (peek() == 'e' || peek() == 'E') {
                 number += take();
                 if (peek() == '+' || peek() == '-') number += take();
                 if (!digit(peek())) throw Error("E_SYNTAX", start, "Expected digits in exponent");
-                while (digit(peek())) number += take();
+                while (digit(peek()) || peek()=='_') number += take();
             }
             if ((peek()=='b' || peek()=='B') && (peek(1)=='i' || peek(1)=='I')) { take(); take(); number+="bi"; }
-            return {TokenKind::number, std::move(number), start};
+            return numeric(std::move(number),start);
         }
         if (peek() == '#') {
             take(); std::string number;
@@ -111,6 +118,12 @@ public:
     }
 
 private:
+    static Token numeric(std::string number,SourceLocation location) {
+        if(number.ends_with('_') || number.find("__")!=std::string::npos)
+            throw Error("E_SYNTAX",location,"Malformed numeric separator");
+        std::erase(number,'_');
+        return {TokenKind::number,std::move(number),location};
+    }
     bool at_end() const { return position_.offset >= source_.size(); }
     char peek(std::size_t ahead = 0) const {
         return position_.offset + ahead < source_.size() ? source_[position_.offset + ahead] : '\0';
@@ -743,7 +756,7 @@ private:
         if (is("-") || is("+") || is("not")) {
             auto op = consume();
             // Parse the signed literal together so -2147483648 has type integer.
-            if ((op.text == "-" || op.text == "+") && current_.kind == TokenKind::number) {
+            if ((op.text == "-" || op.text == "+") && current_.kind == TokenKind::number && !current_.text.starts_with('$')) {
                 auto token = consume();
                 if (op.text == "-") token.text.insert(token.text.begin(), '-');
                 token.location = op.location;
@@ -905,6 +918,15 @@ private:
 };
 
 Value literal(const Token& token) {
+    if(token.kind==TokenKind::number && token.text.starts_with('$')) {
+        std::uint64_t value=0;const auto first=token.text.data()+1,last=token.text.data()+token.text.size();
+        const auto parsed=std::from_chars(first,last,value,16);
+        if(parsed.ec!=std::errc{} || parsed.ptr!=last)throw Error("E_RANGE",token.location,"Hexadecimal literal is outside the UInt64 range");
+        if(value<=INT32_MAX)return static_cast<std::int32_t>(value);
+        if(value<=INT64_MAX)return static_cast<std::int64_t>(value);
+        return value;
+    }
+
     if (token.kind==TokenKind::number && token.text.ends_with("bi")) {
         const auto digits=std::string_view(token.text).substr(0,token.text.size()-2);
         if (digits.find_first_of(".eE")!=std::string_view::npos) throw Error("E_SYNTAX",token.location,"BigInteger literal cannot have a fraction or exponent");
