@@ -212,6 +212,7 @@ def main():
                 ("file-lines.pas", "CP1251: [Первая строка,,Последняя строка]\nUnicode: [Строка 1,Строка 2,Строка 3]\n"),
                 ("streaming-lines.pas", "Первые две: [Первая строка,]\nПовторный обход: [Первая строка,Последняя строка]\nОстановка на строке: Первая строка\nПосле break файл закрыт: True\n"),
                 ("streaming-text.pas", "Число: 17\nСлово: слово\nОстаток строки: [ остаток 🌍]\nНулевой символ: 0\nОстаток файла: конец\nКонец файла: True\n"),
+                ("for-step.pas", "По возрастанию: 1 3 5 \nПо убыванию: 5 3 1 \nСимволы: 53\n"),
                 ("numeric-literals.pas", "Маска: 16711935\n64 бита: 18446744073709551615\nРазделители: 1000000 12.5 1001\n"),
                 ("text-writer.pas", "buffered\nXYcdef\nXYcdefZ\nTrue\n"),
                 ("text-lines.pas", "Массив: [Первая строка,Вторая строка]\nСтрока: Первая строка\nСтрока: Вторая строка\nКонец файла: True\nПосле Close: True\n"),
@@ -466,6 +467,20 @@ def main():
                         or "EN:" not in attempted.stderr or "RU:" not in attempted.stderr
                         or f"{whole_file_source}:2:" not in attempted.stderr):
                     raise RuntimeError(f"{name} Native whole-file sharing mismatch: {attempted.stdout!r}, {attempted.stderr!r}")
+            stepped_source = folder / "Цикл с шагом.pas"
+            for source, expected, code, line in [
+                ("begin\nWriteln('must never run');\nfor var i:=1 to 5 step 0 do Write(i);\nend.", "", "E_RANGE", 3),
+                ("begin\nWriteln('before');var h:=0;\nfor var i:=1 to 5 step h do Write(i);\nend.", "before\n", "E_RANGE", 3),
+                ("begin\nWriteln('must never run');\nfor var i:=5 downto 1 step -2 do Write(i);\nend.", "", "E_SYNTAX", 3),
+                ("begin\nWriteln('must never run');\nfor var i:=1 to 5 step 1.5 do Write(i);\nend.", "", "E_TYPE", 3),
+            ]:
+                stepped_source.write_text(source, encoding="utf-8")
+                attempted = subprocess.run([runner, "run", str(stepped_source)], text=True, encoding="utf-8",
+                                           capture_output=True, cwd=folder, env=env, timeout=10)
+                if (attempted.returncode != 1 or attempted.stdout != expected or code not in attempted.stderr
+                        or "EN:" not in attempted.stderr or "RU:" not in attempted.stderr
+                        or f"{stepped_source}:{line}:" not in attempted.stderr):
+                    raise RuntimeError(f"{name} For step diagnostic mismatch: {attempted.stdout!r}, {attempted.stderr!r}")
             character = folder / "Ошибки символов.pas"
             school_error = folder / "Ошибки School.pas"
             for expression, code, english, russian in [
@@ -1306,6 +1321,7 @@ def main():
             results[-1]["native_text_writer_buffers_sharing_and_append_floor"] = "passed"
             results[-1]["typed_hexadecimal_literals_and_numeric_separators"] = "passed"
             results[-1]["native_whole_file_io_sharing"] = "passed"
+            results[-1]["typed_for_step_loops_and_bilingual_zero_guard"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 

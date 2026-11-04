@@ -395,3 +395,6 @@
     {"Expected a hexadecimal digit after $","После $ ожидается шестнадцатеричная цифра"},
     {"Malformed numeric separator","Неверное положение разделителя в числовом литерале"},
     {"Hexadecimal literal is outside the UInt64 range","Шестнадцатеричный литерал находится вне диапазона UInt64"},
+    {"For step cannot use downto","В цикле с step нельзя использовать downto"},
+    {"Loop step cannot be zero","Шаг цикла не может быть равен нулю"},
+    {"Invalid for step check","Некорректная проверка шага цикла"},

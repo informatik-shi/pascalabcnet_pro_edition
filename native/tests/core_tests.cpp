@@ -4487,6 +4487,59 @@ void nullable_strings() {
 }
 
 void structured_loops() {
+    result("begin for var i:=1 to 5 step 2 do Write(i);Writeln;for var i:=5 to 1 step -2 do Write(i);Writeln;for var c:='5' to '2' step -2 do Write(c);Writeln;end.","135\n531\n53\n");
+    result("begin var i:=99;for i:=1 to 0 step 1 do Write('bad');Writeln(i);for i:=0 to 1 step -1 do Write('bad');Writeln(i);for i:=1 to 6 step 2 do Write(i);Writeln(' ',i);for i:=6 to 1 step -2 do Write(i);Writeln(' ',i);end.","1\n0\n135 5\n642 2\n");
+    result("begin var i:=0;for i:=1 to 7 step 2 do begin if i=3 then continue;Write(i);end;Writeln(' ',i);for i:=1 to 7 step 2 do begin Write(i);if i=3 then break;end;Writeln(' ',i);end.","157 7\n13 3\n");
+    result("begin var i:=0;for i:=1 to 5 step 2 do begin Write(i,' ');Inc(i,10);end;Writeln(i);end.","1 13 25 35\n");
+    result("begin var h:=2;var last:=5;for var i:=1 to last step h do begin Write(i);h:=100;last:=0;end;Writeln(' ',h,' ',last);end.","135 100 0\n");
+    result("function Mark(c:char;v:integer):integer;begin Write(c);Result:=v;end;begin var i:=99;for i:=Mark('A',1) to Mark('B',5) step Mark('H',2) do Write(i);Writeln(' ',i);end.","ABH135 5\n");
+    result("var i:integer;function Start:integer;begin Write('A',i,' ');i:=11;Result:=1;end;function Finish:integer;begin Write('B',i,' ');Result:=5;end;function Step:integer;begin Write('H',i,' ');Result:=2;end;begin i:=99;for i:=Start to Finish step Step do Write(i);Writeln(' ',i);end.","A99 B11 H11 135 5\n");
+    result("var i:integer;procedure P;begin for i:=1 to 5 step 2 do Write(i);end;begin P;Writeln(' ',i);end.","135 5\n");
+    result("procedure P(var i:integer);begin for i:=1 to 5 step 2 do Write(i);end;begin var i:=99;P(i);Writeln(' ',i);end.","135 5\n");
+    result("function P:integer;begin for Result:=1 to 5 step 2 do ;end;begin Writeln(P);end.","5\n");
+    result("function Ord(x:integer):integer;begin Result:=99;end;begin for var i:=1 to 5 step 2 do Write(i);Writeln;end.","135\n");
+    result("begin for var i:int64:=1 to 5 step 2 do Write(i);Writeln;for var c:=#65535 to #0 step -65535 do Write(Ord(c),' ');Writeln;end.","135\n65535 0 \n");
+    result("begin for var b:=byte(250) to byte(255) step 2 do Write(b,' ');for var s:=shortint(-128) to shortint(-124) step 2 do Write(s,' ');Writeln;end.","250 252 254 -128 -126 -124 \n");
+    result("begin for var i:=1 to 3 step 2 do for var i:=4 to 2 step -2 do begin if i=4 then continue;Write(i);end;Writeln;end.","22\n");
+    result("type F=()->integer;begin var a:=new List<F>;for var i:=1 to 5 step 2 do a.Add(()->i);Writeln(a[0](),' ',a[1](),' ',a[2]());end.","5 5 5\n");
+    result("type F=()->integer;begin var a:=new List<F>;for var k:=1 to 2 do for var i:=k to k step 1 do a.Add(()->i);Writeln(a[0](),' ',a[1]());end.","1 2\n");
+    result("begin var s:=SeqGen(2,n->begin var total:=0;for var i:=1 to 5 step 2 do total:=total+i;Result:=total+n;end);Writeln(s.ToArray);end.","[9,10]\n");
+    compile_error("begin for var i:uint64:=1 to 5 step 2 do ;end.","E_TYPE");
+    result("begin for var i:=MaxInt-1 to MaxInt step 1 do Write(i,' ');Writeln;for var i:=-2147483648 to -2147483648 step 1 do Writeln(i);end.","2147483646 2147483647 \n-2147483648\n");
+    for(const auto step:{"0","(0)","$0","0_0"})compile_error("begin Writeln('NEVER');for var i:=1 to 2 step "+std::string(step)+" do ;end.","E_RANGE");
+    for(const auto step:{"+0","-0","1-1","integer(0)"})runtime_error("begin for var i:=1 to 2 step "+std::string(step)+" do ;end.","E_RANGE");
+    runtime_error("begin var h:=0;for var i:=1 to 2 step h do ;end.","E_RANGE");
+    runtime_error("const h=0;begin for var i:=1 to 2 step h do ;end.","E_RANGE");
+    compile_error("begin for var i:=5 downto 1 step -2 do ;end.","E_SYNTAX");
+    compile_error("begin for var i:=1 to 5 step 1.5 do ;end.","E_TYPE");
+    compile_error("begin for var i:=1 to 5 step 'x' do ;end.","E_TYPE");
+    compile_error("begin for var i:=1 to 2 do for i:=1 to 2 step 1 do ;end.","E_TYPE");
+    compile_error("procedure P(const i:integer);begin for i:=1 to 2 step 1 do ;end;begin end.","E_TYPE");
+    compile_error("begin for var i:=1 to 2 step 1 do ;Writeln(i);end.","E_NAME");
+    // The source hidden for counter starts at integer(1), so an int64 count cannot bind its upper limit.
+    compile_error("begin for var i:=int64(1) to int64(5) step 2 do ;end.","E_TYPE");
+    runtime_error("begin for var i:=0 to MaxInt step 1 do break;end.","E_OVERFLOW");
+    runtime_error("begin for var i:=0 to -2147483648 step -1 do break;end.","E_OVERFLOW");
+    {
+        const auto p=abc::compile("begin var h:=2;for var i:=1 to 5 step h do Write(i);end.");
+        require(std::any_of(p.code.begin(),p.code.end(),[](const auto& op){return op.op==abc::Op::for_step_check && op.type==abc::Type::integer;}),"For step has a verified integer guard before execution");
+        for(unsigned mode=0;mode<3;++mode) {
+            auto bad=p;
+            for(std::size_t i=0;i<bad.code.size();++i)if(bad.code[i].op==abc::Op::for_step_check) {
+                if(mode==0)bad.code[i].type=abc::Type::int64;
+                if(mode==1)bad.code[i].operand=1;
+                if(mode==2){bad.constants.push_back(1.0);bad.code[i-1]={abc::Op::push,abc::Type::real,bad.constants.size()-1,{}};}
+                break;
+            }
+            error([&]{abc::verify(bad);},"E_BYTECODE");
+        }
+        std::istringstream in;std::ostringstream out;
+        const auto program=abc::compile("begin\nWriteln('before');\nvar h:=0;\nfor var i:=1 to 2 step h do ;\nend.");
+        try{abc::execute(program,in,out);require(false,"Expected dynamic zero-step error");}
+        catch(const abc::Error& e){require(e.code=="E_RANGE" && e.location.line==4 && e.russian=="Шаг цикла не может быть равен нулю","Dynamic loop step error retains both languages and source location");}
+        require(out.str()=="before\n","Dynamic zero-step guard runs after preceding statements");
+    }
+
     result("begin var sum:=0; for var i:=1 to 10 do sum:=sum+i; Writeln(sum); end.","55\n");
     result("begin for var i:=3 downto 1 do Write(i); Writeln; end.","321\n");
     result("begin var i:integer; for i:=1 to 3 do Write(i); Writeln(' ',i); for i:=7 to 2 do Write('bad'); Writeln(i); for i:=0 downto 2 do Write('bad'); Writeln(i); end.","123 3\n7\n0\n");
@@ -4524,7 +4577,7 @@ void structured_loops() {
     compile_error("begin for var i:=1 to 2147483648 do Write(i); end.","E_RANGE");
     compile_error("begin repeat var n:=1; until n=1; Writeln(n); end.","E_NAME");
     compile_error("begin for i:=1 to 2 do Write(i); end.","E_NAME");
-    compile_error("begin for var i:=1 to 3 step 2 do Write(i); end.","E_UNSUPPORTED");
+    result("begin for var i:=1 to 3 step 2 do Write(i); end.","13");
     compile_error("function F:integer; begin for Result:=1 to 3 do Write(Result); end; begin end.","E_UNSUPPORTED");
     for (const auto* source:{"begin break; end.","begin continue; end.","begin if true then break; end.",
         "procedure P; begin continue; end; begin while true do P; end.",

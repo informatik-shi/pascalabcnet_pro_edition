@@ -4,6 +4,8 @@ namespace abc {
 Error runtime_error(RuntimeError id, SourceLocation location, std::string_view context) {
     const char *code, *english, *russian;
     switch (id) {
+    case RuntimeError::for_step_zero:
+        code="E_RANGE";english="Loop step cannot be zero";russian="Шаг цикла не может быть равен нулю";break;
     case RuntimeError::encoding_data:
         code="E_ENCODING";english="Invalid data for the selected encoding";russian="Некорректные данные для выбранной кодировки";break;
     case RuntimeError::encoding_limit:

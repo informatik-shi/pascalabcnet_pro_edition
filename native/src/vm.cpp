@@ -1082,6 +1082,8 @@ static void execute_impl(const Program& program, std::istream& input, std::ostre
             auto target=std::get<std::shared_ptr<Cell>>(arguments[ref]); arguments[ref]=target->value;
             const auto result=stdlib::invoke(instruction.operand,arguments,instruction.location,services); values.write(target,result); break;
         }
+        case Op::for_step_check:
+            if(!std::get<std::int32_t>(pop()))throw runtime_error(RuntimeError::for_step_zero,instruction.location);break;
         case Op::text_lines:
             stack.emplace_back(text_lines_sequence(values,instruction.type,pop()));break;
         case Op::read_lines: {

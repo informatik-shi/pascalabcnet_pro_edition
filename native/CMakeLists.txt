@@ -310,6 +310,10 @@ if(BUILD_TESTING)
     set_tests_properties(original_person_external PROPERTIES PASS_REGULAR_EXPRESSION "Имя: Иванов  Возраст: 20" TIMEOUT 10)
     add_test(NAME original_short_fun COMMAND $<TARGET_FILE:abc> run "${CMAKE_CURRENT_SOURCE_DIR}/../TestSuite/short_fun.pas")
     set_tests_properties(original_short_fun PROPERTIES PASS_REGULAR_EXPRESSION "133" TIMEOUT 10)
+    add_test(NAME original_for_step2 COMMAND $<TARGET_FILE:abc> run "${CMAKE_CURRENT_SOURCE_DIR}/../TestSuite/for_step2.pas")
+    add_test(NAME for_step_compatibility COMMAND ${CMAKE_COMMAND}
+        -DABC_RUNNER=$<TARGET_FILE:abc> -DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures
+        -DABC_FIXTURE_NAME=for-step-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")
     add_test(NAME numeric_literals_compatibility COMMAND ${CMAKE_COMMAND}
         -DABC_RUNNER=$<TARGET_FILE:abc> -DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures
         -DABC_FIXTURE_NAME=numeric-literals-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")

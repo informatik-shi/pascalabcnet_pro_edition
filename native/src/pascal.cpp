@@ -597,7 +597,7 @@ private:
             if (!is("to") && !is("downto")) fail("Expected to or downto in for loop");
             result.descending=accept("downto"); if (!result.descending) expect("to");
             result.arguments.push_back(expression());
-            if (is("step")) throw Error("E_UNSUPPORTED",current_.location,"For step is not ported yet");
+            if(accept("step"))result.arguments.push_back(expression());
             expect("do"); result.body=std::make_unique<SyntaxStmt>(statement());
         } else if (accept("repeat")) {
             result.kind=SyntaxStmtKind::repeat_loop;
@@ -4097,6 +4097,95 @@ private:
         scopes_.pop_back();
         return result;
     }
+    hir::Stmt stepped_for_statement(const SyntaxStmt& source) {
+        const auto location=source.token.location,step_location=source.arguments[1]->token.location;
+        const auto& syntax_step=*source.arguments[1];
+        if(source.descending)throw Error("E_SYNTAX",location,"For step cannot use downto");
+        if(syntax_step.kind==SyntaxExprKind::literal && syntax_step.token.kind==TokenKind::number && !syntax_step.signed_literal) {
+            const auto value=literal(syntax_step.token);
+            if(const auto* zero=std::get_if<std::int32_t>(&value);zero && *zero==0)
+                throw Error("E_RANGE",step_location,"Loop step cannot be zero");
+        }
+        hir::Stmt output;output.location=location;
+        scopes_.emplace_back();
+        auto temporary=[&](Type type,std::string_view role) {
+            if(module_.locals.size()>=4096)throw Error("E_LIMIT",location,"Local and constant limit exceeded");
+            const auto index=module_.locals.size();const auto name="$for_step_"+std::string(role)+"_"+std::to_string(index);
+            module_.locals.push_back({name,type,!in_routine_});scopes_.back()[name]=index;
+            if(!in_routine_)lexical_globals_.insert(index);
+            return index;
+        };
+        auto local=[&](std::size_t index) {
+            auto result=std::make_unique<hir::Expr>();result->kind=hir::ExprKind::local;result->type=module_.locals[index].type;
+            result->local=index;result->location=location;return result;
+        };
+        auto named=[&](std::size_t index) {
+            return make_expression(SyntaxExprKind::name,Token{TokenKind::name,module_.locals[index].name,location});
+        };
+        auto number=[&](int value) {return make_expression(SyntaxExprKind::literal,Token{TokenKind::number,std::to_string(value),location});};
+        auto binary=[&](std::string op,std::unique_ptr<SyntaxExpr> left,std::unique_ptr<SyntaxExpr> right) {
+            return make_expression(SyntaxExprKind::binary,Token{TokenKind::symbol,std::move(op),location},std::move(left),std::move(right));
+        };
+        auto assign=[&](hir::Stmt& parent,std::size_t index,std::unique_ptr<hir::Expr> value,bool declaration=true) {
+            hir::Stmt store;store.kind=hir::StmtKind::assign;store.location=value->location;store.local=index;
+            store.expression=std::move(value);store.declaration=declaration;parent.statements.push_back(std::move(store));
+        };
+        auto retain=[&](std::unique_ptr<hir::Expr> value,std::string_view role) {
+            const auto index=temporary(value->type,role);assign(output,index,std::move(value));return index;
+        };
+        const auto a=retain(expression(*source.expression),"a");
+        const auto b=retain(expression(*source.arguments[0]),"b");
+        if(!ordinal(module_.locals[a].type) || !ordinal(module_.locals[b].type))
+            throw Error("E_TYPE",location,"For control must be an ordinal type");
+        (void)convert(local(b),module_.locals[a].type);
+        auto ordinal_value=[&](std::size_t index) {
+            auto result=std::make_unique<hir::Expr>();result->kind=hir::ExprKind::call;result->location=location;
+            result->arguments.push_back(local(index));bind_builtin(*result,"ord","pabcsystem");return result;
+        };
+        const auto oa=retain(ordinal_value(a),"oa"),ob=retain(ordinal_value(b),"ob");
+        const auto h=retain(convert(expression(syntax_step),Type::integer),"h");
+        hir::Stmt guard;guard.kind=hir::StmtKind::for_step_check;guard.location=step_location;
+        guard.expression=local(h);output.statements.push_back(std::move(guard));
+        // Preserve the source count arithmetic before its wrong-direction test.
+        auto difference=binary("-",named(ob),named(oa));
+        auto quotient=binary("div",std::move(difference),named(h));
+        auto count=binary("+",std::move(quotient),number(1));
+        const auto n=retain(expression(*count),"n");
+        auto positive_wrong=binary("and",binary(">",named(h),number(0)),binary("<",named(b),named(a)));
+        auto negative_wrong=binary("and",binary("<",named(h),number(0)),binary("<",named(a),named(b)));
+        auto wrong=binary("or",std::move(positive_wrong),std::move(negative_wrong));
+        hir::Stmt direction;direction.kind=hir::StmtKind::conditional;direction.location=location;direction.expression=expression(*wrong);
+        direction.body=std::make_unique<hir::Stmt>();
+        assign(*direction.body,n,convert(expression(*number(0)),module_.locals[n].type),false);
+        output.statements.push_back(std::move(direction));
+        const auto& name=source.names.front();std::size_t control;
+        if(source.declares_control) {
+            const auto type=source.annotation ? resolve_type(*source.annotation) : module_.locals[a].type;
+            control=module_.locals.size();module_.locals.push_back({name.text,type,!in_routine_});scopes_.back()[name.text]=control;
+            if(!in_routine_)lexical_globals_.insert(control);
+        } else control=resolve(name);
+        if(!lvalue(*local(control)))throw Error("E_TYPE",name.location,"Assignment target must be assignable");
+        const auto type=module_.locals[control].type;
+        if(!ordinal(type))throw Error("E_TYPE",name.location,"For control must be an ordinal type");
+        if(type==Type::boolean)throw Error("E_TYPE",name.location,"Boolean Inc/Dec takes no step argument");
+        assign(output,control,convert(local(a),type),source.declares_control);
+        const auto bound=retain(convert(local(n),Type::integer),"bound");
+        const auto counter=temporary(Type::integer,"j");
+        hir::Stmt loop;loop.kind=hir::StmtKind::for_loop;loop.location=location;loop.local=bound;loop.target=local(counter);
+        assign(loop,counter,expression(*number(1)));
+        loop.body=std::make_unique<hir::Stmt>();loop.body->location=location;
+        hir::Stmt advance;advance.kind=hir::StmtKind::conditional;advance.location=name.location;
+        advance.expression=expression(*binary(">",named(counter),number(1)));
+        advance.body=std::make_unique<hir::Stmt>();advance.body->kind=hir::StmtKind::increment;
+        advance.body->location=name.location;advance.body->target=local(control);
+        advance.body->expression=convert(local(h),increment_step_type(type));
+        loop.body->statements.push_back(std::move(advance));
+        // The source lowering protects only its hidden counter, leaving the user's variable assignable.
+        for_controls_.insert(counter);++loop_depth_;
+        loop.body->statements.push_back(scoped_statement(*source.body));
+        --loop_depth_;for_controls_.erase(counter);
+        output.statements.push_back(std::move(loop));scopes_.pop_back();return output;
+    }
     hir::Stmt statement(const SyntaxStmt& source) {
         hir::Stmt result;
         result.location = source.token.location;
@@ -4319,6 +4408,7 @@ private:
             --loop_depth_; for_controls_.erase(control); scopes_.pop_back(); break;
         }
         case SyntaxStmtKind::for_loop: {
+            if(source.arguments.size()==2){result=stepped_for_statement(source);break;}
             auto initial=expression(*source.expression);
             scopes_.emplace_back();
             const auto& name=source.names.front();
