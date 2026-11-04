@@ -29,6 +29,7 @@
 #include "enumeration.hpp"
 #include "comparable.hpp"
 #include "ini_file.hpp"
+#include "compound.hpp"
 #include "file_encoding.hpp"
 #include "file_lines.hpp"
 #include "big_integer_runtime.hpp"
@@ -1087,6 +1088,11 @@ static void execute_impl(const Program& program, std::istream& input, std::ostre
             auto target=std::get<std::shared_ptr<Cell>>(arguments[ref]); arguments[ref]=target->value;
             const auto result=stdlib::invoke(instruction.operand,arguments,instruction.location,services); values.write(target,result); break;
         }
+        case Op::compound_call: {
+            const auto method=static_cast<CompoundMethod>(instruction.operand);std::vector<Value> arguments(compound_parameters(program,instruction.type,method).size());
+            for(std::size_t i=arguments.size();i>0;--i)arguments[i-1]=pop();auto result=compound_invoke(values,instruction.type,method,arguments,options);
+            if(compound_result(instruction.type,method)!=Type::unit)stack.push_back(std::move(result));break;
+        }
         case Op::ini_call: {
             const auto method=static_cast<IniMethod>(instruction.operand);std::vector<Value> arguments(ini_parameters(instruction.type,method).size());
             for(std::size_t i=arguments.size();i>0;--i)arguments[i-1]=pop();
@@ -1161,6 +1167,17 @@ static void execute_impl(const Program& program, std::istream& input, std::ostre
             auto value = pop(); auto target = std::get<std::shared_ptr<Cell>>(pop()); values.write(target,value); break;
         }
         case Op::drop: (void)pop(); break;
+        case Op::store_index: {
+            const auto value=pop();const auto last=std::int64_t(std::get<std::int32_t>(pop()));
+            const bool matrix=type_info(program,instruction.type).rank==2;const auto first=matrix ? std::int64_t(std::get<std::int32_t>(pop())) : last;
+            const auto array=std::get<std::shared_ptr<Aggregate>>(pop());if(!array || array->nil)trap(instruction,RuntimeError::nil_reference);
+            if(first<0 || last<0 || (matrix && (static_cast<std::uint64_t>(first)>=array->rows || static_cast<std::uint64_t>(last)>=array->columns)))trap(instruction,RuntimeError::index_bounds);
+            const auto index=matrix ? static_cast<std::uint64_t>(first)*array->columns+static_cast<std::uint64_t>(last) : static_cast<std::uint64_t>(first);
+            if(index>=array->items.size())trap(instruction,RuntimeError::index_bounds);values.write(array->items[static_cast<std::size_t>(index)],value);break;
+        }
+        case Op::store_field: {
+            const auto value=pop();const auto object=std::get<std::shared_ptr<Aggregate>>(pop());if(!object || object->nil)trap(instruction,RuntimeError::nil_reference);values.write(object->items[instruction.operand],value);break;
+        }
         case Op::get_index: case Op::ref_index: {
             if (compound(instruction.type) && type_info(program,instruction.type).kind==CompoundKind::sequence) {
                 const auto index=std::get<std::int64_t>(pop()); const auto sequence=std::get<std::shared_ptr<Aggregate>>(pop());

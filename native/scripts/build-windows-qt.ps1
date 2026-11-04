@@ -82,6 +82,9 @@ Sleep, Milliseconds и MillisecondsDelta: examples/timing.pas.
 Перечисления проверяются до запуска; HasFlag и форматы G/D/X/F имеют двуязычные ошибки.
 System.Enum как объект, reflection и поддиапазоны ещё не перенесены.
 InRange, Between, Clamp и методы ClampTop/ClampBottom: examples/comparable-ranges.pas.
+Составные присваивания +=, -=, *=, /=: examples/compound-assignments.pas.
+Целочисленное /= запрещено; string/BigInteger и коллекции используют исходные перегрузки.
+Пользовательские операторы, multicast-делегаты и полный набор типов ещё переносятся.
 Нативный IniFile.TIniFile: uses IniFile; пример examples/ini-files.pas.
 WriteString/WriteInteger/WriteBoolean меняют память, Save записывает файл. Наследование TIniFile ещё не перенесено.
 Обобщённые строковые проверки используют en-US, строковые методы InRange/Between — порядок UTF-16.

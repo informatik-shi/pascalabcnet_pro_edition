@@ -15,6 +15,7 @@
 #include "../src/file_encoding.hpp"
 #include "../src/enumeration.hpp"
 #include "../src/comparable.hpp"
+#include "../src/compound.hpp"
 #include "../src/constant.hpp"
 #include <cmath>
 #include "../src/file_reader.hpp"
@@ -4359,6 +4360,66 @@ void sequence_mutations() {
     error([&]{(void)run("begin var a:=new integer[2000]; Reverse(a); end.","",options);},"E_CANCELLED");
 }
 
+void compound_assignments() {
+    result("begin var i:=5;i+=2;i-=1;i*=3;var r:=9.0;r/=2;r+=1;r-=0.5;r*=2;Writeln(i,' ',r);end.","18 10\n");
+    for(const auto name:{"byte","shortint","smallint","word","integer","longword","int64","uint64"}) {
+        result("begin var x:"+std::string(name)+":=2;x+=3;x*=4;x-=1;Writeln(x);end.","19\n");
+        compile_error("begin var x:"+std::string(name)+":=6;x/=2;end.","E_TYPE");
+    }
+    result("begin var x:=1;var y:int64:=2;var z:uint64:=3;x+=y;x+=z;Writeln(x);end.","6\n");
+    result("var x:integer:=1;function Right:integer;begin x:=10;Result:=2;end;begin x+=Right;Writeln(x);end.","3\n");
+    result("var s:string:='old';function Right:string;begin s:='changed';Result:='!';end;begin s+=Right;Writeln(s);s*=2;Writeln(s);s*=(-3);Writeln('[',s,']');end.","changed!\nchanged!changed!\n[]\n");
+    result("begin var s:string:=nil;s+=nil;Writeln(s=nil,' ',s.Length);s+='A';s+=42;s+=1.5;Writeln(s);Writeln('x'+42,' ',1.5+'x');end.","False 0\nA421.5\nx42 1.5x\n");
+    result("var p:BigInteger:=1bi;function Right:BigInteger;begin p:=10bi;Result:=2bi;end;begin p+=Right;p*=3;p-=1;Writeln(p);end.","35\n");
+    result("procedure Update(var x:integer);begin x+=2;end;function F:integer;begin Result+=3;Result*=2;end;begin var x:=1;Update(x);Writeln(x,' ',F);var total:=0;var action:procedure(x:integer):=x->total+=x;action(5);Writeln(total);end.","3 6\n5\n");
+    result("begin var total:=0;var action:procedure(x:integer):=x->total+=x;Arr(1,2,3).ForEach(action);Writeln(total);end.","6\n");
+    result("type R=record x:integer;s:string;b:BigInteger;end;begin var r:R;r.x+=4;r.s+='hello';r.b+=2;var a:=new R[1];a[0]:=r;a[0].x*=2;a[0].s+='!';a[0].b*=3;Writeln(r,' ',a[0]);end.","(4,hello,2) (8,hello!,6)\n");
+    result("type C=class public x:integer:=1;s:string:='a';end;var c:=new C;trace:string;function Obj:C;begin trace+='C';Result:=c;end;function Right:integer;begin trace+='R';Result:=2;end;begin Obj.x+=Right;Writeln(c.x,' ',trace);Obj.s+='b';Writeln(c.s);end.","3 CCR\nab\n");
+    result("type C=class public x:integer:=1;function GetX:integer;begin Write('G');Result:=x;end;procedure SetX(v:integer);begin Write('S');x:=v;end;property Value:integer read GetX write SetX;end;var c:=new C;function Obj:C;begin Write('C');Result:=c;end;function Right:integer;begin Write('R');Result:=2;end;begin Obj.Value+=Right;Writeln(' ',c.x);end.","CCGRS 3\n");
+    result("type C=class public s:string:='old';property Value:string read s write s;end;var c:=new C;function Right:string;begin c.s:='changed';Result:='!';end;begin c.Value+=Right;Writeln(c.Value);end.","old!\n");
+    result("type C=class public p:BigInteger:=9bi;property Value:BigInteger read p write p;end;begin var c:=new C;c.Value/=2bi;Writeln(c.Value);end.","4\n");
+    for(const auto& [type,trace]:std::initializer_list<std::pair<std::string_view,std::string_view>>{{"integer","AIAR"},{"byte","AIAIR"},{"real","AIAR"},{"longword","AIAR"}}) {
+        result("var a:array of "+std::string(type)+";trace:string;function Arr1:array of "+std::string(type)+";begin trace+='A';Result:=a;end;function Index:integer;begin trace+='I';Result:=0;end;function Right:"+std::string(type)+";begin trace+='R';Result:=2;end;begin a:=new "+std::string(type)+"[1];a[0]:=1;Arr1()[Index()]+=Right;Writeln(a[0],' ',trace);end.","3 "+std::string(trace)+"\n");
+    }
+    result("var m:array[,] of integer;trace:string;function Matr1:array[,] of integer;begin trace+='A';Result:=m;end;function Row:integer;begin trace+='i';Result:=0;end;function Col:integer;begin trace+='j';Result:=0;end;function Right:integer;begin trace+='R';Result:=2;end;begin m:=new integer[1,1];m[0,0]:=1;Matr1()[Row(),Col()]+=Right;Writeln(m[0,0],' ',trace);end.","3 AijAijR\n");
+    result("var l:List<integer>;trace:string;function Lst1:List<integer>;begin trace+='L';Result:=l;end;function Index:integer;begin trace+='I';Result:=0;end;function Right:integer;begin trace+='R';Result:=2;end;begin l:=Lst(1);Lst1()[Index()]+=Right;Writeln(l[0],' ',trace);end.","3 LILIR\n");
+    result("function F:integer;begin var a:=Arr(1);a[0]+=2;Result:=a[0];end;begin Writeln(F,' ',SeqGen(2,i->F).ToArray);end.","3 [3,3]\n");
+    result("begin var l:=Lst(1);var alias1:=l;l+=2;l+=Lst(3,4);l+=l;Writeln(l,' ',l=alias1);var c:=l+Lst(5);Writeln(c,' ',c=l);Writeln(Lst(1,2)*2,' ',2*Lst(3));end.","[1,2,3,4,1,2,3,4] True\n[1,2,3,4,1,2,3,4,5] False\n[1,2,1,2] [3,3]\n");
+    result("var l:List<integer>;function Right:integer;begin l:=Lst(9);Result:=2;end;begin l:=Lst(1);var original:=l;l+=Right;Writeln(original,' ',l);end.","[1,2] [9]\n");
+    result("type C=class public l:List<integer>;property Value:List<integer> read l write l;end;begin var c:=new C;c.l:=Lst(1);var old:=c.l;c.Value+=Lst(2);Writeln(old,' ',c.l,' ',old=c.l);c.Value*=2;Writeln(c.l);end.","[1] [1,2] False\n[1,2,1,2]\n");
+    result("type R=record x:integer;end;begin var r:R;r.x:=7;var l:=new List<R>;l+=r;r.x:=9;Writeln(l[0].x);var callbacks:=new List<integer->integer>;callbacks+=x->x+1;Writeln(callbacks[0](4));end.","7\n5\n");
+    result("uses Collections;begin var s:=new Stack<integer>;var q:=new Queue<integer>;s+=1;s+=2;q+=3;q+=4;Writeln(s.Pop,' ',q.Dequeue);var n:=new SingleNode<string>('a',nil);n.Data+='b';Writeln(n.Data);var d:=new DynArray<integer>;d.Count+=2;d[0]+=3;Writeln(d[0],' ',d.Count);var map:=new AssocArray<string,integer>;map['x']:=1;map['x']+=2;Writeln(map['x']);end.","2 3\nab\n3 2\n3\n");
+    result("uses Collections;var n:SingleNode<string>;function Right:string;begin n.Data:='changed';Result:='!';end;begin n:=new SingleNode<string>('old',nil);n.Data+=Right;Writeln(n.Data);end.","old!\n");
+    result("var a:array of string;function Right:string;begin a:=Arr('new');Result:='!';end;begin a:=Arr('old');var original:=a;a[0]+=Right;Writeln(original[0],' ',a[0]);end.","old! new\n");
+    result("begin for var i:=1 to 5 step 2 do begin Write(i,' ');i+=1;end;Writeln;end.","1 4 7 \n");
+    for(const auto& source:{"begin var x:=1;x+=True;end.","begin var x:=1;x/=2;end.","begin var p:=1bi;p/=2;end.","begin var c:char:='a';c+='b';end.","type E=(A,B);begin var x:=A;x+=B;end.","begin const x=1;x+=2;end.","procedure F(const x:integer);begin x+=1;end;begin end.","begin for var i:=1 to 3 do i+=1;end.","begin var l:=Lst(1);l*=2;end.","begin var s:='a';s-=1;end."})compile_error(source,"E_TYPE");
+    compile_error("type C=class public x:integer;property Value:integer read x;end;begin var c:=new C;c.Value+=1;end.","E_TYPE");
+    compile_error("type C=class public x:integer;property Value:integer write x;end;begin var c:=new C;c.Value+=1;end.","E_TYPE");
+    for(const auto& source:{"begin var b:byte:=255;b+=1;end.","begin var x:=MaxInt;x+=1;end.","begin var x:longword:=4294967295;x+=1;end.","begin var x:uint64:=18446744073709551615;x+=1;end."})runtime_error(source,"E_OVERFLOW");
+    runtime_error("begin var r:=1.0;r/=0;end.","E_DIV_ZERO");runtime_error("begin Writeln(Lst(1)*(-1));end.","E_RANGE");
+    runtime_error("begin var l:List<integer>;l+=1;end.","E_NIL");runtime_error("begin var l:=Lst(1);var other:List<integer>;l+=other;end.","E_NIL");
+    runtime_error("begin var l:=Lst(1);foreach var x in l do l+=2;end.","E_MODIFIED");
+    runtime_error("begin var l:=Lst(1);foreach var x in l do l[0]+=1;end.","E_MODIFIED");
+    {
+        const auto p=abc::compile("var a:array of integer;count:integer;function Arr1:array of integer;begin Write('A');Inc(count);Result:=if count=1 then nil else a;end;function Index:integer;begin Write('I');Result:=0;end;function Right:integer;begin Write('R');Result:=2;end;begin a:=Arr(1);\nArr1()[Index()]+=Right;end.");std::istringstream in;std::ostringstream out;
+        try{abc::execute(p,in,out);require(false,"Expected deferred array nil store");}catch(const abc::Error& e){require(e.code=="E_NIL" && e.location.line==2 && !e.russian.empty(),"Deferred nil store retains operator location and both languages");}require(out.str()=="AIAR","Numeric array store fails only after source read/RHS effects");
+    }
+    {
+        auto program=abc::compile("begin var s:string:='a';s+='b';end.");
+        for(unsigned mode=0;mode<3;++mode){auto bad=program;for(auto& op:bad.code)if(op.op==abc::Op::compound_call){if(mode==0)op.operand=999;if(mode==1)op.type=abc::Type::integer;if(mode==2)op.operand=static_cast<std::size_t>(abc::CompoundMethod::text_integer);}error([&]{abc::verify(bad);},"E_BYTECODE");}
+        program=abc::compile("begin var a:=Arr(1);a[0]+=2;end.");for(auto& op:program.code)if(op.op==abc::Op::store_index)op.operand=1;error([&]{abc::verify(program);},"E_BYTECODE");
+        program=abc::compile("type C=class public x:integer;end;begin var c:=new C;c.x+=1;end.");for(auto& op:program.code)if(op.op==abc::Op::store_field)op.operand=999;error([&]{abc::verify(program);},"E_BYTECODE");
+    }
+    {
+        abc::Program program;abc::Values values{program,100};auto cell=values.cell(abc::Type::string,std::u16string{u"old"});
+        const std::array<abc::Value,2> args{cell,std::u16string(1'048'576,u'x')};
+        error([&]{(void)abc::compound_invoke(values,abc::Type::string,abc::CompoundMethod::text_add,args,{});},"E_LIMIT");require(abc::string_text(cell->value)==u"old","Failed string compound operation preserves the target");
+        const std::array<abc::Value,2> repeat{cell,std::int32_t{1000}};abc::ExecutionOptions options;options.instruction_limit=10;
+        error([&]{(void)abc::compound_invoke(values,abc::Type::string,abc::CompoundMethod::text_repeat,repeat,options);},"E_LIMIT");options.instruction_limit=10000;options.cancelled=[] {return true;};
+        error([&]{(void)abc::compound_invoke(values,abc::Type::string,abc::CompoundMethod::text_repeat,repeat,options);},"E_CANCELLED");
+    }
+}
+
 void comparable_ranges() {
     for(const auto& [expression,negative]:std::initializer_list<std::pair<std::string_view,bool>>{
         {"Min(-0.0,0.0)",false},{"Max(-0.0,0.0)",false},{"Min(0.0,-0.0)",true},{"Max(0.0,-0.0)",true},
@@ -6558,7 +6619,7 @@ void characters() {
 
 int main() {
     language();
-    enumerations(); comparable_ranges();
+    enumerations(); comparable_ranges(); compound_assignments();
     structured_loops();
     foreach_loops();
     characters();

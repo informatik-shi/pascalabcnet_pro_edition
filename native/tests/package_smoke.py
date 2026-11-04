@@ -215,6 +215,7 @@ def main():
                 ("for-step.pas", "По возрастанию: 1 3 5 \nПо убыванию: 5 3 1 \nСимволы: 53\n"),
                 ("enumerations.pas", "Начало: Ready\nПосле Inc: Running / 1\nПрава: CanRead, CanWrite\nЗапись: True\nСписок: [Ready,Running,Done]\nШаг: Ready\nШаг: Done\n"),
                 ("comparable-ranges.pas", "Границы: True / False\nПорядок границ: True / False\nОграничение: 0 5 9\nМетоды: 9 0\nПеречисление: Tue / True\nСтрока: True / False\n"),
+                ("compound-assignments.pas", "20 4.5\nPascal 42Pascal 42\n300000000000000000006\n[1,12,3]\n[1,2,3,4]\n[1,2,3,4,1,2,3,4]\n10 20\n5\n"),
                 ("ini-files.pas", "Файл: example-settings.ini\nИмя: ABC Native\nШирина: 1000\nНочная тема: True\nНет ключа: По умолчанию\n"),
                 ("numeric-literals.pas", "Маска: 16711935\n64 бита: 18446744073709551615\nРазделители: 1000000 12.5 1001\n"),
                 ("text-writer.pas", "buffered\nXYcdef\nXYcdefZ\nTrue\n"),
@@ -512,6 +513,23 @@ def main():
                         or "EN:" not in attempted.stderr or "RU:" not in attempted.stderr
                         or f"{comparison_source}:{line}:" not in attempted.stderr):
                     raise RuntimeError(f"{name} Comparison diagnostic mismatch: {attempted.stdout!r}, {attempted.stderr!r}")
+            compound_source = folder / "Составное присваивание.pas"
+            for source, expected, code, line in [
+                ("begin\nWriteln('must never run');var i:=1;i/=2;end.", "", "E_TYPE", 2),
+                ("begin\nWriteln('must never run');var s:='a';s-=1;end.", "", "E_TYPE", 2),
+                ("begin\nWriteln('before');var r:=1.0;r/=0;end.", "before\n", "E_DIV_ZERO", 2),
+                ("begin\nWriteln('before');var b:byte:=255;b+=1;end.", "before\n", "E_OVERFLOW", 2),
+                ("begin\nWriteln('before');Writeln(Lst(1)*(-1));end.", "before\n", "E_RANGE", 2),
+                ("begin\nWriteln('before');var l:List<integer>;l+=1;end.", "before\n", "E_NIL", 2),
+                ("var s:string:='old';function Right:string;begin s:='changed';Result:='!';end;\nbegin s+=Right;Writeln(s);var r:=1.0;r/=0;end.", "changed!\n", "E_DIV_ZERO", 2),
+            ]:
+                compound_source.write_text(source, encoding="utf-8")
+                attempted = subprocess.run([runner, "run", str(compound_source)], text=True, encoding="utf-8",
+                                           capture_output=True, cwd=folder, env=env, timeout=10)
+                if (attempted.returncode != 1 or attempted.stdout != expected or code not in attempted.stderr
+                        or "EN:" not in attempted.stderr or "RU:" not in attempted.stderr
+                        or f"{compound_source}:{line}:" not in attempted.stderr):
+                    raise RuntimeError(f"{name} compound assignment diagnostic mismatch: {attempted.stdout!r}, {attempted.stderr!r}")
             ini_source = folder / "Ошибки настроек.pas"
             for source, expected, code, line in [
                 ("uses IniFile;begin\nWriteln('must never run');var f:=new TIniFile(1);end.", "", "E_TYPE", 2),
@@ -1371,6 +1389,7 @@ def main():
             results[-1]["nominal_enumerations_flags_and_bilingual_errors"] = "passed"
             results[-1]["typed_comparison_ranges_culture_and_bilingual_errors"] = "passed"
             results[-1]["native_inifile_roundtrip_types_and_bilingual_errors"] = "passed"
+            results[-1]["typed_compound_assignments_evaluation_and_bilingual_errors"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 

@@ -4,6 +4,8 @@ namespace abc {
 Error runtime_error(RuntimeError id, SourceLocation location, std::string_view context) {
     const char *code, *english, *russian;
     switch (id) {
+    case RuntimeError::list_repeat_range:
+        code="E_RANGE";english="List cannot be multiplied by a negative count";russian="Список нельзя умножать на отрицательное число";break;
     case RuntimeError::clamp_range:
         code="E_RANGE";english="Minimum cannot be greater than maximum";russian="Минимальное значение не может превышать максимальное";break;
     case RuntimeError::collation_unavailable:

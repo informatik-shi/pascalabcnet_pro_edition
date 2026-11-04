@@ -4,6 +4,7 @@
 #include "enumeration.hpp"
 #include "comparable.hpp"
 #include "ini_file.hpp"
+#include "compound.hpp"
 #include "runtime_values.hpp"
 #include "formatting.hpp"
 #include "school_ip.hpp"
@@ -298,6 +299,12 @@ private:
             expression(*node.left);
             for (const auto& argument : node.arguments) expression(*argument);
             emit(Op::endpoint_call,node.left->type,node.local,node.location); break;
+        case hir::ExprKind::cache_value:
+            expression(*node.left);local(Op::store,node.local,node.location);local(Op::load,node.local,node.location);break;
+        case hir::ExprKind::compound_call:
+            if(compound_reference(static_cast<CompoundMethod>(node.local)))reference(*node.left);else expression(*node.left);
+            for(const auto& argument:node.arguments)expression(*argument);
+            emit(Op::compound_call,node.operation_type,node.local,node.location);break;
         case hir::ExprKind::ini_call:
             for(const auto& argument:node.arguments)expression(*argument);
             emit(Op::ini_call,node.operation_type,node.local,node.location);break;
@@ -436,7 +443,13 @@ private:
             jumps.push_back(emit(Op::jump,Type::invalid,0,node.location)); break;
         }
         case hir::StmtKind::assign:
-            if (node.target && node.target->kind==hir::ExprKind::index && node.target->left->type==Type::string) {
+            if(node.deferred_write && node.target && node.target->kind==hir::ExprKind::index && node.target->left->type!=Type::string) {
+                expression(*node.target->left);expression(*node.target->right);
+                for(const auto& argument:node.target->arguments)expression(*argument);
+                expression(*node.expression);emit(Op::store_index,node.target->left->type,0,node.location);
+            } else if(node.deferred_write && node.target && node.target->kind==hir::ExprKind::field && type_info(program_,node.target->left->type).kind==CompoundKind::object_class) {
+                expression(*node.target->left);expression(*node.expression);emit(Op::store_field,node.target->left->type,node.target->local,node.location);
+            } else if (node.target && node.target->kind==hir::ExprKind::index && node.target->left->type==Type::string) {
                 reference(*node.target->left); expression(*node.target->right); expression(*node.expression);
                 emit(Op::set_character,Type::string,0,node.location);
             }
@@ -1006,6 +1019,12 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             break;
         case Op::encoding_call:
             if(instruction.operand>static_cast<std::size_t>(EncodingMethod::text_append_named) || !encoding_signature_valid(program,type,static_cast<EncodingMethod>(instruction.operand)))invalid(instruction,"Invalid Encoding call metadata");break;
+        case Op::compound_call:
+            if(instruction.operand>static_cast<std::size_t>(CompoundMethod::list_repeat_reverse) || !compound_signature(program,type,static_cast<CompoundMethod>(instruction.operand)))invalid(instruction,"Invalid compound call metadata");break;
+        case Op::store_index:
+            if(!compound(type) || !indexed_sequence(type_info(program,type).kind) || instruction.operand)invalid(instruction,"Invalid deferred index store");break;
+        case Op::store_field:
+            if(!compound(type) || type_info(program,type).kind!=CompoundKind::object_class || instruction.operand>=type_info(program,type).fields.size())invalid(instruction,"Invalid deferred field store");break;
         case Op::ini_call:
             if(instruction.operand>static_cast<std::size_t>(IniMethod::read_boolean) || !ini_signature(program,type,static_cast<IniMethod>(instruction.operand)))invalid(instruction,"Invalid TIniFile call metadata");break;
         case Op::comparable_call:
@@ -1433,6 +1452,13 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             const auto method=static_cast<IniMethod>(instruction.operand);const auto parameters=ini_parameters(instruction.type,method);
             for(auto p=parameters.rbegin();p!=parameters.rend();++p)require(*p);const auto result=ini_result(instruction.type,method);if(result!=Type::unit)stack.push_back(result);break;
         }
+        case Op::compound_call: {
+            const auto method=static_cast<CompoundMethod>(instruction.operand);const auto parameters=compound_parameters(program,instruction.type,method);
+            for(auto p=parameters.rbegin();p!=parameters.rend();++p)require(*p);const auto result=compound_result(instruction.type,method);if(result!=Type::unit)stack.push_back(result);break;
+        }
+        case Op::store_index:
+            require(type_info(program,instruction.type).element);for(unsigned i=0;i<type_info(program,instruction.type).rank;++i)require(Type::integer);require(instruction.type);break;
+        case Op::store_field:require(type_info(program,instruction.type).fields[instruction.operand].type);require(instruction.type);break;
         case Op::for_step_check: require(Type::integer);break;
         case Op::text_lines: require(Type::text_file);stack.push_back(instruction.type);break;
         case Op::read_lines: if(instruction.operand)require(static_cast<Type>(instruction.operand));require(Type::string); stack.push_back(instruction.type); break;

@@ -9,6 +9,7 @@
 #include "enumeration.hpp"
 #include "comparable.hpp"
 #include "ini_file.hpp"
+#include "compound.hpp"
 #include "integer_values.hpp"
 #include "formatting.hpp"
 #include "unicode.hpp"
@@ -118,7 +119,8 @@ public:
         if (point()==U'→') { take(); take(); take(); return {TokenKind::symbol,"->",start}; }
         std::string symbol(1, take());
         if ((symbol == ":" && peek() == '=') || (symbol == "<" && (peek() == '=' || peek() == '>'))
-            || (symbol == ">" && peek() == '=') || (symbol == "-" && peek() == '>')) symbol += take();
+            || (symbol == ">" && peek() == '=') || (symbol == "-" && peek() == '>')
+            || ((symbol=="+" || symbol=="-" || symbol=="*" || symbol=="/") && peek()=='=')) symbol += take();
         if (std::string_view(";:,.()[]+-*/=<>? ").find(symbol.front()) == std::string_view::npos)
             throw Error("E_SYNTAX", start, "Unsupported character in source");
         return {TokenKind::symbol, std::move(symbol), start};
@@ -257,6 +259,7 @@ struct SyntaxStmt {
     std::set<std::string> imported_units;
     bool collections_imported = false;
     bool declares_control = false, descending = false;
+    Token assignment_operator{};
 };
 
 struct SyntaxParameter { Token name; std::shared_ptr<SyntaxType> type; bool by_reference; std::shared_ptr<SyntaxExpr> default_value; bool read_only=false,variadic=false; };
@@ -361,6 +364,7 @@ private:
     Token consume() { auto old = current_; current_ = lexer_.next(); return old; }
     bool is(std::string_view text) const { return current_.kind != TokenKind::text && !current_.escaped && current_.text == text; }
     bool accept(std::string_view text) { if (!is(text)) return false; consume(); return true; }
+    bool assignment_operator() const{return is(":=") || is("+=") || is("-=") || is("*=") || is("/=");}
     Token expect(std::string_view text) {
         if (!is(text)) fail("Expected '" + std::string(text) + "', found '" + current_.text + "'");
         return consume();
@@ -685,7 +689,8 @@ private:
                 expect(")");
             } else {
                 auto target_expression = postfix(make_expression(SyntaxExprKind::name, target));
-                if (accept(":=")) {
+                if (assignment_operator()) {
+                    result.assignment_operator=consume();
                     result.kind = SyntaxStmtKind::assignment;
                     result.target = std::move(target_expression);
                     result.expression = expression();
@@ -697,7 +702,8 @@ private:
             }
         } else if (current_.kind==TokenKind::text || current_.kind==TokenKind::character_code || current_.kind==TokenKind::number || is("(") || is("new") || is("default")) {
             auto target=expression();
-            if (accept(":=")) {
+            if (assignment_operator()) {
+                result.assignment_operator=consume();
                 result.kind=SyntaxStmtKind::assignment; result.target=std::move(target); result.expression=expression();
             } else {
                 if (target->kind!=SyntaxExprKind::call && target->kind!=SyntaxExprKind::member_call && target->kind!=SyntaxExprKind::value_call
@@ -746,7 +752,8 @@ private:
             || is("inc") || is("dec")) lambda->body=statement();
         else {
             auto body=expression();
-            if (accept(":=")) {
+            if (assignment_operator()) {
+                lambda->body.assignment_operator=consume();
                 lambda->body.kind=SyntaxStmtKind::assignment; lambda->body.token=body->token;
                 lambda->body.target=std::move(body); lambda->body.expression=expression();
             } else {
@@ -2854,9 +2861,20 @@ private:
             result->kind = hir::ExprKind::binary;
             result->left = expression(*source.left);
             result->right = expression(*source.right,callable_type(result->left->type) ? result->left->type : Type::invalid);
+            return bind_binary(std::move(result));
+        }
+        }
+        return result;
+    }
+    std::unique_ptr<hir::Expr> bind_binary(std::unique_ptr<hir::Expr> result) {
             auto left = result->left->type;
             auto right = result->right->type;
             const auto& op = result->operation;
+            const auto is_list=[&](Type type){return compound(type) && info(type,result->location).kind==CompoundKind::list;};
+            if(op=="+" && ((is_list(left) && (right==left || right==Type::nil)) || (is_list(right) && left==Type::nil)))
+                return compound_expression(is_list(left) ? left : right,CompoundMethod::list_concat,std::move(result->left),std::move(result->right),result->location);
+            if(op=="*" && (is_list(left) || is_list(right)))
+                return compound_expression(is_list(left) ? left : right,is_list(left) ? CompoundMethod::list_repeat : CompoundMethod::list_repeat_reverse,std::move(result->left),std::move(result->right),result->location);
             const auto is_sequence=[&](Type type) { return compound(type) && info(type,result->location).kind==CompoundKind::sequence; };
             if (op=="+" && (is_sequence(left) || is_sequence(right))) {
                 const auto singleton=[&](std::unique_ptr<hir::Expr> item,Type sequence) {
@@ -2869,45 +2887,45 @@ private:
                 else if (is_sequence(left) && !is_sequence(right) && right!=Type::nil && !sequence_view(right,left,result->location)) result->right=singleton(std::move(result->right),left);
                 else if (is_sequence(right) && !is_sequence(left) && left!=Type::nil && !sequence_view(left,right,result->location)) result->left=singleton(std::move(result->left),right);
                 result->arguments.push_back(std::move(result->left)); result->arguments.push_back(std::move(result->right));
-                (void)bind_sequence_concat(*result,"concat","pabcsystem"); break;
+                (void)bind_sequence_concat(*result,"concat","pabcsystem"); return result;
             }
             if(enumeration(left) || enumeration(right)) {
                 if(left!=right)throw Error("E_TYPE",result->location,"Enumeration operands must have the same type");
                 if(op=="and" || op=="or" || op=="xor") {
                     std::vector<std::unique_ptr<hir::Expr>> arguments;arguments.push_back(std::move(result->left));arguments.push_back(std::move(result->right));
                     result=enum_expression(left,op=="and" ? EnumMethod::bit_and : op=="or" ? EnumMethod::bit_or : EnumMethod::bit_xor,std::move(arguments),result->location);
-                    break;
+                    return result;
                 }
-                if(op=="=" || op=="<>" || op=="<" || op=="<=" || op==">" || op==">="){result->type=Type::boolean;break;}
+                if(op=="=" || op=="<>" || op=="<" || op=="<=" || op==">" || op==">="){result->type=Type::boolean;return result;}
                 throw Error("E_TYPE",result->location,"Invalid operand for '"+op+"'");
             }
             const auto address_type=[&](Type type) { return compound(type) && info(type,result->location).kind==CompoundKind::school_address; };
             if ((op=="and" || op=="or" || op=="+") && (address_type(left) || address_type(right))) {
                 const auto owner=address_type(left) ? left : right;
                 result->arguments.push_back(std::move(result->left)); result->arguments.push_back(std::move(result->right));
-                bind_school_ip(*result,owner,op=="+" ? SchoolIPMethod::address_add : op=="and" ? SchoolIPMethod::address_and : SchoolIPMethod::address_or); break;
+                bind_school_ip(*result,owner,op=="+" ? SchoolIPMethod::address_add : op=="and" ? SchoolIPMethod::address_and : SchoolIPMethod::address_or); return result;
             }
             if (op=="/" && (left==Type::big_integer || right==Type::big_integer)) {
-                if (left==Type::big_integer && right==Type::big_integer) { result->operation="div"; result->type=Type::big_integer; break; }
+                if (left==Type::big_integer && right==Type::big_integer) { result->operation="div"; result->type=Type::big_integer; return result; }
                 if (!numeric(left) || !numeric(right)) throw Error("E_TYPE",result->location,"Invalid BigInteger division operands");
                 result->arguments.push_back(convert(std::move(result->left),left==Type::big_integer ? left : Type::real));
                 result->arguments.push_back(convert(std::move(result->right),right==Type::big_integer ? right : Type::real));
-                result->kind=hir::ExprKind::call; bind_builtin(*result,"$big_real_divide","pabcsystem"); break;
+                result->kind=hir::ExprKind::call; bind_builtin(*result,"$big_real_divide","pabcsystem"); return result;
             }
             if ((op=="and" || op=="or" || op=="xor") && left==Type::boolean && right==Type::boolean) {
                 result->type = Type::boolean;
-                break;
+                return result;
             }
             if (op=="shl" || op=="shr") {
                 if ((!integer_type(left) && left!=Type::big_integer) || !integer_type(right)) throw Error("E_TYPE",result->location,"Shift operands must be integers");
                 const auto type=small_integer(left) ? Type::integer : left;
                 result->left=convert(std::move(result->left),type); result->right=convert(std::move(result->right),Type::integer);
-                result->type=type; break;
+                result->type=type; return result;
             }
             if (op=="and" || op=="or" || op=="xor") {
                 if ((!integer_type(left) && left!=Type::big_integer) || (!integer_type(right) && right!=Type::big_integer)) throw Error("E_TYPE",result->location,"Bitwise operands must be integers of compatible types");
                 if (left==Type::big_integer || right==Type::big_integer) {
-                    result->left=convert(std::move(result->left),Type::big_integer); result->right=convert(std::move(result->right),Type::big_integer); result->type=Type::big_integer; break;
+                    result->left=convert(std::move(result->left),Type::big_integer); result->right=convert(std::move(result->right),Type::big_integer); result->type=Type::big_integer; return result;
                 }
                 if (left==Type::uint64 && result->right->kind==hir::ExprKind::literal) { result->right=convert(std::move(result->right),left); right=left; }
                 if (right==Type::uint64 && result->left->kind==hir::ExprKind::literal) { result->left=convert(std::move(result->left),right); left=right; }
@@ -2916,7 +2934,7 @@ private:
                     if (can_widen(left,candidate) && can_widen(right,candidate)) { type=candidate; break; }
                 if (type==Type::invalid) throw Error("E_TYPE",result->location,"No common integer type for bitwise operation");
                 result->left=convert(std::move(result->left),type); result->right=convert(std::move(result->right),type);
-                result->type=type; break;
+                result->type=type; return result;
             }
             const bool comparison = op == "=" || op == "<>" || op == "<" || op == "<=" || op == ">" || op == ">=";
             if (op=="*" && (((left==Type::string || left==Type::character) && (right==Type::integer || small_integer(right)))
@@ -2931,7 +2949,7 @@ private:
                 });
                 if (found==catalog.end()) throw Error("E_HIR",result->location,"Missing string repetition signature");
                 result->kind=hir::ExprKind::call; result->type=Type::string;
-                result->local=static_cast<std::size_t>(found-catalog.begin()); break;
+                result->local=static_cast<std::size_t>(found-catalog.begin()); return result;
             }
             if ((op == "+" || comparison) && (left == Type::string || right == Type::string || (op=="+" && (left==Type::character || right==Type::character)))) {
                 if (left == Type::nil) { result->left=convert(std::move(result->left),Type::string); left=Type::string; }
@@ -2939,6 +2957,8 @@ private:
                 if (left==Type::character) { result->left=convert(std::move(result->left),Type::string); left=Type::string; }
                 if (right==Type::character) { result->right=convert(std::move(result->right),Type::string); right=Type::string; }
             }
+            if(op=="+" && left==Type::string && numeric(right)){result->right=number_text(std::move(result->right),result->location);right=Type::string;}
+            else if(op=="+" && right==Type::string && numeric(left)){result->left=number_text(std::move(result->left),result->location);left=Type::string;}
             if ((op=="=" || op=="<>") && (compound(left) || compound(right) || left==Type::text_file || right==Type::text_file)) {
                 if (left==Type::nil) { result->left=convert(std::move(result->left),right); left=right; }
                 if (right==Type::nil) { result->right=convert(std::move(result->right),left); right=left; }
@@ -2963,10 +2983,145 @@ private:
                 result->type = Type::boolean;
             } else throw Error("E_TYPE", result->location, "Incompatible operands for '" + op + "': "
                 + std::string(type_name(left)) + " and " + std::string(type_name(right)));
-            break;
-        }
-        }
+            return result;
         return result;
+    }
+    template<class F> hir::Stmt bind_assignment(std::unique_ptr<hir::Expr> target,F value,SourceLocation location,bool deferred=false) {
+        hir::Stmt result;result.kind=hir::StmtKind::assign;result.location=location;result.target=std::move(target);result.deferred_write=deferred;
+            if (result.target->kind==hir::ExprKind::property_access) {
+                auto property=std::move(result.target);
+                if (!property->setter) throw Error("E_TYPE",property->location,"Property is read-only");
+                auto setter=std::make_unique<hir::Expr>();setter->kind=hir::ExprKind::user_call;setter->type=Type::unit;setter->location=property->location;setter->local=*property->setter;
+                setter->arguments.push_back(std::move(property->left));setter->arguments.push_back(convert(value(property->type),property->type));
+                result.kind=hir::StmtKind::call;result.expression=std::move(setter);return result;
+            }
+            if (result.target->kind==hir::ExprKind::list_capacity && result.target->local==static_cast<std::size_t>(ListCapacity::get)) {
+                auto setter=std::move(result.target);setter->arguments.push_back(convert(value(Type::invalid),Type::integer));
+                setter->local=static_cast<std::size_t>(ListCapacity::set);setter->type=Type::unit;
+                result.kind=hir::StmtKind::call;result.expression=std::move(setter);return result;
+            }
+            if (result.target->kind==hir::ExprKind::school_ip && result.target->local==static_cast<std::size_t>(SchoolIPMethod::address_value)) {
+                auto setter=std::move(result.target); const auto owner=setter->operation_type;
+                setter->arguments.push_back(value(Type::invalid)); bind_school_ip(*setter,owner,SchoolIPMethod::address_set);
+                result.kind=hir::StmtKind::call; result.expression=std::move(setter); return result;
+            }
+            if (result.target->kind==hir::ExprKind::index && result.target->left->type==Type::string) {
+                if (!lvalue(*result.target->left)) throw Error("E_TYPE",result.location,"String character assignment requires a writable string");
+                result.expression=convert(value(Type::invalid),Type::character); return result;
+            }
+            if (result.target->kind == hir::ExprKind::linked_call && result.target->local == static_cast<std::size_t>(LinkedMethod::next)
+                && info(result.target->left->type,result.location).kind == CompoundKind::single_node) {
+                auto setter = std::move(result.target);
+                setter->arguments.push_back(convert(value(setter->type),setter->type));
+                setter->local = static_cast<std::size_t>(LinkedMethod::set_next); setter->type = Type::unit;
+                result.kind = hir::StmtKind::call; result.expression = std::move(setter); return result;
+            }
+            if (result.target->kind == hir::ExprKind::linked_call && result.target->local == static_cast<std::size_t>(LinkedMethod::value)) {
+                auto setter = std::move(result.target);
+                setter->arguments.push_back(convert(value(setter->type),setter->type));
+                setter->local = static_cast<std::size_t>(LinkedMethod::set_value); setter->type = Type::unit;
+                result.kind = hir::StmtKind::call; result.expression = std::move(setter); return result;
+            }
+            if (result.target->kind == hir::ExprKind::association_call && result.target->local == static_cast<std::size_t>(AssociationMethod::get)) {
+                auto setter = std::move(result.target);
+                setter->arguments.push_back(convert(value(setter->type),setter->type));
+                setter->local = static_cast<std::size_t>(AssociationMethod::set); setter->type = Type::unit;
+                result.kind = hir::StmtKind::call; result.expression = std::move(setter); return result;
+            }
+            if (result.target->kind == hir::ExprKind::buffer_call) {
+                const auto method = static_cast<BufferMethod>(result.target->local);
+                if (method == BufferMethod::get || method == BufferMethod::count || method == BufferMethod::capacity) {
+                    auto setter = std::move(result.target);
+                    setter->arguments.push_back(convert(value(setter->type),setter->type));
+                    setter->local = static_cast<std::size_t>(method == BufferMethod::get ? BufferMethod::set
+                        : method == BufferMethod::count ? BufferMethod::resize : BufferMethod::reserve);
+                    setter->type = Type::unit; result.kind = hir::StmtKind::call; result.expression = std::move(setter); return result;
+                }
+            }
+            if (!lvalue(*result.target)) throw Error("E_TYPE",result.location,"Assignment target must be assignable");
+            result.expression = convert(value(result.target->type), result.target->type);
+            return result;
+    }
+    std::unique_ptr<hir::Expr> compound_expression(Type owner,CompoundMethod method,std::unique_ptr<hir::Expr> left,std::unique_ptr<hir::Expr> right,SourceLocation location) {
+        const auto parameters=compound_parameters(module_.types,owner,method);
+        auto result=std::make_unique<hir::Expr>();result->kind=hir::ExprKind::compound_call;result->location=location;
+        result->operation_type=owner;result->local=static_cast<std::size_t>(method);result->type=compound_result(owner,method);
+        result->left=compound_reference(method) ? std::move(left) : convert(std::move(left),parameters[0]);result->arguments.push_back(convert(std::move(right),parameters[1]));return result;
+    }
+    std::unique_ptr<hir::Expr> number_text(std::unique_ptr<hir::Expr> input,SourceLocation location) {
+        const auto target=can_widen(input->type,Type::integer) ? Type::integer : Type::real;
+        if(!can_widen(input->type,target))throw Error("E_TYPE",location,"Numeric string operation requires integer or real");
+        auto result=std::make_unique<hir::Expr>();result->kind=hir::ExprKind::call;result->location=location;
+        result->arguments.push_back(convert(std::move(input),target));bind_builtin(*result,target==Type::integer ? "inttostr" : "floattostr","pabcsystem");return result;
+    }
+    bool compound_property(const hir::Expr& target) const {
+        if(target.kind==hir::ExprKind::property_access || target.kind==hir::ExprKind::list_capacity || target.kind==hir::ExprKind::school_ip
+            || target.kind==hir::ExprKind::buffer_call || target.kind==hir::ExprKind::association_call)return true;
+        if(target.kind==hir::ExprKind::index)return target.left->type==Type::string || info(target.left->type,target.location).kind==CompoundKind::list;
+        return target.kind==hir::ExprKind::linked_call;
+    }
+    std::unique_ptr<hir::Expr> checked_compound_cast(std::unique_ptr<hir::Expr> value,Type target,SourceLocation location) {
+        if(value->type==target)return value;
+        if(integer_type(value->type) && integer_type(target)){
+            auto cast=std::make_unique<hir::Expr>();cast->kind=hir::ExprKind::call;cast->location=location;cast->arguments.push_back(std::move(value));
+            bind_builtin(*cast,type_name(target),"pabcsystem");return cast;
+        }
+        return convert(std::move(value),target);
+    }
+    hir::Stmt compound_assignment(const SyntaxStmt& source,std::unique_ptr<hir::Expr> target,std::unique_ptr<hir::Expr> initial={}) {
+        const auto location=source.assignment_operator.location;const auto type=target->type;
+        const auto op=source.assignment_operator.text.substr(0,1);
+        if(constant_parameter_target(*target) || (target->kind==hir::ExprKind::local && for_controls_.contains(target->local)))throw Error("E_TYPE",location,"Assignment target must be assignable");
+        if(callable_type(type))throw Error("E_UNSUPPORTED",location,"Multicast compound operators are not ported yet");
+        if(target->kind==hir::ExprKind::property_access && !target->getter)throw Error("E_TYPE",location,"Property is write-only");
+        if(compound_property(*target)) {
+            auto value=std::make_unique<hir::Expr>();value->kind=hir::ExprKind::binary;value->operation=op;value->location=location;
+            value->left=expression(*source.target);value->right=initial ? std::move(initial) : expression(*source.expression);
+            value=bind_binary(std::move(value));value=checked_compound_cast(std::move(value),type,location);
+            return bind_assignment(std::move(target),[&](Type){return std::move(value);},location,true);
+        }
+        if(type==Type::string || type==Type::big_integer) {
+            if(!lvalue(*target))throw Error("E_TYPE",location,"Compound var operator requires a writable target");
+            auto right=initial ? std::move(initial) : expression(*source.expression);CompoundMethod method;
+            if(type==Type::big_integer){
+                if(op=="/")throw Error("E_TYPE",location,"BigInteger has no division assignment operator");
+                method=op=="+" ? CompoundMethod::big_add : op=="-" ? CompoundMethod::big_subtract : CompoundMethod::big_multiply;
+            } else if(op=="*")method=CompoundMethod::text_repeat;
+            else if(op!="+")throw Error("E_TYPE",location,"Unsupported string compound operator");
+            else if(right->type==Type::string || right->type==Type::character || right->type==Type::nil)method=CompoundMethod::text_add;
+            else if(can_widen(right->type,Type::integer))method=CompoundMethod::text_integer;
+            else if(can_widen(right->type,Type::real))method=CompoundMethod::text_real;
+            else throw Error("E_TYPE",location,"Numeric string operation requires integer or real");
+            hir::Stmt result;result.kind=hir::StmtKind::call;result.location=location;
+            result.expression=compound_expression(type,method,std::move(target),std::move(right),location);return result;
+        }
+        if(compound(type) && (info(type,location).kind==CompoundKind::list || endpoint_collection(info(type,location).kind))) {
+            if(op!="+")throw Error("E_TYPE",location,"Collection compound operator requires +=");
+            const auto element=info(type,location).element;
+            auto right=initial ? std::move(initial) : expression(*source.expression,element);
+            const bool list=info(type,location).kind==CompoundKind::list;
+            if(list && right->type==Type::nil && (element==Type::string || element==Type::text_file || (compound(element) && info(element,location).kind!=CompoundKind::record && info(element,location).kind!=CompoundKind::tuple && !enumeration(element))))
+                throw Error("E_TYPE",location,"Ambiguous nil collection compound argument");
+            const auto method=list ? (right->type==type || right->type==Type::nil ? CompoundMethod::list_range : CompoundMethod::list_add) : CompoundMethod::endpoint_add;
+            hir::Stmt result;result.kind=hir::StmtKind::call;result.location=location;
+            result.expression=compound_expression(type,method,std::move(target),std::move(right),location);return result;
+        }
+        if(!numeric(type))throw Error("E_TYPE",location,"Compound arithmetic requires a numeric target");
+        if(!lvalue(*target))throw Error("E_TYPE",location,"Assignment target must be assignable");
+        if(op=="/" && integer_type(type))throw Error("E_TYPE",location,"Integer division assignment is not allowed in Pascal");
+        auto right=checked_compound_cast(initial ? std::move(initial) : expression(*source.expression),type,location);
+        auto old=expression(*source.target);
+        if(target->kind==hir::ExprKind::index && info(target->left->type,location).kind==CompoundKind::array
+            && info(target->left->type,location).rank==1 && !small_integer(type)) {
+            if(module_.locals.size()>=4096)throw Error("E_LIMIT",location,"Local and constant limit exceeded");
+            const auto local=module_.locals.size();module_.locals.push_back({"$compound_index_"+std::to_string(local),Type::integer,!in_routine_});
+            auto cache=std::make_unique<hir::Expr>();cache->kind=hir::ExprKind::cache_value;cache->type=Type::integer;cache->location=target->right->location;cache->local=local;cache->left=std::move(target->right);target->right=std::move(cache);
+            old->right=std::make_unique<hir::Expr>();old->right->kind=hir::ExprKind::local;old->right->type=Type::integer;old->right->local=local;old->right->location=location;
+        }
+        auto value=std::make_unique<hir::Expr>();value->kind=hir::ExprKind::binary;value->location=location;value->operation=op;
+        value->type=small_integer(type) ? Type::integer : type==Type::longword ? Type::int64 : type;value->left=convert(std::move(old),value->type);value->right=convert(std::move(right),value->type);
+        value=checked_compound_cast(std::move(value),type,location);
+        return bind_assignment(std::move(target),[&](Type){return std::move(value);},location,true);
     }
     bool bind_comparable(hir::Expr& result,std::string_view name,std::string_view unit={},Type explicit_type=Type::invalid,bool member=false) {
         const bool between=name=="between",range=name=="inrange",clamp=name=="clamp",top=name=="clamptop",bottom=name=="clampbottom";
@@ -4593,65 +4748,18 @@ private:
             break;
         }
         case SyntaxStmtKind::assignment:
+            if(!source.assignment_operator.text.empty() && source.assignment_operator.text!=":=") {
+                std::unique_ptr<hir::Expr> initial;
+                if(!lambdas_.empty() && current_result_==Type::invalid && source.target->kind==SyntaxExprKind::name && source.target->token.text=="result"){initial=expression(*source.expression);lambda_result(initial->type,initial->location);}
+                return compound_assignment(source,expression(*source.target),std::move(initial));
+            }
             result.kind = hir::StmtKind::assign;
             if (!lambdas_.empty() && current_result_==Type::invalid && source.target->kind==SyntaxExprKind::name && source.target->token.text=="result") {
                 auto initial=expression(*source.expression); lambda_result(initial->type,initial->location);
                 result.target=expression(*source.target); result.expression=std::move(initial); break;
             }
             result.target = expression(*source.target);
-            if (result.target->kind==hir::ExprKind::property_access) {
-                auto property=std::move(result.target);
-                if (!property->setter) throw Error("E_TYPE",property->location,"Property is read-only");
-                auto setter=std::make_unique<hir::Expr>();setter->kind=hir::ExprKind::user_call;setter->type=Type::unit;setter->location=property->location;setter->local=*property->setter;
-                setter->arguments.push_back(std::move(property->left));setter->arguments.push_back(convert(expression(*source.expression,property->type),property->type));
-                result.kind=hir::StmtKind::call;result.expression=std::move(setter);break;
-            }
-            if (result.target->kind==hir::ExprKind::list_capacity && result.target->local==static_cast<std::size_t>(ListCapacity::get)) {
-                auto setter=std::move(result.target);setter->arguments.push_back(convert(expression(*source.expression),Type::integer));
-                setter->local=static_cast<std::size_t>(ListCapacity::set);setter->type=Type::unit;
-                result.kind=hir::StmtKind::call;result.expression=std::move(setter);break;
-            }
-            if (result.target->kind==hir::ExprKind::school_ip && result.target->local==static_cast<std::size_t>(SchoolIPMethod::address_value)) {
-                auto setter=std::move(result.target); const auto owner=setter->operation_type;
-                setter->arguments.push_back(expression(*source.expression)); bind_school_ip(*setter,owner,SchoolIPMethod::address_set);
-                result.kind=hir::StmtKind::call; result.expression=std::move(setter); break;
-            }
-            if (result.target->kind==hir::ExprKind::index && result.target->left->type==Type::string) {
-                if (!lvalue(*result.target->left)) throw Error("E_TYPE",result.location,"String character assignment requires a writable string");
-                result.expression=convert(expression(*source.expression),Type::character); break;
-            }
-            if (result.target->kind == hir::ExprKind::linked_call && result.target->local == static_cast<std::size_t>(LinkedMethod::next)
-                && info(result.target->left->type,result.location).kind == CompoundKind::single_node) {
-                auto setter = std::move(result.target);
-                setter->arguments.push_back(convert(expression(*source.expression,setter->type),setter->type));
-                setter->local = static_cast<std::size_t>(LinkedMethod::set_next); setter->type = Type::unit;
-                result.kind = hir::StmtKind::call; result.expression = std::move(setter); break;
-            }
-            if (result.target->kind == hir::ExprKind::linked_call && result.target->local == static_cast<std::size_t>(LinkedMethod::value)) {
-                auto setter = std::move(result.target);
-                setter->arguments.push_back(convert(expression(*source.expression,setter->type),setter->type));
-                setter->local = static_cast<std::size_t>(LinkedMethod::set_value); setter->type = Type::unit;
-                result.kind = hir::StmtKind::call; result.expression = std::move(setter); break;
-            }
-            if (result.target->kind == hir::ExprKind::association_call && result.target->local == static_cast<std::size_t>(AssociationMethod::get)) {
-                auto setter = std::move(result.target);
-                setter->arguments.push_back(convert(expression(*source.expression,setter->type),setter->type));
-                setter->local = static_cast<std::size_t>(AssociationMethod::set); setter->type = Type::unit;
-                result.kind = hir::StmtKind::call; result.expression = std::move(setter); break;
-            }
-            if (result.target->kind == hir::ExprKind::buffer_call) {
-                const auto method = static_cast<BufferMethod>(result.target->local);
-                if (method == BufferMethod::get || method == BufferMethod::count || method == BufferMethod::capacity) {
-                    auto setter = std::move(result.target);
-                    setter->arguments.push_back(convert(expression(*source.expression,setter->type),setter->type));
-                    setter->local = static_cast<std::size_t>(method == BufferMethod::get ? BufferMethod::set
-                        : method == BufferMethod::count ? BufferMethod::resize : BufferMethod::reserve);
-                    setter->type = Type::unit; result.kind = hir::StmtKind::call; result.expression = std::move(setter); break;
-                }
-            }
-            if (!lvalue(*result.target)) throw Error("E_TYPE",result.location,"Assignment target must be assignable");
-            result.expression = convert(expression(*source.expression,result.target->type), result.target->type);
-            break;
+            return bind_assignment(std::move(result.target),[&](Type context){return expression(*source.expression,context);},result.location);
         case SyntaxStmtKind::call:
             result.kind = hir::StmtKind::call; result.expression = expression(*source.expression);
             if (callable_type(result.expression->type) && result.expression->kind!=hir::ExprKind::user_call && result.expression->kind!=hir::ExprKind::value_call) {
