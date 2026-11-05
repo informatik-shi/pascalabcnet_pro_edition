@@ -734,3 +734,12 @@ helpers share this model. Windows GetFullPathName/GetLongPathName retain device,
 UNC and existing-prefix short-name behavior; Unix folds segments as text without
 resolving links. Original input is retained for Name, normalized full path supplies
 Extension/DirectoryName; nil root parents and source Path/Drive quirks stay explicit.
+
+ProgramEnvironment references immutable per-execution options containing UTF-16 payload
+arguments and an optional executable identity override; otherwise a cached OS image
+probe supplies the native host path. CLI separates host switches from payload with --
+and preserves empty/Unicode arguments. Source marker shifts remain explicit rather
+than being normalized away. The four environment functions and string/integer disk
+queries use ordinary statically verified builtin signatures. Disk services query
+GetDiskFreeSpaceEx or statfs, use execution-local relative paths, retain source -1
+sentinels and numbered-disk mapping, and never change the host working directory.

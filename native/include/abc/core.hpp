@@ -505,6 +505,8 @@ struct ExecutionOptions {
     std::function<bool()> cancelled;
     std::size_t allocation_limit = 1'048'576;
     std::size_t call_limit = 128;
+    std::vector<std::u16string> arguments;
+    std::u16string executable_name;
 };
 
 void execute(const Program& program, std::istream& input, std::ostream& output,

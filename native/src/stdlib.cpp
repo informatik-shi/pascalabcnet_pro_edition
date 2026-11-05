@@ -2,6 +2,8 @@
 #include "diagnostics.hpp"
 #include "files.hpp"
 #include "file_names.hpp"
+#include "environment.hpp"
+#include "disk_space.hpp"
 #include "text_file.hpp"
 #include "file_operations.hpp"
 #include "integer_values.hpp"
@@ -79,6 +81,13 @@ std::span<const Signature> signatures() {
         }
         for (const auto& [name,function]:{std::pair<std::string_view,Function>{"sindegrees",Function::school_sin_degrees},{"cosdegrees",Function::school_cos_degrees},{"tandegrees",Function::school_tan_degrees}})
             add(name,{Type::real},Type::real,function,"school");
+        add("paramcount",{},Type::integer,Function::command_line_count);
+        add("paramstr",{Type::integer},Type::string,Function::command_line_parameter);
+        add("getexefilename",{},Type::string,Function::executable_name);
+        add("pascalabcversion",{},Type::string,Function::pascal_version);
+        for(auto type:{Type::integer,Type::string}){
+            add("diskfree",{type},Type::int64,Function::disk_free);add("disksize",{type},Type::int64,Function::disk_size);
+        }
         add("randomize",{},Type::unit,Function::random_reset);
         add("randomize",{Type::integer},Type::unit,Function::random_reset);
         add("setrandomseed",{Type::integer},Type::unit,Function::random_reset);
@@ -363,6 +372,18 @@ Value invoke(std::size_t id, std::span<const Value> arguments, SourceLocation lo
     auto& files=context.files; auto& random=context.random;
     const auto& signature = signatures()[id]; // Verified before execution.
     const auto function = signature.function;
+    if(function==Function::command_line_count)return context.environment.count(location);
+    if(function==Function::command_line_parameter)return context.environment.parameter(std::get<std::int32_t>(arguments[0]),location);
+    if(function==Function::executable_name)return context.environment.executable(location);
+    if(function==Function::pascal_version)return std::u16string(u"3.2.0.1364");
+    if(function==Function::disk_free || function==Function::disk_size){
+        auto name=arguments[0];
+        if(const auto* number=std::get_if<std::int32_t>(&name)){
+            const auto first=*number==0 ? context.environment.parameter(0,location) : std::u16string{};
+            name=disk_name_from_number(*number,first);
+        }
+        return disk_space(files,name,function==Function::disk_size,location,context.options);
+    }
     if (function==Function::milliseconds) return context.timing.milliseconds(location);
     if (function==Function::milliseconds_delta) return context.timing.delta(location);
     if (function==Function::sleep) {context.timing.sleep(std::get<std::int32_t>(arguments[0]),location,context.options);return std::int32_t{0};}

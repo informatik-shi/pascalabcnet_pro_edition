@@ -22,6 +22,8 @@
 #include "../src/random_sequence.hpp"
 #include "../src/directory_sequence.hpp"
 #include "../src/file_names.hpp"
+#include "../src/environment.hpp"
+#include "../src/disk_space.hpp"
 #include "../src/new_set.hpp"
 #include "../src/print.hpp"
 #include "../src/constant.hpp"
@@ -77,8 +79,8 @@ std::string run(std::string_view source, std::string input = "", abc::ExecutionO
     return out.str();
 }
 
-void result(std::string_view source, std::string_view expected, std::string input = "") {
-    try { require(run(source, std::move(input)) == expected, source); }
+void result(std::string_view source, std::string_view expected, std::string input = "",abc::ExecutionOptions options = {}) {
+    try { require(run(source, std::move(input),std::move(options)) == expected, source); }
     catch (const std::exception& error) { require(false, std::string(source) + " -> " + error.what()); }
 }
 
@@ -4191,20 +4193,80 @@ void console_unicode_output() {
     error([&]{abc::execute(abc::compile("begin ReadInteger; end."),failed,eof_output);},"E_INPUT");
 }
 
+void system_environment_library() {
+    abc::ExecutionOptions options;options.executable_name=u"D:\\native\\app.exe";options.arguments={u"first",u"",u"два слова",u"🌍"};
+    result("begin Writeln(ParamCount,' ',PABCSystem.ParamCount());for var i:=1 to ParamCount do Writeln('[',ParamStr(i),']');Writeln(ParamStr(0),' ',GetEXEFileName);Writeln(PascalABCVersion);end.",
+        "4 4\n[first]\n[]\n[два слова]\n[🌍]\nD:\\native\\app.exe D:\\native\\app.exe\n3.2.0.1364\n","",options);
+    for(const auto& marker:{u"[REDIRECTIOMODE]",u"[RUNMODE]"}){
+        auto redirected=options;redirected.arguments={marker,u"one",u"two"};
+        result("begin Writeln(ParamCount,' ',ParamStr(0));Writeln(ParamStr(-1)=GetEXEFileName,' ',ParamStr(1),' ',ParamStr(2));end.",
+            "2 "+abc::to_utf8(marker)+"\nTrue one two\n","",redirected);
+        error([&]{(void)run("begin ParamStr(3);end.","",redirected);},"E_BOUNDS");
+    }
+    auto ordinary=options;ordinary.arguments={u"[runmode]",u"one"};result("begin Writeln(ParamCount,' ',ParamStr(0)=GetEXEFileName,' ',ParamStr(1));end.","2 True [runmode]\n","",ordinary);
+    for(const auto& index:{"-2147483648","-1","5","2147483647"})error([&]{(void)run("begin ParamStr("+std::string(index)+");end.","",options);},"E_BOUNDS");
+    result("begin Writeln(ParamCount,' ',ParamStr(0)=GetEXEFileName,' ',FileExists(GetEXEFileName));end.","0 True True\n");
+    result("function ParamCount:integer:=7;begin Writeln(ParamCount,' ',PABCSystem.ParamCount,' ',PABCSystem.ParamStr(1));end.","7 4 first\n","",options);
+    result("function Value:integer:=ParamCount;begin var f:()->string:=()->ParamStr(3);Writeln(Value,' ',f());end.","4 два слова\n","",options);
+    for(const auto& source:{"begin ParamCount(1);end.","begin ParamStr('x');end.","begin GetEXEFileName(1);end.","begin PascalABCVersion(1);end.","begin DiskFree(True);end.","begin DiskSize(1.5);end.","begin var n:integer:=DiskSize('C:');end."})compile_error(source,"E_TYPE");
+    auto argument_limit=options;argument_limit.arguments={std::u16string(1'048'577,u'x')};error([&]{(void)run("begin ParamStr(1);end.","",argument_limit);},"E_LIMIT");
+    abc::ProgramEnvironment direct(options);require(direct.executable({})==options.executable_name && direct.parameter(2,{}).empty(),"Native environment retains image identity and empty string arguments");
+    const auto source=abc::compile("begin\nParamStr(9);\nend.");std::istringstream input;std::ostringstream output;
+    try{abc::execute(source,input,output,options);require(false,"Expected command-line index failure");}catch(const abc::Error& e){require(e.code=="E_BOUNDS" && e.location.line==2 && !e.russian.empty(),"Command-line index diagnostics retain source position and both languages");}
+    for(const auto& [number,expected]:{std::pair<std::int32_t,std::u16string>{INT32_MIN,u"A:"},{-1,u"A:"},{1,u"A:"},{2,u"B:"},{26,u"Z:"},{27,u"Z:"},{INT32_MAX,u"Z:"}})
+        require(abc::disk_name_from_number(number,u"/native/abc")==expected,"Numbered disks clamp to the source A..Z range");
+    require(abc::disk_name_from_number(0,u"D:\\tools\\app.exe")==u"D:" && abc::disk_name_from_number(0,u"/native/abc")==u"C:" && abc::disk_name_from_number(0,u"[RUNMODE]")==u"C:","Disk zero uses ParamStr zero's first colon and the source C fallback");
+    result("begin Writeln(DiskFree(nil),' ',DiskSize(nil),' ',DiskFree(''),' ',DiskSize(''));end.","-1 -1 -1 -1\n");
+    result("begin Writeln(DiskSize(-2147483648)=DiskSize('A:'),' ',DiskSize(2147483647)=DiskSize('Z:'),' ',DiskSize(0)=DiskSize('D:'));end.","True True True\n","",options);
+    {
+        const auto total=abc::disk_space(abc::FileContext{},std::u16string(
+#ifdef _WIN32
+            u"C:"
+#else
+            u"/"
+#endif
+        ),true,{},{});require(total>=0,"Native disk capacity query succeeds for a real local volume");
+    }
+    const auto root=std::filesystem::temp_directory_path()/("abc-native-disk-"+std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    std::filesystem::create_directory(root);struct Cleanup{std::filesystem::path path;~Cleanup(){std::error_code ec;std::filesystem::remove_all(path,ec);}} cleanup{root};
+    abc::FileContext files;files.change_directory(root.u16string(),{});
+#ifdef _WIN32
+    const auto drive=root.root_name().u16string();const auto expected=abc::disk_space(files,drive,true,{},{});
+    require(expected>=0 && abc::disk_space(files,drive+u"\\missing-directory\\file",true,{},{})==expected,"Windows DriveInfo ignores the path tail after the drive root");
+    require(abc::disk_space(files,drive+std::u16string(1,char16_t{})+u"ignored",true,{},{})==expected,"Windows DriveInfo ignores embedded NUL after its parsed root");
+    require(abc::disk_space(files,std::u16string(u"\\\\server\\share"),true,{},{})==-1,"Windows DriveInfo rejects UNC drive names");
+#else
+    std::filesystem::create_directory(root/"C:");
+    require(abc::disk_space(files,std::u16string(u"C:"),true,{},{})==abc::disk_space(files,root.u16string(),true,{},{}),"Unix DriveInfo accepts a relative directory with a colon");
+    std::ofstream(root/"plain")<<"x";require(abc::disk_space(files,std::u16string(u"plain"),true,{},{})>=0,"Unix DriveInfo queries space for regular files too");
+    require(abc::disk_space(files,std::u16string(u"missing"),true,{},{})==-1,"Missing Unix drive names return source failure sentinel");
+#ifdef __linux__
+    std::error_code link_error;std::filesystem::create_directory_symlink("/proc",root/"link",link_error);
+    if(!link_error)require(abc::disk_space(files,std::u16string(u"link/../proc"),true,{},{})==abc::disk_space(files,std::u16string(u"/proc"),true,{},{}),"Unix disk queries retain filesystem symlink/parent resolution rather than lexical folding");
+#endif
+#endif
+    const auto free=abc::disk_space(files,root.u16string(),false,{},{}),size=abc::disk_space(files,root.u16string(),true,{},{});
+    require(free>=0 && size>=free,"DiskFree reports total free bytes bounded by capacity");
+    auto cancelled=options;cancelled.cancelled=[] {return true;};error([&]{(void)abc::disk_space(files,std::u16string(u"C:"),false,{},cancelled);},"E_CANCELLED");
+}
+
 void file_name_library() {
     auto temporary=std::filesystem::temp_directory_path();while(temporary.filename().empty() && temporary.parent_path()!=temporary)temporary=temporary.parent_path();
     const auto parent=temporary/("abc-native-file-names-"+std::to_string(std::chrono::steady_clock::now().time_since_epoch().count())),root=parent/"Root";
     std::filesystem::create_directories(root);
     struct Cleanup{std::filesystem::path path;~Cleanup(){std::error_code ec;std::filesystem::remove_all(path,ec);}} cleanup{parent};
     abc::FileContext files;files.change_directory(root.u16string(),{});
+    // ChDir resolves Unix symlinks and Windows short directory aliases.
+    const std::filesystem::path resolved_root(files.directory({}));
+    const auto resolved_parent=resolved_root.parent_path(),resolved_temporary=resolved_parent.parent_path();
     const auto path_literal=[](const std::filesystem::path& path){const auto text=abc::to_utf8(path.u16string());std::string result="'";for(char c:text){result+=c;if(c=='\'')result+=c;}return result+"'";};
 #ifdef _WIN32
     const auto fixtures=std::filesystem::path(abc::from_utf8(__FILE__)).parent_path()/"fixtures";
     std::ifstream corpus(fixtures/"file-names-windows.tsv");require(static_cast<bool>(corpus),"Independent FileInfo filename corpus is present");
     const auto decode=[](std::string_view text){const auto nibble=[](char c){return c<='9' ? c-'0' : c-'A'+10;};std::u16string result;for(std::size_t i=0;i+3<text.size();i+=4)result+=static_cast<char16_t>(nibble(text[i])*16+nibble(text[i+1])+(nibble(text[i+2])*16+nibble(text[i+3]))*256);return result;};
     const auto substitute=[&](std::u16string text){
-        for(const auto& [from,to]:{std::pair<std::u16string,std::u16string>{u"{root}",root.u16string()},{u"{parent}",parent.u16string()},{u"{temp}",temporary.u16string()},{u"{drive}",root.root_name().u16string()}}){for(auto at=text.find(from);at!=std::u16string::npos;at=text.find(from,at+to.size()))text.replace(at,from.size(),to);}
-        auto drive=root.root_name().u16string();if(!drive.empty() && drive[0]>=u'A' && drive[0]<=u'Z')drive[0]+=u'a'-u'A';const std::u16string marker=u"{drive_lower}";if(const auto at=text.find(marker);at!=std::u16string::npos)text.replace(at,marker.size(),drive);return text;
+        for(const auto& [from,to]:{std::pair<std::u16string,std::u16string>{u"{root}",resolved_root.u16string()},{u"{parent}",resolved_parent.u16string()},{u"{temp}",resolved_temporary.u16string()},{u"{drive}",resolved_root.root_name().u16string()}}){for(auto at=text.find(from);at!=std::u16string::npos;at=text.find(from,at+to.size()))text.replace(at,from.size(),to);}
+        auto drive=resolved_root.root_name().u16string();if(!drive.empty() && drive[0]>=u'A' && drive[0]<=u'Z')drive[0]+=u'a'-u'A';const std::u16string marker=u"{drive_lower}";if(const auto at=text.find(marker);at!=std::u16string::npos)text.replace(at,marker.size(),drive);return text;
     };
     std::string row;unsigned rows=0;
     while(std::getline(corpus,row)){
@@ -4214,17 +4276,17 @@ void file_name_library() {
         const auto method=static_cast<abc::FileNameMethod>(std::stoul(row.substr(a+1,b-a-1)));const auto status=row.substr(b+1,c-b-1);const auto expected=substitute(decode(row.substr(c+1)));
         try{
             const auto actual=abc::file_name_info(files,input,method,{},{});
-            require(status=="N" ? std::holds_alternative<abc::NilString>(actual) : status=="S" && std::holds_alternative<std::u16string>(actual) && std::get<std::u16string>(actual)==expected,"FileInfo oracle row "+std::to_string(rows)+", method "+std::to_string(static_cast<unsigned>(method)));
+            require(status=="N" ? std::holds_alternative<abc::NilString>(actual) : status=="S" && std::holds_alternative<std::u16string>(actual) && std::get<std::u16string>(actual)==expected,"FileInfo oracle row "+std::to_string(rows)+", method "+std::to_string(static_cast<unsigned>(method))+", expected ["+abc::to_utf8(expected,true)+"], actual ["+(std::holds_alternative<std::u16string>(actual) ? abc::to_utf8(std::get<std::u16string>(actual),true) : "nil")+"]");
         }catch(const abc::Error& e){require(e.code==status,"FileInfo oracle row "+std::to_string(rows)+" expected "+status+", got "+e.code);}
         ++rows;
     }
     require(rows==396,"Every independent FileInfo filename reference row loaded");
-    auto drive=root.root_name().u16string();
-    require(abc::string_text(abc::file_name_info(files,drive+u"file.txt",abc::FileNameMethod::full,{},{}))==(root/"file.txt").u16string(),"Drive-relative paths use the execution directory for that drive");
-    drive[0]=static_cast<char16_t>(drive[0]|32);auto lower=(root/"file.txt").u16string();lower[0]=drive[0];
+    auto drive=resolved_root.root_name().u16string();
+    require(abc::string_text(abc::file_name_info(files,drive+u"file.txt",abc::FileNameMethod::full,{},{}))==(resolved_root/"file.txt").u16string(),"Drive-relative paths use the execution directory for that drive");
+    drive[0]=static_cast<char16_t>(drive[0]|32);auto lower=(resolved_root/"file.txt").u16string();lower[0]=drive[0];
     require(abc::string_text(abc::file_name_info(files,drive+u"file.txt",abc::FileNameMethod::full,{},{}))==lower,"Drive-relative paths retain the supplied drive letter case");
     {
-        const auto long_path=root/"Long Native Directory Name";std::filesystem::create_directory(long_path);
+        const auto long_path=resolved_root/"Long Native Directory Name";std::filesystem::create_directory(long_path);
         const auto needed=GetShortPathNameW(long_path.c_str(),nullptr,0);
         if(needed){std::wstring short_path(needed,L'\0');const auto length=GetShortPathNameW(long_path.c_str(),short_path.data(),needed);short_path.resize(length);
             if(length && short_path.find(L'~')!=std::wstring::npos){const std::u16string input(short_path.begin(),short_path.end());require(abc::string_text(abc::file_name_info(files,input+u"\\missing.txt",abc::FileNameMethod::full,{},{}))==(long_path/"missing.txt").u16string(),"Short names expand through an existing prefix even with a missing filename");}
@@ -4248,7 +4310,7 @@ void file_name_library() {
     }
     require(abc::string_text(abc::file_name_info(files,std::u16string(u"/a:tag/file.ext"),abc::FileNameMethod::drive,{},{}))==u"/a:","Source ExtractFileDrive uses the first colon in the directory name");
 #endif
-    const auto path=path_literal(root),file=path_literal(root/"file.tar.gz");
+    const auto path=path_literal(root),file=path_literal(resolved_root/"file.tar.gz");
     result("begin ChDir("+path+");Writeln(ExtractFileName('x/../file.tar.gz'),' ',ExtractFileExt('x/../file.tar.gz'));Writeln(ExpandFileName('x/../file.tar.gz')="+file+");Writeln(ExtractFileDir('missing')=GetDir);Writeln(ExtractFilePath('missing')=GetDir+'\\');Writeln('[',ExtractFileName('part/.'),'][',ExtractFileName('part/'),']');end.","file.tar.gz .gz\nTrue\nTrue\nTrue\n[.][]\n");
     result("function ExtractFileName(s:string):integer:=7;begin Writeln(ExtractFileName('x'),' ',PABCSystem.ExtractFileName('abc.txt'),' ',PABCSystem.ExtractFileExt('abc.txt'));end.","7 abc.txt .txt\n");
     result("begin Writeln(ExtractFileName('a'),' ',ExtractFileExt('.hidden'),' ',ExtractFileName('Данные/файл.данные'));end.","a .hidden файл.данные\n");
@@ -6509,7 +6571,7 @@ void text_files() {
     result("begin var f:Text; f.Write; f.Print(); f.Flush; end.","");
     result("begin var f:=OpenWrite("+file+"); f.Write(1,' ',2); f.Writeln; f.Print(3,4); f.Println('a','b'); f.Println(); f.Writeln('last'); f.Flush(); f.Close; f.Reset(); Writeln('[',f.ReadString,']'); Writeln('[',f.ReadlnString(),']'); Writeln('[',f.ReadlnString,']'); Writeln('[',f.ReadString(),'] ',f.Eof()); f.Close(); end.","[1 2]\n[3 4 a b]\n[]\n[last] True\n");
     result("begin DefaultEncoding:=Encoding.UTF8; var f:=OpenWrite("+file+"); f.Writeln(' 42 rest'); f.Writeln('1.5'); f.Writeln('TRUE'); f.Writeln('word tail'); f.Close; f.Reset; Writeln(f.ReadInteger,' [',f.ReadString,']'); Writeln(f.ReadlnReal(),' ',f.ReadlnBoolean); Writeln(f.ReadWord); Writeln('[',f.ReadlnString,'] ',f.SeekEof); f.Close; f.Append; f.Println('добавлено','🌍'); f.Close; f.Reset; f.Readln; f.Readln(); f.Readln; f.Readln; Writeln(f.ReadString); f.Close; end.","42 [ rest]\n1.5 True\nword\n[ tail] True\nдобавлено 🌍\n");
-    result("begin var f:Text; Assign(f,"+quote(directory/"missing.txt")+"); Writeln(f.Name,' ',f.FullName()="+quote(directory/"missing.txt",true)+"); ChDir("+quote(directory/"child")+"); Writeln(f.FullName="+quote(directory/"missing.txt",true)+"); end.","missing.txt True\nTrue\n");
+    result("begin var expected:=ExpandFileName("+quote(directory/"missing.txt")+");var f:Text; Assign(f,"+quote(directory/"missing.txt")+"); Writeln(f.Name,' ',f.FullName()=expected); ChDir("+quote(directory/"child")+"); Writeln(f.FullName=expected); end.","missing.txt True\nTrue\n");
     { std::ofstream out(path,std::ios::binary); out << "12 rest\r\nnext\rtail\n"; }
     result("begin var f:=OpenRead("+file+"); Writeln(f.ReadInteger); Writeln('[',f.ReadToEnd(),']'); Writeln(f.Eof,' [',f.ReadToEnd,']'); f.Close; Writeln(f.Name); end.","12\n[ rest\r\nnext\rtail\n]\nTrue []\ntext.txt\n");
     result("begin var f:=OpenRead("+file+"); Writeln(f.ReadlnInteger,' ',f.Eoln); f.Readln; Writeln(f.ReadlnString,' ',f.SeekEoln()); f.Close; end.","12 False\ntail True\n");
@@ -7250,7 +7312,7 @@ int main() {
     array_output();
     bitwise_operations();
     console_input();
-    console_functions(); console_tuple_functions(); directory_sequence_library(); file_name_library();
+    console_functions(); console_tuple_functions(); directory_sequence_library(); file_name_library(); system_environment_library();
     console_unicode_output();
     rectangular_arrays();
     array_initializers_language();

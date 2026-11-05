@@ -27,6 +27,7 @@
 #include "matrix_construction.hpp"
 #include "list_operations.hpp"
 #include "timing.hpp"
+#include "environment.hpp"
 #include "encoding.hpp"
 #include "enumeration.hpp"
 #include "comparable.hpp"
@@ -189,6 +190,7 @@ static void execute_impl(const Program& program, std::istream& input, std::ostre
     RandomContext random;
     SchoolContext school;
     TimeContext timing;
+    ProgramEnvironment environment(options);
     ConsoleInput console(input,options);
     std::vector<std::shared_ptr<Cell>> globals(program.locals.size());
     for (std::size_t i = 0; i < program.locals.size(); ++i) if (program.locals[i].global)
@@ -222,7 +224,7 @@ static void execute_impl(const Program& program, std::istream& input, std::ostre
     stdlib::Context services{files,random,console,[&](std::u16string_view text,SourceLocation location) {
         Instruction instruction; instruction.location=location;
         write(text,instruction);
-    },delimiter_value,options,school,values,timing};
+    },delimiter_value,options,school,values,timing,environment};
     values.invoke_builtin=[&](std::size_t id,std::span<const Value> arguments){return stdlib::invoke(id,arguments,values.location,services);};
     const auto enter_routine=[&](std::size_t id,SourceLocation location,std::span<const std::shared_ptr<Cell>> captured={}) {
         if (id>=program.routines.size()) throw runtime_error(RuntimeError::invalid_bytecode,location);

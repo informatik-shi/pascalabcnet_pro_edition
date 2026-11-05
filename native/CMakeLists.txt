@@ -68,6 +68,8 @@ add_library(abc_core
     src/matrix_construction.cpp
     src/list_operations.cpp
     src/timing.cpp
+    src/environment.cpp
+    src/disk_space.cpp
     src/diagnostics.cpp
     src/compiler_diagnostics.cpp
     src/types.cpp
@@ -212,6 +214,12 @@ if(BUILD_TESTING)
     add_test(NAME console_functions_compatibility COMMAND ${CMAKE_COMMAND}
         "-DABC_RUNNER=$<TARGET_FILE:abc>" "-DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
         -DABC_FIXTURE_NAME=console-functions-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")
+    add_test(NAME system_services_compatibility COMMAND ${CMAKE_COMMAND}
+        "-DABC_RUNNER=$<TARGET_FILE:abc>" "-DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
+        -DABC_FIXTURE_NAME=system-services-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")
+    add_test(NAME arguments_cli_compatibility COMMAND ${CMAKE_COMMAND}
+        "-DABC_RUNNER=$<TARGET_FILE:abc>" "-DABC_SOURCE=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/arguments-cli.pas"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/arguments-cli.cmake")
     add_test(NAME file_names_compatibility COMMAND ${CMAKE_COMMAND}
         "-DABC_RUNNER=$<TARGET_FILE:abc>" "-DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
         -DABC_FIXTURE_NAME=file-names-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")
