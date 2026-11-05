@@ -87,7 +87,11 @@ struct DirectorySpec {fs::path root;std::u16string display;std::vector<PatternTo
 struct PendingDirectory {fs::path path;std::u16string display;fs::directory_iterator iterator;};
 struct DirectoryCursor {
     PendingDirectory current;std::deque<PendingDirectory> pending;bool increment=false;
-    explicit DirectoryCursor(const DirectorySpec& spec,SourceLocation location):current{spec.root,spec.display,open(spec.root,location)}{}
+    explicit DirectoryCursor(const DirectorySpec& spec,SourceLocation location){
+        // Open before copying descriptor fields; all cursor members are already constructed.
+        auto iterator=open(spec.root,location);
+        current.path=spec.root;current.display=spec.display;current.iterator=std::move(iterator);
+    }
 };
 }
 struct DirectorySequenceState {
