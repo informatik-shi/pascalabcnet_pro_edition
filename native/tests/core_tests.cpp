@@ -4531,6 +4531,61 @@ void hash_set_library() {
     }
 }
 
+void hash_set_extra_library() {
+    result("begin var s:=new HashSet<integer>(Arr(1,2,3,4));s.Remove(2);var a:=Arr(9,9,9,9,9);s.CopyTo(a,1,4);Writeln(a);s.CopyTo(a);Writeln(a);s.CopyTo(a,2);Writeln(a);s.CopyTo(a,5,0);end.","[9,1,3,4,9]\n[1,3,4,4,9]\n[1,3,1,3,4]\n");
+    result("begin var s:=new HashSet<integer>(Arr(1,2,3,4));s.Remove(2);s.TrimExcess; s.Add(5);Writeln(s.ToArray);var e:=new HashSet<integer>;e.TrimExcess();e.Add(9);Writeln(e);end.","[1,3,4,5]\n{9}\n");
+    result("begin var s:=new HashSet<integer>(Arr(1,2,3,4));s.Remove(2);foreach var x in s do begin Write(x);if x=3 then s.TrimExcess;end;Writeln;end.","13\n");
+    result("begin var s:=new HashSet<integer>(Arr(1,2,3));var seen:=new List<integer>;Writeln(s.RemoveWhere(x->begin seen.Add(x);if x=1 then s.Add(4);Result:=x mod 2=0;end));Writeln(seen,' ',s);end.","2\n[1,2,3,4] {1,3}\n");
+    result("begin var s:=new HashSet<integer>(Arr(1,2));Writeln(s.RemoveWhere(x->begin s.Remove(x);Result:=True;end),' ',s.Count);end.","0 0\n");
+    result("begin var s:=new HashSet<integer>(Arr(1,2,3));Writeln(s.RemoveWhere(x->begin s.Clear;Result:=True;end),' ',s.Count);end.","0 0\n");
+    result("begin var s:=new HashSet<integer>(Arr(1,2,3,4));s.Remove(2);var seen:='';Writeln(s.RemoveWhere(x->begin seen+=x;if x=1 then s.TrimExcess;Result:=False;end),' ',seen,' ',s);end.","0 134 {1,3,4}\n");
+    result("function Even(x:integer):boolean:=x mod 2=0;begin var s:=new HashSet<integer>(Range(1,5));var p:integer->boolean:=Even;Writeln(s.RemoveWhere(p),' ',s);foreach var x in s do s.RemoveWhere(y->False);Writeln(s);end.","2 {1,3,5}\n{1,3,5}\n");
+    result("begin var h:=new HashSet<integer>(Arr(1,2));var x:=2;Writeln(h.TryGetValue(x,x),' ',x);Writeln(h.TryGetValue(9,x),' ',x);var a:=Arr(99);Writeln(h.TryGetValue(1,a[0]),' ',a);end.","True 2\nFalse 0\nTrue [1]\n");
+    result("begin var h:=new HashSet<string>;h.Add(nil);var x:='abc';Writeln(h.TryGetValue(nil,x),' ',x=nil);Writeln(h.TryGetValue('missing',x),' ',x=nil);end.","True True\nFalse True\n");
+    result("type R=record n:integer;s:string;end;begin var h:=new HashSet<R>;var r:R;r.n:=1;r.s:='abc';h.Add(r);var out1:R;Writeln(h.TryGetValue(r,out1),' ',out1.n,' ',out1.s);out1.n:=9;Writeln(h.First.n);r.n:=2;Writeln(h.TryGetValue(r,out1),' ',out1.n,' ',out1.s=nil);end.","True 1 abc\n1\nFalse 0 True\n");
+    result("type R=record n:integer;a:array of integer;end;begin var r:R;r.n:=1;r.a:=Arr(2);var h:=new HashSet<R>;h.Add(r);var a:=new R[1];h.CopyTo(a);a[0].n:=9;a[0].a[0]:=8;Writeln(h.First.n,' ',h.First.a[0]);end.","1 8\n");
+    result("begin var h:=new HashSet<NewSet<integer>>;var s:=SetOf(1);h.Add(s);var a:=new NewSet<integer>[1];h.CopyTo(a);a[0].Add(2);var x:NewSet<integer>;Writeln(h.TryGetValue(s,x),' ',x,' ',s);x.Add(3);Writeln(s);Writeln(h.TryGetValue(SetOf(9),x),' ',x._hs=nil);end.","True {1,2} {1,2}\n{1,2,3}\nFalse True\n");
+    result("var s:HashSet<integer>;function Right:integer;begin s:=new HashSet<integer>(Arr(9));Result:=1;end;begin s:=new HashSet<integer>(Arr(1,2));var old:=s;var a:=Arr(0,0,0);old.CopyTo(a,Right);Writeln(a,' ',s);s:=old;var x:=0;Writeln(s.TryGetValue(Right,x),' ',x,' ',s);end.","[0,1,2] {9}\nTrue 1 {9}\n");
+    result("var s:HashSet<integer>;function Index:integer;begin s.Add(2);Result:=0;end;begin s:=new HashSet<integer>(Arr(1));var a:=Arr(9,9);s.CopyTo(a,Index);Writeln(a);end.","[1,2]\n");
+    for(const auto type:{"byte","shortint","smallint","word","integer","longword","int64","uint64","real","BigInteger","boolean","char"}) {
+        const auto value=std::string(type)=="boolean" ? "True" : std::string(type)=="char" ? "'a'" : "7";
+        result("begin var s:=new HashSet<"+std::string(type)+">;s.Add("+value+");var x:"+type+";Writeln(s.TryGetValue("+value+",x),' ',s.Contains(x));var a:=new "+type+"[1];s.CopyTo(a);Writeln(a[0]=x);end.","True True\nTrue\n");
+    }
+    for(const auto source:{"begin var h:=new HashSet<integer>;h.CopyTo(Arr(0),-1);end.","begin var h:=new HashSet<integer>;h.CopyTo(Arr(0),0,-1);end.","begin var h:=new HashSet<integer>(Arr(1,2));h.CopyTo(Arr(0));end.","begin var h:=new HashSet<integer>;h.CopyTo(Arr(0),2,0);end."})runtime_error(source,"E_RANGE");
+    for(const auto source:{"begin var h:=new HashSet<integer>;h.CopyTo(nil,-1,-1);end.","begin var h:=new HashSet<integer>;h.RemoveWhere(nil);end.","begin var h:HashSet<integer>;var x:=0;h.TryGetValue(1,x);end.","begin var h:HashSet<integer>;h.TrimExcess;end."})runtime_error(source,"E_NIL");
+    for(const auto source:{"begin var h:=new HashSet<integer>;h.CopyTo;end.","begin var h:=new HashSet<integer>;h.CopyTo(Arr(1.0));end.","begin var h:=new HashSet<integer>;h.RemoveWhere(x->x);end.","begin var h:=new HashSet<integer>;h.TryGetValue(1,2);end.","begin var h:=new HashSet<integer>;var x:int64;h.TryGetValue(1,x);end.","begin var h:=new HashSet<integer>;var l:=Lst(1);h.TryGetValue(1,l[0]);end.","begin var h:=new HashSet<integer>;h.TrimExcess(1);end."})compile_error(source,"E_TYPE");
+    {
+        auto p=abc::compile("begin var h:=new HashSet<integer>;h.RemoveWhere(x->False);end.");
+        for(auto& op:p.code)if(op.op==abc::Op::hash_set_call && (op.operand&255U)==static_cast<std::size_t>(abc::HashSetMethod::remove_where))op.operand=(op.operand&255U)|(static_cast<std::size_t>(abc::Type::real)<<8U);
+        error([&]{abc::verify(p);},"E_BYTECODE");
+        p=abc::compile("begin var h:=new HashSet<integer>;var x:=0;h.TryGetValue(1,x);end.");
+        for(auto& op:p.code)if(op.op==abc::Op::hash_set_call && (op.operand&255U)==static_cast<std::size_t>(abc::HashSetMethod::try_get_value))op.operand=static_cast<std::size_t>(abc::HashSetMethod::contains)|(static_cast<std::size_t>(abc::Type::invalid)<<8U);
+        error([&]{abc::verify(p);},"E_BYTECODE");
+    }
+    {
+        const auto p=abc::compile("begin var h:=new HashSet<integer>;h.CopyTo(new integer[1]);end.");
+        const auto owner=static_cast<abc::Type>(64+std::distance(p.types.begin(),std::find_if(p.types.begin(),p.types.end(),[](const auto& t){return t.kind==abc::CompoundKind::hash_set;})));
+        abc::Values values{p,100};const auto h=std::get<std::shared_ptr<abc::Aggregate>>(values.zero(owner,true));
+        for(int i=1;i<=4;++i){const std::array<abc::Value,2> args{h,std::int32_t{i}};(void)abc::hash_set_invoke(values,owner,abc::Type::invalid,abc::HashSetMethod::add,args,{});}
+        const std::array<abc::Value,2> remove{h,std::int32_t{2}};(void)abc::hash_set_invoke(values,owner,abc::Type::invalid,abc::HashSetMethod::remove,remove,{});
+        const auto olditems=h->items;const auto version=h->version;const std::array<abc::Value,1> self{h};
+        abc::ExecutionOptions cancelled;cancelled.cancelled=[] {return true;};
+        error([&]{(void)abc::hash_set_invoke(values,owner,abc::Type::invalid,abc::HashSetMethod::trim_excess,self,cancelled);},"E_CANCELLED");
+        require(h->items==olditems && h->version==version,"Canceled trim preserves slots and version");
+        values.remaining=1;
+        error([&]{(void)abc::hash_set_invoke(values,owner,abc::Type::invalid,abc::HashSetMethod::trim_excess,self,{});},"E_LIMIT");
+        require(h->items==olditems && h->version==version,"Failed trim allocation preserves slots and version");
+        values.remaining=100;
+        (void)abc::hash_set_invoke(values,owner,abc::Type::invalid,abc::HashSetMethod::clear,self,{});
+        const auto seq=abc::sequence_create(values,abc::type_info(p,owner).key,h,abc::SequenceProvider::hash_set);const auto cursor=abc::sequence_begin(values,seq);
+        (void)abc::hash_set_invoke(values,owner,abc::Type::invalid,abc::HashSetMethod::trim_excess,self,{});
+        error([&]{(void)abc::sequence_resume(values,cursor,0,{});},"E_MODIFIED");
+    }
+    for(const auto entry:{std::pair{"begin var s:=new HashSet<integer>;s.CopyTo(Arr(0),-1,-1);end.","HashSet copy destination index cannot be negative"},std::pair{"begin var s:=new HashSet<integer>;s.CopyTo(Arr(0),0,-1);end.","HashSet copy count cannot be negative"}}){
+        try{(void)run(entry.first);require(false,"Expected copy diagnostic");}catch(const abc::Error& caught){require(std::string(caught.what())==entry.second && !caught.russian.empty(),"HashSet copy validation order and bilingual text");}
+    }
+}
+
 void membership_library() {
     result("begin var a:=Arr(1,2,3);Writeln(2 in a,' ',4 in a,' ',4 not in a,' ',not (2 not in a));Writeln(1+1 in a = True,' ',(2 in a) and (4 not in a));var l:=Lst(4,5);Writeln(4 in l,' ',2 not in l);end.","True False True True\nTrue True\nTrue True\n");
     result("begin Writeln('bc' in 'abcd',' ','BC' not in 'abcd',' ','' in 'abcd');Writeln('abcd'.Contains('bc'),' ','abcd'.Contains('BC'),' ',''.Contains(''));Writeln('b' in 'abc',' ','abc'.Contains('b'));Writeln('é' in 'é',' ',#55357 in '😀',' ',#0 in 'a'#0'b');end.","True True True\nTrue False True\nTrue True\nFalse True True\n");
@@ -6863,7 +6918,7 @@ void characters() {
 
 int main() {
     language();
-    enumerations(); comparable_ranges(); compound_assignments(); array_operator_library(); membership_library(); hash_set_library(); new_set_library(); set_literal_library(); print_extensions_library(); include_exclude_library();
+    enumerations(); comparable_ranges(); compound_assignments(); array_operator_library(); membership_library(); hash_set_library(); hash_set_extra_library(); new_set_library(); set_literal_library(); print_extensions_library(); include_exclude_library();
     structured_loops();
     foreach_loops();
     characters();

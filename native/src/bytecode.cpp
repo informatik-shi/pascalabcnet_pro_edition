@@ -318,7 +318,7 @@ private:
         }
         case hir::ExprKind::hash_set_call: {
             const auto method=static_cast<HashSetMethod>(node.local&255U);
-            for(std::size_t i=0;i<node.arguments.size();++i)if(i==0 && hash_set_reference(method))reference(*node.arguments[i]);else expression(*node.arguments[i]);
+            for(std::size_t i=0;i<node.arguments.size();++i)if((i==0 && hash_set_reference(method)) || (i==2 && method==HashSetMethod::try_get_value))reference(*node.arguments[i]);else expression(*node.arguments[i]);
             emit(Op::hash_set_call,node.operation_type,node.local,node.location);break;
         }
         case hir::ExprKind::compound_call:

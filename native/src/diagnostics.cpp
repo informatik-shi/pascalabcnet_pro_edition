@@ -4,6 +4,12 @@ namespace abc {
 Error runtime_error(RuntimeError id, SourceLocation location, std::string_view context) {
     const char *code, *english, *russian;
     switch (id) {
+    case RuntimeError::hash_set_copy_index:
+        code="E_RANGE";english="HashSet copy destination index cannot be negative";russian="Индекс назначения при копировании HashSet не может быть отрицательным";break;
+    case RuntimeError::hash_set_copy_count:
+        code="E_RANGE";english="HashSet copy count cannot be negative";russian="Количество копируемых элементов HashSet не может быть отрицательным";break;
+    case RuntimeError::hash_set_copy_range:
+        code="E_RANGE";english="Destination array has insufficient space for HashSet copy";russian="В массиве назначения недостаточно места для копирования HashSet";break;
     case RuntimeError::search_value_nil:
         code="E_NIL";english="Search substring cannot be nil";russian="Искомая подстрока не может быть nil";break;
     case RuntimeError::array_repeat_range:

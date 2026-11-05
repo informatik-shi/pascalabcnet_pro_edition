@@ -2510,6 +2510,7 @@ private:
                 }
             }
             if(type.kind==CompoundKind::hash_set){
+                if(auto call=bind_hash_set_extra(source,*result,receiver))return call;
                 static const std::map<std::string,HashSetMethod> methods{{"count",HashSetMethod::count},{"add",HashSetMethod::add},{"remove",HashSetMethod::remove},{"contains",HashSetMethod::contains},{"clear",HashSetMethod::clear},{"unionwith",HashSetMethod::union_with},{"exceptwith",HashSetMethod::except_with},{"intersectwith",HashSetMethod::intersect_with},{"symmetricexceptwith",HashSetMethod::symmetric_with},{"setequals",HashSetMethod::set_equals},{"issubsetof",HashSetMethod::subset},{"ispropersubsetof",HashSetMethod::proper_subset},{"issupersetof",HashSetMethod::superset},{"ispropersupersetof",HashSetMethod::proper_superset},{"overlaps",HashSetMethod::overlaps}};
                 if(const auto found=methods.find(source.token.text);found!=methods.end()){
                     if(found->second==HashSetMethod::count && source.kind==SyntaxExprKind::member_call)throw Error("E_TYPE",result->location,"HashSet.Count is not callable");
@@ -3282,12 +3283,37 @@ private:
         else{array=std::make_unique<hir::Expr>();array->location=result.location;array->arguments=std::move(result.arguments);bind_array_literal(*array);}
         const auto owner=new_set_type(info(array->type,result.location).element);std::vector<std::unique_ptr<hir::Expr>> arguments;arguments.push_back(std::move(array));result=std::move(*new_set_expression(owner,NewSetMethod::construct_array,std::move(arguments),result.location));return true;
     }
-    std::unique_ptr<hir::Expr> hash_set_expression(Type owner,HashSetMethod method,std::vector<std::unique_ptr<hir::Expr>> arguments,SourceLocation location){
-        const auto sequence=hash_set_sequence_method(method) ? info(owner,location).key : Type::invalid;
+    ABC_PASCAL_NOINLINE std::unique_ptr<hir::Expr> bind_hash_set_extra(const SyntaxExpr& source,hir::Expr& result,Type owner){
+        const auto name=source.token.text;const auto element=info(owner,result.location).element;
+        if(name!="copyto" && name!="removewhere" && name!="trimexcess" && name!="trygetvalue")return {};
+        const auto count=source.arguments.size();Type payload=Type::invalid;HashSetMethod method;
+        if(name=="copyto"){
+            if(count<1 || count>3)throw Error("E_TYPE",result.location,"Wrong HashSet argument count");
+            (void)sequence_type(CompoundKind::array,element);method=count==1 ? HashSetMethod::copy_array : count==2 ? HashSetMethod::copy_index : HashSetMethod::copy_count;
+        }else if(name=="removewhere"){
+            if(count!=1)throw Error("E_TYPE",result.location,"Wrong HashSet argument count");
+            payload=function_type(Type::boolean,{{element,false,false}},result.location);method=HashSetMethod::remove_where;
+        }else if(name=="trimexcess"){
+            if(count)throw Error("E_TYPE",result.location,"Wrong HashSet argument count");method=HashSetMethod::trim_excess;
+        }else{
+            if(count!=2)throw Error("E_TYPE",result.location,"Wrong HashSet argument count");method=HashSetMethod::try_get_value;
+        }
+        const auto parameters=hash_set_parameters(module_.types,owner,payload,method);
+        std::vector<std::unique_ptr<hir::Expr>> arguments;arguments.push_back(std::move(result.left));
+        for(std::size_t i=0;i<count;++i){
+            const bool ref=method==HashSetMethod::try_get_value && i==1;
+            auto argument=expression(*source.arguments[i],ref ? element : parameters[i+1]);
+            if(ref && (argument->type!=element || !new_set_addressable(*argument)))throw Error("E_TYPE",result.location,"var argument requires an assignable value of exactly the parameter type");
+            arguments.push_back(std::move(argument));
+        }
+        return hash_set_expression(owner,method,std::move(arguments),result.location,payload);
+    }
+    std::unique_ptr<hir::Expr> hash_set_expression(Type owner,HashSetMethod method,std::vector<std::unique_ptr<hir::Expr>> arguments,SourceLocation location,Type payload=Type::invalid){
+        const auto sequence=hash_set_sequence_method(method) ? info(owner,location).key : payload;
         const auto parameters=hash_set_parameters(module_.types,owner,sequence,method);
         if(arguments.size()!=parameters.size())throw Error("E_TYPE",location,"Wrong HashSet argument count");
         auto result=std::make_unique<hir::Expr>();result->kind=hir::ExprKind::hash_set_call;result->type=hash_set_result(owner,method);result->location=location;result->operation_type=owner;result->local=static_cast<std::size_t>(method)|(static_cast<std::size_t>(sequence)<<8U);
-        for(std::size_t i=0;i<arguments.size();++i)result->arguments.push_back(i==0 && hash_set_reference(method) ? std::move(arguments[i]) : convert(std::move(arguments[i]),parameters[i]));return result;
+        for(std::size_t i=0;i<arguments.size();++i)result->arguments.push_back((i==0 && hash_set_reference(method)) || (i==2 && method==HashSetMethod::try_get_value) ? std::move(arguments[i]) : convert(std::move(arguments[i]),parameters[i]));return result;
     }
     std::unique_ptr<hir::Expr> compound_expression(Type owner,CompoundMethod method,std::unique_ptr<hir::Expr> left,std::unique_ptr<hir::Expr> right,SourceLocation location) {
         const auto parameters=compound_parameters(module_.types,owner,method);

@@ -631,3 +631,15 @@ arguments evaluate first, then the method resolves the current record field thro
 stable typed cell; their boolean HashSet results are discarded. Typed callback hints and
 var-addressability checks happen during binding. Bool/set literal method calls now enter
 the normal expression-statement path.
+
+
+HashSet call metadata also describes CopyTo destination arrays, exact bool(T) predicates
+for RemoveWhere and the typed out-reference of TryGetValue. Only the third TryGetValue
+operand is a reference; the receiver is captured before argument evaluation. RemoveWhere
+copies the current value before invoking user code and rescans the dynamic slot span,
+so callback mutation never leaves an iterator or slot reference dangling. CopyTo and
+TryGetValue use generic value copies, retaining record-field cell identity on output
+and sharing contained references without invoking Pascal custom assignment operators.
+Nonempty TrimExcess builds a complete temporary slot/hash index before publication,
+preserves cached hashes and version, and swaps atomically after bounded work. Empty
+trim releases storage and increments version, matching the source framework rules.
