@@ -26,6 +26,12 @@
 #include <map>
 #include <set>
 
+#if defined(_MSC_VER)
+#define ABC_PASCAL_NOINLINE __declspec(noinline)
+#else
+#define ABC_PASCAL_NOINLINE __attribute__((noinline))
+#endif
+
 namespace abc {
 namespace {
 
@@ -121,7 +127,7 @@ public:
         if (point()==U'→') { take(); take(); take(); return {TokenKind::symbol,"->",start}; }
         std::string symbol(1, take());
         if ((symbol == ":" && peek() == '=') || (symbol == "<" && (peek() == '=' || peek() == '>'))
-            || (symbol == ">" && peek() == '=') || (symbol == "-" && peek() == '>')
+            || (symbol == ">" && peek() == '=') || (symbol=="." && peek()=='.') || (symbol == "-" && peek() == '>')
             || ((symbol=="+" || symbol=="-" || symbol=="*" || symbol=="/") && peek()=='=')) symbol += take();
         if (std::string_view(";:,.()[]+-*/=<>? ").find(symbol.front()) == std::string_view::npos)
             throw Error("E_SYNTAX", start, "Unsupported character in source");
@@ -189,7 +195,7 @@ private:
     SourceLocation position_;
 };
 
-enum class SyntaxExprKind { literal, literal_group, name, unary, binary, call, index, field, member_call, construction, formatted, tuple, typed_default, value_call, lambda, conditional };
+enum class SyntaxExprKind { literal, literal_group, name, unary, binary, call, index, field, member_call, construction, formatted, tuple, typed_default, value_call, lambda, conditional, set_literal };
 struct SyntaxRoutine;
 struct SyntaxProperty;
 struct SyntaxExpr;
@@ -796,6 +802,14 @@ private:
         }
         return left;
     }
+    ABC_PASCAL_NOINLINE std::unique_ptr<SyntaxExpr> set_literal() {
+            const auto token=consume();auto result=make_expression(SyntaxExprKind::set_literal,token);
+            if(!is("]")){do{if(result->arguments.size()>=4096)fail("Set literal element limit exceeded");auto item=expression();
+                if(is("..")){const auto op=consume();item=make_expression(SyntaxExprKind::binary,op,std::move(item),expression());}
+                result->depth=std::max(result->depth,item->depth+1);if(result->depth>256)fail("Set literal nesting limit exceeded");result->arguments.push_back(std::move(item));
+            }while(accept(","));}
+            expect("]");return postfix(std::move(result));
+    }
     std::unique_ptr<SyntaxExpr> prefix() {
         DepthGuard guard(depth_, current_.location);
         if (is("-") || is("+") || is("not")) {
@@ -827,6 +841,7 @@ private:
             const bool function=is("function"); const auto token=consume();
             return postfix(lambda_body(lambda_head(token,function,!function)));
         }
+        if(is("["))return set_literal();
         if (is("(")) {
             Parser trial=*this; std::shared_ptr<SyntaxRoutine> lambda;
             try { lambda=trial.lambda_head(current_); }
@@ -1545,6 +1560,11 @@ private:
         module_.types.push_back({name,kind,element,{},key,rank});
         return static_cast<Type>(63+module_.types.size());
     }
+    Type empty_type(){
+        if(const auto type=empty_collection_type(module_.types);type!=Type::invalid)return type;
+        if(module_.types.size()>=1024)throw Error("E_LIMIT",{},"Type limit exceeded");
+        module_.types.push_back({"emptycollection",CompoundKind::empty_collection,Type::invalid,{}});return static_cast<Type>(63+module_.types.size());
+    }
     Type new_set_type(Type element){
         for(std::size_t i=0;i<module_.types.size();++i)if(module_.types[i].kind==CompoundKind::new_set && module_.types[i].element==element)return static_cast<Type>(64+i);
         const auto hash=sequence_type(CompoundKind::hash_set,element);(void)sequence_type(CompoundKind::array,element);
@@ -1763,6 +1783,7 @@ private:
             module_.types.push_back(std::move(record));
             const auto type=static_cast<Type>(63+module_.types.size()); resolved_types_[&syntax]=type; return type;
         }
+        if(syntax.kind=="emptycollection" && (syntax.unit.empty() || syntax.unit=="pabcsystem") && !aliases_.contains(syntax.kind))return empty_type();
         if(syntax.kind=="tinifile" && (syntax.unit=="inifile" || !aliases_.contains(syntax.kind)))return inifile_type(syntax.token.location);
         if (syntax.kind=="encoding" && (syntax.system_qualified || !aliases_.contains(syntax.kind))) return encoding_type();
         if (auto found = find_type(syntax.kind)) return *found;
@@ -1821,6 +1842,10 @@ private:
             && info(to,location).kind==CompoundKind::sequence && info(from,location).element==info(to,location).element;
     }
     std::unique_ptr<hir::Expr> convert(std::unique_ptr<hir::Expr> expression, Type type) {
+        if(expression->type!=type && compound(expression->type) && info(expression->type,expression->location).kind==CompoundKind::empty_collection && compound(type)){
+            const auto target=info(type,expression->location);if(target.kind==CompoundKind::sequence)(void)sequence_type(CompoundKind::array,target.element);
+            Program metadata;metadata.types=module_.types;if(empty_signature(metadata,type,EmptyMethod::convert)){const auto location=expression->location;std::vector<std::unique_ptr<hir::Expr>> args;args.push_back(std::move(expression));return empty_expression(type,EmptyMethod::convert,std::move(args),location);}
+        }
         if(expression->type!=type && compound(type) && info(type,expression->location).kind==CompoundKind::new_set){
             const auto target=info(type,expression->location);const auto from=expression->type;const auto location=expression->location;
             if(compound(from)){const auto source=info(from,location);const auto method=source.kind==CompoundKind::array && source.rank==1 && source.element==target.element ? NewSetMethod::cast_array : from==target.key ? NewSetMethod::cast_hash : NewSetMethod::construct;
@@ -2043,73 +2068,10 @@ private:
         result->left->type=current_owner_;result->left->location=source.token.location;capture_local(current_self_,source.token.location);
         return class_member(std::move(result),source,expected);
     }
-    std::unique_ptr<hir::Expr> expression(const SyntaxExpr& source,Type expected=Type::invalid) {
-        if (!source.type_arguments.empty()) return explicit_factory(source);
-        if((source.token.text=="low" || source.token.text=="high") && source.arguments.size()==1
-            && source.arguments[0]->kind==SyntaxExprKind::name && !lookup(source.arguments[0]->token)
-            && ((source.kind==SyntaxExprKind::call && !lookup(source.token) && !routine_names_.contains(source.token.text))
-                || (source.kind==SyntaxExprKind::member_call && source.left->kind==SyntaxExprKind::name
-                    && source.left->token.text=="pabcsystem" && !lookup(source.left->token)))) {
-            const auto alias=aliases_.find(source.arguments[0]->token.text);
-            if(alias!=aliases_.end() && enumeration(alias->second))
-                return enum_expression(alias->second,source.token.text=="low" ? EnumMethod::low : EnumMethod::high,{},source.token.location);
-        }
-
-        if (auto member=implicit_class_member(source,expected)) return member;
-        if (source.kind==SyntaxExprKind::lambda) return bind_lambda(source,expected);
-        if (source.kind==SyntaxExprKind::name && source.token.text=="result" && !lambdas_.empty() && (current_result_==Type::invalid || current_result_==Type::unit))
-            throw Error("E_TYPE",source.token.location,"Lambda Result requires a known value type");
-        if (source.kind==SyntaxExprKind::name && callable_type(expected)) {
-            const auto local=lookup(source.token);
-            if ((!local || source.token.text==current_name_) && routine_names_.contains(source.token.text)) {
-                const auto id=routine_names_.at(source.token.text); const auto& signature=module_.routines[id].signature;
-                if (signature.parameters.empty() && signature.result==expected) {
-                    SyntaxExpr call{SyntaxExprKind::call,source.token,{},{},1,{},{}}; return expression(call);
-                }
-                return routine_value(id,source.token.location,expected);
-            }
-        }
-        if (callable_type(expected) || source.kind==SyntaxExprKind::field)
-            if (auto value=windows_character_function_value(source,expected)) return value;
-        auto result = std::make_unique<hir::Expr>();
-        result->location = source.token.location;
-        result->operation = source.token.text;
-        switch (source.kind) {
-        case SyntaxExprKind::conditional: {
-            result->kind=hir::ExprKind::conditional;result->left=convert(expression(*source.left),Type::boolean);
-            auto yes=expression(*source.right,expected);
-            auto no=expression(*source.arguments[0],callable_type(yes->type) ? yes->type : expected);
-            const auto a=yes->type,b=no->type;
-            if (a==Type::unit || b==Type::unit || (a==Type::nil && b==Type::nil))
-                throw Error("E_TYPE",result->location,"Conditional branches require known value types");
-            const auto reference=[&](Type type) {return type==Type::string || type==Type::text_file || (compound(type) && info(type,result->location).kind!=CompoundKind::record && !enumeration(type));};
-            auto type=Type::invalid;
-            if (a==b) type=a;
-            else if (a==Type::nil || b==Type::nil) {
-                type=a==Type::nil ? b : a;
-                if (!reference(type)) throw Error("E_UNSUPPORTED",result->location,"Conditional nil with a value type requires Nullable support");
-            } else if (can_widen(a,b) || sequence_view(a,b,result->location)) type=b;
-            else if (can_widen(b,a) || sequence_view(b,a,result->location)) type=a;
-            else if (integer_type(a) && integer_type(b)) {
-                // Source LUB promotes unrelated small integer types to integer.
-                if (a==Type::uint64 || b==Type::uint64) type=Type::uint64;
-                else if (a==Type::int64 || b==Type::int64 || a==Type::longword || b==Type::longword) type=Type::int64;
-                else type=Type::integer;
-            }
-            if (type==Type::invalid) throw Error("E_TYPE",result->location,"Conditional branches have incompatible static types");
-            result->right=convert(std::move(yes),type);result->arguments.push_back(convert(std::move(no),type));result->type=type;break;
-        }
-        case SyntaxExprKind::lambda: throw Error("E_HIR",result->location,"Lambda escaped typed binding");
-        case SyntaxExprKind::value_call:
-            result->left=expression(*source.left); bind_value_call(*result,source.arguments); break;
-        case SyntaxExprKind::typed_default:
-            result->kind=hir::ExprKind::default_value; result->type=resolve_type(*source.constructed); result->operation="default"; break;
-        case SyntaxExprKind::tuple: {
-            result->kind=hir::ExprKind::tuple_literal; std::vector<Type> elements;
-            for (const auto& argument:source.arguments) { auto element=expression(*argument); elements.push_back(element->type); result->arguments.push_back(std::move(element)); }
-            result->type=tuple_type(elements,result->location); break;
-        }
-        case SyntaxExprKind::construction: {
+    ABC_PASCAL_NOINLINE std::unique_ptr<hir::Expr> bind_construction_expression(const SyntaxExpr& source,Type expected,std::unique_ptr<hir::Expr> result) {
+        (void)expected;
+        do {
+ {
             auto type = resolve_type(*source.constructed);
             if(!source.array_construction && enumeration(type)) {if(!source.arguments.empty())throw Error("E_TYPE",result->location,"Enumeration constructor takes no arguments");result->kind=hir::ExprKind::default_value;result->type=type;break;}
             if(!source.array_construction && compound(type) && info(type,result->location).kind==CompoundKind::encoding)throw Error("E_TYPE",result->location,"Encoding cannot be constructed directly");
@@ -2158,6 +2120,7 @@ private:
                     if (source.arguments.size()!=1) throw Error("E_TYPE",result->location,"Callable constructor requires one matching routine value");
                     return convert(expression(*source.arguments[0],type),type);
                 }
+                if(info(type,result->location).kind==CompoundKind::empty_collection){if(!source.arguments.empty())throw Error("E_TYPE",result->location,"EmptyCollection constructor takes no arguments");result->kind=hir::ExprKind::default_value;result->type=type;result->operation="new";return result;}
                 if(info(type,result->location).kind==CompoundKind::new_set){
                     const auto element=info(type,result->location).element;std::vector<std::unique_ptr<hir::Expr>> arguments;
                     if(source.arguments.empty())return new_set_expression(type,NewSetMethod::construct,{},result->location);
@@ -2226,51 +2189,13 @@ private:
             }
             break;
         }
-        case SyntaxExprKind::index: {
-            if (source.left->kind == SyntaxExprKind::field && source.left->token.text == "elem") {
-                auto receiver = expression(*source.left->left);
-                if (compound(receiver->type)) {
-                    const auto kind = info(receiver->type,result->location).kind;
-                    if (kind == CompoundKind::dynarray || kind == CompoundKind::association) result->left = std::move(receiver);
-                }
-            }
-            if (!result->left) result->left = expression(*source.left);
-            const auto receiver_type = result->left->type;
-            const auto rank=compound(receiver_type) && info(receiver_type,result->location).kind==CompoundKind::array ? info(receiver_type,result->location).rank : 1U;
-            if (source.arguments.size()+1!=rank) throw Error("E_TYPE",result->location,"Wrong number of array indices");
-            if (receiver_type==Type::string) {
-                result->right=convert(expression(*source.right),Type::integer);
-                result->type=Type::character; result->kind=hir::ExprKind::index; break;
-            }
-            const auto kind = info(receiver_type,result->location).kind;
-            if (kind == CompoundKind::association) {
-                const auto key = info(receiver_type,result->location).key, element = info(receiver_type,result->location).element;
-                result->kind = hir::ExprKind::association_call; result->type = element;
-                result->local = static_cast<std::size_t>(AssociationMethod::get);
-                result->arguments.push_back(convert(expression(*source.right),key)); break;
-            }
-            if (compound(receiver_type) && info(receiver_type,result->location).kind==CompoundKind::tuple) {
-                auto index=expression(*source.right);
-                if (!source.arguments.empty() || index->kind!=hir::ExprKind::literal || index->type!=Type::integer)
-                    throw Error("E_TYPE",result->location,"Tuple index must be a constant integer");
-                const auto n=std::get<std::int32_t>(index->value);
-                const auto& fields=info(receiver_type,result->location).fields;
-                if (n<0 || static_cast<std::size_t>(n)>=fields.size()) throw Error("E_RANGE",result->location,"Tuple index is outside its arity");
-                result->kind=hir::ExprKind::field; result->local=static_cast<std::size_t>(n); result->type=fields[n].type; break;
-            }
-            result->right = convert(expression(*source.right),Type::integer);
-            for (const auto& argument:source.arguments) result->arguments.push_back(convert(expression(*argument),Type::integer));
-            const auto& type = info(receiver_type,result->location);
-            if (type.kind == CompoundKind::dynarray) {
-                result->kind = hir::ExprKind::buffer_call; result->type = type.element;
-                result->local = static_cast<std::size_t>(BufferMethod::get);
-                result->arguments.push_back(std::move(result->right)); break;
-            }
-            if (!indexed_sequence(type.kind)) throw Error("E_TYPE",result->location,"Only arrays and lists are indexable");
-            result->type = type.element; result->kind = hir::ExprKind::index; break;
-        }
-        case SyntaxExprKind::field:
-        case SyntaxExprKind::member_call: {
+        } while(false);
+        return result;
+    }
+    ABC_PASCAL_NOINLINE std::unique_ptr<hir::Expr> bind_member_expression(const SyntaxExpr& source,Type expected,std::unique_ptr<hir::Expr> result) {
+        (void)expected;
+        do {
+ {
             if(bind_inifile_static(*result,source))break;
             if(bind_encoding_static(*result,source))break;
             if (source.left->kind==SyntaxExprKind::name && !lookup(source.left->token) && source.left->token.text=="regex" && source.token.text=="ismatch") {
@@ -2377,7 +2302,7 @@ private:
             if ((receiver==Type::string || (compound(receiver) && (info(receiver,result->location).kind==CompoundKind::sequence || enumerable_collection(info(receiver,result->location).kind))))
                 && (bind_sequence_zip(*result,source,{},true) || bind_sequence_numeric_selector(*result,source,{},true) || bind_sequence_predicate(*result,source,{},true) || bind_sequence_transform(*result,source,{},true))) break;
             if (receiver==Type::string && (sequence_slice_method(source.token.text) || sequence_query_method(source.token.text)
-                || source.token.text=="count" || source.token.text=="toarray" || source.token.text=="tolist" || source.token.text=="concat"
+                || source.token.text=="count" || source.token.text=="toarray" || source.token.text=="tolist" || source.token.text=="toset" || source.token.text=="tohashset" || source.token.text=="concat"
                 || source.token.text=="asenumerable" || source.token.text=="sequenceequal" || source.token.text=="defaultifempty")) {
                 result->arguments.push_back(convert(std::move(result->left),sequence_type(CompoundKind::sequence,Type::character)));
                 for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
@@ -2563,6 +2488,7 @@ private:
                 break;
             }
             const auto& type = info(receiver,result->location);
+            if(type.kind==CompoundKind::empty_collection && source.token.text=="tostring"){if(!source.arguments.empty())throw Error("E_TYPE",result->location,"EmptyCollection.ToString takes no arguments");std::vector<std::unique_ptr<hir::Expr>> args;args.push_back(std::move(result->left));return empty_expression(Type::string,EmptyMethod::to_string,std::move(args),result->location);}
             if(type.kind==CompoundKind::new_set){
                 if(source.token.text=="_hs"){if(source.kind==SyntaxExprKind::member_call)throw Error("E_TYPE",result->location,"NewSet field is not callable");result->kind=hir::ExprKind::new_set_hash;result->type=type.key;return result;}
                 static const std::map<std::string,NewSetMethod> methods{{"count",NewSetMethod::count},{"add",NewSetMethod::add},{"remove",NewSetMethod::remove},{"contains",NewSetMethod::contains},{"addrange",NewSetMethod::add_range},{"clone",NewSetMethod::clone},{"hs",NewSetMethod::hash},{"tohashset",NewSetMethod::to_hash},{"tostring",NewSetMethod::to_string}};
@@ -2611,6 +2537,7 @@ private:
                 (void)bind_sequence_query(*result,source.token.text,"pabcsystem"); break;
             }
             if ((enumerable_collection(type.kind) && (source.token.text=="toarray" || source.token.text=="tolist"))
+                || ((enumerable_collection(type.kind) || type.kind==CompoundKind::sequence) && (source.token.text=="toset" || source.token.text=="tohashset"))
                 || ((enumerable_collection(type.kind) || type.kind==CompoundKind::sequence) && source.token.text=="asenumerable")) {
                 result->arguments.push_back(std::move(result->left));
                 for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
@@ -2770,22 +2697,12 @@ private:
             }
             throw Error("E_NAME",result->location,"Unknown record field '"+source.token.text+"'");
         }
-        case SyntaxExprKind::literal_group: {
-            std::u16string text;
-            for (const auto& part:source.arguments) {
-                auto value=literal(part->token);
-                if (const auto* ch=std::get_if<char16_t>(&value)) text+=*ch;
-                else text+=std::get<std::u16string>(value);
-            }
-            result->kind=hir::ExprKind::literal; result->type=Type::string; result->value=std::move(text); break;
-        }
-        case SyntaxExprKind::literal:
-            if (source.token.kind==TokenKind::name && source.token.text=="nil") { result->kind=hir::ExprKind::null_literal; result->type=Type::nil; break; }
-            result->kind = hir::ExprKind::literal;
-            result->value = literal(source.token);
-            result->type = value_type(result->value);
-            break;
-        case SyntaxExprKind::name:
+        } while(false);
+        return result;
+    }
+    ABC_PASCAL_NOINLINE std::unique_ptr<hir::Expr> bind_name_expression(const SyntaxExpr& source,Type expected,std::unique_ptr<hir::Expr> result) {
+        (void)expected;
+        do {
             if (const auto local = lookup(source.token)) {
                 capture_local(*local,result->location);
                 result->kind = hir::ExprKind::local;
@@ -2806,6 +2723,8 @@ private:
                 return expression(call);
             } else if (auto windows_value=windows_character_function_value(source)) {
                 return windows_value;
+            } else if(source.token.text=="emptyset") {
+                return empty_expression(empty_type(),EmptyMethod::singleton,{},result->location);
             } else if(source.token.text=="defaultencoding") {
                 result->local=default_encoding();result->kind=hir::ExprKind::local;result->type=module_.locals[result->local].type;
             } else if (source.token.text=="printdelimdefault") {
@@ -2832,15 +2751,13 @@ private:
                 (void)resolve(source.token);
             }
             break;
-        case SyntaxExprKind::formatted: {
-            result->kind=hir::ExprKind::call;
-            for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
-            if (result->arguments.size()==3 && result->arguments[0]->type!=Type::real)
-                throw Error("E_TYPE",result->location,"Precision in a formatted expression requires a real value");
-            if (!bind_object_text(*result,"formatvalue")) bind_builtin(*result,"formatvalue","pabcsystem");
-            break;
-        }
-        case SyntaxExprKind::call: {
+        } while(false);
+        return result;
+    }
+    ABC_PASCAL_NOINLINE std::unique_ptr<hir::Expr> bind_call_expression(const SyntaxExpr& source,Type expected,std::unique_ptr<hir::Expr> result) {
+        (void)expected;
+        do {
+ {
             if (const auto local=lookup(source.token); local && source.token.text!=current_name_) {
                 capture_local(*local,result->location);
                 result->left=std::make_unique<hir::Expr>(); result->left->kind=hir::ExprKind::local;
@@ -2913,6 +2830,147 @@ private:
             bind_builtin(*result,source.token.text);
             break;
         }
+        } while(false);
+        return result;
+    }
+    std::unique_ptr<hir::Expr> expression(const SyntaxExpr& source,Type expected=Type::invalid) {
+        if (!source.type_arguments.empty()) return explicit_factory(source);
+        if((source.token.text=="low" || source.token.text=="high") && source.arguments.size()==1
+            && source.arguments[0]->kind==SyntaxExprKind::name && !lookup(source.arguments[0]->token)
+            && ((source.kind==SyntaxExprKind::call && !lookup(source.token) && !routine_names_.contains(source.token.text))
+                || (source.kind==SyntaxExprKind::member_call && source.left->kind==SyntaxExprKind::name
+                    && source.left->token.text=="pabcsystem" && !lookup(source.left->token)))) {
+            const auto alias=aliases_.find(source.arguments[0]->token.text);
+            if(alias!=aliases_.end() && enumeration(alias->second))
+                return enum_expression(alias->second,source.token.text=="low" ? EnumMethod::low : EnumMethod::high,{},source.token.location);
+        }
+
+        if (auto member=implicit_class_member(source,expected)) return member;
+        if (source.kind==SyntaxExprKind::lambda) return bind_lambda(source,expected);
+        if (source.kind==SyntaxExprKind::name && source.token.text=="result" && !lambdas_.empty() && (current_result_==Type::invalid || current_result_==Type::unit))
+            throw Error("E_TYPE",source.token.location,"Lambda Result requires a known value type");
+        if (source.kind==SyntaxExprKind::name && callable_type(expected)) {
+            const auto local=lookup(source.token);
+            if ((!local || source.token.text==current_name_) && routine_names_.contains(source.token.text)) {
+                const auto id=routine_names_.at(source.token.text); const auto& signature=module_.routines[id].signature;
+                if (signature.parameters.empty() && signature.result==expected) {
+                    SyntaxExpr call{SyntaxExprKind::call,source.token,{},{},1,{},{}}; return expression(call);
+                }
+                return routine_value(id,source.token.location,expected);
+            }
+        }
+        if (callable_type(expected) || source.kind==SyntaxExprKind::field)
+            if (auto value=windows_character_function_value(source,expected)) return value;
+        auto result = std::make_unique<hir::Expr>();
+        result->location = source.token.location;
+        result->operation = source.token.text;
+        switch (source.kind) {
+        case SyntaxExprKind::set_literal: return bind_set_literal(source);
+        case SyntaxExprKind::conditional: {
+            result->kind=hir::ExprKind::conditional;result->left=convert(expression(*source.left),Type::boolean);
+            auto yes=expression(*source.right,expected);
+            auto no=expression(*source.arguments[0],callable_type(yes->type) ? yes->type : expected);
+            const auto a=yes->type,b=no->type;
+            if (a==Type::unit || b==Type::unit || (a==Type::nil && b==Type::nil))
+                throw Error("E_TYPE",result->location,"Conditional branches require known value types");
+            const auto reference=[&](Type type) {return type==Type::string || type==Type::text_file || (compound(type) && info(type,result->location).kind!=CompoundKind::record && !enumeration(type));};
+            auto type=Type::invalid;
+            if (a==b) type=a;
+            else if (a==Type::nil || b==Type::nil) {
+                type=a==Type::nil ? b : a;
+                if (!reference(type)) throw Error("E_UNSUPPORTED",result->location,"Conditional nil with a value type requires Nullable support");
+            } else if (can_widen(a,b) || sequence_view(a,b,result->location)) type=b;
+            else if (can_widen(b,a) || sequence_view(b,a,result->location)) type=a;
+            else if (integer_type(a) && integer_type(b)) {
+                // Source LUB promotes unrelated small integer types to integer.
+                if (a==Type::uint64 || b==Type::uint64) type=Type::uint64;
+                else if (a==Type::int64 || b==Type::int64 || a==Type::longword || b==Type::longword) type=Type::int64;
+                else type=Type::integer;
+            }
+            if (type==Type::invalid) throw Error("E_TYPE",result->location,"Conditional branches have incompatible static types");
+            result->right=convert(std::move(yes),type);result->arguments.push_back(convert(std::move(no),type));result->type=type;break;
+        }
+        case SyntaxExprKind::lambda: throw Error("E_HIR",result->location,"Lambda escaped typed binding");
+        case SyntaxExprKind::value_call:
+            result->left=expression(*source.left); bind_value_call(*result,source.arguments); break;
+        case SyntaxExprKind::typed_default:
+            result->kind=hir::ExprKind::default_value; result->type=resolve_type(*source.constructed); result->operation="default"; break;
+        case SyntaxExprKind::tuple: {
+            result->kind=hir::ExprKind::tuple_literal; std::vector<Type> elements;
+            for (const auto& argument:source.arguments) { auto element=expression(*argument); elements.push_back(element->type); result->arguments.push_back(std::move(element)); }
+            result->type=tuple_type(elements,result->location); break;
+        }
+        case SyntaxExprKind::construction: return bind_construction_expression(source,expected,std::move(result));
+        case SyntaxExprKind::index: {
+            if (source.left->kind == SyntaxExprKind::field && source.left->token.text == "elem") {
+                auto receiver = expression(*source.left->left);
+                if (compound(receiver->type)) {
+                    const auto kind = info(receiver->type,result->location).kind;
+                    if (kind == CompoundKind::dynarray || kind == CompoundKind::association) result->left = std::move(receiver);
+                }
+            }
+            if (!result->left) result->left = expression(*source.left);
+            const auto receiver_type = result->left->type;
+            const auto rank=compound(receiver_type) && info(receiver_type,result->location).kind==CompoundKind::array ? info(receiver_type,result->location).rank : 1U;
+            if (source.arguments.size()+1!=rank) throw Error("E_TYPE",result->location,"Wrong number of array indices");
+            if (receiver_type==Type::string) {
+                result->right=convert(expression(*source.right),Type::integer);
+                result->type=Type::character; result->kind=hir::ExprKind::index; break;
+            }
+            const auto kind = info(receiver_type,result->location).kind;
+            if (kind == CompoundKind::association) {
+                const auto key = info(receiver_type,result->location).key, element = info(receiver_type,result->location).element;
+                result->kind = hir::ExprKind::association_call; result->type = element;
+                result->local = static_cast<std::size_t>(AssociationMethod::get);
+                result->arguments.push_back(convert(expression(*source.right),key)); break;
+            }
+            if (compound(receiver_type) && info(receiver_type,result->location).kind==CompoundKind::tuple) {
+                auto index=expression(*source.right);
+                if (!source.arguments.empty() || index->kind!=hir::ExprKind::literal || index->type!=Type::integer)
+                    throw Error("E_TYPE",result->location,"Tuple index must be a constant integer");
+                const auto n=std::get<std::int32_t>(index->value);
+                const auto& fields=info(receiver_type,result->location).fields;
+                if (n<0 || static_cast<std::size_t>(n)>=fields.size()) throw Error("E_RANGE",result->location,"Tuple index is outside its arity");
+                result->kind=hir::ExprKind::field; result->local=static_cast<std::size_t>(n); result->type=fields[n].type; break;
+            }
+            result->right = convert(expression(*source.right),Type::integer);
+            for (const auto& argument:source.arguments) result->arguments.push_back(convert(expression(*argument),Type::integer));
+            const auto& type = info(receiver_type,result->location);
+            if (type.kind == CompoundKind::dynarray) {
+                result->kind = hir::ExprKind::buffer_call; result->type = type.element;
+                result->local = static_cast<std::size_t>(BufferMethod::get);
+                result->arguments.push_back(std::move(result->right)); break;
+            }
+            if (!indexed_sequence(type.kind)) throw Error("E_TYPE",result->location,"Only arrays and lists are indexable");
+            result->type = type.element; result->kind = hir::ExprKind::index; break;
+        }
+        case SyntaxExprKind::field:
+        case SyntaxExprKind::member_call: return bind_member_expression(source,expected,std::move(result));
+        case SyntaxExprKind::literal_group: {
+            std::u16string text;
+            for (const auto& part:source.arguments) {
+                auto value=literal(part->token);
+                if (const auto* ch=std::get_if<char16_t>(&value)) text+=*ch;
+                else text+=std::get<std::u16string>(value);
+            }
+            result->kind=hir::ExprKind::literal; result->type=Type::string; result->value=std::move(text); break;
+        }
+        case SyntaxExprKind::literal:
+            if (source.token.kind==TokenKind::name && source.token.text=="nil") { result->kind=hir::ExprKind::null_literal; result->type=Type::nil; break; }
+            result->kind = hir::ExprKind::literal;
+            result->value = literal(source.token);
+            result->type = value_type(result->value);
+            break;
+        case SyntaxExprKind::name: return bind_name_expression(source,expected,std::move(result));
+        case SyntaxExprKind::formatted: {
+            result->kind=hir::ExprKind::call;
+            for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
+            if (result->arguments.size()==3 && result->arguments[0]->type!=Type::real)
+                throw Error("E_TYPE",result->location,"Precision in a formatted expression requires a real value");
+            if (!bind_object_text(*result,"formatvalue")) bind_builtin(*result,"formatvalue","pabcsystem");
+            break;
+        }
+        case SyntaxExprKind::call: return bind_call_expression(source,expected,std::move(result));
         case SyntaxExprKind::unary:
             result->kind = hir::ExprKind::unary;
             result->left = expression(*source.left);
@@ -2947,6 +3005,7 @@ private:
             auto right = result->right->type;
             const auto& op = result->operation;
             if(op=="in"){
+                if(compound(right) && info(right,result->location).kind==CompoundKind::empty_collection && left!=Type::nil && left!=Type::unit){const auto owner=new_set_type(left);result->right=convert(std::move(result->right),owner);right=owner;}
                 if(compound(right) && info(right,result->location).kind==CompoundKind::new_set){std::vector<std::unique_ptr<hir::Expr>> arguments;arguments.push_back(std::move(result->left));arguments.push_back(std::move(result->right));return new_set_expression(right,NewSetMethod::membership,std::move(arguments),result->location);}
                 if(compound(right) && info(right,result->location).kind==CompoundKind::hash_set){std::vector<std::unique_ptr<hir::Expr>> arguments;arguments.push_back(std::move(result->left));arguments.push_back(std::move(result->right));return hash_set_expression(right,HashSetMethod::membership,std::move(arguments),result->location);}
                 if(right==Type::string || right==Type::character || (right==Type::nil && (left==Type::string || left==Type::character)))
@@ -2959,6 +3018,19 @@ private:
                         return compound_expression(sequence_type(CompoundKind::sequence,shape.element),CompoundMethod::sequence_in,std::move(result->left),std::move(result->right),result->location);
                 }
                 throw Error("E_TYPE",result->location,"Membership requires string, array, List or sequence");
+            }
+            const auto empty_compatible=[&](Type t){return compound(t) && (info(t,result->location).kind==CompoundKind::new_set || info(t,result->location).kind==CompoundKind::empty_collection);};
+            if(left==Type::nil && empty_compatible(right)){result->left=convert(std::move(result->left),empty_type());left=result->left->type;}
+            if(right==Type::nil && empty_compatible(left)){result->right=convert(std::move(result->right),empty_type());right=result->right->type;}
+            const auto empty_kind=[&](Type t){return compound(t) && info(t,result->location).kind==CompoundKind::empty_collection;};
+            if((empty_kind(left) || empty_kind(right)) && (op=="+" || op=="-" || op=="*" || op=="=" || op=="<>" || op=="<" || op=="<=" || op==">" || op==">=")){
+                if(empty_kind(left) && empty_kind(right)){if(op=="+" || op=="-" || op=="*"){std::vector<std::unique_ptr<hir::Expr>> args;args.push_back(std::move(result->left));args.push_back(std::move(result->right));return empty_expression(left,EmptyMethod::binary,std::move(args),result->location);}}
+                else{const bool empty_first=empty_kind(left);const auto other=empty_first ? right : left;
+                    if(compound(other)){const auto shape=info(other,result->location);const bool array=shape.kind==CompoundKind::array && shape.rank==1;
+                        if(shape.kind==CompoundKind::new_set || (array && (op=="+" || op=="-" || op=="*"))){const auto owner=array ? new_set_type(shape.element) : other;unsigned group=op=="+" ? 0 : op=="-" ? 1 : op=="*" ? 2 : op=="=" ? 3 : op=="<>" ? 4 : op=="<" ? 5 : op=="<=" ? 6 : op==">" ? 7 : 8;
+                            const auto method=static_cast<NewSetMethod>(static_cast<unsigned>(array ? NewSetMethod::empty_array_unite_left : NewSetMethod::empty_unite_left)+2*group+(empty_first ? 0 : 1));std::vector<std::unique_ptr<hir::Expr>> args;args.push_back(std::move(result->left));args.push_back(std::move(result->right));return new_set_expression(owner,method,std::move(args),result->location);}
+                    }
+                }
             }
             if((compound(left) && info(left,result->location).kind==CompoundKind::new_set) || (compound(right) && info(right,result->location).kind==CompoundKind::new_set)){
                 const auto owner=compound(left) && info(left,result->location).kind==CompoundKind::new_set ? left : right;NewSetMethod method;
@@ -2973,7 +3045,7 @@ private:
                 else if(op=="<")method=HashSetMethod::less;else if(op=="<=")method=HashSetMethod::less_equal;else if(op==">")method=HashSetMethod::greater;else if(op==">=")method=HashSetMethod::greater_equal;
                 else if(op=="*" || op=="+" || op=="-"){
                     if(op=="*")method=HashSetMethod::intersect;
-                    else if(right==owner || right==Type::nil)method=op=="+" ? HashSetMethod::unite : HashSetMethod::subtract;
+                    else if(right==owner || right==Type::nil || (empty_kind(right) && info(owner,result->location).element!=right))method=op=="+" ? HashSetMethod::unite : HashSetMethod::subtract;
                     else method=op=="+" ? HashSetMethod::add_copy : HashSetMethod::remove_copy;
                 }else throw Error("E_TYPE",result->location,"Unsupported HashSet operator");
                 std::vector<std::unique_ptr<hir::Expr>> arguments;arguments.push_back(std::move(result->left));arguments.push_back(std::move(result->right));return hash_set_expression(owner,method,std::move(arguments),result->location);
@@ -3158,6 +3230,30 @@ private:
             result.expression = convert(value(result.target->type), result.target->type);
             return result;
     }
+    std::unique_ptr<hir::Expr> empty_expression(Type target,EmptyMethod method,std::vector<std::unique_ptr<hir::Expr>> arguments,SourceLocation location){
+        const auto parameters=empty_parameters(module_.types,method);if(arguments.size()!=parameters.size())throw Error("E_TYPE",location,"Wrong EmptyCollection argument count");
+        auto result=std::make_unique<hir::Expr>();result->kind=hir::ExprKind::empty_call;result->type=target;result->local=static_cast<std::size_t>(method);result->location=location;
+        for(std::size_t i=0;i<arguments.size();++i)result->arguments.push_back(convert(std::move(arguments[i]),parameters[i]));return result;
+    }
+    std::unique_ptr<hir::Expr> bind_set_literal(const SyntaxExpr& source){
+        const auto location=source.token.location;if(source.arguments.empty())return empty_expression(empty_type(),EmptyMethod::singleton,{},location);
+        auto all=std::make_unique<hir::Expr>();all->location=location;std::vector<bool> ranges;
+        for(const auto& item:source.arguments){const bool range=item->kind==SyntaxExprKind::binary && item->token.text=="..";ranges.push_back(range);
+            const auto append=[&](const SyntaxExpr& syntax){if(syntax.kind==SyntaxExprKind::literal && syntax.token.text=="nil")throw Error("E_TYPE",syntax.token.location,"Nil is not allowed directly in a set literal");auto value=expression(syntax);
+                if(range){if(small_integer(value->type))value=convert(std::move(value),Type::integer);if(value->type!=Type::integer && value->type!=Type::boolean && value->type!=Type::character && !enumeration(value->type))throw Error("E_TYPE",syntax.token.location,"Set ranges require integer, char, boolean or enumeration endpoints");}
+                all->arguments.push_back(std::move(value));};
+            if(range){append(*item->left);append(*item->right);}else append(*item);
+        }
+        bind_array_literal(*all);const auto element=info(all->type,location).element,owner=new_set_type(element);const bool ranged=std::any_of(ranges.begin(),ranges.end(),[](bool v){return v;});
+        std::vector<std::unique_ptr<hir::Expr>> arguments;
+        if(!ranged)arguments.push_back(std::move(all));
+        else{if(element!=Type::integer && element!=Type::boolean && element!=Type::character && !enumeration(element))throw Error("E_TYPE",location,"Set ranges require integer, char, boolean or enumeration endpoints");
+            auto scalars=std::make_unique<hir::Expr>(),bounds=std::make_unique<hir::Expr>();scalars->kind=bounds->kind=hir::ExprKind::array_literal;scalars->type=bounds->type=all->type;scalars->location=bounds->location=location;
+            std::size_t offset=0;for(const auto range:ranges){auto& target=range ? bounds : scalars;target->arguments.push_back(std::move(all->arguments[offset++]));if(range)target->arguments.push_back(std::move(all->arguments[offset++]));}
+            arguments.push_back(std::move(scalars));arguments.push_back(std::move(bounds));
+        }
+        auto result=new_set_expression(owner,ranged ? NewSetMethod::literal_ranges : NewSetMethod::construct_array,std::move(arguments),location);result->operation="$set_literal";return result;
+    }
     std::unique_ptr<hir::Expr> new_set_expression(Type owner,NewSetMethod method,std::vector<std::unique_ptr<hir::Expr>> arguments,SourceLocation location,bool ref=false){
         const auto parameters=new_set_parameters(module_.types,owner,method,ref);
         if(arguments.size()!=parameters.size())throw Error("E_TYPE",location,"Wrong NewSet argument count");
@@ -3166,6 +3262,7 @@ private:
     }
     std::unique_ptr<hir::Expr> new_set_copy(std::unique_ptr<hir::Expr> value,SourceLocation location){const auto owner=value->type;std::vector<std::unique_ptr<hir::Expr>> arguments;arguments.push_back(std::move(value));return new_set_expression(owner,NewSetMethod::copy_value,std::move(arguments),location);}
     bool bind_new_set_factory(hir::Expr& result,std::string_view name,std::string_view unit={}){
+        if(name=="emptyset" && (unit.empty() || unit=="pabcsystem")){if(!result.arguments.empty())throw Error("E_TYPE",result.location,"EmptySet takes no arguments");result=std::move(*empty_expression(empty_type(),EmptyMethod::singleton,{},result.location));return true;}
         if(name!="setof" || (!unit.empty() && unit!="pabcsystem"))return false;
         std::unique_ptr<hir::Expr> array;
         if(result.arguments.size()==1 && compound(result.arguments[0]->type) && info(result.arguments[0]->type,result.location).kind==CompoundKind::array && info(result.arguments[0]->type,result.location).rank==1)array=std::move(result.arguments[0]);
@@ -3220,6 +3317,7 @@ private:
         if(compound(type) && info(type,location).kind==CompoundKind::new_set){
             if(!lvalue(*target))throw Error("E_TYPE",location,"Assignment target must be assignable");
             auto right=initial ? std::move(initial) : expression(*source.expression,info(type,location).element);NewSetMethod method;
+            if(compound(right->type) && info(right->type,location).kind==CompoundKind::empty_collection && right->type!=info(type,location).element)right=convert(std::move(right),type);
             if(right->type==type)method=op=="+" ? NewSetMethod::union_assign : op=="-" ? NewSetMethod::except_assign : op=="*" ? NewSetMethod::intersect_assign : throw Error("E_TYPE",location,"Unsupported NewSet operator");
             else method=op=="+" ? NewSetMethod::item_add : op=="-" ? NewSetMethod::item_remove : throw Error("E_TYPE",location,"Unsupported NewSet operator");
             std::vector<std::unique_ptr<hir::Expr>> arguments;arguments.push_back(std::move(target));arguments.push_back(std::move(right));hir::Stmt result;result.kind=hir::StmtKind::call;result.location=location;result.expression=new_set_expression(type,method,std::move(arguments),location);return result;
@@ -3449,6 +3547,17 @@ private:
     std::unique_ptr<hir::Expr> explicit_factory(const SyntaxExpr& source) {
         const bool qualified=source.kind==SyntaxExprKind::member_call;
         const auto& name=source.token.text;
+        if(name=="setof" && ((source.kind==SyntaxExprKind::call && !lookup(source.token) && !routine_names_.contains(name)) || (qualified && source.left && source.left->kind==SyntaxExprKind::name && source.left->token.text=="pabcsystem" && !lookup(source.left->token)))){
+            if(source.type_arguments.size()!=1)throw Error("E_TYPE",source.token.location,"SetOf requires exactly one explicit element type");const auto element=resolve_type(*source.type_arguments[0]),owner=new_set_type(element),array=sequence_type(CompoundKind::array,element);
+            auto input=std::make_unique<hir::Expr>();input->kind=hir::ExprKind::array_literal;input->type=array;input->location=source.token.location;
+            for(const auto& argument:source.arguments)input->arguments.push_back(expression(*argument,element));
+            if(input->arguments.size()==1 && (input->arguments[0]->type==array || input->arguments[0]->type==Type::nil || (compound(input->arguments[0]->type) && info(input->arguments[0]->type,input->location).kind==CompoundKind::empty_collection)))input=convert(std::move(input->arguments[0]),array);
+            else for(auto& argument:input->arguments)argument=convert(std::move(argument),element);
+            std::vector<std::unique_ptr<hir::Expr>> args;args.push_back(std::move(input));return new_set_expression(owner,NewSetMethod::construct_array,std::move(args),source.token.location);
+        }
+        if(name=="toset" && qualified && source.left && !(source.left->kind==SyntaxExprKind::name && source.left->token.text=="pabcsystem" && !lookup(source.left->token))){
+            if(source.type_arguments.size()!=1 || !source.arguments.empty())throw Error("E_TYPE",source.token.location,"EmptyCollection.ToSet requires one explicit element type and no arguments");auto value=expression(*source.left);if(!compound(value->type) || info(value->type,source.token.location).kind!=CompoundKind::empty_collection)throw Error("E_UNSUPPORTED",source.token.location,"Explicit generic calls are not ported for this routine");const auto owner=new_set_type(resolve_type(*source.type_arguments[0]));std::vector<std::unique_ptr<hir::Expr>> args;args.push_back(std::move(value));return empty_expression(owner,EmptyMethod::to_set,std::move(args),source.token.location);
+        }
         if((name=="inrange" || name=="between" || name=="clamp")
             && ((source.kind==SyntaxExprKind::call && !lookup(source.token) && !routine_names_.contains(name))
                 || (qualified && source.left && source.left->kind==SyntaxExprKind::name && source.left->token.text=="pabcsystem" && !lookup(source.left->token)))) {
@@ -3562,6 +3671,10 @@ private:
         return result;
     }
     bool bind_sequence_conversion(hir::Expr& result,std::string_view name,std::string_view unit={}) {
+        if((name=="toset" || name=="tohashset") && (unit.empty() || unit=="pabcsystem")){
+            if(result.arguments.size()!=1)throw Error("E_TYPE",result.location,"Set conversion requires one typed sequence");const auto source=sequence_source(result.arguments[0]->type,result.location);const auto target=name=="toset" ? new_set_type(source.element) : sequence_type(CompoundKind::hash_set,source.element);
+            auto arguments=std::move(result.arguments);auto value=name=="toset" ? new_set_expression(target,NewSetMethod::from_sequence,std::move(arguments),result.location) : hash_set_expression(target,HashSetMethod::construct_sequence,std::move(arguments),result.location);result=std::move(*value);return true;
+        }
         if ((name!="count" && name!="toarray" && name!="tolist" && name!="asenumerable") || (!unit.empty() && unit!="pabcsystem")) return false;
         if (result.arguments.size()!=1) throw Error("E_TYPE",result.location,"Sequence conversion requires one sequence");
         const auto source=result.arguments[0]->type;
@@ -4674,6 +4787,8 @@ private:
             result.arguments[n]=convert(std::move(result.arguments[n]),signature.parameters[n]);
     }
     bool constant_initializer(const hir::Expr& node) const {
+        if(node.kind==hir::ExprKind::empty_call && (static_cast<EmptyMethod>(node.local)==EmptyMethod::singleton || static_cast<EmptyMethod>(node.local)==EmptyMethod::convert))return std::all_of(node.arguments.begin(),node.arguments.end(),[&](const auto& x){return constant_initializer(*x);});
+        if(node.kind==hir::ExprKind::new_set_call && node.operation=="$set_literal")return std::all_of(node.arguments.begin(),node.arguments.end(),[&](const auto& array){return array->kind==hir::ExprKind::array_literal && std::all_of(array->arguments.begin(),array->arguments.end(),[&](const auto& x){return constant_initializer(*x);});});
         if ((compound(node.type) && !enumeration(node.type)) || node.type==Type::unit || node.type==Type::text_file || node.type==Type::nil) return false;
         switch (node.kind) {
         case hir::ExprKind::enum_call: case hir::ExprKind::literal: case hir::ExprKind::convert: case hir::ExprKind::unary:
@@ -4796,9 +4911,10 @@ private:
             const auto& name=source.names.front();
             if (scopes_.back().contains(name.text) || (!in_routine_ && routine_names_.contains(name.text)))
                 throw Error("E_DUPLICATE",name.location,"Duplicate constant name '"+name.text+"'");
+            if(!source.annotation && source.expression->kind==SyntaxExprKind::set_literal && source.expression->arguments.empty())throw Error("E_TYPE",name.location,"Cannot infer an empty set element type");
             auto initial=expression(*source.expression);
             const auto type=source.annotation ? resolve_type(*source.annotation) : initial->type;
-            if ((compound(type) && !enumeration(type)) || type==Type::text_file || type==Type::nil || type==Type::unit)
+            if ((compound(type) && !enumeration(type) && info(type,name.location).kind!=CompoundKind::new_set) || type==Type::text_file || type==Type::nil || type==Type::unit)
                 throw Error("E_UNSUPPORTED",name.location,"Only scalar const declarations are ported");
             initial=convert(std::move(initial),type);
             if (!constant_initializer(*initial)) throw Error("E_TYPE",name.location,"Constant initializer cannot read a variable or call a user routine");
@@ -4816,6 +4932,7 @@ private:
         }
         case SyntaxStmtKind::declaration: {
             auto type=source.annotation ? resolve_type(*source.annotation) : Type::invalid;
+            if(!source.annotation && source.expression && source.expression->kind==SyntaxExprKind::set_literal && source.expression->arguments.empty())throw Error("E_TYPE",result.location,"Cannot infer an empty set element type");
             auto initial=source.expression ? expression(*source.expression,type) : nullptr;
             if (type==Type::invalid && initial) type=initial->type;
             if (type == Type::unit || type == Type::nil) throw Error("E_TYPE",source.token.location,"Procedure has no value");

@@ -17,6 +17,7 @@ bool supports(const std::vector<TypeInfo>& types, Type type, unsigned depth) {
     const auto index=static_cast<std::size_t>(type)-static_cast<std::size_t>(Type::first_compound);
     if (index>=types.size()) return false;
     const auto& info=types[index];
+    if(info.kind==CompoundKind::empty_collection)return true;
     if (school_ip_kind(info.kind) || info.kind==CompoundKind::enumeration) return true;
     if (info.kind==CompoundKind::record || info.kind==CompoundKind::tuple) {
         for (const auto& field:info.fields) if (!supports(types,field.type,depth+1)) return false;
@@ -44,6 +45,7 @@ class ObjectWriter {
         }
         const auto& object=std::get<std::shared_ptr<Aggregate>>(data);
         if (!object || object->nil) { append(u"nil"); return; }
+        if(program.types[static_cast<std::size_t>(type)-64U].kind==CompoundKind::empty_collection){append(u"{}");return;}
         if (std::find(path.begin(),path.end(),object.get())!=path.end()) { append(u"(...)"); return; }
         path.push_back(object.get());
         const auto& info=program.types[static_cast<std::size_t>(type)-static_cast<std::size_t>(Type::first_compound)];

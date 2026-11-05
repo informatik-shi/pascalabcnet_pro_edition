@@ -1091,6 +1091,9 @@ static void execute_impl(const Program& program, std::istream& input, std::ostre
             auto target=std::get<std::shared_ptr<Cell>>(arguments[ref]); arguments[ref]=target->value;
             const auto result=stdlib::invoke(instruction.operand,arguments,instruction.location,services); values.write(target,result); break;
         }
+        case Op::empty_call: {
+            const auto method=static_cast<EmptyMethod>(instruction.operand);std::vector<Value> arguments(empty_parameters(program.types,method).size());for(std::size_t i=arguments.size();i>0;--i)arguments[i-1]=pop();stack.push_back(empty_invoke(values,instruction.type,method,arguments,options));break;
+        }
         case Op::new_set_call: {
             const auto method=static_cast<NewSetMethod>(instruction.operand&127U);const bool ref=(instruction.operand&128U)!=0;const auto parameters=new_set_parameters(program.types,instruction.type,method,ref);
             std::vector<Value> arguments(parameters.size());for(std::size_t i=arguments.size();i>0;--i)arguments[i-1]=pop();auto result=new_set_invoke(values,instruction.type,method,ref,arguments,options);

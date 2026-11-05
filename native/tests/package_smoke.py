@@ -216,6 +216,7 @@ def main():
                 ("enumerations.pas", "Начало: Ready\nПосле Inc: Running / 1\nПрава: CanRead, CanWrite\nЗапись: True\nСписок: [Ready,Running,Done]\nШаг: Ready\nШаг: Done\n"),
                 ("comparable-ranges.pas", "Границы: True / False\nПорядок границ: True / False\nОграничение: 0 5 9\nМетоды: 9 0\nПеречисление: Tue / True\nСтрока: True / False\n"),
                 ("hash-sets.pas", "{1,2,3} 3\n{1,2,3,4}\n{3}\n{1,2}\n{1,3,5} True True\nTrue\n[3,5]\n{1,3,5} {1,9,3,5}\n"),
+                ("set-literals.pas", "{9,1,2,3,4}\n{9,1,2,3,4,5} {3,4} {9,1,2}\nTrue True True\n{z,a,b,c,d}\n{False,True}\n{1,2,3,4} {2,1}\n{9,2,4}\n{}\n"),
                 ("new-sets.pas", "{1,2,3} 3\n{1,2,3,4} {3} {1,2}\n{1,2,3} {1,2,3,5}\n{1,2,3,7} True True\n{10,2,9,7}\n[10,9]\n{10,2,9,7} {10,2,9,7,11}\n"),
                 ("membership.pas", "True True\nTrue True\nTrue True\nTrue True\nTrue True\nTrue 4\n"),
                 ("array-operators.pas", "[1,2,3,4,5]\n[1,2,3,1,2,3]\n[4,5,4,5]\n[]\n7 9 7\n[20] [20]\n"),
@@ -519,6 +520,9 @@ def main():
                     raise RuntimeError(f"{name} Comparison diagnostic mismatch: {attempted.stdout!r}, {attempted.stderr!r}")
             set_source = folder / "Хеш-множества.pas"
             for source, expected, code, line in [
+                ("begin\nWriteln('must never run');Writeln([nil]);end.", "", "E_TYPE", 2),
+                ("begin\nWriteln('must never run');Writeln([1.5..2.5]);end.", "", "E_TYPE", 2),
+                ("begin\nvar e:EmptyCollection;Writeln(e.ToSet&<integer>());end.", "", "E_NIL", 2),
                 ("begin\nWriteln('must never run');var s:=SetOf(1);s.Add('abc');end.", "", "E_TYPE", 2),
                 ("begin\nvar s:=SetOf(1);foreach var x in s do begin Writeln(x);s.Add(2);end;end.", "1\n", "E_MODIFIED", 2),
                 ("begin\nWriteln('before');var h:HashSet<integer>;var s:NewSet<integer>:=h;end.", "before\n", "E_NIL", 2),

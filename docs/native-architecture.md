@@ -577,6 +577,35 @@ CopyFrom identity: ToHashSet and List construction must enumerate and preserve t
 respective compaction and capacity behavior. Direct hs relations and compound methods
 use the HashSet adapter, whereas binary operations enumerate the record as in PABCSystem.
 NewSet default equality inside generic containers compares its backing reference; Pascal
-operators perform set relations. The initial typed profile excludes bracket literals,
-EmptyCollection, range/constant sets and cross-element conversions; these remain required
-work toward the full library objective.
+operators perform set relations. The typed representation is extended below with bracket literals, EmptyCollection and
+range/constant sets. Cross-element conversions remain required work toward the full
+library objective.
+
+
+Set literals bind to a closed NewSet type inferred independently of execution. The parser
+keeps range pairs distinct; binding rearranges the runtime arguments into a scalar array
+and an endpoint array, matching the original scalar-first evaluation and insertion order.
+Range metadata permits integer, char, boolean and enum elements only. The native range
+kernel uses widened counters for inclusive boundary safety and unsigned-value sorted enum
+members for GetValues order; it bounds work, allocation and cancellation. Constant literals
+use the existing startup-initializer path after recursively validating scalar operands.
+
+EmptyCollection is a separate closed reference kind with no element type or fields.
+Verified empty_call metadata covers the execution-scoped singleton, fresh binary empty
+results, supported typed collection conversions and instance ToString/ToSet. Explicit
+NewSet method metadata preserves operand order and the source-specific empty-set relation
+table, rather than erasing EmptyCollection into a mathematically equivalent empty NewSet.
+Array/empty operations defer array enumeration until both arguments have been evaluated;
+source branches that ignore a nil array do not spuriously enumerate it. Generic ToSet and
+ToHashSet use existing sequence adapters and the native HashSet constructor. Numeric
+cross-element set conversions, subrange types and unsupported target collection families
+remain required work for full compatibility.
+
+
+Construction, member, name and call binding run in separate non-inlined helpers. This
+keeps unrelated large case-local temporaries out of each recursive expression frame;
+a measured Clang frame of about 26 KiB otherwise exhausted the normal 1 MiB Windows
+process stack on existing deep-expression tests. The parser depth and language limits
+are retained; tests use the ordinary process stack, including a nested arithmetic case.
+The custom Collections.Stack/Queue kinds are not substituted for framework Stack/Queue
+when resolving EmptyCollection conversions; those framework families remain pending.

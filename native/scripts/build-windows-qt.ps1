@@ -84,7 +84,8 @@ System.Enum как объект, reflection и поддиапазоны ещё �
 InRange, Between, Clamp и методы ClampTop/ClampBottom: examples/comparable-ranges.pas.
 Нативный HashSet<T>, операции множеств и проверки включения: examples/hash-sets.pas.
 Типизированный NewSet<T>, SetOf, копирование и процедуры: examples/new-sets.pas.
-Литералы NewSet, EmptyCollection, SortedSet, компараторы и остальные API множеств ещё переносятся.
+Литералы [1..4,9], EmptyCollection, ToSet и ToHashSet: examples/set-literals.pas.
+SortedSet, TypedSet, числовые преобразования множеств и остальные API ещё переносятся.
 Проверка принадлежности in и not in, поиск подстроки Contains: examples/membership.pas.
 Работают строки, одномерные массивы, матрицы, List и последовательности.
 Объединение массивов через + и повторение через *: examples/array-operators.pas.

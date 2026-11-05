@@ -26,6 +26,7 @@
 #include "../src/cp1251.hpp"
 
 #include <iostream>
+#include <cstdlib>
 #include <array>
 #include <algorithm>
 #include <filesystem>
@@ -55,6 +56,7 @@ void require(bool condition, std::string_view description) {
 }
 
 std::string run(std::string_view source, std::string input = "", abc::ExecutionOptions options = {}) {
+    if(std::getenv("ABC_TEST_TRACE"))std::cerr<<"RUN "<<source.substr(0,160)<<'\n';
     auto program = abc::compile(source);
     std::istringstream in(input);
     std::ostringstream out;
@@ -68,6 +70,7 @@ void result(std::string_view source, std::string_view expected, std::string inpu
 }
 
 template<class F> void error(F action, std::string_view code, std::string_view source = {}) {
+    if(std::getenv("ABC_TEST_TRACE"))std::cerr<<"EXPECT "<<code<<' '<<source.substr(0,160)<<'\n';
     const auto context=source.empty() ? std::string{} : " in "+std::string(source);
     try { action(); require(false, std::string("Expected ") + std::string(code)+context); }
     catch (const abc::Error& caught) { require(caught.code == code, std::string("Expected ") + std::string(code) + ", got " + caught.code+context); }
@@ -4362,6 +4365,36 @@ void sequence_mutations() {
     error([&]{(void)run("begin var a:=new integer[2000]; Reverse(a); end.","",options);},"E_CANCELLED");
 }
 
+void set_literal_library() {
+    result("begin var s:=[1];Writeln(s=nil,' ',s<>nil,' ',nil<s,' ',s>=nil,' ',nil>=s);Writeln(s+nil,' ',nil+s,' ',s*nil,' ',nil-s);s:=[];Writeln(s=nil,' ',nil=s);Writeln((EmptySet+nil)=EmptySet);end.","False True True True False\n{1} {1} {} {}\nTrue True\nFalse\n");
+    {std::string value="1";for(unsigned i=0;i<100;++i)value="("+value+"+1)";result("begin Writeln("+value+");end.","101\n");}
+
+    result("begin var s:=[1,2,2,3];Writeln(s,' ',s.Count,' ',2 in s,' ',9 not in s);Writeln([1..3,2..4,9],' ',['a'..'d','z'],' ',[False..True]);Writeln([4..2],' ',['z'..'a'],' ',[True..False]);end.","{1,2,3} 3 True True\n{9,1,2,3,4} {z,a,b,c,d} {False,True}\n{} {} {}\n");
+    result("var trace:string;function F(x:integer):integer;begin trace+=x;Result:=x;end;begin var s:=[F(1)..F(3),F(9),F(2)..F(4),F(8)];Writeln(trace,' ',s);end.","981324 {9,8,1,2,3,4}\n");
+    result("begin Writeln([MaxInt..MaxInt]);Writeln([#65535..#65535].Select(c->Ord(c)).ToArray);Writeln([1.5,2.5,1.5],' ',['abc','def','abc']);var t:=(1,2,[3,4,5]);Writeln(t.Item3=SetOf(3,4,5));end.","{2147483647}\n[65535]\n{1.5,2.5} {abc,def}\nTrue\n");
+    result("type E=(A=1,B=2);begin Writeln([A..default(E)].Count);end.","0\n");
+    runtime_error("type E=(A=1,B=2);begin Writeln([default(E)..B]);end.","E_BOUNDS");
+    result("type E=(Z=0,P=3,Q=7,N=-1);begin Writeln([Z..N].Select(x->Ord(x)).ToArray,' ',[N..Z].Count);end.","[0,3,7,-1] 0\n");
+    result("begin var s:set of integer:=[];Writeln(s.Count,' ',s=[],' ',[]=s,' ',s<>[]);s:=[1,2];Writeln(s>[],' ',[]<s,' ',s<[],' ',[]>s,' ',s>=[],' ',[]<=s,' ',s<=[],' ',[]>=s);s:=[];Writeln(s>=[],' ',[]<=s,' ',s<=[],' ',[]>=s);end.","0 True True False\nTrue True False False True True False False\nTrue True False False\n");
+    result("begin var e:=EmptySet;var other:=new EmptyCollection;Writeln(e=[],' ',e=PABCSystem.EmptySet(),' ',other=e,' ',([]+[])=[],' ',([]-[])=[],' ',([]*[])=[],' ',e.ToString);var s:=e.ToSet&<integer>();Writeln(s,' ',s.Count);end.","True True False False False False {}\n{} 0\n");
+    result("begin var a:=[1,2];Writeln(a+[],' ',[]+a,' ',a-[],' ',[]-a,' ',a*[],' ',[]*a);var h:HashSet<integer>:=(a+[]).hs;h.Add(9);Writeln(a,' ',h);a+=[];a-=[];Writeln(a);a*=[];Writeln(a);end.","{1,2} {1,2} {1,2} {} {} {}\n{1,2} {1,2,9}\n{1,2}\n{}\n");
+    result("begin var a:=Arr(1,2,2);Writeln(a+[],' ',[]+a,' ',a-[],' ',[]-a,' ',a*[],' ',[]*a);var n:array of integer;Writeln([]-n,' ',n*[],' ',[]*n);end.","{1,2} {1,2} {1,2} {} {} {}\n{} {} {}\n");
+    result("var a:array of integer;function Empty:EmptyCollection;begin a[0]:=9;Result:=EmptySet;end;begin a:=Arr(1);Writeln(a+Empty);end.","{9}\n");
+    result("uses Collections;begin var a:array of integer:=[];var l:List<string>:=[];var h:HashSet<integer>:=[];var seq:sequence of integer:=[];Writeln(a.Length,' ',l.Count,' ',h.Count,' ',seq.Count);Writeln(a=nil,' ',l=nil,' ',h=nil);end.","0 0 0 0\nFalse False False\n");
+    result("begin var e:EmptyCollection;var a:NewSet<integer>:=e;var h:HashSet<integer>:=e;Writeln(a,' ',h,' ',1 in [],' ',1 not in []);end.","{} {} False True\n");
+    result("begin Writeln(SetOf&<integer>(),' ',SetOf&<string>(nil,'abc'),' ',PABCSystem.SetOf&<integer>(Arr(2,1,2)));Writeln(Range(1,3).ToSet,' ',Arr(2,1,2).ToHashSet,' ','aba'.ToSet);var s:=[1,2,3,4];s.Remove(2);var h:=s.hs.ToHashSet;h.Add(5);var t:=s.ToSet;t.Add(5);Writeln(h,' ',t);end.","{} {nil,abc} {2,1}\n{1,2,3} {2,1} {a,b}\n{1,5,3,4} {1,3,4,5}\n");
+    result("const c:set of integer=[1..3,9];empty:set of char=[];begin var s:=c;s+=4;Writeln(c,' ',s,' ',empty);end.","{9,1,2,3} {9,1,2,3,4} {}\n");
+    for(const auto source:{"uses Collections;begin var s:Stack<integer>:=[];end.","uses Collections;begin var q:Queue<integer>:=[];end.","begin var s:=[];end.","const s=[];begin end.","begin Writeln([nil]);end.","begin Writeln([1.5..3.5]);end.","begin Writeln(['abc'..'def']);end.","begin Writeln([1..3,1.5]);end.","begin Writeln([True..2]);end.","begin Writeln(EmptySet(1));end.","const c=[1,2];begin c:=[3];end.","var n:=1;const c=[n];begin end."})compile_error(source,"E_TYPE");
+    runtime_error("begin var a:array of integer;Writeln(a+[]);end.","E_NIL");runtime_error("begin var e:EmptyCollection;Writeln(e.ToString);end.","E_NIL");runtime_error("begin var e:EmptyCollection;Writeln(e.ToSet&<integer>());end.","E_NIL");runtime_error("begin var a:sequence of integer;Writeln(a.ToSet);end.","E_NIL");
+    {
+        auto p=abc::compile("begin var s:set of integer:=[];Writeln([1..2],s=[]);end.");
+        for(unsigned mode=0;mode<3;++mode){auto bad=p;for(auto& op:bad.code)if(op.op==abc::Op::empty_call){if(mode==0)op.operand=99;if(mode==1)op.type=abc::Type::integer;if(mode==2)op.operand=static_cast<std::size_t>(abc::EmptyMethod::to_string);}error([&]{abc::verify(bad);},"E_BYTECODE");}
+        for(unsigned mode=0;mode<3;++mode){auto bad=p;for(auto& t:bad.types)if(t.kind==abc::CompoundKind::empty_collection){if(mode==0)t.element=abc::Type::integer;if(mode==1)t.key=abc::Type::string;if(mode==2)t.fields.push_back({"bad",abc::Type::integer});}error([&]{abc::verify(bad);},"E_BYTECODE");}
+        auto bad=abc::compile("begin Writeln(SetOf('abc'));end.");for(auto& op:bad.code)if(op.op==abc::Op::new_set_call)op.operand=static_cast<std::size_t>(abc::NewSetMethod::literal_ranges);error([&]{abc::verify(bad);},"E_BYTECODE");
+        abc::ExecutionOptions options;options.instruction_limit=500;error([&]{(void)run("begin Writeln([1..MaxInt]);end.","",options);},"E_LIMIT");
+    }
+}
+
 void new_set_library() {
     result("type R=record s:NewSet<integer>;end;begin var a:R;a.s:=SetOf(1);var b:=a;b.s.Add(2);Writeln(a.s,' ',b.s);b.s:=SetOf(9);Writeln(a.s,' ',b.s);end.","{1,2} {1,2}\n{1,2} {9}\n");
     result("begin var s:=SetOf(1);var l:=new List<NewSet<integer>>;l.Add(s);l[0].Add(2);Writeln(s,' ',l[0]);var t:=SetOf(9);l[0]:=t;l[0].Add(10);Writeln(t,' ',l[0]);var a:=new NewSet<integer>[1];a[0]:=s;var b:=a.Copy;b[0].Add(3);Writeln(a[0],' ',b[0],' ',s);end.","{1,2} {1,2}\n{9,10} {9,10}\n{1,2,3} {1,2,3} {1,2}\n");
@@ -6769,7 +6802,7 @@ void characters() {
 
 int main() {
     language();
-    enumerations(); comparable_ranges(); compound_assignments(); array_operator_library(); membership_library(); hash_set_library(); new_set_library();
+    enumerations(); comparable_ranges(); compound_assignments(); array_operator_library(); membership_library(); hash_set_library(); new_set_library(); set_literal_library();
     structured_loops();
     foreach_loops();
     characters();

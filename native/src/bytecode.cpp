@@ -306,6 +306,8 @@ private:
             expression(*node.left);local(Op::store,node.local,node.location);local(Op::load,node.local,node.location);break;
         case hir::ExprKind::new_set_hash:
             expression(*node.left);emit(Op::new_set_call,node.left->type,static_cast<std::size_t>(NewSetMethod::raw_hash),node.location);break;
+        case hir::ExprKind::empty_call:
+            for(const auto& argument:node.arguments)expression(*argument);emit(Op::empty_call,node.type,node.local,node.location);break;
         case hir::ExprKind::new_set_call: {
             const bool ref=(node.local&128U)!=0;
             for(std::size_t i=0;i<node.arguments.size();++i)if(i==0 && ref)reference(*node.arguments[i]);else expression(*node.arguments[i]);
@@ -1034,6 +1036,8 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             break;
         case Op::encoding_call:
             if(instruction.operand>static_cast<std::size_t>(EncodingMethod::text_append_named) || !encoding_signature_valid(program,type,static_cast<EncodingMethod>(instruction.operand)))invalid(instruction,"Invalid Encoding call metadata");break;
+        case Op::empty_call:
+            if(instruction.operand>static_cast<std::size_t>(EmptyMethod::to_set) || !empty_signature(program,type,static_cast<EmptyMethod>(instruction.operand)))invalid(instruction,"Invalid EmptyCollection call metadata");break;
         case Op::new_set_call:
             if((instruction.operand>>8U) || !new_set_signature(program,type,static_cast<NewSetMethod>(instruction.operand&127U),(instruction.operand&128U)!=0))invalid(instruction,"Invalid NewSet call metadata");break;
         case Op::hash_set_call:
@@ -1471,6 +1475,9 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             const auto method=static_cast<IniMethod>(instruction.operand);const auto parameters=ini_parameters(instruction.type,method);
             for(auto p=parameters.rbegin();p!=parameters.rend();++p)require(*p);const auto result=ini_result(instruction.type,method);if(result!=Type::unit)stack.push_back(result);break;
         }
+        case Op::empty_call: {
+            const auto parameters=empty_parameters(program.types,static_cast<EmptyMethod>(instruction.operand));for(auto it=parameters.rbegin();it!=parameters.rend();++it)require(*it);stack.push_back(instruction.type);break;
+        }
         case Op::new_set_call: {
             const auto method=static_cast<NewSetMethod>(instruction.operand&127U);const auto parameters=new_set_parameters(program.types,instruction.type,method,(instruction.operand&128U)!=0);
             for(auto it=parameters.rbegin();it!=parameters.rend();++it)require(*it);const auto result=new_set_result(program.types,instruction.type,method);if(result!=Type::unit)stack.push_back(result);break;
@@ -1658,6 +1665,8 @@ void verify(const Program& program) {
                 enum_text_bytes+=member.name.size()+member.text.size();
                 try{(void)from_utf8(member.name);(void)from_utf8(member.text);}catch(const std::invalid_argument&){throw Error("E_BYTECODE",{},"Invalid enumeration member metadata");}
             }
+        } else if(type.kind==CompoundKind::empty_collection) {
+            if(type.name!="emptycollection" || type.element!=Type::invalid || type.key!=Type::invalid || !type.fields.empty() || static_cast<Type>(64+i)!=empty_collection_type(program.types))throw Error("E_BYTECODE",{},"Invalid EmptyCollection type metadata");
         } else if(type.kind==CompoundKind::new_set) {
             if(type.name!="newset" || type.fields.size()!=1 || type.fields[0].name!="_hs" || type.fields[0].type!=type.key || type.fields[0].global)throw Error("E_BYTECODE",{},"Invalid NewSet type metadata");prior(type.element);prior(type.key);
             if(!compound(type.key) || type_info(program,type.key).kind!=CompoundKind::hash_set || type_info(program,type.key).element!=type.element)throw Error("E_BYTECODE",{},"Invalid NewSet storage type");

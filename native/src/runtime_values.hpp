@@ -34,6 +34,7 @@ struct Values {
     std::size_t remaining;
     SourceLocation location{};
     std::shared_ptr<Aggregate> empty_integer_range{};
+    std::shared_ptr<Aggregate> empty_collection{};
     std::size_t sequence_depth=0;
     std::size_t list_storage_remaining=remaining;
     std::function<Value(std::size_t,std::span<const Value>)> invoke{};
@@ -86,7 +87,7 @@ struct Values {
             if(info.kind==CompoundKind::enumeration)return EnumValue{type,0};
             if (buffer_collection(info.kind) && constructed) return buffer(type,0);
             const bool object=info.kind==CompoundKind::object_class;
-            if ((object || info.kind==CompoundKind::hash_set) && constructed) {
+            if ((object || info.kind==CompoundKind::hash_set || info.kind==CompoundKind::empty_collection) && constructed) {
                 if (!remaining) throw runtime_error(RuntimeError::allocation_limit,location);
                 --remaining;
             }
