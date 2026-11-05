@@ -4189,6 +4189,54 @@ void console_unicode_output() {
     error([&]{abc::execute(abc::compile("begin ReadInteger; end."),failed,eof_output);},"E_INPUT");
 }
 
+void console_tuple_functions() {
+    // PABCSystem.pas 7452..7551 builds each tuple from scalar reads, left to right.
+    for(unsigned count=2;count<=4;++count)for(const auto& kind:{"Integer","Real","Char","String"})for(bool newline:{false,true})for(bool prompt:{false,true}){
+        const std::string type=kind,name=std::string(newline ? "Readln" : "Read")+kind+std::to_string(count);
+        std::string input,expected="(",tail;
+        for(unsigned i=1;i<=count;++i){
+            if(i>1)expected+=",";
+            if(type=="Integer" || type=="Real"){
+                const auto value=std::to_string(i)+(type=="Real" ? ".5" : "");input+=(i>1 ? " " : "")+value;expected+=value;
+            }else if(type=="Char"){input+=static_cast<char>('a'+i-1);expected+=static_cast<char>('a'+i-1);}
+            else {const auto value="line"+std::to_string(i);input+=value+"\n";expected+=value;}
+        }
+        if(type=="String"){input+="next\n";tail="next";}
+        else {input+=" rest\nnext\n";tail=newline ? "next" : " rest";}
+        const auto source="begin var t:="+name+(prompt ? "('Prompt:')" : "()")+";Writeln(t,'|',ReadString);end.";
+        result(source,(prompt ? "Prompt: " : "")+expected+")|"+tail+"\n",input);
+    }
+    result("begin Writeln(ReadInteger2,' ',PABCSystem.ReadInteger3,' ',PABCSystem.ReadInteger4());end.","(1,2) (3,4,5) (6,7,8,9)\n","1 2 3 4 5 6 7 8 9\n");
+    result("begin var t:(real,real):=ReadlnReal2;var a:=Arr(ReadChar2);var l:=new List<(string,string)>;l.Add(ReadString2);Writeln(t,' ',a,' ',l);end.","(1.5,2.5) [(A,B)] [( tail,next)]\n","1.5 2.5 unused\nAB tail\nnext\n");
+    result("function ReadInteger2:integer:=99;function ReadInteger:integer:=88;begin Writeln(ReadInteger2,' ',PABCSystem.ReadInteger2);end.","99 (1,2)\n","1 2\n");
+    result("type Pair=(integer,integer);function Input:Pair:=ReadlnInteger2;begin var f:()->Pair:=()->ReadInteger2;Writeln(Input,' ',f());end.","(1,2) (3,4)\n","1 2 tail\n3 4\n");
+    result("begin var ReadInteger2:()->integer:=()->7;Writeln(ReadInteger2(),' ',PABCSystem.ReadInteger2());end.","7 (1,2)\n","1 2\n");
+    result("function Prompt:string;begin Write('P');PrintDelimDefault:='|';Result:=ReadString;end;begin Writeln(ReadInteger2(Prompt));end.","Pnumbers|(3,4)\n","numbers\n3 4\n");
+    result("begin PrintDelimDefault:='|';Writeln(ReadInteger2(nil),' ',ReadInteger2(''));end.","nil||(1,2) (3,4)\n","1 2 3 4\n");
+    result("begin Writeln(ReadInteger2('X'));end.","X (1,2)\n","1 2\n");
+    result("begin var t:=ReadChar3;Writeln(Ord(t.Item1),' ',Ord(t.Item2),' ',Ord(t.Item3));end.","65535 65535 65535\n");
+    result("begin Writeln(ReadlnString4,' ',ReadString3);end.","(,,,) (,,)\n");
+    result("begin var t:=ReadChar3;Writeln(Ord(t.Item1),' ',Ord(t.Item2),' ',Ord(t.Item3));end.","65 13 10\n","A\r\n");
+    result("begin var t:=ReadlnChar2;Writeln(Ord(t.Item1),' ',Ord(t.Item2),' ',ReadString);end.","65 13 B\n","A\r\nB\n");
+    for(const auto& source:{"begin ReadInteger2(1);end.","begin ReadReal3(True);end.","begin ReadChar4('a','b');end.","begin ReadString2('a','b');end.","begin var p:(int64,int64):=ReadInteger2;end.","begin var p:integer:=ReadInteger2;end.","begin ReadInteger2.Item1:=1;end."})compile_error(source,"E_TYPE");
+    for(const auto& source:{"begin ReadInteger1;end.","begin ReadInteger5;end.","begin ReadInt642;end.","begin ReadBoolean2;end.","begin ReadLexem2;end."})compile_error(source,"E_NAME");
+    for(const auto& input:{"","1","1 bad","1 2147483648"})error([&]{(void)run("begin ReadInteger2;end.",input);},"E_INPUT");
+    error([&]{(void)run("begin ReadReal3;end.","1.5 2.5 invalid");},"E_INPUT");
+    {
+        auto p=abc::compile("begin\nvar t:=ReadInteger3('Prompt:');\nWriteln(t);\nend.");std::istringstream in("1 bad 3");std::ostringstream out;
+        try{abc::execute(p,in,out);require(false,"Tuple input must fail at its second element");}catch(const abc::Error& e){require(e.code=="E_INPUT" && e.location.line==2,"Tuple element failures retain call-site location");}
+        require(out.str()=="Prompt: ","Tuple prompt appears once before an input failure and no tuple is published");
+    }
+    {
+        auto p=abc::compile("begin ReadInteger2('abc');end.");abc::ExecutionOptions options;options.output_limit=2;std::istringstream in("1 2");std::ostringstream out;
+        error([&]{abc::execute(p,in,out,options);},"E_LIMIT");require(in.peek()=='1',"Tuple prompt output failure occurs before consuming input");
+    }
+    {
+        auto p=abc::compile("begin ReadInteger2;end.");abc::ExecutionOptions options;options.cancelled=[] {return true;};std::istringstream in("1 2");std::ostringstream out;
+        error([&]{abc::execute(p,in,out,options);},"E_CANCELLED");require(in.peek()=='1',"Cancelled tuple input consumes no input");
+    }
+}
+
 void console_functions() {
     result("begin var a:=ReadInteger; var b:=ReadInt64(); var c:=ReadReal; var d:=ReadBoolean; Writeln(a,' ',b,' ',c,' ',d); Writeln('[',ReadString,']'); Writeln(ReadlnString()); end.","12 2147483648 1.25 True\n[ tail]\nnext\n","12 2147483648 1.25 TRUE tail\nnext\n");
     result("begin Writeln(ReadlnInteger,' ',ReadlnInt64(),' ',ReadlnReal,' ',ReadlnBoolean); end.","12 2147483648 1.5 False\n","12 ignored\n2147483648 ignored\n1.5 ignored\nFalse ignored\n");
@@ -7067,7 +7115,7 @@ int main() {
     array_output();
     bitwise_operations();
     console_input();
-    console_functions();
+    console_functions(); console_tuple_functions();
     console_unicode_output();
     rectangular_arrays();
     array_initializers_language();

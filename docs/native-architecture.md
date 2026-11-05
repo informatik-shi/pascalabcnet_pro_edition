@@ -709,3 +709,11 @@ while supporting nested calls and long self-referential field paths with the nor
 bind through a compact non-inlined dispatcher; bytecode operator-table initialization
 also runs outside recursive emission frames. Regressions include 100 nested
 Take(...).Count and ElementAt(...) calls without enlarging the executable stack.
+
+Console tuple input families lower to a closed tuple_construct HIR node containing
+2..4 verified scalar builtin calls. The optional prompt belongs only to the first
+read; only the last scalar uses the Readln variant. These calls use the existing
+execution ConsoleInput/ConsoleOutput and budgets. Unlike a tuple literal, the
+function result retains exact field types during contextual conversion. Generator
+emits the ordinary verified tuple_literal opcode after all reads complete, so
+there is no duplicated input state machine or runtime overload resolution.

@@ -486,3 +486,4 @@
     {"RealRange member is not ported yet","Этот член RealRange пока не перенесён"},
     {"InternalRange requires two bounds","Для InternalRange требуются две границы"},
     {"Wrong random sequence argument count","Неверное число аргументов случайной последовательности"},
+    {"Tuple input accepts only an optional string prompt","Кортежный ввод принимает только необязательное строковое приглашение"},

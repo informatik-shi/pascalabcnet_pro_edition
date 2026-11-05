@@ -254,9 +254,9 @@ private:
             operation(Op::store_ref,Type::boolean);
             increment(row); emit(Op::jump,Type::invalid,start,node.location); (*code_)[finish].operand=code_->size(); load(matrix); break;
         }
-        case hir::ExprKind::tuple_literal: case hir::ExprKind::school_pair:
+        case hir::ExprKind::tuple_literal: case hir::ExprKind::tuple_construct: case hir::ExprKind::school_pair:
             for (const auto& argument:node.arguments) expression(*argument);
-            emit(node.kind==hir::ExprKind::tuple_literal ? Op::tuple_literal : Op::school_pair,node.type,0,node.location); break;
+            emit(node.kind==hir::ExprKind::school_pair ? Op::school_pair : Op::tuple_literal,node.type,0,node.location); break;
         case hir::ExprKind::school_fold:
             expression(*node.left); emit(Op::school_fold,node.left->type,node.local,node.location); break;
         case hir::ExprKind::replace_last: case hir::ExprKind::swap_substrings:

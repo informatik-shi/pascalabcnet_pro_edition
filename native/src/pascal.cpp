@@ -2821,7 +2821,7 @@ private:
                 result->kind=hir::ExprKind::local;result->type=Type::boolean;result->local=print_matrix_format();
             } else if (source.token.text=="printdelimdefault") {
                 result->kind=hir::ExprKind::local; result->type=Type::string; result->local=print_delimiter();
-            } else if (source.token.text=="print" || source.token.text=="println" || source.token.text=="hset" || source.token.text=="hsetint" || source.token.text=="hsetstr" || source.token.text=="random2" || source.token.text=="random3" || source.token.text=="seqrandom" || source.token.text=="seqrandominteger" || source.token.text=="seqrandomreal") {
+            } else if (console_tuple_input(source.token.text) || source.token.text=="print" || source.token.text=="println" || source.token.text=="hset" || source.token.text=="hsetint" || source.token.text=="hsetstr" || source.token.text=="random2" || source.token.text=="random3" || source.token.text=="seqrandom" || source.token.text=="seqrandominteger" || source.token.text=="seqrandomreal") {
                 SyntaxExpr call{SyntaxExprKind::call,source.token,{},{},1,{},{}};
                 return expression(call);
             } else if (collections_imported_ && (source.token.text == "min_cap" || source.token.text == "inc_cap_factor")) {
@@ -3691,7 +3691,29 @@ private:
         result.kind=hir::ExprKind::school_list; result.local=static_cast<std::size_t>(method); result.operation_type=list;
         result.type=school_list_result(method,list); return true;
     }
+    struct ConsoleTupleInput { Type element;unsigned count;bool newline;std::string_view suffix; };
+    static std::optional<ConsoleTupleInput> console_tuple_input(std::string_view name) {
+        if(!name.starts_with("read") || name.back()<'2' || name.back()>'4')return {};
+        const auto count=static_cast<unsigned>(name.back()-'0');name.remove_suffix(1);
+        const bool newline=name.starts_with("readln");name.remove_prefix(newline ? 6 : 4);
+        for(const auto& [suffix,type]:{std::pair<std::string_view,Type>{"integer",Type::integer},
+            {"real",Type::real},{"char",Type::character},{"string",Type::string}})
+            if(name==suffix)return ConsoleTupleInput{type,count,newline,suffix};
+        return {};
+    }
     bool bind_tuple(hir::Expr& result,std::string_view name,std::string_view unit={}) {
+        if(const auto input=console_tuple_input(name);input && (unit.empty() || unit=="pabcsystem")){
+            if(result.arguments.size()>1)throw Error("E_TYPE",result.location,"Tuple input accepts only an optional string prompt");
+            auto prompt=result.arguments.empty() ? std::unique_ptr<hir::Expr>{} : convert(std::move(result.arguments[0]),Type::string);
+            result.arguments.clear();
+            for(unsigned i=0;i<input->count;++i){
+                auto value=std::make_unique<hir::Expr>();value->kind=hir::ExprKind::call;value->location=result.location;
+                value->operation=std::string(input->newline && i+1==input->count ? "readln" : "read")+std::string(input->suffix);
+                if(i==0 && prompt)value->arguments.push_back(std::move(prompt));
+                bind_builtin(*value,value->operation,"pabcsystem");result.arguments.push_back(std::move(value));
+            }
+            result.type=tuple_type(std::vector<Type>(input->count,input->element),result.location);result.kind=hir::ExprKind::tuple_construct;return true;
+        }
         if (name=="minmax" && imported_units_.contains("school") && (unit.empty() || unit=="school")) {
             if (result.arguments.size()!=1 || !compound(result.arguments[0]->type)) throw Error("E_TYPE",result.location,"MinMax requires a typed numeric sequence");
             const auto& sequence=info(result.arguments[0]->type,result.location);

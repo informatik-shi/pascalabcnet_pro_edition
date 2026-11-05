@@ -109,6 +109,23 @@ def main():
                                      capture_output=True, cwd=folder, env=env, timeout=10)
             if console.returncode or console.stdout != "Введите число: Введите имя: Здравствуйте, Анна! Число: 42\n":
                 raise RuntimeError(f"{name} typed console functions/prompts failed: {console.stdout!r}, {console.stderr!r}")
+            console = subprocess.run([runner, "run", str(folder / "examples" / "console-tuples.pas")],
+                                     input="1 2 3 ignored\n1.5 2.5\nАБ ignored\nhello\nмир\n", text=True, encoding="utf-8",
+                                     capture_output=True, cwd=folder, env=env, timeout=10)
+            expected = "Три числа: (1,2,3) sum=6\nДва вещественных: (1.5,2.5)\nДве буквы: (А,Б)\nДве строки: (hello,мир)\n"
+            if console.returncode or console.stdout != expected:
+                raise RuntimeError(f"{name} tuple input example failed: {console.stdout!r}, {console.stderr!r}")
+            for source, supplied, expected, code in [
+                ("begin\nWriteln('must never run');ReadInteger2(True);end.", "1 2", "", "E_TYPE"),
+                ("begin\nWriteln('must never run');ReadString3('a','b');end.", "", "", "E_TYPE"),
+                ("begin\nWriteln(ReadInteger3('Numbers:'));end.", "1 bad 3", "Numbers: ", "E_INPUT"),
+            ]:
+                console_source.write_text(source, encoding="utf-8")
+                console = subprocess.run([runner, "run", str(console_source)], input=supplied,
+                                         text=True, encoding="utf-8", capture_output=True, cwd=folder, env=env, timeout=10)
+                if (console.returncode != 1 or console.stdout != expected or code not in console.stderr
+                        or f"{console_source}:2:" not in console.stderr or "EN:" not in console.stderr or "RU:" not in console.stderr):
+                    raise RuntimeError(f"{name} tuple input diagnostic failed: {console.stdout!r}, {console.stderr!r}")
             console_source.write_text("begin var c:char; Readln(c); Writeln(Ord(c)); end.", encoding="utf-8")
             console = subprocess.run([runner, "run", str(console_source)], input=b"\r\n",
                                      capture_output=True, cwd=folder, env=env, timeout=10)
@@ -1498,6 +1515,7 @@ def main():
             results[-1]["native_ordinal_range_records_count_copy_and_enumeration"] = "passed"
             results[-1]["native_real_range_random_tuples_and_range_arrays"] = "passed"
             results[-1]["native_lazy_random_sequences_and_deferred_errors"] = "passed"
+            results[-1]["native_console_tuple_input_prompts_and_bilingual_errors"] = "passed"
             results[-1]["native_set_literals_empty_ranges_and_bilingual_errors"] = "passed"
             results[-1]["typed_print_extensions_streaming_and_set_mutation"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))
