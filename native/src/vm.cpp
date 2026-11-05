@@ -32,6 +32,7 @@
 #include "compound.hpp"
 #include "hash_set.hpp"
 #include "new_set.hpp"
+#include "print.hpp"
 #include "file_encoding.hpp"
 #include "file_lines.hpp"
 #include "big_integer_runtime.hpp"
@@ -1090,6 +1091,10 @@ static void execute_impl(const Program& program, std::istream& input, std::ostre
             for (std::size_t i=arguments.size();i>0;--i) arguments[i-1]=pop();
             auto target=std::get<std::shared_ptr<Cell>>(arguments[ref]); arguments[ref]=target->value;
             const auto result=stdlib::invoke(instruction.operand,arguments,instruction.location,services); values.write(target,result); break;
+        }
+        case Op::print_call: {
+            const auto method=static_cast<PrintMethod>(instruction.operand&255U);const auto callback=method==PrintMethod::sequence_map_lines ? static_cast<Type>(instruction.operand>>8U) : Type::invalid;std::vector<Value> arguments(print_parameters(instruction.type,method,callback).size());for(std::size_t i=arguments.size();i>0;--i)arguments[i-1]=pop();
+            stack.push_back(print_invoke(values,instruction.type,method,callback,arguments,delimiter_value,[&]{return !program.print_matrix_format || std::get<bool>(globals[*program.print_matrix_format]->value);},[&](auto text){write(text,instruction);},options));break;
         }
         case Op::empty_call: {
             const auto method=static_cast<EmptyMethod>(instruction.operand);std::vector<Value> arguments(empty_parameters(program.types,method).size());for(std::size_t i=arguments.size();i>0;--i)arguments[i-1]=pop();stack.push_back(empty_invoke(values,instruction.type,method,arguments,options));break;

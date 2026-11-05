@@ -38,7 +38,7 @@ bool new_set_signature(const Program& p,Type owner,NewSetMethod m,bool reference
     if((m==NewSetMethod::construct_array || m==NewSetMethod::cast_array) && array_type(p.types,type_info(p,owner).element)==Type::invalid)return false;
     if(m==NewSetMethod::literal_ranges && (!range_element(p.types,type_info(p,owner).element) || array_type(p.types,type_info(p,owner).element)==Type::invalid))return false;
     if(empty_operation(m) && (empty_collection_type(p.types)==Type::invalid || (m>=NewSetMethod::empty_array_unite_left && array_type(p.types,type_info(p,owner).element)==Type::invalid)))return false;
-    if(m==NewSetMethod::assign || m==NewSetMethod::raw_reference)return reference;
+    if(m==NewSetMethod::assign || m==NewSetMethod::raw_reference || m==NewSetMethod::include || m==NewSetMethod::exclude)return reference;
     return !reference || instance(m);
 }
 std::vector<Type> new_set_parameters(const std::vector<TypeInfo>& types,Type owner,NewSetMethod m,bool reference){
@@ -46,6 +46,7 @@ std::vector<Type> new_set_parameters(const std::vector<TypeInfo>& types,Type own
     if(empty_operation(m)){const auto empty=empty_collection_type(types),other=m>=NewSetMethod::empty_array_unite_left ? array_type(types,type.element) : owner;return empty_left(m) ? std::vector<Type>{empty,other} : std::vector<Type>{other,empty};}
     if(m==NewSetMethod::literal_ranges)return {array_type(types,type.element),array_type(types,type.element)};
     if(m==NewSetMethod::from_sequence)return {sequence};
+    if(m==NewSetMethod::include || m==NewSetMethod::exclude)return {reference_type(owner),type.element};
     if(m==NewSetMethod::construct)return {};
     if(m==NewSetMethod::construct_array || m==NewSetMethod::cast_array)return {array_type(types,type.element)};
     if(m==NewSetMethod::cast_hash)return {hash};
@@ -57,6 +58,7 @@ std::vector<Type> new_set_parameters(const std::vector<TypeInfo>& types,Type own
     return result;
 }
 Type new_set_result(const std::vector<TypeInfo>& types,Type owner,NewSetMethod m){
+    if(m==NewSetMethod::include || m==NewSetMethod::exclude)return Type::unit;
     if(m==NewSetMethod::count)return Type::integer;
     if(m==NewSetMethod::add || m==NewSetMethod::remove || m==NewSetMethod::contains || (m>=NewSetMethod::equal && m<=NewSetMethod::membership) || (m>=NewSetMethod::empty_equal_left && m<=NewSetMethod::empty_greater_equal_right))return Type::boolean;
     if(m==NewSetMethod::to_string)return Type::string;
@@ -128,6 +130,7 @@ Value new_set_invoke(Values& values,Type owner,NewSetMethod m,bool reference,std
             auto result=std::get<NewSetValue>(values.zero(owner));update(new_set_hash(values,result),seq_hash(object),HashSetMethod::union_with);return result;
         }
         if(m==NewSetMethod::to_string)return object_text(values.program,Value{object},hash,values.location,options);
+        if(m==NewSetMethod::include || m==NewSetMethod::exclude){const std::array<Value,2> args{object,arguments[1]};(void)call(m==NewSetMethod::include ? HashSetMethod::add : HashSetMethod::remove,args);return false;}
         if(m==NewSetMethod::count){const std::array<Value,1> args{object};return call(HashSetMethod::count,args);}
         if(m==NewSetMethod::add || m==NewSetMethod::remove || m==NewSetMethod::contains || m==NewSetMethod::item_add || m==NewSetMethod::item_remove){
             const std::array<Value,2> args{object,arguments[1]};const auto result=call(m==NewSetMethod::add || m==NewSetMethod::item_add ? HashSetMethod::add : m==NewSetMethod::remove || m==NewSetMethod::item_remove ? HashSetMethod::remove : HashSetMethod::contains,args);return m==NewSetMethod::item_add || m==NewSetMethod::item_remove ? Value{false} : result;

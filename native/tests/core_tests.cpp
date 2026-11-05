@@ -18,6 +18,7 @@
 #include "../src/compound.hpp"
 #include "../src/hash_set.hpp"
 #include "../src/new_set.hpp"
+#include "../src/print.hpp"
 #include "../src/constant.hpp"
 #include <cmath>
 #include "../src/file_reader.hpp"
@@ -49,6 +50,13 @@
 namespace {
 int failures = 0;
 int checks = 0;
+bool trace_tests() {
+#ifdef _WIN32
+    return GetEnvironmentVariableW(L"ABC_TEST_TRACE",nullptr,0)>0;
+#else
+    const auto* value=std::getenv("ABC_TEST_TRACE");return value && *value;
+#endif
+}
 
 void require(bool condition, std::string_view description) {
     ++checks;
@@ -56,7 +64,7 @@ void require(bool condition, std::string_view description) {
 }
 
 std::string run(std::string_view source, std::string input = "", abc::ExecutionOptions options = {}) {
-    if(std::getenv("ABC_TEST_TRACE"))std::cerr<<"RUN "<<source.substr(0,160)<<'\n';
+    if(trace_tests())std::cerr<<"RUN "<<source.substr(0,160)<<'\n';
     auto program = abc::compile(source);
     std::istringstream in(input);
     std::ostringstream out;
@@ -70,7 +78,7 @@ void result(std::string_view source, std::string_view expected, std::string inpu
 }
 
 template<class F> void error(F action, std::string_view code, std::string_view source = {}) {
-    if(std::getenv("ABC_TEST_TRACE"))std::cerr<<"EXPECT "<<code<<' '<<source.substr(0,160)<<'\n';
+    if(trace_tests())std::cerr<<"EXPECT "<<code<<' '<<source.substr(0,160)<<'\n';
     const auto context=source.empty() ? std::string{} : " in "+std::string(source);
     try { action(); require(false, std::string("Expected ") + std::string(code)+context); }
     catch (const abc::Error& caught) { require(caught.code == code, std::string("Expected ") + std::string(code) + ", got " + caught.code+context); }
@@ -4365,6 +4373,59 @@ void sequence_mutations() {
     error([&]{(void)run("begin var a:=new integer[2000]; Reverse(a); end.","",options);},"E_CANCELLED");
 }
 
+void print_extensions_library() {
+    result("begin True.Println;False.Print;Writeln;[1,2].Println;[].Println&<integer>();end.","True\nFalse \n1 2\n\n");
+
+#ifdef _WIN32
+    const std::string nl="\r\n";
+#else
+    const std::string nl="\n";
+#endif
+    result("begin var a:=1.Print;var b:=2.Println;Writeln(a,' ',b);PrintDelimDefault:='|';'abc'.Print;True.Println;var s:string:=nil;Writeln(s.Print=nil);s.Println;end.","1 2\n1 2\nabc|True\nnil|True\nnil\n");
+    result("begin var b:byte:=255;var w:longword:=4294967295;var u:uint64:=18446744073709551615;var x:=b.Print;var y:=w.Print;var z:=u.Print;Writeln;Writeln(x,' ',y,' ',z);Writeln(int64(9223372036854775807).Print);end.","255 -1 -1 \n255 -1 -1\n9223372036854775807 9223372036854775807\n");
+    {const auto p=abc::compile("begin var w:longword;var x:=w.Print;var u:uint64;var y:=u.Println;end.");require(p.locals[p.locals.size()-1].type==abc::Type::integer && p.locals[p.locals.size()-3].type==abc::Type::integer,"Unsigned Print uses the source integer overload and has a known integer result");}
+    result("begin var s:=Seq(1,2,3);var same:=s.Print('|');Writeln;Writeln(same=s,' ',same.Sum);s.Println;Seq('a','b').Println;Arr('x','y').Print;Writeln;end.","1|2|3\nTrue 6\n1 2 3\nab\nxy\n");
+    result("begin var s:=new HashSet<integer>(Arr(1,2,3));var q:=s.Println;Writeln(q.Count);var a:=[3,1,2];a.Println('|');a.PrintLines;Writeln(a);end.","1 2 3\n3\n3|1|2\n3"+nl+"1"+nl+"2\n{3,1,2}\n");
+    result("begin Seq(1,2).Print(nil);Writeln;var empty:=new integer[0];empty.Print;empty.Println;empty.PrintLines;PrintDelimDefault:=nil;Seq(4,5).Println;6.Print;end.","1nil2\n\n\n4nil5\n6nil");
+    result("begin PrintDelimDefault:='|';var s:=SeqGen(3,i->begin PrintDelimDefault:=',';Result:=i;end);s.Println;s.Println;end.","0|1|2\n0,1,2\n");
+    result("function F(x:integer):string:=IntToStr(x*10);begin var s:=Seq(1,2);var r:=s.PrintLines(F);Writeln(r=s,' ',r.First);var map:integer->integer:=x->x+1;s.PrintLines(map);s.PrintLines&<integer,real>(x->x+1);end.","10"+nl+"20\nTrue 1\n2"+nl+"3\n2"+nl+"3\n");
+    result("begin PrintLines(Arr(1,2));PABCSystem.PrintLines(Seq(3,4),x->x*2);PABCSystem.Print&<integer>(Arr(7,8),'|');Writeln;Println&<integer>(Seq(9,10));'ab'.Println&<char>();end.","1"+nl+"2\n6"+nl+"8\n7|8\n9 10\nab\n");
+    result("function PrintLines(s:sequence of integer):integer:=42;begin Writeln(PrintLines(Seq(1,2)));PABCSystem.PrintLines(Seq(3));end.","42\n3\n");
+    result("begin var t:=Rec(1,'abc');t.Print;t.Println;t.Print&<integer,string>();Println&<integer,string>(t);end.","(1,abc) (1,abc)\n(1,abc) (1,abc)\n");
+    result("begin var m:=new integer[2,2]((1,20),(300,4));var r:=m.Print;Writeln(r=m);m.Println(2);PrintMatrixWithFormat:=False;PrintDelimDefault:='|';m.Print(-1);PABCSystem.PrintMatrixWithFormat:=True;Writeln(PrintMatrixWithFormat);end.","   1  20\n 300   4\nTrue\n 120\n300 4\n1|20|\n300|4|\nTrue\n");
+    result("begin var m:=new real[2,2]((1.5,20.26),(-300.5,4.0));m.Print(2,1);var r:=m.Println(2,-1);Writeln(r=m);m.Print&<real>(4);PrintMatrixWithFormat:=False;m.Print(-1,-2147483648);end.","    1.5 20.3\n -300.5  4.0\n    1.5 20.3\n -300.5  4.0\nTrue\n 1.520.26\n-300.5   4\n1.5 20.26 \n-300.5 4 \n");
+    result("begin var a:=new integer[0,2];a.Print(-1);var b:=new real[0,2];b.Print(-1,-2147483648);var c:=new real[2,0];c.Println;end.","\n\n");
+    result("begin var m:=new integer[1,1]((7));Print&<integer>(m,3);end.","  7\n");
+    for(const auto source:{"begin var s:sequence of integer;s.Println;end.","begin var s:HashSet<integer>;s.Println;end.","begin var m:array[,] of integer;m.Print;end.","begin var f:integer->string;Seq(1).PrintLines(f);end.","begin Seq(1).PrintLines&<integer,string>(nil);end.","begin PrintLines&<integer>(nil);end."})runtime_error(source,"E_NIL");
+    runtime_error("begin new integer[1,1].Print(-1);end.","E_RANGE");
+    for(const auto source:{"begin Writeln('NEVER');Seq(1).Print(2);end.","begin var a:array of integer:=Arr(1).Println;end.","begin var t:=Rec(1,2);var x:=t.Print;end.","begin Seq(1).PrintLines((x,i)->x+i);end.","begin Seq(1).PrintLines(x->begin Writeln(x);end);end.","begin PrintMatrixWithFormat:=1;end.","begin Arr(1).Print&<string>();end.","begin Seq(1).PrintLines&<integer>(x->x);end."})compile_error(source,"E_TYPE");
+    {
+        const auto p=abc::compile("begin SeqGen(3,i->(if i=2 then 1 div 0 else i+1)).Println('|');end.");std::istringstream in;std::ostringstream out;error([&]{abc::execute(p,in,out);},"E_DIV_ZERO");require(out.str()=="1|2","Late sequence failure preserves already printed items without an extra delimiter or newline");
+        auto limit=abc::compile("begin Seq(10,20).Println('|');end.");std::ostringstream bounded;abc::ExecutionOptions options;options.output_limit=3;error([&]{abc::execute(limit,in,bounded,options);},"E_LIMIT");require(bounded.str()=="10|","Output limit preserves the completed streaming prefix");
+        options.output_limit=2'000'000;const auto text=run("begin SeqGen(3,i->'x'*400000).Print;end.","",options);require(text.size()==1'200'002 && std::count(text.begin(),text.end(),'x')==1'200'000,"Sequence Print streams past the single-string limit without joining the result");
+    }
+    {
+        auto p=abc::compile("begin 1.Print;Seq(1).Println;Seq(1).PrintLines(x->x+1);new integer[1,1].Print;end.");
+        for(unsigned mode=0;mode<4;++mode){auto bad=p;for(auto& op:bad.code)if(op.op==abc::Op::print_call){if(mode==0)op.operand=255;if(mode==1)op.type=abc::Type::boolean;if(mode==2)op.operand|=static_cast<std::size_t>(abc::Type::real)<<8U;if(mode==3 && (op.operand&255U)==static_cast<std::size_t>(abc::PrintMethod::sequence_map_lines))op.operand=(static_cast<std::size_t>(abc::Type::integer)<<8U)|(op.operand&255U);}error([&]{abc::verify(bad);},"E_BYTECODE");}
+        p=abc::compile("begin PrintMatrixWithFormat:=False;new integer[1,1].Print;end.");p.print_matrix_format=p.locals.size();error([&]{abc::verify(p);},"E_BYTECODE");
+    }
+    {
+        const auto path=std::filesystem::temp_directory_path()/"abc-native-print-lines-test.txt";const auto file="'"+path.generic_string()+"'";
+        result("begin WriteAllText("+file+",'one'+NewLine+'two');ReadLines("+file+").Println('|');Writeln(DeleteFile("+file+"));end.","one|two\nTrue\n");std::filesystem::remove(path);
+    }
+}
+
+void include_exclude_library() {
+    result("begin var s:set of integer;Include(s,1);Include(s,2);Include(s,1);Exclude(s,9);PABCSystem.Exclude(s,1);Writeln(s);Include&<integer>(s,3);PABCSystem.Exclude&<integer>(s,2);Writeln(s);end.","{2}\n{3}\n");
+    result("var s:NewSet<integer>;function Right:integer;begin s:=[9];Result:=2;end;begin s:=[1];var old:=s.hs;Include(s,Right);Writeln(old,' ',s);s:=[1];old:=s.hs;Exclude(s,Right);Writeln(old,' ',s);end.","{1} {9,2}\n{1} {9}\n");
+    result("type C=class public s:NewSet<string>;end;begin var c:=new C;Include(c.s,nil);Include(c.s,'abc');Writeln(c.s);var a:=new NewSet<integer>[1];Include(a[0],7);Writeln(a[0]);end.","{nil,abc}\n{7}\n");
+    result("begin var s:=new NewSet<integer->integer>;Include(s,x->x+1);var f:=s.First;Writeln(f(4));Exclude(s,f);Writeln(s.Count);end.","5\n0\n");
+    for(const auto type:{"byte","shortint","smallint","word","integer","longword","int64","uint64","real","BigInteger"})result("begin var s:NewSet<"+std::string(type)+">;Include(s,7);Include(s,7);Exclude(s,9);Writeln(s.Count,' ',7 in s);end.","1 True\n");
+    for(const auto source:{"begin Include([1],2);end.","begin var h:=new HashSet<integer>;Include(h,1);end.","const s=[1];begin Include(s,2);end.","begin var l:=new List<NewSet<integer>>;l.Add([1]);Include(l[0],2);end.","begin var s:NewSet<integer>;Include(s,'abc');end.","begin var s:NewSet<integer>;Include&<real>(s,1);end.","begin var s:NewSet<integer>;var x:=Include(s,1);end."})compile_error(source,"E_TYPE");
+    result("procedure Include(var s:NewSet<integer>;x:integer);begin s:=[42];end;begin var s:NewSet<integer>;Include(s,1);Writeln(s);PABCSystem.Include(s,2);Writeln(s);end.","{42}\n{42,2}\n");
+    auto p=abc::compile("begin var s:NewSet<integer>;Include(s,1);Exclude(s,2);end.");for(auto& op:p.code)if(op.op==abc::Op::new_set_call && ((op.operand&127U)==static_cast<std::size_t>(abc::NewSetMethod::include) || (op.operand&127U)==static_cast<std::size_t>(abc::NewSetMethod::exclude)))op.operand&=~128U;error([&]{abc::verify(p);},"E_BYTECODE");
+}
+
 void set_literal_library() {
     result("begin var s:=[1];Writeln(s=nil,' ',s<>nil,' ',nil<s,' ',s>=nil,' ',nil>=s);Writeln(s+nil,' ',nil+s,' ',s*nil,' ',nil-s);s:=[];Writeln(s=nil,' ',nil=s);Writeln((EmptySet+nil)=EmptySet);end.","False True True True False\n{1} {1} {} {}\nTrue True\nFalse\n");
     {std::string value="1";for(unsigned i=0;i<100;++i)value="("+value+"+1)";result("begin Writeln("+value+");end.","101\n");}
@@ -6802,7 +6863,7 @@ void characters() {
 
 int main() {
     language();
-    enumerations(); comparable_ranges(); compound_assignments(); array_operator_library(); membership_library(); hash_set_library(); new_set_library(); set_literal_library();
+    enumerations(); comparable_ranges(); compound_assignments(); array_operator_library(); membership_library(); hash_set_library(); new_set_library(); set_literal_library(); print_extensions_library(); include_exclude_library();
     structured_loops();
     foreach_loops();
     characters();

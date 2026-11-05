@@ -7,7 +7,7 @@ enum class NewSetMethod {
     construct,construct_array,cast_array,cast_hash,copy_value,clone,hash,raw_hash,raw_reference,
     count,add,remove,contains,add_range,to_string,to_hash,assign,
     item_add,item_remove,union_assign,except_assign,intersect_assign,
-    unite,subtract,intersect,equal,not_equal,less,less_equal,greater,greater_equal,membership,literal_ranges,from_sequence,
+    unite,subtract,intersect,equal,not_equal,less,less_equal,greater,greater_equal,membership,literal_ranges,from_sequence,include,exclude,
     empty_unite_left,empty_unite_right,empty_subtract_left,empty_subtract_right,empty_intersect_left,empty_intersect_right,
     empty_equal_left,empty_equal_right,empty_not_equal_left,empty_not_equal_right,empty_less_left,empty_less_right,
     empty_less_equal_left,empty_less_equal_right,empty_greater_left,empty_greater_right,empty_greater_equal_left,empty_greater_equal_right,

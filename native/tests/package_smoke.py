@@ -216,6 +216,7 @@ def main():
                 ("enumerations.pas", "Начало: Ready\nПосле Inc: Running / 1\nПрава: CanRead, CanWrite\nЗапись: True\nСписок: [Ready,Running,Done]\nШаг: Ready\nШаг: Done\n"),
                 ("comparable-ranges.pas", "Границы: True / False\nПорядок границ: True / False\nОграничение: 0 5 9\nМетоды: 9 0\nПеречисление: Tue / True\nСтрока: True / False\n"),
                 ("hash-sets.pas", "{1,2,3} 3\n{1,2,3,4}\n{3}\n{1,2}\n{1,3,5} True True\nTrue\n[3,5]\n{1,3,5} {1,9,3,5}\n"),
+                ("print-extensions.pas", "{1,4,3}\n1 4 3\n10\n40\n30\n8\n4 | 5 | 6\n   1  20\n 300   4\n1 | 20 | \n300 | 4 | \n"),
                 ("set-literals.pas", "{9,1,2,3,4}\n{9,1,2,3,4,5} {3,4} {9,1,2}\nTrue True True\n{z,a,b,c,d}\n{False,True}\n{1,2,3,4} {2,1}\n{9,2,4}\n{}\n"),
                 ("new-sets.pas", "{1,2,3} 3\n{1,2,3,4} {3} {1,2}\n{1,2,3} {1,2,3,5}\n{1,2,3,7} True True\n{10,2,9,7}\n[10,9]\n{10,2,9,7} {10,2,9,7,11}\n"),
                 ("membership.pas", "True True\nTrue True\nTrue True\nTrue True\nTrue True\nTrue 4\n"),
@@ -520,6 +521,9 @@ def main():
                     raise RuntimeError(f"{name} Comparison diagnostic mismatch: {attempted.stdout!r}, {attempted.stderr!r}")
             set_source = folder / "Хеш-множества.pas"
             for source, expected, code, line in [
+                ("begin\nWriteln('must never run');Include([1],2);end.", "", "E_TYPE", 2),
+                ("begin\nSeqGen(3,i->(if i=2 then 1 div 0 else i+1)).Println('|');end.", "1|2", "E_DIV_ZERO", 2),
+                ("begin\nWriteln('before');new integer[1,1].Print(-1);end.", "before\n", "E_RANGE", 2),
                 ("begin\nWriteln('must never run');Writeln([nil]);end.", "", "E_TYPE", 2),
                 ("begin\nWriteln('must never run');Writeln([1.5..2.5]);end.", "", "E_TYPE", 2),
                 ("begin\nvar e:EmptyCollection;Writeln(e.ToSet&<integer>());end.", "", "E_NIL", 2),
@@ -1464,6 +1468,8 @@ def main():
             results[-1]["typed_array_operators_copy_identity_and_bilingual_errors"] = "passed"
             results[-1]["typed_membership_substrings_and_reader_cleanup"] = "passed"
             results[-1]["native_hashset_operators_slots_aliases_and_reader_cleanup"] = "passed"
+            results[-1]["native_set_literals_empty_ranges_and_bilingual_errors"] = "passed"
+            results[-1]["typed_print_extensions_streaming_and_set_mutation"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))
 
 

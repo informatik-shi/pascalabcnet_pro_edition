@@ -12,6 +12,7 @@
 #include "compound.hpp"
 #include "hash_set.hpp"
 #include "new_set.hpp"
+#include "print.hpp"
 #include "integer_values.hpp"
 #include "formatting.hpp"
 #include "unicode.hpp"
@@ -709,7 +710,7 @@ private:
                     result.expression = std::move(target_expression);
                 }
             }
-        } else if (current_.kind==TokenKind::text || current_.kind==TokenKind::character_code || current_.kind==TokenKind::number || is("(") || is("new") || is("default")) {
+        } else if (current_.kind==TokenKind::text || current_.kind==TokenKind::character_code || current_.kind==TokenKind::number || is("(") || is("new") || is("default") || is("true") || is("false") || is("nil") || is("[")) {
             auto target=expression();
             if (assignment_operator()) {
                 result.assignment_operator=consume();
@@ -1133,6 +1134,7 @@ public:
             initial.expression->type=Type::string; initial.expression->value=std::u16string{u" "};
             module_.body.statements.insert(module_.body.statements.begin(),std::move(initial));
         }
+        if(module_.print_matrix_format){hir::Stmt initial;initial.kind=hir::StmtKind::assign;initial.local=*module_.print_matrix_format;initial.expression=std::make_unique<hir::Expr>();initial.expression->kind=hir::ExprKind::literal;initial.expression->type=Type::boolean;initial.expression->value=true;module_.body.statements.insert(module_.body.statements.begin(),std::move(initial));}
         if(module_.default_encoding) {
             hir::Stmt initial;initial.kind=hir::StmtKind::assign;initial.local=*module_.default_encoding;
             initial.expression=std::make_unique<hir::Expr>();
@@ -1313,6 +1315,10 @@ private:
             module_.locals.push_back({"$printdelimdefault",Type::string,true});
         }
         return *module_.print_delimiter;
+    }
+    std::size_t print_matrix_format() {
+        if(!module_.print_matrix_format){module_.print_matrix_format=module_.locals.size();module_.locals.push_back({"$printmatrixwithformat",Type::boolean,true});}
+        return *module_.print_matrix_format;
     }
     std::size_t default_encoding() {
         if(!module_.default_encoding) {
@@ -2227,6 +2233,7 @@ private:
                     if(source.token.text=="defaultencoding") {
                         result->local=default_encoding();result->kind=hir::ExprKind::local;result->type=module_.locals[result->local].type;break;
                     }
+                    if(source.token.text=="printmatrixwithformat"){result->kind=hir::ExprKind::local;result->type=Type::boolean;result->local=print_matrix_format();break;}
                     if (source.token.text=="printdelimdefault") {
                         result->kind=hir::ExprKind::local; result->type=Type::string; result->local=print_delimiter(); break;
                     }
@@ -2241,6 +2248,8 @@ private:
                 if (bind_sequence_numeric_selector(*result,source,source.left->token.text)) break;
                 if (bind_sequence_predicate(*result,source,source.left->token.text)) break;
                 if (bind_sequence_transform(*result,source,source.left->token.text)) break;
+                if(bind_set_mutation(*result,source,source.left->token.text))break;
+                if(source.left->token.text=="pabcsystem" && bind_print_extension(*result,source,false))break;
                 for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
                 if (bind_print(*result,source.token.text,source.left->token.text)) break;
                 if (bind_sequence_conversion(*result,source.token.text,source.left->token.text)) break;
@@ -2271,6 +2280,7 @@ private:
             }
             if(enum_static_member(*result,source))break;
             result->left = expression(*source.left); const auto receiver = result->left->type;
+            if(bind_print_extension(*result,source,true))break;
             if(bind_inifile_member(*result,source))break;
             if(bind_encoding_member(*result,source))break;
             if((receiver==Type::string || receiver==Type::character || (numeric(receiver) && receiver!=Type::big_integer))
@@ -2727,6 +2737,8 @@ private:
                 return empty_expression(empty_type(),EmptyMethod::singleton,{},result->location);
             } else if(source.token.text=="defaultencoding") {
                 result->local=default_encoding();result->kind=hir::ExprKind::local;result->type=module_.locals[result->local].type;
+            } else if(source.token.text=="printmatrixwithformat"){
+                result->kind=hir::ExprKind::local;result->type=Type::boolean;result->local=print_matrix_format();
             } else if (source.token.text=="printdelimdefault") {
                 result->kind=hir::ExprKind::local; result->type=Type::string; result->local=print_delimiter();
             } else if (source.token.text=="print" || source.token.text=="println") {
@@ -2765,6 +2777,7 @@ private:
                 bind_value_call(*result,source.arguments); break;
             }
             result->kind = hir::ExprKind::call;
+            if(!routine_names_.contains(source.token.text) && (bind_set_mutation(*result,source) || bind_print_extension(*result,source,false)))break;
             if (!routine_names_.contains(source.token.text) && bind_generators(*result,source)) break;
             if (!routine_names_.contains(source.token.text) && bind_school_table(*result,source)) break;
             if (!routine_names_.contains(source.token.text) && bind_sequence_zip(*result,source)) break;
@@ -3544,9 +3557,23 @@ private:
         // Self is allocated by construct_user only after all explicit/default arguments.
         result.arguments.erase(result.arguments.begin());
     }
-    std::unique_ptr<hir::Expr> explicit_factory(const SyntaxExpr& source) {
+    ABC_PASCAL_NOINLINE std::unique_ptr<hir::Expr> explicit_factory(const SyntaxExpr& source) {
         const bool qualified=source.kind==SyntaxExprKind::member_call;
         const auto& name=source.token.text;
+        const bool qualified_unit=qualified && source.left && source.left->kind==SyntaxExprKind::name && source.left->token.text=="pabcsystem" && !lookup(source.left->token);
+        const bool standard_call=(source.kind==SyntaxExprKind::call && !lookup(source.token) && !routine_names_.contains(name)) || qualified_unit;
+        if((name=="include" || name=="exclude") && standard_call){if(source.type_arguments.size()!=1)throw Error("E_TYPE",source.token.location,"Include/Exclude require exactly one explicit element type");auto result=std::make_unique<hir::Expr>();result->location=source.token.location;(void)bind_set_mutation(*result,source,{},resolve_type(*source.type_arguments[0]));return result;}
+        if((name=="print" || name=="println" || name=="printlines") && (standard_call || (qualified && !qualified_unit))){
+            const bool member=qualified && !qualified_unit;auto result=std::make_unique<hir::Expr>();result->location=source.token.location;
+            if((name=="print" || name=="println") && source.type_arguments.size()>1){
+                if(source.arguments.size()!=(member ? 0U : 1U))throw Error("E_TYPE",result->location,"Tuple Print/Println take no arguments");auto value=expression(member ? *source.left : *source.arguments[0]);
+                if(!compound(value->type) || info(value->type,result->location).kind!=CompoundKind::tuple)throw Error("E_TYPE",result->location,"Print explicit types must match the tuple");const auto tuple=info(value->type,result->location);
+                if(tuple.fields.size()!=source.type_arguments.size())throw Error("E_TYPE",result->location,"Print explicit types must match the tuple");for(std::size_t i=0;i<tuple.fields.size();++i)if(tuple.fields[i].type!=resolve_type(*source.type_arguments[i]))throw Error("E_TYPE",result->location,"Print explicit types must match the tuple");result->arguments.push_back(std::move(value));(void)bind_print(*result,name);return result;
+            }
+            const auto extra=source.arguments.size()-(member ? 0U : source.arguments.empty() ? 0U : 1U);const auto count=name=="printlines" && extra==1 ? 2U : 1U;
+            if(source.type_arguments.size()!=count)throw Error("E_TYPE",result->location,"Print explicit type argument count does not match the overload");if(member)result->left=expression(*source.left);
+            if(!bind_print_extension(*result,source,member,resolve_type(*source.type_arguments[0]),count==2 ? resolve_type(*source.type_arguments[1]) : Type::invalid))throw Error("E_TYPE",result->location,"Print requires a compatible typed source");return result;
+        }
         if(name=="setof" && ((source.kind==SyntaxExprKind::call && !lookup(source.token) && !routine_names_.contains(name)) || (qualified && source.left && source.left->kind==SyntaxExprKind::name && source.left->token.text=="pabcsystem" && !lookup(source.left->token)))){
             if(source.type_arguments.size()!=1)throw Error("E_TYPE",source.token.location,"SetOf requires exactly one explicit element type");const auto element=resolve_type(*source.type_arguments[0]),owner=new_set_type(element),array=sequence_type(CompoundKind::array,element);
             auto input=std::make_unique<hir::Expr>();input->kind=hir::ExprKind::array_literal;input->type=array;input->location=source.token.location;
@@ -4579,6 +4606,49 @@ private:
             result.right->type=Type::string; result.right->value=std::u16string{}; result.right->location=result.location;
         }
         result.arguments.clear(); result.kind=hir::ExprKind::try_read; result.type=Type::boolean; return true;
+    }
+    bool bind_set_mutation(hir::Expr& result,const SyntaxExpr& source,std::string_view unit={},Type expected=Type::invalid){
+        const auto& name=source.token.text;if((name!="include" && name!="exclude") || (!unit.empty() && unit!="pabcsystem"))return false;
+        if(source.arguments.size()!=2)throw Error("E_TYPE",result.location,"Include/Exclude require a set variable and one element");auto target=expression(*source.arguments[0]);
+        if(!compound(target->type) || info(target->type,result.location).kind!=CompoundKind::new_set || !new_set_addressable(*target))throw Error("E_TYPE",result.location,"Include/Exclude require an addressable NewSet variable");
+        const auto owner=target->type,element=info(owner,result.location).element;if(expected!=Type::invalid && expected!=element)throw Error("E_TYPE",result.location,"Include/Exclude explicit element type must match the set");
+        std::vector<std::unique_ptr<hir::Expr>> args;args.push_back(std::move(target));args.push_back(expression(*source.arguments[1],element));result=std::move(*new_set_expression(owner,name=="include" ? NewSetMethod::include : NewSetMethod::exclude,std::move(args),result.location,true));return true;
+    }
+    ABC_PASCAL_NOINLINE bool bind_print_extension(hir::Expr& result,const SyntaxExpr& source,bool member,Type explicit_element=Type::invalid,Type explicit_result=Type::invalid){
+        const auto& name=source.token.text;if(name!="print" && name!="println" && name!="printlines")return false;
+        if(!member && name!="printlines" && explicit_element==Type::invalid)return false;
+        if(!member){if(source.arguments.empty())throw Error("E_TYPE",result.location,"PrintLines requires a typed sequence");result.left=expression(*source.arguments[0]);}
+        if(explicit_element!=Type::invalid && ((result.left->type==Type::nil && name=="printlines") || (compound(result.left->type) && info(result.left->type,result.location).kind==CompoundKind::empty_collection)))result.left=convert(std::move(result.left),sequence_type(CompoundKind::sequence,explicit_element));
+        const auto receiver=result.left->type;const auto extra=source.arguments.size()-(member ? 0U : 1U);
+        const auto argument=[&](std::size_t n)->const SyntaxExpr&{return *source.arguments[n+(member ? 0U : 1U)];};
+        const auto literal=[&](Type type,Value value){auto p=std::make_unique<hir::Expr>();p->kind=hir::ExprKind::literal;p->location=result.location;p->type=type;p->value=std::move(value);return p;};
+        const auto finish=[&](PrintMethod method,Type self,Type callback=Type::invalid){result.kind=hir::ExprKind::print_call;result.operation_type=self;result.type=print_result(self,method);result.local=static_cast<std::size_t>(method)|(method==PrintMethod::sequence_map_lines ? static_cast<std::size_t>(callback)<<8U : 0U);};
+        if(member && compound(receiver) && info(receiver,result.location).kind==CompoundKind::tuple && name!="printlines"){
+            if(extra || explicit_element!=Type::invalid)throw Error("E_TYPE",result.location,"Tuple Print/Println take no arguments");result.arguments.push_back(std::move(result.left));return bind_print(result,name);
+        }
+        if(compound(receiver) && info(receiver,result.location).kind==CompoundKind::array && info(receiver,result.location).rank==2 && name!="printlines"){
+            const auto element=info(receiver,result.location).element;if(explicit_element!=Type::invalid && element!=explicit_element)throw Error("E_TYPE",result.location,"Print explicit element type must match the source");
+            const bool real=element==Type::real && explicit_element==Type::invalid;if(extra>(real ? 2U : 1U))throw Error("E_TYPE",result.location,"Matrix Print requires optional width and real precision");if(!object_text_supported(module_.types,element))throw Error("E_UNSUPPORTED",result.location,"Print element output is not implemented for this type");
+            (void)print_matrix_format();(void)print_delimiter();result.arguments.push_back(std::move(result.left));result.arguments.push_back(extra ? convert(expression(argument(0)),Type::integer) : literal(Type::integer,std::int32_t{real ? 7 : 4}));if(real)result.arguments.push_back(extra>1 ? convert(expression(argument(1)),Type::integer) : literal(Type::integer,std::int32_t{2}));finish(real ? PrintMethod::matrix_real : PrintMethod::matrix,receiver);return true;
+        }
+        if(member && !extra && explicit_element==Type::invalid && name!="printlines" && (numeric(receiver) || receiver==Type::character || receiver==Type::boolean || receiver==Type::string)){
+            Type self=receiver;if(small_integer(self))self=Type::integer;
+            (void)print_delimiter();result.arguments.push_back(convert(std::move(result.left),self));finish(name=="print" ? PrintMethod::scalar_print : PrintMethod::scalar_println,self);return true;
+        }
+        if(receiver!=Type::string && (!compound(receiver) || (info(receiver,result.location).kind!=CompoundKind::sequence && !enumerable_collection(info(receiver,result.location).kind))))return false;
+        const auto input=sequence_source(receiver,result.location);if(explicit_element!=Type::invalid && explicit_element!=input.element)throw Error("E_TYPE",result.location,"Print explicit element type must match the source");
+        const auto self=sequence_type(CompoundKind::sequence,input.element);result.arguments.push_back(convert(std::move(result.left),self));
+        if(name=="printlines" && extra==1){auto bound=explicit_result!=Type::invalid ? library_callback_value(convert(expression(argument(0),function_type(explicit_result,{{input.element,false,false}},result.location)),function_type(explicit_result,{{input.element,false,false}},result.location))) : library_callback(argument(0),{input.element});const auto signature=bound.signature;
+            if(signature.parameters.size()!=1 || signature.parameters[0].by_reference || signature.parameters[0].type!=input.element || signature.result==Type::unit)throw Error("E_TYPE",result.location,"PrintLines map must accept one exact element by value and return a value");
+            if(!object_text_supported(module_.types,signature.result))throw Error("E_UNSUPPORTED",result.location,"Print element output is not implemented for this type");(void)sequence_type(CompoundKind::sequence,signature.result);
+            auto callback=bound.named ? routine_value(*bound.named,result.location) : std::move(bound.value);const auto type=callback->type;result.arguments.push_back(std::move(callback));finish(PrintMethod::sequence_map_lines,self,type);return true;
+        }
+        if(extra>(name=="printlines" ? 0U : 1U))throw Error("E_TYPE",result.location,"Sequence Print requires at most one delimiter");if(!object_text_supported(module_.types,input.element))throw Error("E_UNSUPPORTED",result.location,"Print element output is not implemented for this type");
+        if(name=="printlines")result.arguments.push_back(literal(Type::string,*stdlib::constant("newline")));
+        else if(extra)result.arguments.push_back(convert(expression(argument(0)),Type::string));
+        else if(input.element==Type::character)result.arguments.push_back(literal(Type::string,std::u16string{}));
+        else{auto delimiter=std::make_unique<hir::Expr>();delimiter->kind=hir::ExprKind::local;delimiter->type=Type::string;delimiter->location=result.location;delimiter->local=print_delimiter();result.arguments.push_back(std::move(delimiter));}
+        finish(name=="print" ? PrintMethod::sequence_print : PrintMethod::sequence_println,self);return true;
     }
     bool bind_print(hir::Expr& result, std::string_view name, std::string_view unit = {}) {
         if ((name!="print" && name!="println") || (!unit.empty() && unit!="pabcsystem")) return false;

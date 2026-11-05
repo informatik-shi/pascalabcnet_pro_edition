@@ -609,3 +609,25 @@ process stack on existing deep-expression tests. The parser depth and language l
 are retained; tests use the ordinary process stack, including a nested arithmetic case.
 The custom Collections.Stack/Queue kinds are not substituted for framework Stack/Queue
 when resolving EmptyCollection conversions; those framework families remain pending.
+
+
+The verified print_call instruction carries a closed input type, bounded method tag and,
+for mapped PrintLines, an exact callable type. Shared signature/parameter/result metadata
+covers scalar overloads, sequence output and both matrix families. Unsigned scalar inputs
+retain their source type on the operand stack while their selected integer overload has a
+statically known integer result; low-32-bit conversion preserves the source narrowing rule.
+The native output kernel emits chunks through ConsoleOutput instead of joining a sequence.
+It leases cursors, snapshots the sequence delimiter before enumeration, composes mapped
+printing with the existing lazy Select provider, and returns the original source value.
+Formatting, output/work/allocation limits, cancellation and callback locations use existing
+native services; errors preserve completed output and dispose readers.
+
+A validated optional boolean global implements PrintMatrixWithFormat, initialized before
+user code. The generic matrix path pads ObjectToString values; the real path computes
+per-column widths in a first pass. Both preserve zero-dimension branches, ignored argument
+validation and the original distinction from array/sequence output. Tuple extensions lower
+to existing procedure output. Include/Exclude are distinct verified NewSet var operations:
+arguments evaluate first, then the method resolves the current record field through its
+stable typed cell; their boolean HashSet results are discarded. Typed callback hints and
+var-addressability checks happen during binding. Bool/set literal method calls now enter
+the normal expression-statement path.

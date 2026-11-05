@@ -7,6 +7,7 @@
 #include "compound.hpp"
 #include "hash_set.hpp"
 #include "new_set.hpp"
+#include "print.hpp"
 #include "runtime_values.hpp"
 #include "formatting.hpp"
 #include "school_ip.hpp"
@@ -31,7 +32,7 @@ class Generator {
 public:
     Program generate(hir::Module module) {
         program_.locals = std::move(module.locals); program_.types = std::move(module.types);
-        program_.print_delimiter=module.print_delimiter;program_.default_encoding=module.default_encoding;
+        program_.print_delimiter=module.print_delimiter;program_.print_matrix_format=module.print_matrix_format;program_.default_encoding=module.default_encoding;
         for (auto& routine : module.routines) {
             for (auto local:routine.signature.captures) captured_.insert(local);
             program_.routines.push_back(std::move(routine.signature));
@@ -306,6 +307,8 @@ private:
             expression(*node.left);local(Op::store,node.local,node.location);local(Op::load,node.local,node.location);break;
         case hir::ExprKind::new_set_hash:
             expression(*node.left);emit(Op::new_set_call,node.left->type,static_cast<std::size_t>(NewSetMethod::raw_hash),node.location);break;
+        case hir::ExprKind::print_call:
+            for(const auto& argument:node.arguments)expression(*argument);emit(Op::print_call,node.operation_type,node.local,node.location);break;
         case hir::ExprKind::empty_call:
             for(const auto& argument:node.arguments)expression(*argument);emit(Op::empty_call,node.type,node.local,node.location);break;
         case hir::ExprKind::new_set_call: {
@@ -1036,6 +1039,10 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             break;
         case Op::encoding_call:
             if(instruction.operand>static_cast<std::size_t>(EncodingMethod::text_append_named) || !encoding_signature_valid(program,type,static_cast<EncodingMethod>(instruction.operand)))invalid(instruction,"Invalid Encoding call metadata");break;
+        case Op::print_call: {
+            const auto method=static_cast<PrintMethod>(instruction.operand&255U);const auto callback=method==PrintMethod::sequence_map_lines ? static_cast<Type>(instruction.operand>>8U) : Type::invalid;
+            if((instruction.operand>>8U)>65535U || (method!=PrintMethod::sequence_map_lines && (instruction.operand>>8U)) || !print_signature(program,type,method,callback))invalid(instruction,"Invalid Print call metadata");break;
+        }
         case Op::empty_call:
             if(instruction.operand>static_cast<std::size_t>(EmptyMethod::to_set) || !empty_signature(program,type,static_cast<EmptyMethod>(instruction.operand)))invalid(instruction,"Invalid EmptyCollection call metadata");break;
         case Op::new_set_call:
@@ -1475,6 +1482,9 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             const auto method=static_cast<IniMethod>(instruction.operand);const auto parameters=ini_parameters(instruction.type,method);
             for(auto p=parameters.rbegin();p!=parameters.rend();++p)require(*p);const auto result=ini_result(instruction.type,method);if(result!=Type::unit)stack.push_back(result);break;
         }
+        case Op::print_call: {
+            const auto method=static_cast<PrintMethod>(instruction.operand&255U);const auto callback=method==PrintMethod::sequence_map_lines ? static_cast<Type>(instruction.operand>>8U) : Type::invalid;const auto parameters=print_parameters(instruction.type,method,callback);for(auto it=parameters.rbegin();it!=parameters.rend();++it)require(*it);stack.push_back(print_result(instruction.type,method));break;
+        }
         case Op::empty_call: {
             const auto parameters=empty_parameters(program.types,static_cast<EmptyMethod>(instruction.operand));for(auto it=parameters.rbegin();it!=parameters.rend();++it)require(*it);stack.push_back(instruction.type);break;
         }
@@ -1623,6 +1633,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
 void verify(const Program& program) {
     if (program.print_delimiter && (*program.print_delimiter>=program.locals.size() || !program.locals[*program.print_delimiter].global
         || program.locals[*program.print_delimiter].type!=Type::string)) throw Error("E_BYTECODE",{},"Invalid PrintDelimDefault global");
+    if(program.print_matrix_format && (*program.print_matrix_format>=program.locals.size() || !program.locals[*program.print_matrix_format].global || program.locals[*program.print_matrix_format].type!=Type::boolean))throw Error("E_BYTECODE",{},"Invalid PrintMatrixWithFormat global");
     if(program.default_encoding) {
         const auto slot=*program.default_encoding;
         if(slot>=program.locals.size() || !program.locals[slot].global || !valid_value_type(program,program.locals[slot].type)

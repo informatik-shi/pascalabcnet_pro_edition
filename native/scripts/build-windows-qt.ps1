@@ -85,6 +85,8 @@ InRange, Between, Clamp и методы ClampTop/ClampBottom: examples/comparabl
 Нативный HashSet<T>, операции множеств и проверки включения: examples/hash-sets.pas.
 Типизированный NewSet<T>, SetOf, копирование и процедуры: examples/new-sets.pas.
 Литералы [1..4,9], EmptyCollection, ToSet и ToHashSet: examples/set-literals.pas.
+Print/Println, PrintLines(map), матрицы и Include/Exclude: examples/print-extensions.pas.
+PrintMatrixWithFormat управляет выравниванием матриц; PrintLines возвращает исходную последовательность.
 SortedSet, TypedSet, числовые преобразования множеств и остальные API ещё переносятся.
 Проверка принадлежности in и not in, поиск подстроки Contains: examples/membership.pas.
 Работают строки, одномерные массивы, матрицы, List и последовательности.
