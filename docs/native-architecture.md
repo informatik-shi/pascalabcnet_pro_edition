@@ -643,3 +643,14 @@ and sharing contained references without invoking Pascal custom assignment opera
 Nonempty TrimExcess builds a complete temporary slot/hash index before publication,
 preserves cached hashes and version, and swaps atomically after bounded work. Empty
 trim releases storage and increments version, matching the source framework rules.
+
+
+HashSet factories lower directly into verified typed array/sequence adapters and the
+existing native HashSet constructor. Generic inference preserves single-array/sequence
+inputs versus params object elements; an explicit T admits exact collection views and
+provides callable element hints. Generic type-name calls are conversions, preserving
+HashSet reference identity rather than substituting new construction. A separate
+copy_value method shares constructor CopyFrom storage rules while retaining the Pascal
+Copy(nil) shortcut. Explicit ToSet/ToHashSet reuse closed sequence conversion metadata;
+the EmptyCollection instance ToSet path remains distinct from implicit sequence conversion.
+No dynamic type inference or managed execution is introduced.

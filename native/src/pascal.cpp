@@ -2254,6 +2254,7 @@ private:
                 if (bind_print(*result,source.token.text,source.left->token.text)) break;
                 if (bind_sequence_conversion(*result,source.token.text,source.left->token.text)) break;
                 if (bind_new_set_factory(*result,source.token.text,source.left->token.text)) break;
+                if (bind_hash_set_factory(*result,source.token.text,source.left->token.text)) break;
                 if (bind_list_factory(*result,source.token.text,source.left->token.text)) break;
                 if (bind_sequence_factory(*result,source.token.text,source.left->token.text)) break;
                 if (bind_sequence_query(*result,source.token.text,source.left->token.text)) break;
@@ -2742,7 +2743,7 @@ private:
                 result->kind=hir::ExprKind::local;result->type=Type::boolean;result->local=print_matrix_format();
             } else if (source.token.text=="printdelimdefault") {
                 result->kind=hir::ExprKind::local; result->type=Type::string; result->local=print_delimiter();
-            } else if (source.token.text=="print" || source.token.text=="println") {
+            } else if (source.token.text=="print" || source.token.text=="println" || source.token.text=="hset" || source.token.text=="hsetint" || source.token.text=="hsetstr") {
                 SyntaxExpr call{SyntaxExprKind::call,source.token,{},{},1,{},{}};
                 return expression(call);
             } else if (collections_imported_ && (source.token.text == "min_cap" || source.token.text == "inc_cap_factor")) {
@@ -2808,6 +2809,7 @@ private:
             if (bind_print(*result,source.token.text)) break;
             if (bind_sequence_conversion(*result,source.token.text)) break;
             if (bind_new_set_factory(*result,source.token.text)) break;
+            if (bind_hash_set_factory(*result,source.token.text)) break;
             if (bind_list_factory(*result,source.token.text)) break;
             if (bind_sequence_factory(*result,source.token.text)) break;
             if (bind_sequence_query(*result,source.token.text)) break;
@@ -3308,6 +3310,31 @@ private:
         }
         return hash_set_expression(owner,method,std::move(arguments),result.location,payload);
     }
+    ABC_PASCAL_NOINLINE bool bind_hash_set_factory(hir::Expr& result,std::string_view name,std::string_view unit={},Type explicit_element=Type::invalid){
+        if((name!="hset" && name!="hsetint" && name!="hsetstr") || (!unit.empty() && unit!="pabcsystem"))return false;
+        const auto element=explicit_element!=Type::invalid ? explicit_element : name=="hsetint" ? Type::integer : name=="hsetstr" ? Type::string : Type::invalid;
+        std::unique_ptr<hir::Expr> input;
+        if(result.arguments.size()==1){
+            const auto type=result.arguments[0]->type;
+            if(element!=Type::invalid && (type==Type::nil || (compound(type) && info(type,result.location).kind==CompoundKind::empty_collection)))
+                input=convert(std::move(result.arguments[0]),sequence_type(CompoundKind::array,element));
+            else if(compound(type)){
+                const auto source=info(type,result.location);
+                const bool array=source.kind==CompoundKind::array && source.rank==1;
+                const bool sequence=name=="hset" && (source.kind==CompoundKind::sequence
+                    || (explicit_element!=Type::invalid && enumerable_collection(source.kind) && source.rank==1 && source.element==element && type!=element));
+                if((array || sequence) && (element==Type::invalid || source.element==element))input=std::move(result.arguments[0]);
+            }else if(explicit_element==Type::character && type==Type::string)input=std::move(result.arguments[0]);
+        }
+        if(!input){
+            input=std::make_unique<hir::Expr>();input->location=result.location;input->arguments=std::move(result.arguments);
+            if(element==Type::invalid){if(input->arguments.empty())throw Error("E_TYPE",result.location,"Cannot infer an empty set element type");bind_array_literal(*input);}
+            else{input->kind=hir::ExprKind::array_literal;input->type=sequence_type(CompoundKind::array,element);for(auto& argument:input->arguments)argument=convert(std::move(argument),element);}
+        }
+        const auto item=input->type==Type::string ? Type::character : info(input->type,result.location).element;
+        const auto owner=sequence_type(CompoundKind::hash_set,item);std::vector<std::unique_ptr<hir::Expr>> arguments;arguments.push_back(std::move(input));
+        result=std::move(*hash_set_expression(owner,HashSetMethod::construct_sequence,std::move(arguments),result.location));return true;
+    }
     std::unique_ptr<hir::Expr> hash_set_expression(Type owner,HashSetMethod method,std::vector<std::unique_ptr<hir::Expr>> arguments,SourceLocation location,Type payload=Type::invalid){
         const auto sequence=hash_set_sequence_method(method) ? info(owner,location).key : payload;
         const auto parameters=hash_set_parameters(module_.types,owner,sequence,method);
@@ -3458,6 +3485,10 @@ private:
         if ((!sort && !fill && name!="copy" && name!="high") || result.arguments.empty() || !compound(result.arguments[0]->type) || enumeration(result.arguments[0]->type)) return false;
         if (!unit.empty() && !(unit=="pabcsystem" && !fill) && !(unit=="arrays" && (sort || fill))) return false;
         const auto sequence=result.arguments[0]->type; const auto& type=info(sequence,result.location);
+        if(name=="copy" && type.kind==CompoundKind::hash_set){
+            if(result.arguments.size()!=1)throw Error("E_TYPE",result.location,"Wrong sequence arguments");
+            result=std::move(*hash_set_expression(sequence,HashSetMethod::copy_value,std::move(result.arguments),result.location));return true;
+        }
         if (!indexed_sequence(type.kind) || (unit=="arrays" && type.kind!=CompoundKind::array))
             throw Error("E_TYPE",result.location,"Operation requires an array or list");
         if (result.arguments.size()!=(fill ? 2U : 1U) || (sort && (type.rank!=1 || !text_scalar(type.element))))
@@ -3588,6 +3619,25 @@ private:
         const auto& name=source.token.text;
         const bool qualified_unit=qualified && source.left && source.left->kind==SyntaxExprKind::name && source.left->token.text=="pabcsystem" && !lookup(source.left->token);
         const bool standard_call=(source.kind==SyntaxExprKind::call && !lookup(source.token) && !routine_names_.contains(name)) || qualified_unit;
+        if(name=="hset" && standard_call){
+            if(source.type_arguments.size()!=1)throw Error("E_TYPE",source.token.location,"HSet requires exactly one explicit element type");
+            const auto element=resolve_type(*source.type_arguments[0]);auto result=std::make_unique<hir::Expr>();result->location=source.token.location;
+            for(const auto& argument:source.arguments)result->arguments.push_back(expression(*argument,element));
+            (void)bind_hash_set_factory(*result,name,{},element);return result;
+        }
+        if((name=="hashset" || name=="newset") && standard_call){
+            if(source.type_arguments.size()!=1 || source.arguments.size()!=1)throw Error("E_TYPE",source.token.location,"Set type conversion requires one explicit element type and one value");
+            const auto element=resolve_type(*source.type_arguments[0]),owner=name=="hashset" ? sequence_type(CompoundKind::hash_set,element) : new_set_type(element);
+            return convert(expression(*source.arguments[0],owner),owner);
+        }
+        if(name=="copy" && standard_call){
+            if(source.type_arguments.size()!=1 || source.arguments.size()!=1)throw Error("E_TYPE",source.token.location,"Copy requires one explicit element type and one collection");
+            const auto element=resolve_type(*source.type_arguments[0]);auto result=std::make_unique<hir::Expr>();result->location=source.token.location;
+            result->arguments.push_back(expression(*source.arguments[0]));const auto input=result->arguments[0]->type;
+            if(!compound(input) || (info(input,result->location).kind!=CompoundKind::hash_set && info(input,result->location).kind!=CompoundKind::list) || info(input,result->location).element!=element)
+                throw Error("E_TYPE",result->location,"Copy explicit element type must match the collection");
+            (void)bind_sequence_library(*result,name);return result;
+        }
         if((name=="include" || name=="exclude") && standard_call){if(source.type_arguments.size()!=1)throw Error("E_TYPE",source.token.location,"Include/Exclude require exactly one explicit element type");auto result=std::make_unique<hir::Expr>();result->location=source.token.location;(void)bind_set_mutation(*result,source,{},resolve_type(*source.type_arguments[0]));return result;}
         if((name=="print" || name=="println" || name=="printlines") && (standard_call || (qualified && !qualified_unit))){
             const bool member=qualified && !qualified_unit;auto result=std::make_unique<hir::Expr>();result->location=source.token.location;
@@ -3608,8 +3658,16 @@ private:
             else for(auto& argument:input->arguments)argument=convert(std::move(argument),element);
             std::vector<std::unique_ptr<hir::Expr>> args;args.push_back(std::move(input));return new_set_expression(owner,NewSetMethod::construct_array,std::move(args),source.token.location);
         }
-        if(name=="toset" && qualified && source.left && !(source.left->kind==SyntaxExprKind::name && source.left->token.text=="pabcsystem" && !lookup(source.left->token))){
-            if(source.type_arguments.size()!=1 || !source.arguments.empty())throw Error("E_TYPE",source.token.location,"EmptyCollection.ToSet requires one explicit element type and no arguments");auto value=expression(*source.left);if(!compound(value->type) || info(value->type,source.token.location).kind!=CompoundKind::empty_collection)throw Error("E_UNSUPPORTED",source.token.location,"Explicit generic calls are not ported for this routine");const auto owner=new_set_type(resolve_type(*source.type_arguments[0]));std::vector<std::unique_ptr<hir::Expr>> args;args.push_back(std::move(value));return empty_expression(owner,EmptyMethod::to_set,std::move(args),source.token.location);
+        if((name=="toset" || name=="tohashset") && (standard_call || (qualified && !qualified_unit))){
+            const bool member=qualified && !qualified_unit;
+            if(source.type_arguments.size()!=1 || source.arguments.size()!=(member ? 0U : 1U))throw Error("E_TYPE",source.token.location,"Set conversion requires one explicit element type and one source");
+            const auto element=resolve_type(*source.type_arguments[0]),owner=name=="toset" ? new_set_type(element) : sequence_type(CompoundKind::hash_set,element);
+            auto value=expression(member ? *source.left : *source.arguments[0]);
+            std::vector<std::unique_ptr<hir::Expr>> args;
+            if(member && name=="toset" && compound(value->type) && info(value->type,source.token.location).kind==CompoundKind::empty_collection){args.push_back(std::move(value));return empty_expression(owner,EmptyMethod::to_set,std::move(args),source.token.location);}
+            (void)sequence_type(CompoundKind::array,element);
+            args.push_back(convert(std::move(value),sequence_type(CompoundKind::sequence,element)));
+            return name=="toset" ? new_set_expression(owner,NewSetMethod::from_sequence,std::move(args),source.token.location) : hash_set_expression(owner,HashSetMethod::construct_sequence,std::move(args),source.token.location);
         }
         if((name=="inrange" || name=="between" || name=="clamp")
             && ((source.kind==SyntaxExprKind::call && !lookup(source.token) && !routine_names_.contains(name))

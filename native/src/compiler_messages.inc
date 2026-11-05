@@ -473,3 +473,8 @@
     {"Print explicit types must match the tuple","Явные типы Print должны совпадать с типами элементов кортежа"},
     {"Print explicit type argument count does not match the overload","Количество явных типов Print не соответствует выбранной перегрузке"},
     {"Print requires a compatible typed source","Для Print требуется совместимый типизированный источник"},
+    {"HSet requires exactly one explicit element type","Для HSet требуется ровно один явный тип элемента"},
+    {"Set type conversion requires one explicit element type and one value","Преобразование типа множества требует один явный тип элемента и одно значение"},
+    {"Copy requires one explicit element type and one collection","Для Copy требуется один явный тип элемента и одна коллекция"},
+    {"Copy explicit element type must match the collection","Явный тип элемента Copy должен совпадать с типом элементов коллекции"},
+    {"Set conversion requires one explicit element type and one source","Преобразование множества требует один явный тип элемента и один источник"},

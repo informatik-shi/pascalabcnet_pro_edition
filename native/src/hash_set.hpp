@@ -21,7 +21,7 @@ enum class HashSetMethod {
     union_with,except_with,intersect_with,symmetric_with,set_equals,subset,proper_subset,superset,proper_superset,overlaps,
     equal,not_equal,unite,subtract,intersect,add_copy,remove_copy,less,less_equal,greater,greater_equal,
     ref_add,ref_remove,ref_union,ref_except,
-    copy_array,copy_index,copy_count,remove_where,trim_excess,try_get_value
+    copy_array,copy_index,copy_count,remove_where,trim_excess,try_get_value,copy_value
 };
 bool hash_set_reference(HashSetMethod method);
 bool hash_set_sequence_method(HashSetMethod method);

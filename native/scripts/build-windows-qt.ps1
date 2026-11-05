@@ -84,6 +84,7 @@ System.Enum как объект, reflection и поддиапазоны ещё �
 InRange, Between, Clamp и методы ClampTop/ClampBottom: examples/comparable-ranges.pas.
 Нативный HashSet<T>, операции множеств и проверки включения: examples/hash-sets.pas.
 CopyTo, TryGetValue, RemoveWhere и TrimExcess: examples/hash-set-extra.pas.
+HSet/HSetInt/HSetStr, Copy и явные преобразования: examples/hash-set-factories.pas.
 Типизированный NewSet<T>, SetOf, копирование и процедуры: examples/new-sets.pas.
 Литералы [1..4,9], EmptyCollection, ToSet и ToHashSet: examples/set-literals.pas.
 Print/Println, PrintLines(map), матрицы и Include/Exclude: examples/print-extensions.pas.

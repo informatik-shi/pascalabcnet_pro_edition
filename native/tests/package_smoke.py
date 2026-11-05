@@ -215,6 +215,7 @@ def main():
                 ("for-step.pas", "По возрастанию: 1 3 5 \nПо убыванию: 5 3 1 \nСимволы: 53\n"),
                 ("enumerations.pas", "Начало: Ready\nПосле Inc: Running / 1\nПрава: CanRead, CanWrite\nЗапись: True\nСписок: [Ready,Running,Done]\nШаг: Ready\nШаг: Done\n"),
                 ("comparable-ranges.pas", "Границы: True / False\nПорядок границ: True / False\nОграничение: 0 5 9\nМетоды: 9 0\nПеречисление: Tue / True\nСтрока: True / False\n"),
+                ("hash-set-factories.pas", "{1,3,4} {1,5,3,4}\n0 {one,two}\n{2,1}\n{3,4} {3,4}\n1 3\n{3,4,9}\nTrue\n5\n"),
                 ("hash-set-extra.pas", "[9,1,3,4,9]\n13\n1 {1,3,5}\nTrue 3\nFalse 0\n"),
                 ("hash-sets.pas", "{1,2,3} 3\n{1,2,3,4}\n{3}\n{1,2}\n{1,3,5} True True\nTrue\n[3,5]\n{1,3,5} {1,9,3,5}\n"),
                 ("print-extensions.pas", "{1,4,3}\n1 4 3\n10\n40\n30\n8\n4 | 5 | 6\n   1  20\n 300   4\n1 | 20 | \n300 | 4 | \n"),
@@ -522,6 +523,10 @@ def main():
                     raise RuntimeError(f"{name} Comparison diagnostic mismatch: {attempted.stdout!r}, {attempted.stderr!r}")
             set_source = folder / "Хеш-множества.pas"
             for source, expected, code, line in [
+                ("begin\nWriteln('must never run');HSet&<integer>(Arr(1.5));end.", "", "E_TYPE", 2),
+                ("begin\nWriteln('must never run');Copy&<real>(HSet(1));end.", "", "E_TYPE", 2),
+                ("begin\nWriteln('before');HSetInt(nil);end.", "before\n", "E_NIL", 2),
+                ("begin\nWriteln('before');ToHashSet&<integer>(nil);end.", "before\n", "E_NIL", 2),
                 ("begin\nWriteln('must never run');var s:=new HashSet<integer>;s.TryGetValue(1,2);end.", "", "E_TYPE", 2),
                 ("begin\nWriteln('before');var s:=new HashSet<integer>;s.CopyTo(Arr(0),-1,-1);end.", "before\n", "E_RANGE", 2),
                 ("begin\nWriteln('before');var s:=new HashSet<integer>;s.CopyTo(nil,-1,-1);end.", "before\n", "E_NIL", 2),
@@ -1475,6 +1480,7 @@ def main():
             results[-1]["typed_membership_substrings_and_reader_cleanup"] = "passed"
             results[-1]["native_hashset_operators_slots_aliases_and_reader_cleanup"] = "passed"
             results[-1]["native_hashset_copy_lookup_mutating_predicates_and_trim"] = "passed"
+            results[-1]["native_hashset_factories_copy_conversions_and_typed_callable"] = "passed"
             results[-1]["native_set_literals_empty_ranges_and_bilingual_errors"] = "passed"
             results[-1]["typed_print_extensions_streaming_and_set_mutation"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))

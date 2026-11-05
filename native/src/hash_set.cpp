@@ -18,7 +18,7 @@ Type array_type(const std::vector<TypeInfo>& types,Type element){for(std::size_t
 }
 bool hash_set_sequence_method(HashSetMethod method){return sequence_method(method);}
 bool hash_set_signature(const Program& p,Type owner,Type sequence,HashSetMethod m){
-    if(m>HashSetMethod::try_get_value || !compound(owner) || static_cast<unsigned>(owner)-64U>=p.types.size() || type_info(p,owner).kind!=CompoundKind::hash_set)return false;
+    if(m>HashSetMethod::copy_value || !compound(owner) || static_cast<unsigned>(owner)-64U>=p.types.size() || type_info(p,owner).kind!=CompoundKind::hash_set)return false;
     const auto element=type_info(p,owner).element;
     if(m==HashSetMethod::remove_where){
         if(!compound(sequence) || static_cast<unsigned>(sequence)-64U>=p.types.size())return false;
@@ -35,7 +35,7 @@ std::vector<Type> hash_set_parameters(const std::vector<TypeInfo>& types,Type ow
     if(m==HashSetMethod::construct_copy)return {owner};
     if(m==HashSetMethod::membership)return {info(types,owner).element,owner};
     std::vector<Type> result{hash_set_reference(m) ? reference_type(owner) : owner};
-    if(m==HashSetMethod::count || m==HashSetMethod::clear || m==HashSetMethod::trim_excess)return result;
+    if(m==HashSetMethod::count || m==HashSetMethod::clear || m==HashSetMethod::trim_excess || m==HashSetMethod::copy_value)return result;
     if(m>=HashSetMethod::copy_array && m<=HashSetMethod::copy_count){result.push_back(array_type(types,info(types,owner).element));if(m>=HashSetMethod::copy_index)result.push_back(Type::integer);if(m==HashSetMethod::copy_count)result.push_back(Type::integer);return result;}
     if(m==HashSetMethod::remove_where){result.push_back(sequence);return result;}
     if(m==HashSetMethod::try_get_value){const auto element=info(types,owner).element;result.push_back(element);result.push_back(reference_type(element));return result;}
@@ -45,7 +45,7 @@ std::vector<Type> hash_set_parameters(const std::vector<TypeInfo>& types,Type ow
     return result;
 }
 Type hash_set_result(Type owner,HashSetMethod m){
-    if(m<=HashSetMethod::construct_copy || (m>=HashSetMethod::unite && m<=HashSetMethod::remove_copy))return owner;
+    if(m<=HashSetMethod::construct_copy || m==HashSetMethod::copy_value || (m>=HashSetMethod::unite && m<=HashSetMethod::remove_copy))return owner;
     if(m==HashSetMethod::count || m==HashSetMethod::remove_where)return Type::integer;
     if((m>=HashSetMethod::copy_array && m<=HashSetMethod::copy_count) || m==HashSetMethod::trim_excess || m==HashSetMethod::clear || (m>=HashSetMethod::union_with && m<=HashSetMethod::symmetric_with) || hash_set_reference(m))return Type::unit;
     return Type::boolean;
@@ -194,6 +194,7 @@ Value hash_set_invoke(Values& values,Type owner,Type sequence,HashSetMethod meth
         if(method==HashSetMethod::construct_sequence){const auto source=std::get<std::shared_ptr<Aggregate>>(arguments[0]);if(!source || source->nil)throw runtime_error(RuntimeError::nil_reference,values.location);if(const auto direct=direct_set(source))return copy(work,owner,direct);auto result=std::get<std::shared_ptr<Aggregate>>(values.zero(owner,true));if(const auto count=collection_count(source);count && *count)reserve(result,prime(*count));update(work,result,source,HashSetMethod::union_with);if(result->count && result->hash_set->capacity/result->count>3){std::vector<std::shared_ptr<Cell>> compact;for(const auto& cell:result->items)if(cell)compact.push_back(cell);result->items=std::move(compact);result->hash_set->hashes.clear();result->hash_set->lookup.clear();result->hash_set->free.clear();reserve(result,prime(result->count));for(std::size_t i=0;i<result->items.size();++i){const auto code=hash(work,result->items[i]->value);result->hash_set->hashes.push_back(code);result->hash_set->lookup.emplace(code,i);}}return result;}
         if(method==HashSetMethod::membership){const auto set=std::get<std::shared_ptr<Aggregate>>(arguments[1]);require(set,values.location);return find(work,set,arguments[0])!=absent;}
         const auto object=hash_set_reference(method) ? std::get<std::shared_ptr<Aggregate>>(std::get<std::shared_ptr<Cell>>(arguments[0])->value) : std::get<std::shared_ptr<Aggregate>>(arguments[0]);
+        if(method==HashSetMethod::copy_value){if(!object || object->nil)return object;require(object,values.location);return copy(work,owner,object);}
         if(method==HashSetMethod::equal || method==HashSetMethod::not_equal){const auto right=std::get<std::shared_ptr<Aggregate>>(arguments[1]);bool equal=(object && !object->nil)==(right && !right->nil);if(equal && object && !object->nil){require(object,values.location);require(right,values.location);const auto seq=sequence_create(values,sequence==Type::invalid ? type_info(values.program,owner).key : sequence,right,SequenceProvider::hash_set);equal=relation(work,object,seq,HashSetMethod::set_equals);}return method==HashSetMethod::equal ? equal : !equal;}
         require(object,values.location);
         if(method==HashSetMethod::count)return static_cast<std::int32_t>(object->count);
