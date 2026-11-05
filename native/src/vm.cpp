@@ -19,6 +19,7 @@
 #include "sequences.hpp"
 #include "generators.hpp"
 #include "random_sequence.hpp"
+#include "directory_sequence.hpp"
 #include "array_views.hpp"
 #include "matrix_operations.hpp"
 #include "array_operations.hpp"
@@ -1153,6 +1154,9 @@ static void execute_impl(const Program& program, std::istream& input, std::ostre
             if(!std::get<std::int32_t>(pop()))throw runtime_error(RuntimeError::for_step_zero,instruction.location);break;
         case Op::text_lines:
             stack.emplace_back(text_lines_sequence(values,instruction.type,pop()));break;
+        case Op::directory_sequence: {
+            const auto pattern=pop(),path=pop();stack.emplace_back(directory_sequence_create(values,files,instruction.type,static_cast<DirectorySequenceMethod>(instruction.operand),path,pattern,options));break;
+        }
         case Op::read_lines: {
             const auto encoding=instruction.operand ? std::optional<Value>{pop()} : std::nullopt;const auto path=pop();
             stack.emplace_back(file_read_lines(values,files,instruction.type,path,encoding ? &*encoding : nullptr,options));break;

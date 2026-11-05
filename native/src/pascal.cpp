@@ -1,6 +1,7 @@
 #include "hir.hpp"
 #include "generators.hpp"
 #include "random_sequence.hpp"
+#include "directory_sequence.hpp"
 #include "matrix_operations.hpp"
 #include "list_operations.hpp"
 #include "constant.hpp"
@@ -1521,6 +1522,14 @@ private:
     }
     bool bind_file_lines(hir::Expr& result,std::string_view name,std::string_view unit={}) {
         if(!unit.empty() && unit!="pabcsystem")return false;
+        if(name=="enumeratefiles" || name=="enumerateallfiles" || name=="enumeratedirectories" || name=="enumeratealldirectories"){
+            const bool directories=name=="enumeratedirectories" || name=="enumeratealldirectories";
+            if(result.arguments.empty() || result.arguments.size()>(directories ? 1U : 2U))throw Error("E_TYPE",result.location,"Wrong directory enumeration argument count");
+            for(auto& argument:result.arguments)argument=convert(std::move(argument),Type::string);
+            if(result.arguments.size()==1){auto pattern=std::make_unique<hir::Expr>();pattern->kind=hir::ExprKind::literal;pattern->type=Type::string;pattern->value=std::u16string(directories ? u"*" : u"*.*");pattern->location=result.location;result.arguments.push_back(std::move(pattern));}
+            result.kind=hir::ExprKind::directory_sequence;result.type=sequence_type(CompoundKind::sequence,Type::string);
+            result.local=static_cast<std::size_t>(name=="enumeratefiles" ? DirectorySequenceMethod::files : name=="enumerateallfiles" ? DirectorySequenceMethod::all_files : name=="enumeratedirectories" ? DirectorySequenceMethod::directories : DirectorySequenceMethod::all_directories);return true;
+        }
         const bool read=name=="readalllines" || name=="readlines",write=name=="writealllines",sequence=name=="writelines";
         if(!read && !write && !sequence)return false;
         const auto minimum=read ? 1U : 2U;
@@ -2821,7 +2830,7 @@ private:
                 result->kind=hir::ExprKind::local;result->type=Type::boolean;result->local=print_matrix_format();
             } else if (source.token.text=="printdelimdefault") {
                 result->kind=hir::ExprKind::local; result->type=Type::string; result->local=print_delimiter();
-            } else if (console_tuple_input(source.token.text) || source.token.text=="print" || source.token.text=="println" || source.token.text=="hset" || source.token.text=="hsetint" || source.token.text=="hsetstr" || source.token.text=="random2" || source.token.text=="random3" || source.token.text=="seqrandom" || source.token.text=="seqrandominteger" || source.token.text=="seqrandomreal") {
+            } else if (console_tuple_input(source.token.text) || source.token.text=="enumeratefiles" || source.token.text=="enumerateallfiles" || source.token.text=="enumeratedirectories" || source.token.text=="enumeratealldirectories" || source.token.text=="print" || source.token.text=="println" || source.token.text=="hset" || source.token.text=="hsetint" || source.token.text=="hsetstr" || source.token.text=="random2" || source.token.text=="random3" || source.token.text=="seqrandom" || source.token.text=="seqrandominteger" || source.token.text=="seqrandomreal") {
                 SyntaxExpr call{SyntaxExprKind::call,source.token,{},{},1,{},{}};
                 return expression(call);
             } else if (collections_imported_ && (source.token.text == "min_cap" || source.token.text == "inc_cap_factor")) {

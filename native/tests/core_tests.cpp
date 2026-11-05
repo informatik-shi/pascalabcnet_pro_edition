@@ -20,6 +20,7 @@
 #include "../src/ordinal_range.hpp"
 #include "../src/real_interval.hpp"
 #include "../src/random_sequence.hpp"
+#include "../src/directory_sequence.hpp"
 #include "../src/new_set.hpp"
 #include "../src/print.hpp"
 #include "../src/constant.hpp"
@@ -4189,6 +4190,61 @@ void console_unicode_output() {
     error([&]{abc::execute(abc::compile("begin ReadInteger; end."),failed,eof_output);},"E_INPUT");
 }
 
+void directory_sequence_library() {
+    const auto fixtures=std::filesystem::path(abc::from_utf8(__FILE__)).parent_path()/"fixtures";
+    const auto verify_corpus=[&](const char* filename,std::size_t expected_rows){
+    std::ifstream corpus(fixtures/filename);require(static_cast<bool>(corpus),"Directory wildcard reference corpus is present");
+    std::string row;std::size_t rows=0;
+    while(std::getline(corpus,row)){
+        if(!row.empty() && row.back()=='\r')row.pop_back();const auto a=row.find('\t'),b=row.find('\t',a+1),c=row.find('\t',b+1);
+        if(a==std::string::npos || b==std::string::npos || c==std::string::npos){require(false,"Invalid directory reference row");continue;}
+        const auto pattern=row.substr(0,a),name=row.substr(a+1,b-a-1);const bool ignore=row[b+1]=='1',expected=row[c+1]=='1';
+        require(abc::directory_pattern_matches(abc::from_utf8(pattern),abc::from_utf8(name),ignore,{})==expected,"Directory pattern '"+pattern+"' matches '"+name+"'");++rows;
+    }
+    require(rows==expected_rows,"Complete independent directory wildcard corpus loaded");
+    };
+    verify_corpus("directory-patterns.tsv",2886);
+#ifndef _WIN32
+    verify_corpus("directory-patterns-unix.tsv",544);
+#endif
+    const auto root=std::filesystem::temp_directory_path()/("abc-native-enumeration-"+std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    std::filesystem::create_directories(root/"sub"/"deep");std::filesystem::create_directories(root/"empty");
+    struct Cleanup{std::filesystem::path path;~Cleanup(){std::error_code ec;std::filesystem::remove_all(path,ec);}} cleanup{root};
+    for(const auto& name:{"a.txt","b.bin","plain",".hidden","sub/c.txt","sub/deep/d.txt"}){std::ofstream out(root/name);out<<name;}
+    const auto quote=[](const std::filesystem::path& p){auto text=abc::to_utf8(p.u16string());std::string result="'";for(char c:text){result+=c;if(c=='\'')result+=c;}return result+"'";};
+    const auto path=quote(root),file=quote(root/"a.txt"),missing=quote(root/"missing");
+    result("begin Writeln(EnumerateFiles("+path+").Count,' ',EnumerateAllFiles("+path+").Count,' ',EnumerateDirectories("+path+").Count,' ',EnumerateAllDirectories("+path+").Count);end.","4 6 2 3\n");
+    result("begin Writeln(EnumerateFiles("+path+",'*.txt').Count,' ',EnumerateAllFiles("+path+",'*.txt').Count,' ',EnumerateFiles("+path+",'').Count,' ',EnumerateFiles("+path+",'.').Count);end.","1 3 4 4\n");
+    result("begin Writeln(EnumerateFiles("+path+",'sub/*.txt').Count,' ',PABCSystem.EnumerateAllFiles("+path+",'sub/*.txt').Count,' ',EnumerateFiles("+path+",'empty/').Count);end.","1 2 0\n");
+    result("begin var s:sequence of string:=EnumerateFiles("+path+");Writeln(s.Count,' ',s.Count,' ',s.Contains("+file+"));var n:=0;foreach var a in s do foreach var b in s do n+=1;Writeln(n);end.","4 4 True\n16\n");
+    result("begin var s:=EnumerateAllFiles("+path+");ChDir("+quote(root/"sub")+");Writeln(s.Count,' ',s.Take(0).Count,' ',s.Take(1).Count,' ',s.Count);end.","6 0 1 6\n");
+    result("function EnumerateFiles(path:string):integer:=9;begin Writeln(EnumerateFiles("+path+"),' ',PABCSystem.EnumerateFiles("+path+").Count);end.","9 4\n");
+    result("begin var EnumerateFiles:()->integer:=()->8;Writeln(EnumerateFiles(),' ',PABCSystem.EnumerateDirectories("+path+").Count);end.","8 2\n");
+    result("function PathValue:string;begin Write('P');Result:="+path+";end;function Pattern:string;begin Write('S');Result:='*.txt';end;begin Writeln(EnumerateFiles(PathValue,Pattern).Count);end.","PS1\n");
+    {
+        std::error_code ec;std::filesystem::create_directory_symlink(root/"sub",root/"alias",ec);
+        if(!ec){result("begin Writeln(EnumerateAllFiles("+path+").Count,' ',EnumerateAllDirectories("+path+").Count);end.","8 5\n");std::filesystem::remove(root/"alias");}
+    }
+    for(const auto& source:{"begin EnumerateFiles(1);end.","begin EnumerateFiles('a',True);end.","begin EnumerateAllFiles;end.","begin EnumerateDirectories('a','*');end.","begin var s:sequence of integer:=EnumerateFiles('a');end."})compile_error(source,"E_TYPE");
+    for(const auto& source:{"EnumerateFiles(nil)","EnumerateFiles('missing',nil)"})runtime_error("begin "+std::string(source)+";end.","E_NIL");
+    for(const auto& value:{missing,file,std::string("''")})runtime_error("begin EnumerateFiles("+value+").Take(0).Count;end.","E_IO");
+    runtime_error("begin EnumerateFiles("+path+",'/rooted');end.","E_IO");
+    {
+        auto p=abc::compile("begin Write('before');EnumerateFiles("+missing+");Write('after');end.");std::istringstream in;std::ostringstream out;error([&]{abc::execute(p,in,out);},"E_IO");require(out.str()=="before","Missing directory fails eagerly before sequence consumption");
+    }
+    auto p=abc::compile("begin var s:=EnumerateFiles("+path+");end.");auto op=std::find_if(p.code.begin(),p.code.end(),[](const auto& i){return i.op==abc::Op::directory_sequence;});
+    require(op!=p.code.end(),"Directory enumeration has typed bytecode metadata");const auto type=op->type;
+    for(int kind=0;kind<4;++kind){auto bad=p;for(auto& i:bad.code)if(i.op==abc::Op::directory_sequence){if(kind==0)i.type=abc::Type::integer;if(kind==1)i.operand=4;if(kind==2)i.operand=0x100;}if(kind==3)bad.types[static_cast<unsigned>(type)-64].element=abc::Type::integer;error([&]{abc::verify(bad);},"E_BYTECODE");}
+    abc::Values values{p,10000};abc::FileContext files;auto prototype=abc::directory_sequence_create(values,files,type,abc::DirectorySequenceMethod::files,root.u16string(),std::u16string(u"*.*"),{});
+    auto first=abc::sequence_begin(values,prototype),second=abc::sequence_begin(values,prototype);std::weak_ptr<abc::DirectorySequenceState> weak=second->sequence->directory;
+    require(!abc::sequence_known_length(first,{}),"Directory enumeration does not shortcut Count");
+    require(abc::sequence_resume(values,first,0,{}) && abc::sequence_resume(values,second,0,{}),"Concurrent directory cursors start independently");
+    const auto current=abc::sequence_at(values,first,0,{});require(std::get<std::u16string>(current)==std::get<std::u16string>(abc::sequence_at(values,first,0,{})),"Directory Current does not advance the cursor");
+    second.reset();require(weak.expired(),"Cursor lease releases directory state and native handles");
+    abc::ExecutionOptions options;options.cancelled=[]{return true;};error([&]{(void)abc::sequence_resume(values,first,1,options);},"E_CANCELLED");
+    options={};options.instruction_limit=1;error([&]{(void)abc::directory_pattern_matches(u"*a*",u"abcdef",false,options);},"E_LIMIT");
+}
+
 void console_tuple_functions() {
     // PABCSystem.pas 7452..7551 builds each tuple from scalar reads, left to right.
     for(unsigned count=2;count<=4;++count)for(const auto& kind:{"Integer","Real","Char","String"})for(bool newline:{false,true})for(bool prompt:{false,true}){
@@ -7115,7 +7171,7 @@ int main() {
     array_output();
     bitwise_operations();
     console_input();
-    console_functions(); console_tuple_functions();
+    console_functions(); console_tuple_functions(); directory_sequence_library();
     console_unicode_output();
     rectangular_arrays();
     array_initializers_language();

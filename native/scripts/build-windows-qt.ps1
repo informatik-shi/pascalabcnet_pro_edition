@@ -89,6 +89,7 @@ HSet/HSetInt/HSetStr, Copy и явные преобразования: examples/
 RealRange, Random2/Random3 и случайные массивы по диапазону: examples/real-range-random.pas.
 Ленивые SeqRandom/SeqRandomInteger/SeqRandomReal: examples/random-sequences.pas.
 Групповой ввод ReadInteger/Real/Char/String2..4: examples/console-tuples.pas.
+Потоковый обход каталогов: examples/directory-sequences.pas.
 Типизированный NewSet<T>, SetOf, копирование и процедуры: examples/new-sets.pas.
 Литералы [1..4,9], EmptyCollection, ToSet и ToHashSet: examples/set-literals.pas.
 Print/Println, PrintLines(map), матрицы и Include/Exclude: examples/print-extensions.pas.

@@ -717,3 +717,12 @@ execution ConsoleInput/ConsoleOutput and budgets. Unlike a tuple literal, the
 function result retains exact field types during contextual conversion. Generator
 emits the ordinary verified tuple_literal opcode after all reads complete, so
 there is no duplicated input state machine or runtime overload resolution.
+
+Directory enumeration has a dedicated string sequence provider and verified mode
+metadata for the four PABCSystem wrappers. The descriptor captures a resolved
+execution root, original display prefix, translated pattern and search mode.
+A streaming native directory cursor owns its handles and breadth-first pending
+queue. Root open is eager, repeated traversal opens an independent cursor, and
+cursor leases close active/pending iterators on disposal or unwinding. Pattern
+matching uses bounded iterative dynamic programming over DOS wildcard tokens;
+UTF-16 current paths use existing sequence consumers and static element typing.

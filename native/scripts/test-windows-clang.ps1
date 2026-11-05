@@ -46,7 +46,13 @@ if (!$BackendOnly) {
     $regexLibrary = Join-Path $regexBuild 'abc-regex.lib'
     & $librarian "/OUT:$regexLibrary" @regexObjects
     if ($LASTEXITCODE -ne 0) { throw 'Regex C library archive failed' }
-    $core = @('big_integer','big_integer_runtime','stdlib','random','console_input','console_output','formatting','print','files','file_reader','file_writer','file_lines','file_encoding','encoding','enumeration','comparable','ini_file','compound','hash_set','new_set','cp1251','file_moves','file_operations','text_file','stdlib_text','string_arrays','school','school_text','regex','school_ip','sequences','generators','real_range','sequence_numeric','sequence_slice','sequence_concat','sequence_compare','sequence_transform','sequence_join','sequence_predicate','sequence_zip','sequence_cartesian','sequence_combinatorics','array_views','matrix_operations','array_operations','collection_operations','matrix_construction','list_operations','timing','diagnostics','compiler_diagnostics','types','pascal','constant','bytecode','vm') | ForEach-Object { Join-Path $nativeRoot "src/$_.cpp" }
+    # Keep this independent build aligned with the authoritative core target.
+    $cmake = Get-Content -LiteralPath (Join-Path $nativeRoot 'CMakeLists.txt') -Raw
+    $coreTarget = [regex]::Match($cmake, '(?ms)^add_library\(abc_core\s*\r?\n(?<sources>.*?)\)')
+    if (!$coreTarget.Success) { throw 'Core CMake target was not found' }
+    $sourceMatches = [regex]::Matches($coreTarget.Groups['sources'].Value, '(?m)^\s*src/(?<source>[a-z0-9_]+\.cpp)\s*$')
+    $core = @($sourceMatches | ForEach-Object { Join-Path $nativeRoot ('src/'+$_.Groups['source'].Value) })
+    if (!$core.Count) { throw 'Core CMake target has no C++ sources' }
     $tests = Join-Path $buildRoot 'core-tests.exe'
     & $cxx -std=c++20 -Wall -Wextra -Wpedantic -O2 -DABC_HAS_FLOAT_FROM_CHARS=1 @defines "-I$mathRoot" "-I$regexBuild" "-I$nativeRoot/include" @core (Join-Path $nativeRoot 'tests/core_tests.cpp') $library $regexLibrary -ladvapi32 -o $tests
     if ($LASTEXITCODE -ne 0) { throw 'Core C++ compilation failed' }

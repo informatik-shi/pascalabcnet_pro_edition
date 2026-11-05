@@ -5,6 +5,7 @@
 #include "real_range.hpp"
 #include "generators.hpp"
 #include "random_sequence.hpp"
+#include "directory_sequence.hpp"
 #include "array_views.hpp"
 #include "matrix_operations.hpp"
 #include "file_lines.hpp"
@@ -50,6 +51,7 @@ void sequence_dispose(const std::shared_ptr<Aggregate>& sequence) noexcept {
     if(!sequence || !sequence->sequence || !sequence->sequence->started || sequence->sequence->disposed)return;
     auto& state=*sequence->sequence;state.disposed=true;
     if(state.file_line)file_sequence_dispose(*state.file_line);
+    if(state.directory)directory_sequence_dispose(*state.directory);
     // Close actual inner cursors even if a native operation temporarily retains their state.
     // Input prototypes and numeric range descriptors remain available for a new traversal.
     const auto close=[](std::shared_ptr<Aggregate>& inner){sequence_dispose(inner);inner.reset();};
@@ -76,6 +78,7 @@ std::shared_ptr<Aggregate> sequence_begin(Values& values,const std::shared_ptr<A
     if(sequence->sequence->provider==SequenceProvider::ordinal_range)return sequence_begin(values,ordinal_range_begin(values,sequence->type,sequence->sequence->source));
     reserve_state(values);
     if(sequence->sequence->provider==SequenceProvider::file_lines)return cursor_lease(file_sequence_begin(values,sequence));
+    if(sequence->sequence->provider==SequenceProvider::directory)return cursor_lease(directory_sequence_begin(values,sequence));
     auto result=std::make_shared<Aggregate>(); result->type=sequence->type;
     result->sequence=std::make_unique<SequenceState>(*sequence->sequence);
     auto& state=*result->sequence; state.started=true;state.disposed=false; state.first=0;
@@ -144,6 +147,7 @@ bool sequence_resume(Values& values,const std::shared_ptr<Aggregate>& sequence,s
     sequence_check(sequence,location); auto& state=*sequence->sequence;
     if(state.disposed)return false;
     if(state.provider==SequenceProvider::random)return random_sequence_resume(values,sequence,index,options);
+    if(state.provider==SequenceProvider::directory)return directory_sequence_resume(values,sequence,index,options);
     if(state.provider==SequenceProvider::hash_set || state.provider==SequenceProvider::new_set)return hash_set_resume(values,sequence,index,options);
     if(state.provider==SequenceProvider::file_lines)return file_sequence_resume(values,sequence,index,options);
     if(state.provider==SequenceProvider::text_lines)return text_lines_resume(values,sequence,index);
@@ -213,7 +217,7 @@ bool sequence_resume(Values& values,const std::shared_ptr<Aggregate>& sequence,s
 std::optional<std::uint64_t> sequence_known_length(const std::shared_ptr<Aggregate>& sequence,SourceLocation location) {
     const auto& state=cursor(sequence,location);
     if(state.disposed)return std::uint64_t{0};
-    if(state.provider==SequenceProvider::random)return std::nullopt;
+    if(state.provider==SequenceProvider::random || state.provider==SequenceProvider::directory)return std::nullopt;
     if (state.provider==SequenceProvider::text_lines || state.provider==SequenceProvider::file_lines || state.provider==SequenceProvider::matrix_lines || state.provider==SequenceProvider::array_view || state.provider==SequenceProvider::combinatorics || state.provider==SequenceProvider::cartesian || state.provider==SequenceProvider::cartesian_power || state.provider==SequenceProvider::generated || state.provider==SequenceProvider::zip || state.provider==SequenceProvider::transform || state.provider==SequenceProvider::concat || state.provider==SequenceProvider::slice || state.provider==SequenceProvider::partial_sum || state.provider==SequenceProvider::big_range || (state.provider==SequenceProvider::real_range && !state.real_range->initialized)) return std::nullopt;
     return state.count;
 }
@@ -235,6 +239,7 @@ Value sequence_at(Values& values,const std::shared_ptr<Aggregate>& sequence,std:
     }
     if(state.provider==SequenceProvider::hash_set || state.provider==SequenceProvider::new_set)return values.copy(state.hash_cursor->current);
     if(state.provider==SequenceProvider::random)return values.copy(state.random->current);
+    if(state.provider==SequenceProvider::directory)return directory_sequence_current(sequence);
     if(state.provider==SequenceProvider::file_lines)return state.file_line->current;
     if(state.provider==SequenceProvider::text_lines)return state.text_line->current;
     if (state.provider==SequenceProvider::string) return std::get<std::u16string>(state.seed->value)[static_cast<std::size_t>(index)];

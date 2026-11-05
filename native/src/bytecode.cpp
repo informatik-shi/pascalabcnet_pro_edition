@@ -15,6 +15,7 @@
 #include "school_ip.hpp"
 #include "generators.hpp"
 #include "random_sequence.hpp"
+#include "directory_sequence.hpp"
 #include "array_views.hpp"
 #include "matrix_operations.hpp"
 #include "array_operations.hpp"
@@ -117,6 +118,8 @@ private:
             expression(*node.left); expression(*node.right);
             for (const auto& argument:node.arguments) expression(*argument);
             emit(Op::sequence_range,node.type,node.arguments.size(),node.location); break;
+        case hir::ExprKind::directory_sequence:
+            for(const auto& argument:node.arguments)expression(*argument);emit(Op::directory_sequence,node.type,node.local,node.location);break;
         case hir::ExprKind::random_sequence:
             for(const auto& argument:node.arguments)expression(*argument);emit(Op::random_sequence,node.type,node.local,node.location);break;
         case hir::ExprKind::sequence_partition:
@@ -809,6 +812,8 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         case Op::sequence_repeat:
             if (!compound(type) || type_info(program,type).kind!=CompoundKind::sequence || instruction.operand) invalid(instruction,"Invalid SeqFill metadata");
             break;
+        case Op::directory_sequence:
+            if(instruction.operand>static_cast<std::size_t>(DirectorySequenceMethod::all_directories) || !directory_sequence_signature(program,type,static_cast<DirectorySequenceMethod>(instruction.operand)))invalid(instruction,"Invalid directory enumeration metadata");break;
         case Op::random_sequence:
             if(instruction.operand>static_cast<std::size_t>(RandomSequenceMethod::real) || !random_sequence_signature(program,type,static_cast<RandomSequenceMethod>(instruction.operand)))invalid(instruction,"Invalid random sequence metadata");break;
         case Op::sequence_partition:
@@ -1530,6 +1535,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             const auto method=static_cast<OrdinalRangeMethod>(instruction.operand);const auto parameters=ordinal_range_parameters(program.types,instruction.type,method);
             for(auto it=parameters.rbegin();it!=parameters.rend();++it)require(*it);const auto result=ordinal_range_result(program.types,instruction.type,method);if(result!=Type::unit)stack.push_back(result);break;
         }
+        case Op::directory_sequence:require(Type::string);require(Type::string);stack.push_back(instruction.type);break;
         case Op::random_sequence: {
             const auto parameters=random_sequence_parameters(static_cast<RandomSequenceMethod>(instruction.operand));for(auto it=parameters.rbegin();it!=parameters.rend();++it)require(*it);stack.push_back(instruction.type);break;
         }

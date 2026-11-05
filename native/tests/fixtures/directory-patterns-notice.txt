@@ -1,0 +1,11 @@
+Independent expected results generated with System.IO.Enumeration.FileSystemName,
+development runtime 10.0.11; Directory's legacy compatible normalization applies.
+37 patterns x 39 names x case-sensitive/case-insensitive = 2886 cases.
+No managed code or runtime is included in the application package.
+Behavioral sources: dotnet/runtime v10.0.0, MIT:
+https://github.com/dotnet/runtime/blob/v10.0.0/src/libraries/System.Private.CoreLib/src/System/IO/Enumeration/FileSystemName.cs
+https://github.com/dotnet/runtime/blob/v10.0.0/src/libraries/System.Private.CoreLib/src/System/IO/Enumeration/FileSystemEnumerableFactory.cs
+Native matcher uses an independent bounded dynamic-programming implementation.
+
+Unix literal/escape corpus: 17 patterns x 16 names x 2 casings = 544 cases.
+Uses the source Unix reserved-character protection before Win32 translation.
