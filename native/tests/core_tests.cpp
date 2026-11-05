@@ -4193,6 +4193,39 @@ void console_unicode_output() {
     error([&]{abc::execute(abc::compile("begin ReadInteger; end."),failed,eof_output);},"E_INPUT");
 }
 
+void termination_library() {
+    const auto stopped=[](std::string_view source,std::int32_t expected,std::string_view expected_output){
+        if(trace_tests())std::cerr<<"HALT "<<source.substr(0,160)<<'\n';
+        try{std::istringstream in;std::ostringstream out;const auto code=abc::execute(abc::compile(source),in,out);
+            require(code==expected && out.str()==expected_output,"Halt returns its execution code and stops all remaining language work");
+        }catch(const std::exception& e){require(false,std::string(source)+" -> "+e.what());}
+    };
+    stopped("begin Write('before');Halt;Write('after');end.",0,"before");
+    stopped("begin PABCSystem.Halt();Write('after');end.",0,"");
+    for(const auto code:{INT32_MIN,-1,0,7,255,INT32_MAX})stopped("begin Write('before');Halt("+std::to_string(code)+");Write('after');end.",code,"before");
+    stopped("procedure Stop;begin Halt(9);Write('after stop');end;procedure Outer;begin Stop;Write('after outer');end;begin Write('before');Outer;Write('after main');end.",9,"before");
+    stopped("function Code:integer;begin Write('arg');Result:=7;end;begin Halt(Code);Write('after');end.",7,"arg");
+    stopped("procedure Stop(n:integer);begin Write(n);if n=2 then Halt(8);end;begin Arr(1,2,3).ForEach(Stop);Write('after');end.",8,"12");
+    stopped("function Map(n:integer):integer;begin Write(n);if n=2 then Halt(11);Result:=n;end;begin Seq(1,2,3).Select(Map).Count;Write('after');end.",11,"12");
+    stopped("begin var stop:Action<integer>:=Halt;stop(19);Write('after');end.",19,"");
+    stopped("begin var stop:Action0:=Halt;stop();Write('after');end.",0,"");
+    stopped("begin var stop:Action<integer>:=PABCSystem.Halt;stop(17);Write('after');end.",17,"");
+    stopped("begin Arr(4,5).ForEach(Halt);Write('after');end.",4,"");
+    stopped("procedure Halt;begin Write('local');end;begin Halt;PABCSystem.Halt(3);Write('after');end.",3,"local");
+    stopped("begin Write(#55356);Halt(6);end.",6,"�");
+    stopped("begin Write('ordinary');end.",0,"ordinary");
+    result("begin Write('next execution');end.","next execution");
+    for(const auto& source:{"begin Write('must never run');Halt(True);end.","begin Write('must never run');Halt('x');end.","begin Halt(1,2);end.","begin var stop:Action<real>:=Halt;end.","begin var stop:procedure(var n:integer):=Halt;end.","begin Halt;var n:integer:='bad';end."})compile_error(source,"E_TYPE");
+    abc::ExecutionOptions options;options.output_limit=2;error([&]{(void)run("begin Write(#55356);Halt;end.","",options);},"E_LIMIT");
+    const auto directory=std::filesystem::temp_directory_path()/("abc-native-halt-"+std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    std::filesystem::create_directory(directory);struct Cleanup{std::filesystem::path path;~Cleanup(){std::error_code ec;std::filesystem::remove_all(path,ec);}} cleanup{directory};
+    const auto file=directory/"buffered.txt";std::string literal="'";for(char c:abc::to_utf8(file.u16string())){literal+=c;if(c=='\'')literal+=c;}literal+="'";
+    stopped("begin var f:=OpenWrite("+literal+",Encoding.UTF8);f.Write('buffered');Halt(5);end.",5,"");
+    require(abc::read_text_file(abc::FileContext{},file.u16string(),{})==u"buffered","Halt unwinds native file owners and flushes buffered output");
+    stopped("function Stop(s:string):boolean;begin Halt(4);Result:=True;end;begin var f:=OpenRead("+literal+");f.Lines.Where(Stop).Count;Write('after');end.",4,"");
+    require(abc::delete_file(abc::FileContext{},file.u16string()),"Halt inside a lazy reader callback releases every file handle");
+}
+
 void system_environment_library() {
     abc::ExecutionOptions options;options.executable_name=u"D:\\native\\app.exe";options.arguments={u"first",u"",u"два слова",u"🌍"};
     result("begin Writeln(ParamCount,' ',PABCSystem.ParamCount());for var i:=1 to ParamCount do Writeln('[',ParamStr(i),']');Writeln(ParamStr(0),' ',GetEXEFileName);Writeln(PascalABCVersion);end.",
@@ -7312,7 +7345,7 @@ int main() {
     array_output();
     bitwise_operations();
     console_input();
-    console_functions(); console_tuple_functions(); directory_sequence_library(); file_name_library(); system_environment_library();
+    console_functions(); console_tuple_functions(); directory_sequence_library(); file_name_library(); system_environment_library(); termination_library();
     console_unicode_output();
     rectangular_arrays();
     array_initializers_language();

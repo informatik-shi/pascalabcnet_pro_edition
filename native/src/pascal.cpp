@@ -1376,36 +1376,46 @@ private:
             throw Error("E_TYPE",location,"Routine does not match the callable parameter and result types");
         return value;
     }
-    std::unique_ptr<hir::Expr> windows_character_function_value(const SyntaxExpr& source,Type expected=Type::invalid,const std::vector<Type>& hints={}) {
-        std::string_view unit;
+    ABC_PASCAL_NOINLINE std::unique_ptr<hir::Expr> builtin_function_value(const SyntaxExpr& source,Type expected=Type::invalid,const std::vector<Type>& hints={}) {
         if (source.kind==SyntaxExprKind::name) {
             if (lookup(source.token) || routine_names_.contains(source.token.text)) return {};
         } else if (source.kind==SyntaxExprKind::field && source.left && source.left->kind==SyntaxExprKind::name) {
-            unit=source.left->token.text;
-            if (lookup(source.left->token) || unit!="pabcsystem") return {};
+            if (lookup(source.left->token) || source.left->token.text!="pabcsystem") return {};
         } else return {};
         const auto context=callable_type(expected) ? std::optional<TypeInfo>{info(expected,source.token.location)} : std::nullopt;
         const auto catalog=stdlib::signatures();
         for (std::size_t id=0;id<catalog.size();++id) {
             const auto& signature=catalog[id];
-            if (signature.name!=source.token.text || (signature.function!=stdlib::Function::windows_character && signature.function!=stdlib::Function::windows_ordinal)) continue;
+            if (signature.name!=source.token.text) continue;
+            const bool character=signature.function==stdlib::Function::windows_character || signature.function==stdlib::Function::windows_ordinal;
+            if (!character && signature.function!=stdlib::Function::terminate_program) continue;
+            // Bare Halt remains a call unless a target or callback supplies its signature.
+            if (!character && !context && (hints.empty() || signature.parameters.empty())) continue;
             if (context) {
-                if (context->element!=signature.result || context->parameters.size()!=1 || context->parameters[0].by_reference
-                    || context->parameters[0].variadic || context->parameters[0].type!=signature.parameters[0]) return {};
-            } else if (!hints.empty() && hints.front()!=signature.parameters[0]) return {};
-            auto found=windows_character_routines_.find(id);
-            if (found==windows_character_routines_.end()) {
+                if (context->element!=signature.result || context->parameters.size()!=signature.parameters.size()) continue;
+                bool matches=true;
+                for(std::size_t n=0;n<signature.parameters.size();++n)
+                    if(context->parameters[n].by_reference || context->parameters[n].variadic || context->parameters[n].type!=signature.parameters[n])matches=false;
+                if(!matches)continue;
+            // Hints also offer optional index arguments; unary callbacks consume the prefix.
+            } else if (!hints.empty() && (hints.size()<signature.parameters.size()
+                || !std::equal(signature.parameters.begin(),signature.parameters.end(),hints.begin()))) continue;
+            auto found=builtin_routines_.find(id);
+            if (found==builtin_routines_.end()) {
                 if (module_.routines.size()>=256) throw Error("E_LIMIT",source.token.location,"Routine limit exceeded");
-                hir::RoutineBody body;body.signature.name="$windows_character_"+std::to_string(id);body.signature.result=signature.result;
+                hir::RoutineBody body;body.signature.name="$builtin_"+std::to_string(id);body.signature.result=signature.result;
                 auto local=[&](std::string name,Type type) {
                     const auto n=module_.locals.size();module_.locals.push_back({std::move(name),type,false});body.signature.locals.push_back(n);lambda_locals_.insert(n);return n;
                 };
-                const auto argument=local("$argument",signature.parameters[0]);body.signature.parameters.push_back({argument,signature.parameters[0]});
-                body.signature.result_local=local("$result",signature.result);
                 auto call=std::make_unique<hir::Expr>();call->kind=hir::ExprKind::call;call->type=signature.result;call->local=id;call->location=source.token.location;
-                auto value=std::make_unique<hir::Expr>();value->kind=hir::ExprKind::local;value->type=signature.parameters[0];value->local=argument;value->location=source.token.location;call->arguments.push_back(std::move(value));
-                body.body.kind=hir::StmtKind::return_stmt;body.body.location=source.token.location;body.body.expression=std::move(call);
-                const auto routine=module_.routines.size();module_.routines.push_back(std::move(body));found=windows_character_routines_.emplace(id,routine).first;
+                for(const auto type:signature.parameters){
+                    const auto argument=local("$argument",type);body.signature.parameters.push_back({argument,type});
+                    auto value=std::make_unique<hir::Expr>();value->kind=hir::ExprKind::local;value->type=type;value->local=argument;value->location=source.token.location;call->arguments.push_back(std::move(value));
+                }
+                if(signature.result!=Type::unit)body.signature.result_local=local("$result",signature.result);
+                body.body.kind=signature.result==Type::unit ? hir::StmtKind::call : hir::StmtKind::return_stmt;
+                body.body.location=source.token.location;body.body.expression=std::move(call);
+                const auto routine=module_.routines.size();module_.routines.push_back(std::move(body));found=builtin_routines_.emplace(id,routine).first;
             }
             return routine_value(found->second,source.token.location,expected);
         }
@@ -2820,8 +2830,8 @@ private:
                 if (!no_arguments || signature.result==Type::unit) return routine_value(id,result->location);
                 SyntaxExpr call{SyntaxExprKind::call,source.token,{},{},1,{},{}};
                 return expression(call);
-            } else if (auto windows_value=windows_character_function_value(source)) {
-                return windows_value;
+            } else if (auto builtin_value=builtin_function_value(source)) {
+                return builtin_value;
             } else if(source.token.text=="emptyset") {
                 return empty_expression(empty_type(),EmptyMethod::singleton,{},result->location);
             } else if(source.token.text=="defaultencoding") {
@@ -2964,7 +2974,7 @@ private:
             }
         }
         if (callable_type(expected) || source.kind==SyntaxExprKind::field)
-            if (auto value=windows_character_function_value(source,expected)) return value;
+            if (auto value=builtin_function_value(source,expected)) return value;
         auto result = std::make_unique<hir::Expr>();
         result->location = source.token.location;
         result->operation = source.token.text;
@@ -3999,7 +4009,7 @@ private:
             const auto& signature=module_.routines[*callback.named].signature;
             callback.signature.result=signature.result; callback.signature.parameters=signature.parameters; return callback;
         }
-        if (auto value=windows_character_function_value(source,Type::invalid,hints)) return library_callback_value(std::move(value));
+        if (auto value=builtin_function_value(source,Type::invalid,hints)) return library_callback_value(std::move(value));
         if (source.kind==SyntaxExprKind::name && !lookup(source.token))
             throw Error("E_TYPE",source.token.location,"Library callback requires a function value with known types");
         return library_callback_value(expression(source));
@@ -5573,7 +5583,7 @@ private:
     std::map<std::string,std::size_t> routine_names_;
     std::map<Type,std::map<std::string,std::size_t>> class_methods_;
     std::map<Type,std::size_t> class_constructors_;
-    std::map<std::size_t,std::size_t> windows_character_routines_;
+    std::map<std::size_t,std::size_t> builtin_routines_;
     struct ClassProperty { Type type;std::optional<std::size_t> getter,setter; };
     std::map<Type,std::map<std::string,ClassProperty>> class_properties_;
     Type current_owner_=Type::invalid;

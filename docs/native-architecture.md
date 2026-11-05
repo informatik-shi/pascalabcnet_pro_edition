@@ -743,3 +743,12 @@ than being normalized away. The four environment functions and string/integer di
 queries use ordinary statically verified builtin signatures. Disk services query
 GetDiskFreeSpaceEx or statfs, use execution-local relative paths, retain source -1
 sentinels and numbered-disk mapping, and never change the host working directory.
+
+Halt uses ordinary verified unit-result builtin signatures and an internal
+compact ProgramTermination control value, caught only at the outer execution
+boundary. It propagates through native sequence consumers and language callbacks.
+execute returns int32 instead of void; normal completion and zero-argument Halt
+return zero. Program-owned frames, closures, sequences and files unwind through
+native RAII; pending console UTF-16 is finalized before returning. No process-global
+exit state is shared between executions. This deliberately replaces source
+Process.Kill/Environment.Exit with execution-local termination for embedding.

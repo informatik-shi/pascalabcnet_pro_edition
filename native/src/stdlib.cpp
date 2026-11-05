@@ -3,6 +3,7 @@
 #include "files.hpp"
 #include "file_names.hpp"
 #include "environment.hpp"
+#include "termination.hpp"
 #include "disk_space.hpp"
 #include "text_file.hpp"
 #include "file_operations.hpp"
@@ -34,6 +35,8 @@ std::span<const Signature> signatures() {
         add("milliseconds",{},Type::integer,Function::milliseconds);
         add("millisecondsdelta",{},Type::integer,Function::milliseconds_delta);
         add("sleep",{Type::integer},Type::unit,Function::sleep);
+        add("halt",{},Type::unit,Function::terminate_program);
+        add("halt",{Type::integer},Type::unit,Function::terminate_program);
         add("assert",{Type::boolean},Type::unit,Function::assertion);
         add("assert",{Type::boolean,Type::string},Type::unit,Function::assertion);
         add("assert",{Type::boolean,Type::string,Type::integer},Type::unit,Function::assertion);
@@ -372,6 +375,7 @@ Value invoke(std::size_t id, std::span<const Value> arguments, SourceLocation lo
     auto& files=context.files; auto& random=context.random;
     const auto& signature = signatures()[id]; // Verified before execution.
     const auto function = signature.function;
+    if(function==Function::terminate_program)throw ProgramTermination{arguments.empty() ? std::int32_t{0} : std::get<std::int32_t>(arguments[0])};
     if(function==Function::command_line_count)return context.environment.count(location);
     if(function==Function::command_line_parameter)return context.environment.parameter(std::get<std::int32_t>(arguments[0]),location);
     if(function==Function::executable_name)return context.environment.executable(location);

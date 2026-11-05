@@ -509,7 +509,8 @@ struct ExecutionOptions {
     std::u16string executable_name;
 };
 
-void execute(const Program& program, std::istream& input, std::ostream& output,
+// Returns the native program exit code; Halt stops this execution, not the host.
+std::int32_t execute(const Program& program, std::istream& input, std::ostream& output,
              const ExecutionOptions& options = {});
 
 } // namespace abc

@@ -28,6 +28,7 @@
 #include "list_operations.hpp"
 #include "timing.hpp"
 #include "environment.hpp"
+#include "termination.hpp"
 #include "encoding.hpp"
 #include "enumeration.hpp"
 #include "comparable.hpp"
@@ -168,7 +169,7 @@ void append_collection_text(const Program& program,std::u16string& text, const V
 
 } // namespace
 
-static void execute_impl(const Program& program, std::istream& input, std::ostream& output, const ExecutionOptions& options, Value* constant_result) {
+static std::int32_t execute_impl(const Program& program, std::istream& input, std::ostream& output, const ExecutionOptions& options, Value* constant_result) {
     try { verify(program); }
     catch (const Error& error) {
         throw Error(error.code, error.location, error.what(), "Некорректный байт-код: выполнение невозможно");
@@ -1503,13 +1504,16 @@ static void execute_impl(const Program& program, std::istream& input, std::ostre
         }
     }
     };
-    run_to(0);
+    std::int32_t exit_code=0;
+    try { run_to(0); }
+    catch(const ProgramTermination& request) { exit_code=request.code; }
     console_output.finish();
     if (constant_result) *constant_result=globals[0]->value;
+    return exit_code;
 }
 
-void execute(const Program& program, std::istream& input, std::ostream& output, const ExecutionOptions& options) {
-    execute_impl(program,input,output,options,nullptr);
+std::int32_t execute(const Program& program, std::istream& input, std::ostream& output, const ExecutionOptions& options) {
+    return execute_impl(program,input,output,options,nullptr);
 }
 
 Value execute_scalar_constant(const Program& program) {

@@ -1,0 +1,17 @@
+foreach(code IN ITEMS 0 7 255)
+    if(code EQUAL 0)
+        set(payload)
+    else()
+        set(payload -- "${code}")
+    endif()
+    execute_process(COMMAND "${ABC_RUNNER}" run "${ABC_SOURCE}" ${payload}
+        RESULT_VARIABLE status OUTPUT_VARIABLE actual ERROR_VARIABLE diagnostic ENCODING UTF-8 TIMEOUT 10)
+    if(NOT status EQUAL code OR NOT actual STREQUAL "before" OR NOT diagnostic STREQUAL "")
+        message(FATAL_ERROR "Halt differs: expected ${code}, actual ${status}: ${actual}: ${diagnostic}")
+    endif()
+endforeach()
+execute_process(COMMAND "${ABC_RUNNER}" check "${ABC_SOURCE}"
+    RESULT_VARIABLE status OUTPUT_VARIABLE actual ERROR_VARIABLE diagnostic ENCODING UTF-8 TIMEOUT 10)
+if(NOT status EQUAL 0 OR NOT diagnostic STREQUAL "")
+    message(FATAL_ERROR "Checking Halt must not execute it: ${status}: ${diagnostic}")
+endif()

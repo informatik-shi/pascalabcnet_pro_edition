@@ -59,7 +59,7 @@ int cli(const std::vector<std::string>& arguments,const std::vector<std::u16stri
         }
         if (stream.bad()) return command_error(filename,"E_IO","Cannot read source file","Не удалось прочитать исходный файл");
         const auto program = abc::compile(source);
-        if (arguments[1] == "run") abc::execute(program, std::cin, std::cout, options);
+        if (arguments[1] == "run") return abc::execute(program, std::cin, std::cout, options);
         else std::cout << "OK: " << filename << '\n';
         return 0;
     } catch (const abc::Error& error) {

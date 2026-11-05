@@ -23,7 +23,7 @@ enum class Function {
     text_assign, text_reset, text_rewrite, text_append, text_close, text_flush,
     text_eof, text_eoln, text_seek_eof, text_seek_eoln, text_open_read, text_open_write, text_open_append,
     text_read, text_read_line, text_read_word, text_skip_line, text_name, text_full_name, text_read_end, text_erase, text_rename,
-    windows_character, windows_ordinal, regex_is_match, regex_match_value, assertion, milliseconds, milliseconds_delta, sleep, extract_file_name, extract_file_ext, extract_file_path, extract_file_dir, extract_file_drive, expand_file_name, command_line_count, command_line_parameter, executable_name, pascal_version, disk_free, disk_size
+    windows_character, windows_ordinal, regex_is_match, regex_match_value, assertion, milliseconds, milliseconds_delta, sleep, extract_file_name, extract_file_ext, extract_file_path, extract_file_dir, extract_file_drive, expand_file_name, command_line_count, command_line_parameter, executable_name, pascal_version, disk_free, disk_size, terminate_program
 };
 struct Signature {
     std::string_view name;

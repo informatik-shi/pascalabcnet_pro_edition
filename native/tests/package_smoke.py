@@ -236,6 +236,7 @@ def main():
                 ("directory-sequences.pas", "2 3 1 1\n2 2\n1\nTrue\n"),
                 ("file-names.pas", "данные.tar.gz .gz\nTrue\nTrue\nTrue\nTrue\n[.][]\n"),
                 ("system-services.pas", "3.2.0.1364\n0\nTrue\nTrue\nTrue\n-1 -1\n"),
+                ("halt.pas", "Завершение программы\n"),
                 ("real-range-random.pas", "1.5..3.5 2 True\n646184960\nTrue\nTrue\nTrue\n1..3 'a'..'c'\n"),
                 ("ordinal-ranges.pas", "1..5 5 True\n[1,2,3,4,5] [1,3,5] [5,4,3,2,1]\n[9,1,2]\n'a'..'c' {a,b,c}\n[1,2,3,4,5] 9..10\nTrue 2 [2147483647,-2147483648] {}\n"),
                 ("hash-set-factories.pas", "{1,3,4} {1,5,3,4}\n0 {one,two}\n{2,1}\n{3,4} {3,4}\n1 3\n{3,4,9}\nTrue\n5\n"),
@@ -544,6 +545,17 @@ def main():
                         or "EN:" not in attempted.stderr or "RU:" not in attempted.stderr
                         or f"{comparison_source}:{line}:" not in attempted.stderr):
                     raise RuntimeError(f"{name} Comparison diagnostic mismatch: {attempted.stdout!r}, {attempted.stderr!r}")
+            halt_source = folder / "Завершение программы.pas"
+            for source, code, expected in [
+                ("begin Write('before');Halt;Write('after');end.", 0, "before"),
+                ("procedure Stop(n:integer);begin Write(n);if n=2 then Halt(7);end;begin Arr(1,2,3).ForEach(Stop);Write('after');end.", 7, "12"),
+                ("begin var stop:Action<integer>:=Halt;stop(19);Write('after');end.", 19, ""),
+            ]:
+                halt_source.write_text(source, encoding="utf-8")
+                attempted = subprocess.run([runner, "run", str(halt_source)], text=True, encoding="utf-8",
+                                           capture_output=True, cwd=folder, env=env, timeout=10)
+                if attempted.returncode != code or attempted.stdout != expected or attempted.stderr:
+                    raise RuntimeError(f"{name} Halt mismatch: {attempted.returncode}, {attempted.stdout!r}, {attempted.stderr!r}")
             argument_source = folder / "Параметры программы.pas"
             argument_source.write_text("begin Writeln(ParamCount);for var i:=1 to ParamCount do Writeln('[',ParamStr(i),']');Writeln(ParamStr(0)=GetEXEFileName);end.", encoding="utf-8")
             for payload, expected in [
@@ -557,6 +569,8 @@ def main():
                     raise RuntimeError(f"{name} Program arguments mismatch: {attempted.stdout!r}, {attempted.stderr!r}")
             set_source = folder / "Хеш-множества.pas"
             for source, expected, code, line in [
+                ("begin\nWriteln('must never run');Halt(True);end.", "", "E_TYPE", 2),
+                ("begin\nHalt;var n:integer:='bad';end.", "", "E_TYPE", 2),
                 ("begin\nWriteln('must never run');ParamStr(True);end.", "", "E_TYPE", 2),
                 ("begin\nWrite('before');ParamStr(1);end.", "before", "E_BOUNDS", 2),
                 ("begin\nWriteln('must never run');var n:integer:=DiskSize('C:');end.", "", "E_TYPE", 2),
@@ -1542,6 +1556,7 @@ def main():
             results[-1]["native_streaming_directory_enumeration_and_bilingual_errors"] = "passed"
             results[-1]["native_file_name_helpers_and_bilingual_errors"] = "passed"
             results[-1]["native_program_environment_disk_services_and_bilingual_errors"] = "passed"
+            results[-1]["native_halt_exit_codes_callbacks_and_bilingual_type_errors"] = "passed"
             results[-1]["native_set_literals_empty_ranges_and_bilingual_errors"] = "passed"
             results[-1]["typed_print_extensions_streaming_and_set_mutation"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))
