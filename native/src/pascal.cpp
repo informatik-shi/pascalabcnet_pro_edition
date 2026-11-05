@@ -12,6 +12,7 @@
 #include "compound.hpp"
 #include "hash_set.hpp"
 #include "ordinal_range.hpp"
+#include "real_interval.hpp"
 #include "new_set.hpp"
 #include "print.hpp"
 #include "integer_values.hpp"
@@ -1580,6 +1581,11 @@ private:
         TypeInfo type{element==Type::integer ? "intrange" : "charrange",CompoundKind::record,element,{{"_l",element,false},{"_h",element,false}},sequence};
         type.native_record=NativeRecord::ordinal_range;module_.types.push_back(std::move(type));return static_cast<Type>(63+module_.types.size());
     }
+    Type real_interval_record(){
+        for(std::size_t i=0;i<module_.types.size();++i)if(real_interval_type(module_.types[i]))return static_cast<Type>(64+i);
+        if(module_.types.size()>=1024)throw Error("E_LIMIT",{},"Type limit exceeded");
+        TypeInfo type{"realrange",CompoundKind::record,Type::real,{{"_l",Type::real,false},{"_h",Type::real,false}}};type.native_record=NativeRecord::real_interval;module_.types.push_back(std::move(type));return static_cast<Type>(63+module_.types.size());
+    }
     Type new_set_type(Type element){
         for(std::size_t i=0;i<module_.types.size();++i)if(module_.types[i].kind==CompoundKind::new_set && module_.types[i].element==element)return static_cast<Type>(64+i);
         const auto hash=sequence_type(CompoundKind::hash_set,element);(void)sequence_type(CompoundKind::array,element);
@@ -1754,6 +1760,7 @@ private:
         }
         if (syntax.kind=="sequence" && syntax.element) return sequence_type(CompoundKind::sequence,resolve_type(*syntax.element));
         if(syntax.kind=="intrange" || syntax.kind=="charrange")return ordinal_range_record(syntax.kind=="intrange" ? Type::integer : Type::character);
+        if(syntax.kind=="realrange")return real_interval_record();
         if(syntax.kind=="newset" && syntax.element)return new_set_type(resolve_type(*syntax.element));
         if (syntax.kind == "array" || ((syntax.kind == "list" || syntax.kind=="hashset") && syntax.element))
             return sequence_type(syntax.kind == "array" ? CompoundKind::array : syntax.kind=="hashset" ? CompoundKind::hash_set : CompoundKind::list,resolve_type(*syntax.element),syntax.rank);
@@ -2132,6 +2139,10 @@ private:
                     result->kind=hir::ExprKind::default_value; result->type=type; result->operation="new"; break;
                 }
                 if (!compound(type)) throw Error("E_TYPE",result->location,"new requires an array length, record or collection type");
+                if(real_interval_type(info(type,result->location))){
+                    if(source.arguments.empty()){result->kind=hir::ExprKind::default_value;result->type=type;return result;}
+                    std::vector<std::unique_ptr<hir::Expr>> args;for(const auto& argument:source.arguments)args.push_back(expression(*argument,Type::real));return real_interval_expression(type,RealIntervalMethod::construct,std::move(args),result->location);
+                }
                 if(ordinal_range_type(info(type,result->location))){
                     if(source.arguments.empty()){result->kind=hir::ExprKind::default_value;result->type=type;return result;}
                     std::vector<std::unique_ptr<hir::Expr>> args;const auto element=info(type,result->location).element;for(const auto& argument:source.arguments)args.push_back(expression(*argument,element));
@@ -2318,6 +2329,7 @@ private:
 
             if (compound(receiver) && info(receiver,result->location).kind==CompoundKind::object_class) return class_member(std::move(result),source,expected);
             if(compound(receiver) && ordinal_range_type(info(receiver,result->location))){if(auto range=bind_ordinal_range_member(source,*result,receiver))return range;}
+            if(compound(receiver) && real_interval_type(info(receiver,result->location))){if(auto range=bind_real_interval_member(source,*result,receiver))return range;}
             if(receiver==Type::string && source.token.text=="contains"){
                 if(source.arguments.size()!=1)throw Error("E_TYPE",result->location,"String.Contains requires one substring");
                 return compound_expression(Type::string,CompoundMethod::string_contains,std::move(result->left),expression(*source.arguments[0],Type::string),result->location);
@@ -2696,6 +2708,7 @@ private:
                 break;
             }
             if(ordinal_range_type(type))throw Error("E_UNSUPPORTED",result->location,"Ordinal range member is not ported yet");
+            if(real_interval_type(type))throw Error("E_UNSUPPORTED",result->location,"RealRange member is not ported yet");
             if(type.kind==CompoundKind::hash_set)throw Error("E_UNSUPPORTED",result->location,"HashSet member is not ported yet");
             if (type.kind != CompoundKind::record && type.kind!=CompoundKind::tuple) {
                 if ((source.token.text == "length" && type.kind == CompoundKind::array) || (source.token.text == "count" && type.kind == CompoundKind::list)) {
@@ -2761,7 +2774,7 @@ private:
                 result->kind=hir::ExprKind::local;result->type=Type::boolean;result->local=print_matrix_format();
             } else if (source.token.text=="printdelimdefault") {
                 result->kind=hir::ExprKind::local; result->type=Type::string; result->local=print_delimiter();
-            } else if (source.token.text=="print" || source.token.text=="println" || source.token.text=="hset" || source.token.text=="hsetint" || source.token.text=="hsetstr") {
+            } else if (source.token.text=="print" || source.token.text=="println" || source.token.text=="hset" || source.token.text=="hsetint" || source.token.text=="hsetstr" || source.token.text=="random2" || source.token.text=="random3") {
                 SyntaxExpr call{SyntaxExprKind::call,source.token,{},{},1,{},{}};
                 return expression(call);
             } else if (collections_imported_ && (source.token.text == "min_cap" || source.token.text == "inc_cap_factor")) {
@@ -3040,6 +3053,9 @@ private:
             auto right = result->right->type;
             const auto& op = result->operation;
             if(op==".."){
+                if(left==Type::real || right==Type::real || ((left==Type::int64 || right==Type::int64) && can_widen(left,Type::real) && can_widen(right,Type::real))){
+                    std::vector<std::unique_ptr<hir::Expr>> args;args.push_back(std::move(result->left));args.push_back(std::move(result->right));return real_interval_expression(real_interval_record(),RealIntervalMethod::construct,std::move(args),result->location);
+                }
                 const auto element=left==Type::character && right==Type::character ? Type::character : Type::integer;
                 std::vector<std::unique_ptr<hir::Expr>> args;args.push_back(std::move(result->left));args.push_back(std::move(result->right));
                 return ordinal_range_expression(ordinal_range_record(element),OrdinalRangeMethod::construct,std::move(args),result->location);
@@ -3048,7 +3064,13 @@ private:
                 std::vector<std::unique_ptr<hir::Expr>> args;args.push_back(std::move(result->left));args.push_back(std::move(result->right));
                 return ordinal_range_expression(left,op=="=" ? OrdinalRangeMethod::equal : OrdinalRangeMethod::not_equal,std::move(args),result->location);
             }
+            if((op=="=" || op=="<>") && left==right && compound(left) && real_interval_type(info(left,result->location))){
+                std::vector<std::unique_ptr<hir::Expr>> args;args.push_back(std::move(result->left));args.push_back(std::move(result->right));return real_interval_expression(left,op=="=" ? RealIntervalMethod::equal : RealIntervalMethod::not_equal,std::move(args),result->location);
+            }
             if(op=="in"){
+                if(compound(right) && real_interval_type(info(right,result->location))){
+                    std::vector<std::unique_ptr<hir::Expr>> args;args.push_back(std::move(result->left));args.push_back(std::move(result->right));return real_interval_expression(right,RealIntervalMethod::membership,std::move(args),result->location);
+                }
                 if(compound(right) && ordinal_range_type(info(right,result->location))){
                     const bool real=info(right,result->location).element==Type::integer && !can_widen(left,Type::integer);
                     const auto method=info(right,result->location).element==Type::integer && left==Type::longword ? OrdinalRangeMethod::membership_longword : info(right,result->location).element==Type::integer && left==Type::uint64 ? OrdinalRangeMethod::membership_uint64 : real ? OrdinalRangeMethod::membership_real : OrdinalRangeMethod::membership;
@@ -3325,6 +3347,17 @@ private:
         auto result=std::make_unique<hir::Expr>();result->kind=hir::ExprKind::ordinal_range_call;result->type=ordinal_range_result(module_.types,owner,method);result->location=location;result->operation_type=owner;result->local=static_cast<std::size_t>(method);
         for(std::size_t i=0;i<args.size();++i)result->arguments.push_back(convert(std::move(args[i]),parameters[i]));return result;
     }
+    std::unique_ptr<hir::Expr> real_interval_expression(Type owner,RealIntervalMethod method,std::vector<std::unique_ptr<hir::Expr>> args,SourceLocation location){
+        const auto parameters=real_interval_parameters(owner,method);if(args.size()!=parameters.size())throw Error("E_TYPE",location,"Wrong RealRange argument count");
+        auto result=std::make_unique<hir::Expr>();result->kind=hir::ExprKind::real_interval_call;result->type=real_interval_result(owner,method);result->operation_type=owner;result->local=static_cast<std::size_t>(method);result->location=location;
+        for(std::size_t i=0;i<args.size();++i)result->arguments.push_back(convert(std::move(args[i]),parameters[i]));return result;
+    }
+    ABC_PASCAL_NOINLINE std::unique_ptr<hir::Expr> bind_real_interval_member(const SyntaxExpr& source,hir::Expr& result,Type owner){
+        static const std::map<std::string,RealIntervalMethod> methods{{"low",RealIntervalMethod::low},{"high",RealIntervalMethod::high},{"size",RealIntervalMethod::size},{"isempty",RealIntervalMethod::is_empty},{"equals",RealIntervalMethod::equal},{"tostring",RealIntervalMethod::to_string},{"gethashcode",RealIntervalMethod::hash_code}};
+        const auto found=methods.find(source.token.text);if(found==methods.end())return {};const auto method=found->second;
+        if((method==RealIntervalMethod::low || method==RealIntervalMethod::high || method==RealIntervalMethod::size) && source.kind==SyntaxExprKind::member_call)throw Error("E_TYPE",result.location,"RealRange property is not callable");
+        std::vector<std::unique_ptr<hir::Expr>> args;args.push_back(std::move(result.left));for(const auto& argument:source.arguments)args.push_back(expression(*argument,owner));return real_interval_expression(owner,method,std::move(args),result.location);
+    }
     ABC_PASCAL_NOINLINE std::unique_ptr<hir::Expr> bind_ordinal_range_member(const SyntaxExpr& source,hir::Expr& result,Type owner){
         static const std::map<std::string,OrdinalRangeMethod> methods{{"low",OrdinalRangeMethod::low},{"high",OrdinalRangeMethod::high},{"count",OrdinalRangeMethod::count},{"isempty",OrdinalRangeMethod::is_empty},{"contains",OrdinalRangeMethod::contains},{"equals",OrdinalRangeMethod::equal},{"tostring",OrdinalRangeMethod::to_string},{"gethashcode",OrdinalRangeMethod::hash_code},{"copyto",OrdinalRangeMethod::copy_to},{"toarray",OrdinalRangeMethod::to_array},{"step",OrdinalRangeMethod::step},{"reverse",OrdinalRangeMethod::reverse}};
         const auto found=methods.find(source.token.text);if(found==methods.end())return {};
@@ -3339,6 +3372,9 @@ private:
         return ordinal_range_expression(owner,method,std::move(args),result.location);
     }
     bool bind_ordinal_range_factory(hir::Expr& result,std::string_view name,std::string_view unit={}){
+        if(name=="internalrange" && (unit.empty() || unit=="pabcsystem")){
+            if(result.arguments.size()!=2)throw Error("E_TYPE",result.location,"InternalRange requires two bounds");auto range=std::make_unique<hir::Expr>();range->kind=hir::ExprKind::binary;range->operation="..";range->location=result.location;range->left=std::move(result.arguments[0]);range->right=std::move(result.arguments[1]);result=std::move(*bind_binary(std::move(range)));return true;
+        }
         if(name!="arr" || (!unit.empty() && unit!="pabcsystem") || result.arguments.size()!=1 || !compound(result.arguments[0]->type) || !ordinal_range_type(info(result.arguments[0]->type,result.location)))return false;
         const auto owner=result.arguments[0]->type;result=std::move(*ordinal_range_expression(owner,OrdinalRangeMethod::to_array,std::move(result.arguments),result.location));return true;
     }
@@ -4887,12 +4923,56 @@ private:
         result.type=mutation_result(static_cast<SequenceMutation>(result.local)) ? receiver : Type::unit;
         return true;
     }
+    std::unique_ptr<hir::Expr> cached_read(std::size_t slot,SourceLocation location){
+        auto value=std::make_unique<hir::Expr>();value->kind=hir::ExprKind::local;value->type=module_.locals[slot].type;value->local=slot;value->location=location;return value;
+    }
+    std::unique_ptr<hir::Expr> cache_argument(std::unique_ptr<hir::Expr> value,std::vector<std::size_t>* slots=nullptr){
+        const auto slot=module_.locals.size();module_.locals.push_back({"$argument_"+std::to_string(slot),value->type,!in_routine_});if(slots)slots->push_back(slot);
+        auto cache=std::make_unique<hir::Expr>();cache->kind=hir::ExprKind::cache_value;cache->type=value->type;cache->location=value->location;cache->local=slot;cache->left=std::move(value);return cache;
+    }
+    std::vector<std::unique_ptr<hir::Expr>> range_bound_arguments(std::unique_ptr<hir::Expr> range){
+        const auto owner=range->type;const auto location=range->location;auto cached=cache_argument(std::move(range));const auto slot=cached->local;
+        std::vector<std::unique_ptr<hir::Expr>> low,high;low.push_back(std::move(cached));high.push_back(cached_read(slot,location));
+        std::vector<std::unique_ptr<hir::Expr>> result;
+        if(real_interval_type(info(owner,location))){result.push_back(real_interval_expression(owner,RealIntervalMethod::low,std::move(low),location));result.push_back(real_interval_expression(owner,RealIntervalMethod::high,std::move(high),location));}
+        else{result.push_back(ordinal_range_expression(owner,OrdinalRangeMethod::low,std::move(low),location));result.push_back(ordinal_range_expression(owner,OrdinalRangeMethod::high,std::move(high),location));}
+        return result;
+    }
+    ABC_PASCAL_NOINLINE bool bind_range_random(hir::Expr& result,std::string_view name,std::string_view unit={}){
+        if((name!="random" && name!="random2" && name!="random3") || (!unit.empty() && unit!="pabcsystem"))return false;
+        const bool range=result.arguments.size()==1 && compound(result.arguments[0]->type) && (ordinal_range_type(info(result.arguments[0]->type,result.location)) || real_interval_type(info(result.arguments[0]->type,result.location)));
+        if(name=="random" && !range)return false;
+        if(range)result.arguments=range_bound_arguments(std::move(result.arguments[0]));
+        auto first=std::make_unique<hir::Expr>();first->kind=hir::ExprKind::call;first->location=result.location;first->arguments=std::move(result.arguments);result.arguments.clear();bind_builtin(*first,"random","pabcsystem");
+        if(name=="random"){result=std::move(*first);return true;}
+        const auto count=name=="random2" ? 2U : 3U;const auto element=first->type;const auto id=first->local;std::vector<std::size_t> slots;
+        for(auto& argument:first->arguments)argument=cache_argument(std::move(argument),&slots);
+        result.kind=hir::ExprKind::tuple_literal;result.type=tuple_type(std::vector<Type>(count,element),result.location);result.arguments.push_back(std::move(first));
+        for(unsigned i=1;i<count;++i){auto draw=std::make_unique<hir::Expr>();draw->kind=hir::ExprKind::call;draw->type=element;draw->local=id;draw->location=result.location;for(const auto slot:slots)draw->arguments.push_back(cached_read(slot,result.location));result.arguments.push_back(std::move(draw));}
+        return true;
+    }
+    ABC_PASCAL_NOINLINE void expand_random_range(hir::Expr& result,std::string_view name){
+        const bool integer=name=="arrrandominteger" || name=="matrrandominteger",real=name=="arrrandomreal" || name=="matrrandomreal";
+        if(!integer && !real)return;const bool matrix=name=="matrrandominteger" || name=="matrrandomreal";const auto rank=matrix ? 2U : 1U;const auto count=result.arguments.size();
+        if(count<rank+1 || count>rank+2 || (integer && count!=rank+1) || (real && !matrix && count!=rank+2))return;
+        const auto owner=result.arguments[rank]->type;if(!compound(owner))return;const auto type=info(owner,result.location);
+        if(integer ? !ordinal_range_type(type) || type.element!=Type::integer : !real_interval_type(type))return;
+        std::vector<std::unique_ptr<hir::Expr>> expanded;for(unsigned i=0;i<rank;++i)expanded.push_back(std::move(result.arguments[i]));
+        auto bounds=range_bound_arguments(std::move(result.arguments[rank]));for(auto& bound:bounds)expanded.push_back(std::move(bound));
+        if(count==rank+2){
+            auto digits=convert(std::move(result.arguments.back()),Type::integer);
+            if(matrix){auto ignored=std::make_unique<hir::Expr>();ignored->kind=hir::ExprKind::evaluate_then;ignored->type=Type::integer;ignored->location=result.location;ignored->left=std::move(digits);ignored->right=std::make_unique<hir::Expr>();ignored->right->kind=hir::ExprKind::literal;ignored->right->type=Type::integer;ignored->right->location=result.location;ignored->right->value=std::int32_t{2};digits=std::move(ignored);}
+            expanded.push_back(std::move(digits));
+        }
+        result.arguments=std::move(expanded);
+    }
     bool bind_random_array(hir::Expr& result, std::string_view name, std::string_view unit = {}) {
         const bool matrix_factory=name=="createrandomintegermatrix" || name=="createrandomrealmatrix" || name=="matrrandom" || name=="matrrandominteger" || name=="matrrandomreal";
         const bool arrays=name=="fillbyrandom" || name=="createrandomintegerarray" || name=="createrandomrealarray" || name=="createrandomintegermatrix" || name=="createrandomrealmatrix";
         const bool system=name=="arrrandom" || name=="arrrandominteger" || name=="arrrandomreal" || name=="fillrandom" || name=="matrrandom" || name=="matrrandominteger" || name=="matrrandomreal";
         if ((!arrays && !system) || (!unit.empty() && unit!=(arrays ? "arrays" : "pabcsystem"))
             || (arrays && unit.empty() && !imported_units_.contains("arrays"))) return false;
+        if(system)expand_random_range(result,name);
         auto args=std::move(result.arguments); result.arguments.clear(); const auto count=args.size();
         const bool fill=name=="fillbyrandom" || name=="fillrandom";
         const bool rounded=name=="arrrandomreal" || name=="matrrandomreal";
@@ -4935,6 +5015,7 @@ private:
         return true;
     }
     void bind_builtin(hir::Expr& result, std::string_view name, std::string_view unit = {}) {
+        if(bind_range_random(result,name,unit))return;
         if(bind_comparable(result,name,unit))return;
         if(bind_enumeration(result,name,unit))return;
         if(bind_file_lines(result,name,unit))return;

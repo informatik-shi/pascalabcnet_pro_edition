@@ -481,3 +481,7 @@
     {"Wrong ordinal range argument count","Неверное число аргументов диапазона"},
     {"Ordinal range property is not callable","Свойство диапазона нельзя вызывать как функцию"},
     {"Ordinal range member is not ported yet","Этот член диапазона пока не перенесён"},
+    {"Wrong RealRange argument count","Неверное число аргументов RealRange"},
+    {"RealRange property is not callable","Свойство RealRange нельзя вызывать как функцию"},
+    {"RealRange member is not ported yet","Этот член RealRange пока не перенесён"},
+    {"InternalRange requires two bounds","Для InternalRange требуются две границы"},

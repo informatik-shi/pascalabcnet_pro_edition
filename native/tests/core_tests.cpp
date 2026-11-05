@@ -18,6 +18,7 @@
 #include "../src/compound.hpp"
 #include "../src/hash_set.hpp"
 #include "../src/ordinal_range.hpp"
+#include "../src/real_interval.hpp"
 #include "../src/new_set.hpp"
 #include "../src/print.hpp"
 #include "../src/constant.hpp"
@@ -4639,13 +4640,44 @@ void ordinal_ranges_library() {
     for(const auto source:{"begin var r:=1..3;r.CopyTo(Arr(0),-1);end.","begin var r:=new IntRange(5,1);r.CopyTo(new integer[0],(not MaxInt));end."})runtime_error(source,"E_BOUNDS");
     runtime_error("begin var r:=3..1;r.CopyTo(nil,0);end.","E_NIL");
     runtime_error("begin var r:=1..3;r.Step(0).Count;end.","E_RANGE");
-    for(const auto source:{"begin var r:=new IntRange(1);end.","begin var r:=new CharRange(1,2);end.","begin var r:=1..3;r.Low:=9;end.","begin var r:=1..3;Writeln(r.Count());end.","begin var r:=1.5..3.5;end.","begin var r:CharRange:=1..3;end.","begin var r:='a'..'z';Writeln(r.Contains(1.5));end."})compile_error(source,"E_TYPE");
+    for(const auto source:{"begin var r:=new IntRange(1);end.","begin var r:=new CharRange(1,2);end.","begin var r:=1..3;r.Low:=9;end.","begin var r:=1..3;Writeln(r.Count());end.","begin var r:CharRange:=1..3;end.","begin var r:='a'..'z';Writeln(r.Contains(1.5));end."})compile_error(source,"E_TYPE");
     compile_error("begin var r:=1..3;Writeln(r._l);end.","E_UNSUPPORTED");
     {
         auto p=abc::compile("begin var r:=1..3;Writeln(r.Count);end.");
         for(unsigned mode=0;mode<3;++mode){auto bad=p;for(auto& op:bad.code)if(op.op==abc::Op::ordinal_range_call){if(mode==0)op.operand=255;if(mode==1)op.type=abc::Type::integer;if(mode==2)op.operand|=std::size_t{1}<<32U;}error([&]{abc::verify(bad);},"E_BYTECODE");}
         for(unsigned mode=0;mode<3;++mode){auto bad=p;for(auto& t:bad.types)if(abc::ordinal_range_type(t)){if(mode==0)t.fields[0].name="low";if(mode==1)t.element=abc::Type::real;if(mode==2)t.key=abc::Type::integer;}error([&]{abc::verify(bad);},"E_BYTECODE");}
         abc::ExecutionOptions options;options.allocation_limit=10;error([&]{(void)run("begin var r:=1..100;Writeln(r.ToArray);end.","",options);},"E_LIMIT");
+    }
+}
+
+void real_intervals_and_range_random() {
+    result("begin var r:RealRange:=1.5..3.5;Writeln(r.Low,' ',r.High,' ',r.Size,' ',r.IsEmpty,' ',r);Writeln(2 in r,' ',3.6 not in r,' ',r.Equals(new RealRange(1.5,3.5)),' ',r=1.5..3.5);var c:=r;r:=9.0..10.0;Writeln(c,' ',r,' ',c<>r);Writeln(c.GetHashCode);end.","1.5 3.5 2 False 1.5..3.5\nTrue True True True\n1.5..3.5 9..10 True\n646184960\n");
+    result("type R=RealRange;begin var z:=new R;var e:=new RealRange(5,1);Writeln(z,' ',z.Size,' ',z.IsEmpty,' ',e,' ',e.Size,' ',e.IsEmpty);Writeln((new RealRange(-0.0,0.0)).GetHashCode,' ',(new RealRange(-0.0,0.0))=z);var h:=HSet(z,z,e);Writeln(h.Count,' ',h.Contains(new RealRange(0,0)));Writeln(Lst(z,z).Contains(new RealRange(0,0)));end.","0..0 0 False 5..1 0 True\n0 True\n2 True\nTrue\n");
+    result("begin Writeln(InternalRange(1,3),' ',InternalRange('a','c'),' ',PABCSystem.InternalRange(1.5,3));var r:=int64(2147483648)..int64(2147483650);Writeln(r.Size,' ',2147483649.0 in r);Writeln((new RealRange(MaxReal,-MaxReal)).Size);end.","1..3 'a'..'c' 1.5..3\n2 True\n0\n");
+    result("var trace:string;function X:real;begin trace+='X';Result:=2.5;end;function R:RealRange;begin trace+='R';Result:=1.5..3.5;end;begin Writeln(X in R,' ',trace);end.","True XR\n");
+    result("begin Randomize(1);var p:=Random2;var q:=Random3();var next:=Random;Randomize(1);Writeln(p=(Random,Random),' ',q=(Random,Random,Random),' ',next=Random);end.","True True True\n");
+    result("begin Randomize(1);var p:=Random2(10);var q:=Random3(1,9);var next:=Random(100);Randomize(1);Writeln(p=(Random(10),Random(10)),' ',q=(Random(1,9),Random(1,9),Random(1,9)),' ',next=Random(100));end.","True True True\n");
+    result("begin Randomize(2);var p:=Random2(10.0);var q:=Random3(1.5,9.5);Randomize(2);Writeln(p=(Random(10.0),Random(10.0)),' ',q=(Random(1.5,9.5),Random(1.5,9.5),Random(1.5,9.5)));Randomize(3);var c:=Random3('a','z');Randomize(3);Writeln(c=(Random('a','z'),Random('a','z'),Random('a','z')));end.","True True\nTrue\n");
+    result("var calls:string;function B(x:integer):integer;begin calls+=x;Result:=x;end;begin Randomize(1);var p:=Random3(B(1),B(9));Randomize(1);Writeln(calls,' ',p=(Random(1,9),Random(1,9),Random(1,9)));end.","19 True\n");
+    result("var calls:string;function R:IntRange;begin calls+='R';Result:=1..9;end;begin Randomize(1);var p:=Random2(R);var q:=Random(R);Randomize(1);Writeln(calls,' ',p=(Random(1,9),Random(1,9)),' ',q=Random(1,9));end.","RR True True\n");
+    result("begin Randomize(1);var a:=Random(new CharRange('a','z'));var b:=Random2('a'..'z');var c:=PABCSystem.Random3(new RealRange(1,9));Randomize(1);Writeln(a=Random('a','z'),' ',b=(Random('a','z'),Random('a','z')),' ',c=(Random(1.0,9.0),Random(1.0,9.0),Random(1.0,9.0)));end.","True True True\n");
+    result("function A(n:integer):integer;begin if n=0 then Result:=1 else begin var p:=Random2(A(n-1),9);Result:=p.Item1;end;end;function B(n:integer):integer;begin if n=0 then Result:=1 else begin var lo:=B(n-1);Result:=Random(lo,9);Random(lo,9);end;end;begin Randomize(1);var x:=A(5);var next:=Random;Randomize(1);Writeln(x=B(5),' ',next=Random);end.","True True\n");
+    result("begin var r:=1..9;Randomize(1);var a:=ArrRandomInteger(6,r);var m:=MatrRandomInteger(2,3,r);Randomize(1);var b:=ArrRandomInteger(6,1,9);var n:=MatrRandomInteger(2,3,1,9);Writeln(a.SequenceEqual(b),' ',m.Row(0).SequenceEqual(n.Row(0)),' ',m.Row(1).SequenceEqual(n.Row(1)));end.","True True True\n");
+    result("begin var r:=1.5..9.5;Randomize(1);var a:=ArrRandomReal(6,r,4);Randomize(1);Writeln(a.SequenceEqual(ArrRandomReal(6,1.5,9.5,4)));Randomize(1);var m:=MatrRandomReal(2,3,r,99);Randomize(1);var n:=MatrRandomReal(2,3,1.5,9.5,2);Writeln(m.Row(0).SequenceEqual(n.Row(0)),' ',m.Row(1).SequenceEqual(n.Row(1)));end.","True\nTrue True\n");
+    result("var calls:string;function M:integer;begin calls+='M';Result:=1;end;function N:integer;begin calls+='N';Result:=3;end;function R:RealRange;begin calls+='R';Result:=1.5..9.5;end;function D:integer;begin calls+='D';Result:=-1;end;begin Randomize(1);var m:=MatrRandomReal(M,N,R,D);Randomize(1);var n:=MatrRandomReal(1,3,1.5,9.5,2);Writeln(calls,' ',m.Row(0).SequenceEqual(n.Row(0)));end.","MNRD True\n");
+    result("begin Randomize(1);var m:=MatrRandomReal(1,3,new RealRange(1.5,9.5));Randomize(1);Writeln(m.Row(0).SequenceEqual(MatrRandomReal(1,3,1.5,9.5,2).Row(0)));var a:=ArrRandomReal(0,1.5..9.5,-1);Writeln(a.Length);end.","True\n0\n");
+    result("function Random2(x:integer):integer:=x+10;begin Writeln(Random2(1));Randomize(1);var p:=PABCSystem.Random2(1..9);Randomize(1);Writeln(p=(Random(1,9),Random(1,9)));end.","11\nTrue\n");
+    runtime_error("begin Writeln((new RealRange(-MaxReal,MaxReal)).Size);end.","E_OVERFLOW");
+    result("begin Randomize(1);var a:=ArrRandomReal(4,1.5..9.5,-1);Randomize(1);Writeln(a.SequenceEqual(ArrRandomReal(4,1.5,9.5,-1)));end.","True\n");
+    runtime_error("begin ArrRandomReal(1,1.5..9.5,16);end.","E_RANGE");
+    runtime_error("begin var p:=Random2(-1);end.","E_RANGE");
+    for(const auto source:{"begin var r:=new RealRange(1);end.","begin var r:=new RealRange(False,2);end.","begin var r:=1.5..3.5;r.Low:=1;end.","begin var r:=1.5..3.5;Writeln(r.Size());end.","begin var r:=1.5..3.5;Writeln(r.Equals(1..3));end.","begin Random2('abc');end.","begin ArrRandomInteger(3,'a'..'z');end.","begin ArrRandomReal(3,1..9,2);end.","begin InternalRange(1);end."})compile_error(source,"E_TYPE");
+    compile_error("begin var r:=1.5..3.5;foreach var x in r do Writeln(x);end.","E_UNSUPPORTED");
+    compile_error("begin var r:=1.5..3.5;Writeln(r.Count);end.","E_UNSUPPORTED");
+    {
+        auto p=abc::compile("begin var r:=1.5..3.5;Writeln(r.Size);end.");
+        for(unsigned mode=0;mode<3;++mode){auto bad=p;for(auto& op:bad.code)if(op.op==abc::Op::real_interval_call){if(mode==0)op.operand=255;if(mode==1)op.type=abc::Type::integer;if(mode==2)op.operand|=std::size_t{1}<<32U;}error([&]{abc::verify(bad);},"E_BYTECODE");}
+        for(unsigned mode=0;mode<3;++mode){auto bad=p;for(auto& t:bad.types)if(abc::real_interval_type(t)){if(mode==0)t.fields[0].name="low";if(mode==1)t.element=abc::Type::integer;if(mode==2)t.key=abc::Type::integer;}error([&]{abc::verify(bad);},"E_BYTECODE");}
     }
 }
 
@@ -6981,7 +7013,7 @@ void characters() {
 
 int main() {
     language();
-    enumerations(); comparable_ranges(); compound_assignments(); array_operator_library(); membership_library(); hash_set_library(); hash_set_extra_library(); hash_set_factories_library(); ordinal_ranges_library(); new_set_library(); set_literal_library(); print_extensions_library(); include_exclude_library();
+    enumerations(); comparable_ranges(); compound_assignments(); array_operator_library(); membership_library(); hash_set_library(); hash_set_extra_library(); hash_set_factories_library(); ordinal_ranges_library(); real_intervals_and_range_random(); new_set_library(); set_literal_library(); print_extensions_library(); include_exclude_library();
     structured_loops();
     foreach_loops();
     characters();

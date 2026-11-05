@@ -672,3 +672,19 @@ C++ signed overflow. List bulk ranges use the same typed copy path; HashSet uses
 count hint but still enumerates. Formatting and generic hash/equality recognize the
 native record tag. General user-visible interfaces, boxing and remaining range-related
 standard overloads still require implementation.
+
+
+RealRange is a non-enumerable native record tag with verified private real cells and
+a separate real_interval_call contract. Its source hash uses Double bit hashes with
+zero normalization and defined uint32 wrapping; Size follows the finite-real policy.
+Typed membership preserves operand order and ordinary record storage preserves copies.
+InternalRange resolves to the appropriate closed integer, char or real record.
+
+Range random overloads lower to existing verified scalar/array kernels. Hidden typed
+cache_value locals retain the range and scalar arguments once, before the first draw;
+Random2/Random3 then assemble an immutable concrete tuple from ordinary native calls.
+The caches belong to each routine frame, including recursion. Array range expansion
+keeps dimensions, value-snapshot bounds and digits in argument order. A small HIR
+evaluate_then node emits existing drop metadata to retain effects of the source
+MatrRandomReal(range,digits) argument while supplying its actual fixed precision 2.
+No additional RNG state or dynamic overload resolution is introduced.

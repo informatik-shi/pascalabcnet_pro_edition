@@ -263,7 +263,7 @@ enum class Op {
     read_lines, write_lines, array_copy, array_high, sequence_sort, sequence_fill, mutate_string, increment, read_value,
     endpoint_call, buffer_call, association_call, linked_call, file_print, file_newline, file_read, file_skip_line, file_output,
     iteration_version, iteration_check, set_character, random_array, fill_random_array, sequence_mutate, swap_values, write_array,
-    bit_not, bit_and, bit_or, bit_xor, shift_left, shift_right, read_console, read_array, console_output, array_query, write_matrix, object_text, print_output, try_read, convert_string, try_parse, val, string_read, string_array, school_list, replace_last, replace_many, school_fold, tuple_literal, school_pair, school_minmax, school_table_print, school_table_new, school_ip, sequence_begin, sequence_count, sequence_array, sequence_wrap, swap_substrings, sequence_list, sequence_query, sequence_snapshot, sequence_repeat, sequence_range, sequence_resume, sequence_partition, sequence_aggregate, sequence_partial, sequence_slice, sequence_concat, sequence_equal, sequence_default, sequence_select, sequence_where, sequence_predicate, sequence_flatmap, sequence_zip, sequence_takewhile, sequence_skipwhile, routine_value, call_value, sequence_select_value, sequence_where_value, sequence_flatmap_value, sequence_takewhile_value, sequence_skipwhile_value, sequence_predicate_value, sequence_zip_value, fresh_local, generator, sequence_cartesian, sequence_cartesian_value, cartesian_power, combinations, permutations, partial_permutations, next_permutation, array_view, matrix_operation, array_operation, collection_operation, matrix_build, list_operation, list_bulk, list_capacity, list_copy, construct_user, encoding_call, sequence_dispose, text_lines, for_step_check, enum_call, comparable_call, ini_call, compound_call, store_index, store_field, hash_set_call, new_set_call, empty_call, print_call, sequence_join, ordinal_range_call
+    bit_not, bit_and, bit_or, bit_xor, shift_left, shift_right, read_console, read_array, console_output, array_query, write_matrix, object_text, print_output, try_read, convert_string, try_parse, val, string_read, string_array, school_list, replace_last, replace_many, school_fold, tuple_literal, school_pair, school_minmax, school_table_print, school_table_new, school_ip, sequence_begin, sequence_count, sequence_array, sequence_wrap, swap_substrings, sequence_list, sequence_query, sequence_snapshot, sequence_repeat, sequence_range, sequence_resume, sequence_partition, sequence_aggregate, sequence_partial, sequence_slice, sequence_concat, sequence_equal, sequence_default, sequence_select, sequence_where, sequence_predicate, sequence_flatmap, sequence_zip, sequence_takewhile, sequence_skipwhile, routine_value, call_value, sequence_select_value, sequence_where_value, sequence_flatmap_value, sequence_takewhile_value, sequence_skipwhile_value, sequence_predicate_value, sequence_zip_value, fresh_local, generator, sequence_cartesian, sequence_cartesian_value, cartesian_power, combinations, permutations, partial_permutations, next_permutation, array_view, matrix_operation, array_operation, collection_operation, matrix_build, list_operation, list_bulk, list_capacity, list_copy, construct_user, encoding_call, sequence_dispose, text_lines, for_step_check, enum_call, comparable_call, ini_call, compound_call, store_index, store_field, hash_set_call, new_set_call, empty_call, print_call, sequence_join, ordinal_range_call, real_interval_call
 };
 
 enum class SequenceQuery { any, first, last, first_default, last_default, element, element_default, contains, single, single_default };
@@ -356,7 +356,7 @@ struct Local {
 };
 
 enum class CompoundKind { array, record, list, stack, queue, dynarray, simple_set, association, linked_node, linked_list, single_node, tuple, school_address, school_ip, sequence, callable, object_class, encoding, enumeration, ini_file, hash_set, new_set, empty_collection };
-enum class NativeRecord { none, ordinal_range };
+enum class NativeRecord { none, ordinal_range, real_interval };
 inline bool node_kind(CompoundKind kind) { return kind == CompoundKind::linked_node || kind == CompoundKind::single_node; }
 inline bool indexed_sequence(CompoundKind kind) { return kind == CompoundKind::array || kind == CompoundKind::list; }
 inline bool enumerable_collection(CompoundKind kind) { return indexed_sequence(kind) || kind==CompoundKind::hash_set || kind==CompoundKind::new_set; }
@@ -418,6 +418,7 @@ struct TypeInfo {
     NativeRecord native_record=NativeRecord::none;
 };
 inline bool ordinal_range_type(const TypeInfo& type){return type.native_record==NativeRecord::ordinal_range;}
+inline bool real_interval_type(const TypeInfo& type){return type.native_record==NativeRecord::real_interval;}
 inline bool enumerable_collection(const TypeInfo& type){return enumerable_collection(type.kind) || ordinal_range_type(type);}
 enum class AssociationMethod { get, set, to_string, print, println };
 inline std::vector<Type> association_parameters(const TypeInfo& info, AssociationMethod method) {

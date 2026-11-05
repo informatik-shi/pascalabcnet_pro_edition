@@ -7,6 +7,7 @@
 #include "compound.hpp"
 #include "hash_set.hpp"
 #include "ordinal_range.hpp"
+#include "real_interval.hpp"
 #include "new_set.hpp"
 #include "print.hpp"
 #include "runtime_values.hpp"
@@ -306,6 +307,8 @@ private:
             emit(Op::endpoint_call,node.left->type,node.local,node.location); break;
         case hir::ExprKind::cache_value:
             expression(*node.left);local(Op::store,node.local,node.location);local(Op::load,node.local,node.location);break;
+        case hir::ExprKind::evaluate_then:
+            expression(*node.left);if(node.left->type!=Type::unit)emit(Op::drop,node.left->type,0,node.location);expression(*node.right);break;
         case hir::ExprKind::new_set_hash:
             expression(*node.left);emit(Op::new_set_call,node.left->type,static_cast<std::size_t>(NewSetMethod::raw_hash),node.location);break;
         case hir::ExprKind::print_call:
@@ -325,6 +328,9 @@ private:
         case hir::ExprKind::ordinal_range_call:
             for(const auto& argument:node.arguments)expression(*argument);
             emit(Op::ordinal_range_call,node.operation_type,node.local,node.location);break;
+        case hir::ExprKind::real_interval_call:
+            for(const auto& argument:node.arguments)expression(*argument);
+            emit(Op::real_interval_call,node.operation_type,node.local,node.location);break;
         case hir::ExprKind::compound_call:
             if(compound_reference(static_cast<CompoundMethod>(node.local)))reference(*node.left);else expression(*node.left);
             for(const auto& argument:node.arguments)expression(*argument);
@@ -1055,6 +1061,8 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if((instruction.operand>>8U)>65535U || !hash_set_signature(program,type,static_cast<Type>(instruction.operand>>8U),static_cast<HashSetMethod>(instruction.operand&255U)))invalid(instruction,"Invalid HashSet call metadata");break;
         case Op::ordinal_range_call:
             if(instruction.operand>static_cast<std::size_t>(OrdinalRangeMethod::membership_uint64) || !ordinal_range_signature(program,type,static_cast<OrdinalRangeMethod>(instruction.operand)))invalid(instruction,"Invalid ordinal range call metadata");break;
+        case Op::real_interval_call:
+            if(instruction.operand>static_cast<std::size_t>(RealIntervalMethod::membership) || !real_interval_signature(program,type,static_cast<RealIntervalMethod>(instruction.operand)))invalid(instruction,"Invalid RealRange call metadata");break;
         case Op::compound_call:
             if(instruction.operand>static_cast<std::size_t>(CompoundMethod::matrix_in) || !compound_signature(program,type,static_cast<CompoundMethod>(instruction.operand)))invalid(instruction,"Invalid compound call metadata");break;
         case Op::store_index:
@@ -1141,7 +1149,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             break;
         case Op::get_field: case Op::ref_field:
             if (!compound(type) || (type_info(program,type).kind!=CompoundKind::record && type_info(program,type).kind!=CompoundKind::object_class && !(instruction.op==Op::get_field && type_info(program,type).kind==CompoundKind::tuple))
-                || ordinal_range_type(type_info(program,type)) || instruction.operand>=type_info(program,type).fields.size()) invalid(instruction,"Invalid or writable tuple/record access");
+                || ordinal_range_type(type_info(program,type)) || real_interval_type(type_info(program,type)) || instruction.operand>=type_info(program,type).fields.size()) invalid(instruction,"Invalid or writable tuple/record access");
             break;
         case Op::list_add: case Op::list_remove: case Op::list_clear: case Op::list_contains:
             if (!compound(type) || type_info(program,type).kind != CompoundKind::list) invalid(instruction,"Invalid list instruction"); break;
@@ -1506,6 +1514,10 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             const auto method=static_cast<OrdinalRangeMethod>(instruction.operand);const auto parameters=ordinal_range_parameters(program.types,instruction.type,method);
             for(auto it=parameters.rbegin();it!=parameters.rend();++it)require(*it);const auto result=ordinal_range_result(program.types,instruction.type,method);if(result!=Type::unit)stack.push_back(result);break;
         }
+        case Op::real_interval_call: {
+            const auto method=static_cast<RealIntervalMethod>(instruction.operand);const auto parameters=real_interval_parameters(instruction.type,method);
+            for(auto it=parameters.rbegin();it!=parameters.rend();++it)require(*it);stack.push_back(real_interval_result(instruction.type,method));break;
+        }
         case Op::compound_call: {
             const auto method=static_cast<CompoundMethod>(instruction.operand);const auto parameters=compound_parameters(program,instruction.type,method);
             for(auto p=parameters.rbegin();p!=parameters.rend();++p)require(*p);const auto result=compound_result(instruction.type,method);if(result!=Type::unit)stack.push_back(result);break;
@@ -1655,7 +1667,7 @@ void verify(const Program& program) {
     std::vector<unsigned> depth(program.types.size());std::size_t enum_text_bytes=0;
     for (std::size_t i = 0; i < program.types.size(); ++i) {
         const auto& type = program.types[i]; unsigned level = 1;
-        if(type.native_record!=NativeRecord::none && (type.native_record!=NativeRecord::ordinal_range || type.kind!=CompoundKind::record))throw Error("E_BYTECODE",{},"Invalid native record metadata");
+        if(type.native_record!=NativeRecord::none && ((type.native_record!=NativeRecord::ordinal_range && type.native_record!=NativeRecord::real_interval) || type.kind!=CompoundKind::record))throw Error("E_BYTECODE",{},"Invalid native record metadata");
         for (const auto& field:type.fields) if (!valid_member_access(field.access)
             || (type.kind!=CompoundKind::object_class && field.access!=MemberAccess::public_member))
             throw Error("E_BYTECODE",{},"Invalid class member visibility metadata");
@@ -1726,6 +1738,11 @@ void verify(const Program& program) {
                     throw Error("E_BYTECODE",{},"Invalid native class field");
             }
         } else if (type.kind == CompoundKind::record || type.kind==CompoundKind::tuple) {
+            if(real_interval_type(type)){
+                if(type.name!="realrange" || type.element!=Type::real || type.key!=Type::invalid || type.fields.size()!=2
+                    || type.fields[0].name!="_l" || type.fields[1].name!="_h" || type.fields[0].type!=Type::real || type.fields[1].type!=Type::real || type.fields[0].global || type.fields[1].global)
+                    throw Error("E_BYTECODE",{},"Invalid RealRange fields");
+            }
             if(ordinal_range_type(type)){
                 if((type.element!=Type::integer && type.element!=Type::character) || type.name!=(type.element==Type::integer ? "intrange" : "charrange")
                     || type.fields.size()!=2 || type.fields[0].name!="_l" || type.fields[1].name!="_h"

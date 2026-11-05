@@ -32,6 +32,7 @@
 #include "compound.hpp"
 #include "hash_set.hpp"
 #include "ordinal_range.hpp"
+#include "real_interval.hpp"
 #include "new_set.hpp"
 #include "print.hpp"
 #include "file_encoding.hpp"
@@ -1115,6 +1116,10 @@ static void execute_impl(const Program& program, std::istream& input, std::ostre
             const auto method=static_cast<OrdinalRangeMethod>(instruction.operand);const auto parameters=ordinal_range_parameters(program.types,instruction.type,method);
             std::vector<Value> arguments(parameters.size());for(std::size_t i=arguments.size();i>0;--i)arguments[i-1]=pop();
             auto result=ordinal_range_invoke(values,instruction.type,method,arguments,options);if(ordinal_range_result(program.types,instruction.type,method)!=Type::unit)stack.push_back(std::move(result));break;
+        }
+        case Op::real_interval_call: {
+            const auto method=static_cast<RealIntervalMethod>(instruction.operand);const auto parameters=real_interval_parameters(instruction.type,method);
+            std::vector<Value> arguments(parameters.size());for(std::size_t i=arguments.size();i>0;--i)arguments[i-1]=pop();stack.push_back(real_interval_invoke(values,instruction.type,method,arguments));break;
         }
         case Op::compound_call: {
             const auto method=static_cast<CompoundMethod>(instruction.operand);std::vector<Value> arguments(compound_parameters(program,instruction.type,method).size());

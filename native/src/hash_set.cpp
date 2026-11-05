@@ -1,5 +1,6 @@
 #include "hash_set.hpp"
 #include "ordinal_range.hpp"
+#include "real_interval.hpp"
 #include "runtime_values.hpp"
 #include "sequences.hpp"
 #include "big_integer_runtime.hpp"
@@ -80,6 +81,7 @@ std::size_t hash(Work& work,const Value& value){
         else if constexpr(std::is_same_v<T,std::shared_ptr<Aggregate>>){
             if(!v || v->nil)return 0;const auto kind=type_info(work.values.program,v->type).kind;
             if(ordinal_range_type(type_info(work.values.program,v->type)))return static_cast<std::uint32_t>(ordinal_range_hash(v));
+            if(real_interval_type(type_info(work.values.program,v->type)))return static_cast<std::uint32_t>(real_interval_hash(v));
             if(kind==CompoundKind::record || kind==CompoundKind::tuple){std::size_t result=0;for(const auto& field:v->items)result=mix(result,hash(work,field->value));return result;}
             if(kind==CompoundKind::callable){std::size_t result=v->routine.value_or(0);for(const auto& cell:v->captures)result=mix(result,std::hash<const void*>{}(cell.get()));return result;}
             if(kind==CompoundKind::sequence && v->sequence && (collection_sequence(v->sequence->provider) || v->sequence->provider==SequenceProvider::hash_set))return std::hash<const void*>{}(v->sequence->source.get());
