@@ -761,3 +761,16 @@ optional indices; multiple matching signatures are compile-time ambiguities.
 One ordinary verified routine thunk is cached per selected catalog signature and
 shares the current VM services. Private $ intrinsics never enter method-group
 lookup. This reuses unit/result bytecode contracts without a dynamic overload bridge.
+
+Native ReflectedType is a small closed-universe value: target type, bounded runtime
+implementation tag and optional source type. No CLR handles or host object addresses
+cross the bytecode boundary. typeof resolves syntax before execution; GetType and
+TypeName inspect evaluated native values without enumerating providers. TypeInfo
+retains declaration display spelling separately from folded lookup names. The shared
+iterative type-name formatter preserves Pascal primitive/shape/delegate forms and
+source byref generic-name quirks, with bounded tasks/work/strings and cancellation.
+Typed nil, equality, generic storage/hash and descriptor constants are validated with
+ordinary VM type rules. A dedicated typed operation checks input and result stack
+contracts; TypeToTypeName has a fixed public catalog signature. Runtime implementation
+identity belongs to the native closed type model, not arbitrary CLR-private classes.
+Open generic metadata, object boxing and the rest of Reflection remain future work.

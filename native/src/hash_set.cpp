@@ -77,6 +77,7 @@ std::size_t hash(Work& work,const Value& value){
         else if constexpr(std::is_same_v<T,NewSetValue>)return hash(work,v.storage->value);
         else if constexpr(std::is_same_v<T,NilString>)return 0;
         else if constexpr(std::is_same_v<T,EnumValue>)return std::hash<std::int32_t>{}(v.value);
+        else if constexpr(std::is_same_v<T,ReflectedType>)return mix(mix(static_cast<unsigned>(v.target),v.implementation),static_cast<unsigned>(v.source));
         else if constexpr(std::is_same_v<T,BigInteger>){big_work(v.bits()/16+1,work.values.location,work.options);std::size_t result=0;for(const auto c:v.text(16)){work.step();result=mix(result,static_cast<unsigned char>(c));}return result;}
         else if constexpr(std::is_same_v<T,std::shared_ptr<Aggregate>>){
             if(!v || v->nil)return 0;const auto kind=type_info(work.values.program,v->type).kind;

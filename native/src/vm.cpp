@@ -30,6 +30,7 @@
 #include "environment.hpp"
 #include "termination.hpp"
 #include "encoding.hpp"
+#include "type_names.hpp"
 #include "enumeration.hpp"
 #include "comparable.hpp"
 #include "ini_file.hpp"
@@ -602,6 +603,11 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
                 stack.emplace_back(false);
             }
             break;
+        }
+        case Op::type_operation: {
+            const auto value=pop();const auto descriptor=reflected_value_type(program,value,instruction.type,instruction.location,options);
+            if(instruction.operand==static_cast<unsigned>(TypeOperation::value_name))stack.emplace_back(reflected_type_name(program,descriptor,instruction.location,options));
+            else {if(descriptor.target==Type::invalid)trap(instruction,RuntimeError::nil_reference);stack.emplace_back(descriptor);}break;
         }
         case Op::object_text: {
             const auto width=instruction.operand ? std::get<std::int32_t>(pop()) : 0;

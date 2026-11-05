@@ -1,0 +1,47 @@
+typeof(shortint)	shortint
+typeof(byte)	byte
+typeof(smallint)	smallint
+typeof(word)	word
+typeof(integer)	integer
+typeof(longword)	longword
+typeof(int64)	int64
+typeof(uint64)	uint64
+typeof(real)	real
+typeof(boolean)	boolean
+typeof(char)	char
+typeof(string)	string
+typeof(BigInteger)	BigInteger
+typeof(System.Type)	Type
+typeof(System.Void)	Void
+typeof(System.Text.Encoding)	Encoding
+nil	nil
+typeof(integer).GetType	RuntimeType
+typeof(array of integer)	array of integer
+typeof(array[,] of real)	array[,] of real
+typeof(array of array[,] of char)	array of array[,] of char
+typeof(List<integer>)	List<integer>
+typeof(List<array of string>)	List<array of string>
+typeof(HashSet<string>)	HashSet<string>
+typeof(Stack<integer>)	Stack<integer>
+typeof(Queue<string>)	Queue<string>
+typeof(LinkedList<char>)	LinkedList<char>
+typeof(LinkedListNode<integer>)	LinkedListNode<integer>
+typeof(DynArray<integer>)	DynArray<integer>
+typeof(SimpleSet<string>)	SimpleSet<string>
+typeof(AssocArray<string,integer>)	AssocArray<string, integer>
+typeof(SingleNode<integer>)	SingleNode<integer>
+typeof(set of integer)	set of integer
+typeof((integer,string))	(integer, string)
+typeof(Func<integer,string>)	function(integer): string
+typeof(Func2<integer,string,boolean>)	function(integer, string): boolean
+typeof(Func0<integer>)	function: integer
+typeof(Action0)	procedure
+typeof(Action<integer>)	procedure(integer)
+typeof(RefShapes)	procedure(NewSet<integer>, Tuple<integer, string>, Func<integer, string>, List<integer>)
+typeof(RefArray)	function(Int32[]&, List<string>): real
+typeof(MiXeDRecord)	MiXeDRecord
+typeof(MiXeDClass)	MiXeDClass
+typeof(Цвет)	Цвет
+typeof(IntRange)	IntRange
+typeof(CharRange)	CharRange
+typeof(RealRange)	RealRange

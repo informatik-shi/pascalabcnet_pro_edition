@@ -8,6 +8,7 @@
 #include "number.hpp"
 #include "stdlib.hpp"
 #include "encoding.hpp"
+#include "type_names.hpp"
 #include "enumeration.hpp"
 #include "comparable.hpp"
 #include "ini_file.hpp"
@@ -200,7 +201,7 @@ private:
     SourceLocation position_;
 };
 
-enum class SyntaxExprKind { literal, literal_group, name, unary, binary, call, index, field, member_call, construction, formatted, tuple, typed_default, value_call, lambda, conditional, set_literal };
+enum class SyntaxExprKind { literal, literal_group, name, unary, binary, call, index, field, member_call, construction, formatted, tuple, typed_default, type_literal, value_call, lambda, conditional, set_literal };
 struct SyntaxRoutine;
 struct SyntaxProperty;
 struct SyntaxExpr;
@@ -293,7 +294,7 @@ bool reserved(std::string_view text) {
         "div", "mod", "xor", "shl", "shr", "true", "false", "uses", "unit", "type", "const", "function", "procedure",
         "for", "to", "downto", "repeat", "until", "foreach", "in", "case", "of", "array", "record", "class", "nil",
         "constructor", "property", "public", "private", "protected", "internal",
-        "new", "default", "out", "params", "set", "try", "except", "finally", "raise", "break", "continue", "exit", "writeln", "write", "readln", "read"};
+        "new", "default", "typeof", "out", "params", "set", "try", "except", "finally", "raise", "break", "continue", "exit", "writeln", "write", "readln", "read"};
     return words.contains(text);
 }
 
@@ -488,9 +489,9 @@ private:
                 if(result->kind!="tinifile")throw Error("E_UNSUPPORTED",result->token.location,"Unknown IniFile type");
             }
             if (result->kind=="system") {
-                result->system_qualified=true; expect("."); result->kind=name().text;
+                result->system_qualified=true; expect("."); result->kind=is("type") ? consume().text : name().text;
                 if(result->kind=="text") {expect(".");result->kind=name().text;if(result->kind!="encoding")throw Error("E_UNSUPPORTED",result->token.location,"Unknown or unsupported Encoding type");}
-                else if (result->kind!="func" && result->kind!="action" && result->kind!="predicate")
+                else if (result->kind!="func" && result->kind!="action" && result->kind!="predicate" && result->kind!="type" && result->kind!="void")
                     throw Error("E_UNSUPPORTED",result->token.location,"Unknown or unsupported type 'System."+result->kind+"'");
             }
             if (result->kind=="func" || result->kind=="func0" || result->kind=="func2" || result->kind=="func3"
@@ -924,9 +925,9 @@ private:
         }
         if (current_.kind == TokenKind::number || is("true") || is("false") || is("nil"))
             return postfix(make_expression(SyntaxExprKind::literal, consume()));
-        if (is("default")) {
-            const auto token=consume(); expect("("); auto type=type_syntax(); expect(")");
-            auto result=make_expression(SyntaxExprKind::typed_default,token); result->constructed=std::move(type);
+        if (is("default") || is("typeof")) {
+            const bool reflection=is("typeof");const auto token=consume(); expect("("); auto type=type_syntax(); expect(")");
+            auto result=make_expression(reflection ? SyntaxExprKind::type_literal : SyntaxExprKind::typed_default,token); result->constructed=std::move(type);
             return postfix(std::move(result));
         }
         if(accept("new"))return construction_expression();
@@ -1060,6 +1061,7 @@ public:
                 if (module_.types.size()>=1024) throw Error("E_LIMIT",name.location,"Type limit exceeded");
                 const auto type=static_cast<Type>(64+module_.types.size());
                 module_.types.push_back({name.text,CompoundKind::object_class,Type::invalid,{}});
+                module_.types.back().display_name=name.spelling.empty() ? name.text : name.spelling;
                 aliases_[name.text]=type;resolved_types_[syntax.get()]=type;
             }
         }
@@ -1650,6 +1652,7 @@ private:
         if(module_.types.size()>=1024)throw Error("E_LIMIT",syntax.token.location,"Type limit exceeded");
         const auto owner=static_cast<Type>(64+module_.types.size());
         TypeInfo type{syntax.token.kind==TokenKind::name ? syntax.token.text : "$enum_"+std::to_string(module_.types.size()),CompoundKind::enumeration,Type::integer,{}};
+        type.display_name=syntax.token.spelling.empty() ? type.name : syntax.token.spelling;
         type.enum_flags=syntax.enum_flags;
         std::set<std::string> names;bool explicit_value=false;
         for(std::size_t index=0;index<syntax.fields.size();++index) {
@@ -1831,6 +1834,7 @@ private:
         if (syntax.kind=="class") throw Error("E_UNSUPPORTED",syntax.token.location,"Classes require a named type declaration");
         if (syntax.kind == "record") {
             TypeInfo record{syntax.token.text,CompoundKind::record,Type::invalid,{}};
+            record.display_name=syntax.token.spelling.empty() ? syntax.token.text : syntax.token.spelling;
             for (const auto& [name,type] : syntax.fields) {
                 for (const auto& field : record.fields) if (field.name == name.text) throw Error("E_DUPLICATE",name.location,"Duplicate record field");
                 record.fields.push_back({name.text,resolve_type(*type)});
@@ -1949,6 +1953,7 @@ private:
         if (expression->type == Type::nil && type == Type::string) {
             expression->type=type; expression->kind=hir::ExprKind::literal; expression->value=NilString{}; return expression;
         }
+        if(expression->type==Type::nil && type==Type::type_descriptor){expression->type=type;expression->kind=hir::ExprKind::literal;expression->value=ReflectedType{};return expression;}
         if (expression->type==Type::nil && type==Type::text_file) {
             expression->type=type; expression->kind=hir::ExprKind::default_value; expression->operation="default"; return expression;
         }
@@ -2385,6 +2390,17 @@ private:
             }
             if(enum_static_member(*result,source))break;
             if(!result->left)result->left=expression(*source.left);const auto receiver=result->left->type;
+            if(source.token.text=="gettype"){
+                const bool own=compound(receiver) && info(receiver,result->location).kind==CompoundKind::object_class
+                    && ((class_methods_.contains(receiver) && class_methods_.at(receiver).contains("gettype"))
+                        || (class_properties_.contains(receiver) && class_properties_.at(receiver).contains("gettype"))
+                        || std::any_of(info(receiver,result->location).fields.begin(),info(receiver,result->location).fields.end(),[](const auto& field){return field.name=="gettype";}));
+                if(!own){
+                    if(!source.arguments.empty())throw Error("E_TYPE",result->location,"Wrong callable argument count");
+                    if(receiver==Type::nil || receiver==Type::unit)throw Error("E_TYPE",result->location,"Expression has no value");
+                    result->kind=hir::ExprKind::type_operation;result->operation_type=receiver;result->local=static_cast<unsigned>(TypeOperation::runtime_type);result->type=Type::type_descriptor;break;
+                }
+            }
             if(bind_print_extension(*result,source,true))break;
             if(bind_inifile_member(*result,source))break;
             if(bind_encoding_member(*result,source))break;
@@ -2998,7 +3014,7 @@ private:
             const auto a=yes->type,b=no->type;
             if (a==Type::unit || b==Type::unit || (a==Type::nil && b==Type::nil))
                 throw Error("E_TYPE",result->location,"Conditional branches require known value types");
-            const auto reference=[&](Type type) {return type==Type::string || type==Type::text_file || (compound(type) && info(type,result->location).kind!=CompoundKind::record && !enumeration(type));};
+            const auto reference=[&](Type type) {return type==Type::string || type==Type::text_file || type==Type::type_descriptor || (compound(type) && info(type,result->location).kind!=CompoundKind::record && !enumeration(type));};
             auto type=Type::invalid;
             if (a==b) type=a;
             else if (a==Type::nil || b==Type::nil) {
@@ -3018,6 +3034,9 @@ private:
         case SyntaxExprKind::lambda: throw Error("E_HIR",result->location,"Lambda escaped typed binding");
         case SyntaxExprKind::value_call:
             result->left=expression(*source.left); bind_value_call(*result,source.arguments); break;
+        case SyntaxExprKind::type_literal:
+            result->kind=hir::ExprKind::literal;result->type=Type::type_descriptor;
+            result->value=ReflectedType{source.constructed->kind=="void" && source.constructed->system_qualified ? Type::unit : resolve_type(*source.constructed)};break;
         case SyntaxExprKind::typed_default:
             result->kind=hir::ExprKind::default_value; result->type=resolve_type(*source.constructed); result->operation="default"; break;
         case SyntaxExprKind::tuple: {
@@ -3295,7 +3314,7 @@ private:
             }
             if(op=="+" && left==Type::string && numeric(right)){result->right=number_text(std::move(result->right),result->location);right=Type::string;}
             else if(op=="+" && right==Type::string && numeric(left)){result->left=number_text(std::move(result->left),result->location);left=Type::string;}
-            if ((op=="=" || op=="<>") && (compound(left) || compound(right) || left==Type::text_file || right==Type::text_file)) {
+            if ((op=="=" || op=="<>") && (compound(left) || compound(right) || left==Type::text_file || right==Type::text_file || left==Type::type_descriptor || right==Type::type_descriptor)) {
                 if (left==Type::nil) { result->left=convert(std::move(result->left),right); left=right; }
                 if (right==Type::nil) { result->right=convert(std::move(result->right),left); right=left; }
                 if (left!=right && sequence_view(right,left,result->location)) { result->right=convert(std::move(result->right),left); right=left; }
@@ -4319,7 +4338,7 @@ private:
         if (name=="fill") {
             auto value=argument.kind==SyntaxExprKind::lambda
                 ? bind_lambda(argument,Type::invalid,std::vector<Type>(type.rank,Type::integer)) : expression(argument);
-            const bool nullable=type.element==Type::string || type.element==Type::text_file
+            const bool nullable=type.element==Type::string || type.element==Type::text_file || type.element==Type::type_descriptor
                 || (compound(type.element) && info(type.element,result.location).kind!=CompoundKind::record && !enumeration(type.element));
             if (value->type==Type::nil && (type.rank==2 || !nullable)) {
                 std::vector<CallableParameter> parameters(type.rank,{Type::integer,false,false});
@@ -4954,6 +4973,13 @@ private:
         result.local=static_cast<std::size_t>(name=="print" ? TextOutput::print : TextOutput::println); return true;
     }
     bool bind_object_text(hir::Expr& result, std::string_view name, std::string_view unit = {}) {
+        if(name=="typename" && (unit.empty() || unit=="pabcsystem")){
+            if(result.arguments.size()!=1)throw Error("E_TYPE",result.location,"Wrong object formatting argument count");
+            auto value=std::move(result.arguments[0]);if(value->type==Type::nil)value=convert(std::move(value),Type::string);
+            if(value->type==Type::unit)throw Error("E_TYPE",result.location,"Expression has no value");
+            result.left=std::move(value);result.arguments.clear();result.operation_type=result.left->type;
+            result.kind=hir::ExprKind::type_operation;result.local=static_cast<unsigned>(TypeOperation::value_name);result.type=Type::string;return true;
+        }
         if ((name!="objecttostring" && name!="formatvalue") || (!unit.empty() && unit!="pabcsystem")) return false;
         const bool width=name=="formatvalue";
         if (width && !result.arguments.empty() && scalar(result.arguments[0]->type)) return false;

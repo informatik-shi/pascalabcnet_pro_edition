@@ -31,6 +31,7 @@ std::string_view type_name(Type type) {
     case Type::uint64: return "uint64";
     case Type::big_integer: return "BigInteger";
     case Type::text_file: return "Text";
+    case Type::type_descriptor: return "System.Type";
     case Type::unit: return "procedure";
     default: return compound(type) ? "compound type" : "<invalid>";
     }
@@ -42,6 +43,7 @@ std::optional<Type> find_type(std::string_view name) {
     if (name == "double") return Type::real;
     if (name == "biginteger") return Type::big_integer;
     if (name == "text" || name == "textfile") return Type::text_file;
+    if (name == "type") return Type::type_descriptor;
     return std::nullopt;
 }
 
@@ -58,11 +60,12 @@ bool can_widen(Type from, Type to) {
         || (small_integer(from) && (to == Type::integer || to == Type::int64 || to == Type::real))
         || (from==Type::byte && (to==Type::word || to==Type::smallint))
         || (from==Type::shortint && to==Type::smallint)
-        || (from == Type::nil && to == Type::string) || (from == Type::integer && to == Type::int64)
+        || (from == Type::nil && (to == Type::string || to==Type::type_descriptor)) || (from == Type::integer && to == Type::int64)
         || ((from == Type::integer || from == Type::int64) && to == Type::real);
 }
 
 Type value_type(const Value& value) {
+    if(std::holds_alternative<ReflectedType>(value))return Type::type_descriptor;
     if(const auto* set=std::get_if<NewSetValue>(&value))return set->type;
     if(const auto* member=std::get_if<EnumValue>(&value))return member->type;
     if (std::holds_alternative<BigInteger>(value)) return Type::big_integer;

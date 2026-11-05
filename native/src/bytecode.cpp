@@ -1,6 +1,7 @@
 #include "hir.hpp"
 #include "stdlib.hpp"
 #include "encoding.hpp"
+#include "type_names.hpp"
 #include "enumeration.hpp"
 #include "comparable.hpp"
 #include "ini_file.hpp"
@@ -284,6 +285,8 @@ private:
             emit(node.local==0 ? Op::convert_string : node.local==1 ? Op::try_parse : Op::val,node.local==0 ? node.left->type : node.right->type,0,node.location); break;
         case hir::ExprKind::try_read:
             reference(*node.left); expression(*node.right); emit(Op::try_read,node.left->type,0,node.location); break;
+        case hir::ExprKind::type_operation:
+            expression(*node.left);emit(Op::type_operation,node.operation_type,node.local,node.location);break;
         case hir::ExprKind::object_text:
             expression(*node.left); if (node.right) expression(*node.right);
             emit(Op::object_text,node.left->type,node.local,node.location); break;
@@ -1178,10 +1181,13 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if (instruction.operand >= stdlib::signatures().size()
                 || type != stdlib::signatures()[instruction.operand].result) invalid(instruction, "Invalid standard function");
             break;
+        case Op::type_operation:
+            if(!type_operation_valid(program,type,static_cast<TypeOperation>(instruction.operand)))invalid(instruction,"Invalid type operation");break;
         case Op::push:
-            if ((!valid_type(type) && !enumeration(program,type)) || instruction.operand >= program.constants.size()
+            if ((!valid_type(type) && type!=Type::type_descriptor && !enumeration(program,type)) || instruction.operand >= program.constants.size()
                 || type != value_type(program.constants[instruction.operand])) invalid(instruction, "Invalid constant");
             if(std::holds_alternative<EnumValue>(program.constants[instruction.operand]) && !enumeration(program,type))invalid(instruction,"Invalid enumeration constant");
+            if(const auto* descriptor=std::get_if<ReflectedType>(&program.constants[instruction.operand]);descriptor && !reflected_type_valid(program,*descriptor))invalid(instruction,"Invalid type descriptor");
             if (const auto* value = std::get_if<double>(&program.constants[instruction.operand]); value && !std::isfinite(*value))
                 invalid(instruction, "Non-finite real constant");
             break;
@@ -1564,6 +1570,8 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if (mutation_result(method)) stack.push_back(instruction.type);
             break;
         }
+        case Op::type_operation:
+            require(instruction.type);stack.push_back(instruction.operand==static_cast<unsigned>(TypeOperation::value_name) ? Type::string : Type::type_descriptor);break;
         case Op::object_text:
             if (instruction.operand) require(Type::integer);
             require(instruction.type); stack.push_back(Type::string); break;

@@ -1,0 +1,6 @@
+Coordinate
+array[,] of integer
+array of integer
+sequence of integer
+[integer,string,function(integer): string]
+nil nil

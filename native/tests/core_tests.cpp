@@ -24,6 +24,7 @@
 #include "../src/file_names.hpp"
 #include "../src/environment.hpp"
 #include "../src/stdlib.hpp"
+#include "../src/type_names.hpp"
 #include "../src/disk_space.hpp"
 #include "../src/new_set.hpp"
 #include "../src/print.hpp"
@@ -4194,6 +4195,55 @@ void console_unicode_output() {
     error([&]{abc::execute(abc::compile("begin ReadInteger; end."),failed,eof_output);},"E_INPUT");
 }
 
+void native_type_names() {
+    const auto fixtures=std::filesystem::path(abc::from_utf8(__FILE__)).parent_path()/"fixtures";
+    std::ifstream corpus(fixtures/"type-names-reference.tsv");require(static_cast<bool>(corpus),"Independent type-name reference corpus is present");
+    const std::string prelude="uses Collections;type MiXeDRecord=record X:integer;end;MiXeDClass=class end;Цвет=(Красный,Синий);RefArray=function(var a:array of integer;var b:List<string>):real;RefShapes=procedure(var a:set of integer;var b:(integer,string);var c:Func<integer,string>;var d:array of List<integer>);";
+    std::string row;std::size_t rows=0;
+    while(std::getline(corpus,row)){
+        if(!row.empty() && row.back()=='\r')row.pop_back();const auto tab=row.find('\t');
+        if(tab==std::string::npos){require(false,"Malformed type-name reference row");continue;}
+        result(prelude+"begin Writeln(TypeToTypeName("+row.substr(0,tab)+"));end.",row.substr(tab+1)+"\n");++rows;
+    }
+    require(rows==47,"Every independent type-name reference outcome loaded");
+    for(const auto& [type,name]:{std::pair<std::string,std::string>{"integer","integer"},{"int64","int64"},{"real","real"},{"boolean","boolean"},{"char","char"},{"byte","byte"},{"shortint","shortint"},{"word","word"},{"smallint","smallint"},{"longword","longword"},{"uint64","uint64"},{"BigInteger","BigInteger"},{"Text","Text"},{"System.Type","Type"},{"System.Void","Void"}})
+        result("begin Writeln(TypeToTypeName(typeof("+type+")));end.",name+"\n");
+    result("begin Writeln(TypeName(1),' ',TypeName(1.5),' ',TypeName(True),' ',TypeName('xy'),' ',TypeName(#65));end.","integer real boolean string char\n");
+    result("begin Writeln(TypeName(nil),' ',TypeToTypeName(nil));var t:System.Type;Writeln(t=nil,' ',TypeToTypeName(t),' ',TypeName(t));end.","nil nil\nTrue nil nil\n");
+    result("begin var t:System.Type:=typeof(integer);Writeln(t=typeof(integer),' ',t<>typeof(int64),' ',TypeToTypeName(t));Writeln(TypeName(t),' ',TypeToTypeName(t.GetType),' ',TypeToTypeName(typeof(System.Type)));end.","True True integer\nRuntimeType RuntimeType Type\n");
+    result("type MyRecord=record n:integer;end;Alias=MyRecord;MyClass=class end;МойТип=(Один,Два);begin Writeln(TypeName(default(MyRecord)),' ',TypeToTypeName(typeof(Alias)),' ',TypeName(new MyClass),' ',TypeName(Один));end.","MyRecord MyRecord MyClass МойТип\n");
+    result("type Box=class t:System.Type;end;begin var a:=new System.Type[2];a[0]:=typeof(integer);var b:=new Box;b.t:=a[0];Writeln(a[1]=nil,' ',b.t=typeof(integer));a.Fill(nil);Writeln(a[0]=nil,' ',a[1]=nil);end.","True True\nTrue True\n");
+    result("begin Writeln(TypeToTypeName(typeof(array of array[,] of integer)));Writeln(TypeToTypeName(typeof(List<(integer,string)>)));Writeln(TypeToTypeName(typeof(set of char)));Writeln(TypeName((1,'xy')));end.","array of array[,] of integer\nList<(integer, string)>\nset of char\n(integer, string)\n");
+    result("type F=function(var n:integer;s:string):real;P=procedure(var a:array of integer);begin Writeln(TypeToTypeName(typeof(F)));Writeln(TypeToTypeName(typeof(P)));Writeln(TypeToTypeName(typeof(Func0<integer>)),' ',TypeToTypeName(typeof(Action0)));end.","function(Int32&, string): real\nprocedure(Int32[]&)\nfunction: integer procedure\n");
+    result("uses Collections;begin Writeln(TypeToTypeName(typeof(Stack<integer>)),' ',TypeToTypeName(typeof(Queue<string>)));Writeln(TypeToTypeName(typeof(AssocArray<string,integer>)));var h:=new HashSet<System.Type>;Writeln(h.Add(typeof(integer)),' ',h.Add(typeof(integer)),' ',h.Contains(typeof(integer)));end.","Stack<integer> Queue<string>\nAssocArray<string, integer>\nTrue False True\n");
+    result("begin Writeln(TypeName(Seq(1,2)),' ',TypeToTypeName(typeof(sequence of integer)));Writeln(TypeName(Seq(1,2).Select(n->n+1)));var l:=new List<integer>;Writeln(TypeName(l.AsEnumerable));end.","array of integer IEnumerable<integer>\nsequence of integer\nList<integer>\n");
+    result("begin Writeln(TypeName(SeqRandomInteger(1,0,MaxInt)));Writeln(TypeName(SeqRandomReal(1,0.0,1.0,99)));end.","sequence of integer\nsequence of real\n");
+    result("begin Writeln(TypeName(Encoding.UTF8),' ',TypeName(Encoding.Unicode),' ',TypeName(Encoding.ASCII));Writeln(TypeToTypeName(typeof(System.Text.Encoding)));end.","UTF8Encoding UnicodeEncoding ASCIIEncoding\nEncoding\n");
+    result("var calls:integer;function Value:integer;begin Inc(calls);Result:=7;end;begin Writeln(TypeName(Value),' ',calls);Writeln(TypeToTypeName(Value().GetType),' ',calls);end.","integer 1\ninteger 2\n");
+    result("function TypeName(n:integer):string:='local';begin Writeln(TypeName(1),' ',PABCSystem.TypeName(1));var names:=Arr(typeof(integer),typeof(string)).Select(TypeToTypeName).ToArray;Writeln(names);end.","local integer\n[integer,string]\n");
+    result("type C=class function GetType:integer:=7;end;begin Writeln(new C.GetType);end.","7\n");
+    for(const auto& source:{"begin var s:string:=nil;s.GetType;end.","begin var a:array of integer:=nil;a.GetType();end.","begin var t:System.Type;t.GetType;end."})runtime_error(source,"E_NIL");
+    for(const auto& source:{"begin Write('must never run');TypeToTypeName(1);end.","begin TypeName;end.","begin TypeName(1,2);end.","begin 1.GetType(2);end."})compile_error(source,"E_TYPE");
+    std::string type="integer",expected="integer";for(int i=0;i<32;++i){type="array of "+type;expected="array of "+expected;}
+    result("begin Writeln(TypeToTypeName(typeof("+type+")));end.",expected+"\n");
+    compile_error("begin TypeToTypeName(typeof(array of "+type+"));end.","E_BYTECODE");
+    auto program=abc::compile("begin Writeln(TypeToTypeName(typeof(integer)));TypeName(1);1.GetType;end.");
+    for(int kind=0;kind<4;++kind){auto bad=program;
+        if(kind<2){for(auto& value:bad.constants)if(auto* descriptor=std::get_if<abc::ReflectedType>(&value)){if(kind==0)descriptor->target=static_cast<abc::Type>(9999);else descriptor->implementation=1;break;}}
+        else for(auto& op:bad.code)if(op.op==abc::Op::type_operation){if(kind==2)op.operand=99;else op.type=abc::Type::unit;break;}
+        error([&]{abc::verify(bad);},"E_BYTECODE");
+    }
+    auto invalid_variant=abc::compile("begin TypeToTypeName(typeof(sequence of integer));end.");
+    for(auto& value:invalid_variant.constants)if(auto* descriptor=std::get_if<abc::ReflectedType>(&value))descriptor->implementation=32U+static_cast<unsigned>(abc::SequenceProvider::transform)*16U+15U;
+    error([&]{abc::verify(invalid_variant);},"E_BYTECODE");
+    abc::ExecutionOptions limited;limited.instruction_limit=2;error([&]{(void)abc::reflected_type_name(program,{abc::Type::integer},{},limited);},"E_LIMIT");
+    limited={};limited.cancelled=[]{return true;};error([&]{(void)abc::reflected_type_name(program,{abc::Type::integer},{},limited);},"E_CANCELLED");
+    abc::Program cyclic;cyclic.types.push_back({"array",abc::CompoundKind::array,abc::Type::first_compound,{}});limited={};limited.instruction_limit=100;
+    error([&]{(void)abc::reflected_type_name(cyclic,{abc::Type::first_compound},{},limited);},"E_LIMIT");
+    const auto p=abc::compile("begin\nvar s:string:=nil;s.GetType;end.");std::istringstream in;std::ostringstream out;
+    try{abc::execute(p,in,out);require(false,"Expected nil type receiver");}catch(const abc::Error& e){require(e.code=="E_NIL" && e.location.line==2 && !e.russian.empty(),"GetType nil errors retain source position and both languages");}
+}
+
 void builtin_callable_library() {
     std::size_t public_signatures=0;
     for(const auto& signature:abc::stdlib::signatures()){
@@ -7382,7 +7432,7 @@ int main() {
     array_output();
     bitwise_operations();
     console_input();
-    console_functions(); console_tuple_functions(); directory_sequence_library(); file_name_library(); system_environment_library(); termination_library(); builtin_callable_library();
+    console_functions(); console_tuple_functions(); directory_sequence_library(); file_name_library(); system_environment_library(); termination_library(); builtin_callable_library(); native_type_names();
     console_unicode_output();
     rectangular_arrays();
     array_initializers_language();

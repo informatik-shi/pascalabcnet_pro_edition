@@ -95,6 +95,7 @@ RealRange, Random2/Random3 и случайные массивы по диапа�
 Аргументы CLI: abc run файл.pas -- "два слова" аргумент.
 Halt завершает программу с кодом 0; Halt(integer) задаёт код завершения: examples/halt.pas.
 Стандартные функции как типизированные значения: examples/builtin-callables.pas.
+Имена типов, typeof и GetType без .NET: examples/type-names.pas.
 Типизированный NewSet<T>, SetOf, копирование и процедуры: examples/new-sets.pas.
 Литералы [1..4,9], EmptyCollection, ToSet и ToHashSet: examples/set-literals.pas.
 Print/Println, PrintLines(map), матрицы и Include/Exclude: examples/print-extensions.pas.

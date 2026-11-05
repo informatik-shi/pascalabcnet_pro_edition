@@ -68,6 +68,7 @@ add_library(abc_core
     src/matrix_construction.cpp
     src/list_operations.cpp
     src/timing.cpp
+    src/type_names.cpp
     src/environment.cpp
     src/disk_space.cpp
     src/diagnostics.cpp
@@ -217,6 +218,9 @@ if(BUILD_TESTING)
     add_test(NAME halt_cli_compatibility COMMAND ${CMAKE_COMMAND}
         "-DABC_RUNNER=$<TARGET_FILE:abc>" "-DABC_SOURCE=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/halt-cli.pas"
         -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/halt-cli.cmake")
+    add_test(NAME type_names_compatibility COMMAND ${CMAKE_COMMAND}
+        "-DABC_RUNNER=$<TARGET_FILE:abc>" "-DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
+        -DABC_FIXTURE_NAME=type-names-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")
     add_test(NAME system_services_compatibility COMMAND ${CMAKE_COMMAND}
         "-DABC_RUNNER=$<TARGET_FILE:abc>" "-DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
         -DABC_FIXTURE_NAME=system-services-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")

@@ -3,6 +3,8 @@
 #include "files.hpp"
 #include "file_names.hpp"
 #include "environment.hpp"
+#include "type_names.hpp"
+#include "runtime_values.hpp"
 #include "termination.hpp"
 #include "disk_space.hpp"
 #include "text_file.hpp"
@@ -88,6 +90,7 @@ std::span<const Signature> signatures() {
         add("paramstr",{Type::integer},Type::string,Function::command_line_parameter);
         add("getexefilename",{},Type::string,Function::executable_name);
         add("pascalabcversion",{},Type::string,Function::pascal_version);
+        add("typetotypename",{Type::type_descriptor},Type::string,Function::reflected_type_name);
         for(auto type:{Type::integer,Type::string}){
             add("diskfree",{type},Type::int64,Function::disk_free);add("disksize",{type},Type::int64,Function::disk_size);
         }
@@ -380,6 +383,7 @@ Value invoke(std::size_t id, std::span<const Value> arguments, SourceLocation lo
     if(function==Function::command_line_parameter)return context.environment.parameter(std::get<std::int32_t>(arguments[0]),location);
     if(function==Function::executable_name)return context.environment.executable(location);
     if(function==Function::pascal_version)return std::u16string(u"3.2.0.1364");
+    if(function==Function::reflected_type_name)return abc::reflected_type_name(context.values.program,std::get<ReflectedType>(arguments[0]),location,context.options);
     if(function==Function::disk_free || function==Function::disk_size){
         auto name=arguments[0];
         if(const auto* number=std::get_if<std::int32_t>(&name)){

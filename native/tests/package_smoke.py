@@ -238,6 +238,7 @@ def main():
                 ("system-services.pas", "3.2.0.1364\n0\nTrue\nTrue\nTrue\n-1 -1\n"),
                 ("halt.pas", "Завершение программы\n"),
                 ("builtin-callables.pas", "7 2500000000\n[ONE,ДВА]\n101 3.2.0.1364\n"),
+                ("type-names.pas", "Coordinate\narray[,] of integer\narray of integer\nsequence of integer\n[integer,string,function(integer): string]\nnil nil\n"),
                 ("real-range-random.pas", "1.5..3.5 2 True\n646184960\nTrue\nTrue\nTrue\n1..3 'a'..'c'\n"),
                 ("ordinal-ranges.pas", "1..5 5 True\n[1,2,3,4,5] [1,3,5] [5,4,3,2,1]\n[9,1,2]\n'a'..'c' {a,b,c}\n[1,2,3,4,5] 9..10\nTrue 2 [2147483647,-2147483648] {}\n"),
                 ("hash-set-factories.pas", "{1,3,4} {1,5,3,4}\n0 {one,two}\n{2,1}\n{3,4} {3,4}\n1 3\n{3,4,9}\nTrue\n5\n"),
@@ -570,6 +571,8 @@ def main():
                     raise RuntimeError(f"{name} Program arguments mismatch: {attempted.stdout!r}, {attempted.stderr!r}")
             set_source = folder / "Хеш-множества.pas"
             for source, expected, code, line in [
+                ("begin\nWriteln('must never run');TypeToTypeName(1);end.", "", "E_TYPE", 2),
+                ("begin\nvar t:System.Type;t.GetType;end.", "", "E_NIL", 2),
                 ("begin\nWriteln('must never run');var f:Func<integer,real>:=Abs;end.", "", "E_TYPE", 2),
                 ("begin\nWriteln('must never run');Seq(1,2).Select(Random).Count;end.", "", "E_TYPE", 2),
                 ("begin\nWriteln('must never run');Halt(True);end.", "", "E_TYPE", 2),
@@ -1561,6 +1564,7 @@ def main():
             results[-1]["native_program_environment_disk_services_and_bilingual_errors"] = "passed"
             results[-1]["native_halt_exit_codes_callbacks_and_bilingual_type_errors"] = "passed"
             results[-1]["native_catalog_callable_values_types_and_ambiguity_errors"] = "passed"
+            results[-1]["native_type_descriptors_names_nil_and_bilingual_errors"] = "passed"
             results[-1]["native_set_literals_empty_ranges_and_bilingual_errors"] = "passed"
             results[-1]["typed_print_extensions_streaming_and_set_mutation"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))

@@ -16,7 +16,7 @@ inline const TypeInfo& type_info(const Program& program, Type type) {
     return program.types[index];
 }
 inline bool valid_value_type(const Program& program, Type type) {
-    return scalar(type) || type==Type::text_file
+    return scalar(type) || type==Type::text_file || type==Type::type_descriptor
         || (compound(type) && static_cast<unsigned>(type) - 64U < program.types.size());
 }
 // Execution-scoped tracking breaks reference cycles without allocating during cleanup.
@@ -80,6 +80,7 @@ struct Values {
         case Type::longword: return std::uint32_t{0};
         case Type::uint64: return std::uint64_t{0};
         case Type::big_integer: return BigInteger{};
+        case Type::type_descriptor: return ReflectedType{};
         case Type::string: return generic ? Value{NilString{}} : Value{std::u16string{}};
         case Type::text_file: return generic ? Value{std::shared_ptr<TextFile>{}} : Value{std::make_shared<TextFile>()};
         default: {

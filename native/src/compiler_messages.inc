@@ -488,3 +488,6 @@
     {"Wrong random sequence argument count","Неверное число аргументов случайной последовательности"},
     {"Tuple input accepts only an optional string prompt","Кортежный ввод принимает только необязательное строковое приглашение"},
     {"Wrong directory enumeration argument count","Неверное число аргументов перечисления каталога"},
+    {"Expression has no value","Выражение не возвращает значение"},
+    {"Invalid type operation","Некорректная операция над типом"},
+    {"Invalid type descriptor","Некорректный дескриптор типа"},

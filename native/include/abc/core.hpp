@@ -37,7 +37,7 @@ public:
 // English remains available through what(); source and runtime errors carry Russian.
 std::string format_diagnostic(const Error& error, std::string_view filename);
 
-enum class Type { integer, int64, real, boolean, string, invalid, unit, nil, text_file, character, word, byte, shortint, smallint, longword, uint64, big_integer, first_compound = 64 };
+enum class Type { integer, int64, real, boolean, string, invalid, unit, nil, text_file, character, word, byte, shortint, smallint, longword, uint64, big_integer, type_descriptor, first_compound = 64 };
 inline bool small_integer(Type t) { return t==Type::word || t==Type::byte || t==Type::shortint || t==Type::smallint; }
 inline bool wide_unsigned(Type t) { return t==Type::longword || t==Type::uint64; }
 inline bool integer_type(Type t) { return t==Type::integer || t==Type::int64 || small_integer(t) || wide_unsigned(t); }
@@ -73,9 +73,11 @@ struct LinkedLinks { std::weak_ptr<Aggregate> prev, next; };
 struct NilString { auto operator<=>(const NilString&) const = default; };
 struct NewSetValue {Type type=Type::invalid;std::shared_ptr<Cell> storage;bool operator==(const NewSetValue& other) const;std::strong_ordering operator<=>(const NewSetValue& other) const;};
 struct EnumValue {Type type=Type::invalid;std::int32_t value=0;auto operator<=>(const EnumValue&) const=default;};
+// A closed type-universe handle; implementation tags identify native runtime classes.
+struct ReflectedType {Type target=Type::invalid;std::uint32_t implementation=0;Type source=Type::invalid;auto operator<=>(const ReflectedType&) const=default;};
 using Value = std::variant<std::int32_t, std::int64_t, double, bool, std::u16string,
     std::shared_ptr<Aggregate>, std::shared_ptr<Cell>, NilString, std::shared_ptr<TextFile>, char16_t, std::uint16_t,
-    std::uint8_t, std::int8_t, std::int16_t, std::uint32_t, std::uint64_t, BigInteger, EnumValue, NewSetValue>;
+    std::uint8_t, std::int8_t, std::int16_t, std::uint32_t, std::uint64_t, BigInteger, EnumValue, NewSetValue, ReflectedType>;
 struct Cell { Type type; Value value; std::weak_ptr<Aggregate> list_owner{}; };
 enum class SequenceTransform { select, where, flatmap, take_while, skip_while };
 inline bool predicate_transform(SequenceTransform method) {
@@ -265,7 +267,7 @@ enum class Op {
     read_lines, write_lines, array_copy, array_high, sequence_sort, sequence_fill, mutate_string, increment, read_value,
     endpoint_call, buffer_call, association_call, linked_call, file_print, file_newline, file_read, file_skip_line, file_output,
     iteration_version, iteration_check, set_character, random_array, fill_random_array, sequence_mutate, swap_values, write_array,
-    bit_not, bit_and, bit_or, bit_xor, shift_left, shift_right, read_console, read_array, console_output, array_query, write_matrix, object_text, print_output, try_read, convert_string, try_parse, val, string_read, string_array, school_list, replace_last, replace_many, school_fold, tuple_literal, school_pair, school_minmax, school_table_print, school_table_new, school_ip, sequence_begin, sequence_count, sequence_array, sequence_wrap, swap_substrings, sequence_list, sequence_query, sequence_snapshot, sequence_repeat, sequence_range, sequence_resume, sequence_partition, sequence_aggregate, sequence_partial, sequence_slice, sequence_concat, sequence_equal, sequence_default, sequence_select, sequence_where, sequence_predicate, sequence_flatmap, sequence_zip, sequence_takewhile, sequence_skipwhile, routine_value, call_value, sequence_select_value, sequence_where_value, sequence_flatmap_value, sequence_takewhile_value, sequence_skipwhile_value, sequence_predicate_value, sequence_zip_value, fresh_local, generator, sequence_cartesian, sequence_cartesian_value, cartesian_power, combinations, permutations, partial_permutations, next_permutation, array_view, matrix_operation, array_operation, collection_operation, matrix_build, list_operation, list_bulk, list_capacity, list_copy, construct_user, encoding_call, sequence_dispose, text_lines, for_step_check, enum_call, comparable_call, ini_call, compound_call, store_index, store_field, hash_set_call, new_set_call, empty_call, print_call, sequence_join, ordinal_range_call, real_interval_call, random_sequence, directory_sequence
+    bit_not, bit_and, bit_or, bit_xor, shift_left, shift_right, read_console, read_array, console_output, array_query, write_matrix, object_text, print_output, try_read, convert_string, try_parse, val, string_read, string_array, school_list, replace_last, replace_many, school_fold, tuple_literal, school_pair, school_minmax, school_table_print, school_table_new, school_ip, sequence_begin, sequence_count, sequence_array, sequence_wrap, swap_substrings, sequence_list, sequence_query, sequence_snapshot, sequence_repeat, sequence_range, sequence_resume, sequence_partition, sequence_aggregate, sequence_partial, sequence_slice, sequence_concat, sequence_equal, sequence_default, sequence_select, sequence_where, sequence_predicate, sequence_flatmap, sequence_zip, sequence_takewhile, sequence_skipwhile, routine_value, call_value, sequence_select_value, sequence_where_value, sequence_flatmap_value, sequence_takewhile_value, sequence_skipwhile_value, sequence_predicate_value, sequence_zip_value, fresh_local, generator, sequence_cartesian, sequence_cartesian_value, cartesian_power, combinations, permutations, partial_permutations, next_permutation, array_view, matrix_operation, array_operation, collection_operation, matrix_build, list_operation, list_bulk, list_capacity, list_copy, construct_user, encoding_call, sequence_dispose, text_lines, for_step_check, enum_call, comparable_call, ini_call, compound_call, store_index, store_field, hash_set_call, new_set_call, empty_call, print_call, sequence_join, ordinal_range_call, real_interval_call, random_sequence, directory_sequence, type_operation
 };
 
 enum class SequenceQuery { any, first, last, first_default, last_default, element, element_default, contains, single, single_default };
@@ -418,6 +420,7 @@ struct TypeInfo {
     std::vector<EnumMember> enum_members{};
     bool enum_flags=false;
     NativeRecord native_record=NativeRecord::none;
+    std::string display_name{}; // Original declaration spelling, independent of lookup folding.
 };
 inline bool ordinal_range_type(const TypeInfo& type){return type.native_record==NativeRecord::ordinal_range;}
 inline bool real_interval_type(const TypeInfo& type){return type.native_record==NativeRecord::real_interval;}
