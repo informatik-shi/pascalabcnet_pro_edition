@@ -1,5 +1,6 @@
 #include "hir.hpp"
 #include "generators.hpp"
+#include "random_sequence.hpp"
 #include "matrix_operations.hpp"
 #include "list_operations.hpp"
 #include "constant.hpp"
@@ -814,7 +815,69 @@ private:
             }while(accept(","));}
             expect("]");return postfix(std::move(result));
     }
-    std::unique_ptr<SyntaxExpr> prefix() {
+    ABC_PASCAL_NOINLINE std::unique_ptr<SyntaxExpr> parenthesized_expression() {
+        Parser trial=*this; std::shared_ptr<SyntaxRoutine> lambda;
+        try { lambda=trial.lambda_head(current_); }
+        catch (const Error& error) { if (error.code=="E_LIMIT") throw; }
+        if (lambda) { lexer_=std::move(trial.lexer_); current_=std::move(trial.current_); return postfix(lambda_body(std::move(lambda))); }
+        const auto token=consume(); auto result=expression();
+        if (accept(",")) {
+            auto tuple=make_expression(SyntaxExprKind::tuple,token); tuple->depth=result->depth+1;
+            if (tuple->depth>256) fail("Tuple nesting limit exceeded");
+            tuple->arguments.push_back(std::move(result));
+            do {
+                if (tuple->arguments.size()>=7) throw Error("E_UNSUPPORTED",token.location,"Tuple arities above seven require nested Rest tuples");
+                auto element=expression(); tuple->depth=std::max(tuple->depth,element->depth+1);
+                if (tuple->depth>256) fail("Tuple nesting limit exceeded");
+                tuple->arguments.push_back(std::move(element));
+            } while (accept(","));
+            result=std::move(tuple);
+        }
+        expect(")"); return postfix(std::move(result));
+    }
+    ABC_PASCAL_NOINLINE std::unique_ptr<SyntaxExpr> construction_expression() {
+        const auto token = current_; auto type = type_syntax();
+        auto result = make_expression(SyntaxExprKind::construction, token); result->constructed = type;
+        if (accept("[")) {
+            result->array_construction=true;
+            do {
+                if (result->arguments.size()>=2) throw Error("E_UNSUPPORTED",current_.location,"Array ranks above two are not implemented");
+                result->arguments.push_back(expression());
+            } while (accept(","));
+            expect("]");
+            if (accept("(")) {
+                result->initialized_array=true;
+                std::size_t elements=0;
+                if (!is(")")) do {
+                    if (result->initializers.size()>=4096) fail("Array initializer limit exceeded");
+                    if (result->arguments.size()==2) {
+                        const auto row_token=current_; expect("(");
+                        auto row=make_expression(SyntaxExprKind::tuple,row_token);
+                        if (!is(")")) do {
+                            if (++elements>4096) fail("Array initializer limit exceeded");
+                            row->arguments.push_back(expression());
+                        } while (accept(","));
+                        expect(")"); result->initializers.push_back(std::move(row));
+                    } else {
+                        if (++elements>4096) fail("Array initializer limit exceeded");
+                        result->initializers.push_back(expression());
+                    }
+                } while (accept(","));
+                expect(")");
+            }
+        }
+        else if (accept("(")) {
+            if (!is(")")) do {
+                if (result->arguments.size() >= 7) fail("Constructor argument limit exceeded");
+                auto argument = expression(); result->depth = std::max(result->depth,argument->depth+1);
+                if (result->depth > 256) fail("Constructor nesting limit exceeded");
+                result->arguments.push_back(std::move(argument));
+            } while (accept(","));
+            expect(")");
+        }
+        return postfix(std::move(result));
+    }
+    ABC_PASCAL_NOINLINE std::unique_ptr<SyntaxExpr> prefix() {
         DepthGuard guard(depth_, current_.location);
         if (is("-") || is("+") || is("not")) {
             auto op = consume();
@@ -846,26 +909,7 @@ private:
             return postfix(lambda_body(lambda_head(token,function,!function)));
         }
         if(is("["))return set_literal();
-        if (is("(")) {
-            Parser trial=*this; std::shared_ptr<SyntaxRoutine> lambda;
-            try { lambda=trial.lambda_head(current_); }
-            catch (const Error& error) { if (error.code=="E_LIMIT") throw; }
-            if (lambda) { lexer_=std::move(trial.lexer_); current_=std::move(trial.current_); return postfix(lambda_body(std::move(lambda))); }
-            const auto token=consume(); auto result=expression();
-            if (accept(",")) {
-                auto tuple=make_expression(SyntaxExprKind::tuple,token); tuple->depth=result->depth+1;
-                if (tuple->depth>256) fail("Tuple nesting limit exceeded");
-                tuple->arguments.push_back(std::move(result));
-                do {
-                    if (tuple->arguments.size()>=7) throw Error("E_UNSUPPORTED",token.location,"Tuple arities above seven require nested Rest tuples");
-                    auto element=expression(); tuple->depth=std::max(tuple->depth,element->depth+1);
-                    if (tuple->depth>256) fail("Tuple nesting limit exceeded");
-                    tuple->arguments.push_back(std::move(element));
-                } while (accept(","));
-                result=std::move(tuple);
-            }
-            expect(")"); return postfix(std::move(result));
-        }
+        if(is("("))return parenthesized_expression();
         if (current_.kind==TokenKind::text || current_.kind==TokenKind::character_code) {
             auto result=make_expression(SyntaxExprKind::literal,consume());
             if (current_.kind==TokenKind::text || current_.kind==TokenKind::character_code) {
@@ -884,48 +928,7 @@ private:
             auto result=make_expression(SyntaxExprKind::typed_default,token); result->constructed=std::move(type);
             return postfix(std::move(result));
         }
-        if (accept("new")) {
-            const auto token = current_; auto type = type_syntax();
-            auto result = make_expression(SyntaxExprKind::construction, token); result->constructed = type;
-            if (accept("[")) {
-                result->array_construction=true;
-                do {
-                    if (result->arguments.size()>=2) throw Error("E_UNSUPPORTED",current_.location,"Array ranks above two are not implemented");
-                    result->arguments.push_back(expression());
-                } while (accept(","));
-                expect("]");
-                if (accept("(")) {
-                    result->initialized_array=true;
-                    std::size_t elements=0;
-                    if (!is(")")) do {
-                        if (result->initializers.size()>=4096) fail("Array initializer limit exceeded");
-                        if (result->arguments.size()==2) {
-                            const auto row_token=current_; expect("(");
-                            auto row=make_expression(SyntaxExprKind::tuple,row_token);
-                            if (!is(")")) do {
-                                if (++elements>4096) fail("Array initializer limit exceeded");
-                                row->arguments.push_back(expression());
-                            } while (accept(","));
-                            expect(")"); result->initializers.push_back(std::move(row));
-                        } else {
-                            if (++elements>4096) fail("Array initializer limit exceeded");
-                            result->initializers.push_back(expression());
-                        }
-                    } while (accept(","));
-                    expect(")");
-                }
-            }
-            else if (accept("(")) {
-                if (!is(")")) do {
-                    if (result->arguments.size() >= 7) fail("Constructor argument limit exceeded");
-                    auto argument = expression(); result->depth = std::max(result->depth,argument->depth+1);
-                    if (result->depth > 256) fail("Constructor nesting limit exceeded");
-                    result->arguments.push_back(std::move(argument));
-                } while (accept(","));
-                expect(")");
-            }
-            return postfix(std::move(result));
-        }
+        if(accept("new"))return construction_expression();
         if (current_.kind == TokenKind::name && (current_.escaped || !reserved(current_.text)))
             return postfix(make_expression(SyntaxExprKind::name, consume()));
         fail("Expected an expression");
@@ -942,7 +945,7 @@ private:
         if (result->depth>256) fail("Formatted expression nesting limit exceeded");
         return result;
     }
-    std::unique_ptr<SyntaxExpr> postfix(std::unique_ptr<SyntaxExpr> result) {
+    ABC_PASCAL_NOINLINE std::unique_ptr<SyntaxExpr> postfix(std::unique_ptr<SyntaxExpr> result) {
         for (;;) {
             if (accept("&")) {
                 if ((result->kind!=SyntaxExprKind::name && result->kind!=SyntaxExprKind::field) || !result->type_arguments.empty())
@@ -2224,6 +2227,50 @@ private:
         } while(false);
         return result;
     }
+    // Keep recursively bound sequence arguments out of the general member dispatch frame.
+    ABC_PASCAL_NOINLINE bool bind_sequence_value_member(hir::Expr& result,const SyntaxExpr& source) {
+        const auto receiver=result.left->type;
+        if(!compound(receiver) || info(receiver,result.location).kind!=CompoundKind::sequence)return false;
+        if(bind_sequence_zip(result,source,{},true) || bind_sequence_numeric_selector(result,source,{},true)
+            || bind_sequence_predicate(result,source,{},true) || bind_sequence_transform(result,source,{},true))return true;
+        const auto& name=source.token.text;
+        if(name=="count" || name=="length" || name=="toarray" || name=="tolist"){
+            if(!source.arguments.empty())throw Error("E_TYPE",result.location,"Sequence supports parameterless Count, ToArray and ToList");
+            if(name=="length" && source.kind==SyntaxExprKind::member_call)throw Error("E_TYPE",result.location,"Length is not callable");
+            const auto element=info(receiver,result.location).element;
+            result.kind=hir::ExprKind::sequence_call;result.local=name=="tolist" ? 2U : name=="toarray" ? 1U : 0U;
+            result.type=result.local ? sequence_type(result.local==2 ? CompoundKind::list : CompoundKind::array,element) : Type::integer;return true;
+        }
+        const bool slice=sequence_slice_method(name).has_value(),query=sequence_query_method(name).has_value();
+        const bool numeric=name=="sum" || name=="average" || name=="product" || name=="partialsum";
+        const bool conversion=name=="toset" || name=="tohashset" || name=="asenumerable";
+        if(!slice && !query && !numeric && !conversion && name!="defaultifempty" && name!="concat" && name!="sequenceequal")return false;
+        result.arguments.push_back(std::move(result.left));
+        for(const auto& argument:source.arguments)result.arguments.push_back(expression(*argument));
+        if(slice)return bind_sequence_slice(result,name,"pabcsystem");
+        if(query)return bind_sequence_query(result,name,"pabcsystem");
+        if(numeric)return bind_sequence_numeric(result,name,"pabcsystem");
+        if(conversion)return bind_sequence_conversion(result,name,"pabcsystem");
+        if(name=="defaultifempty")return bind_sequence_default(result,name,"pabcsystem");
+        return bind_sequence_concat(result,name,"pabcsystem");
+    }
+    ABC_PASCAL_NOINLINE std::unique_ptr<hir::Expr> bind_member_chain(const SyntaxExpr& source,Type expected){
+        std::vector<const SyntaxExpr*> chain;const auto* base=&source;
+        while((base->kind==SyntaxExprKind::field || base->kind==SyntaxExprKind::member_call) && base->left){
+            if(!base->type_arguments.empty())break;
+            if(base->left->kind==SyntaxExprKind::name && !lookup(base->left->token)
+                && (base->left->token.text=="pabcsystem" || imported_units_.contains(base->left->token.text)))break;
+            chain.push_back(base);base=base->left.get();
+        }
+        if(chain.empty() || (base->kind==SyntaxExprKind::name && !lookup(base->token) && (!routine_names_.contains(base->token.text) || aliases_.contains(base->token.text))))return {};
+        auto result=expression(*base);
+        for(std::size_t i=chain.size();i>0;--i){
+            const auto& part=*chain[i-1];auto member=std::make_unique<hir::Expr>();member->location=part.token.location;member->operation=part.token.text;member->left=std::move(result);
+            if(bind_sequence_value_member(*member,part))result=std::move(member);
+            else result=bind_member_expression(part,i==1 ? expected : Type::invalid,std::move(member));
+        }
+        return result;
+    }
     ABC_PASCAL_NOINLINE std::unique_ptr<hir::Expr> bind_member_expression(const SyntaxExpr& source,Type expected,std::unique_ptr<hir::Expr> result) {
         (void)expected;
         do {
@@ -2307,7 +2354,7 @@ private:
                 bind_builtin(*result,source.token.text,source.left->token.text); break;
             }
             if(enum_static_member(*result,source))break;
-            result->left = expression(*source.left); const auto receiver = result->left->type;
+            if(!result->left)result->left=expression(*source.left);const auto receiver=result->left->type;
             if(bind_print_extension(*result,source,true))break;
             if(bind_inifile_member(*result,source))break;
             if(bind_encoding_member(*result,source))break;
@@ -2774,7 +2821,7 @@ private:
                 result->kind=hir::ExprKind::local;result->type=Type::boolean;result->local=print_matrix_format();
             } else if (source.token.text=="printdelimdefault") {
                 result->kind=hir::ExprKind::local; result->type=Type::string; result->local=print_delimiter();
-            } else if (source.token.text=="print" || source.token.text=="println" || source.token.text=="hset" || source.token.text=="hsetint" || source.token.text=="hsetstr" || source.token.text=="random2" || source.token.text=="random3") {
+            } else if (source.token.text=="print" || source.token.text=="println" || source.token.text=="hset" || source.token.text=="hsetint" || source.token.text=="hsetstr" || source.token.text=="random2" || source.token.text=="random3" || source.token.text=="seqrandom" || source.token.text=="seqrandominteger" || source.token.text=="seqrandomreal") {
                 SyntaxExpr call{SyntaxExprKind::call,source.token,{},{},1,{},{}};
                 return expression(call);
             } else if (collections_imported_ && (source.token.text == "min_cap" || source.token.text == "inc_cap_factor")) {
@@ -2993,7 +3040,9 @@ private:
             result->type = type.element; result->kind = hir::ExprKind::index; break;
         }
         case SyntaxExprKind::field:
-        case SyntaxExprKind::member_call: return bind_member_expression(source,expected,std::move(result));
+        case SyntaxExprKind::member_call:
+            if(auto chain=bind_member_chain(source,expected))return chain;
+            return bind_member_expression(source,expected,std::move(result));
         case SyntaxExprKind::literal_group: {
             std::u16string text;
             for (const auto& part:source.arguments) {
@@ -3826,6 +3875,16 @@ private:
         result.kind=hir::ExprKind::sequence_call;result.local=2;result.type=sequence_type(CompoundKind::list,element);return true;
     }
     bool bind_sequence_factory(hir::Expr& result,std::string_view name,std::string_view unit={}) {
+        if((name=="seqrandom" || name=="seqrandominteger" || name=="seqrandomreal") && (unit.empty() || unit=="pabcsystem")){
+            const auto method=name=="seqrandomreal" ? RandomSequenceMethod::real : RandomSequenceMethod::integer;const auto parameters=random_sequence_parameters(method);const bool real=method==RandomSequenceMethod::real;
+            if(result.arguments.size()>parameters.size())throw Error("E_TYPE",result.location,"Wrong random sequence argument count");
+            while(result.arguments.size()<parameters.size()){
+                const auto i=result.arguments.size();auto value=std::make_unique<hir::Expr>();value->kind=hir::ExprKind::literal;value->location=result.location;value->type=parameters[i];
+                value->value=i==0 ? Value{std::int32_t{10}} : i==1 ? (real ? Value{0.0} : Value{std::int32_t{0}}) : i==2 ? (real ? Value{10.0} : Value{std::int32_t{100}}) : Value{std::int32_t{1}};result.arguments.push_back(std::move(value));
+            }
+            for(std::size_t i=0;i<parameters.size();++i)result.arguments[i]=convert(std::move(result.arguments[i]),parameters[i]);
+            result.kind=hir::ExprKind::random_sequence;result.local=static_cast<std::size_t>(method);result.type=sequence_type(CompoundKind::sequence,real ? Type::real : Type::integer);return true;
+        }
         if ((name!="seq" && name!="seqfill" && name!="range" && name!="partitionpoints" && name!="linspace") || (!unit.empty() && unit!="pabcsystem")) return false;
         if (name=="partitionpoints" || name=="linspace") {
             if (result.arguments.size()!=3) throw Error("E_TYPE",result.location,"PartitionPoints/Linspace require two real bounds and an integer count");

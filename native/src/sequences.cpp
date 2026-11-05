@@ -4,6 +4,7 @@
 #include "big_integer_runtime.hpp"
 #include "real_range.hpp"
 #include "generators.hpp"
+#include "random_sequence.hpp"
 #include "array_views.hpp"
 #include "matrix_operations.hpp"
 #include "file_lines.hpp"
@@ -61,6 +62,7 @@ void sequence_dispose(const std::shared_ptr<Aggregate>& sequence) noexcept {
     state.partial.reset();state.slice.reset();state.concat.reset();state.transform.reset();state.zip.reset();
     state.generator.reset();state.cartesian.reset();state.power.reset();state.combinator.reset();
     state.view.reset();state.matrix_line.reset();state.text_line.reset();state.hash_cursor.reset();
+    state.random.reset();
 }
 namespace {
 std::shared_ptr<Aggregate> cursor_lease(std::shared_ptr<Aggregate> owner) {
@@ -77,6 +79,10 @@ std::shared_ptr<Aggregate> sequence_begin(Values& values,const std::shared_ptr<A
     auto result=std::make_shared<Aggregate>(); result->type=sequence->type;
     result->sequence=std::make_unique<SequenceState>(*sequence->sequence);
     auto& state=*result->sequence; state.started=true;state.disposed=false; state.first=0;
+    if(state.provider==SequenceProvider::random){
+        if(!state.random)throw runtime_error(RuntimeError::invalid_bytecode,values.location);
+        reserve_state(values);state.random=std::make_shared<RandomSequenceState>(*state.random);state.random->positioned=false;state.random->available=false;state.random->index=0;state.random->current=values.zero(type_info(values.program,sequence->type).element);return cursor_lease(std::move(result));
+    }
     if(state.provider==SequenceProvider::text_lines){reserve_state(values);state.text_line=std::make_shared<TextLineState>();state.text_line->file=state.text_input;return cursor_lease(std::move(result));}
     if (state.provider==SequenceProvider::transform) { reserve_state(values); state.transform=std::make_shared<TransformState>(); return cursor_lease(std::move(result)); }
     if (state.provider==SequenceProvider::zip) { reserve_state(values); state.zip=std::make_shared<ZipState>(); return cursor_lease(std::move(result)); }
@@ -137,6 +143,7 @@ bool sequence_resume(Values& values,const std::shared_ptr<Aggregate>& sequence,s
     const auto location=values.location;
     sequence_check(sequence,location); auto& state=*sequence->sequence;
     if(state.disposed)return false;
+    if(state.provider==SequenceProvider::random)return random_sequence_resume(values,sequence,index,options);
     if(state.provider==SequenceProvider::hash_set || state.provider==SequenceProvider::new_set)return hash_set_resume(values,sequence,index,options);
     if(state.provider==SequenceProvider::file_lines)return file_sequence_resume(values,sequence,index,options);
     if(state.provider==SequenceProvider::text_lines)return text_lines_resume(values,sequence,index);
@@ -206,6 +213,7 @@ bool sequence_resume(Values& values,const std::shared_ptr<Aggregate>& sequence,s
 std::optional<std::uint64_t> sequence_known_length(const std::shared_ptr<Aggregate>& sequence,SourceLocation location) {
     const auto& state=cursor(sequence,location);
     if(state.disposed)return std::uint64_t{0};
+    if(state.provider==SequenceProvider::random)return std::nullopt;
     if (state.provider==SequenceProvider::text_lines || state.provider==SequenceProvider::file_lines || state.provider==SequenceProvider::matrix_lines || state.provider==SequenceProvider::array_view || state.provider==SequenceProvider::combinatorics || state.provider==SequenceProvider::cartesian || state.provider==SequenceProvider::cartesian_power || state.provider==SequenceProvider::generated || state.provider==SequenceProvider::zip || state.provider==SequenceProvider::transform || state.provider==SequenceProvider::concat || state.provider==SequenceProvider::slice || state.provider==SequenceProvider::partial_sum || state.provider==SequenceProvider::big_range || (state.provider==SequenceProvider::real_range && !state.real_range->initialized)) return std::nullopt;
     return state.count;
 }
@@ -226,6 +234,7 @@ Value sequence_at(Values& values,const std::shared_ptr<Aggregate>& sequence,std:
         return finite_partition(first+finite_partition(offset,values.location),values.location);
     }
     if(state.provider==SequenceProvider::hash_set || state.provider==SequenceProvider::new_set)return values.copy(state.hash_cursor->current);
+    if(state.provider==SequenceProvider::random)return values.copy(state.random->current);
     if(state.provider==SequenceProvider::file_lines)return state.file_line->current;
     if(state.provider==SequenceProvider::text_lines)return state.text_line->current;
     if (state.provider==SequenceProvider::string) return std::get<std::u16string>(state.seed->value)[static_cast<std::size_t>(index)];

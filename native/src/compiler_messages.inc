@@ -485,3 +485,4 @@
     {"RealRange property is not callable","Свойство RealRange нельзя вызывать как функцию"},
     {"RealRange member is not ported yet","Этот член RealRange пока не перенесён"},
     {"InternalRange requires two bounds","Для InternalRange требуются две границы"},
+    {"Wrong random sequence argument count","Неверное число аргументов случайной последовательности"},

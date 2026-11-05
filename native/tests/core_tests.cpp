@@ -19,6 +19,7 @@
 #include "../src/hash_set.hpp"
 #include "../src/ordinal_range.hpp"
 #include "../src/real_interval.hpp"
+#include "../src/random_sequence.hpp"
 #include "../src/new_set.hpp"
 #include "../src/print.hpp"
 #include "../src/constant.hpp"
@@ -4681,6 +4682,48 @@ void real_intervals_and_range_random() {
     }
 }
 
+void random_sequences_library() {
+    {std::string query="0";for(unsigned i=0;i<100;++i)query="s.Take("+query+").Count";result("begin var s:=SeqRandom(1,1,9);Writeln("+query+");end.","0\n");}
+    {std::string query="0";for(unsigned i=0;i<100;++i)query="s.ElementAt("+query+")";result("begin var s:=Seq(0);Writeln("+query+");end.","0\n");}
+    {std::string target="x";for(unsigned i=0;i<100;++i)target+=".next";result("type C=class public next:C;end;var x:C;begin if False then "+target+":=x;end.","");}
+    result("begin var a:=Arr(1,2,3);Writeln(a.ToSet&<integer>().Count);end.","3\n");
+    compile_error("begin var a:=Arr(1,2,3);Writeln(a.ToSet&<real>().Count);end.","E_TYPE");
+    result("begin Randomize(1);var s:=SeqRandom(3,1,9);var before:=Random(100);var a:=s.ToArray;Randomize(1);Writeln(before=Random(100),' ',a.SequenceEqual(Arr(Random(1,9),Random(1,9),Random(1,9))));end.","True True\n");
+    result("begin Randomize(1);var s:=SeqRandomInteger(3,1,9);var a:=s.ToArray;var b:=s.ToArray;Randomize(1);Writeln(a.SequenceEqual(Arr(Random(1,9),Random(1,9),Random(1,9))),' ',b.SequenceEqual(Arr(Random(1,9),Random(1,9),Random(1,9))));end.","True True\n");
+    result("begin Randomize(1);var s:=SeqRandomReal(3,1.5,9.5);var a:=s.ToArray;Randomize(1);Writeln(a.SequenceEqual(Arr(RandomReal(1.5,9.5,1),RandomReal(1.5,9.5,1),RandomReal(1.5,9.5,1))));Randomize(1);var b:=SeqRandomReal(3,1.5,9.5,-1).ToArray;Randomize(1);Writeln(b.SequenceEqual(Arr(Random(1.5,9.5),Random(1.5,9.5),Random(1.5,9.5))));end.","True\nTrue\n");
+    result("begin Randomize(1);var s:=SeqRandom(5,1,9);Writeln(s.Count);var next:=Random(100);Randomize(1);for var i:=1 to 5 do Random(1,9);Writeln(next=Random(100));end.","5\nTrue\n");
+    result("begin Randomize(1);var s:=SeqRandom(5,1,9);Writeln(s.Take(0).Count,' ',s.Take(2).Count);var next:=Random(100);Randomize(1);Random(1,9);Random(1,9);Writeln(next=Random(100));end.","0 2\nTrue\n");
+    result("begin Randomize(1);var s:=SeqRandom(3,1,9);var first:=s.First;var next:=Random(100);Randomize(1);Writeln(first=Random(1,9),' ',next=Random(100));var large:=SeqRandom(MaxInt,1,9);Randomize(1);var x:=large.First;Randomize(1);Writeln(x=Random(1,9));end.","True True\nTrue\n");
+    result("begin Randomize(1);var s:=SeqRandomInteger(3,1,9);Randomize(2);var a:=s.ToArray;Randomize(2);Writeln(a.SequenceEqual(Arr(Random(1,9),Random(1,9),Random(1,9))));end.","True\n");
+    result("var trace:string;function N:integer;begin trace+='N';Result:=2;end;function A:integer;begin trace+='A';Result:=1;end;function B:integer;begin trace+='B';Result:=9;end;begin var s:=SeqRandom(N,A,B);Writeln(trace);Writeln(s.Count,' ',trace);end.","NAB\n2 NAB\n");
+    result("function Make(n,a,b:integer):sequence of integer:=SeqRandom(n,a,b);begin Randomize(1);var s:=Make(2,1,9);var t:=Make(2,10,19);var a:=s.ToArray;var b:=t.ToArray;Randomize(1);Writeln(a.SequenceEqual(Arr(Random(1,9),Random(1,9))),' ',b.SequenceEqual(Arr(Random(10,19),Random(10,19))));end.","True True\n");
+    result("begin var lo:=1;var hi:=9;var s:=SeqRandomInteger(2,lo,hi);lo:=10;hi:=19;Randomize(1);var a:=s.ToArray;Randomize(1);Writeln(a.SequenceEqual(Arr(Random(1,9),Random(1,9))));end.","True\n");
+    result("begin Randomize(1);var a:=SeqRandomReal(2,3).ToArray;Randomize(1);Writeln(a.SequenceEqual(Arr(RandomReal(3,10,1),RandomReal(3,10,1))));Writeln(SeqRandom.Count,' ',SeqRandomInteger.Count,' ',PABCSystem.SeqRandomReal.Count);end.","True\n10 10 10\n");
+    result("begin Writeln(SeqRandom(0,0,MaxInt).Count,' ',SeqRandom(-1,0,MaxInt).Count,' ',SeqRandomInteger(not MaxInt,0,MaxInt).Count,' ',SeqRandomReal(0,0,1,99).Count);var s:=SeqRandomReal(2,0,1,99);Writeln(s.Take(0).Count);end.","0 0 0 0\n0\n");
+    result("begin var l:=SeqRandom(5,1,9).ToList;Writeln(l.Count,' ',l.Capacity);var a:=SeqRandom(0).ToArray;Writeln(a.Length);end.","5 8\n0\n");
+    result("begin Randomize(1);var s:=SeqRandom(2,1,9);var a:=s.Select(x->begin Randomize(1);Result:=x;end).ToArray;Randomize(1);var x:=Random(1,9);Writeln(a.SequenceEqual(Arr(x,x)));end.","True\n");
+    result("function SeqRandom(n:integer):integer:=n+10;begin Writeln(SeqRandom(1),' ',PABCSystem.SeqRandom(2,1,9).Count);end.","11 2\n");
+    runtime_error("begin var s:=SeqRandom(1,0,MaxInt);Writeln(s.Take(0).Count);s.First;end.","E_OVERFLOW");
+    runtime_error("begin var s:=SeqRandomReal(1,0,1,16);s.First;end.","E_RANGE");
+    runtime_error("begin var s:=SeqRandom(1,1 div 0,9);end.","E_DIV_ZERO");
+    for(const auto source:{"begin var s:=SeqRandom('bad');end.","begin var s:=SeqRandomReal(1.5);end.","begin var s:=SeqRandom(1,1,9,2);end.","begin var s:=SeqRandomReal(1,0,1,'bad');end.","begin var s:=SeqRandom(1,1..9);end."})compile_error(source,"E_TYPE");
+    {
+        auto p=abc::compile("begin var s:=SeqRandom(3,1,9);end.");const auto owner=static_cast<abc::Type>(64+std::distance(p.types.begin(),std::find_if(p.types.begin(),p.types.end(),[](const auto& t){return t.kind==abc::CompoundKind::sequence && t.element==abc::Type::integer;})));
+        for(unsigned mode=0;mode<3;++mode){auto bad=p;for(auto& op:bad.code)if(op.op==abc::Op::random_sequence){if(mode==0)op.operand=255;if(mode==1)op.type=abc::Type::integer;if(mode==2)op.operand|=std::size_t{1}<<32U;}error([&]{abc::verify(bad);},"E_BYTECODE");}
+        abc::Values values{p,200};int draws=0;values.invoke_builtin=[&](std::size_t,std::span<const abc::Value> arguments)->abc::Value{require(arguments.size()==2 && std::get<std::int32_t>(arguments[0])==1 && std::get<std::int32_t>(arguments[1])==9,"Random cursor retains typed captured bounds");return std::int32_t{++draws};};
+        const std::array<abc::Value,3> args{std::int32_t{3},std::int32_t{1},std::int32_t{9}};
+        const auto s=abc::random_sequence_create(values,owner,abc::RandomSequenceMethod::integer,args);auto a=abc::sequence_begin(values,s),b=abc::sequence_begin(values,s);require(draws==0 && !abc::sequence_known_length(a,{}),"Random construction/opening stays lazy and does not expose a count shortcut");
+        require(abc::sequence_resume(values,a,0,{}) && std::get<std::int32_t>(abc::sequence_at(values,a,0,{}))==1 && abc::sequence_resume(values,a,0,{}) && draws==1,"Repeated Current and resume do not consume another random sample");
+        require(abc::sequence_resume(values,b,0,{}) && std::get<std::int32_t>(abc::sequence_at(values,b,0,{}))==2,"Independent cursors share the execution random stream");
+        require(abc::sequence_resume(values,a,1,{}) && std::get<std::int32_t>(abc::sequence_at(values,a,1,{}))==3 && std::get<std::int32_t>(abc::sequence_at(values,b,0,{}))==2,"Interleaved cursor positions keep independent Current values");
+        require(abc::sequence_resume(values,a,2,{}) && !abc::sequence_resume(values,a,3,{}) && draws==4,"Random exhaustion consumes no extra sample");
+        abc::sequence_dispose(a);require(!abc::sequence_resume(values,a,4,{}) && draws==4,"Disposed random cursor does not draw");
+        auto c=abc::sequence_begin(values,s);abc::ExecutionOptions cancelled;cancelled.cancelled=[] {return true;};error([&]{(void)abc::sequence_resume(values,c,0,cancelled);},"E_CANCELLED");require(draws==4,"Canceled random resume does not draw");
+        abc::ExecutionOptions limited;limited.instruction_limit=1;error([&]{(void)abc::sequence_resume(values,c,2,limited);},"E_LIMIT");require(draws==5 && std::get<std::int32_t>(abc::sequence_at(values,c,0,{}))==5,"Limited random advancement retains completed samples and cached Current");
+        values.remaining=3;error([&]{(void)abc::random_sequence_create(values,owner,abc::RandomSequenceMethod::integer,args);},"E_LIMIT");
+    }
+}
+
 void membership_library() {
     result("begin var a:=Arr(1,2,3);Writeln(2 in a,' ',4 in a,' ',4 not in a,' ',not (2 not in a));Writeln(1+1 in a = True,' ',(2 in a) and (4 not in a));var l:=Lst(4,5);Writeln(4 in l,' ',2 not in l);end.","True False True True\nTrue True\nTrue True\n");
     result("begin Writeln('bc' in 'abcd',' ','BC' not in 'abcd',' ','' in 'abcd');Writeln('abcd'.Contains('bc'),' ','abcd'.Contains('BC'),' ',''.Contains(''));Writeln('b' in 'abc',' ','abc'.Contains('b'));Writeln('é' in 'é',' ',#55357 in '😀',' ',#0 in 'a'#0'b');end.","True True True\nTrue False True\nTrue True\nFalse True True\n");
@@ -7013,7 +7056,7 @@ void characters() {
 
 int main() {
     language();
-    enumerations(); comparable_ranges(); compound_assignments(); array_operator_library(); membership_library(); hash_set_library(); hash_set_extra_library(); hash_set_factories_library(); ordinal_ranges_library(); real_intervals_and_range_random(); new_set_library(); set_literal_library(); print_extensions_library(); include_exclude_library();
+    enumerations(); comparable_ranges(); compound_assignments(); array_operator_library(); membership_library(); hash_set_library(); hash_set_extra_library(); hash_set_factories_library(); ordinal_ranges_library(); real_intervals_and_range_random(); random_sequences_library(); new_set_library(); set_literal_library(); print_extensions_library(); include_exclude_library();
     structured_loops();
     foreach_loops();
     characters();

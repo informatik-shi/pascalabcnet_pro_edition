@@ -18,6 +18,7 @@
 #include "school_ip.hpp"
 #include "sequences.hpp"
 #include "generators.hpp"
+#include "random_sequence.hpp"
 #include "array_views.hpp"
 #include "matrix_operations.hpp"
 #include "array_operations.hpp"
@@ -221,6 +222,7 @@ static void execute_impl(const Program& program, std::istream& input, std::ostre
         Instruction instruction; instruction.location=location;
         write(text,instruction);
     },delimiter_value,options,school,values,timing};
+    values.invoke_builtin=[&](std::size_t id,std::span<const Value> arguments){return stdlib::invoke(id,arguments,values.location,services);};
     const auto enter_routine=[&](std::size_t id,SourceLocation location,std::span<const std::shared_ptr<Cell>> captured={}) {
         if (id>=program.routines.size()) throw runtime_error(RuntimeError::invalid_bytecode,location);
         if (frames.size()>options.call_limit) throw runtime_error(RuntimeError::call_limit,location);
@@ -292,6 +294,10 @@ static void execute_impl(const Program& program, std::istream& input, std::ostre
                 stack.emplace_back(instruction.operand ? sequence_range_step(values,instruction.type,first,last,step) : sequence_range(values,instruction.type,first,last));
             }
             break;
+        }
+        case Op::random_sequence: {
+            const auto method=static_cast<RandomSequenceMethod>(instruction.operand);std::vector<Value> arguments(random_sequence_parameters(method).size());for(std::size_t i=arguments.size();i>0;--i)arguments[i-1]=pop();
+            stack.emplace_back(random_sequence_create(values,instruction.type,method,arguments));break;
         }
         case Op::sequence_join: {
             const auto delimiter=pop();const auto source=std::get<std::shared_ptr<Aggregate>>(pop());

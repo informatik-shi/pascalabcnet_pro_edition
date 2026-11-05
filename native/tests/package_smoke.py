@@ -215,6 +215,7 @@ def main():
                 ("for-step.pas", "По возрастанию: 1 3 5 \nПо убыванию: 5 3 1 \nСимволы: 53\n"),
                 ("enumerations.pas", "Начало: Ready\nПосле Inc: Running / 1\nПрава: CanRead, CanWrite\nЗапись: True\nСписок: [Ready,Running,Done]\nШаг: Ready\nШаг: Done\n"),
                 ("comparable-ranges.pas", "Границы: True / False\nПорядок границ: True / False\nОграничение: 0 5 9\nМетоды: 9 0\nПеречисление: Tue / True\nСтрока: True / False\n"),
+                ("random-sequences.pas", "created\n[3,1,5]\n[3,1]\nTrue\nTrue\n0\n"),
                 ("real-range-random.pas", "1.5..3.5 2 True\n646184960\nTrue\nTrue\nTrue\n1..3 'a'..'c'\n"),
                 ("ordinal-ranges.pas", "1..5 5 True\n[1,2,3,4,5] [1,3,5] [5,4,3,2,1]\n[9,1,2]\n'a'..'c' {a,b,c}\n[1,2,3,4,5] 9..10\nTrue 2 [2147483647,-2147483648] {}\n"),
                 ("hash-set-factories.pas", "{1,3,4} {1,5,3,4}\n0 {one,two}\n{2,1}\n{3,4} {3,4}\n1 3\n{3,4,9}\nTrue\n5\n"),
@@ -525,6 +526,9 @@ def main():
                     raise RuntimeError(f"{name} Comparison diagnostic mismatch: {attempted.stdout!r}, {attempted.stderr!r}")
             set_source = folder / "Хеш-множества.pas"
             for source, expected, code, line in [
+                ("begin\nWriteln('must never run');SeqRandom('abc');end.", "", "E_TYPE", 2),
+                ("begin\nvar s:=SeqRandomReal(1,0,1,16);Writeln('created');s.First;end.", "created\n", "E_RANGE", 2),
+                ("begin\nvar s:=SeqRandom(1,0,MaxInt);Writeln(s.Take(0).Count);s.First;end.", "0\n", "E_OVERFLOW", 2),
                 ("begin\nWriteln('must never run');Random2('abc');end.", "", "E_TYPE", 2),
                 ("begin\nWriteln('before');Writeln((new RealRange(-MaxReal,MaxReal)).Size);end.", "before\n", "E_OVERFLOW", 2),
                 ("begin\nWriteln('before');MatrRandomReal(1,1,1.5..9.5,1 div 0);end.", "before\n", "E_DIV_ZERO", 2),
@@ -1493,6 +1497,7 @@ def main():
             results[-1]["native_hashset_factories_copy_conversions_and_typed_callable"] = "passed"
             results[-1]["native_ordinal_range_records_count_copy_and_enumeration"] = "passed"
             results[-1]["native_real_range_random_tuples_and_range_arrays"] = "passed"
+            results[-1]["native_lazy_random_sequences_and_deferred_errors"] = "passed"
             results[-1]["native_set_literals_empty_ranges_and_bilingual_errors"] = "passed"
             results[-1]["typed_print_extensions_streaming_and_set_mutation"] = "passed"
     print(json.dumps(results, ensure_ascii=False, indent=2))

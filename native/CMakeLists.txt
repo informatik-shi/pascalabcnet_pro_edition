@@ -17,6 +17,7 @@ add_library(abc_core
     src/big_integer_runtime.cpp
     src/stdlib.cpp
     src/random.cpp
+    src/random_sequence.cpp
     src/console_input.cpp
     src/console_output.cpp
     src/formatting.cpp
@@ -314,6 +315,9 @@ if(BUILD_TESTING)
     add_test(NAME original_set9 COMMAND $<TARGET_FILE:abc> run "${CMAKE_CURRENT_SOURCE_DIR}/../TestSuite/set9.pas")
     add_test(NAME original_hset1 COMMAND $<TARGET_FILE:abc> run "${CMAKE_CURRENT_SOURCE_DIR}/../TestSuite/hset1.pas")
     add_test(NAME original_typed_range COMMAND $<TARGET_FILE:abc> run "${CMAKE_CURRENT_SOURCE_DIR}/../TestSuite/typedRange.pas")
+    add_test(NAME random_sequences_compatibility COMMAND ${CMAKE_COMMAND}
+        -DABC_RUNNER=$<TARGET_FILE:abc> -DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures
+        -DABC_FIXTURE_NAME=random-sequences-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")
     add_test(NAME real_range_random_compatibility COMMAND ${CMAKE_COMMAND}
         -DABC_RUNNER=$<TARGET_FILE:abc> -DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures
         -DABC_FIXTURE_NAME=real-range-random-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")

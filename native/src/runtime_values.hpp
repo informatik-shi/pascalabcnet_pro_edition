@@ -40,6 +40,7 @@ struct Values {
     std::function<Value(std::size_t,std::span<const Value>)> invoke{};
     std::function<Value(const std::shared_ptr<Aggregate>&,std::span<const Value>)> invoke_closure{};
     std::function<void(const std::shared_ptr<Aggregate>&)> observe_object{};
+    std::function<Value(std::size_t,std::span<const Value>)> invoke_builtin{};
     std::size_t callable_target(const std::shared_ptr<Aggregate>& callable) const {
         if (!callable || callable->nil) throw runtime_error(RuntimeError::nil_reference,location);
         if (!callable->routine || *callable->routine>=program.routines.size()

@@ -688,3 +688,24 @@ keeps dimensions, value-snapshot bounds and digits in argument order. A small HI
 evaluate_then node emits existing drop metadata to retain effects of the source
 MatrRandomReal(range,digits) argument while supplying its actual fixed precision 2.
 No additional RNG state or dynamic overload resolution is introduced.
+
+
+SeqRandom/SeqRandomInteger/SeqRandomReal use a dedicated random sequence provider
+with typed copied scalar parameters. Construction and cursor opening perform no draws;
+resume calls the same verified scalar builtin service used by ordinary execution.
+Values exposes an execution-owned builtin callback, not a captured RNG object or a
+routine frame. Each cursor clones position/Current state, while the shared execution
+RandomContext remains visible to later Randomize and interleaved consumers. Repeated
+Current is idempotent; Count must enumerate, so the provider exposes no ICollection
+length shortcut. Source loop lowering is for 1..n, retaining empty nonpositive counts.
+Opcode metadata verifies the concrete integer/real sequence and all arguments.
+
+Parser parentheses/lambda and construction alternatives run in separate non-inlined
+helpers, keeping their large local objects off every recursive name/call frame. Member
+chains with a value base bind iteratively; namespace prefixes and explicit generic
+anchors retain their existing resolution. This preserves the language depth limit
+while supporting nested calls and long self-referential field paths with the normal
+1 MiB Windows stack under the independent Clang Release build. Sequence arguments
+bind through a compact non-inlined dispatcher; bytecode operator-table initialization
+also runs outside recursive emission frames. Regressions include 100 nested
+Take(...).Count and ElementAt(...) calls without enlarging the executable stack.

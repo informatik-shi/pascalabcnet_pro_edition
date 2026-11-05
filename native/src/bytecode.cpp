@@ -14,6 +14,7 @@
 #include "formatting.hpp"
 #include "school_ip.hpp"
 #include "generators.hpp"
+#include "random_sequence.hpp"
 #include "array_views.hpp"
 #include "matrix_operations.hpp"
 #include "array_operations.hpp"
@@ -27,8 +28,24 @@
 #include <map>
 #include <set>
 
+#if defined(_MSC_VER)
+#define ABC_BYTECODE_NOINLINE __declspec(noinline)
+#else
+#define ABC_BYTECODE_NOINLINE __attribute__((noinline))
+#endif
+
 namespace abc {
 namespace {
+
+// Keep the operator table initialization out of every recursive emission frame.
+ABC_BYTECODE_NOINLINE Op binary_operation(const std::string& name) {
+    static const std::map<std::string, Op> operations{
+                {"+", Op::add}, {"-", Op::subtract}, {"*", Op::multiply}, {"/", Op::divide_real},
+                {"div", Op::divide_int}, {"mod", Op::modulo}, {"=", Op::equal}, {"<>", Op::not_equal},
+                {"<", Op::less}, {"<=", Op::less_equal}, {">", Op::greater}, {">=", Op::greater_equal},
+                {"and",Op::bit_and}, {"or",Op::bit_or}, {"xor",Op::bit_xor}, {"shl",Op::shift_left}, {"shr",Op::shift_right}};
+    return operations.at(name);
+}
 
 class Generator {
 public:
@@ -100,6 +117,8 @@ private:
             expression(*node.left); expression(*node.right);
             for (const auto& argument:node.arguments) expression(*argument);
             emit(Op::sequence_range,node.type,node.arguments.size(),node.location); break;
+        case hir::ExprKind::random_sequence:
+            for(const auto& argument:node.arguments)expression(*argument);emit(Op::random_sequence,node.type,node.local,node.location);break;
         case hir::ExprKind::sequence_partition:
             for (const auto& argument:node.arguments) expression(*argument);
             emit(Op::sequence_partition,node.type,node.local,node.location); break;
@@ -452,12 +471,7 @@ private:
                 break;
             }
             expression(*node.right);
-            static const std::map<std::string, Op> operations{
-                {"+", Op::add}, {"-", Op::subtract}, {"*", Op::multiply}, {"/", Op::divide_real},
-                {"div", Op::divide_int}, {"mod", Op::modulo}, {"=", Op::equal}, {"<>", Op::not_equal},
-                {"<", Op::less}, {"<=", Op::less_equal}, {">", Op::greater}, {">=", Op::greater_equal},
-                {"and",Op::bit_and}, {"or",Op::bit_or}, {"xor",Op::bit_xor}, {"shl",Op::shift_left}, {"shr",Op::shift_right}};
-            emit(operations.at(node.operation), node.left->type, 0, node.location);
+            emit(binary_operation(node.operation), node.left->type, 0, node.location);
             break;
         }
         }
@@ -795,6 +809,8 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         case Op::sequence_repeat:
             if (!compound(type) || type_info(program,type).kind!=CompoundKind::sequence || instruction.operand) invalid(instruction,"Invalid SeqFill metadata");
             break;
+        case Op::random_sequence:
+            if(instruction.operand>static_cast<std::size_t>(RandomSequenceMethod::real) || !random_sequence_signature(program,type,static_cast<RandomSequenceMethod>(instruction.operand)))invalid(instruction,"Invalid random sequence metadata");break;
         case Op::sequence_partition:
             if (!compound(type) || type_info(program,type).kind!=CompoundKind::sequence || type_info(program,type).element!=Type::real || instruction.operand>1) invalid(instruction,"Invalid partition generator metadata");
             break;
@@ -1513,6 +1529,9 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         case Op::ordinal_range_call: {
             const auto method=static_cast<OrdinalRangeMethod>(instruction.operand);const auto parameters=ordinal_range_parameters(program.types,instruction.type,method);
             for(auto it=parameters.rbegin();it!=parameters.rend();++it)require(*it);const auto result=ordinal_range_result(program.types,instruction.type,method);if(result!=Type::unit)stack.push_back(result);break;
+        }
+        case Op::random_sequence: {
+            const auto parameters=random_sequence_parameters(static_cast<RandomSequenceMethod>(instruction.operand));for(auto it=parameters.rbegin();it!=parameters.rend();++it)require(*it);stack.push_back(instruction.type);break;
         }
         case Op::real_interval_call: {
             const auto method=static_cast<RealIntervalMethod>(instruction.operand);const auto parameters=real_interval_parameters(instruction.type,method);
