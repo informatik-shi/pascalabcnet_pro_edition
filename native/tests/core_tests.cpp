@@ -21,6 +21,7 @@
 #include "../src/real_interval.hpp"
 #include "../src/random_sequence.hpp"
 #include "../src/directory_sequence.hpp"
+#include "../src/file_names.hpp"
 #include "../src/new_set.hpp"
 #include "../src/print.hpp"
 #include "../src/constant.hpp"
@@ -4190,6 +4191,84 @@ void console_unicode_output() {
     error([&]{abc::execute(abc::compile("begin ReadInteger; end."),failed,eof_output);},"E_INPUT");
 }
 
+void file_name_library() {
+    auto temporary=std::filesystem::temp_directory_path();while(temporary.filename().empty() && temporary.parent_path()!=temporary)temporary=temporary.parent_path();
+    const auto parent=temporary/("abc-native-file-names-"+std::to_string(std::chrono::steady_clock::now().time_since_epoch().count())),root=parent/"Root";
+    std::filesystem::create_directories(root);
+    struct Cleanup{std::filesystem::path path;~Cleanup(){std::error_code ec;std::filesystem::remove_all(path,ec);}} cleanup{parent};
+    abc::FileContext files;files.change_directory(root.u16string(),{});
+    const auto path_literal=[](const std::filesystem::path& path){const auto text=abc::to_utf8(path.u16string());std::string result="'";for(char c:text){result+=c;if(c=='\'')result+=c;}return result+"'";};
+#ifdef _WIN32
+    const auto fixtures=std::filesystem::path(abc::from_utf8(__FILE__)).parent_path()/"fixtures";
+    std::ifstream corpus(fixtures/"file-names-windows.tsv");require(static_cast<bool>(corpus),"Independent FileInfo filename corpus is present");
+    const auto decode=[](std::string_view text){const auto nibble=[](char c){return c<='9' ? c-'0' : c-'A'+10;};std::u16string result;for(std::size_t i=0;i+3<text.size();i+=4)result+=static_cast<char16_t>(nibble(text[i])*16+nibble(text[i+1])+(nibble(text[i+2])*16+nibble(text[i+3]))*256);return result;};
+    const auto substitute=[&](std::u16string text){
+        for(const auto& [from,to]:{std::pair<std::u16string,std::u16string>{u"{root}",root.u16string()},{u"{parent}",parent.u16string()},{u"{temp}",temporary.u16string()},{u"{drive}",root.root_name().u16string()}}){for(auto at=text.find(from);at!=std::u16string::npos;at=text.find(from,at+to.size()))text.replace(at,from.size(),to);}
+        auto drive=root.root_name().u16string();if(!drive.empty() && drive[0]>=u'A' && drive[0]<=u'Z')drive[0]+=u'a'-u'A';const std::u16string marker=u"{drive_lower}";if(const auto at=text.find(marker);at!=std::u16string::npos)text.replace(at,marker.size(),drive);return text;
+    };
+    std::string row;unsigned rows=0;
+    while(std::getline(corpus,row)){
+        if(!row.empty() && row.back()=='\r')row.pop_back();const auto a=row.find('\t'),b=row.find('\t',a+1),c=row.find('\t',b+1);
+        if(a==std::string::npos || b==std::string::npos || c==std::string::npos){require(false,"Malformed filename reference row");continue;}
+        const auto input_text=row.substr(0,a);const abc::Value input=input_text=="#" ? abc::Value{abc::NilString{}} : abc::Value{decode(input_text)};
+        const auto method=static_cast<abc::FileNameMethod>(std::stoul(row.substr(a+1,b-a-1)));const auto status=row.substr(b+1,c-b-1);const auto expected=substitute(decode(row.substr(c+1)));
+        try{
+            const auto actual=abc::file_name_info(files,input,method,{},{});
+            require(status=="N" ? std::holds_alternative<abc::NilString>(actual) : status=="S" && std::holds_alternative<std::u16string>(actual) && std::get<std::u16string>(actual)==expected,"FileInfo oracle row "+std::to_string(rows)+", method "+std::to_string(static_cast<unsigned>(method)));
+        }catch(const abc::Error& e){require(e.code==status,"FileInfo oracle row "+std::to_string(rows)+" expected "+status+", got "+e.code);}
+        ++rows;
+    }
+    require(rows==396,"Every independent FileInfo filename reference row loaded");
+    auto drive=root.root_name().u16string();
+    require(abc::string_text(abc::file_name_info(files,drive+u"file.txt",abc::FileNameMethod::full,{},{}))==(root/"file.txt").u16string(),"Drive-relative paths use the execution directory for that drive");
+    drive[0]=static_cast<char16_t>(drive[0]|32);auto lower=(root/"file.txt").u16string();lower[0]=drive[0];
+    require(abc::string_text(abc::file_name_info(files,drive+u"file.txt",abc::FileNameMethod::full,{},{}))==lower,"Drive-relative paths retain the supplied drive letter case");
+    {
+        const auto long_path=root/"Long Native Directory Name";std::filesystem::create_directory(long_path);
+        const auto needed=GetShortPathNameW(long_path.c_str(),nullptr,0);
+        if(needed){std::wstring short_path(needed,L'\0');const auto length=GetShortPathNameW(long_path.c_str(),short_path.data(),needed);short_path.resize(length);
+            if(length && short_path.find(L'~')!=std::wstring::npos){const std::u16string input(short_path.begin(),short_path.end());require(abc::string_text(abc::file_name_info(files,input+u"\\missing.txt",abc::FileNameMethod::full,{},{}))==(long_path/"missing.txt").u16string(),"Short names expand through an existing prefix even with a missing filename");}
+        }
+    }
+#else
+    struct Case{std::u16string input,name,extension,full,directory;};
+    for(const auto& item:{
+        Case{u"/a/b/c.tar.gz",u"c.tar.gz",u".gz",u"/a/b/c.tar.gz",u"/a/b"},
+        Case{u"/a/b/..",u"..",u"",u"/a",u"/"},
+        Case{u"/a/b/../",u"",u"",u"/a/",u"/a"},
+        Case{u"//a///b/../file.",u"file.",u".",u"/a/file.",u"/a"},
+        Case{u"/а/имя.два",u"имя.два",u".два",u"/а/имя.два",u"/а"},
+        Case{u"/a:tag/file.ext",u"file.ext",u".ext",u"/a:tag/file.ext",u"/a:tag"},
+        Case{u"/a\\b.ext",u"a\\b.ext",u".ext",u"/a\\b.ext",u"/"}}){
+        require(abc::string_text(abc::file_name_info(files,item.input,abc::FileNameMethod::name,{},{}))==item.name,"Unix FileInfo preserves the supplied final name component");
+        require(abc::string_text(abc::file_name_info(files,item.input,abc::FileNameMethod::extension,{},{}))==item.extension,"Unix FileInfo extension uses normalized full path");
+        require(abc::string_text(abc::file_name_info(files,item.input,abc::FileNameMethod::full,{},{}))==item.full,"Unix full path collapses segments without requiring filesystem entries");
+        require(abc::string_text(abc::file_name_info(files,item.input,abc::FileNameMethod::directory,{},{}))==item.directory,"Unix directory name uses the normalized absolute parent");
+        require(abc::string_text(abc::file_name_info(files,item.input,abc::FileNameMethod::path,{},{}))==item.directory+(item.directory.back()==u'/' ? u"" : u"\\"),"Source ExtractFilePath appends a backslash even on Unix");
+    }
+    require(abc::string_text(abc::file_name_info(files,std::u16string(u"/a:tag/file.ext"),abc::FileNameMethod::drive,{},{}))==u"/a:","Source ExtractFileDrive uses the first colon in the directory name");
+#endif
+    const auto path=path_literal(root),file=path_literal(root/"file.tar.gz");
+    result("begin ChDir("+path+");Writeln(ExtractFileName('x/../file.tar.gz'),' ',ExtractFileExt('x/../file.tar.gz'));Writeln(ExpandFileName('x/../file.tar.gz')="+file+");Writeln(ExtractFileDir('missing')=GetDir);Writeln(ExtractFilePath('missing')=GetDir+'\\');Writeln('[',ExtractFileName('part/.'),'][',ExtractFileName('part/'),']');end.","file.tar.gz .gz\nTrue\nTrue\nTrue\n[.][]\n");
+    result("function ExtractFileName(s:string):integer:=7;begin Writeln(ExtractFileName('x'),' ',PABCSystem.ExtractFileName('abc.txt'),' ',PABCSystem.ExtractFileExt('abc.txt'));end.","7 abc.txt .txt\n");
+    result("begin Writeln(ExtractFileName('a'),' ',ExtractFileExt('.hidden'),' ',ExtractFileName('Данные/файл.данные'));end.","a .hidden файл.данные\n");
+    for(const auto& name:{"ExtractFileName","ExtractFileExt","ExtractFilePath","ExtractFileDir","ExtractFileDrive","ExpandFileName"}){
+        runtime_error("begin "+std::string(name)+"(nil);end.","E_NIL");
+        runtime_error("begin "+std::string(name)+"('');end.","E_IO");
+        runtime_error("begin "+std::string(name)+"('a'#0'b');end.","E_IO");
+        compile_error("begin Writeln('must never run');"+std::string(name)+"(True);end.","E_TYPE");
+        compile_error("begin "+std::string(name)+"('a','b');end.","E_TYPE");
+    }
+    const auto volume=root.root_path().u16string();
+    require(std::holds_alternative<abc::NilString>(abc::file_name_info(files,volume,abc::FileNameMethod::directory,{},{})),"Root FileInfo directory is a typed nil string");
+    error([&]{(void)abc::file_name_info(files,volume,abc::FileNameMethod::path,{},{});},"E_NIL");
+    error([&]{(void)abc::file_name_info(files,volume,abc::FileNameMethod::drive,{},{});},"E_NIL");
+    abc::ExecutionOptions options;options.instruction_limit=2;error([&]{(void)abc::file_name_info(files,std::u16string(u"abc"),abc::FileNameMethod::full,{},options);},"E_LIMIT");
+    options={};options.cancelled=[]{return true;};error([&]{(void)abc::file_name_info(files,std::u16string(u"abc"),abc::FileNameMethod::full,{},options);},"E_CANCELLED");
+    error([&]{(void)abc::file_name_info(files,std::u16string(u"abc"),static_cast<abc::FileNameMethod>(99),{},{});},"E_BYTECODE");
+    const auto before=std::filesystem::current_path();(void)run("begin ChDir("+path+");ExpandFileName('x');end.");require(std::filesystem::current_path()==before,"Filename helpers and execution ChDir leave the host working directory unchanged");
+}
+
 void directory_sequence_library() {
     const auto fixtures=std::filesystem::path(abc::from_utf8(__FILE__)).parent_path()/"fixtures";
     const auto verify_corpus=[&](const char* filename,std::size_t expected_rows){
@@ -7171,7 +7250,7 @@ int main() {
     array_output();
     bitwise_operations();
     console_input();
-    console_functions(); console_tuple_functions(); directory_sequence_library();
+    console_functions(); console_tuple_functions(); directory_sequence_library(); file_name_library();
     console_unicode_output();
     rectangular_arrays();
     array_initializers_language();

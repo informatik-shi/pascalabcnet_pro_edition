@@ -23,6 +23,7 @@ add_library(abc_core
     src/formatting.cpp
     src/print.cpp
     src/files.cpp
+    src/file_names.cpp
     src/file_reader.cpp
     src/file_writer.cpp
     src/file_lines.cpp
@@ -211,6 +212,9 @@ if(BUILD_TESTING)
     add_test(NAME console_functions_compatibility COMMAND ${CMAKE_COMMAND}
         "-DABC_RUNNER=$<TARGET_FILE:abc>" "-DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
         -DABC_FIXTURE_NAME=console-functions-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")
+    add_test(NAME file_names_compatibility COMMAND ${CMAKE_COMMAND}
+        "-DABC_RUNNER=$<TARGET_FILE:abc>" "-DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
+        -DABC_FIXTURE_NAME=file-names-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")
     add_test(NAME directory_sequences_compatibility COMMAND ${CMAKE_COMMAND}
         "-DABC_RUNNER=$<TARGET_FILE:abc>" "-DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
         -DABC_FIXTURE_NAME=directory-sequences-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")

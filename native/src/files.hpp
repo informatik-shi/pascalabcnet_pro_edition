@@ -12,6 +12,7 @@ public:
     std::function<const TextEncoding*(SourceLocation)> default_encoding;
     const TextEncoding* encoding(SourceLocation location) const { return default_encoding ? default_encoding(location) : nullptr; }
     std::filesystem::path resolve(std::u16string_view path, SourceLocation location) const;
+    std::u16string full_name(std::u16string_view path,SourceLocation location) const;
     std::u16string directory(SourceLocation location) const;
     void change_directory(std::u16string_view path, SourceLocation location);
     bool rename(std::u16string_view source, std::u16string_view destination, bool directory);
@@ -20,6 +21,11 @@ public:
     bool text_file_locked(const std::filesystem::path& path, bool subtree=false) const;
 private:
     std::filesystem::path current_;
+    void initialize_drives();
+    void remember_drive();
+#ifdef _WIN32
+    std::array<std::filesystem::path,26> drive_directories_;
+#endif
     std::vector<std::weak_ptr<TextFile>> open_texts_;
     std::vector<std::weak_ptr<LineReader>> open_readers_;
 };

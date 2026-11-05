@@ -1,6 +1,7 @@
 #include "stdlib.hpp"
 #include "diagnostics.hpp"
 #include "files.hpp"
+#include "file_names.hpp"
 #include "text_file.hpp"
 #include "file_operations.hpp"
 #include "integer_values.hpp"
@@ -250,6 +251,9 @@ std::span<const Signature> signatures() {
         add("deletefile", {Type::string}, Type::boolean, Function::delete_file);
         add("setcurrentdir", {Type::string}, Type::boolean, Function::set_current_dir);
         add("changefilenameextension", {Type::string,Type::string}, Type::string, Function::change_extension);
+        for(const auto& [name,function]:{std::pair{"extractfilename",Function::extract_file_name},{"extractfileext",Function::extract_file_ext},
+            {"extractfilepath",Function::extract_file_path},{"extractfiledir",Function::extract_file_dir},{"extractfiledrive",Function::extract_file_drive},{"expandfilename",Function::expand_file_name}})
+            add(name,{Type::string},Type::string,function);
         add("renamefile", {Type::string,Type::string}, Type::boolean, Function::rename_file);
         add("renamedirectory", {Type::string,Type::string}, Type::boolean, Function::rename_directory);
         for (auto name:{"assign","assignfile"}) add(name,{Type::text_file,Type::string},Type::unit,Function::text_assign);
@@ -590,6 +594,8 @@ Value invoke(std::size_t id, std::span<const Value> arguments, SourceLocation lo
     if (function == Function::rename_file || function == Function::rename_directory)
         return files.rename(string_text(value),string_text(arguments[1]),function==Function::rename_directory);
     if (function == Function::change_extension) return change_file_extension(value,arguments[1],location);
+    if(function>=Function::extract_file_name && function<=Function::expand_file_name)
+        return file_name_info(files,value,static_cast<FileNameMethod>(static_cast<unsigned>(function)-static_cast<unsigned>(Function::extract_file_name)),location,context.options);
     if (function == Function::read_all_text) return read_text_file(files,string_text(value),location);
     if (function == Function::file_exists) return file_exists(files,string_text(value));
     if (function == Function::write_all_text) {

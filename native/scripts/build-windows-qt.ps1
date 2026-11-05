@@ -90,6 +90,7 @@ RealRange, Random2/Random3 и случайные массивы по диапа�
 Ленивые SeqRandom/SeqRandomInteger/SeqRandomReal: examples/random-sequences.pas.
 Групповой ввод ReadInteger/Real/Char/String2..4: examples/console-tuples.pas.
 Потоковый обход каталогов: examples/directory-sequences.pas.
+Выделение частей и полного имени файла: examples/file-names.pas.
 Типизированный NewSet<T>, SetOf, копирование и процедуры: examples/new-sets.pas.
 Литералы [1..4,9], EmptyCollection, ToSet и ToHashSet: examples/set-literals.pas.
 Print/Println, PrintLines(map), матрицы и Include/Exclude: examples/print-extensions.pas.

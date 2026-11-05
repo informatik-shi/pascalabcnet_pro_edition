@@ -1,0 +1,14 @@
+Windows reference: six PABCSystem FileInfo-based name helpers, 66 inputs,
+396 expected outcomes, generated using development runtime 10.0.11.
+Actual runtime current directory was a private temporary Root folder and restored.
+Absolute temporary prefixes are represented by {root}, {parent}, {temp};
+the current drive is represented by {drive}/{drive_lower}.
+Input/result strings are UTF-16LE hexadecimal; # means nil input, N nil output.
+A dash in the result field denotes an empty hexadecimal string.
+Root null-directory and the source appended-backslash behavior are retained.
+No reference compiler or managed runtime is part of the application package.
+Source declarations and bodies: bin/Lib/PABCSystem.pas.
+Behavioral sources, dotnet/runtime v10.0.0 (MIT):
+https://github.com/dotnet/runtime/blob/v10.0.0/src/libraries/System.Private.CoreLib/src/System/IO/FileInfo.cs
+https://github.com/dotnet/runtime/blob/v10.0.0/src/libraries/System.Private.CoreLib/src/System/IO/FileSystemInfo.cs
+https://github.com/dotnet/runtime/blob/v10.0.0/src/libraries/System.Private.CoreLib/src/System/IO/Path.Unix.cs

@@ -14,14 +14,11 @@ FileContext::FileContext() {
     std::error_code error;
     current_ = std::filesystem::current_path(error);
     if (error) current_.clear();
+    initialize_drives();
 }
 std::filesystem::path FileContext::resolve(std::u16string_view text, SourceLocation location) const {
-    if (text.empty() || text.find(char16_t{0}) != std::u16string_view::npos)
-        throw runtime_error(RuntimeError::file_io,location);
-    auto utf8 = to_utf8(text,true);
-    const std::filesystem::path input(std::u8string(utf8.begin(),utf8.end()));
-    if (current_.empty() && !input.is_absolute()) throw runtime_error(RuntimeError::file_io,location);
-    return (current_/input).lexically_normal();
+    const auto normalized=full_name(text,location);
+    auto utf8=to_utf8(normalized,true);return std::filesystem::path(std::u8string(utf8.begin(),utf8.end()));
 }
 std::u16string FileContext::directory(SourceLocation location) const {
     std::error_code error;
@@ -48,7 +45,7 @@ void FileContext::change_directory(std::u16string_view path, SourceLocation loca
 #endif
     auto absolute=std::filesystem::canonical(target,error);
     if (error) throw runtime_error(RuntimeError::directory_io,location);
-    current_=std::move(absolute);
+    current_=std::move(absolute);remember_drive();
 }
 std::u16string read_text_file(const FileContext& files,std::u16string_view path,SourceLocation location,const TextEncoding* encoding) {
     const auto target=files.resolve(path,location);if(!encoding)encoding=files.encoding(location);

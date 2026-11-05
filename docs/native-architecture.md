@@ -726,3 +726,11 @@ queue. Root open is eager, repeated traversal opens an independent cursor, and
 cursor leases close active/pending iterators on disposal or unwinding. Pattern
 matching uses bounded iterative dynamic programming over DOS wildcard tokens;
 UTF-16 current paths use existing sequence consumers and static element typing.
+
+Filename helpers use ordinary verified string builtin signatures. Native FileContext
+captures per-drive Windows directories and updates them on execution ChDir, then
+normalizes paths without changing host cwd. Filesystem resolve and the six name
+helpers share this model. Windows GetFullPathName/GetLongPathName retain device,
+UNC and existing-prefix short-name behavior; Unix folds segments as text without
+resolving links. Original input is retained for Name, normalized full path supplies
+Extension/DirectoryName; nil root parents and source Path/Drive quirks stay explicit.
