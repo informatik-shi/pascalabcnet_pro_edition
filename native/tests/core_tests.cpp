@@ -23,6 +23,7 @@
 #include "../src/directory_sequence.hpp"
 #include "../src/file_names.hpp"
 #include "../src/environment.hpp"
+#include "../src/stdlib.hpp"
 #include "../src/disk_space.hpp"
 #include "../src/new_set.hpp"
 #include "../src/print.hpp"
@@ -2870,7 +2871,7 @@ void sequence_callbacks_library() {
     runtime_error("var a:List<integer>; function F(value:integer):integer; begin a.Add(2); Result:=value; end; begin a:=new List<integer>; a.Add(1); a.Select(F).Count; end.","E_MODIFIED");
     runtime_error("var a:List<integer>; function F(value:integer):boolean; begin a.Add(2); Result:=False; end; begin a:=new List<integer>; a.Add(1); a.Where(F).First; end.","E_MODIFIED");
     runtime_error("function F(value:integer):integer; begin Result:=value; end; begin Range(MaxInt,MaxInt,1).Select(F).Count; end.","E_OVERFLOW");
-    for(const auto source:{"function F(value:real):integer; begin Result:=1; end; begin Seq(1).Select(F); end.","function F(var value:integer):integer; begin Result:=value; end; begin Seq(1).Select(F); end.","procedure F(value:integer); begin end; begin Seq(1).Select(F); end.","function F(value:integer):integer; begin Result:=1; end; begin Seq(1).Where(F); end.","function F(x,y,z:integer):integer; begin Result:=x+y+z; end; begin Seq(1).Select(F); end.","begin Seq(1).Select(Abs); end.","begin Seq(1).Select; end.","function F(value:integer):integer; begin Result:=value; end; begin var F:=1; Seq(1).Select(F); end."}) compile_error(source,"E_TYPE");
+    for(const auto source:{"function F(value:real):integer; begin Result:=1; end; begin Seq(1).Select(F); end.","function F(var value:integer):integer; begin Result:=value; end; begin Seq(1).Select(F); end.","procedure F(value:integer); begin end; begin Seq(1).Select(F); end.","function F(value:integer):integer; begin Result:=1; end; begin Seq(1).Where(F); end.","function F(x,y,z:integer):integer; begin Result:=x+y+z; end; begin Seq(1).Select(F); end.","begin Seq(True).Select(Abs); end.","begin Seq(1).Select; end.","function F(value:integer):integer; begin Result:=value; end; begin var F:=1; Seq(1).Select(F); end."}) compile_error(source,"E_TYPE");
     abc::ExecutionOptions options; options.instruction_limit=100;
     error([&]{(void)run("function F(value:integer):integer; begin while True do Inc(value); Result:=value; end; begin Seq(1).Select(F).First; end.","",options);},"E_LIMIT");
     options={}; options.call_limit=8;
@@ -4191,6 +4192,42 @@ void console_unicode_output() {
     } input_buffer;
     std::istream failed(&input_buffer); failed.exceptions(std::ios::badbit);
     error([&]{abc::execute(abc::compile("begin ReadInteger; end."),failed,eof_output);},"E_INPUT");
+}
+
+void builtin_callable_library() {
+    std::size_t public_signatures=0;
+    for(const auto& signature:abc::stdlib::signatures()){
+        if(signature.name.starts_with("$"))continue;
+        const auto unit=signature.unit.empty() ? std::string("PABCSystem") : std::string(signature.unit);
+        std::string source=signature.unit.empty() ? "" : "uses "+unit+";";
+        source+="type CallbackType=";source+=signature.result==abc::Type::unit ? "procedure(" : "function(";
+        for(std::size_t n=0;n<signature.parameters.size();++n){if(n)source+=";";source+="a"+std::to_string(n)+":"+std::string(abc::type_name(signature.parameters[n]));}
+        source+=")";if(signature.result!=abc::Type::unit)source+=":"+std::string(abc::type_name(signature.result));
+        source+=";begin var callback:CallbackType:="+unit+"."+std::string(signature.name)+";end.";
+        result(source,"");++public_signatures;
+    }
+    if(trace_tests())std::cerr<<"PUBLIC CALLABLE SIGNATURES "<<public_signatures<<'\n';
+    require(public_signatures>200,"Every public closed catalog signature binds as a typed value without invoking its body");
+    result("begin Writeln(Seq(-1,2).Select(Abs).ToArray);end.","[1,2]\n");
+    result("begin var f:Func<integer,integer>:=Abs;var g:Func<integer,int64>:=Sqr;Writeln(f(-7),' ',g(50000));end.","7 2500000000\n");
+    result("var f:Func<real,real>:=Sin;begin Writeln(f(0));end.","0\n");
+    result("begin var p:function(x:real;n:integer):real:=Power;Writeln(p(2,5));end.","32\n");
+    result("begin var reader:Func0<integer>:=ReadInteger;Writeln(reader(),' ',reader());end.","10 20\n","10 20");
+    result("begin var count:Func0<integer>:=ParamCount;var n:=ParamCount;Writeln(count(),' ',n);end.","0 0\n");
+    result("begin var f:=Sqrt;Writeln(f(9));end.","3\n");
+    result("begin var f:Func<string,string>:=UpperCase;Writeln(f('Яа'));Writeln(Seq('one','два').Select(UpperCase).ToArray);end.","ЯА\n[ONE,ДВА]\n");
+    result("begin var a:array of int64:=Seq(2,3).Select(Sqr).ToArray;Writeln(a);Writeln('1a2'.Where(IsDigit).ToArray);end.","[4,9]\n[1,2]\n");
+    result("function Make:Func<integer,integer>:=Abs;type Holder=record f:Func<integer,integer>;end;begin var h:Holder;h.f:=Make;var a:=Arr(h.f,Make);Writeln(a[0](-5),' ',a[1](-6));end.","5 6\n");
+    result("function Abs(n:integer):integer:=99;begin var local:Func<integer,integer>:=Abs;var native:Func<integer,integer>:=PABCSystem.Abs;Writeln(local(-2),' ',native(-2));end.","99 2\n");
+    result("begin var draw:Func<integer,integer>:=Random;Randomize(37);var n:=draw(100);Randomize(37);Writeln(n=Random(100));end.","True\n");
+    result("uses School;begin var f:Func<int64,string>:=School.Bin;var g:Func<int64,string>:=Bin;Writeln(f(5),' ',g(3));end.","101 11\n");
+    for(const auto& source:{"begin var f:=Abs;end.","begin Seq(1,2).Select(Random).Count;end.","begin var f:Func<integer,real>:=Abs;end.","begin var f:procedure(var n:integer):=Sleep;end.","begin var f:Func0<integer>:=Random;end."})compile_error(source,"E_TYPE");
+    compile_error("begin Write('must never run');var f:Func<string,string>:=ReadFileToEnd;end.","E_NAME");
+    const auto directory=std::filesystem::temp_directory_path()/("abc-native-callable-"+std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    std::filesystem::create_directory(directory);struct Cleanup{std::filesystem::path path;~Cleanup(){std::error_code ec;std::filesystem::remove_all(path,ec);}} cleanup{directory};
+    const auto file=directory/"typed.txt";std::string literal="'";for(char c:abc::to_utf8(file.u16string())){literal+=c;if(c=='\'')literal+=c;}literal+="'";
+    result("uses FilesOperations;begin DefaultEncoding:=Encoding.UTF8;var put:procedure(path:string;text:string):=FilesOperations.WriteStringToFile;var get:Func<string,string>:=ReadFileToEnd;put("+literal+",'Я🌍');Writeln(get("+literal+")='Я🌍'+NewLine);end.","True\n");
+    result("begin var open:Func<string,Text>:=OpenRead;var closeFile:Action<Text>:=PABCSystem.CloseFile;var f:=open("+literal+");Writeln(f.ReadToEnd);closeFile(f);Writeln(DeleteFile("+literal+"));end.","Я🌍\nTrue\n");
 }
 
 void termination_library() {
@@ -7345,7 +7382,7 @@ int main() {
     array_output();
     bitwise_operations();
     console_input();
-    console_functions(); console_tuple_functions(); directory_sequence_library(); file_name_library(); system_environment_library(); termination_library();
+    console_functions(); console_tuple_functions(); directory_sequence_library(); file_name_library(); system_environment_library(); termination_library(); builtin_callable_library();
     console_unicode_output();
     rectangular_arrays();
     array_initializers_language();

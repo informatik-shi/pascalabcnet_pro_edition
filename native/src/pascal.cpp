@@ -1377,49 +1377,60 @@ private:
         return value;
     }
     ABC_PASCAL_NOINLINE std::unique_ptr<hir::Expr> builtin_function_value(const SyntaxExpr& source,Type expected=Type::invalid,const std::vector<Type>& hints={}) {
+        std::string_view unit;
         if (source.kind==SyntaxExprKind::name) {
             if (lookup(source.token) || routine_names_.contains(source.token.text)) return {};
         } else if (source.kind==SyntaxExprKind::field && source.left && source.left->kind==SyntaxExprKind::name) {
-            if (lookup(source.left->token) || source.left->token.text!="pabcsystem") return {};
+            unit=source.left->token.text;
+            if (lookup(source.left->token) || !imported_units_.contains(std::string(unit))) return {};
         } else return {};
         const auto context=callable_type(expected) ? std::optional<TypeInfo>{info(expected,source.token.location)} : std::nullopt;
         const auto catalog=stdlib::signatures();
+        const auto visible=[&](const auto& signature){
+            if(signature.name!=source.token.text || signature.name.starts_with("$"))return false;
+            if(unit.empty())return signature.unit.empty() || imported_units_.contains(std::string(signature.unit));
+            return signature.unit==(unit=="pabcsystem" ? std::string_view{} : unit);
+        };
+        // An implicit zero-argument call keeps its value semantics without a delegate target.
+        if(!context && hints.empty())for(const auto& signature:catalog)
+            if(visible(signature) && signature.parameters.empty())return {};
+        std::optional<std::size_t> chosen;
         for (std::size_t id=0;id<catalog.size();++id) {
-            const auto& signature=catalog[id];
-            if (signature.name!=source.token.text) continue;
-            const bool character=signature.function==stdlib::Function::windows_character || signature.function==stdlib::Function::windows_ordinal;
-            if (!character && signature.function!=stdlib::Function::terminate_program) continue;
-            // Bare Halt remains a call unless a target or callback supplies its signature.
-            if (!character && !context && (hints.empty() || signature.parameters.empty())) continue;
+            const auto& signature=catalog[id];if(!visible(signature))continue;
             if (context) {
                 if (context->element!=signature.result || context->parameters.size()!=signature.parameters.size()) continue;
                 bool matches=true;
                 for(std::size_t n=0;n<signature.parameters.size();++n)
                     if(context->parameters[n].by_reference || context->parameters[n].variadic || context->parameters[n].type!=signature.parameters[n])matches=false;
                 if(!matches)continue;
-            // Hints also offer optional index arguments; unary callbacks consume the prefix.
-            } else if (!hints.empty() && (hints.size()<signature.parameters.size()
-                || !std::equal(signature.parameters.begin(),signature.parameters.end(),hints.begin()))) continue;
-            auto found=builtin_routines_.find(id);
-            if (found==builtin_routines_.end()) {
-                if (module_.routines.size()>=256) throw Error("E_LIMIT",source.token.location,"Routine limit exceeded");
-                hir::RoutineBody body;body.signature.name="$builtin_"+std::to_string(id);body.signature.result=signature.result;
-                auto local=[&](std::string name,Type type) {
-                    const auto n=module_.locals.size();module_.locals.push_back({std::move(name),type,false});body.signature.locals.push_back(n);lambda_locals_.insert(n);return n;
-                };
-                auto call=std::make_unique<hir::Expr>();call->kind=hir::ExprKind::call;call->type=signature.result;call->local=id;call->location=source.token.location;
-                for(const auto type:signature.parameters){
-                    const auto argument=local("$argument",type);body.signature.parameters.push_back({argument,type});
-                    auto value=std::make_unique<hir::Expr>();value->kind=hir::ExprKind::local;value->type=type;value->local=argument;value->location=source.token.location;call->arguments.push_back(std::move(value));
-                }
-                if(signature.result!=Type::unit)body.signature.result_local=local("$result",signature.result);
-                body.body.kind=signature.result==Type::unit ? hir::StmtKind::call : hir::StmtKind::return_stmt;
-                body.body.location=source.token.location;body.body.expression=std::move(call);
-                const auto routine=module_.routines.size();module_.routines.push_back(std::move(body));found=builtin_routines_.emplace(id,routine).first;
+            } else if (!hints.empty()) {
+                // Hints also offer optional index arguments; callbacks consume a nonempty prefix.
+                if(signature.parameters.empty() || hints.size()<signature.parameters.size()
+                    || !std::equal(signature.parameters.begin(),signature.parameters.end(),hints.begin()))continue;
             }
-            return routine_value(found->second,source.token.location,expected);
+            if(chosen)throw Error("E_TYPE",source.token.location,"Ambiguous overload for '"+source.token.text+"'");
+            chosen=id;
         }
-        return {};
+        if(!chosen)return {};
+        const auto id=*chosen;const auto& signature=catalog[id];
+        auto found=builtin_routines_.find(id);
+        if (found==builtin_routines_.end()) {
+            if (module_.routines.size()>=256) throw Error("E_LIMIT",source.token.location,"Routine limit exceeded");
+            hir::RoutineBody body;body.signature.name="$builtin_"+std::to_string(id);body.signature.result=signature.result;
+            auto local=[&](std::string name,Type type) {
+                const auto n=module_.locals.size();module_.locals.push_back({std::move(name),type,false});body.signature.locals.push_back(n);lambda_locals_.insert(n);return n;
+            };
+            auto call=std::make_unique<hir::Expr>();call->kind=hir::ExprKind::call;call->type=signature.result;call->local=id;call->location=source.token.location;
+            for(const auto type:signature.parameters){
+                const auto argument=local("$argument",type);body.signature.parameters.push_back({argument,type});
+                auto value=std::make_unique<hir::Expr>();value->kind=hir::ExprKind::local;value->type=type;value->local=argument;value->location=source.token.location;call->arguments.push_back(std::move(value));
+            }
+            if(signature.result!=Type::unit)body.signature.result_local=local("$result",signature.result);
+            body.body.kind=signature.result==Type::unit ? hir::StmtKind::call : hir::StmtKind::return_stmt;
+            body.body.location=source.token.location;body.body.expression=std::move(call);
+            const auto routine=module_.routines.size();module_.routines.push_back(std::move(body));found=builtin_routines_.emplace(id,routine).first;
+        }
+        return routine_value(found->second,source.token.location,expected);
     }
     Type inifile_type(SourceLocation location) {
         if(!imported_units_.contains("inifile"))throw Error("E_UNSUPPORTED",location,"TIniFile requires uses IniFile");

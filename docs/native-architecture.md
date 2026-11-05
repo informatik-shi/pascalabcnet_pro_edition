@@ -752,3 +752,12 @@ return zero. Program-owned frames, closures, sequences and files unwind through
 native RAII; pending console UTF-16 is finalized before returning. No process-global
 exit state is shared between executions. This deliberately replaces source
 Process.Kill/Environment.Exit with execution-local termination for embedding.
+
+Public catalog method groups bind to statically known callable targets using exact
+parameter/result/ref/params signatures and unit visibility. Uncontextualized unique
+mandatory-parameter signatures may infer a callable; implicit zero-argument calls
+retain invocation semantics. Callback hints describe a nonempty prefix including
+optional indices; multiple matching signatures are compile-time ambiguities.
+One ordinary verified routine thunk is cached per selected catalog signature and
+shares the current VM services. Private $ intrinsics never enter method-group
+lookup. This reuses unit/result bytecode contracts without a dynamic overload bridge.
