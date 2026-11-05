@@ -17,6 +17,7 @@
 #include "../src/comparable.hpp"
 #include "../src/compound.hpp"
 #include "../src/hash_set.hpp"
+#include "../src/ordinal_range.hpp"
 #include "../src/new_set.hpp"
 #include "../src/print.hpp"
 #include "../src/constant.hpp"
@@ -4617,6 +4618,37 @@ void hash_set_factories_library() {
     }
 }
 
+void ordinal_ranges_library() {
+    result("begin var r:IntRange:=1..5;Writeln(r.Low,' ',r.High,' ',r.Count,' ',r.IsEmpty,' ',r);Writeln(r.Contains(2),' ',r.Contains(2.5),' ',2.5 in r,' ',6 not in r);Writeln(r.ToArray,' ',Arr(r),' ',Lst(r),' ',HSet(r));Writeln(r.Step(2).ToArray,' ',r.Reverse.ToArray);end.","1 5 5 False 1..5\nTrue True True True\n[1,2,3,4,5] [1,2,3,4,5] [1,2,3,4,5] {1,2,3,4,5}\n[1,3,5] [5,4,3,2,1]\n");
+    result("begin var r:=new CharRange('a','d');Writeln(r.Low,' ',r.High,' ',r.Count,' ',r.ToString);Writeln('b' in r,' ',r.Contains('x'),' ',r.ToArray);Writeln(Arr(r),' ',Lst(r),' ',HSet(r),' ',r.Reverse.ToArray);var z:=new CharRange;Writeln(Ord(z.Low),' ',Ord(z.High),' ',z.Count);end.","a d 4 'a'..'d'\nTrue False [a,b,c,d]\n[a,b,c,d] [a,b,c,d] {a,b,c,d} [d,c,b,a]\n0 0 1\n");
+    result("begin var r:=new IntRange;Writeln(r,' ',r.Count);r:=3..1;Writeln(r.IsEmpty,' ',r.Count,' ',r.ToArray,' ',r.Reverse.ToArray);var chars:CharRange:='z'..'a';Writeln(chars.IsEmpty,' ',chars.Count,' ',chars.ToArray);end.","0..0 1\nTrue 0 [] []\nTrue 0 []\n");
+    result("begin var a:=1..3;var b:=a;a:=9..10;Writeln(a,' ',b,' ',b=1..3,' ',a<>b,' ',b.Equals(new IntRange(1,3)));var seq:sequence of integer:=b;b:=7..8;Writeln(seq.ToArray,' ',b);var n:=0;foreach var x in 1..4 do n+=x;Writeln(n);end.","9..10 1..3 True True True\n[1,2,3] 7..8\n10\n");
+    result("begin var r:=1+2..2*4;Writeln(r,' ',2 in 1..3,' ',1+2 in 2..4,' ',not (8 in 1..3));Writeln([1..3,9],' ',[('a')..('c')]);end.","3..8 True True True\n{9,1,2,3} {a,b,c}\n");
+    result("var trace:string;function X:integer;begin trace+='x';Result:=2;end;function R:IntRange;begin trace+='r';Result:=1..3;end;begin Writeln(X in R,' ',trace);end.","True xr\n");
+    result("begin var r:=1..8;var a:=Arr(9,9,9);r.CopyTo(a,1);Writeln(a);r.CopyTo(a,4);Writeln(a);var e:=3..1;e.CopyTo(a,-1);Writeln(a);end.","[9,1,2]\n[9,1,2]\n[9,1,2]\n");
+    result("begin var r:=new CharRange('b','f');var a:=Arr('x','x','x');r.CopyTo(a,0);Writeln(a);end.","[b,c,d]\n");
+    result("begin var r:=new IntRange((not MaxInt),MaxInt);Writeln(r.Count,' ',r.IsEmpty,' ',r.ToArray,' ',r.AsEnumerable.Count,' ',Lst(r),' ',HSet(r));end.","0 False [] 0 [] {}\n");
+    result("begin var r:=new IntRange(0,MaxInt);Writeln(r.Count,' ',r.ToArray,' ',r.ToList,' ',r.AsEnumerable.Count);end.","0 [] [] 0\n");
+    result("begin var r:=new IntRange(MaxInt,(not MaxInt));Writeln(r.IsEmpty,' ',r.Count,' ',r.ToArray,' ',r.ToList,' ',HSet(r));var n:=0;foreach var x in r do Inc(n);Writeln(n);var l:=Lst(9);l.AddRange(r);l.InsertRange(0,r);Writeln(l);end.","True 2 [2147483647,-2147483648] [2147483647,-2147483648] {}\n0\n[2147483647,-2147483648,9,2147483647,-2147483648]\n");
+    result("begin var r:=new IntRange(9,12);Writeln(r.GetHashCode);Writeln((new CharRange('A','B')).GetHashCode);var h:=HSet(r,r,new IntRange(9,13));Writeln(h.Count,' ',h.Contains(new IntRange(9,12)));Writeln(Lst(r,r).Contains(new IntRange(9,12)));end.","1719420075\n-742607187\n2 True\nTrue\n");
+    result("begin var r:=-1..-1;Writeln(r.Contains(longword(4294967295)),' ',longword(4294967295) in r,' ',uint64(4294967295) in r);end.","True True True\n");
+    result("begin var r:=new IntRange(1,3);Writeln(r.Select(x->x*2).ToArray,' ',r.Where(x->x>1).Sum,' ',r.First,' ',r.Last);var l:=new List<integer>(r);Writeln(l,' ',l.Capacity);var h:=new HashSet<integer>(r);Writeln(h);Writeln(r.ToSet&<integer>);end.","[2,4,6] 5 1 3\n[1,2,3] 3\n{1,2,3}\n{1,2,3}\n");
+    result("begin var r:=1..3;var n:=0;var s:=r.Step(0);Writeln(s.Take(0).Count);foreach var x in r do begin Inc(n);r:=9..10;end;Writeln(n,' ',r);end.","0\n3 9..10\n");
+    result("begin var h:=HSet(1,2,3,4,5);var l:=new List<integer>;l.AddRange(h);Writeln(l,' ',l.Capacity);l.InsertRange(0,HSet(8,9));Writeln(l);var s:=SetOf(1,2,3,4,5);var other:=new List<integer>;other.AddRange(s);Writeln(other,' ',other.Capacity);end.","[1,2,3,4,5] 5\n[8,9,1,2,3,4,5]\n[1,2,3,4,5] 8\n");
+    for(const auto source:{"begin var r:=new IntRange(0,MaxInt);foreach var x in r do break;end.","begin var h:=HSet(new IntRange(0,MaxInt));end."})runtime_error(source,"E_RANGE");
+    for(const auto source:{"begin var r:=1..3;r.CopyTo(Arr(0),-1);end.","begin var r:=new IntRange(5,1);r.CopyTo(new integer[0],(not MaxInt));end."})runtime_error(source,"E_BOUNDS");
+    runtime_error("begin var r:=3..1;r.CopyTo(nil,0);end.","E_NIL");
+    runtime_error("begin var r:=1..3;r.Step(0).Count;end.","E_RANGE");
+    for(const auto source:{"begin var r:=new IntRange(1);end.","begin var r:=new CharRange(1,2);end.","begin var r:=1..3;r.Low:=9;end.","begin var r:=1..3;Writeln(r.Count());end.","begin var r:=1.5..3.5;end.","begin var r:CharRange:=1..3;end.","begin var r:='a'..'z';Writeln(r.Contains(1.5));end."})compile_error(source,"E_TYPE");
+    compile_error("begin var r:=1..3;Writeln(r._l);end.","E_UNSUPPORTED");
+    {
+        auto p=abc::compile("begin var r:=1..3;Writeln(r.Count);end.");
+        for(unsigned mode=0;mode<3;++mode){auto bad=p;for(auto& op:bad.code)if(op.op==abc::Op::ordinal_range_call){if(mode==0)op.operand=255;if(mode==1)op.type=abc::Type::integer;if(mode==2)op.operand|=std::size_t{1}<<32U;}error([&]{abc::verify(bad);},"E_BYTECODE");}
+        for(unsigned mode=0;mode<3;++mode){auto bad=p;for(auto& t:bad.types)if(abc::ordinal_range_type(t)){if(mode==0)t.fields[0].name="low";if(mode==1)t.element=abc::Type::real;if(mode==2)t.key=abc::Type::integer;}error([&]{abc::verify(bad);},"E_BYTECODE");}
+        abc::ExecutionOptions options;options.allocation_limit=10;error([&]{(void)run("begin var r:=1..100;Writeln(r.ToArray);end.","",options);},"E_LIMIT");
+    }
+}
+
 void membership_library() {
     result("begin var a:=Arr(1,2,3);Writeln(2 in a,' ',4 in a,' ',4 not in a,' ',not (2 not in a));Writeln(1+1 in a = True,' ',(2 in a) and (4 not in a));var l:=Lst(4,5);Writeln(4 in l,' ',2 not in l);end.","True False True True\nTrue True\nTrue True\n");
     result("begin Writeln('bc' in 'abcd',' ','BC' not in 'abcd',' ','' in 'abcd');Writeln('abcd'.Contains('bc'),' ','abcd'.Contains('BC'),' ',''.Contains(''));Writeln('b' in 'abc',' ','abc'.Contains('b'));Writeln('é' in 'é',' ',#55357 in '😀',' ',#0 in 'a'#0'b');end.","True True True\nTrue False True\nTrue True\nFalse True True\n");
@@ -6949,7 +6981,7 @@ void characters() {
 
 int main() {
     language();
-    enumerations(); comparable_ranges(); compound_assignments(); array_operator_library(); membership_library(); hash_set_library(); hash_set_extra_library(); hash_set_factories_library(); new_set_library(); set_literal_library(); print_extensions_library(); include_exclude_library();
+    enumerations(); comparable_ranges(); compound_assignments(); array_operator_library(); membership_library(); hash_set_library(); hash_set_extra_library(); hash_set_factories_library(); ordinal_ranges_library(); new_set_library(); set_literal_library(); print_extensions_library(); include_exclude_library();
     structured_loops();
     foreach_loops();
     characters();

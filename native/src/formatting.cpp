@@ -4,6 +4,7 @@
 #include "big_integer_runtime.hpp"
 #include "school_ip.hpp"
 #include "enumeration.hpp"
+#include "ordinal_range.hpp"
 #include <array>
 #include <charconv>
 #include <type_traits>
@@ -49,7 +50,8 @@ class ObjectWriter {
         if (std::find(path.begin(),path.end(),object.get())!=path.end()) { append(u"(...)"); return; }
         path.push_back(object.get());
         const auto& info=program.types[static_cast<std::size_t>(type)-static_cast<std::size_t>(Type::first_compound)];
-        if (school_ip_kind(info.kind)) append(school_ip_text(program,object,location));
+        if(ordinal_range_type(info))append(ordinal_range_text(object));
+        else if (school_ip_kind(info.kind)) append(school_ip_text(program,object,location));
         else if (info.kind==CompoundKind::record || info.kind==CompoundKind::tuple) {
             append(u"(");
             for (std::size_t i=0;i<info.fields.size();++i) {

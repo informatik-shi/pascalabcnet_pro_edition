@@ -31,6 +31,7 @@
 #include "ini_file.hpp"
 #include "compound.hpp"
 #include "hash_set.hpp"
+#include "ordinal_range.hpp"
 #include "new_set.hpp"
 #include "print.hpp"
 #include "file_encoding.hpp"
@@ -394,6 +395,7 @@ static void execute_impl(const Program& program, std::istream& input, std::ostre
             if(compound(instruction.type) && type_info(program,instruction.type).kind==CompoundKind::new_set){stack.emplace_back(new_set_sequence(values,static_cast<Type>(instruction.operand),std::get<NewSetValue>(pop())));break;}
             if (instruction.type==Type::string) { stack.emplace_back(sequence_text(values,static_cast<Type>(instruction.operand),pop())); break; }
             const auto source=std::get<std::shared_ptr<Aggregate>>(pop());
+            if(ordinal_range_type(type_info(program,instruction.type))){stack.emplace_back(sequence_create(values,static_cast<Type>(instruction.operand),std::get<std::shared_ptr<Aggregate>>(values.copy(source)),SequenceProvider::ordinal_range));break;}
             stack.emplace_back(sequence_create(values,static_cast<Type>(instruction.operand),source,type_info(program,instruction.type).kind==CompoundKind::array ? SequenceProvider::array : type_info(program,instruction.type).kind==CompoundKind::hash_set ? SequenceProvider::hash_set : SequenceProvider::list)); break;
         }
         case Op::sequence_dispose:
@@ -1108,6 +1110,11 @@ static void execute_impl(const Program& program, std::istream& input, std::ostre
             const auto method=static_cast<HashSetMethod>(instruction.operand&255U);const auto sequence=static_cast<Type>(instruction.operand>>8U);const auto parameters=hash_set_parameters(program.types,instruction.type,sequence,method);
             std::vector<Value> arguments(parameters.size());for(std::size_t i=arguments.size();i>0;--i)arguments[i-1]=pop();auto result=hash_set_invoke(values,instruction.type,sequence,method,arguments,options);
             if(hash_set_result(instruction.type,method)!=Type::unit)stack.push_back(std::move(result));break;
+        }
+        case Op::ordinal_range_call: {
+            const auto method=static_cast<OrdinalRangeMethod>(instruction.operand);const auto parameters=ordinal_range_parameters(program.types,instruction.type,method);
+            std::vector<Value> arguments(parameters.size());for(std::size_t i=arguments.size();i>0;--i)arguments[i-1]=pop();
+            auto result=ordinal_range_invoke(values,instruction.type,method,arguments,options);if(ordinal_range_result(program.types,instruction.type,method)!=Type::unit)stack.push_back(std::move(result));break;
         }
         case Op::compound_call: {
             const auto method=static_cast<CompoundMethod>(instruction.operand);std::vector<Value> arguments(compound_parameters(program,instruction.type,method).size());

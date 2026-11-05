@@ -654,3 +654,21 @@ copy_value method shares constructor CopyFrom storage rules while retaining the 
 Copy(nil) shortcut. Explicit ToSet/ToHashSet reuse closed sequence conversion metadata;
 the EmptyCollection instance ToSet path remains distinct from implicit sequence conversion.
 No dynamic type inference or managed execution is introduced.
+
+
+Ordinal ranges use ordinary record value storage plus a closed NativeRecord tag.
+The verifier fixes integer/char element types, two private storage cells, sequence
+dependency and array methods; direct field instructions cannot expose or mutate the
+private state. ordinal_range_call shares typed parameter/result metadata across HIR,
+verification and execution. Binary .. preserves arithmetic/comparison precedence,
+and membership preserves left-to-right operand evaluation even when endpoints contain
+user calls. Explicit unsigned inputs retain source narrowing overload behavior.
+
+An ordinal_range sequence provider retains a value snapshot. Count/materialization use
+the original ICollection Count/CopyTo path, while opening an enumerator builds the
+source range plan separately. This distinction is observable for unchecked wide and
+reversed endpoints. Int32 wrap operations use uint32 arithmetic and bit_cast, avoiding
+C++ signed overflow. List bulk ranges use the same typed copy path; HashSet uses the
+count hint but still enumerates. Formatting and generic hash/equality recognize the
+native record tag. General user-visible interfaces, boxing and remaining range-related
+standard overloads still require implementation.

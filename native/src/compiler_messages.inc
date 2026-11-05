@@ -478,3 +478,6 @@
     {"Copy requires one explicit element type and one collection","Для Copy требуется один явный тип элемента и одна коллекция"},
     {"Copy explicit element type must match the collection","Явный тип элемента Copy должен совпадать с типом элементов коллекции"},
     {"Set conversion requires one explicit element type and one source","Преобразование множества требует один явный тип элемента и один источник"},
+    {"Wrong ordinal range argument count","Неверное число аргументов диапазона"},
+    {"Ordinal range property is not callable","Свойство диапазона нельзя вызывать как функцию"},
+    {"Ordinal range member is not ported yet","Этот член диапазона пока не перенесён"},

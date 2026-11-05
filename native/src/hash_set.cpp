@@ -1,4 +1,5 @@
 #include "hash_set.hpp"
+#include "ordinal_range.hpp"
 #include "runtime_values.hpp"
 #include "sequences.hpp"
 #include "big_integer_runtime.hpp"
@@ -78,6 +79,7 @@ std::size_t hash(Work& work,const Value& value){
         else if constexpr(std::is_same_v<T,BigInteger>){big_work(v.bits()/16+1,work.values.location,work.options);std::size_t result=0;for(const auto c:v.text(16)){work.step();result=mix(result,static_cast<unsigned char>(c));}return result;}
         else if constexpr(std::is_same_v<T,std::shared_ptr<Aggregate>>){
             if(!v || v->nil)return 0;const auto kind=type_info(work.values.program,v->type).kind;
+            if(ordinal_range_type(type_info(work.values.program,v->type)))return static_cast<std::uint32_t>(ordinal_range_hash(v));
             if(kind==CompoundKind::record || kind==CompoundKind::tuple){std::size_t result=0;for(const auto& field:v->items)result=mix(result,hash(work,field->value));return result;}
             if(kind==CompoundKind::callable){std::size_t result=v->routine.value_or(0);for(const auto& cell:v->captures)result=mix(result,std::hash<const void*>{}(cell.get()));return result;}
             if(kind==CompoundKind::sequence && v->sequence && (collection_sequence(v->sequence->provider) || v->sequence->provider==SequenceProvider::hash_set))return std::hash<const void*>{}(v->sequence->source.get());
@@ -133,6 +135,7 @@ std::optional<std::size_t> collection_count(const std::shared_ptr<Aggregate>& se
     if(!sequence || !sequence->sequence)return {};
     const auto& s=*sequence->sequence;
     if(s.provider==SequenceProvider::hash_set)return s.source->count;
+    if(s.provider==SequenceProvider::ordinal_range)return static_cast<std::size_t>(ordinal_range_count(s.source));
     if(collection_sequence(s.provider))return s.source->items.size();
     return {};
 }

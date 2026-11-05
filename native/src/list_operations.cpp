@@ -1,5 +1,6 @@
 #include "list_operations.hpp"
 #include "sequences.hpp"
+#include "ordinal_range.hpp"
 #include <bit>
 
 namespace abc {
@@ -82,6 +83,15 @@ void list_bulk(Values& values,const std::shared_ptr<Aggregate>& target,const std
     const auto kind=type_info(values.program,input->type).kind;
     if (kind==CompoundKind::array || kind==CompoundKind::list) collection=input;
     else if (input->sequence && collection_sequence(input->sequence->provider)) collection=input->sequence->source;
+    else if(input->sequence && input->sequence->provider==SequenceProvider::hash_set){
+        Type array=Type::invalid;for(std::size_t i=0;i<values.program.types.size();++i){const auto& type=values.program.types[i];if(type.kind==CompoundKind::array && type.rank==1 && type.element==element){array=static_cast<Type>(64+i);break;}}
+        if(array==Type::invalid)throw runtime_error(RuntimeError::invalid_bytecode,values.location);
+        collection=std::get<std::shared_ptr<Aggregate>>(sequence_collect(values,input,array,options));
+    }
+    else if(input->sequence && input->sequence->provider==SequenceProvider::ordinal_range){
+        const auto owner=input->sequence->source->type;const auto array=ordinal_range_array(values.program.types,owner);
+        collection=std::get<std::shared_ptr<Aggregate>>(ordinal_range_collect(values,input->sequence->source,array,options));
+    }
     if (collection) {
         const auto count=collection->items.size();if (!count) return;
         if (target->items.size()>INT32_MAX || count>static_cast<std::size_t>(INT32_MAX)-target->items.size() || count>values.remaining)

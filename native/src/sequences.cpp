@@ -8,6 +8,7 @@
 #include "matrix_operations.hpp"
 #include "file_lines.hpp"
 #include "hash_set.hpp"
+#include "ordinal_range.hpp"
 #include "new_set.hpp"
 #include <cmath>
 
@@ -70,6 +71,7 @@ std::shared_ptr<Aggregate> cursor_lease(std::shared_ptr<Aggregate> owner) {
 std::shared_ptr<Aggregate> sequence_begin(Values& values,const std::shared_ptr<Aggregate>& sequence) {
     require(sequence,values.location);
     if (!sequence->sequence) throw runtime_error(RuntimeError::invalid_bytecode,values.location);
+    if(sequence->sequence->provider==SequenceProvider::ordinal_range)return sequence_begin(values,ordinal_range_begin(values,sequence->type,sequence->sequence->source));
     reserve_state(values);
     if(sequence->sequence->provider==SequenceProvider::file_lines)return cursor_lease(file_sequence_begin(values,sequence));
     auto result=std::make_shared<Aggregate>(); result->type=sequence->type;
@@ -251,6 +253,7 @@ Value sequence_at(Values& values,const std::shared_ptr<Aggregate>& sequence,std:
     return school_ip_sequence_value(values,type_info(values.program,sequence->type).element,state,index);
 }
 Value sequence_collect(Values& values,const std::shared_ptr<Aggregate>& sequence,Type collection,const ExecutionOptions& options) {
+    if(sequence && !sequence->nil && sequence->sequence && sequence->sequence->provider==SequenceProvider::ordinal_range)return ordinal_range_collect(values,sequence->sequence->source,collection,options);
     const auto iterator=sequence_begin(values,sequence);
     if(iterator->sequence->provider!=SequenceProvider::hash_set)(void)sequence_resume(values,iterator,0,options);
     const auto known_count=sequence_known_length(iterator,values.location);

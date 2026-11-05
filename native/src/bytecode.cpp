@@ -6,6 +6,7 @@
 #include "ini_file.hpp"
 #include "compound.hpp"
 #include "hash_set.hpp"
+#include "ordinal_range.hpp"
 #include "new_set.hpp"
 #include "print.hpp"
 #include "runtime_values.hpp"
@@ -321,6 +322,9 @@ private:
             for(std::size_t i=0;i<node.arguments.size();++i)if((i==0 && hash_set_reference(method)) || (i==2 && method==HashSetMethod::try_get_value))reference(*node.arguments[i]);else expression(*node.arguments[i]);
             emit(Op::hash_set_call,node.operation_type,node.local,node.location);break;
         }
+        case hir::ExprKind::ordinal_range_call:
+            for(const auto& argument:node.arguments)expression(*argument);
+            emit(Op::ordinal_range_call,node.operation_type,node.local,node.location);break;
         case hir::ExprKind::compound_call:
             if(compound_reference(static_cast<CompoundMethod>(node.local)))reference(*node.left);else expression(*node.left);
             for(const auto& argument:node.arguments)expression(*argument);
@@ -775,7 +779,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         }
         case Op::sequence_snapshot: case Op::sequence_wrap: {
             const bool text=type==Type::string && instruction.op==Op::sequence_wrap;
-            if ((!text && (!compound(type) || !enumerable_collection(type_info(program,type).kind) || type_info(program,type).rank!=1))
+            if ((!text && (!compound(type) || !enumerable_collection(type_info(program,type)) || type_info(program,type).rank!=1))
                 || instruction.operand<64 || instruction.operand>=64+program.types.size()) invalid(instruction,"Invalid sequence view source");
             const auto& target=type_info(program,static_cast<Type>(instruction.operand));
             if (target.kind!=CompoundKind::sequence || target.element!=(text ? Type::character : type_info(program,type).element)) invalid(instruction,"Invalid sequence view element type");
@@ -1049,6 +1053,8 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if((instruction.operand>>8U) || !new_set_signature(program,type,static_cast<NewSetMethod>(instruction.operand&127U),(instruction.operand&128U)!=0))invalid(instruction,"Invalid NewSet call metadata");break;
         case Op::hash_set_call:
             if((instruction.operand>>8U)>65535U || !hash_set_signature(program,type,static_cast<Type>(instruction.operand>>8U),static_cast<HashSetMethod>(instruction.operand&255U)))invalid(instruction,"Invalid HashSet call metadata");break;
+        case Op::ordinal_range_call:
+            if(instruction.operand>static_cast<std::size_t>(OrdinalRangeMethod::membership_uint64) || !ordinal_range_signature(program,type,static_cast<OrdinalRangeMethod>(instruction.operand)))invalid(instruction,"Invalid ordinal range call metadata");break;
         case Op::compound_call:
             if(instruction.operand>static_cast<std::size_t>(CompoundMethod::matrix_in) || !compound_signature(program,type,static_cast<CompoundMethod>(instruction.operand)))invalid(instruction,"Invalid compound call metadata");break;
         case Op::store_index:
@@ -1135,7 +1141,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             break;
         case Op::get_field: case Op::ref_field:
             if (!compound(type) || (type_info(program,type).kind!=CompoundKind::record && type_info(program,type).kind!=CompoundKind::object_class && !(instruction.op==Op::get_field && type_info(program,type).kind==CompoundKind::tuple))
-                || instruction.operand>=type_info(program,type).fields.size()) invalid(instruction,"Invalid or writable tuple/record access");
+                || ordinal_range_type(type_info(program,type)) || instruction.operand>=type_info(program,type).fields.size()) invalid(instruction,"Invalid or writable tuple/record access");
             break;
         case Op::list_add: case Op::list_remove: case Op::list_clear: case Op::list_contains:
             if (!compound(type) || type_info(program,type).kind != CompoundKind::list) invalid(instruction,"Invalid list instruction"); break;
@@ -1496,6 +1502,10 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             const auto method=static_cast<HashSetMethod>(instruction.operand&255U);const auto parameters=hash_set_parameters(program.types,instruction.type,static_cast<Type>(instruction.operand>>8U),method);
             for(auto it=parameters.rbegin();it!=parameters.rend();++it)require(*it);const auto result=hash_set_result(instruction.type,method);if(result!=Type::unit)stack.push_back(result);break;
         }
+        case Op::ordinal_range_call: {
+            const auto method=static_cast<OrdinalRangeMethod>(instruction.operand);const auto parameters=ordinal_range_parameters(program.types,instruction.type,method);
+            for(auto it=parameters.rbegin();it!=parameters.rend();++it)require(*it);const auto result=ordinal_range_result(program.types,instruction.type,method);if(result!=Type::unit)stack.push_back(result);break;
+        }
         case Op::compound_call: {
             const auto method=static_cast<CompoundMethod>(instruction.operand);const auto parameters=compound_parameters(program,instruction.type,method);
             for(auto p=parameters.rbegin();p!=parameters.rend();++p)require(*p);const auto result=compound_result(instruction.type,method);if(result!=Type::unit)stack.push_back(result);break;
@@ -1645,6 +1655,7 @@ void verify(const Program& program) {
     std::vector<unsigned> depth(program.types.size());std::size_t enum_text_bytes=0;
     for (std::size_t i = 0; i < program.types.size(); ++i) {
         const auto& type = program.types[i]; unsigned level = 1;
+        if(type.native_record!=NativeRecord::none && (type.native_record!=NativeRecord::ordinal_range || type.kind!=CompoundKind::record))throw Error("E_BYTECODE",{},"Invalid native record metadata");
         for (const auto& field:type.fields) if (!valid_member_access(field.access)
             || (type.kind!=CompoundKind::object_class && field.access!=MemberAccess::public_member))
             throw Error("E_BYTECODE",{},"Invalid class member visibility metadata");
@@ -1715,6 +1726,14 @@ void verify(const Program& program) {
                     throw Error("E_BYTECODE",{},"Invalid native class field");
             }
         } else if (type.kind == CompoundKind::record || type.kind==CompoundKind::tuple) {
+            if(ordinal_range_type(type)){
+                if((type.element!=Type::integer && type.element!=Type::character) || type.name!=(type.element==Type::integer ? "intrange" : "charrange")
+                    || type.fields.size()!=2 || type.fields[0].name!="_l" || type.fields[1].name!="_h"
+                    || type.fields[0].type!=type.element || type.fields[1].type!=type.element || type.fields[0].global || type.fields[1].global)
+                    throw Error("E_BYTECODE",{},"Invalid ordinal range fields");
+                prior(type.element);prior(type.key);
+                if(!compound(type.key) || type_info(program,type.key).kind!=CompoundKind::sequence || type_info(program,type.key).element!=type.element)throw Error("E_BYTECODE",{},"Invalid ordinal range sequence");
+            }
             if (type.fields.size() > 256) throw Error("E_BYTECODE",{},"Too many record fields");
             if (type.kind==CompoundKind::tuple) {
                 if (type.fields.size()<2 || type.fields.size()>7 || type.element!=Type::invalid || type.key!=Type::invalid)
