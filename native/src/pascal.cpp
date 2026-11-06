@@ -511,6 +511,15 @@ private:
                 }
             } else if ((result->kind == "assocarray" || result->kind=="dictionary" || result->kind=="keyvaluepair") && accept("<")) {
                 result->named=false; result->key = type_syntax(); expect(","); result->element = type_syntax(); expect(">");
+                if(result->kind=="dictionary" && is(".") && [&]{auto probe=lexer_;const auto next=probe.next();return next.text=="enumerator" || next.text=="keycollection" || next.text=="valuecollection";}()){
+                    expect(".");
+                    const auto nested=name();
+                    if(nested.text=="enumerator")result->kind="dictionary_enumerator";
+                    else if(nested.text=="keycollection" || nested.text=="valuecollection"){
+                        result->kind=nested.text=="keycollection" ? "dictionary_keycollection" : "dictionary_valuecollection";
+                        if(is(".") && [&]{auto probe=lexer_;return probe.next().text=="enumerator";}()){expect(".");const auto member=name();if(member.text!="enumerator")throw Error("E_UNSUPPORTED",member.location,"Unknown Dictionary nested type");result->kind=nested.text=="keycollection" ? "dictionary_key_enumerator" : "dictionary_value_enumerator";}
+                    }else throw Error("E_UNSUPPORTED",nested.location,"Unknown Dictionary nested type");
+                }
             } else if ((result->kind == "list" || result->kind == "hashset" || result->kind=="newset" || result->kind == "stack" || result->kind == "queue" || result->kind == "dynarray" || result->kind == "simpleset" || result->kind == "linkedlist" || result->kind == "linkedlistnode" || result->kind == "singlenode") && accept("<")) {
                 result->named=false; result->element = type_syntax(); expect(">");
             }
@@ -1753,6 +1762,13 @@ private:
         const auto kind=keys ? CompoundKind::dictionary_keys : CompoundKind::dictionary_values;for(std::size_t i=0;i<module_.types.size();++i)if(module_.types[i].kind==kind && module_.types[i].key==owner)return static_cast<Type>(64+i);
         const auto element=keys ? info(owner,{}).key : dictionary_value_type(module_.types,owner);(void)sequence_type(CompoundKind::sequence,element);if(module_.types.size()>=1024)throw Error("E_LIMIT",{},"Type limit exceeded");module_.types.push_back({keys ? "dictionarykeys" : "dictionaryvalues",kind,element,{},owner});return static_cast<Type>(63+module_.types.size());
     }
+    ABC_PASCAL_NOINLINE Type dictionary_enumerator(Type source){
+        for(std::size_t i=0;i<module_.types.size();++i){const auto& t=module_.types[i];if(dictionary_enumerator_type(t) && t.key==source)return static_cast<Type>(64+i);}
+        const auto s=info(source,{});const auto dictionary=s.kind==CompoundKind::dictionary ? source : s.key;
+        if(module_.types.size()>=1024)throw Error("E_LIMIT",{},"Type limit exceeded");
+        TypeInfo iterator{"dictionaryenumerator",CompoundKind::record,s.element,{{"$source",dictionary,false},{"$version",Type::uint64,false},{"$index",Type::integer,false},{"$current",s.element,false}},source};
+        iterator.native_record=NativeRecord::dictionary_enumerator;module_.types.push_back(std::move(iterator));return static_cast<Type>(63+module_.types.size());
+    }
     Type association_type(Type key, Type element) {
         for (std::size_t i=0;i<module_.types.size();++i) {
             const auto& type = module_.types[i];
@@ -1815,6 +1831,12 @@ private:
         if(syntax.kind=="newset" && syntax.element)return new_set_type(resolve_type(*syntax.element));
         if (syntax.kind == "array" || ((syntax.kind == "list" || syntax.kind=="hashset") && syntax.element))
             return sequence_type(syntax.kind == "array" ? CompoundKind::array : syntax.kind=="hashset" ? CompoundKind::hash_set : CompoundKind::list,resolve_type(*syntax.element),syntax.rank);
+        if(syntax.kind.starts_with("dictionary_") && syntax.key && syntax.element){
+            const auto dictionary=dictionary_type(resolve_type(*syntax.key),resolve_type(*syntax.element));
+            const bool keys=syntax.kind=="dictionary_keycollection" || syntax.kind=="dictionary_key_enumerator";
+            const auto source=syntax.kind=="dictionary_enumerator" ? dictionary : dictionary_view_type(dictionary,keys);
+            return syntax.kind.ends_with("enumerator") ? dictionary_enumerator(source) : source;
+        }
         if((syntax.kind=="dictionary" || syntax.kind=="keyvaluepair") && syntax.key && syntax.element){const auto key=resolve_type(*syntax.key),value=resolve_type(*syntax.element);return syntax.kind=="dictionary" ? dictionary_type(key,value) : pair_type(key,value);}
         if (syntax.kind == "assocarray" && syntax.key && syntax.element) {
             if (!collections_imported_) throw Error("E_UNSUPPORTED",syntax.token.location,"AssocArray requires uses Collections");
@@ -3543,6 +3565,17 @@ private:
     ABC_PASCAL_NOINLINE bool bind_dictionary_member(hir::Expr& result,const SyntaxExpr& source,bool global=false){
         const auto offset=global ? 1U : 0U;const auto owner=result.left->type;if(!compound(owner))return false;
         const auto shape=info(owner,result.location);const auto& name=source.token.text;
+        if(!global && (dictionary_enumerator_type(shape) || ((shape.kind==CompoundKind::dictionary || shape.kind==CompoundKind::dictionary_keys || shape.kind==CompoundKind::dictionary_values) && name=="getenumerator"))){
+            DictionaryMethod method;Type payload=Type::invalid;
+            if(!dictionary_enumerator_type(shape)){method=DictionaryMethod::get_enumerator;payload=dictionary_enumerator(owner);}
+            else if(name=="movenext")method=new_set_addressable(*result.left) ? DictionaryMethod::enumerator_move : DictionaryMethod::enumerator_move_copy;
+            else if(name=="current"){if(source.kind==SyntaxExprKind::member_call)throw Error("E_TYPE",result.location,"Enumerator property is not callable");method=DictionaryMethod::enumerator_current;}
+            else if(name=="dispose")method=DictionaryMethod::enumerator_dispose;
+            else return false;
+            if(!source.arguments.empty())throw Error("E_TYPE",result.location,"Wrong Dictionary argument count");
+            auto argument=std::move(result.left);result.kind=hir::ExprKind::dictionary_call;result.operation_type=owner;result.local=static_cast<std::size_t>(method)|(static_cast<std::size_t>(payload)<<8U);
+            result.type=dictionary_result(module_.types,owner,payload,method);result.arguments.push_back(std::move(argument));return true;
+        }
         if(key_value_pair_type(shape) && name=="tostring"){
             std::vector<std::unique_ptr<hir::Expr>> args;args.push_back(std::move(result.left));for(const auto& item:source.arguments)args.push_back(expression(*item));
             result=std::move(*dictionary_expression(owner,DictionaryMethod::pair_to_string,std::move(args),result.location));return true;

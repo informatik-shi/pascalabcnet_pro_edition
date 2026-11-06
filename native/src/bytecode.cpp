@@ -349,7 +349,7 @@ private:
         }
         case hir::ExprKind::dictionary_call: {
             const auto method=static_cast<DictionaryMethod>(node.local&255U);
-            for(std::size_t i=0;i<node.arguments.size();++i)if(method==DictionaryMethod::try_get_value && i==2)reference(*node.arguments[i]);else expression(*node.arguments[i]);
+            for(std::size_t i=0;i<node.arguments.size();++i)if((method==DictionaryMethod::try_get_value && i==2) || method==DictionaryMethod::enumerator_move)reference(*node.arguments[i]);else expression(*node.arguments[i]);
             emit(Op::dictionary_call,node.operation_type,node.local,node.location);break;
         }
         case hir::ExprKind::hash_set_call: {
@@ -1182,7 +1182,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             break;
         case Op::get_field: case Op::ref_field:
             if (!compound(type) || (type_info(program,type).kind!=CompoundKind::record && type_info(program,type).kind!=CompoundKind::object_class && !(instruction.op==Op::get_field && type_info(program,type).kind==CompoundKind::tuple))
-                || ordinal_range_type(type_info(program,type)) || real_interval_type(type_info(program,type)) || (instruction.op==Op::ref_field && key_value_pair_type(type_info(program,type))) || instruction.operand>=type_info(program,type).fields.size()) invalid(instruction,"Invalid or writable tuple/record access");
+                || dictionary_enumerator_type(type_info(program,type)) || ordinal_range_type(type_info(program,type)) || real_interval_type(type_info(program,type)) || (instruction.op==Op::ref_field && key_value_pair_type(type_info(program,type))) || instruction.operand>=type_info(program,type).fields.size()) invalid(instruction,"Invalid or writable tuple/record access");
             break;
         case Op::list_add: case Op::list_remove: case Op::list_clear: case Op::list_contains:
             if (!compound(type) || type_info(program,type).kind != CompoundKind::list) invalid(instruction,"Invalid list instruction"); break;
@@ -1714,7 +1714,7 @@ void verify(const Program& program) {
     std::vector<unsigned> depth(program.types.size());std::size_t enum_text_bytes=0;
     for (std::size_t i = 0; i < program.types.size(); ++i) {
         const auto& type = program.types[i]; unsigned level = 1;
-        if(type.native_record!=NativeRecord::none && ((type.native_record!=NativeRecord::ordinal_range && type.native_record!=NativeRecord::real_interval && type.native_record!=NativeRecord::key_value_pair) || type.kind!=CompoundKind::record))throw Error("E_BYTECODE",{},"Invalid native record metadata");
+        if(type.native_record!=NativeRecord::none && ((type.native_record!=NativeRecord::ordinal_range && type.native_record!=NativeRecord::real_interval && type.native_record!=NativeRecord::key_value_pair && type.native_record!=NativeRecord::dictionary_enumerator) || type.kind!=CompoundKind::record))throw Error("E_BYTECODE",{},"Invalid native record metadata");
         for (const auto& field:type.fields) if (!valid_member_access(field.access)
             || (type.kind!=CompoundKind::object_class && field.access!=MemberAccess::public_member))
             throw Error("E_BYTECODE",{},"Invalid class member visibility metadata");
@@ -1805,6 +1805,10 @@ void verify(const Program& program) {
                     throw Error("E_BYTECODE",{},"Invalid ordinal range fields");
                 prior(type.element);prior(type.key);
                 if(!compound(type.key) || type_info(program,type.key).kind!=CompoundKind::sequence || type_info(program,type.key).element!=type.element)throw Error("E_BYTECODE",{},"Invalid ordinal range sequence");
+            }
+            if(dictionary_enumerator_type(type)){
+                prior(type.key);prior(type.element);
+                if(!dictionary_enumerator_metadata(program,static_cast<Type>(64+i)))throw Error("E_BYTECODE",{},"Invalid Dictionary enumerator metadata");
             }
             if(key_value_pair_type(type) && (type.name!="keyvaluepair" || type.element!=Type::invalid || type.key!=Type::invalid || type.fields.size()!=2 || type.fields[0].name!="key" || type.fields[1].name!="value" || type.fields[0].global || type.fields[1].global))throw Error("E_BYTECODE",{},"Invalid KeyValuePair metadata");
             if (type.fields.size() > 256) throw Error("E_BYTECODE",{},"Too many record fields");

@@ -19,6 +19,7 @@ bool supports(const std::vector<TypeInfo>& types, Type type, unsigned depth) {
     const auto index=static_cast<std::size_t>(type)-static_cast<std::size_t>(Type::first_compound);
     if (index>=types.size()) return false;
     const auto& info=types[index];
+    if(dictionary_enumerator_type(info))return false;
     if(info.kind==CompoundKind::empty_collection)return true;
     if (school_ip_kind(info.kind) || info.kind==CompoundKind::enumeration) return true;
     if (info.kind==CompoundKind::record || info.kind==CompoundKind::tuple) {

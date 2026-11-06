@@ -806,5 +806,21 @@ clears dictionary/view ownership cycles at execution unwind. Compound index upda
 cache receiver and key in typed temporaries before getter/RHS/setter evaluation.
 EachCount groups completely with nil-capable private storage before dictionary Add;
 ToDictionary evaluates key then value before validating Add. Typed callbacks share
-execution services and limits. Explicit user enumerator/interfaces/comparers and the
+execution services and limits. General user enumerator/interfaces/comparers and the
 remaining Dictionary/object APIs remain future work.
+
+Concrete Dictionary/KeyCollection/ValueCollection enumerators are native records,
+not reference-identity sequence providers. Their validated private fields store a
+closed dictionary reference, captured version, slot index and typed Current value.
+Ordinary record copy/write/ref rules preserve independent cursors and record-value
+snapshots while retaining reference elements. The analyzer chooses a verified ref
+MoveNext for writable storage and a copy operation for temporary/const/List-index
+receivers, including nested record fields. Current copies its stored value without
+checking the source version; MoveNext checks version even after exhaustion and
+restores generic defaults at the end. Dispose is deliberately a no-op. Private
+field opcodes are rejected, nested concrete types resolve before execution, and
+closed reflection names do not enumerate sources. Bounded native work, allocation,
+cancellation and execution cycle cleanup remain shared with the VM. Independent
+Framework struct-array probes avoid accidental interface boxing during copy tests.
+General IEnumerator conversion, explicit interface Reset and custom user enumerator
+implementations still require a separate interface/type-system stage.

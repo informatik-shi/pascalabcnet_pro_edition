@@ -525,3 +525,6 @@
     {"Invalid Dictionary view owner","Некорректный владелец представления Dictionary"},
     {"Invalid KeyValuePair metadata","Некорректные метаданные KeyValuePair"},
     {"Ambiguous nil Dictionary GetOrAdd argument","Неоднозначный аргумент nil в Dictionary.GetOrAdd"},
+    {"Unknown Dictionary nested type","Неизвестный вложенный тип Dictionary"},
+    {"Enumerator property is not callable","Свойство перечислителя нельзя вызывать как функцию"},
+    {"Invalid Dictionary enumerator metadata","Некорректные метаданные перечислителя Dictionary"},

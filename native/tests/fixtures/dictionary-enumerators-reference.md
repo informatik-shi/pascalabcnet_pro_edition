@@ -1,0 +1,13 @@
+This corpus contains 7,104 operations produced independently with Windows PowerShell 5 and .NET Framework CLR 4.0.30319.42000. No original Pascal compiler was invoked. The managed runtime and C# probe are development tools; they are excluded from native installation and portable packages.
+
+Regenerate on Windows with Windows PowerShell 5, not modern PowerShell:
+
+```powershell
+& "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File native/tests/reference/generate-dictionary-enumerators.ps1
+```
+
+The complete [independent generator](../reference/dictionary-enumerators.cs) uses three arrays of concrete structs: Dictionary<int,string>.Enumerator, its KeyCollection.Enumerator and its ValueCollection.Enumerator. Copying an array slot performs a struct copy; the probe does not accidentally box those enumerators as interface references. Each row records operation, destination slot, integer argument, string argument and the result. Current reports key:value|key|value; ~ represents a nil string. Next and Dispose report the three independent outcomes, separated by |. Native error codes map Framework InvalidOperationException, NullReferenceException and duplicate-key ArgumentException to E_MODIFIED, E_NIL and E_KEY_DUPLICATE respectively.
+
+Ninety-six blocks cover initial/default Current, holes, repeated exhaustion, copy before and during traversal, no-op Dispose, replacement after capturing Current, stale versions, failed duplicate Add/Remove and repeated empty Clear. Each block adds 24 seeded random actions. System.Random(7931) is used only by this independent development probe. The native test compares every row, then separately compiles and executes typed Pascal cases for parameters, returns, records, arrays, List index copies, const parameters, nested type names, nil errors, cancellation, allocation/work limits and malformed bytecode. The unchanged TestSuite/dValues.pas is also registered in CTest.
+
+The legacy contracts were checked against [Microsoft reference source Dictionary](https://github.com/microsoft/referencesource/blob/main/mscorlib/system/collections/generic/dictionary.cs). Generic Current returns its stored/default value without checking the dictionary version; MoveNext checks versions and skips free slots; Dispose has no effect. Reset is an explicit IEnumerator member and is not fabricated as a public concrete-struct method. General IEnumerator/IEnumerable/IDictionary interfaces, boxing, custom comparers and the remaining Dictionary API are still pending. This corpus does not establish a complete standard-library port.

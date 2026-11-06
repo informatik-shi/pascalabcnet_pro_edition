@@ -102,7 +102,7 @@ struct Values {
             if (endpoint_collection(info.kind) && constructed)
                 aggregate->ends = std::make_unique<std::deque<std::shared_ptr<Cell>>>();
             if (info.kind == CompoundKind::record || (object && constructed))
-                for (const auto& field : info.fields) aggregate->items.push_back(cell(field.type, zero(field.type,false,generic || object || key_value_pair_type(info))));
+                for (const auto& field : info.fields) aggregate->items.push_back(cell(field.type, zero(field.type,false,generic || object || key_value_pair_type(info) || dictionary_enumerator_type(info))));
             if ((object || dictionary) && constructed && observe_object) observe_object(aggregate);
             return aggregate;
         }

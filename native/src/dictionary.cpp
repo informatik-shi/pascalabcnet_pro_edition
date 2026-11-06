@@ -23,8 +23,21 @@ bool pair_shape(const Program& p,Type t,Type key,Type value,bool tuple){
 }
 }
 Type dictionary_value_type(const std::vector<TypeInfo>& types,Type owner){return info(types,info(types,owner).element).fields.at(1).type;}
+bool dictionary_enumerator_metadata(const Program& p,Type iterator){
+ if(!valid(p,iterator))return false;const auto& e=type_info(p,iterator);
+ if(!dictionary_enumerator_type(e) || e.kind!=CompoundKind::record || e.name!="dictionaryenumerator" || !valid(p,e.key) || e.fields.size()!=4)return false;
+ const auto& source=type_info(p,e.key);const bool dictionary=source.kind==CompoundKind::dictionary;
+ if(!dictionary && source.kind!=CompoundKind::dictionary_keys && source.kind!=CompoundKind::dictionary_values)return false;
+ const auto root=dictionary ? e.key : source.key;
+ if(!valid(p,root) || type_info(p,root).kind!=CompoundKind::dictionary || e.element!=source.element)return false;
+ const std::array<std::string_view,4> names{"$source","$version","$index","$current"};const std::array<Type,4> fields{root,Type::uint64,Type::integer,e.element};
+ for(std::size_t i=0;i<4;++i)if(e.fields[i].name!=names[i] || e.fields[i].type!=fields[i] || e.fields[i].global)return false;
+ return true;
+}
 bool dictionary_signature(const Program& p,Type owner,Type payload,DictionaryMethod m){
- if(m>DictionaryMethod::to_dictionary_elements || !valid(p,owner))return false;const auto& d=type_info(p,owner);
+ if(m>DictionaryMethod::enumerator_dispose || !valid(p,owner))return false;const auto& d=type_info(p,owner);
+ if(m==DictionaryMethod::get_enumerator)return dictionary_enumerator_metadata(p,payload) && type_info(p,payload).key==owner;
+ if(m>=DictionaryMethod::enumerator_move)return payload==Type::invalid && dictionary_enumerator_metadata(p,owner);
  if(m==DictionaryMethod::pair_construct || m==DictionaryMethod::pair_to_string)
   return d.kind==CompoundKind::record && key_value_pair_type(d) && d.fields.size()==2 && payload==Type::invalid;
  if(m==DictionaryMethod::view_count || m==DictionaryMethod::view_contains || m==DictionaryMethod::view_copy_to){
@@ -60,6 +73,8 @@ bool dictionary_signature(const Program& p,Type owner,Type payload,DictionaryMet
  return payload==Type::invalid;
 }
 std::vector<Type> dictionary_parameters(const std::vector<TypeInfo>& types,Type owner,Type payload,DictionaryMethod m){
+ if(m==DictionaryMethod::get_enumerator || m==DictionaryMethod::enumerator_move_copy || m==DictionaryMethod::enumerator_current || m==DictionaryMethod::enumerator_dispose)return {owner};
+ if(m==DictionaryMethod::enumerator_move)return {reference_type(owner)};
  if(m==DictionaryMethod::view_count)return {owner};
  if(m==DictionaryMethod::view_contains)return {owner,info(types,owner).element};
  if(m==DictionaryMethod::view_copy_to)return {owner,payload,Type::integer};
@@ -88,6 +103,10 @@ std::vector<Type> dictionary_parameters(const std::vector<TypeInfo>& types,Type 
  return result;
 }
 Type dictionary_result(const std::vector<TypeInfo>& types,Type owner,Type payload,DictionaryMethod m){
+ if(m==DictionaryMethod::get_enumerator)return payload;
+ if(m==DictionaryMethod::enumerator_move || m==DictionaryMethod::enumerator_move_copy)return Type::boolean;
+ if(m==DictionaryMethod::enumerator_current)return info(types,owner).element;
+ if(m==DictionaryMethod::enumerator_dispose)return Type::unit;
  if(m==DictionaryMethod::each_count || m==DictionaryMethod::each || m==DictionaryMethod::to_dictionary || m==DictionaryMethod::to_dictionary_elements)return owner;
  if(m<=DictionaryMethod::from_sequences || m==DictionaryMethod::copy_value || m==DictionaryMethod::merge || m==DictionaryMethod::without_key || m==DictionaryMethod::without_keys || m==DictionaryMethod::pair_construct)return owner;
  if(m==DictionaryMethod::view_count)return Type::integer;
@@ -203,6 +222,34 @@ Value dictionary_invoke(Values& values,Type owner,Type payload,DictionaryMethod 
  if(!dictionary_signature(values.program,owner,payload,m) || args.size()!=dictionary_parameters(values.program.types,owner,payload,m).size())throw runtime_error(RuntimeError::invalid_bytecode,values.location);
  try{
   ValueHashWork work{values,options};work.step();
+  if(m==DictionaryMethod::get_enumerator){
+   auto d=std::get<Object>(args[0]);if(!d || d->nil)throw runtime_error(RuntimeError::nil_reference,values.location);
+   if(type_info(values.program,owner).kind!=CompoundKind::dictionary){if(d->items.size()!=1)throw runtime_error(RuntimeError::invalid_bytecode,values.location);d=std::get<Object>(d->items[0]->value);}
+   require(d,values.location);auto iterator=std::get<Object>(values.zero(payload));
+   values.write(iterator->items[0],d);values.write(iterator->items[1],d->version);return iterator;
+  }
+  if(m>=DictionaryMethod::enumerator_move){
+   const auto iterator=m==DictionaryMethod::enumerator_move ? std::get<Object>(std::get<std::shared_ptr<Cell>>(args[0])->value)
+    : std::get<Object>(m==DictionaryMethod::enumerator_move_copy ? values.copy(args[0]) : args[0]);
+   if(!iterator || iterator->nil || iterator->items.size()!=4)throw runtime_error(RuntimeError::invalid_bytecode,values.location);
+   if(m==DictionaryMethod::enumerator_current)return values.copy(iterator->items[3]->value);
+   // Framework dictionary enumerators keep both their position and Current after Dispose.
+   if(m==DictionaryMethod::enumerator_dispose)return false;
+   const auto d=std::get<Object>(iterator->items[0]->value);require(d,values.location);
+   if(std::get<std::uint64_t>(iterator->items[1]->value)!=d->version)throw runtime_error(RuntimeError::collection_changed,values.location);
+   auto index=static_cast<std::uint32_t>(std::get<std::int32_t>(iterator->items[2]->value));
+   const auto& shape=type_info(values.program,owner);const auto source=type_info(values.program,shape.key).kind;
+   while(index<d->items.size()){
+    work.step();const auto cell=d->items[index++];
+    if(cell){const auto& pair=std::get<Object>(cell->value);
+     values.write(iterator->items[3],source==CompoundKind::dictionary ? cell->value : pair->items[source==CompoundKind::dictionary_keys ? 0U : 1U]->value);
+     values.write(iterator->items[2],static_cast<std::int32_t>(index));return true;
+    }
+    values.write(iterator->items[2],static_cast<std::int32_t>(index));
+   }
+   values.write(iterator->items[2],static_cast<std::int32_t>(static_cast<std::uint32_t>(d->items.size())+1U));
+   values.write(iterator->items[3],values.zero(shape.element,false,true));return false;
+  }
   if(m==DictionaryMethod::view_count || m==DictionaryMethod::view_contains || m==DictionaryMethod::view_copy_to){
    const auto view=std::get<Object>(args[0]);if(!view || view->nil)throw runtime_error(RuntimeError::nil_reference,values.location);
    if(view->items.size()!=1)throw runtime_error(RuntimeError::invalid_bytecode,values.location);const auto d=std::get<Object>(view->items[0]->value);require(d,values.location);

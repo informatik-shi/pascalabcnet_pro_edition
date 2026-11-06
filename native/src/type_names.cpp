@@ -15,6 +15,7 @@ struct Work {
     }
 };
 std::u16string named(const TypeInfo& type){return from_utf8(type.display_name.empty() ? type.name : type.display_name);}
+const TypeInfo& enumerator_pair(const Program& program,const TypeInfo& iterator){const auto& source=type_info(program,iterator.key);const auto& dictionary=source.kind==CompoundKind::dictionary ? source : type_info(program,source.key);return type_info(program,dictionary.element);}
 std::u16string byref_name(const Program& program,Type type,Work& work){
     std::u16string suffix;
     while(compound(type) && type_info(program,type).kind==CompoundKind::array){
@@ -34,6 +35,7 @@ std::u16string byref_name(const Program& program,Type type,Work& work){
         if(ordinal_range_type(info)){name=info.element==Type::character ? u"CharRange" : u"IntRange";arity=0;}
         else if(real_interval_type(info)){name=u"RealRange";arity=0;}
         else if(key_value_pair_type(info)){name=u"KeyValuePair";arity=2;}
+        else if(dictionary_enumerator_type(info)){name=u"Enumerator";arity=2;}
         else switch(info.kind){
         case CompoundKind::record:case CompoundKind::object_class:case CompoundKind::enumeration:name=named(info);arity=0;break;
         case CompoundKind::list:name=u"List";break;case CompoundKind::stack:name=u"Stack";break;case CompoundKind::queue:name=u"Queue";break;
@@ -144,7 +146,7 @@ std::u16string reflected_type_name(const Program& program,const ReflectedType& t
                 case CompoundKind::dynarray:name=u"DynArray";break;case CompoundKind::simple_set:name=u"SimpleSet";break;case CompoundKind::hash_set:name=u"HashSet";break;
                 case CompoundKind::new_set:name=u"NewSet";break;case CompoundKind::linked_list:name=u"LinkedList";break;case CompoundKind::linked_node:name=u"LinkedListNode";break;
                 case CompoundKind::single_node:name=u"SingleNode";break;case CompoundKind::sequence:name=u"IEnumerable";break;
-                case CompoundKind::record:if(key_value_pair_type(info)){name=u"KeyValuePair";for(const auto& field:info.fields)arguments.push_back(field.type);}break;
+                case CompoundKind::record:if(key_value_pair_type(info)){name=u"KeyValuePair";for(const auto& field:info.fields)arguments.push_back(field.type);}else if(dictionary_enumerator_type(info)){name=u"Enumerator";for(const auto& field:enumerator_pair(program,info).fields)arguments.push_back(field.type);}break;
                 case CompoundKind::dictionary:name=u"Dictionary";arguments.push_back(info.key);arguments.push_back(type_info(program,info.element).fields[1].type);break;
                 case CompoundKind::dictionary_keys:case CompoundKind::dictionary_values:{name=info.kind==CompoundKind::dictionary_keys ? u"KeyCollection" : u"ValueCollection";const auto& dictionary=type_info(program,info.key);arguments.push_back(dictionary.key);arguments.push_back(type_info(program,dictionary.element).fields[1].type);break;}
                 case CompoundKind::association:name=u"AssocArray";arguments.push_back(info.key);break;
@@ -154,7 +156,7 @@ std::u16string reflected_type_name(const Program& program,const ReflectedType& t
                     if(info.element!=Type::unit)arguments.push_back(info.element);if(arguments.empty())name.clear();break;
                 default:break;
                 }
-                if(!name.empty() && info.kind!=CompoundKind::tuple && info.kind!=CompoundKind::callable && !key_value_pair_type(info) && info.kind!=CompoundKind::dictionary && info.kind!=CompoundKind::dictionary_keys && info.kind!=CompoundKind::dictionary_values)arguments.push_back(info.element);
+                if(!name.empty() && info.kind!=CompoundKind::tuple && info.kind!=CompoundKind::callable && !key_value_pair_type(info) && !dictionary_enumerator_type(info) && info.kind!=CompoundKind::dictionary && info.kind!=CompoundKind::dictionary_keys && info.kind!=CompoundKind::dictionary_values)arguments.push_back(info.element);
             }
             if(!name.empty()){
                 // Reflection forwards root generic arguments through byref/array wrappers.
@@ -169,6 +171,7 @@ std::u16string reflected_type_name(const Program& program,const ReflectedType& t
         const auto& info=type_info(program,task.type);
         if(ordinal_range_type(info)){text(info.element==Type::character ? u"CharRange" : u"IntRange");continue;}
         if(real_interval_type(info)){text(u"RealRange");continue;}
+        if(dictionary_enumerator_type(info)){const auto& pair=enumerator_pair(program,info);text(u">");child(pair.fields[1].type);text(u", ");child(pair.fields[0].type);text(u"Enumerator<");continue;}
         if(key_value_pair_type(info) || info.kind==CompoundKind::dictionary || info.kind==CompoundKind::dictionary_keys || info.kind==CompoundKind::dictionary_values){
             const auto& pair=key_value_pair_type(info) ? info : info.kind==CompoundKind::dictionary ? type_info(program,info.element) : type_info(program,type_info(program,info.key).element);
             const auto name=key_value_pair_type(info) ? u"KeyValuePair" : info.kind==CompoundKind::dictionary ? u"Dictionary" : info.kind==CompoundKind::dictionary_keys ? u"KeyCollection" : u"ValueCollection";
