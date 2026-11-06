@@ -46,7 +46,7 @@ std::u16string byref_name(const Program& program,Type type,Work& work){
         case CompoundKind::dictionary_values:name=u"ValueCollection";arity=2;break;
         case CompoundKind::association:name=u"AssocArray";arity=2;break;case CompoundKind::linked_list:name=u"LinkedList";break;
         case CompoundKind::linked_node:name=u"LinkedListNode";break;case CompoundKind::single_node:name=u"SingleNode";break;
-        case CompoundKind::sequence:name=u"IEnumerable";break;
+        case CompoundKind::sequence:name=u"IEnumerable";break;case CompoundKind::enumerator:name=u"IEnumerator";break;
         case CompoundKind::tuple:name=u"Tuple";arity=info.fields.size();break;
         case CompoundKind::callable:name=info.element==Type::unit ? u"Action" : u"Func";arity=info.parameters.size()+(info.element==Type::unit ? 0U : 1U);break;
         case CompoundKind::encoding:name=u"Encoding";arity=0;break;case CompoundKind::ini_file:name=u"TIniFile";arity=0;break;
@@ -71,7 +71,7 @@ bool reflected_type_valid(const Program& program,const ReflectedType& type){
     const auto last=provider==SequenceProvider::transform ? static_cast<unsigned>(SequenceTransform::skip_while)
         : provider==SequenceProvider::generated ? static_cast<unsigned>(GeneratorMethod::while_two)
         : provider==SequenceProvider::slice ? static_cast<unsigned>(SequenceSlice::default_if_empty) : 0U;
-    return variant<=last && compound(type.target) && type_info(program,type.target).kind==CompoundKind::sequence
+    return variant<=last && compound(type.target) && (type_info(program,type.target).kind==CompoundKind::sequence || type_info(program,type.target).kind==CompoundKind::enumerator)
         && (type.source==Type::invalid || valid_value_type(program,type.source));
 }
 bool type_operation_valid(const Program& program,Type input,TypeOperation operation){
@@ -93,6 +93,13 @@ ReflectedType reflected_value_type(const Program& program,const Value& value,Typ
     for(std::size_t depth=0;depth<256;++depth){
         work.step();if(!current || current->nil)return {};
         const auto& info=type_info(program,current->type);
+        if(info.kind==CompoundKind::enumerator){
+            if(!current->enumerator)throw runtime_error(RuntimeError::invalid_bytecode,location);const auto& state=*current->enumerator;
+            if(state.boxed)return {state.boxed->type};
+            if(!state.cursor || !state.cursor->sequence)throw runtime_error(RuntimeError::invalid_bytecode,location);const auto& sequence=*state.cursor->sequence;
+            const auto variant=sequence.provider==SequenceProvider::transform ? static_cast<unsigned>(sequence.transform_method) : sequence.provider==SequenceProvider::generated ? static_cast<unsigned>(sequence.generator_method) : sequence.provider==SequenceProvider::slice ? static_cast<unsigned>(sequence.slice_method) : 0U;
+            return {current->type,sequence_implementation+static_cast<unsigned>(sequence.provider)*16U+variant,sequence.source ? sequence.source->type : Type::invalid};
+        }
         if(info.kind==CompoundKind::encoding){
             if(!current->encoding)throw runtime_error(RuntimeError::invalid_bytecode,location);
             const auto kind=current->encoding->kind;
@@ -127,7 +134,7 @@ std::u16string reflected_type_name(const Program& program,const ReflectedType& t
     else if(type.implementation>=2 && type.implementation<=6){
         constexpr std::u16string_view names[]={u"UTF8Encoding",u"UnicodeEncoding",u"UTF32Encoding",u"ASCIIEncoding",u"SBCSCodePageEncoding"};text(std::u16string(names[type.implementation-2]));
     }
-    else if(type.implementation>=sequence_implementation){child(type_info(program,type.target).element);text(u"sequence of ");}
+    else if(type.implementation>=sequence_implementation){if(type_info(program,type.target).kind==CompoundKind::enumerator)child(type.target);else{child(type_info(program,type.target).element);text(u"sequence of ");}}
     else child(type.target);
     while(!pending.empty()){
         work.step();if(pending.size()>options.allocation_limit || pending.size()>limit)throw runtime_error(RuntimeError::allocation_limit,location);
@@ -145,7 +152,7 @@ std::u16string reflected_type_name(const Program& program,const ReflectedType& t
                 case CompoundKind::list:name=u"List";break;case CompoundKind::stack:name=u"Stack";break;case CompoundKind::queue:name=u"Queue";break;
                 case CompoundKind::dynarray:name=u"DynArray";break;case CompoundKind::simple_set:name=u"SimpleSet";break;case CompoundKind::hash_set:name=u"HashSet";break;
                 case CompoundKind::new_set:name=u"NewSet";break;case CompoundKind::linked_list:name=u"LinkedList";break;case CompoundKind::linked_node:name=u"LinkedListNode";break;
-                case CompoundKind::single_node:name=u"SingleNode";break;case CompoundKind::sequence:name=u"IEnumerable";break;
+                case CompoundKind::single_node:name=u"SingleNode";break;case CompoundKind::sequence:name=u"IEnumerable";break;case CompoundKind::enumerator:name=u"IEnumerator";break;
                 case CompoundKind::record:if(key_value_pair_type(info)){name=u"KeyValuePair";for(const auto& field:info.fields)arguments.push_back(field.type);}else if(dictionary_enumerator_type(info)){name=u"Enumerator";for(const auto& field:enumerator_pair(program,info).fields)arguments.push_back(field.type);}break;
                 case CompoundKind::dictionary:name=u"Dictionary";arguments.push_back(info.key);arguments.push_back(type_info(program,info.element).fields[1].type);break;
                 case CompoundKind::dictionary_keys:case CompoundKind::dictionary_values:{name=info.kind==CompoundKind::dictionary_keys ? u"KeyCollection" : u"ValueCollection";const auto& dictionary=type_info(program,info.key);arguments.push_back(dictionary.key);arguments.push_back(type_info(program,dictionary.element).fields[1].type);break;}
@@ -200,7 +207,7 @@ std::u16string reflected_type_name(const Program& program,const ReflectedType& t
         case CompoundKind::simple_set:name=u"SimpleSet";break;case CompoundKind::association:name=u"AssocArray";break;
         case CompoundKind::linked_node:name=u"LinkedListNode";break;case CompoundKind::linked_list:name=u"LinkedList";break;
         case CompoundKind::single_node:name=u"SingleNode";break;case CompoundKind::hash_set:name=u"HashSet";break;
-        case CompoundKind::sequence:name=u"IEnumerable";break;
+        case CompoundKind::sequence:name=u"IEnumerable";break;case CompoundKind::enumerator:name=u"IEnumerator";break;
         default:throw runtime_error(RuntimeError::invalid_bytecode,location);
         }
         text(u">");child(info.element);if(info.kind==CompoundKind::association){text(u", ");child(info.key);}text(name+u"<");

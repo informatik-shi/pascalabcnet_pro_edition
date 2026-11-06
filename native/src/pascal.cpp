@@ -16,6 +16,7 @@
 #include "compound.hpp"
 #include "hash_set.hpp"
 #include "dictionary.hpp"
+#include "enumerator.hpp"
 #include "ordinal_range.hpp"
 #include "real_interval.hpp"
 #include "new_set.hpp"
@@ -493,7 +494,7 @@ private:
             if (result->kind=="system") {
                 result->system_qualified=true; expect("."); result->kind=is("type") ? consume().text : name().text;
                 if(result->kind=="text") {expect(".");result->kind=name().text;if(result->kind!="encoding")throw Error("E_UNSUPPORTED",result->token.location,"Unknown or unsupported Encoding type");}
-                else if(result->kind=="collections"){expect(".");const auto generic=name();if(generic.text!="generic")throw Error("E_UNSUPPORTED",generic.location,"Unknown System.Collections namespace");expect(".");result->kind=name().text;if(result->kind!="dictionary" && result->kind!="keyvaluepair")throw Error("E_UNSUPPORTED",result->token.location,"Unknown generic collection type");}
+                else if(result->kind=="collections"){expect(".");const auto generic=name();if(generic.text!="generic")throw Error("E_UNSUPPORTED",generic.location,"Unknown System.Collections namespace");expect(".");result->kind=name().text;if(result->kind!="dictionary" && result->kind!="keyvaluepair" && result->kind!="ienumerable" && result->kind!="ienumerator")throw Error("E_UNSUPPORTED",result->token.location,"Unknown generic collection type");}
                 else if (result->kind!="func" && result->kind!="action" && result->kind!="predicate" && result->kind!="type" && result->kind!="void" && result->kind!="single")
                     throw Error("E_UNSUPPORTED",result->token.location,"Unknown or unsupported type 'System."+result->kind+"'");
             }
@@ -520,7 +521,7 @@ private:
                         if(is(".") && [&]{auto probe=lexer_;return probe.next().text=="enumerator";}()){expect(".");const auto member=name();if(member.text!="enumerator")throw Error("E_UNSUPPORTED",member.location,"Unknown Dictionary nested type");result->kind=nested.text=="keycollection" ? "dictionary_key_enumerator" : "dictionary_value_enumerator";}
                     }else throw Error("E_UNSUPPORTED",nested.location,"Unknown Dictionary nested type");
                 }
-            } else if ((result->kind == "list" || result->kind == "hashset" || result->kind=="newset" || result->kind == "stack" || result->kind == "queue" || result->kind == "dynarray" || result->kind == "simpleset" || result->kind == "linkedlist" || result->kind == "linkedlistnode" || result->kind == "singlenode") && accept("<")) {
+            } else if ((result->kind=="ienumerable" || result->kind=="ienumerator" || result->kind == "list" || result->kind == "hashset" || result->kind=="newset" || result->kind == "stack" || result->kind == "queue" || result->kind == "dynarray" || result->kind == "simpleset" || result->kind == "linkedlist" || result->kind == "linkedlistnode" || result->kind == "singlenode") && accept("<")) {
                 result->named=false; result->element = type_syntax(); expect(">");
             }
         }
@@ -1750,17 +1751,21 @@ private:
         }
         return false;
     }
+    ABC_PASCAL_NOINLINE Type enumerator_type(Type element){
+        for(std::size_t i=0;i<module_.types.size();++i)if(module_.types[i].kind==CompoundKind::enumerator && module_.types[i].element==element)return static_cast<Type>(64+i);
+        if(module_.types.size()>=1024)throw Error("E_LIMIT",{},"Type limit exceeded");module_.types.push_back({"ienumerator",CompoundKind::enumerator,element,{}});return static_cast<Type>(63+module_.types.size());
+    }
     ABC_PASCAL_NOINLINE Type pair_type(Type key,Type value){
         for(std::size_t i=0;i<module_.types.size();++i){const auto& t=module_.types[i];if(key_value_pair_type(t) && t.fields.size()==2 && t.fields[0].type==key && t.fields[1].type==value)return static_cast<Type>(64+i);}
         if(module_.types.size()>=1024)throw Error("E_LIMIT",{},"Type limit exceeded");TypeInfo pair{"keyvaluepair",CompoundKind::record,Type::invalid,{{"key",key,false},{"value",value,false}}};pair.native_record=NativeRecord::key_value_pair;module_.types.push_back(std::move(pair));return static_cast<Type>(63+module_.types.size());
     }
     ABC_PASCAL_NOINLINE Type dictionary_type(Type key,Type value){
         const auto pair=pair_type(key,value);for(std::size_t i=0;i<module_.types.size();++i)if(module_.types[i].kind==CompoundKind::dictionary && module_.types[i].key==key && module_.types[i].element==pair)return static_cast<Type>(64+i);
-        if(module_.types.size()>=1024)throw Error("E_LIMIT",{},"Type limit exceeded");module_.types.push_back({"dictionary",CompoundKind::dictionary,pair,{},key});const auto result=static_cast<Type>(63+module_.types.size());(void)sequence_type(CompoundKind::sequence,pair);return result;
+        if(module_.types.size()>=1024)throw Error("E_LIMIT",{},"Type limit exceeded");module_.types.push_back({"dictionary",CompoundKind::dictionary,pair,{},key});const auto result=static_cast<Type>(63+module_.types.size());(void)sequence_type(CompoundKind::sequence,pair);(void)dictionary_enumerator(result);return result;
     }
     ABC_PASCAL_NOINLINE Type dictionary_view_type(Type owner,bool keys){
         const auto kind=keys ? CompoundKind::dictionary_keys : CompoundKind::dictionary_values;for(std::size_t i=0;i<module_.types.size();++i)if(module_.types[i].kind==kind && module_.types[i].key==owner)return static_cast<Type>(64+i);
-        const auto element=keys ? info(owner,{}).key : dictionary_value_type(module_.types,owner);(void)sequence_type(CompoundKind::sequence,element);if(module_.types.size()>=1024)throw Error("E_LIMIT",{},"Type limit exceeded");module_.types.push_back({keys ? "dictionarykeys" : "dictionaryvalues",kind,element,{},owner});return static_cast<Type>(63+module_.types.size());
+        const auto element=keys ? info(owner,{}).key : dictionary_value_type(module_.types,owner);(void)sequence_type(CompoundKind::sequence,element);if(module_.types.size()>=1024)throw Error("E_LIMIT",{},"Type limit exceeded");module_.types.push_back({keys ? "dictionarykeys" : "dictionaryvalues",kind,element,{},owner});const auto result=static_cast<Type>(63+module_.types.size());(void)dictionary_enumerator(result);return result;
     }
     ABC_PASCAL_NOINLINE Type dictionary_enumerator(Type source){
         for(std::size_t i=0;i<module_.types.size();++i){const auto& t=module_.types[i];if(dictionary_enumerator_type(t) && t.key==source)return static_cast<Type>(64+i);}
@@ -1825,7 +1830,8 @@ private:
             if (!imported_units_.contains("school")) throw Error("E_UNSUPPORTED",syntax.token.location,"IPv4 classes require uses School");
             return school_ip_type(syntax.kind=="addr32" ? CompoundKind::school_address : CompoundKind::school_ip);
         }
-        if (syntax.kind=="sequence" && syntax.element) return sequence_type(CompoundKind::sequence,resolve_type(*syntax.element));
+        if(syntax.kind=="ienumerator" && syntax.element)return enumerator_type(resolve_type(*syntax.element));
+        if ((syntax.kind=="sequence" || syntax.kind=="ienumerable") && syntax.element) return sequence_type(CompoundKind::sequence,resolve_type(*syntax.element));
         if(syntax.kind=="intrange" || syntax.kind=="charrange")return ordinal_range_record(syntax.kind=="intrange" ? Type::integer : Type::character);
         if(syntax.kind=="realrange")return real_interval_record();
         if(syntax.kind=="newset" && syntax.element)return new_set_type(resolve_type(*syntax.element));
@@ -1940,6 +1946,10 @@ private:
             && info(to,location).kind==CompoundKind::sequence && info(from,location).element==info(to,location).element;
     }
     std::unique_ptr<hir::Expr> convert(std::unique_ptr<hir::Expr> expression, Type type) {
+        if(compound(type) && info(type,expression->location).kind==CompoundKind::enumerator && compound(expression->type) && dictionary_enumerator_type(info(expression->type,expression->location))){
+            if(info(expression->type,expression->location).element!=info(type,expression->location).element)throw Error("E_TYPE",expression->location,"Enumerator element types must match exactly");
+            return enumerator_expression(EnumeratorMethod::box_dictionary,std::move(expression),type);
+        }
         if(expression->type!=type && compound(expression->type) && info(expression->type,expression->location).kind==CompoundKind::empty_collection && compound(type)){
             const auto target=info(type,expression->location);
             if(target.kind==CompoundKind::dictionary){const auto location=expression->location;auto result=std::make_unique<hir::Expr>();result->kind=hir::ExprKind::evaluate_then;result->type=type;result->location=location;result->left=std::move(expression);result->right=dictionary_expression(type,DictionaryMethod::construct,{},location);return result;}
@@ -2217,6 +2227,7 @@ private:
                     result->kind=hir::ExprKind::default_value; result->type=type; result->operation="new"; break;
                 }
                 if (!compound(type)) throw Error("E_TYPE",result->location,"new requires an array length, record or collection type");
+                if(info(type,result->location).kind==CompoundKind::enumerator || info(type,result->location).kind==CompoundKind::sequence)throw Error("E_TYPE",result->location,"An interface cannot be constructed");
                 if(real_interval_type(info(type,result->location))){
                     if(source.arguments.empty()){result->kind=hir::ExprKind::default_value;result->type=type;return result;}
                     std::vector<std::unique_ptr<hir::Expr>> args;for(const auto& argument:source.arguments)args.push_back(expression(*argument,Type::real));return real_interval_expression(type,RealIntervalMethod::construct,std::move(args),result->location);
@@ -2464,6 +2475,7 @@ private:
                 }
             }
             if(bind_print_extension(*result,source,true))break;
+            if(bind_enumerator_member(*result,source))break;
             if(bind_dictionary_member(*result,source))break;
             if(bind_inifile_member(*result,source))break;
             if(bind_encoding_member(*result,source))break;
@@ -2957,8 +2969,8 @@ private:
     }
     ABC_PASCAL_NOINLINE bool bind_callable_cast(hir::Expr& result,const SyntaxExpr& source){
         if(routine_names_.contains(source.token.text))return false;Type cast=Type::invalid;
-        if(const auto alias=aliases_.find(source.token.text);alias!=aliases_.end()){if(callable_type(alias->second))cast=alias->second;}else if(source.token.text=="action0")cast=function_type(Type::unit,{},result.location);
-        if(cast==Type::invalid)return false;if(source.arguments.size()!=1)throw Error("E_TYPE",result.location,"Callable constructor requires one matching routine value");result=std::move(*convert(expression(*source.arguments[0],cast),cast));return true;
+        if(const auto alias=aliases_.find(source.token.text);alias!=aliases_.end()){if(callable_type(alias->second) || (compound(alias->second) && (info(alias->second,result.location).kind==CompoundKind::enumerator || info(alias->second,result.location).kind==CompoundKind::sequence)))cast=alias->second;}else if(source.token.text=="action0")cast=function_type(Type::unit,{},result.location);
+        if(cast==Type::invalid)return false;if(source.arguments.size()!=1)throw Error("E_TYPE",result.location,callable_type(cast) ? "Callable constructor requires one matching routine value" : "Interface conversion requires one value");result=std::move(*convert(expression(*source.arguments[0],cast),cast));return true;
     }
     ABC_PASCAL_NOINLINE std::unique_ptr<hir::Expr> bind_call_expression(const SyntaxExpr& source,Type expected,std::unique_ptr<hir::Expr> result) {
         (void)expected;
@@ -3562,6 +3574,27 @@ private:
         if(name!="arr" || (!unit.empty() && unit!="pabcsystem") || result.arguments.size()!=1 || !compound(result.arguments[0]->type) || !ordinal_range_type(info(result.arguments[0]->type,result.location)))return false;
         const auto owner=result.arguments[0]->type;result=std::move(*ordinal_range_expression(owner,OrdinalRangeMethod::to_array,std::move(result.arguments),result.location));return true;
     }
+    ABC_PASCAL_NOINLINE std::unique_ptr<hir::Expr> enumerator_expression(EnumeratorMethod method,std::unique_ptr<hir::Expr> argument,Type payload=Type::invalid){
+        auto result=std::make_unique<hir::Expr>();result->kind=hir::ExprKind::enumerator_call;result->location=argument->location;result->operation_type=argument->type;result->local=static_cast<std::size_t>(method)|(static_cast<std::size_t>(payload)<<8U);
+        if(method==EnumeratorMethod::get || method==EnumeratorMethod::box_dictionary)result->type=payload;
+        else result->type=method==EnumeratorMethod::move ? Type::boolean : method==EnumeratorMethod::current ? info(argument->type,argument->location).element : Type::unit;
+        result->left=std::move(argument);return result;
+    }
+    ABC_PASCAL_NOINLINE bool bind_enumerator_member(hir::Expr& result,const SyntaxExpr& source){
+        const auto owner=result.left->type;if(!compound(owner))return false;const auto shape=info(owner,result.location);const auto& name=source.token.text;
+        if((shape.kind==CompoundKind::sequence || shape.kind==CompoundKind::new_set || ordinal_range_type(shape)) && name=="getenumerator"){
+            if(!source.arguments.empty())throw Error("E_TYPE",result.location,"Wrong enumerator argument count");
+            (void)sequence_type(CompoundKind::array,shape.element);const auto target=enumerator_type(shape.element);
+            auto receiver=std::move(result.left);if(shape.kind!=CompoundKind::sequence)receiver=convert(std::move(receiver),sequence_type(CompoundKind::sequence,shape.element));
+            auto bound=enumerator_expression(EnumeratorMethod::get,std::move(receiver),target);bound->location=result.location;result=std::move(*bound);return true;
+        }
+        if(shape.kind!=CompoundKind::enumerator)return false;
+        const auto method=name=="movenext" ? EnumeratorMethod::move : name=="current" ? EnumeratorMethod::current : name=="dispose" ? EnumeratorMethod::dispose : name=="reset" ? EnumeratorMethod::reset : static_cast<EnumeratorMethod>(255);
+        if(method==static_cast<EnumeratorMethod>(255))return false;
+        if(!source.arguments.empty())throw Error("E_TYPE",result.location,"Wrong enumerator argument count");
+        if(method==EnumeratorMethod::current && source.kind==SyntaxExprKind::member_call)throw Error("E_TYPE",result.location,"Enumerator property is not callable");
+        auto bound=enumerator_expression(method,std::move(result.left));bound->location=result.location;result=std::move(*bound);return true;
+    }
     ABC_PASCAL_NOINLINE bool bind_dictionary_member(hir::Expr& result,const SyntaxExpr& source,bool global=false){
         const auto offset=global ? 1U : 0U;const auto owner=result.left->type;if(!compound(owner))return false;
         const auto shape=info(owner,result.location);const auto& name=source.token.text;
@@ -4080,6 +4113,9 @@ private:
         const auto& name=source.token.text;
         const bool qualified_unit=qualified && source.left && source.left->kind==SyntaxExprKind::name && source.left->token.text=="pabcsystem" && !lookup(source.left->token);
         const bool standard_call=(source.kind==SyntaxExprKind::call && !lookup(source.token) && !routine_names_.contains(name)) || qualified_unit;
+        if((name=="ienumerator" || name=="ienumerable") && standard_call){
+            if(source.type_arguments.size()!=1 || source.arguments.size()!=1)throw Error("E_TYPE",source.token.location,"Interface conversion requires one type and one value");const auto element=resolve_type(*source.type_arguments[0]),target=name=="ienumerator" ? enumerator_type(element) : sequence_type(CompoundKind::sequence,element);return convert(expression(*source.arguments[0],target),target);
+        }
         if((name=="eachcount" || name=="each" || name=="todictionary") && (standard_call || (qualified && !qualified_unit))){
             const auto extra=name=="eachcount" ? 1U : name=="each" ? 2U : (source.arguments.size()-(qualified && !qualified_unit ? 0U : 1U)==2 ? 3U : 2U);if(source.type_arguments.size()!=extra)throw Error("E_TYPE",source.token.location,"Wrong Dictionary query explicit type count");std::vector<Type> declared;for(const auto& type:source.type_arguments)declared.push_back(resolve_type(*type));auto result=std::make_unique<hir::Expr>();result->location=source.token.location;const bool member=qualified && !qualified_unit;if(member)result->left=expression(*source.left);(void)bind_dictionary_query(*result,source,{},member,declared);return result;
         }

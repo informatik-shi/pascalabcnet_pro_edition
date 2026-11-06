@@ -26,7 +26,7 @@ struct ReferenceObjects {
     void observe(const std::shared_ptr<Aggregate>& object) { entries.push_back({object,{}}); }
     ~ReferenceObjects() {
         for (auto& entry:entries) entry.retained=entry.object.lock();
-        for (auto& entry:entries) if (entry.retained) entry.retained->items.clear();
+        for (auto& entry:entries) if (entry.retained) {entry.retained->enumerator.reset();entry.retained->items.clear();}
     }
 };
 struct Values {
@@ -35,6 +35,7 @@ struct Values {
     SourceLocation location{};
     std::shared_ptr<Aggregate> empty_integer_range{};
     std::shared_ptr<Aggregate> empty_collection{};
+    std::vector<std::pair<Type,std::weak_ptr<Aggregate>>> empty_enumerators{};
     std::size_t sequence_depth=0;
     std::size_t list_storage_remaining=remaining;
     std::function<Value(std::size_t,std::span<const Value>)> invoke{};
@@ -90,8 +91,9 @@ struct Values {
             if(info.kind==CompoundKind::enumeration)return EnumValue{type,0};
             if (buffer_collection(info.kind) && constructed) return buffer(type,0);
             const bool object=info.kind==CompoundKind::object_class;
+            const bool iterator=info.kind==CompoundKind::enumerator;
             const bool dictionary=info.kind==CompoundKind::dictionary || info.kind==CompoundKind::dictionary_keys || info.kind==CompoundKind::dictionary_values;
-            if ((object || dictionary || info.kind==CompoundKind::hash_set || info.kind==CompoundKind::empty_collection) && constructed) {
+            if ((object || iterator || dictionary || info.kind==CompoundKind::hash_set || info.kind==CompoundKind::empty_collection) && constructed) {
                 if (!remaining) throw runtime_error(RuntimeError::allocation_limit,location);
                 --remaining;
             }
@@ -103,7 +105,7 @@ struct Values {
                 aggregate->ends = std::make_unique<std::deque<std::shared_ptr<Cell>>>();
             if (info.kind == CompoundKind::record || (object && constructed))
                 for (const auto& field : info.fields) aggregate->items.push_back(cell(field.type, zero(field.type,false,generic || object || key_value_pair_type(info) || dictionary_enumerator_type(info))));
-            if ((object || dictionary) && constructed && observe_object) observe_object(aggregate);
+            if ((object || iterator || dictionary) && constructed && observe_object) observe_object(aggregate);
             return aggregate;
         }
         }

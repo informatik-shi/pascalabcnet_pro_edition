@@ -126,6 +126,10 @@ Error runtime_error(RuntimeError id, SourceLocation location, std::string_view c
         code = "E_FORMAT"; english = "Character is not a decimal digit from 0 to 9"; russian = "Символ не является десятичной цифрой от 0 до 9"; break;
     case RuntimeError::integer_overflow:
         code = "E_OVERFLOW"; english = "Integer overflow"; russian = "Переполнение целого числа"; break;
+    case RuntimeError::iterator_position:
+        code="E_ITERATOR_STATE";english="Enumeration has not started or has already finished";russian="Перебор ещё не начат или уже завершён";break;
+    case RuntimeError::iterator_reset:
+        code="E_NOT_SUPPORTED";english="Reset is not supported by this enumerator";russian="Этот перечислитель не поддерживает Reset";break;
     case RuntimeError::collection_changed:
         code = "E_MODIFIED"; english = "Collection was modified during enumeration"; russian = "Коллекция изменена во время перебора"; break;
     case RuntimeError::file_erase:

@@ -37,6 +37,7 @@ add_library(abc_core
     src/hash_set.cpp
     src/value_hash.cpp
     src/dictionary.cpp
+    src/enumerator.cpp
     src/ordinal_range.cpp
     src/real_interval.cpp
     src/new_set.cpp
@@ -152,6 +153,12 @@ if(BUILD_TESTING)
         target_compile_options(abc_dictionary_enumerator_tests PRIVATE /utf-8)
     endif()
     add_test(NAME dictionary_enumerators COMMAND abc_dictionary_enumerator_tests)
+    add_executable(abc_generic_enumerator_tests tests/generic_enumerator_tests.cpp)
+    target_link_libraries(abc_generic_enumerator_tests PRIVATE abc_core)
+    if(MSVC)
+        target_compile_options(abc_generic_enumerator_tests PRIVATE /utf-8)
+    endif()
+    add_test(NAME generic_enumerators COMMAND abc_generic_enumerator_tests)
     add_test(NAME single_numbers_compatibility COMMAND ${CMAKE_COMMAND}
         "-DABC_RUNNER=$<TARGET_FILE:abc>" "-DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
         -DABC_FIXTURE_NAME=single-numbers-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")

@@ -99,6 +99,7 @@ Halt завершает программу с кодом 0; Halt(integer) зад
 Числа single с округлением до 32 бит, вводом и коллекциями: examples/single-numbers.pas.
 Словари Dictionary, Dict, Keys/Values, EachCount и ToDictionary: examples/dictionaries.pas.
 Перечислители словаря с независимым копированием: examples/dictionary-enumerators.pas.
+Общие интерфейсы IEnumerable<T>/IEnumerator<T>: examples/enumerator-interfaces.pas.
 Типизированный NewSet<T>, SetOf, копирование и процедуры: examples/new-sets.pas.
 Литералы [1..4,9], EmptyCollection, ToSet и ToHashSet: examples/set-literals.pas.
 Print/Println, PrintLines(map), матрицы и Include/Exclude: examples/print-extensions.pas.

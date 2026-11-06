@@ -35,7 +35,7 @@ bool dictionary_enumerator_metadata(const Program& p,Type iterator){
  return true;
 }
 bool dictionary_signature(const Program& p,Type owner,Type payload,DictionaryMethod m){
- if(m>DictionaryMethod::enumerator_dispose || !valid(p,owner))return false;const auto& d=type_info(p,owner);
+ if(m>DictionaryMethod::enumerator_reset || !valid(p,owner))return false;const auto& d=type_info(p,owner);
  if(m==DictionaryMethod::get_enumerator)return dictionary_enumerator_metadata(p,payload) && type_info(p,payload).key==owner;
  if(m>=DictionaryMethod::enumerator_move)return payload==Type::invalid && dictionary_enumerator_metadata(p,owner);
  if(m==DictionaryMethod::pair_construct || m==DictionaryMethod::pair_to_string)
@@ -74,7 +74,7 @@ bool dictionary_signature(const Program& p,Type owner,Type payload,DictionaryMet
 }
 std::vector<Type> dictionary_parameters(const std::vector<TypeInfo>& types,Type owner,Type payload,DictionaryMethod m){
  if(m==DictionaryMethod::get_enumerator || m==DictionaryMethod::enumerator_move_copy || m==DictionaryMethod::enumerator_current || m==DictionaryMethod::enumerator_dispose)return {owner};
- if(m==DictionaryMethod::enumerator_move)return {reference_type(owner)};
+ if(m==DictionaryMethod::enumerator_move || m==DictionaryMethod::enumerator_reset)return {reference_type(owner)};
  if(m==DictionaryMethod::view_count)return {owner};
  if(m==DictionaryMethod::view_contains)return {owner,info(types,owner).element};
  if(m==DictionaryMethod::view_copy_to)return {owner,payload,Type::integer};
@@ -106,7 +106,7 @@ Type dictionary_result(const std::vector<TypeInfo>& types,Type owner,Type payloa
  if(m==DictionaryMethod::get_enumerator)return payload;
  if(m==DictionaryMethod::enumerator_move || m==DictionaryMethod::enumerator_move_copy)return Type::boolean;
  if(m==DictionaryMethod::enumerator_current)return info(types,owner).element;
- if(m==DictionaryMethod::enumerator_dispose)return Type::unit;
+ if(m==DictionaryMethod::enumerator_dispose || m==DictionaryMethod::enumerator_reset)return Type::unit;
  if(m==DictionaryMethod::each_count || m==DictionaryMethod::each || m==DictionaryMethod::to_dictionary || m==DictionaryMethod::to_dictionary_elements)return owner;
  if(m<=DictionaryMethod::from_sequences || m==DictionaryMethod::copy_value || m==DictionaryMethod::merge || m==DictionaryMethod::without_key || m==DictionaryMethod::without_keys || m==DictionaryMethod::pair_construct)return owner;
  if(m==DictionaryMethod::view_count)return Type::integer;
@@ -229,7 +229,7 @@ Value dictionary_invoke(Values& values,Type owner,Type payload,DictionaryMethod 
    values.write(iterator->items[0],d);values.write(iterator->items[1],d->version);return iterator;
   }
   if(m>=DictionaryMethod::enumerator_move){
-   const auto iterator=m==DictionaryMethod::enumerator_move ? std::get<Object>(std::get<std::shared_ptr<Cell>>(args[0])->value)
+   const auto iterator=(m==DictionaryMethod::enumerator_move || m==DictionaryMethod::enumerator_reset) ? std::get<Object>(std::get<std::shared_ptr<Cell>>(args[0])->value)
     : std::get<Object>(m==DictionaryMethod::enumerator_move_copy ? values.copy(args[0]) : args[0]);
    if(!iterator || iterator->nil || iterator->items.size()!=4)throw runtime_error(RuntimeError::invalid_bytecode,values.location);
    if(m==DictionaryMethod::enumerator_current)return values.copy(iterator->items[3]->value);
@@ -237,6 +237,7 @@ Value dictionary_invoke(Values& values,Type owner,Type payload,DictionaryMethod 
    if(m==DictionaryMethod::enumerator_dispose)return false;
    const auto d=std::get<Object>(iterator->items[0]->value);require(d,values.location);
    if(std::get<std::uint64_t>(iterator->items[1]->value)!=d->version)throw runtime_error(RuntimeError::collection_changed,values.location);
+   if(m==DictionaryMethod::enumerator_reset){values.write(iterator->items[2],std::int32_t{0});values.write(iterator->items[3],values.zero(type_info(values.program,owner).element,false,true));return false;}
    auto index=static_cast<std::uint32_t>(std::get<std::int32_t>(iterator->items[2]->value));
    const auto& shape=type_info(values.program,owner);const auto source=type_info(values.program,shape.key).kind;
    while(index<d->items.size()){

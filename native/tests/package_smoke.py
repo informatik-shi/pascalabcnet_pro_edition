@@ -239,6 +239,7 @@ def main():
                 ("halt.pas", "Завершение программы\n"),
                 ("builtin-callables.pas", "7 2500000000\n[ONE,ДВА]\n101 3.2.0.1364\n"),
                 ("dictionaries.pas", "{(чай,130),(кофе,180)}\n[чай,кофе,сок]\n{(чай,140),(вода,60)}\n{(2,2),(1,1),(3,1)}\n{(1,1),(2,4),(3,9)}\nчай: 130\nкофе: 180\nсок: 90\n"),
+                ("enumerator-interfaces.pas", "10 20\n30\n1 2\n1\n2\n4\nFalse\n"),
                 ("dictionary-enumerators.pas", "Original: two=2\nCopy: one=1\ntwo=2\nthree=3\none\ntwo\nthree\n"),
                 ("single-numbers.pas", "16777216 single\n1.0000001\n1 0.33333334\n16777216\nTrue 1E-45\n3.4028235E+38 1E-45\n"),
                 ("type-names.pas", "Coordinate\narray[,] of integer\narray of integer\nsequence of integer\n[integer,string,function(integer): string]\nnil nil\n"),
@@ -1586,6 +1587,8 @@ def main():
                 ("begin\n var d:=DictInt((1,2));d.Add(1,3);\nend.", "E_KEY_DUPLICATE", "An item with the same key has already been added", "Элемент с таким ключом уже добавлен"),
                 ("begin\n var d:=DictInt((1,2));var e:=d.Values.GetEnumerator;d[1]:=3;e.MoveNext;\nend.", "E_MODIFIED", "Collection was modified during enumeration", "Коллекция изменена во время перебора"),
                 ("type E=Dictionary<integer,integer>.Enumerator;begin\n var e:E;e.MoveNext;\nend.", "E_NIL", "Cannot access a nil reference", "Нельзя обратиться к пустой ссылке nil"),
+                ("begin\n var s:IEnumerable<integer>:=Arr(1);var e:=s.GetEnumerator;Writeln(e.Current);\nend.", "E_ITERATOR_STATE", "Enumeration has not started or has already finished", "Перебор ещё не начат или уже завершён"),
+                ("begin\n var e:=Range(1,3).GetEnumerator;e.Reset;\nend.", "E_NOT_SUPPORTED", "Reset is not supported by this enumerator", "Этот перечислитель не поддерживает Reset"),
                 ("begin\n var d:=DictInt();Writeln(d[1]);\nend.", "E_KEY_NOT_FOUND", "The given key was not present in the dictionary", "Указанный ключ отсутствует в словаре"),
                 ("begin\n var d:=new Dictionary<string,integer>;d.Add(nil,1);\nend.", "E_NIL", "Dictionary key cannot be nil", "Ключ словаря не может быть nil"),
             ):
@@ -1602,6 +1605,18 @@ def main():
             invalid = subprocess.run([runner, "run", str(dictionary_error)], text=True, encoding="utf-8", capture_output=True, cwd=folder, env=env, timeout=10)
             if invalid.returncode != 1 or invalid.stdout or "E_TYPE" not in invalid.stderr or "RU:" not in invalid.stderr:
                 raise RuntimeError(f"{name} enumerator type mismatch was not rejected before output")
+            dictionary_error.write_text("begin Writeln('must never run');var e:IEnumerator<real>:=Range(1,3).GetEnumerator;end.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(dictionary_error)], text=True, encoding="utf-8", capture_output=True, cwd=folder, env=env, timeout=10)
+            if invalid.returncode != 1 or invalid.stdout or "E_TYPE" not in invalid.stderr or "RU:" not in invalid.stderr:
+                raise RuntimeError(f"{name} interface element type mismatch was not rejected before output")
+            iterator_data = folder / "iterator-resource.txt"
+            iterator_data.write_text("one\ntwo\n", encoding="utf-8")
+            iterator_source = folder / "Ресурсы перечислителя.pas"
+            iterator_source.write_text("begin for var i:=1 to 300 do begin var e:=ReadLines('iterator-resource.txt').GetEnumerator;assert(e.MoveNext);assert(e.Current='one');e.Dispose;assert(e.Current=nil);assert(not e.MoveNext);end;end.", encoding="utf-8")
+            disposed = subprocess.run([runner, "run", str(iterator_source)], text=True, encoding="utf-8", capture_output=True, cwd=folder, env=env, timeout=10)
+            if disposed.returncode != 0 or disposed.stdout or disposed.stderr:
+                raise RuntimeError(f"{name} interface cursor resource disposal failed: {disposed.stderr!r}")
+            results[-1]["native_generic_enumerators_boxing_resources_and_bilingual_errors"] = "passed"
             results[-1]["native_typed_dictionary_enumerators_and_bilingual_errors"] = "passed"
             results[-1]["native_dictionary_factories_views_callbacks_and_bilingual_errors"] = "passed"
             results[-1]["native_single_rounding_types_io_and_bilingual_errors"] = "passed"

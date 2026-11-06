@@ -822,5 +822,34 @@ field opcodes are rejected, nested concrete types resolve before execution, and
 closed reflection names do not enumerate sources. Bounded native work, allocation,
 cancellation and execution cycle cleanup remain shared with the VM. Independent
 Framework struct-array probes avoid accidental interface boxing during copy tests.
-General IEnumerator conversion, explicit interface Reset and custom user enumerator
-implementations still require a separate interface/type-system stage.
+Closed generic IEnumerator conversion and inherited interface Reset are now handled
+by the native interface adapter described below. Nongeneric interfaces and custom
+user implementations still require further interface/type-system work.
+
+IEnumerator<T> has a closed static element type and reference identity. Its dedicated
+verified operation distinguishes GetEnumerator, concrete Dictionary boxing, MoveNext,
+Current, Dispose and inherited Reset; owner/payload/result types never come from
+runtime overload resolution. IEnumerable<T> syntax maps to the existing native
+sequence contract. Normal sequence conversion, parameters, returns, aliases, fields
+and generic storage preserve these types; exact-element boxing copies a concrete
+Dictionary/KeyCollection/ValueCollection record once. Later interface assignments
+share that boxed record instead of copying its cursor. Dictionary provider adapters
+retain concrete runtime type identity, including inherited Reset version rules.
+
+IntRange, CharRange and NewSet direct GetEnumerator calls use their source-defined
+interface result via typed sequence adapters. Multiline member locations survive
+adaptation, and metadata/cache scans share bounded native work/cancellation.
+Sequence-backed interfaces own cursor leases and typed cached Current cells. Arrays
+read the live indexed cell; List/HashSet and Dictionary retain saved values. Legacy
+string disposal invalidates further access, while Range/Repeat disposal is a no-op.
+LINQ indexed/unindexed adapters preserve their distinct Current-reset behavior. Empty
+integer Range uses the source Empty-array contract; weak per-execution caches preserve
+empty-array generic enumerator identity without retaining dead interfaces. Reset is
+limited to source-supported collection/string/boxed operations and rejects lazy
+iterators explicitly. Resource-bearing cursors close files/directories and nested
+leases on Dispose. Execution-scoped object cleanup releases interface state before
+clearing fields, breaking closure/class/dictionary ownership cycles. Closed native
+reflection tags retain provider/source identity without loading CLR-private types.
+Independent Framework interface probes cover 4488 operations over22sources. General
+object boxing, nongeneric interfaces, user implementations, variance, bound method
+values and concrete List/HashSet public enumerator structs remain separate work.
