@@ -15,6 +15,7 @@
 #include "ini_file.hpp"
 #include "compound.hpp"
 #include "hash_set.hpp"
+#include "dictionary.hpp"
 #include "ordinal_range.hpp"
 #include "real_interval.hpp"
 #include "new_set.hpp"
@@ -492,6 +493,7 @@ private:
             if (result->kind=="system") {
                 result->system_qualified=true; expect("."); result->kind=is("type") ? consume().text : name().text;
                 if(result->kind=="text") {expect(".");result->kind=name().text;if(result->kind!="encoding")throw Error("E_UNSUPPORTED",result->token.location,"Unknown or unsupported Encoding type");}
+                else if(result->kind=="collections"){expect(".");const auto generic=name();if(generic.text!="generic")throw Error("E_UNSUPPORTED",generic.location,"Unknown System.Collections namespace");expect(".");result->kind=name().text;if(result->kind!="dictionary" && result->kind!="keyvaluepair")throw Error("E_UNSUPPORTED",result->token.location,"Unknown generic collection type");}
                 else if (result->kind!="func" && result->kind!="action" && result->kind!="predicate" && result->kind!="type" && result->kind!="void" && result->kind!="single")
                     throw Error("E_UNSUPPORTED",result->token.location,"Unknown or unsupported type 'System."+result->kind+"'");
             }
@@ -507,7 +509,7 @@ private:
                     } while (accept(","));
                     expect(">");
                 }
-            } else if (result->kind == "assocarray" && accept("<")) {
+            } else if ((result->kind == "assocarray" || result->kind=="dictionary" || result->kind=="keyvaluepair") && accept("<")) {
                 result->named=false; result->key = type_syntax(); expect(","); result->element = type_syntax(); expect(">");
             } else if ((result->kind == "list" || result->kind == "hashset" || result->kind=="newset" || result->kind == "stack" || result->kind == "queue" || result->kind == "dynarray" || result->kind == "simpleset" || result->kind == "linkedlist" || result->kind == "linkedlistnode" || result->kind == "singlenode") && accept("<")) {
                 result->named=false; result->element = type_syntax(); expect(">");
@@ -1739,6 +1741,18 @@ private:
         }
         return false;
     }
+    ABC_PASCAL_NOINLINE Type pair_type(Type key,Type value){
+        for(std::size_t i=0;i<module_.types.size();++i){const auto& t=module_.types[i];if(key_value_pair_type(t) && t.fields.size()==2 && t.fields[0].type==key && t.fields[1].type==value)return static_cast<Type>(64+i);}
+        if(module_.types.size()>=1024)throw Error("E_LIMIT",{},"Type limit exceeded");TypeInfo pair{"keyvaluepair",CompoundKind::record,Type::invalid,{{"key",key,false},{"value",value,false}}};pair.native_record=NativeRecord::key_value_pair;module_.types.push_back(std::move(pair));return static_cast<Type>(63+module_.types.size());
+    }
+    ABC_PASCAL_NOINLINE Type dictionary_type(Type key,Type value){
+        const auto pair=pair_type(key,value);for(std::size_t i=0;i<module_.types.size();++i)if(module_.types[i].kind==CompoundKind::dictionary && module_.types[i].key==key && module_.types[i].element==pair)return static_cast<Type>(64+i);
+        if(module_.types.size()>=1024)throw Error("E_LIMIT",{},"Type limit exceeded");module_.types.push_back({"dictionary",CompoundKind::dictionary,pair,{},key});const auto result=static_cast<Type>(63+module_.types.size());(void)sequence_type(CompoundKind::sequence,pair);return result;
+    }
+    ABC_PASCAL_NOINLINE Type dictionary_view_type(Type owner,bool keys){
+        const auto kind=keys ? CompoundKind::dictionary_keys : CompoundKind::dictionary_values;for(std::size_t i=0;i<module_.types.size();++i)if(module_.types[i].kind==kind && module_.types[i].key==owner)return static_cast<Type>(64+i);
+        const auto element=keys ? info(owner,{}).key : dictionary_value_type(module_.types,owner);(void)sequence_type(CompoundKind::sequence,element);if(module_.types.size()>=1024)throw Error("E_LIMIT",{},"Type limit exceeded");module_.types.push_back({keys ? "dictionarykeys" : "dictionaryvalues",kind,element,{},owner});return static_cast<Type>(63+module_.types.size());
+    }
     Type association_type(Type key, Type element) {
         for (std::size_t i=0;i<module_.types.size();++i) {
             const auto& type = module_.types[i];
@@ -1801,6 +1815,7 @@ private:
         if(syntax.kind=="newset" && syntax.element)return new_set_type(resolve_type(*syntax.element));
         if (syntax.kind == "array" || ((syntax.kind == "list" || syntax.kind=="hashset") && syntax.element))
             return sequence_type(syntax.kind == "array" ? CompoundKind::array : syntax.kind=="hashset" ? CompoundKind::hash_set : CompoundKind::list,resolve_type(*syntax.element),syntax.rank);
+        if((syntax.kind=="dictionary" || syntax.kind=="keyvaluepair") && syntax.key && syntax.element){const auto key=resolve_type(*syntax.key),value=resolve_type(*syntax.element);return syntax.kind=="dictionary" ? dictionary_type(key,value) : pair_type(key,value);}
         if (syntax.kind == "assocarray" && syntax.key && syntax.element) {
             if (!collections_imported_) throw Error("E_UNSUPPORTED",syntax.token.location,"AssocArray requires uses Collections");
             const auto key = resolve_type(*syntax.key), element = resolve_type(*syntax.element);
@@ -1866,7 +1881,7 @@ private:
         if(expression.kind==hir::ExprKind::new_set_hash)return new_set_addressable(*expression.left);
         if (expression.kind==hir::ExprKind::index && expression.left->type==Type::string) return false;
         if (expression.kind==hir::ExprKind::field && compound(expression.left->type) && info(expression.left->type,expression.location).kind==CompoundKind::object_class) return true;
-        if (expression.kind==hir::ExprKind::field && compound(expression.left->type) && info(expression.left->type,expression.location).kind==CompoundKind::tuple) return false;
+        if (expression.kind==hir::ExprKind::field && compound(expression.left->type) && (info(expression.left->type,expression.location).kind==CompoundKind::tuple || key_value_pair_type(info(expression.left->type,expression.location)))) return false;
         if (expression.kind==hir::ExprKind::index && compound(expression.left->type)
             && indexed_sequence(info(expression.left->type,expression.location).kind)) return true;
         return (expression.kind == hir::ExprKind::local && !for_controls_.contains(expression.local))
@@ -1904,7 +1919,9 @@ private:
     }
     std::unique_ptr<hir::Expr> convert(std::unique_ptr<hir::Expr> expression, Type type) {
         if(expression->type!=type && compound(expression->type) && info(expression->type,expression->location).kind==CompoundKind::empty_collection && compound(type)){
-            const auto target=info(type,expression->location);if(target.kind==CompoundKind::sequence)(void)sequence_type(CompoundKind::array,target.element);
+            const auto target=info(type,expression->location);
+            if(target.kind==CompoundKind::dictionary){const auto location=expression->location;auto result=std::make_unique<hir::Expr>();result->kind=hir::ExprKind::evaluate_then;result->type=type;result->location=location;result->left=std::move(expression);result->right=dictionary_expression(type,DictionaryMethod::construct,{},location);return result;}
+            if(target.kind==CompoundKind::sequence)(void)sequence_type(CompoundKind::array,target.element);
             Program metadata;metadata.types=module_.types;if(empty_signature(metadata,type,EmptyMethod::convert)){const auto location=expression->location;std::vector<std::unique_ptr<hir::Expr>> args;args.push_back(std::move(expression));return empty_expression(type,EmptyMethod::convert,std::move(args),location);}
         }
         if(expression->type!=type && compound(type) && info(type,expression->location).kind==CompoundKind::new_set){
@@ -2200,6 +2217,12 @@ private:
                     else for(const auto& argument:source.arguments)array->arguments.push_back(convert(expression(*argument,element),element));
                     arguments.push_back(std::move(array));return new_set_expression(type,NewSetMethod::construct_array,std::move(arguments),result->location);
                 }
+                if(info(type,result->location).kind==CompoundKind::dictionary || key_value_pair_type(info(type,result->location))){
+                    std::vector<std::unique_ptr<hir::Expr>> args;for(const auto& argument:source.arguments)args.push_back(expression(*argument));
+                    if(key_value_pair_type(info(type,result->location))){if(args.empty()){result->kind=hir::ExprKind::default_value;result->type=type;result->operation="default";return result;}return dictionary_expression(type,DictionaryMethod::pair_construct,std::move(args),result->location);}
+                    if(args.size()==1 && args[0]->type==Type::nil)throw Error("E_TYPE",result->location,"Dictionary constructor requires a typed argument");
+                    const auto method=args.empty() ? DictionaryMethod::construct : args.size()==1 && args[0]->type==type ? DictionaryMethod::construct_copy : DictionaryMethod::construct_capacity;return dictionary_expression(type,method,std::move(args),result->location);
+                }
                 if(info(type,result->location).kind==CompoundKind::hash_set){
                     std::vector<std::unique_ptr<hir::Expr>> arguments;for(const auto& argument:source.arguments)arguments.push_back(expression(*argument));
                     if(arguments.size()==1 && arguments[0]->type==Type::nil)throw Error("E_TYPE",result->location,"HashSet constructor requires a typed collection");
@@ -2267,7 +2290,7 @@ private:
     ABC_PASCAL_NOINLINE bool bind_sequence_value_member(hir::Expr& result,const SyntaxExpr& source) {
         const auto receiver=result.left->type;
         if(!compound(receiver) || info(receiver,result.location).kind!=CompoundKind::sequence)return false;
-        if(bind_sequence_zip(result,source,{},true) || bind_sequence_numeric_selector(result,source,{},true)
+        if(bind_dictionary_query(result,source,{},true) || bind_sequence_zip(result,source,{},true) || bind_sequence_numeric_selector(result,source,{},true)
             || bind_sequence_predicate(result,source,{},true) || bind_sequence_transform(result,source,{},true))return true;
         const auto& name=source.token.text;
         if(name=="count" || name=="length" || name=="toarray" || name=="tolist"){
@@ -2362,8 +2385,11 @@ private:
                     }
                 }
                 result->kind=hir::ExprKind::call;
+                if (bind_fixed_dictionary_factory(*result,source,source.left->token.text)) break;
+                if (bind_dictionary_extension(*result,source,source.left->token.text)) break;
                 if (bind_generators(*result,source,source.left->token.text)) break;
                 if (bind_school_table(*result,source,source.left->token.text)) break;
+                if (bind_dictionary_query(*result,source,source.left->token.text)) break;
                 if (bind_sequence_zip(*result,source,source.left->token.text)) break;
                 if (bind_sequence_numeric_selector(*result,source,source.left->token.text)) break;
                 if (bind_sequence_predicate(*result,source,source.left->token.text)) break;
@@ -2375,6 +2401,8 @@ private:
                 if (bind_sequence_conversion(*result,source.token.text,source.left->token.text)) break;
                 if (bind_new_set_factory(*result,source.token.text,source.left->token.text)) break;
                 if (bind_hash_set_factory(*result,source.token.text,source.left->token.text)) break;
+                if (bind_pair_factory(*result,source.token.text,source.left->token.text)) break;
+                if (bind_dictionary_factory(*result,source.token.text,source.left->token.text)) break;
                 if (bind_ordinal_range_factory(*result,source.token.text,source.left->token.text)) break;
                 if (bind_list_factory(*result,source.token.text,source.left->token.text)) break;
                 if (bind_sequence_factory(*result,source.token.text,source.left->token.text)) break;
@@ -2414,6 +2442,7 @@ private:
                 }
             }
             if(bind_print_extension(*result,source,true))break;
+            if(bind_dictionary_member(*result,source))break;
             if(bind_inifile_member(*result,source))break;
             if(bind_encoding_member(*result,source))break;
             if((receiver==Type::string || receiver==Type::character || (numeric(receiver) && receiver!=Type::big_integer))
@@ -2445,7 +2474,7 @@ private:
                 bind_value_call(*result,source.arguments); break;
             }
             if ((receiver==Type::string || (compound(receiver) && (info(receiver,result->location).kind==CompoundKind::sequence || enumerable_collection(info(receiver,result->location)))))
-                && (bind_sequence_zip(*result,source,{},true) || bind_sequence_numeric_selector(*result,source,{},true) || bind_sequence_predicate(*result,source,{},true) || bind_sequence_transform(*result,source,{},true))) break;
+                && (bind_dictionary_query(*result,source,{},true) || bind_sequence_zip(*result,source,{},true) || bind_sequence_numeric_selector(*result,source,{},true) || bind_sequence_predicate(*result,source,{},true) || bind_sequence_transform(*result,source,{},true))) break;
             if (receiver==Type::string && (sequence_slice_method(source.token.text) || sequence_query_method(source.token.text)
                 || source.token.text=="count" || source.token.text=="toarray" || source.token.text=="tolist" || source.token.text=="toset" || source.token.text=="tohashset" || source.token.text=="concat"
                 || source.token.text=="asenumerable" || source.token.text=="sequenceequal" || source.token.text=="defaultifempty")) {
@@ -2665,7 +2694,7 @@ private:
                 (void)bind_sequence_concat(*result,source.token.text,"pabcsystem"); break;
             }
             if ((type.kind==CompoundKind::sequence || enumerable_collection(type)) && sequence_slice_method(source.token.text)
-                && (source.token.text!="reverse" || type.kind==CompoundKind::sequence || type.kind==CompoundKind::hash_set || type.kind==CompoundKind::new_set)) {
+                && (source.token.text!="reverse" || type.kind==CompoundKind::sequence || type.kind==CompoundKind::hash_set || type.kind==CompoundKind::new_set || type.kind==CompoundKind::dictionary || type.kind==CompoundKind::dictionary_keys || type.kind==CompoundKind::dictionary_values)) {
                 result->arguments.push_back(std::move(result->left));
                 for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
                 (void)bind_sequence_slice(*result,source.token.text,"pabcsystem"); break;
@@ -2904,6 +2933,11 @@ private:
         } while(false);
         return result;
     }
+    ABC_PASCAL_NOINLINE bool bind_callable_cast(hir::Expr& result,const SyntaxExpr& source){
+        if(routine_names_.contains(source.token.text))return false;Type cast=Type::invalid;
+        if(const auto alias=aliases_.find(source.token.text);alias!=aliases_.end()){if(callable_type(alias->second))cast=alias->second;}else if(source.token.text=="action0")cast=function_type(Type::unit,{},result.location);
+        if(cast==Type::invalid)return false;if(source.arguments.size()!=1)throw Error("E_TYPE",result.location,"Callable constructor requires one matching routine value");result=std::move(*convert(expression(*source.arguments[0],cast),cast));return true;
+    }
     ABC_PASCAL_NOINLINE std::unique_ptr<hir::Expr> bind_call_expression(const SyntaxExpr& source,Type expected,std::unique_ptr<hir::Expr> result) {
         (void)expected;
         do {
@@ -2915,9 +2949,13 @@ private:
                 bind_value_call(*result,source.arguments); break;
             }
             result->kind = hir::ExprKind::call;
+            if(bind_callable_cast(*result,source))break;
             if(!routine_names_.contains(source.token.text) && (bind_set_mutation(*result,source) || bind_print_extension(*result,source,false)))break;
+            if (!routine_names_.contains(source.token.text) && bind_fixed_dictionary_factory(*result,source)) break;
+            if (!routine_names_.contains(source.token.text) && bind_dictionary_extension(*result,source)) break;
             if (!routine_names_.contains(source.token.text) && bind_generators(*result,source)) break;
             if (!routine_names_.contains(source.token.text) && bind_school_table(*result,source)) break;
+            if (!routine_names_.contains(source.token.text) && bind_dictionary_query(*result,source)) break;
             if (!routine_names_.contains(source.token.text) && bind_sequence_zip(*result,source)) break;
             if (!routine_names_.contains(source.token.text) && bind_sequence_numeric_selector(*result,source)) break;
             if (!routine_names_.contains(source.token.text) && bind_sequence_predicate(*result,source)) break;
@@ -2946,6 +2984,8 @@ private:
             if (bind_sequence_conversion(*result,source.token.text)) break;
             if (bind_new_set_factory(*result,source.token.text)) break;
             if (bind_hash_set_factory(*result,source.token.text)) break;
+            if (bind_pair_factory(*result,source.token.text)) break;
+            if (bind_dictionary_factory(*result,source.token.text)) break;
             if (bind_ordinal_range_factory(*result,source.token.text)) break;
             if (bind_list_factory(*result,source.token.text)) break;
             if (bind_sequence_factory(*result,source.token.text)) break;
@@ -3074,6 +3114,7 @@ private:
                 result->type=Type::character; result->kind=hir::ExprKind::index; break;
             }
             const auto kind = info(receiver_type,result->location).kind;
+            if(kind==CompoundKind::dictionary){std::vector<std::unique_ptr<hir::Expr>> args;args.push_back(std::move(result->left));args.push_back(expression(*source.right,info(receiver_type,result->location).key));return dictionary_expression(receiver_type,DictionaryMethod::get_item,std::move(args),result->location);}
             if (kind == CompoundKind::association) {
                 const auto key = info(receiver_type,result->location).key, element = info(receiver_type,result->location).element;
                 result->kind = hir::ExprKind::association_call; result->type = element;
@@ -3190,6 +3231,7 @@ private:
                 }
                 if(compound(right) && info(right,result->location).kind==CompoundKind::empty_collection && left!=Type::nil && left!=Type::unit){const auto owner=new_set_type(left);result->right=convert(std::move(result->right),owner);right=owner;}
                 if(compound(right) && info(right,result->location).kind==CompoundKind::new_set){std::vector<std::unique_ptr<hir::Expr>> arguments;arguments.push_back(std::move(result->left));arguments.push_back(std::move(result->right));return new_set_expression(right,NewSetMethod::membership,std::move(arguments),result->location);}
+                if(compound(right) && info(right,result->location).kind==CompoundKind::dictionary){std::vector<std::unique_ptr<hir::Expr>> args;args.push_back(std::move(result->left));args.push_back(std::move(result->right));return dictionary_expression(right,DictionaryMethod::membership,std::move(args),result->location);}
                 if(compound(right) && info(right,result->location).kind==CompoundKind::hash_set){std::vector<std::unique_ptr<hir::Expr>> arguments;arguments.push_back(std::move(result->left));arguments.push_back(std::move(result->right));return hash_set_expression(right,HashSetMethod::membership,std::move(arguments),result->location);}
                 if(right==Type::string || right==Type::character || (right==Type::nil && (left==Type::string || left==Type::character)))
                     return compound_expression(Type::string,CompoundMethod::string_in,std::move(result->left),std::move(result->right),result->location);
@@ -3197,7 +3239,7 @@ private:
                     const auto shape=info(right,result->location);
                     if(shape.kind==CompoundKind::array && shape.rank==2)
                         return compound_expression(right,CompoundMethod::matrix_in,std::move(result->left),std::move(result->right),result->location);
-                    if(shape.kind==CompoundKind::sequence || (indexed_sequence(shape.kind) && shape.rank==1))
+                    if(shape.kind==CompoundKind::sequence || (enumerable_collection(shape) && shape.rank==1))
                         return compound_expression(sequence_type(CompoundKind::sequence,shape.element),CompoundMethod::sequence_in,std::move(result->left),std::move(result->right),result->location);
                 }
                 throw Error("E_TYPE",result->location,"Membership requires string, array, List or sequence");
@@ -3233,6 +3275,9 @@ private:
                 }else throw Error("E_TYPE",result->location,"Unsupported HashSet operator");
                 std::vector<std::unique_ptr<hir::Expr>> arguments;arguments.push_back(std::move(result->left));arguments.push_back(std::move(result->right));return hash_set_expression(owner,method,std::move(arguments),result->location);
             }
+            const auto is_dictionary=[&](Type type){return compound(type) && info(type,result->location).kind==CompoundKind::dictionary;};
+            if(op=="+" && ((is_dictionary(left) && (right==left || right==Type::nil || empty_kind(right))) || (is_dictionary(right) && (left==Type::nil || empty_kind(left))))){const auto owner=is_dictionary(left) ? left : right;std::vector<std::unique_ptr<hir::Expr>> args;args.push_back(std::move(result->left));args.push_back(std::move(result->right));return dictionary_expression(owner,DictionaryMethod::merge,std::move(args),result->location);}
+            if(op=="-" && is_dictionary(left))return dictionary_removal(left,std::move(result->left),std::move(result->right),result->location,true);
             const auto is_array=[&](Type type){return compound(type) && info(type,result->location).kind==CompoundKind::array && info(type,result->location).rank==1;};
             if(op=="+" && ((is_array(left) && (right==left || right==Type::nil)) || (is_array(right) && left==Type::nil)))
                 return compound_expression(is_array(left) ? left : right,CompoundMethod::array_concat,std::move(result->left),std::move(result->right),result->location);
@@ -3243,6 +3288,9 @@ private:
                 return compound_expression(is_list(left) ? left : right,CompoundMethod::list_concat,std::move(result->left),std::move(result->right),result->location);
             if(op=="*" && (is_list(left) || is_list(right)))
                 return compound_expression(is_list(left) ? left : right,is_list(left) ? CompoundMethod::list_repeat : CompoundMethod::list_repeat_reverse,std::move(result->left),std::move(result->right),result->location);
+            if(op=="+"){
+                const auto adapt=[&](std::unique_ptr<hir::Expr>& value,Type& type){if(compound(type)){const auto shape=info(type,result->location);if(shape.kind==CompoundKind::dictionary || shape.kind==CompoundKind::dictionary_keys || shape.kind==CompoundKind::dictionary_values){const auto sequence=sequence_type(CompoundKind::sequence,shape.element);value=convert(std::move(value),sequence);type=sequence;}}};adapt(result->left,left);adapt(result->right,right);
+            }
             const auto is_sequence=[&](Type type) { return compound(type) && info(type,result->location).kind==CompoundKind::sequence; };
             if (op=="+" && (is_sequence(left) || is_sequence(right))) {
                 const auto singleton=[&](std::unique_ptr<hir::Expr> item,Type sequence) {
@@ -3390,6 +3438,9 @@ private:
                 setter->local = static_cast<std::size_t>(LinkedMethod::set_value); setter->type = Type::unit;
                 result.kind = hir::StmtKind::call; result.expression = std::move(setter); return result;
             }
+            if(result.target->kind==hir::ExprKind::dictionary_call && (result.target->local&255U)==static_cast<std::size_t>(DictionaryMethod::get_item)){
+                auto setter=std::move(result.target);setter->arguments.push_back(convert(value(setter->type),setter->type));setter->local=(setter->local&~std::size_t{255})|static_cast<std::size_t>(DictionaryMethod::set_item);setter->type=Type::unit;result.kind=hir::StmtKind::call;result.expression=std::move(setter);return result;
+            }
             if (result.target->kind == hir::ExprKind::association_call && result.target->local == static_cast<std::size_t>(AssociationMethod::get)) {
                 auto setter = std::move(result.target);
                 setter->arguments.push_back(convert(value(setter->type),setter->type));
@@ -3489,6 +3540,140 @@ private:
         if(name!="arr" || (!unit.empty() && unit!="pabcsystem") || result.arguments.size()!=1 || !compound(result.arguments[0]->type) || !ordinal_range_type(info(result.arguments[0]->type,result.location)))return false;
         const auto owner=result.arguments[0]->type;result=std::move(*ordinal_range_expression(owner,OrdinalRangeMethod::to_array,std::move(result.arguments),result.location));return true;
     }
+    ABC_PASCAL_NOINLINE bool bind_dictionary_member(hir::Expr& result,const SyntaxExpr& source,bool global=false){
+        const auto offset=global ? 1U : 0U;const auto owner=result.left->type;if(!compound(owner))return false;
+        const auto shape=info(owner,result.location);const auto& name=source.token.text;
+        if(key_value_pair_type(shape) && name=="tostring"){
+            std::vector<std::unique_ptr<hir::Expr>> args;args.push_back(std::move(result.left));for(const auto& item:source.arguments)args.push_back(expression(*item));
+            result=std::move(*dictionary_expression(owner,DictionaryMethod::pair_to_string,std::move(args),result.location));return true;
+        }
+        if(shape.kind==CompoundKind::dictionary_keys || shape.kind==CompoundKind::dictionary_values){
+            if(name!="count" && name!="contains" && name!="copyto")return false;
+            auto method=name=="count" ? DictionaryMethod::view_count : name=="contains" ? DictionaryMethod::view_contains : DictionaryMethod::view_copy_to;
+            if(name=="count" && source.kind==SyntaxExprKind::member_call)throw Error("E_TYPE",result.location,"Dictionary property is not callable");
+            std::vector<std::unique_ptr<hir::Expr>> args;args.push_back(std::move(result.left));for(std::size_t i=offset;i<source.arguments.size();++i)args.push_back(expression(*source.arguments[i],name=="contains" ? shape.element : i==offset+1 ? Type::integer : Type::invalid));
+            const auto payload=method==DictionaryMethod::view_copy_to ? sequence_type(CompoundKind::array,shape.element) : Type::invalid;
+            result=std::move(*dictionary_expression(owner,method,std::move(args),result.location,payload));return true;
+        }
+        if(shape.kind!=CompoundKind::dictionary)return false;
+        static const std::map<std::string,DictionaryMethod> methods{{"count",DictionaryMethod::count},{"add",DictionaryMethod::add},{"containskey",DictionaryMethod::contains_key},{"containsvalue",DictionaryMethod::contains_value},{"trygetvalue",DictionaryMethod::try_get_value},{"remove",DictionaryMethod::remove},{"clear",DictionaryMethod::clear},{"get",DictionaryMethod::get_default},{"getoradd",DictionaryMethod::get_or_add_value},{"keys",DictionaryMethod::keys},{"values",DictionaryMethod::values},{"update",DictionaryMethod::update}};
+        const auto found=methods.find(name);if(found==methods.end())return false;
+        auto method=found->second;const auto value=dictionary_value_type(module_.types,owner);
+        if((method==DictionaryMethod::count || method==DictionaryMethod::keys || method==DictionaryMethod::values) && source.kind==SyntaxExprKind::member_call)throw Error("E_TYPE",result.location,"Dictionary property is not callable");
+        Type payload=Type::invalid;
+        if(method==DictionaryMethod::keys || method==DictionaryMethod::values)payload=dictionary_view_type(owner,method==DictionaryMethod::keys);
+        std::vector<std::unique_ptr<hir::Expr>> args;args.push_back(std::move(result.left));
+        for(std::size_t i=offset;i<source.arguments.size();++i){
+            Type context=Type::invalid;
+            if(method==DictionaryMethod::contains_value)context=value;
+            else if(method==DictionaryMethod::update)context=owner;
+            else if(i==offset)context=shape.key;
+            else context=value;
+            if(name=="getoradd" && i==offset+1 && source.arguments[i]->kind==SyntaxExprKind::lambda){
+                payload=function_type(value,{{shape.key,false,false}},result.location);context=payload;method=DictionaryMethod::get_or_add_factory;
+            }
+            auto argument=expression(*source.arguments[i],context);
+            if(name=="getoradd" && i==offset+1 && argument->type==Type::nil){const bool reference=value==Type::string || value==Type::text_file || value==Type::type_descriptor || (compound(value) && info(value,result.location).kind!=CompoundKind::record && info(value,result.location).kind!=CompoundKind::new_set && !enumeration(value));if(reference)throw Error("E_TYPE",result.location,"Ambiguous nil Dictionary GetOrAdd argument");payload=function_type(value,{{shape.key,false,false}},result.location);argument=convert(std::move(argument),payload);method=DictionaryMethod::get_or_add_factory;}
+            if(name=="getoradd" && i==offset+1 && argument->type!=value && callable_type(argument->type)){payload=argument->type;method=DictionaryMethod::get_or_add_factory;
+                const auto signature=info(payload,result.location);if(signature.element!=value || signature.parameters!=std::vector<CallableParameter>{{shape.key,false,false}})throw Error("E_TYPE",result.location,"Dictionary factory requires an exact key-to-value function");
+            }
+            args.push_back(std::move(argument));
+        }
+        if(method==DictionaryMethod::get_default && args.size()==2){auto initial=std::make_unique<hir::Expr>();initial->kind=hir::ExprKind::default_value;initial->type=value;initial->operation="default";initial->location=result.location;args.push_back(std::move(initial));}
+        result=std::move(*dictionary_expression(owner,method,std::move(args),result.location,payload));return true;
+    }
+    ABC_PASCAL_NOINLINE bool bind_fixed_dictionary_factory(hir::Expr& result,const SyntaxExpr& source,std::string_view unit={}){
+        const auto& name=source.token.text;if((name!="dictstr" && name!="dictstrint" && name!="dictint") || (!unit.empty() && unit!="pabcsystem"))return false;
+        const auto key=name=="dictint" ? Type::integer : Type::string,value=name=="dictstr" ? Type::string : Type::integer,tuple=tuple_type({key,value},result.location);
+        for(const auto& argument:source.arguments)result.arguments.push_back(expression(*argument,argument->kind==SyntaxExprKind::tuple ? tuple : Type::invalid));return bind_dictionary_factory(result,name,unit,key,value);
+    }
+    ABC_PASCAL_NOINLINE bool bind_dictionary_extension(hir::Expr& result,const SyntaxExpr& source,std::string_view unit={}){
+        const auto& name=source.token.text;if((name!="get" && name!="getoradd" && name!="update") || (!unit.empty() && unit!="pabcsystem") || source.arguments.empty())return false;
+        result.left=expression(*source.arguments[0]);if(!compound(result.left->type) || info(result.left->type,result.location).kind!=CompoundKind::dictionary){result.left.reset();return false;}
+        return bind_dictionary_member(result,source,true);
+    }
+    ABC_PASCAL_NOINLINE bool bind_dictionary_query(hir::Expr& result,const SyntaxExpr& source,std::string_view unit={},bool member=false,const std::vector<Type>& declared={}){
+        const auto& name=source.token.text;const bool count=name=="eachcount",each=name=="each",dictionary=name=="todictionary";
+        if((!count && !each && !dictionary) || (!unit.empty() && unit!="pabcsystem"))return false;
+        const auto offset=member ? 0U : 1U;
+        if(source.arguments.size()<offset || (count ? source.arguments.size()!=offset : each ? source.arguments.size()!=offset+1 : source.arguments.size()!=offset+1 && source.arguments.size()!=offset+2))throw Error("E_TYPE",result.location,"Wrong Dictionary query argument count");
+        auto input=member ? std::move(result.left) : expression(*source.arguments[0]);const auto element=sequence_source(input->type,result.location).element;
+        if(!declared.empty() && declared[0]!=element)throw Error("E_TYPE",result.location,"Dictionary query explicit source type must match");
+        std::vector<std::unique_ptr<hir::Expr>> args;const auto payload=sequence_type(CompoundKind::sequence,element);args.push_back(convert(std::move(input),payload));
+        Type key=element,value=Type::integer;DictionaryMethod method=DictionaryMethod::each_count;
+        if(!count){
+            const auto bind=[&](const SyntaxExpr& syntax,Type expected){
+                auto callback=expected==Type::invalid ? library_callback(syntax,{element}) : library_callback_value(expression(syntax,function_type(expected,{{element,false,false}},result.location)));
+                if(callback.signature.parameters.size()!=1 || callback.signature.parameters[0].type!=element || callback.signature.parameters[0].by_reference || callback.signature.parameters[0].variadic || callback.signature.result==Type::unit || callback.signature.result==Type::nil || callback.signature.result==Type::invalid)throw Error("E_TYPE",result.location,"Dictionary selector requires one exact source element and a known value result");
+                auto result_type=callback.signature.result;auto callable=callback.value ? std::move(callback.value) : routine_value(*callback.named,result.location);return std::pair<Type,std::unique_ptr<hir::Expr>>{result_type,std::move(callable)};
+            };
+            auto selected=bind(*source.arguments[offset],declared.size()>1 ? declared[1] : Type::invalid);args.push_back(std::move(selected.second));
+            if(each){value=selected.first;method=DictionaryMethod::each;}
+            else{key=selected.first;value=element;method=DictionaryMethod::to_dictionary;
+                if(source.arguments.size()==offset+2){auto output=bind(*source.arguments[offset+1],declared.size()>2 ? declared[2] : Type::invalid);value=output.first;args.push_back(std::move(output.second));method=DictionaryMethod::to_dictionary_elements;}
+            }
+        }
+        const auto owner=dictionary_type(key,value);result=std::move(*dictionary_expression(owner,method,std::move(args),result.location,payload));return true;
+    }
+    ABC_PASCAL_NOINLINE bool bind_dictionary_factory(hir::Expr& result,std::string_view name,std::string_view unit={},Type key=Type::invalid,Type value=Type::invalid){
+        if((name!="dict" && name!="dictstr" && name!="dictstrint" && name!="dictint") || (!unit.empty() && unit!="pabcsystem"))return false;
+        if(name=="dictstr"){key=Type::string;value=Type::string;}else if(name=="dictstrint"){key=Type::string;value=Type::integer;}else if(name=="dictint"){key=Type::integer;value=Type::integer;}
+        const auto source_element=[&](Type type)->Type{if(type==Type::string)return Type::character;if(!compound(type))return Type::invalid;const auto t=info(type,result.location);return t.kind==CompoundKind::sequence || enumerable_collection(t) ? t.element : Type::invalid;};
+        const auto pair_fields=[&](Type type)->std::optional<std::array<Type,2>>{
+            if(!compound(type))return {};const auto t=info(type,result.location);if((t.kind!=CompoundKind::tuple && !key_value_pair_type(t)) || t.fields.size()!=2)return {};
+            return std::array<Type,2>{t.fields[0].type,t.fields[1].type};
+        };
+        if(name=="dict" && result.arguments.size()==2){
+            const auto first=source_element(result.arguments[0]->type),second=source_element(result.arguments[1]->type);
+            if(first!=Type::invalid && second!=Type::invalid){
+                if(key==Type::invalid){key=first;value=second;}
+                const auto owner=dictionary_type(key,value),keys=sequence_type(CompoundKind::sequence,key),values=sequence_type(CompoundKind::sequence,value);
+                result.arguments[0]=convert(std::move(result.arguments[0]),keys);result.arguments[1]=convert(std::move(result.arguments[1]),values);
+                result=std::move(*dictionary_expression(owner,DictionaryMethod::from_sequences,std::move(result.arguments),result.location,values));return true;
+            }
+        }
+        std::unique_ptr<hir::Expr> source;
+        bool tuples=true;
+        if(result.arguments.size()==1 && name!="dict" && (result.arguments[0]->type==Type::nil || (compound(result.arguments[0]->type) && info(result.arguments[0]->type,result.location).kind==CompoundKind::empty_collection))){const auto tuple=tuple_type({key,value},result.location);source=convert(std::move(result.arguments[0]),sequence_type(CompoundKind::array,tuple));result.arguments.clear();}
+        if(result.arguments.size()==1){
+            const auto element=source_element(result.arguments[0]->type);
+            if(const auto fields=pair_fields(element)){
+                if(key==Type::invalid){key=(*fields)[0];value=(*fields)[1];}
+                if((*fields)[0]!=key || (*fields)[1]!=value)throw Error("E_TYPE",result.location,"Dictionary source pair types must match exactly");
+                tuples=!key_value_pair_type(info(element,result.location));source=std::move(result.arguments[0]);result.arguments.clear();
+            }
+        }
+        if(!source){
+            if(key==Type::invalid){
+                if(result.arguments.empty())throw Error("E_TYPE",result.location,"Dictionary factory requires known key and value types");
+                const auto first=pair_fields(result.arguments[0]->type);if(!first)throw Error("E_TYPE",result.location,"Dictionary factory requires key-value pairs");key=(*first)[0];value=(*first)[1];
+                tuples=!key_value_pair_type(info(result.arguments[0]->type,result.location));
+                for(const auto& item:result.arguments){
+                    const auto fields=pair_fields(item->type);if(!fields || (!tuples)!=key_value_pair_type(info(item->type,result.location)))throw Error("E_TYPE",result.location,"Dictionary factory requires compatible pair shapes");
+                    if(item->kind==hir::ExprKind::tuple_literal){
+                        const auto join=[&](Type a,Type b){if(a==b)return a;if(can_widen(a,b))return b;if(can_widen(b,a))return a;throw Error("E_TYPE",result.location,"Dictionary factory requires compatible component types");};
+                        key=join(key,(*fields)[0]);value=join(value,(*fields)[1]);
+                    }else if((*fields)[0]!=key || (*fields)[1]!=value)throw Error("E_TYPE",result.location,"Dictionary source pair types must match exactly");
+                }
+            }else if(!result.arguments.empty()){
+                const auto fields=pair_fields(result.arguments[0]->type);if(!fields)throw Error("E_TYPE",result.location,"Dictionary factory requires key-value pairs");
+                tuples=!key_value_pair_type(info(result.arguments[0]->type,result.location));
+            }
+            if(key==Type::nil || value==Type::nil)throw Error("E_TYPE",result.location,"Dictionary factory requires known key and value types");
+            const auto pair=tuples ? tuple_type({key,value},result.location) : pair_type(key,value);
+            source=std::make_unique<hir::Expr>();source->kind=hir::ExprKind::array_literal;source->type=sequence_type(CompoundKind::array,pair);source->location=result.location;
+            for(auto& argument:result.arguments)source->arguments.push_back(convert(std::move(argument),pair));result.arguments.clear();
+        }
+        const auto element=source_element(source->type),payload=sequence_type(CompoundKind::sequence,element),owner=dictionary_type(key,value);
+        std::vector<std::unique_ptr<hir::Expr>> arguments;arguments.push_back(convert(std::move(source),payload));
+        result=std::move(*dictionary_expression(owner,tuples ? DictionaryMethod::from_tuples : DictionaryMethod::from_pairs,std::move(arguments),result.location,payload));return true;
+    }
+    ABC_PASCAL_NOINLINE bool bind_pair_factory(hir::Expr& result,std::string_view name,std::string_view unit={},Type key=Type::invalid,Type value=Type::invalid){
+        if((name!="kv" && name!="pair") || (!unit.empty() && unit!="pabcsystem"))return false;
+        if(result.arguments.size()!=2)throw Error("E_TYPE",result.location,"KeyValuePair factory requires key and value");
+        if(key==Type::invalid){key=result.arguments[0]->type;value=result.arguments[1]->type;if(key==Type::nil || value==Type::nil)throw Error("E_TYPE",result.location,"KeyValuePair factory requires known element types");}
+        result=std::move(*dictionary_expression(pair_type(key,value),DictionaryMethod::pair_construct,std::move(result.arguments),result.location));return true;
+    }
     ABC_PASCAL_NOINLINE std::unique_ptr<hir::Expr> bind_hash_set_extra(const SyntaxExpr& source,hir::Expr& result,Type owner){
         const auto name=source.token.text;const auto element=info(owner,result.location).element;
         if(name!="copyto" && name!="removewhere" && name!="trimexcess" && name!="trygetvalue")return {};
@@ -3539,6 +3724,17 @@ private:
         const auto owner=sequence_type(CompoundKind::hash_set,item);std::vector<std::unique_ptr<hir::Expr>> arguments;arguments.push_back(std::move(input));
         result=std::move(*hash_set_expression(owner,HashSetMethod::construct_sequence,std::move(arguments),result.location));return true;
     }
+    ABC_PASCAL_NOINLINE std::unique_ptr<hir::Expr> dictionary_removal(Type owner,std::unique_ptr<hir::Expr> dictionary,std::unique_ptr<hir::Expr> right,SourceLocation location,bool copy){
+        const auto key=info(owner,location).key;const bool single=right->type==key || can_widen(right->type,key);Type payload=Type::invalid;auto method=copy ? DictionaryMethod::without_key : DictionaryMethod::remove;
+        if(right->type==Type::nil && (key==Type::string || key==Type::text_file || key==Type::type_descriptor || (compound(key) && info(key,location).kind!=CompoundKind::record && info(key,location).kind!=CompoundKind::tuple && !enumeration(key))))throw Error("E_TYPE",location,"Ambiguous nil dictionary removal argument");
+        if(!single){method=copy ? DictionaryMethod::without_keys : DictionaryMethod::remove_keys;payload=sequence_type(CompoundKind::sequence,key);}
+        std::vector<std::unique_ptr<hir::Expr>> args;args.push_back(std::move(dictionary));args.push_back(std::move(right));return dictionary_expression(owner,method,std::move(args),location,payload);
+    }
+    ABC_PASCAL_NOINLINE std::unique_ptr<hir::Expr> dictionary_expression(Type owner,DictionaryMethod method,std::vector<std::unique_ptr<hir::Expr>> arguments,SourceLocation location,Type payload=Type::invalid){
+        const auto parameters=dictionary_parameters(module_.types,owner,payload,method);if(arguments.size()!=parameters.size())throw Error("E_TYPE",location,"Wrong Dictionary argument count");
+        auto result=std::make_unique<hir::Expr>();result->kind=hir::ExprKind::dictionary_call;result->type=dictionary_result(module_.types,owner,payload,method);result->location=location;result->operation_type=owner;result->local=static_cast<std::size_t>(method)|(static_cast<std::size_t>(payload)<<8U);
+        for(std::size_t i=0;i<arguments.size();++i){if(method==DictionaryMethod::try_get_value && i==2){if(!lvalue(*arguments[i]) || arguments[i]->type!=dictionary_value_type(module_.types,owner))throw Error("E_TYPE",location,"Dictionary TryGetValue requires a writable exact value type");result->arguments.push_back(std::move(arguments[i]));}else result->arguments.push_back(convert(std::move(arguments[i]),parameters[i]));}return result;
+    }
     std::unique_ptr<hir::Expr> hash_set_expression(Type owner,HashSetMethod method,std::vector<std::unique_ptr<hir::Expr>> arguments,SourceLocation location,Type payload=Type::invalid){
         const auto sequence=hash_set_sequence_method(method) ? info(owner,location).key : payload;
         const auto parameters=hash_set_parameters(module_.types,owner,sequence,method);
@@ -3584,6 +3780,11 @@ private:
             value=bind_binary(std::move(value));value=checked_compound_cast(std::move(value),type,location);
             return bind_assignment(std::move(target),[&](Type){return std::move(value);},location,true);
         }
+        if(target->kind==hir::ExprKind::dictionary_call && (target->local&255U)==static_cast<std::size_t>(DictionaryMethod::get_item)){
+            std::vector<std::unique_ptr<hir::Expr>> reads;for(auto& argument:target->arguments){if(module_.locals.size()>=4096)throw Error("E_LIMIT",location,"Local and constant limit exceeded");const auto local=module_.locals.size();const auto value_type=argument->type;module_.locals.push_back({"$dictionary_index_"+std::to_string(local),value_type,!in_routine_});auto cache=std::make_unique<hir::Expr>();cache->kind=hir::ExprKind::cache_value;cache->type=value_type;cache->location=argument->location;cache->local=local;cache->left=std::move(argument);argument=std::move(cache);auto read=std::make_unique<hir::Expr>();read->kind=hir::ExprKind::local;read->type=value_type;read->local=local;read->location=location;reads.push_back(std::move(read));}
+            auto value=std::make_unique<hir::Expr>();value->kind=hir::ExprKind::binary;value->operation=op;value->location=location;value->left=dictionary_expression(target->operation_type,DictionaryMethod::get_item,std::move(reads),location);value->right=initial ? std::move(initial) : expression(*source.expression);value=checked_compound_cast(bind_binary(std::move(value)),type,location);return bind_assignment(std::move(target),[&](Type){return std::move(value);},location,true);
+        }
+        if(compound(type) && info(type,location).kind==CompoundKind::dictionary){auto right=initial ? std::move(initial) : expression(*source.expression);hir::Stmt result;result.kind=hir::StmtKind::call;result.location=location;if(op=="+"){std::vector<std::unique_ptr<hir::Expr>> args;args.push_back(std::move(target));args.push_back(std::move(right));result.expression=dictionary_expression(type,DictionaryMethod::update,std::move(args),location);}else if(op=="-")result.expression=dictionary_removal(type,std::move(target),std::move(right),location,false);else throw Error("E_TYPE",location,"Dictionary compound operation requires += or -=");return result;}
         if(compound(type) && info(type,location).kind==CompoundKind::new_set){
             if(!lvalue(*target))throw Error("E_TYPE",location,"Assignment target must be assignable");
             auto right=initial ? std::move(initial) : expression(*source.expression,info(type,location).element);NewSetMethod method;
@@ -3689,6 +3890,7 @@ private:
         if ((!sort && !fill && name!="copy" && name!="high") || result.arguments.empty() || !compound(result.arguments[0]->type) || enumeration(result.arguments[0]->type)) return false;
         if (!unit.empty() && !(unit=="pabcsystem" && !fill) && !(unit=="arrays" && (sort || fill))) return false;
         const auto sequence=result.arguments[0]->type; const auto& type=info(sequence,result.location);
+        if(name=="copy" && type.kind==CompoundKind::dictionary){result=std::move(*dictionary_expression(sequence,DictionaryMethod::copy_value,std::move(result.arguments),result.location));return true;}
         if(name=="copy" && type.kind==CompoundKind::hash_set){
             if(result.arguments.size()!=1)throw Error("E_TYPE",result.location,"Wrong sequence arguments");
             result=std::move(*hash_set_expression(sequence,HashSetMethod::copy_value,std::move(result.arguments),result.location));return true;
@@ -3845,6 +4047,19 @@ private:
         const auto& name=source.token.text;
         const bool qualified_unit=qualified && source.left && source.left->kind==SyntaxExprKind::name && source.left->token.text=="pabcsystem" && !lookup(source.left->token);
         const bool standard_call=(source.kind==SyntaxExprKind::call && !lookup(source.token) && !routine_names_.contains(name)) || qualified_unit;
+        if((name=="eachcount" || name=="each" || name=="todictionary") && (standard_call || (qualified && !qualified_unit))){
+            const auto extra=name=="eachcount" ? 1U : name=="each" ? 2U : (source.arguments.size()-(qualified && !qualified_unit ? 0U : 1U)==2 ? 3U : 2U);if(source.type_arguments.size()!=extra)throw Error("E_TYPE",source.token.location,"Wrong Dictionary query explicit type count");std::vector<Type> declared;for(const auto& type:source.type_arguments)declared.push_back(resolve_type(*type));auto result=std::make_unique<hir::Expr>();result->location=source.token.location;const bool member=qualified && !qualified_unit;if(member)result->left=expression(*source.left);(void)bind_dictionary_query(*result,source,{},member,declared);return result;
+        }
+        if(((name=="copy" && source.type_arguments.size()==2) || name=="get" || name=="getoradd" || name=="update") && standard_call){
+            if(source.type_arguments.size()!=2 || source.arguments.empty())throw Error("E_TYPE",source.token.location,"Dictionary operation requires two types and a source");const auto key=resolve_type(*source.type_arguments[0]),value=resolve_type(*source.type_arguments[1]),owner=dictionary_type(key,value);auto result=std::make_unique<hir::Expr>();result->location=source.token.location;result->left=expression(*source.arguments[0]);if(result->left->type!=owner)throw Error("E_TYPE",result->location,"Dictionary explicit types must match its key and value");
+            if(name=="copy"){std::vector<std::unique_ptr<hir::Expr>> args;args.push_back(std::move(result->left));for(std::size_t i=1;i<source.arguments.size();++i)args.push_back(expression(*source.arguments[i]));return dictionary_expression(owner,DictionaryMethod::copy_value,std::move(args),result->location);}
+            (void)bind_dictionary_member(*result,source,true);return result;
+        }
+        if((name=="dict" || name=="kv" || name=="pair" || name=="dictionary") && standard_call){
+            if(source.type_arguments.size()!=2)throw Error("E_TYPE",source.token.location,"Dictionary operation requires two explicit type arguments");const auto key=resolve_type(*source.type_arguments[0]),value=resolve_type(*source.type_arguments[1]);auto result=std::make_unique<hir::Expr>();result->location=source.token.location;
+            for(const auto& argument:source.arguments)result->arguments.push_back(expression(*argument));
+            if(name=="kv" || name=="pair")(void)bind_pair_factory(*result,name,{},key,value);else if(name=="dict")(void)bind_dictionary_factory(*result,name,{},key,value);else{if(result->arguments.size()!=1)throw Error("E_TYPE",result->location,"Dictionary type conversion requires one value");return convert(std::move(result->arguments[0]),dictionary_type(key,value));}return result;
+        }
         if(name=="hset" && standard_call){
             if(source.type_arguments.size()!=1)throw Error("E_TYPE",source.token.location,"HSet requires exactly one explicit element type");
             const auto element=resolve_type(*source.type_arguments[0]);auto result=std::make_unique<hir::Expr>();result->location=source.token.location;
@@ -5489,7 +5704,7 @@ private:
             break;
         case SyntaxStmtKind::foreach_loop: {
             result.kind=hir::StmtKind::foreach_loop; result.expression=expression(*source.expression);
-            if(compound(result.expression->type)){const auto shape=info(result.expression->type,result.location);if(shape.kind==CompoundKind::hash_set || shape.kind==CompoundKind::new_set || ordinal_range_type(shape)){const auto target=shape.kind==CompoundKind::new_set ? info(shape.key,result.location).key : shape.key;result.expression=convert(std::move(result.expression),target);}}
+            if(compound(result.expression->type)){const auto shape=info(result.expression->type,result.location);if(shape.kind==CompoundKind::hash_set || shape.kind==CompoundKind::new_set || ordinal_range_type(shape) || shape.kind==CompoundKind::dictionary || shape.kind==CompoundKind::dictionary_keys || shape.kind==CompoundKind::dictionary_values){const auto target=shape.kind==CompoundKind::dictionary || shape.kind==CompoundKind::dictionary_keys || shape.kind==CompoundKind::dictionary_values ? sequence_type(CompoundKind::sequence,shape.element) : shape.kind==CompoundKind::new_set ? info(shape.key,result.location).key : shape.key;result.expression=convert(std::move(result.expression),target);}}
             const auto sequence=result.expression->type;
             const bool lazy=compound(sequence) && info(sequence,result.location).kind==CompoundKind::sequence;
             if (sequence!=Type::string && (!compound(sequence) || (!indexed_sequence(info(sequence,result.location).kind) && !lazy)))

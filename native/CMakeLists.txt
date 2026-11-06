@@ -35,6 +35,8 @@ add_library(abc_core
     src/ini_file.cpp
     src/compound.cpp
     src/hash_set.cpp
+    src/value_hash.cpp
+    src/dictionary.cpp
     src/ordinal_range.cpp
     src/real_interval.cpp
     src/new_set.cpp
@@ -130,6 +132,19 @@ if(BUILD_TESTING)
         target_compile_options(abc_single_tests PRIVATE /utf-8)
     endif()
     add_test(NAME single_precision COMMAND abc_single_tests)
+    add_executable(abc_dictionary_tests tests/dictionary_tests.cpp)
+    target_link_libraries(abc_dictionary_tests PRIVATE abc_core)
+    if(MSVC)
+        target_compile_options(abc_dictionary_tests PRIVATE /utf-8)
+    endif()
+    add_test(NAME dictionary_compatibility COMMAND abc_dictionary_tests)
+    add_test(NAME dictionary_example COMMAND ${CMAKE_COMMAND}
+        "-DABC_RUNNER=$<TARGET_FILE:abc>" "-DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
+        -DABC_FIXTURE_NAME=dictionary-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")
+    add_test(NAME original_dictionary_array COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/../TestSuite/new_templ_arr.pas")
+    add_test(NAME original_dictionary_keys COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/../TestSuite/nested_class1.pas")
+    add_test(NAME original_dictionary_view_addition COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/../TestSuite/extensionmethods30.pas")
+    add_test(NAME original_dictionary_actions COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/../TestSuite/foreach14.pas")
     add_test(NAME single_numbers_compatibility COMMAND ${CMAKE_COMMAND}
         "-DABC_RUNNER=$<TARGET_FILE:abc>" "-DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
         -DABC_FIXTURE_NAME=single-numbers-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")

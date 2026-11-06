@@ -4,6 +4,22 @@ namespace abc {
 Error runtime_error(RuntimeError id, SourceLocation location, std::string_view context) {
     const char *code, *english, *russian;
     switch (id) {
+    case RuntimeError::dictionary_nil_copy:
+        code="E_NIL";english="Dictionary is nil";russian="Словарь равен nil";break;
+    case RuntimeError::dictionary_copy_index:
+        code="E_RANGE";english="Dictionary view copy index is outside the destination array";russian="Индекс копирования представления словаря находится вне массива назначения";break;
+    case RuntimeError::dictionary_copy_range:
+        code="E_RANGE";english="Destination array has insufficient space for Dictionary view copy";russian="В массиве назначения недостаточно места для копирования представления словаря";break;
+    case RuntimeError::dictionary_nil_key:
+        code="E_NIL";english="Dictionary key cannot be nil";russian="Ключ словаря не может быть nil";break;
+    case RuntimeError::dictionary_duplicate_key:
+        code="E_KEY_DUPLICATE";english="An item with the same key has already been added";russian="Элемент с таким ключом уже добавлен";break;
+    case RuntimeError::dictionary_missing_key:
+        code="E_KEY_NOT_FOUND";english="The given key was not present in the dictionary";russian="Указанный ключ отсутствует в словаре";break;
+    case RuntimeError::dictionary_capacity:
+        code="E_RANGE";english="Dictionary capacity must be nonnegative";russian="Ёмкость словаря должна быть неотрицательной";break;
+    case RuntimeError::dictionary_lengths:
+        code="E_RANGE";english="Sequences keys and values must have equal lengths";russian="Последовательности keys и values должны иметь одинаковую длину";break;
     case RuntimeError::hash_set_copy_index:
         code="E_RANGE";english="HashSet copy destination index cannot be negative";russian="Индекс назначения при копировании HashSet не может быть отрицательным";break;
     case RuntimeError::hash_set_copy_count:

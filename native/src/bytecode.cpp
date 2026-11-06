@@ -8,6 +8,7 @@
 #include "ini_file.hpp"
 #include "compound.hpp"
 #include "hash_set.hpp"
+#include "dictionary.hpp"
 #include "ordinal_range.hpp"
 #include "real_interval.hpp"
 #include "new_set.hpp"
@@ -345,6 +346,11 @@ private:
             const bool ref=(node.local&128U)!=0;
             for(std::size_t i=0;i<node.arguments.size();++i)if(i==0 && ref)reference(*node.arguments[i]);else expression(*node.arguments[i]);
             emit(Op::new_set_call,node.operation_type,node.local,node.location);break;
+        }
+        case hir::ExprKind::dictionary_call: {
+            const auto method=static_cast<DictionaryMethod>(node.local&255U);
+            for(std::size_t i=0;i<node.arguments.size();++i)if(method==DictionaryMethod::try_get_value && i==2)reference(*node.arguments[i]);else expression(*node.arguments[i]);
+            emit(Op::dictionary_call,node.operation_type,node.local,node.location);break;
         }
         case hir::ExprKind::hash_set_call: {
             const auto method=static_cast<HashSetMethod>(node.local&255U);
@@ -1082,6 +1088,8 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if(instruction.operand>static_cast<std::size_t>(EmptyMethod::to_set) || !empty_signature(program,type,static_cast<EmptyMethod>(instruction.operand)))invalid(instruction,"Invalid EmptyCollection call metadata");break;
         case Op::new_set_call:
             if((instruction.operand>>8U) || !new_set_signature(program,type,static_cast<NewSetMethod>(instruction.operand&127U),(instruction.operand&128U)!=0))invalid(instruction,"Invalid NewSet call metadata");break;
+        case Op::dictionary_call:
+            if((instruction.operand>>8U)>65535U || !dictionary_signature(program,type,static_cast<Type>(instruction.operand>>8U),static_cast<DictionaryMethod>(instruction.operand&255U)))invalid(instruction,"Invalid Dictionary call metadata");break;
         case Op::hash_set_call:
             if((instruction.operand>>8U)>65535U || !hash_set_signature(program,type,static_cast<Type>(instruction.operand>>8U),static_cast<HashSetMethod>(instruction.operand&255U)))invalid(instruction,"Invalid HashSet call metadata");break;
         case Op::ordinal_range_call:
@@ -1130,7 +1138,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if (instruction.op==Op::make_default && instruction.operand==1 && compound(type) && type_info(program,type).kind==CompoundKind::object_class
                 && std::any_of(program.routines.begin(),program.routines.end(),[type](const auto& candidate){return candidate.constructor && candidate.owner==type;}))
                 invalid(instruction,"Class constructor cannot be bypassed");
-            if (instruction.op==Op::make_default && instruction.operand==1 && compound(type) && (node_kind(type_info(program,type).kind) || type_info(program,type).kind==CompoundKind::tuple || type_info(program,type).kind==CompoundKind::sequence || type_info(program,type).kind==CompoundKind::callable || type_info(program,type).kind==CompoundKind::encoding || type_info(program,type).kind==CompoundKind::ini_file || type_info(program,type).kind==CompoundKind::hash_set || school_ip_kind(type_info(program,type).kind)))
+            if (instruction.op==Op::make_default && instruction.operand==1 && compound(type) && (node_kind(type_info(program,type).kind) || type_info(program,type).kind==CompoundKind::tuple || type_info(program,type).kind==CompoundKind::sequence || type_info(program,type).kind==CompoundKind::callable || type_info(program,type).kind==CompoundKind::encoding || type_info(program,type).kind==CompoundKind::ini_file || type_info(program,type).kind==CompoundKind::hash_set || type_info(program,type).kind==CompoundKind::dictionary || type_info(program,type).kind==CompoundKind::dictionary_keys || type_info(program,type).kind==CompoundKind::dictionary_values || school_ip_kind(type_info(program,type).kind)))
                 invalid(instruction,"Nodes and tuples require the typed constructor");
             break;
         case Op::routine_value:
@@ -1174,7 +1182,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             break;
         case Op::get_field: case Op::ref_field:
             if (!compound(type) || (type_info(program,type).kind!=CompoundKind::record && type_info(program,type).kind!=CompoundKind::object_class && !(instruction.op==Op::get_field && type_info(program,type).kind==CompoundKind::tuple))
-                || ordinal_range_type(type_info(program,type)) || real_interval_type(type_info(program,type)) || instruction.operand>=type_info(program,type).fields.size()) invalid(instruction,"Invalid or writable tuple/record access");
+                || ordinal_range_type(type_info(program,type)) || real_interval_type(type_info(program,type)) || (instruction.op==Op::ref_field && key_value_pair_type(type_info(program,type))) || instruction.operand>=type_info(program,type).fields.size()) invalid(instruction,"Invalid or writable tuple/record access");
             break;
         case Op::list_add: case Op::list_remove: case Op::list_clear: case Op::list_contains:
             if (!compound(type) || type_info(program,type).kind != CompoundKind::list) invalid(instruction,"Invalid list instruction"); break;
@@ -1535,6 +1543,10 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             const auto method=static_cast<NewSetMethod>(instruction.operand&127U);const auto parameters=new_set_parameters(program.types,instruction.type,method,(instruction.operand&128U)!=0);
             for(auto it=parameters.rbegin();it!=parameters.rend();++it)require(*it);const auto result=new_set_result(program.types,instruction.type,method);if(result!=Type::unit)stack.push_back(result);break;
         }
+        case Op::dictionary_call: {
+            const auto method=static_cast<DictionaryMethod>(instruction.operand&255U);const auto payload=static_cast<Type>(instruction.operand>>8U);const auto parameters=dictionary_parameters(program.types,instruction.type,payload,method);
+            for(auto it=parameters.rbegin();it!=parameters.rend();++it)require(*it);const auto result=dictionary_result(program.types,instruction.type,payload,method);if(result!=Type::unit)stack.push_back(result);break;
+        }
         case Op::hash_set_call: {
             const auto method=static_cast<HashSetMethod>(instruction.operand&255U);const auto parameters=hash_set_parameters(program.types,instruction.type,static_cast<Type>(instruction.operand>>8U),method);
             for(auto it=parameters.rbegin();it!=parameters.rend();++it)require(*it);const auto result=hash_set_result(instruction.type,method);if(result!=Type::unit)stack.push_back(result);break;
@@ -1702,7 +1714,7 @@ void verify(const Program& program) {
     std::vector<unsigned> depth(program.types.size());std::size_t enum_text_bytes=0;
     for (std::size_t i = 0; i < program.types.size(); ++i) {
         const auto& type = program.types[i]; unsigned level = 1;
-        if(type.native_record!=NativeRecord::none && ((type.native_record!=NativeRecord::ordinal_range && type.native_record!=NativeRecord::real_interval) || type.kind!=CompoundKind::record))throw Error("E_BYTECODE",{},"Invalid native record metadata");
+        if(type.native_record!=NativeRecord::none && ((type.native_record!=NativeRecord::ordinal_range && type.native_record!=NativeRecord::real_interval && type.native_record!=NativeRecord::key_value_pair) || type.kind!=CompoundKind::record))throw Error("E_BYTECODE",{},"Invalid native record metadata");
         for (const auto& field:type.fields) if (!valid_member_access(field.access)
             || (type.kind!=CompoundKind::object_class && field.access!=MemberAccess::public_member))
             throw Error("E_BYTECODE",{},"Invalid class member visibility metadata");
@@ -1742,6 +1754,14 @@ void verify(const Program& program) {
         } else if(type.kind==CompoundKind::hash_set) {
             if(type.name!="hashset" || !type.fields.empty())throw Error("E_BYTECODE",{},"Invalid HashSet type metadata");prior(type.element);prior(type.key);
             if(!compound(type.key) || type_info(program,type.key).kind!=CompoundKind::sequence || type_info(program,type.key).element!=type.element)throw Error("E_BYTECODE",{},"Invalid HashSet sequence type");
+        } else if(type.kind==CompoundKind::dictionary) {
+            if(type.name!="dictionary" || !type.fields.empty())throw Error("E_BYTECODE",{},"Invalid Dictionary type metadata");prior(type.key);prior(type.element);
+            const auto& pair=type_info(program,type.element);
+            if(!key_value_pair_type(pair) || pair.fields.size()!=2 || pair.fields[0].type!=type.key)throw Error("E_BYTECODE",{},"Invalid Dictionary pair type");
+        } else if(type.kind==CompoundKind::dictionary_keys || type.kind==CompoundKind::dictionary_values) {
+            if(type.name!=(type.kind==CompoundKind::dictionary_keys ? "dictionarykeys" : "dictionaryvalues") || !type.fields.empty())throw Error("E_BYTECODE",{},"Invalid Dictionary view metadata");prior(type.key);prior(type.element);
+            const auto& owner=type_info(program,type.key);
+            if(owner.kind!=CompoundKind::dictionary || (type.kind==CompoundKind::dictionary_keys ? owner.key : type_info(program,owner.element).fields.at(1).type)!=type.element)throw Error("E_BYTECODE",{},"Invalid Dictionary view owner");
         } else if(type.kind==CompoundKind::ini_file) {
             if(type.name!="tinifile" || type.element!=Type::invalid || type.key!=Type::invalid || !type.fields.empty())throw Error("E_BYTECODE",{},"Invalid TIniFile type metadata");
         } else if(type.kind==CompoundKind::encoding) {
@@ -1786,6 +1806,7 @@ void verify(const Program& program) {
                 prior(type.element);prior(type.key);
                 if(!compound(type.key) || type_info(program,type.key).kind!=CompoundKind::sequence || type_info(program,type.key).element!=type.element)throw Error("E_BYTECODE",{},"Invalid ordinal range sequence");
             }
+            if(key_value_pair_type(type) && (type.name!="keyvaluepair" || type.element!=Type::invalid || type.key!=Type::invalid || type.fields.size()!=2 || type.fields[0].name!="key" || type.fields[1].name!="value" || type.fields[0].global || type.fields[1].global))throw Error("E_BYTECODE",{},"Invalid KeyValuePair metadata");
             if (type.fields.size() > 256) throw Error("E_BYTECODE",{},"Too many record fields");
             if (type.kind==CompoundKind::tuple) {
                 if (type.fields.size()<2 || type.fields.size()>7 || type.element!=Type::invalid || type.key!=Type::invalid)

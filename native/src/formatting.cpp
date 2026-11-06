@@ -25,7 +25,7 @@ bool supports(const std::vector<TypeInfo>& types, Type type, unsigned depth) {
         for (const auto& field:info.fields) if (!supports(types,field.type,depth+1)) return false;
         return true;
     }
-    return (info.kind==CompoundKind::array || info.kind==CompoundKind::list || info.kind==CompoundKind::hash_set || info.kind==CompoundKind::new_set) && supports(types,info.element,depth+1);
+    return (info.kind==CompoundKind::array || info.kind==CompoundKind::list || info.kind==CompoundKind::hash_set || info.kind==CompoundKind::new_set || info.kind==CompoundKind::dictionary || info.kind==CompoundKind::dictionary_keys || info.kind==CompoundKind::dictionary_values) && supports(types,info.element,depth+1);
 }
 class ObjectWriter {
     const Program& program;
@@ -66,6 +66,11 @@ class ObjectWriter {
             else sequence(object->rows,99,[&](std::size_t row) {
                 sequence(object->columns,99,[&](std::size_t column) { value(object->items[row*object->columns+column]->value,info.element); });
             });
+        } else if(info.kind==CompoundKind::dictionary || info.kind==CompoundKind::dictionary_keys || info.kind==CompoundKind::dictionary_values){
+            const bool dictionary=info.kind==CompoundKind::dictionary;const auto owner=dictionary ? object : object->items.size()==1 ? std::get<std::shared_ptr<Aggregate>>(object->items[0]->value) : std::shared_ptr<Aggregate>{};if(!owner || owner->nil)throw runtime_error(RuntimeError::invalid_bytecode,location);
+            append(dictionary ? u"{" : u"[");const auto count=owner->count>101 ? 100 : owner->count;std::size_t shown=0;
+            for(std::size_t i=0;i<owner->items.size() && shown<count;++i){if(i>=options.instruction_limit)throw runtime_error(RuntimeError::instruction_limit,location);if((i&255U)==0 && options.cancelled && options.cancelled())throw runtime_error(RuntimeError::cancelled,location);const auto& cell=owner->items[i];if(!cell)continue;if(shown++)append(u",");if(dictionary)value(cell->value,info.element);else value(std::get<std::shared_ptr<Aggregate>>(cell->value)->items[info.kind==CompoundKind::dictionary_keys ? 0U : 1U]->value,info.element);}
+            if(owner->count>101)append(u",...");append(dictionary ? u"}" : u"]");
         } else if(info.kind==CompoundKind::hash_set){
             append(u"{");const auto count=object->count>101 ? 100 : object->count;std::size_t shown=0;
             for(std::size_t i=0;i<object->items.size() && shown<count;++i){if(i>=options.instruction_limit)throw runtime_error(RuntimeError::instruction_limit,location);if((i&255U)==0 && options.cancelled && options.cancelled())throw runtime_error(RuntimeError::cancelled,location);if(object->items[i]){if(shown++)append(u",");value(object->items[i]->value,info.element);}}

@@ -1,4 +1,5 @@
 #include "hash_set.hpp"
+#include "value_hash.hpp"
 #include "ordinal_range.hpp"
 #include "real_interval.hpp"
 #include "runtime_values.hpp"
@@ -53,45 +54,8 @@ Type hash_set_result(Type owner,HashSetMethod m){
     return Type::boolean;
 }
 namespace {
-struct Work {
-    Values& values;const ExecutionOptions& options;std::uint64_t done=0;
-    void step(){if(done>=options.instruction_limit)throw runtime_error(RuntimeError::instruction_limit,values.location);if((done++&255U)==0 && options.cancelled && options.cancelled())throw runtime_error(RuntimeError::cancelled,values.location);}
-};
+using Work=ValueHashWork;
 void require(const std::shared_ptr<Aggregate>& set,SourceLocation location){if(!set || set->nil)throw runtime_error(RuntimeError::nil_reference,location);if(!set->hash_set)throw runtime_error(RuntimeError::invalid_bytecode,location);}
-std::size_t mix(std::size_t seed,std::size_t value){return (seed^value)*static_cast<std::size_t>(1099511628211ULL);}
-bool same(Work& work,const Value& a,const Value& b){
-    work.step();
-    if(const auto* x=std::get_if<double>(&a)){const auto y=std::get<double>(b);return *x==y || (std::isnan(*x) && std::isnan(y));}
-    if(const auto* x=std::get_if<std::u16string>(&a)){const auto* y=std::get_if<std::u16string>(&b);if(!y || x->size()!=y->size())return false;for(std::size_t i=0;i<x->size();++i){work.step();if((*x)[i]!=(*y)[i])return false;}return true;}
-    if(const auto* x=std::get_if<std::shared_ptr<Aggregate>>(&a)){
-        const auto& y=std::get<std::shared_ptr<Aggregate>>(b);const auto kind=type_info(work.values.program,(*x)->type).kind;
-        if(kind==CompoundKind::record || kind==CompoundKind::tuple){if((*x)->nil || y->nil)return (*x)->nil==y->nil;for(std::size_t i=0;i<(*x)->items.size();++i)if(!same(work,(*x)->items[i]->value,y->items[i]->value))return false;return true;}
-    }
-    return work.values.equal(a,b);
-}
-std::size_t hash(Work& work,const Value& value){
-    work.step();
-    return std::visit([&](const auto& v)->std::size_t{
-        using T=std::decay_t<decltype(v)>;
-        if constexpr(std::is_same_v<T,std::u16string>){std::size_t result=1469598103934665603ULL;for(const auto c:v){work.step();result=mix(result,c);}return result;}
-        else if constexpr(std::is_same_v<T,NewSetValue>)return hash(work,v.storage->value);
-        else if constexpr(std::is_same_v<T,NilString>)return 0;
-        else if constexpr(std::is_same_v<T,EnumValue>)return std::hash<std::int32_t>{}(v.value);
-        else if constexpr(std::is_same_v<T,ReflectedType>)return mix(mix(static_cast<unsigned>(v.target),v.implementation),static_cast<unsigned>(v.source));
-        else if constexpr(std::is_same_v<T,BigInteger>){big_work(v.bits()/16+1,work.values.location,work.options);std::size_t result=0;for(const auto c:v.text(16)){work.step();result=mix(result,static_cast<unsigned char>(c));}return result;}
-        else if constexpr(std::is_same_v<T,std::shared_ptr<Aggregate>>){
-            if(!v || v->nil)return 0;const auto kind=type_info(work.values.program,v->type).kind;
-            if(ordinal_range_type(type_info(work.values.program,v->type)))return static_cast<std::uint32_t>(ordinal_range_hash(v));
-            if(real_interval_type(type_info(work.values.program,v->type)))return static_cast<std::uint32_t>(real_interval_hash(v));
-            if(kind==CompoundKind::record || kind==CompoundKind::tuple){std::size_t result=0;for(const auto& field:v->items)result=mix(result,hash(work,field->value));return result;}
-            if(kind==CompoundKind::callable){std::size_t result=v->routine.value_or(0);for(const auto& cell:v->captures)result=mix(result,std::hash<const void*>{}(cell.get()));return result;}
-            if(kind==CompoundKind::sequence && v->sequence && (collection_sequence(v->sequence->provider) || v->sequence->provider==SequenceProvider::hash_set))return std::hash<const void*>{}(v->sequence->source.get());
-            return std::hash<const void*>{}(v.get());
-        }else if constexpr(std::is_same_v<T,std::shared_ptr<Cell>> || std::is_same_v<T,std::shared_ptr<TextFile>>)return std::hash<const void*>{}(v.get());
-        else if constexpr(std::is_floating_point_v<T>)return std::isnan(v) ? 0x7ff80000U : std::hash<T>{}(v);
-        else return std::hash<T>{}(v);
-    },value);
-}
 std::size_t prime(std::size_t minimum){
     static constexpr std::size_t table[]={3,7,11,17,23,29,37,47,59,71,89,107,131,163,197,239,293,353,431,521,631,761,919,1103,1327,1597,1931,2333,2801,3371,4049,4861,5839,7013,8419,10103,12143,14591,17519,21023,25229,30293,36353,43627,52361,62851,75431,90523,108631,130363,156437,187751,225307,270371,324449,389357,467237,560689,672827,807403,968897,1162687,1395263,1674319,2009191,2411033,2893249,3471899,4166287,4999559,5999471,7199369};
     for(const auto n:table)if(n>=minimum)return n;
@@ -101,12 +65,12 @@ void reserve(const std::shared_ptr<Aggregate>& set,std::size_t size){set->items.
 constexpr auto absent=std::numeric_limits<std::size_t>::max();
 std::size_t find(Work& work,const std::shared_ptr<Aggregate>& set,const Value& item,std::size_t code){
     const auto range=set->hash_set->lookup.equal_range(code);
-    for(auto it=range.first;it!=range.second;++it){work.step();if(same(work,set->items[it->second]->value,item))return it->second;}
+    for(auto it=range.first;it!=range.second;++it){work.step();if(value_equal(work,set->items[it->second]->value,item))return it->second;}
     return absent;
 }
-std::size_t find(Work& work,const std::shared_ptr<Aggregate>& set,const Value& item){return find(work,set,item,hash(work,item));}
+std::size_t find(Work& work,const std::shared_ptr<Aggregate>& set,const Value& item){return find(work,set,item,value_hash(work,item));}
 std::pair<bool,std::size_t> add(Work& work,const std::shared_ptr<Aggregate>& set,const Value& item){
-    const auto code=hash(work,item),found=find(work,set,item,code);if(found!=absent)return {false,found};
+    const auto code=value_hash(work,item),found=find(work,set,item,code);if(found!=absent)return {false,found};
     auto& state=*set->hash_set;const bool reuse=!state.free.empty();const auto slot=reuse ? state.free.back() : set->items.size();
     if(!reuse && slot>=state.capacity)reserve(set,prime(state.capacity ? state.capacity*2 : 0));
     auto cell=work.values.cell(type_info(work.values.program,set->type).element,work.values.copy(item));
@@ -116,7 +80,7 @@ std::pair<bool,std::size_t> add(Work& work,const std::shared_ptr<Aggregate>& set
     ++set->count;++set->version;return {true,slot};
 }
 bool remove(Work& work,const std::shared_ptr<Aggregate>& set,const Value& item){
-    const auto code=hash(work,item),slot=find(work,set,item,code);if(slot==absent)return false;
+    const auto code=value_hash(work,item),slot=find(work,set,item,code);if(slot==absent)return false;
     auto& state=*set->hash_set;const auto range=state.lookup.equal_range(code);for(auto it=range.first;it!=range.second;++it)if(it->second==slot){state.lookup.erase(it);break;}
     set->items[slot].reset();--set->count;++set->version;
     if(!set->count){set->items.clear();state.hashes.clear();state.free.clear();}else state.free.push_back(slot);
@@ -197,7 +161,7 @@ Value hash_set_invoke(Values& values,Type owner,Type sequence,HashSetMethod meth
         Work work{values,options};
         if(method==HashSetMethod::construct)return values.zero(owner,true);
         if(method==HashSetMethod::construct_copy){const auto source=std::get<std::shared_ptr<Aggregate>>(arguments[0]);require(source,values.location);return copy(work,owner,source);}
-        if(method==HashSetMethod::construct_sequence){const auto source=std::get<std::shared_ptr<Aggregate>>(arguments[0]);if(!source || source->nil)throw runtime_error(RuntimeError::nil_reference,values.location);if(const auto direct=direct_set(source))return copy(work,owner,direct);auto result=std::get<std::shared_ptr<Aggregate>>(values.zero(owner,true));if(const auto count=collection_count(source);count && *count)reserve(result,prime(*count));update(work,result,source,HashSetMethod::union_with);if(result->count && result->hash_set->capacity/result->count>3){std::vector<std::shared_ptr<Cell>> compact;for(const auto& cell:result->items)if(cell)compact.push_back(cell);result->items=std::move(compact);result->hash_set->hashes.clear();result->hash_set->lookup.clear();result->hash_set->free.clear();reserve(result,prime(result->count));for(std::size_t i=0;i<result->items.size();++i){const auto code=hash(work,result->items[i]->value);result->hash_set->hashes.push_back(code);result->hash_set->lookup.emplace(code,i);}}return result;}
+        if(method==HashSetMethod::construct_sequence){const auto source=std::get<std::shared_ptr<Aggregate>>(arguments[0]);if(!source || source->nil)throw runtime_error(RuntimeError::nil_reference,values.location);if(const auto direct=direct_set(source))return copy(work,owner,direct);auto result=std::get<std::shared_ptr<Aggregate>>(values.zero(owner,true));if(const auto count=collection_count(source);count && *count)reserve(result,prime(*count));update(work,result,source,HashSetMethod::union_with);if(result->count && result->hash_set->capacity/result->count>3){std::vector<std::shared_ptr<Cell>> compact;for(const auto& cell:result->items)if(cell)compact.push_back(cell);result->items=std::move(compact);result->hash_set->hashes.clear();result->hash_set->lookup.clear();result->hash_set->free.clear();reserve(result,prime(result->count));for(std::size_t i=0;i<result->items.size();++i){const auto code=value_hash(work,result->items[i]->value);result->hash_set->hashes.push_back(code);result->hash_set->lookup.emplace(code,i);}}return result;}
         if(method==HashSetMethod::membership){const auto set=std::get<std::shared_ptr<Aggregate>>(arguments[1]);require(set,values.location);return find(work,set,arguments[0])!=absent;}
         const auto object=hash_set_reference(method) ? std::get<std::shared_ptr<Aggregate>>(std::get<std::shared_ptr<Cell>>(arguments[0])->value) : std::get<std::shared_ptr<Aggregate>>(arguments[0]);
         if(method==HashSetMethod::copy_value){if(!object || object->nil)return object;require(object,values.location);return copy(work,owner,object);}

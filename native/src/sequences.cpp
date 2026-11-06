@@ -10,6 +10,7 @@
 #include "matrix_operations.hpp"
 #include "file_lines.hpp"
 #include "hash_set.hpp"
+#include "dictionary.hpp"
 #include "ordinal_range.hpp"
 #include "new_set.hpp"
 #include <cmath>
@@ -133,6 +134,7 @@ std::shared_ptr<Aggregate> sequence_begin(Values& values,const std::shared_ptr<A
     if(state.provider==SequenceProvider::new_set){if(!state.seed)throw runtime_error(RuntimeError::invalid_bytecode,values.location);state.source=new_set_hash(values,std::get<NewSetValue>(state.seed->value));}
     require(state.source,values.location);
     if(state.provider==SequenceProvider::hash_set || state.provider==SequenceProvider::new_set){reserve_state(values);state.count=state.source->count;state.version=state.source->version;state.hash_cursor=std::make_shared<HashSetCursor>();}
+    else if(dictionary_provider(state.provider)){const auto owner=dictionary_sequence_source(state,values.location);reserve_state(values);state.count=owner->count;state.version=owner->version;state.hash_cursor=std::make_shared<HashSetCursor>();}
     else if (collection_sequence(state.provider)) { state.count=state.source->items.size(); state.version=state.source->version; }
     else school_ip_sequence_start(state,values.location);
     return cursor_lease(std::move(result));
@@ -140,6 +142,7 @@ std::shared_ptr<Aggregate> sequence_begin(Values& values,const std::shared_ptr<A
 void sequence_check(const std::shared_ptr<Aggregate>& sequence,SourceLocation location) {
     const auto& state=cursor(sequence,location);
     if(state.disposed)return;
+    if(dictionary_provider(state.provider) && state.version!=dictionary_sequence_source(state,location)->version)throw runtime_error(RuntimeError::collection_changed,location);
     if ((state.provider==SequenceProvider::list || state.provider==SequenceProvider::hash_set || state.provider==SequenceProvider::new_set) && state.version!=state.source->version) throw runtime_error(RuntimeError::collection_changed,location);
 }
 bool sequence_resume(Values& values,const std::shared_ptr<Aggregate>& sequence,std::uint64_t index,const ExecutionOptions& options) {
@@ -148,6 +151,7 @@ bool sequence_resume(Values& values,const std::shared_ptr<Aggregate>& sequence,s
     if(state.disposed)return false;
     if(state.provider==SequenceProvider::random)return random_sequence_resume(values,sequence,index,options);
     if(state.provider==SequenceProvider::directory)return directory_sequence_resume(values,sequence,index,options);
+    if(dictionary_provider(state.provider))return dictionary_sequence_resume(values,sequence,index,options);
     if(state.provider==SequenceProvider::hash_set || state.provider==SequenceProvider::new_set)return hash_set_resume(values,sequence,index,options);
     if(state.provider==SequenceProvider::file_lines)return file_sequence_resume(values,sequence,index,options);
     if(state.provider==SequenceProvider::text_lines)return text_lines_resume(values,sequence,index);
@@ -237,7 +241,7 @@ Value sequence_at(Values& values,const std::shared_ptr<Aggregate>& sequence,std:
         volatile double offset=static_cast<double>(index)*range.step;
         return finite_partition(first+finite_partition(offset,values.location),values.location);
     }
-    if(state.provider==SequenceProvider::hash_set || state.provider==SequenceProvider::new_set)return values.copy(state.hash_cursor->current);
+    if(state.provider==SequenceProvider::hash_set || state.provider==SequenceProvider::new_set || dictionary_provider(state.provider))return values.copy(state.hash_cursor->current);
     if(state.provider==SequenceProvider::random)return values.copy(state.random->current);
     if(state.provider==SequenceProvider::directory)return directory_sequence_current(sequence);
     if(state.provider==SequenceProvider::file_lines)return state.file_line->current;
@@ -269,11 +273,11 @@ Value sequence_at(Values& values,const std::shared_ptr<Aggregate>& sequence,std:
 Value sequence_collect(Values& values,const std::shared_ptr<Aggregate>& sequence,Type collection,const ExecutionOptions& options) {
     if(sequence && !sequence->nil && sequence->sequence && sequence->sequence->provider==SequenceProvider::ordinal_range)return ordinal_range_collect(values,sequence->sequence->source,collection,options);
     const auto iterator=sequence_begin(values,sequence);
-    if(iterator->sequence->provider!=SequenceProvider::hash_set)(void)sequence_resume(values,iterator,0,options);
+    if(iterator->sequence->provider!=SequenceProvider::hash_set && !dictionary_provider(iterator->sequence->provider))(void)sequence_resume(values,iterator,0,options);
     const auto known_count=sequence_known_length(iterator,values.location);
     const bool materialize=collection!=Type::invalid;
     const bool list=materialize && type_info(values.program,collection).kind==CompoundKind::list;
-    if (!materialize && (collection_sequence(iterator->sequence->provider) || iterator->sequence->provider==SequenceProvider::hash_set)) {
+    if (!materialize && (collection_sequence(iterator->sequence->provider) || iterator->sequence->provider==SequenceProvider::hash_set || dictionary_provider(iterator->sequence->provider))) {
         const auto count=*known_count;
         if (count>INT32_MAX) throw runtime_error(RuntimeError::integer_overflow,values.location);
         return static_cast<std::int32_t>(count);
@@ -284,7 +288,7 @@ Value sequence_collect(Values& values,const std::shared_ptr<Aggregate>& sequence
         const auto cost=iterator->sequence->provider==SequenceProvider::school_ip_hosts ? 4U : 1U;
         if (known_count && *known_count>values.remaining/cost) throw runtime_error(RuntimeError::allocation_limit,values.location);
         result=values.array(collection,0);
-        if (list && known_count && (collection_sequence(iterator->sequence->provider) || iterator->sequence->provider==SequenceProvider::hash_set)) values.set_list_capacity(result,static_cast<std::size_t>(*known_count));
+        if (list && known_count && (collection_sequence(iterator->sequence->provider) || iterator->sequence->provider==SequenceProvider::hash_set || dictionary_provider(iterator->sequence->provider))) values.set_list_capacity(result,static_cast<std::size_t>(*known_count));
     }
     std::uint64_t count=0;
     for (;sequence_resume(values,iterator,count,options);++count) {

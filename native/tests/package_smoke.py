@@ -238,6 +238,7 @@ def main():
                 ("system-services.pas", "3.2.0.1364\n0\nTrue\nTrue\nTrue\n-1 -1\n"),
                 ("halt.pas", "Завершение программы\n"),
                 ("builtin-callables.pas", "7 2500000000\n[ONE,ДВА]\n101 3.2.0.1364\n"),
+                ("dictionaries.pas", "{(чай,130),(кофе,180)}\n[чай,кофе,сок]\n{(чай,140),(вода,60)}\n{(2,2),(1,1),(3,1)}\n{(1,1),(2,4),(3,9)}\nчай: 130\nкофе: 180\nсок: 90\n"),
                 ("single-numbers.pas", "16777216 single\n1.0000001\n1 0.33333334\n16777216\nTrue 1E-45\n3.4028235E+38 1E-45\n"),
                 ("type-names.pas", "Coordinate\narray[,] of integer\narray of integer\nsequence of integer\n[integer,string,function(integer): string]\nnil nil\n"),
                 ("real-range-random.pas", "1.5..3.5 2 True\n646184960\nTrue\nTrue\nTrue\n1..3 'a'..'c'\n"),
@@ -1579,6 +1580,22 @@ def main():
             invalid = subprocess.run([runner, "run", str(single_error)], text=True, encoding="utf-8", capture_output=True, cwd=folder, env=env, timeout=10)
             if invalid.returncode != 1 or invalid.stdout or "E_TYPE" not in invalid.stderr or "RU:" not in invalid.stderr:
                 raise RuntimeError(f"{name} single type mismatch was not rejected before output")
+            dictionary_error = folder / "Ошибка словаря.pas"
+            for source, code, english, russian in (
+                ("begin\n var d:=DictInt((1,2));d.Add(1,3);\nend.", "E_KEY_DUPLICATE", "An item with the same key has already been added", "Элемент с таким ключом уже добавлен"),
+                ("begin\n var d:=DictInt();Writeln(d[1]);\nend.", "E_KEY_NOT_FOUND", "The given key was not present in the dictionary", "Указанный ключ отсутствует в словаре"),
+                ("begin\n var d:=new Dictionary<string,integer>;d.Add(nil,1);\nend.", "E_NIL", "Dictionary key cannot be nil", "Ключ словаря не может быть nil"),
+            ):
+                dictionary_error.write_text(source, encoding="utf-8")
+                invalid = subprocess.run([runner, "run", str(dictionary_error)], text=True, encoding="utf-8", capture_output=True, cwd=folder, env=env, timeout=10)
+                if (invalid.returncode != 1 or code not in invalid.stderr or f"EN: {english}" not in invalid.stderr
+                        or f"RU: {russian}" not in invalid.stderr or f"{dictionary_error}:2:" not in invalid.stderr):
+                    raise RuntimeError(f"{name} bilingual Dictionary error failed: {invalid.stderr!r}")
+            dictionary_error.write_text("begin Writeln('must never run');var d:=new Dictionary<string,integer>;d.Add(1,2);end.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(dictionary_error)], text=True, encoding="utf-8", capture_output=True, cwd=folder, env=env, timeout=10)
+            if invalid.returncode != 1 or invalid.stdout or "E_TYPE" not in invalid.stderr or "RU:" not in invalid.stderr:
+                raise RuntimeError(f"{name} Dictionary type mismatch was not rejected before output")
+            results[-1]["native_dictionary_factories_views_callbacks_and_bilingual_errors"] = "passed"
             results[-1]["native_single_rounding_types_io_and_bilingual_errors"] = "passed"
             results[-1]["native_type_descriptors_names_nil_and_bilingual_errors"] = "passed"
             results[-1]["native_set_literals_empty_ranges_and_bilingual_errors"] = "passed"

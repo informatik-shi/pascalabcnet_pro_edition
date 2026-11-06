@@ -37,6 +37,7 @@
 #include "ini_file.hpp"
 #include "compound.hpp"
 #include "hash_set.hpp"
+#include "dictionary.hpp"
 #include "ordinal_range.hpp"
 #include "real_interval.hpp"
 #include "new_set.hpp"
@@ -410,7 +411,7 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
             if (instruction.type==Type::string) { stack.emplace_back(sequence_text(values,static_cast<Type>(instruction.operand),pop())); break; }
             const auto source=std::get<std::shared_ptr<Aggregate>>(pop());
             if(ordinal_range_type(type_info(program,instruction.type))){stack.emplace_back(sequence_create(values,static_cast<Type>(instruction.operand),std::get<std::shared_ptr<Aggregate>>(values.copy(source)),SequenceProvider::ordinal_range));break;}
-            stack.emplace_back(sequence_create(values,static_cast<Type>(instruction.operand),source,type_info(program,instruction.type).kind==CompoundKind::array ? SequenceProvider::array : type_info(program,instruction.type).kind==CompoundKind::hash_set ? SequenceProvider::hash_set : SequenceProvider::list)); break;
+            stack.emplace_back(sequence_create(values,static_cast<Type>(instruction.operand),source,type_info(program,instruction.type).kind==CompoundKind::dictionary ? SequenceProvider::dictionary_entries : type_info(program,instruction.type).kind==CompoundKind::dictionary_keys ? SequenceProvider::dictionary_keys : type_info(program,instruction.type).kind==CompoundKind::dictionary_values ? SequenceProvider::dictionary_values : type_info(program,instruction.type).kind==CompoundKind::array ? SequenceProvider::array : type_info(program,instruction.type).kind==CompoundKind::hash_set ? SequenceProvider::hash_set : SequenceProvider::list)); break;
         }
         case Op::sequence_dispose:
             sequence_dispose(std::get<std::shared_ptr<Aggregate>>(pop()));break;
@@ -1124,6 +1125,11 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
             const auto method=static_cast<NewSetMethod>(instruction.operand&127U);const bool ref=(instruction.operand&128U)!=0;const auto parameters=new_set_parameters(program.types,instruction.type,method,ref);
             std::vector<Value> arguments(parameters.size());for(std::size_t i=arguments.size();i>0;--i)arguments[i-1]=pop();auto result=new_set_invoke(values,instruction.type,method,ref,arguments,options);
             if(new_set_result(program.types,instruction.type,method)!=Type::unit)stack.push_back(std::move(result));break;
+        }
+        case Op::dictionary_call: {
+            const auto method=static_cast<DictionaryMethod>(instruction.operand&255U);const auto payload=static_cast<Type>(instruction.operand>>8U);const auto parameters=dictionary_parameters(program.types,instruction.type,payload,method);
+            std::vector<Value> arguments(parameters.size());for(std::size_t i=arguments.size();i>0;--i)arguments[i-1]=pop();auto result=dictionary_invoke(values,instruction.type,payload,method,arguments,options);
+            if(dictionary_result(program.types,instruction.type,payload,method)!=Type::unit)stack.push_back(std::move(result));break;
         }
         case Op::hash_set_call: {
             const auto method=static_cast<HashSetMethod>(instruction.operand&255U);const auto sequence=static_cast<Type>(instruction.operand>>8U);const auto parameters=hash_set_parameters(program.types,instruction.type,sequence,method);

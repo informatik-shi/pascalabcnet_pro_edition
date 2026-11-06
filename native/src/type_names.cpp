@@ -33,11 +33,15 @@ std::u16string byref_name(const Program& program,Type type,Work& work){
         const auto& info=type_info(program,type);std::size_t arity=1;
         if(ordinal_range_type(info)){name=info.element==Type::character ? u"CharRange" : u"IntRange";arity=0;}
         else if(real_interval_type(info)){name=u"RealRange";arity=0;}
+        else if(key_value_pair_type(info)){name=u"KeyValuePair";arity=2;}
         else switch(info.kind){
         case CompoundKind::record:case CompoundKind::object_class:case CompoundKind::enumeration:name=named(info);arity=0;break;
         case CompoundKind::list:name=u"List";break;case CompoundKind::stack:name=u"Stack";break;case CompoundKind::queue:name=u"Queue";break;
         case CompoundKind::dynarray:name=u"DynArray";break;case CompoundKind::simple_set:name=u"SimpleSet";break;
         case CompoundKind::hash_set:name=u"HashSet";break;case CompoundKind::new_set:name=u"NewSet";break;
+        case CompoundKind::dictionary:name=u"Dictionary";arity=2;break;
+        case CompoundKind::dictionary_keys:name=u"KeyCollection";arity=2;break;
+        case CompoundKind::dictionary_values:name=u"ValueCollection";arity=2;break;
         case CompoundKind::association:name=u"AssocArray";arity=2;break;case CompoundKind::linked_list:name=u"LinkedList";break;
         case CompoundKind::linked_node:name=u"LinkedListNode";break;case CompoundKind::single_node:name=u"SingleNode";break;
         case CompoundKind::sequence:name=u"IEnumerable";break;
@@ -59,7 +63,7 @@ bool reflected_type_valid(const Program& program,const ReflectedType& type){
     if(!type.implementation)return type.source==Type::invalid;
     if(type.implementation==runtime_type_implementation)return type.target==Type::type_descriptor && type.source==Type::invalid;
     if(type.implementation>=2 && type.implementation<=6)return compound(type.target) && type_info(program,type.target).kind==CompoundKind::encoding && type.source==Type::invalid;
-    if(type.implementation<sequence_implementation || type.implementation>=sequence_implementation+(static_cast<unsigned>(SequenceProvider::directory)+1U)*16U)return false;
+    if(type.implementation<sequence_implementation || type.implementation>=sequence_implementation+(static_cast<unsigned>(SequenceProvider::dictionary_values)+1U)*16U)return false;
     const auto provider=static_cast<SequenceProvider>((type.implementation-sequence_implementation)/16U);
     const auto variant=(type.implementation-sequence_implementation)%16U;
     const auto last=provider==SequenceProvider::transform ? static_cast<unsigned>(SequenceTransform::skip_while)
@@ -97,7 +101,7 @@ ReflectedType reflected_value_type(const Program& program,const Value& value,Typ
         const auto& sequence=*current->sequence;
         if(sequence.provider==SequenceProvider::string){if(sequence.seed && std::holds_alternative<NilString>(sequence.seed->value))return {};return {Type::string};}
         if(sequence.provider==SequenceProvider::ordinal_range && sequence.source)return {sequence.source->type};
-        if(collection_sequence(sequence.provider) || sequence.provider==SequenceProvider::hash_set){current=sequence.source;continue;}
+        if(collection_sequence(sequence.provider) || sequence.provider==SequenceProvider::hash_set || dictionary_provider(sequence.provider)){current=sequence.source;continue;}
         if(sequence.provider==SequenceProvider::new_set){
             if(!sequence.seed || !std::holds_alternative<NewSetValue>(sequence.seed->value))throw runtime_error(RuntimeError::invalid_bytecode,location);
             return {std::get<NewSetValue>(sequence.seed->value).type};
@@ -140,6 +144,9 @@ std::u16string reflected_type_name(const Program& program,const ReflectedType& t
                 case CompoundKind::dynarray:name=u"DynArray";break;case CompoundKind::simple_set:name=u"SimpleSet";break;case CompoundKind::hash_set:name=u"HashSet";break;
                 case CompoundKind::new_set:name=u"NewSet";break;case CompoundKind::linked_list:name=u"LinkedList";break;case CompoundKind::linked_node:name=u"LinkedListNode";break;
                 case CompoundKind::single_node:name=u"SingleNode";break;case CompoundKind::sequence:name=u"IEnumerable";break;
+                case CompoundKind::record:if(key_value_pair_type(info)){name=u"KeyValuePair";for(const auto& field:info.fields)arguments.push_back(field.type);}break;
+                case CompoundKind::dictionary:name=u"Dictionary";arguments.push_back(info.key);arguments.push_back(type_info(program,info.element).fields[1].type);break;
+                case CompoundKind::dictionary_keys:case CompoundKind::dictionary_values:{name=info.kind==CompoundKind::dictionary_keys ? u"KeyCollection" : u"ValueCollection";const auto& dictionary=type_info(program,info.key);arguments.push_back(dictionary.key);arguments.push_back(type_info(program,dictionary.element).fields[1].type);break;}
                 case CompoundKind::association:name=u"AssocArray";arguments.push_back(info.key);break;
                 case CompoundKind::tuple:name=u"Tuple";for(const auto& field:info.fields)arguments.push_back(field.type);break;
                 case CompoundKind::callable:
@@ -147,7 +154,7 @@ std::u16string reflected_type_name(const Program& program,const ReflectedType& t
                     if(info.element!=Type::unit)arguments.push_back(info.element);if(arguments.empty())name.clear();break;
                 default:break;
                 }
-                if(!name.empty() && info.kind!=CompoundKind::tuple && info.kind!=CompoundKind::callable)arguments.push_back(info.element);
+                if(!name.empty() && info.kind!=CompoundKind::tuple && info.kind!=CompoundKind::callable && !key_value_pair_type(info) && info.kind!=CompoundKind::dictionary && info.kind!=CompoundKind::dictionary_keys && info.kind!=CompoundKind::dictionary_values)arguments.push_back(info.element);
             }
             if(!name.empty()){
                 // Reflection forwards root generic arguments through byref/array wrappers.
@@ -162,6 +169,11 @@ std::u16string reflected_type_name(const Program& program,const ReflectedType& t
         const auto& info=type_info(program,task.type);
         if(ordinal_range_type(info)){text(info.element==Type::character ? u"CharRange" : u"IntRange");continue;}
         if(real_interval_type(info)){text(u"RealRange");continue;}
+        if(key_value_pair_type(info) || info.kind==CompoundKind::dictionary || info.kind==CompoundKind::dictionary_keys || info.kind==CompoundKind::dictionary_values){
+            const auto& pair=key_value_pair_type(info) ? info : info.kind==CompoundKind::dictionary ? type_info(program,info.element) : type_info(program,type_info(program,info.key).element);
+            const auto name=key_value_pair_type(info) ? u"KeyValuePair" : info.kind==CompoundKind::dictionary ? u"Dictionary" : info.kind==CompoundKind::dictionary_keys ? u"KeyCollection" : u"ValueCollection";
+            text(u">");child(pair.fields[1].type);text(u", ");child(pair.fields[0].type);text(std::u16string(name)+u"<");continue;
+        }
         if(info.kind==CompoundKind::record || info.kind==CompoundKind::object_class || info.kind==CompoundKind::enumeration){text(named(info));continue;}
         if(info.kind==CompoundKind::array){child(info.element);text(info.rank==2 ? u"array[,] of " : u"array of ");continue;}
         if(info.kind==CompoundKind::new_set){child(info.element);text(u"set of ");continue;}

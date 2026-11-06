@@ -790,3 +790,21 @@ No host runtime or dynamic type is introduced. Independent development-only gold
 bits/text/arithmetic and original realsingle1 are executed by the native runner.
 Shortest invariant single text is native policy; full CLR formatting/culture,
 NaN/Infinity, nullable and decimal remain outside the current profile.
+
+Native Dictionary stores closed KeyValuePair record cells in sparse slots with a
+native hash-to-slot lookup and a LIFO free list. Shared value_hash/value_equal
+retain the former HashSet algorithms and common bounded work/cancellation.
+Dictionary keeps historical slots after removing the last key; Framework version
+rules distinguish successful replacement, failed removal and empty Clear states.
+A dedicated verified dictionary_call describes owner, method and optional concrete
+sequence/callback/view payload. No runtime overload search or managed bridge occurs.
+Pair fields are immutable in source and ref_field verification, while whole structs
+retain ordinary record copying. Live Keys/Values keep an owner cell and weak cached
+identity on the dictionary. Their three source-specific sequence providers retain
+view identity, independent slot cursors and version snapshots. Reference tracking
+clears dictionary/view ownership cycles at execution unwind. Compound index updates
+cache receiver and key in typed temporaries before getter/RHS/setter evaluation.
+EachCount groups completely with nil-capable private storage before dictionary Add;
+ToDictionary evaluates key then value before validating Add. Typed callbacks share
+execution services and limits. Explicit user enumerator/interfaces/comparers and the
+remaining Dictionary/object APIs remain future work.

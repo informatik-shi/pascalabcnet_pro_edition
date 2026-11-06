@@ -90,19 +90,20 @@ struct Values {
             if(info.kind==CompoundKind::enumeration)return EnumValue{type,0};
             if (buffer_collection(info.kind) && constructed) return buffer(type,0);
             const bool object=info.kind==CompoundKind::object_class;
-            if ((object || info.kind==CompoundKind::hash_set || info.kind==CompoundKind::empty_collection) && constructed) {
+            const bool dictionary=info.kind==CompoundKind::dictionary || info.kind==CompoundKind::dictionary_keys || info.kind==CompoundKind::dictionary_values;
+            if ((object || dictionary || info.kind==CompoundKind::hash_set || info.kind==CompoundKind::empty_collection) && constructed) {
                 if (!remaining) throw runtime_error(RuntimeError::allocation_limit,location);
                 --remaining;
             }
             auto aggregate = std::make_shared<Aggregate>(); aggregate->type = type;
             aggregate->nil = info.kind != CompoundKind::record && !constructed;
-            if(info.kind==CompoundKind::hash_set && constructed)aggregate->hash_set=std::make_shared<HashSetState>();
+            if((info.kind==CompoundKind::hash_set || info.kind==CompoundKind::dictionary) && constructed)aggregate->hash_set=std::make_shared<HashSetState>();
             if (info.kind == CompoundKind::linked_list && constructed) aggregate->links = std::make_unique<LinkedLinks>();
             if (endpoint_collection(info.kind) && constructed)
                 aggregate->ends = std::make_unique<std::deque<std::shared_ptr<Cell>>>();
             if (info.kind == CompoundKind::record || (object && constructed))
-                for (const auto& field : info.fields) aggregate->items.push_back(cell(field.type, zero(field.type,false,generic || object)));
-            if (object && constructed && observe_object) observe_object(aggregate);
+                for (const auto& field : info.fields) aggregate->items.push_back(cell(field.type, zero(field.type,false,generic || object || key_value_pair_type(info))));
+            if ((object || dictionary) && constructed && observe_object) observe_object(aggregate);
             return aggregate;
         }
         }
@@ -138,7 +139,7 @@ struct Values {
             const auto& b = std::get<std::shared_ptr<Aggregate>>(right);
             const auto kind=type_info(program,(*a)->type).kind;
             if (kind==CompoundKind::sequence && !(*a)->nil && !b->nil && (*a)->sequence && b->sequence
-                && (collection_sequence((*a)->sequence->provider) || (*a)->sequence->provider==SequenceProvider::hash_set) && (collection_sequence(b->sequence->provider) || b->sequence->provider==SequenceProvider::hash_set))
+                && (collection_sequence((*a)->sequence->provider) || (*a)->sequence->provider==SequenceProvider::hash_set || dictionary_provider((*a)->sequence->provider)) && (collection_sequence(b->sequence->provider) || b->sequence->provider==SequenceProvider::hash_set || dictionary_provider(b->sequence->provider)))
                 return (*a)->sequence->source==b->sequence->source;
             if (kind==CompoundKind::callable) return (*a)->nil || b->nil ? (*a)->nil==b->nil : ((*a)->routine==b->routine && (*a)->captures==b->captures);
             if (kind!=CompoundKind::record && kind!=CompoundKind::tuple) return ((*a)->nil && b->nil) || *a == b;
