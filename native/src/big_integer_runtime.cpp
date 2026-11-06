@@ -1,11 +1,13 @@
 #include "big_integer_runtime.hpp"
 #include "integer_values.hpp"
+#include "single.hpp"
 #include <cmath>
 #include <type_traits>
 
 namespace abc {
 Value big_cast(const Value& value,Type target,SourceLocation location) {
     return checked_big(location,[&]()->Value {
+        if(target==Type::single)return single_number(value,location);
         if (target==Type::real) {
             const auto result=std::visit([&](const auto& n)->double {
                 using T=std::decay_t<decltype(n)>;
@@ -19,7 +21,7 @@ Value big_cast(const Value& value,Type target,SourceLocation location) {
         if (target==Type::big_integer) return std::visit([&](const auto& n)->Value {
             using T=std::decay_t<decltype(n)>;
             if constexpr (std::is_same_v<T,BigInteger>) return n;
-            else if constexpr (std::is_same_v<T,double>) return BigInteger::from_real(n);
+            else if constexpr (std::is_floating_point_v<T>) return BigInteger::from_real(static_cast<double>(n));
             else if constexpr (std::is_integral_v<T> && !std::is_same_v<T,bool>) {
                 if constexpr (std::is_unsigned_v<T>) return BigInteger::from_unsigned(n);
                 else return BigInteger::from_signed(n);

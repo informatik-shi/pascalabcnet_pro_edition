@@ -9,6 +9,7 @@
 #include "stdlib.hpp"
 #include "encoding.hpp"
 #include "type_names.hpp"
+#include "single.hpp"
 #include "enumeration.hpp"
 #include "comparable.hpp"
 #include "ini_file.hpp"
@@ -491,7 +492,7 @@ private:
             if (result->kind=="system") {
                 result->system_qualified=true; expect("."); result->kind=is("type") ? consume().text : name().text;
                 if(result->kind=="text") {expect(".");result->kind=name().text;if(result->kind!="encoding")throw Error("E_UNSUPPORTED",result->token.location,"Unknown or unsupported Encoding type");}
-                else if (result->kind!="func" && result->kind!="action" && result->kind!="predicate" && result->kind!="type" && result->kind!="void")
+                else if (result->kind!="func" && result->kind!="action" && result->kind!="predicate" && result->kind!="type" && result->kind!="void" && result->kind!="single")
                     throw Error("E_UNSUPPORTED",result->token.location,"Unknown or unsupported type 'System."+result->kind+"'");
             }
             if (result->kind=="func" || result->kind=="func0" || result->kind=="func2" || result->kind=="func3"
@@ -1966,7 +1967,7 @@ private:
             auto call=std::make_unique<hir::Expr>(); call->kind=hir::ExprKind::value_call; call->type=info(expression->type,expression->location).element;
             call->location=expression->location; call->left=std::move(expression); return convert(std::move(call),type);
         }
-        if (!can_widen(expression->type, type))
+        if (!can_widen(expression->type, type) && !(expression->type==Type::real && type==Type::single))
             throw Error("E_TYPE", expression->location, "Cannot assign " + std::string(type_name(expression->type))
                 + " to " + std::string(type_name(type)));
         const auto location = expression->location;
@@ -2316,6 +2317,17 @@ private:
                 for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
                 result->kind=hir::ExprKind::call; bind_builtin(*result,"ismatch","pabcsystem"); break;
             }
+            if((source.left->kind==SyntaxExprKind::name && !lookup(source.left->token) && source.left->token.text=="single")
+                || (source.left->kind==SyntaxExprKind::field && source.left->token.text=="single" && source.left->left && source.left->left->kind==SyntaxExprKind::name && source.left->left->token.text=="system" && !lookup(source.left->left->token))){
+                if(source.token.text=="maxvalue" || source.token.text=="minvalue" || source.token.text=="epsilon"){
+                    if(source.kind!=SyntaxExprKind::field)throw Error("E_TYPE",result->location,"Single property is not callable");
+                    result->kind=hir::ExprKind::literal;result->type=Type::single;result->value=source.token.text=="epsilon" ? std::numeric_limits<float>::denorm_min() : source.token.text=="minvalue" ? -std::numeric_limits<float>::max() : std::numeric_limits<float>::max();break;
+                }
+                for(const auto& argument:source.arguments)result->arguments.push_back(expression(*argument));
+                if(source.token.text=="tryparse"){(void)bind_number_conversion(*result,"$try_single");break;}
+                if(source.token.text=="parse"){result->kind=hir::ExprKind::call;bind_builtin(*result,"$single_parse","pabcsystem");break;}
+                throw Error("E_UNSUPPORTED",result->location,"Unknown or unsupported type 'single member'");
+            }
             if (source.left->kind==SyntaxExprKind::name && !lookup(source.left->token) && source.left->token.text=="biginteger") {
                 if (source.token.text=="zero" || source.token.text=="one" || source.token.text=="minusone") {
                     if (source.kind!=SyntaxExprKind::field) throw Error("E_TYPE",result->location,"BigInteger property is not callable");
@@ -2472,8 +2484,8 @@ private:
                 for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
                 result->kind=hir::ExprKind::call; bind_builtin(*result,source.token.text,"school"); break;
             }
-            if (receiver==Type::big_integer && source.token.text=="tostring") {
-                if (!source.arguments.empty()) throw Error("E_TYPE",result->location,"BigInteger ToString currently takes no arguments");
+            if ((receiver==Type::big_integer || receiver==Type::single) && source.token.text=="tostring") {
+                if (!source.arguments.empty()) throw Error("E_TYPE",result->location,receiver==Type::single ? "Single ToString currently takes no arguments" : "BigInteger ToString currently takes no arguments");
                 result->arguments.push_back(std::move(result->left));(void)bind_object_text(*result,"objecttostring","pabcsystem");break;
             }
             if (receiver==Type::big_integer && (source.token.text=="sign" || source.token.text=="iszero" || source.token.text=="isone" || source.token.text=="iseven")) {
@@ -3111,6 +3123,7 @@ private:
         case SyntaxExprKind::formatted: {
             result->kind=hir::ExprKind::call;
             for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
+            if(result->arguments.size()==3 && result->arguments[0]->type==Type::single)result->arguments[0]=convert(std::move(result->arguments[0]),Type::real);
             if (result->arguments.size()==3 && result->arguments[0]->type!=Type::real)
                 throw Error("E_TYPE",result->location,"Precision in a formatted expression requires a real value");
             if (!bind_object_text(*result,"formatvalue")) bind_builtin(*result,"formatvalue","pabcsystem");
@@ -3322,10 +3335,10 @@ private:
                 if (left!=right) throw Error("E_TYPE",result->location,"Incompatible aggregate comparison");
                 result->type=Type::boolean;
             } else if (numeric(left) && numeric(right)) {
-                if ((op == "div" || op == "mod") && (left == Type::real || right == Type::real))
+                if ((op == "div" || op == "mod") && (left == Type::real || right == Type::real || left==Type::single || right==Type::single))
                     throw Error("E_TYPE", result->location, "div and mod require integer operands");
-                const auto common = op == "/" || left == Type::real || right == Type::real ? Type::real
-                    : left==Type::big_integer || right==Type::big_integer ? Type::big_integer : left==Type::uint64 || right==Type::uint64 ? Type::uint64
+                const auto common = left == Type::real || right == Type::real ? Type::real : left==Type::single || right==Type::single ? Type::single
+                    : op=="/" ? Type::real : left==Type::big_integer || right==Type::big_integer ? Type::big_integer : left==Type::uint64 || right==Type::uint64 ? Type::uint64
                     : left == Type::int64 || right == Type::int64 || left==Type::longword || right==Type::longword ? Type::int64 : Type::integer;
                 result->left = convert(std::move(result->left), common);
                 result->right = convert(std::move(result->right), common);
@@ -3654,7 +3667,7 @@ private:
                 if(can_widen(type,other))type=other;
                 else if(!can_widen(other,type)) {
                     bool joined=false;
-                    if(numeric(type) && numeric(other))for(const auto candidate:{Type::byte,Type::shortint,Type::smallint,Type::word,Type::integer,Type::int64,Type::longword,Type::uint64,Type::real})
+                    if(numeric(type) && numeric(other))for(const auto candidate:{Type::byte,Type::shortint,Type::smallint,Type::word,Type::integer,Type::int64,Type::longword,Type::uint64,Type::single,Type::real})
                         if(can_widen(type,candidate) && can_widen(other,candidate)){type=candidate;joined=true;break;}
                     if(!joined)throw Error("E_TYPE",result.location,"Comparison values require compatible static types");
                 }
@@ -3797,7 +3810,7 @@ private:
             else if (!can_widen(argument->type,element)) {
                 bool joined=false;
                 if (numeric(element) && numeric(argument->type))
-                    for (auto type:{Type::byte,Type::shortint,Type::smallint,Type::word,Type::integer,Type::int64,Type::longword,Type::uint64,Type::real})
+                    for (auto type:{Type::byte,Type::shortint,Type::smallint,Type::word,Type::integer,Type::int64,Type::longword,Type::uint64,Type::single,Type::real})
                         if (can_widen(element,type) && can_widen(argument->type,type)) { element=type; joined=true; break; }
                 if (!joined) throw Error("E_TYPE",result.location,"Incompatible array elements");
             }
@@ -4571,8 +4584,8 @@ private:
         (void)bind_sequence_transform(*selected,source,unit,member,"select");
         const auto element=info(selected->type,result.location).element;
         const auto arity=selected->right ? info(selected->right->type,result.location).parameters.size() : module_.routines[selected->local].signature.parameters.size();
-        if (arity!=1 || (element!=Type::integer && element!=Type::int64 && element!=Type::real))
-            throw Error("E_TYPE",result.location,"Sum/Average selector requires one input parameter and integer, int64 or real result");
+        if (arity!=1 || (element!=Type::integer && element!=Type::int64 && element!=Type::single && element!=Type::real))
+            throw Error("E_TYPE",result.location,"Sum/Average selector requires one input parameter and integer, int64, single or real result");
         result.arguments.push_back(std::move(selected)); return bind_sequence_numeric(result,name,unit);
     }
     static std::optional<PredicateQuery> predicate_method(std::string_view name) {
@@ -4679,7 +4692,7 @@ private:
         if (!compound(source)) throw Error("E_TYPE",result.location,"Numeric operation requires a typed sequence, array or List");
         const auto source_info=info(source,result.location); const auto element=source_info.element;
         if ((source_info.kind!=CompoundKind::sequence && !enumerable_collection(source_info)) || source_info.rank!=1
-            || !numeric_sequence_element(element) || (name=="partialsum" && !partial_sum_element(element)))
+            || !numeric_sequence_element(element) || (name=="product" && element==Type::single) || (name=="partialsum" && !partial_sum_element(element)))
             throw Error("E_TYPE",result.location,"Unsupported numeric sequence element type");
         auto argument=std::move(result.arguments[0]); result.arguments.clear();
         const auto sequence=sequence_type(CompoundKind::sequence,element);
@@ -4705,6 +4718,7 @@ private:
     bool bind_sequence_query(hir::Expr& result,std::string_view name,std::string_view unit={}) {
         const auto method=sequence_query_method(name);
         if (!method || (!unit.empty() && unit!="pabcsystem")) return false;
+        if(name=="single" && unit.empty() && result.arguments.size()==1 && (numeric(result.arguments[0]->type) || result.arguments[0]->type==Type::character))return false;
         const bool extra=sequence_query_index(*method) || *method==SequenceQuery::contains;
         if (result.arguments.size()!=(extra ? 2U : 1U)) throw Error("E_TYPE",result.location,"Wrong sequence query argument count");
         const auto source=result.arguments[0]->type;
@@ -4880,7 +4894,7 @@ private:
     }
     bool bind_number_conversion(hir::Expr& result, std::string_view name, std::string_view unit = {}) {
         const bool str=name=="str", val=name=="val";
-        if ((!str && !val && name!="trystrtoint" && name!="trystrtoint64" && name!="trystrtoreal" && name!="trystrtofloat" && name!="$try_big")
+        if ((!str && !val && name!="trystrtoint" && name!="trystrtoint64" && name!="trystrtoreal" && name!="trystrtofloat" && name!="trystrtosingle" && name!="$try_single" && name!="$try_big")
             || (!unit.empty() && unit!="pabcsystem")) return false;
         if (result.arguments.size()!=(val ? 3U : 2U)) throw Error("E_TYPE",result.location,"Wrong string conversion argument count");
         auto source=std::move(result.arguments[0]), target=std::move(result.arguments[1]);
@@ -4892,7 +4906,8 @@ private:
             if (!numeric(source->type) && source->type!=Type::string) throw Error("E_TYPE",result.location,"Str requires a number or string");
         } else {
             source=convert(std::move(source),Type::string);
-            const auto expected=name=="$try_big" ? Type::big_integer : name=="trystrtoint" ? Type::integer : name=="trystrtoint64" ? Type::int64 : Type::real;
+            const auto expected=name=="$try_big" ? Type::big_integer : name=="trystrtoint" ? Type::integer : name=="trystrtoint64" ? Type::int64
+                : name=="trystrtosingle" || name=="$try_single" || (name=="trystrtofloat" && target->type==Type::single) ? Type::single : Type::real;
             if (!numeric(target->type) || (!val && target->type!=expected)) throw Error("E_TYPE",result.location,"Wrong numeric conversion destination type");
         }
         if (val) {
@@ -4900,7 +4915,7 @@ private:
             if (!lvalue(*code) || code->type!=Type::integer) throw Error("E_TYPE",result.location,"Val error destination must be a writable integer");
             auto error=std::move(code); result.arguments.clear(); result.arguments.push_back(std::move(error));
         } else result.arguments.clear();
-        result.kind=hir::ExprKind::number_conversion; result.local=str ? 0U : val ? 2U : 1U;
+        result.kind=hir::ExprKind::number_conversion; result.local=str ? 0U : val ? 2U : name=="$try_single" ? 3U : 1U;
         result.left=std::move(source); result.right=std::move(target); result.type=str || val ? Type::unit : Type::boolean; return true;
     }
     bool bind_try_read(hir::Expr& result, std::string_view name, std::string_view unit = {}) {
@@ -4941,7 +4956,7 @@ private:
             (void)print_matrix_format();(void)print_delimiter();result.arguments.push_back(std::move(result.left));result.arguments.push_back(extra ? convert(expression(argument(0)),Type::integer) : literal(Type::integer,std::int32_t{real ? 7 : 4}));if(real)result.arguments.push_back(extra>1 ? convert(expression(argument(1)),Type::integer) : literal(Type::integer,std::int32_t{2}));finish(real ? PrintMethod::matrix_real : PrintMethod::matrix,receiver);return true;
         }
         if(member && !extra && explicit_element==Type::invalid && name!="printlines" && (numeric(receiver) || receiver==Type::character || receiver==Type::boolean || receiver==Type::string)){
-            Type self=receiver;if(small_integer(self))self=Type::integer;
+            Type self=receiver;if(small_integer(self))self=Type::integer;else if(self==Type::single)self=Type::real;
             (void)print_delimiter();result.arguments.push_back(convert(std::move(result.left),self));finish(name=="print" ? PrintMethod::scalar_print : PrintMethod::scalar_println,self);return true;
         }
         if(receiver!=Type::string && (!compound(receiver) || (info(receiver,result.location).kind!=CompoundKind::sequence && !enumerable_collection(info(receiver,result.location)))))return false;

@@ -20,6 +20,7 @@ std::string_view type_name(Type type) {
     case Type::integer: return "integer";
     case Type::int64: return "int64";
     case Type::real: return "real";
+    case Type::single: return "single";
     case Type::boolean: return "boolean";
     case Type::string: return "string";
     case Type::character: return "char";
@@ -41,6 +42,7 @@ std::optional<Type> find_type(std::string_view name) {
     for (auto type : {Type::integer, Type::int64, Type::real, Type::boolean, Type::string, Type::character, Type::word, Type::byte, Type::shortint, Type::smallint, Type::longword, Type::uint64})
         if (name == type_name(type)) return type;
     if (name == "double") return Type::real;
+    if (name == "single") return Type::single;
     if (name == "biginteger") return Type::big_integer;
     if (name == "text" || name == "textfile") return Type::text_file;
     if (name == "type") return Type::type_descriptor;
@@ -48,11 +50,12 @@ std::optional<Type> find_type(std::string_view name) {
 }
 
 bool numeric(Type type) {
-    return integer_type(type) || type==Type::big_integer || type == Type::real;
+    return integer_type(type) || type==Type::big_integer || type == Type::real || type==Type::single;
 }
 
 bool can_widen(Type from, Type to) {
-    return from == to || (from == Type::character && to == Type::string)
+    return from == to || (from==Type::single && to==Type::real) || (integer_type(from) && to==Type::single)
+        || (from == Type::character && to == Type::string)
         || ((integer_type(from) || from==Type::character) && to==Type::big_integer)
         || (wide_unsigned(from) && to==Type::real)
         || (from==Type::longword && (to==Type::int64 || to==Type::uint64))
@@ -65,6 +68,7 @@ bool can_widen(Type from, Type to) {
 }
 
 Type value_type(const Value& value) {
+    if(std::holds_alternative<float>(value))return Type::single;
     if(std::holds_alternative<ReflectedType>(value))return Type::type_descriptor;
     if(const auto* set=std::get_if<NewSetValue>(&value))return set->type;
     if(const auto* member=std::get_if<EnumValue>(&value))return member->type;

@@ -37,13 +37,13 @@ public:
 // English remains available through what(); source and runtime errors carry Russian.
 std::string format_diagnostic(const Error& error, std::string_view filename);
 
-enum class Type { integer, int64, real, boolean, string, invalid, unit, nil, text_file, character, word, byte, shortint, smallint, longword, uint64, big_integer, type_descriptor, first_compound = 64 };
+enum class Type { integer, int64, real, boolean, string, invalid, unit, nil, text_file, character, word, byte, shortint, smallint, longword, uint64, big_integer, type_descriptor, single, first_compound = 64 };
 inline bool small_integer(Type t) { return t==Type::word || t==Type::byte || t==Type::shortint || t==Type::smallint; }
 inline bool wide_unsigned(Type t) { return t==Type::longword || t==Type::uint64; }
 inline bool integer_type(Type t) { return t==Type::integer || t==Type::int64 || small_integer(t) || wide_unsigned(t); }
 inline bool ordinal(Type t) { return integer_type(t) || t==Type::character || t==Type::boolean; }
 inline Type increment_step_type(Type t) { return t==Type::boolean ? Type::unit : t==Type::int64 || t==Type::uint64 ? Type::int64 : Type::integer; }
-inline bool scalar(Type t) { return integer_type(t) || t==Type::big_integer || t==Type::real || t==Type::boolean || t==Type::string || t==Type::character; }
+inline bool scalar(Type t) { return integer_type(t) || t==Type::big_integer || t==Type::real || t==Type::single || t==Type::boolean || t==Type::string || t==Type::character; }
 inline std::pair<std::int64_t,std::int64_t> small_integer_bounds(Type t) {
     switch (t) {
     case Type::byte: return {0,255};
@@ -77,7 +77,7 @@ struct EnumValue {Type type=Type::invalid;std::int32_t value=0;auto operator<=>(
 struct ReflectedType {Type target=Type::invalid;std::uint32_t implementation=0;Type source=Type::invalid;auto operator<=>(const ReflectedType&) const=default;};
 using Value = std::variant<std::int32_t, std::int64_t, double, bool, std::u16string,
     std::shared_ptr<Aggregate>, std::shared_ptr<Cell>, NilString, std::shared_ptr<TextFile>, char16_t, std::uint16_t,
-    std::uint8_t, std::int8_t, std::int16_t, std::uint32_t, std::uint64_t, BigInteger, EnumValue, NewSetValue, ReflectedType>;
+    std::uint8_t, std::int8_t, std::int16_t, std::uint32_t, std::uint64_t, BigInteger, EnumValue, NewSetValue, ReflectedType, float>;
 struct Cell { Type type; Value value; std::weak_ptr<Aggregate> list_owner{}; };
 enum class SequenceTransform { select, where, flatmap, take_while, skip_while };
 inline bool predicate_transform(SequenceTransform method) {
@@ -281,11 +281,11 @@ inline Type predicate_query_result(Type element,PredicateQuery method) {
 }
 enum class SequenceAggregate { sum, average, product };
 inline bool numeric_sequence_element(Type element) {
-    return element==Type::integer || element==Type::int64 || element==Type::real || element==Type::big_integer;
+    return element==Type::integer || element==Type::int64 || element==Type::real || element==Type::single || element==Type::big_integer;
 }
-inline bool partial_sum_element(Type element) { return numeric_sequence_element(element) && element!=Type::int64; }
+inline bool partial_sum_element(Type element) { return numeric_sequence_element(element) && element!=Type::int64 && element!=Type::single; }
 inline Type sequence_aggregate_result(Type element,SequenceAggregate method) {
-    return method==SequenceAggregate::average ? Type::real : method==SequenceAggregate::product && element==Type::integer ? Type::int64 : element;
+    return method==SequenceAggregate::average ? element==Type::single ? Type::single : Type::real : method==SequenceAggregate::product && element==Type::integer ? Type::int64 : element;
 }
 enum class SchoolFold { gcd, lcm };
 

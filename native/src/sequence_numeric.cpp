@@ -2,6 +2,7 @@
 #include "runtime_values.hpp"
 #include "big_integer_runtime.hpp"
 #include "sequence_guard.hpp"
+#include "single.hpp"
 #include <cmath>
 #include <limits>
 
@@ -51,7 +52,7 @@ Value sequence_aggregate(Values& values,const std::shared_ptr<Aggregate>& sequen
     const auto iterator=sequence_begin(values,sequence);
     const auto element=type_info(values.program,sequence->type).element;
     const bool average=method==SequenceAggregate::average,product=method==SequenceAggregate::product;
-    const auto accumulator=(average || product) && element==Type::integer ? Type::int64 : element;
+    const auto accumulator=element==Type::single ? Type::real : (average || product) && element==Type::integer ? Type::int64 : element;
     auto total=values.zero(accumulator);
     if (product) {
         if (accumulator==Type::big_integer) { total=checked_big(values.location,[]{return BigInteger::from_signed(1);}); values.number(total); }
@@ -64,18 +65,20 @@ Value sequence_aggregate(Values& values,const std::shared_ptr<Aggregate>& sequen
         if ((count&255U)==0 && options.cancelled && options.cancelled()) throw runtime_error(RuntimeError::cancelled,values.location);
         if (count>static_cast<std::uint64_t>(INT64_MAX)) throw runtime_error(RuntimeError::integer_overflow,values.location);
         auto item=sequence_at(values,iterator,static_cast<std::int64_t>(count),options);
+        if(element==Type::single)item=static_cast<double>(std::get<float>(item));
         if (accumulator==Type::int64 && element==Type::integer) item=std::int64_t(std::get<std::int32_t>(item));
         total=sequence_numeric_step(values,accumulator,total,item,product,options);
         if (average && count>=static_cast<std::uint64_t>(element==Type::big_integer ? INT32_MAX : INT64_MAX)) throw runtime_error(RuntimeError::integer_overflow,values.location);
     }
-    if (!average) return total;
+    if (!average) return element==Type::single ? Value{single_number(total,values.location)} : total;
     if (!count) {
         if (element==Type::big_integer) return 0.0;
         throw runtime_error(RuntimeError::sequence_empty,values.location);
     }
     const auto sum=element==Type::big_integer ? std::get<double>(big_cast(total,Type::real,values.location))
         : accumulator==Type::real ? std::get<double>(total) : static_cast<double>(std::get<std::int64_t>(total));
-    return finite(sum/static_cast<double>(count),values.location);
+    const auto result=finite(sum/static_cast<double>(count),values.location);
+    return element==Type::single ? Value{single_number(Value{result},values.location)} : Value{result};
 }
 std::shared_ptr<Aggregate> sequence_partial(Values& values,Type type,const std::shared_ptr<Aggregate>& source,const ExecutionOptions& options) {
     return sequence_composed(values,type,source,SequenceProvider::partial_sum,options);

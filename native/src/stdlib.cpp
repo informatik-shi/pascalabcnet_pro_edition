@@ -5,6 +5,7 @@
 #include "environment.hpp"
 #include "type_names.hpp"
 #include "runtime_values.hpp"
+#include "single.hpp"
 #include "termination.hpp"
 #include "disk_space.hpp"
 #include "text_file.hpp"
@@ -44,13 +45,15 @@ std::span<const Signature> signatures() {
         add("assert",{Type::boolean,Type::string,Type::integer},Type::unit,Function::assertion);
         add("assert",{Type::boolean,Type::string,Type::string},Type::unit,Function::assertion);
         add("assert",{Type::boolean,Type::string,Type::string,Type::integer},Type::unit,Function::assertion);
-        for (auto source:{Type::integer,Type::int64,Type::real,Type::word,Type::byte,Type::shortint,Type::smallint,Type::longword,Type::uint64,Type::character,Type::big_integer}) {
+        for (auto source:{Type::integer,Type::int64,Type::real,Type::word,Type::byte,Type::shortint,Type::smallint,Type::longword,Type::uint64,Type::character,Type::big_integer,Type::single}) {
+            add("single",{source},Type::single,Function::single_cast);
             add("biginteger",{source},Type::big_integer,Function::big_cast);
             for (auto name:{"real","double"}) add(name,{source},Type::real,Function::big_cast);
         }
         for (auto target:{Type::integer,Type::int64,Type::word,Type::byte,Type::shortint,Type::smallint,Type::longword,Type::uint64,Type::character})
             add(target==Type::character ? "char" : type_name(target),{Type::big_integer},target,Function::big_cast);
         add("tobiginteger",{Type::string},Type::big_integer,Function::big_parse);
+        add("$single_parse",{Type::string},Type::single,Function::str_to_single);
         add("ismatch",{Type::string,Type::string},Type::boolean,Function::regex_is_match);
         add("matchvalue",{Type::string,Type::string},Type::string,Function::regex_match_value);
         add("$big_real_divide",{Type::big_integer,Type::real},Type::real,Function::big_real_divide);
@@ -205,6 +208,10 @@ std::span<const Signature> signatures() {
             for (auto source:{Type::integer,Type::int64,Type::word,Type::character,Type::byte,Type::shortint,Type::smallint,Type::longword,Type::uint64})
                 add(type_name(target),{source},target,Function::integer_cast);
         add("integer",{Type::boolean},Type::integer,Function::integer_cast);
+        for(auto target:{Type::word,Type::byte,Type::shortint,Type::smallint,Type::integer,Type::int64,Type::longword,Type::uint64})
+            for(auto source:{Type::single,Type::real})add(type_name(target),{source},target,Function::integer_cast);
+        add("abs",{Type::single},Type::single,Function::abs);
+        for(std::size_t count=2;count<=4;++count){add("min",std::vector<Type>(count,Type::single),Type::single,Function::minimum);add("max",std::vector<Type>(count,Type::single),Type::single,Function::maximum);}
         for (auto type:{Type::integer,Type::int64,Type::word,Type::character,Type::boolean,Type::byte,Type::shortint,Type::smallint,Type::longword,Type::uint64}) {
             add("succ",{type},type,Function::successor);
             add("pred",{type},type,Function::predecessor);
@@ -316,6 +323,8 @@ std::optional<Value> constant(std::string_view name) {
         u"\n"
 #endif
     );
+    if(name=="maxsingle")return std::numeric_limits<float>::max();
+    if(name=="minsingle")return std::numeric_limits<float>::denorm_min();
     if (name == "pi") return std::numbers::pi;
     if (name == "e") return std::numbers::e;
     if (name == "maxint") return std::numeric_limits<std::int32_t>::max();
@@ -557,7 +566,13 @@ Value invoke(std::size_t id, std::span<const Value> arguments, SourceLocation lo
         if (const auto* flag=std::get_if<bool>(&value)) return std::int32_t(*flag);
         return value;
     }
+    if(function==Function::single_cast)return single_number(value,location);
+    if(signature.result==Type::single && (function==Function::minimum || function==Function::maximum)){
+        float chosen=std::get<float>(value);for(std::size_t i=1;i<arguments.size();++i){const auto next=std::get<float>(arguments[i]);if(function==Function::minimum ? next<chosen : next>chosen)chosen=next;}return chosen;
+    }
+    if(function==Function::abs && std::holds_alternative<float>(value))return std::fabs(std::get<float>(value));
     if (function==Function::integer_cast) {
+        if(std::holds_alternative<float>(value) || std::holds_alternative<double>(value))return floating_integer_cast(signature.result,value,location);
         if (wide_unsigned(signature.result)) return checked_unsigned_integer(signature.result,value,location);
         if (signature.result==Type::integer || signature.result==Type::int64) return checked_signed_integer(signature.result,value,location);
         return checked_small_integer(signature.result,integral_number(value,location,type_name(signature.result)),location);

@@ -238,6 +238,7 @@ def main():
                 ("system-services.pas", "3.2.0.1364\n0\nTrue\nTrue\nTrue\n-1 -1\n"),
                 ("halt.pas", "Завершение программы\n"),
                 ("builtin-callables.pas", "7 2500000000\n[ONE,ДВА]\n101 3.2.0.1364\n"),
+                ("single-numbers.pas", "16777216 single\n1.0000001\n1 0.33333334\n16777216\nTrue 1E-45\n3.4028235E+38 1E-45\n"),
                 ("type-names.pas", "Coordinate\narray[,] of integer\narray of integer\nsequence of integer\n[integer,string,function(integer): string]\nnil nil\n"),
                 ("real-range-random.pas", "1.5..3.5 2 True\n646184960\nTrue\nTrue\nTrue\n1..3 'a'..'c'\n"),
                 ("ordinal-ranges.pas", "1..5 5 True\n[1,2,3,4,5] [1,3,5] [5,4,3,2,1]\n[9,1,2]\n'a'..'c' {a,b,c}\n[1,2,3,4,5] 9..10\nTrue 2 [2147483647,-2147483648] {}\n"),
@@ -1564,6 +1565,21 @@ def main():
             results[-1]["native_program_environment_disk_services_and_bilingual_errors"] = "passed"
             results[-1]["native_halt_exit_codes_callbacks_and_bilingual_type_errors"] = "passed"
             results[-1]["native_catalog_callable_values_types_and_ambiguity_errors"] = "passed"
+            single_error = folder / "Число single.pas"
+            for source, code, english, russian in (
+                ("begin\n var s:single:=MaxSingle;s:=s*2;\nend.", "E_OVERFLOW", "Real overflow", "Переполнение вещественного числа"),
+                ("begin\n var s:single:=1;Writeln(s/single(0));\nend.", "E_DIV_ZERO", "Division by zero", "Деление на ноль"),
+            ):
+                single_error.write_text(source, encoding="utf-8")
+                invalid = subprocess.run([runner, "run", str(single_error)], text=True, encoding="utf-8", capture_output=True, cwd=folder, env=env, timeout=10)
+                if (invalid.returncode != 1 or code not in invalid.stderr or f"EN: {english}" not in invalid.stderr
+                        or f"RU: {russian}" not in invalid.stderr or f"{single_error}:2:" not in invalid.stderr):
+                    raise RuntimeError(f"{name} bilingual single error failed: {invalid.stderr!r}")
+            single_error.write_text("begin Writeln('must never run');var s:single:=True;end.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(single_error)], text=True, encoding="utf-8", capture_output=True, cwd=folder, env=env, timeout=10)
+            if invalid.returncode != 1 or invalid.stdout or "E_TYPE" not in invalid.stderr or "RU:" not in invalid.stderr:
+                raise RuntimeError(f"{name} single type mismatch was not rejected before output")
+            results[-1]["native_single_rounding_types_io_and_bilingual_errors"] = "passed"
             results[-1]["native_type_descriptors_names_nil_and_bilingual_errors"] = "passed"
             results[-1]["native_set_literals_empty_ranges_and_bilingual_errors"] = "passed"
             results[-1]["typed_print_extensions_streaming_and_set_mutation"] = "passed"

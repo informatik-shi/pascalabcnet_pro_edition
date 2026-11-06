@@ -23,7 +23,7 @@ enum class Function {
     text_assign, text_reset, text_rewrite, text_append, text_close, text_flush,
     text_eof, text_eoln, text_seek_eof, text_seek_eoln, text_open_read, text_open_write, text_open_append,
     text_read, text_read_line, text_read_word, text_skip_line, text_name, text_full_name, text_read_end, text_erase, text_rename,
-    windows_character, windows_ordinal, regex_is_match, regex_match_value, assertion, milliseconds, milliseconds_delta, sleep, extract_file_name, extract_file_ext, extract_file_path, extract_file_dir, extract_file_drive, expand_file_name, command_line_count, command_line_parameter, executable_name, pascal_version, disk_free, disk_size, terminate_program, reflected_type_name
+    windows_character, windows_ordinal, regex_is_match, regex_match_value, assertion, milliseconds, milliseconds_delta, sleep, extract_file_name, extract_file_ext, extract_file_path, extract_file_dir, extract_file_drive, expand_file_name, command_line_count, command_line_parameter, executable_name, pascal_version, disk_free, disk_size, terminate_program, reflected_type_name, single_cast, str_to_single
 };
 struct Signature {
     std::string_view name;
@@ -49,7 +49,7 @@ std::span<const Signature> signatures();
 std::optional<Value> constant(std::string_view name);
 Value invoke(std::size_t id, std::span<const Value> arguments, SourceLocation location, Context& context);
 std::optional<Value> invoke_text(Function function, std::span<const Value> arguments, SourceLocation location);
-std::optional<Value> try_parse_number(Type type, const Value& source, SourceLocation location);
+std::optional<Value> try_parse_number(Type type, const Value& source, SourceLocation location,bool single_groups=false,bool single_nil_zero=false);
 bool unicode_whitespace(char16_t character);
 std::pair<std::u16string,std::int32_t> read_string_word(const Value& source, std::int32_t position,
     SourceLocation location, const ExecutionOptions& options, bool skip_only=false);

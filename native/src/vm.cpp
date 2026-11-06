@@ -31,6 +31,7 @@
 #include "termination.hpp"
 #include "encoding.hpp"
 #include "type_names.hpp"
+#include "single.hpp"
 #include "enumeration.hpp"
 #include "comparable.hpp"
 #include "ini_file.hpp"
@@ -143,6 +144,7 @@ std::string format(const Value& value, const Instruction& instruction) {
     else if (const auto* small_value = std::get_if<std::int16_t>(&value)) result = std::to_chars(buffer, buffer + sizeof buffer, *small_value);
     else if (const auto* unsigned32 = std::get_if<std::uint32_t>(&value)) result = std::to_chars(buffer, buffer + sizeof buffer, *unsigned32);
     else if (const auto* unsigned64 = std::get_if<std::uint64_t>(&value)) result = std::to_chars(buffer, buffer + sizeof buffer, *unsigned64);
+    else if(std::holds_alternative<float>(value)){const std::array<Value,1> args{value};return to_utf8(std::get<std::u16string>(*stdlib::invoke_text(stdlib::Function::float_to_str,args,instruction.location)));}
     else result = std::to_chars(buffer, buffer + sizeof buffer, std::get<double>(value));
     if (result.ec != std::errc{}) trap(instruction, RuntimeError::number_format);
     return {buffer, result.ptr};
@@ -580,7 +582,7 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
         case Op::try_parse: case Op::val: {
             const auto code=instruction.op==Op::val ? std::get<std::shared_ptr<Cell>>(pop()) : std::shared_ptr<Cell>{};
             const auto target=std::get<std::shared_ptr<Cell>>(pop()); const auto source=pop();
-            const auto parsed=stdlib::try_parse_number(instruction.type,source,instruction.location);
+            const auto parsed=stdlib::try_parse_number(instruction.type,source,instruction.location,instruction.operand!=0 || static_cast<bool>(code),static_cast<bool>(code));
             if (parsed) { account_number(*parsed); values.write(target,*parsed); }
             else if (instruction.type!=Type::integer) values.write(target,values.zero(instruction.type));
             if (code) values.write(code,std::int32_t{parsed ? 0 : 1}); else stack.emplace_back(parsed.has_value());
@@ -1391,7 +1393,9 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
         case Op::store: values.write(locals[instruction.operand],pop()); break;
         case Op::convert: {
             const auto value = pop();
-            if (instruction.type==Type::big_integer && value_type(value)!=instruction.type) {
+            if(instruction.type==Type::single){stack.emplace_back(single_number(value,instruction.location));}
+            else if(value_type(value)==Type::single && instruction.type==Type::real){stack.emplace_back(static_cast<double>(std::get<float>(value)));}
+            else if (instruction.type==Type::big_integer && value_type(value)!=instruction.type) {
                 auto result=big_cast(value,instruction.type,instruction.location); account_number(result,std::span<const Value>(&value,1)); stack.push_back(std::move(result));
             } else if (value_type(value) == instruction.type) stack.push_back(value);
             else if (instruction.type==Type::string) stack.emplace_back(std::u16string(1,std::get<char16_t>(value)));
@@ -1420,7 +1424,8 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
             if (instruction.type==Type::big_integer) {
                 Value result=big_unary(instruction.op,std::get<BigInteger>(value),instruction.location,options);
                 account_number(result,std::span<const Value>(&value,1)); stack.push_back(std::move(result));
-            } else if (instruction.type == Type::integer) {
+            } else if(instruction.type==Type::single)stack.emplace_back(-std::get<float>(value));
+            else if (instruction.type == Type::integer) {
                 const auto n = std::get<std::int32_t>(value);
                 if (n == std::numeric_limits<std::int32_t>::min()) trap(instruction, RuntimeError::integer_overflow);
                 stack.emplace_back(-n);
@@ -1442,7 +1447,8 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
             if (instruction.type==Type::big_integer) {
                 Value result=big_binary(instruction.op,std::get<BigInteger>(left),std::get<BigInteger>(right),instruction.location,options);
                 const std::array<Value,2> inputs{left,right}; account_number(result,inputs); stack.push_back(std::move(result));
-            } else if (instruction.type == Type::integer) stack.emplace_back(integer_operation(
+            } else if(instruction.type==Type::single)stack.emplace_back(single_binary(instruction.op,std::get<float>(left),std::get<float>(right),instruction.location));
+            else if (instruction.type == Type::integer) stack.emplace_back(integer_operation(
                 std::get<std::int32_t>(left), std::get<std::int32_t>(right), instruction));
             else if (instruction.type == Type::int64) stack.emplace_back(integer_operation(
                 std::get<std::int64_t>(left), std::get<std::int64_t>(right), instruction));

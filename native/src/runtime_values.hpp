@@ -71,6 +71,7 @@ struct Values {
         case Type::integer: return std::int32_t{0};
         case Type::int64: return std::int64_t{0};
         case Type::real: return 0.0;
+        case Type::single: return 0.0F;
         case Type::boolean: return false;
         case Type::character: return char16_t{0};
         case Type::word: return std::uint16_t{0};

@@ -51,7 +51,7 @@ template<class T> Value parse_integer(std::u16string_view text, SourceLocation l
     return static_cast<T>(negative ? -static_cast<T>(magnitude) : static_cast<T>(magnitude));
 }
 
-double parse_decimal(std::u16string_view source, std::u16string_view separator, char16_t group, SourceLocation location, bool allow_group=true) {
+template<class Float=double> Float parse_decimal(std::u16string_view source, std::u16string_view separator, char16_t group, SourceLocation location, bool allow_group=true) {
     if (separator.empty()) throw runtime_error(RuntimeError::decimal_separator, location);
     const auto text = number_text(source, false);
     std::string normalized;
@@ -74,13 +74,14 @@ double parse_decimal(std::u16string_view source, std::u16string_view separator, 
         } else if (allow_group && !exponent && !decimal && digit && c == group) {
             // Global nfi uses '.', while NumberFormat(separator) uses ','.
             ++position;
-        } else throw runtime_error(RuntimeError::number_text, location, "real");
+        } else throw runtime_error(RuntimeError::number_text, location, (std::is_same_v<Float,float> ? "single" : "real"));
     }
-    if (!digit || (exponent && !exponent_digit)) throw runtime_error(RuntimeError::number_text, location, "real");
+    if (!digit || (exponent && !exponent_digit)) throw runtime_error(RuntimeError::number_text, location, (std::is_same_v<Float,float> ? "single" : "real"));
     auto view = std::string_view(normalized);
     if (view.starts_with('+')) view.remove_prefix(1);
-    double result = 0;
-    if (!parse_real(view, result)) {
+    Float result = 0;
+    const auto parsed=[&]{if constexpr(std::is_same_v<Float,float>)return parse_single(view,result);else return parse_real(view,result);}();
+    if (!parsed) {
         // Unlike source literals, .NET string conversion rounds tiny numbers to zero.
         auto magnitude = view;
         const bool negative = magnitude.starts_with('-');
@@ -105,8 +106,8 @@ double parse_decimal(std::u16string_view source, std::u16string_view separator, 
             ++digit_index;
         }
         if (!nonzero || power + static_cast<int>(before) - digit_index - 1 <= -324)
-            return negative ? -0.0 : 0.0;
-        throw runtime_error(RuntimeError::number_range, location, "real");
+            return negative ? -Float{0} : Float{0};
+        throw runtime_error(RuntimeError::number_range, location, (std::is_same_v<Float,float> ? "single" : "real"));
     }
     return result;
 }
@@ -116,6 +117,7 @@ std::u16string format_number(const Value& value, SourceLocation location) {
     std::to_chars_result converted;
     if (const auto* n = std::get_if<std::int32_t>(&value)) converted = std::to_chars(buffer, buffer + sizeof buffer, *n);
     else if (const auto* wide = std::get_if<std::int64_t>(&value)) converted = std::to_chars(buffer, buffer + sizeof buffer, *wide);
+    else if(const auto* single=std::get_if<float>(&value))converted=std::to_chars(buffer,buffer+sizeof buffer,*single,std::chars_format::general);
     else converted = std::to_chars(buffer, buffer + sizeof buffer, std::get<double>(value), std::chars_format::general);
     if (converted.ec != std::errc{}) throw runtime_error(RuntimeError::number_format, location);
     std::string text(buffer, converted.ptr);
@@ -125,7 +127,7 @@ std::u16string format_number(const Value& value, SourceLocation location) {
         if (digits.starts_with('+')) digits.remove_prefix(1);
         const auto parsed = std::from_chars(digits.data(), digits.data() + digits.size(), power);
         if (parsed.ec != std::errc{}) throw runtime_error(RuntimeError::number_format, location);
-        if (power >= -4 && power < 17) {
+        if (power >= -4 && power < (std::holds_alternative<float>(value) ? 9 : 17)) {
             const bool negative = text.front() == '-';
             std::string mantissa = text.substr(negative ? 1 : 0, e - (negative ? 1 : 0));
             if (const auto dot = mantissa.find('.'); dot != std::string::npos) mantissa.erase(dot, 1);
@@ -142,8 +144,9 @@ std::u16string format_number(const Value& value, SourceLocation location) {
 
 bool unicode_whitespace(char16_t character) { return unicode_space(character); }
 
-std::optional<Value> try_parse_number(Type type, const Value& source, SourceLocation location) {
+std::optional<Value> try_parse_number(Type type, const Value& source, SourceLocation location,bool single_groups,bool single_nil_zero) {
     if (std::holds_alternative<NilString>(source)) {
+        if(type==Type::single && single_nil_zero)return Value{0.0F};
         if (type==Type::integer) throw runtime_error(RuntimeError::nil_reference,location);
         return std::nullopt;
     }
@@ -153,6 +156,7 @@ std::optional<Value> try_parse_number(Type type, const Value& source, SourceLoca
         if (type==Type::integer) return parse_integer<std::int32_t>(source_text,location);
         if (type==Type::int64) return parse_integer<std::int64_t>(source_text,location);
         if (type==Type::real) return parse_decimal(source_text,u".",u',',location,false);
+        if(type==Type::single)return parse_decimal<float>(source_text,u".",u',',location,single_groups);
         if (type==Type::uint64 || type==Type::longword) {
             auto text=number_text(source_text,false);
             const bool negative=!text.empty() && text.front()==u'-';
@@ -314,6 +318,9 @@ std::optional<Value> invoke_text(Function function, std::span<const Value> argum
     }
     case Function::is_integer: case Function::is_real:
         return try_parse_number(function==Function::is_integer ? Type::integer : Type::real,arguments[0],location).has_value();
+    case Function::str_to_single:
+        if(std::holds_alternative<NilString>(arguments[0]))throw runtime_error(RuntimeError::nil_reference,location);
+        return parse_decimal<float>(string_text(arguments[0]),u".",u'.',location);
     case Function::parse_real: case Function::str_to_real: {
         if (arguments.size()==2 && string_text(arguments[1]).empty()) throw runtime_error(RuntimeError::decimal_separator,location);
         if (std::holds_alternative<NilString>(arguments[0])) {

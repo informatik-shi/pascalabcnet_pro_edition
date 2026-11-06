@@ -774,3 +774,19 @@ ordinary VM type rules. A dedicated typed operation checks input and result stac
 contracts; TypeToTypeName has a fixed public catalog signature. Runtime implementation
 identity belongs to the native closed type model, not arbitrary CLR-private classes.
 Open generic metadata, object boxing and the rest of Reflection remain future work.
+
+Native single values use an independent IEEE binary32 variant alternative and static
+Type tag; arithmetic rounds through a float result and rejects nonfinite values.
+The ordinary widening graph is acyclic. Source implicit real-to-single assignment is
+an explicit analyzer/verified conversion edge, outside overload dominance. Decimal
+strings parse directly to float (including subnormals and signed underflow zero),
+while casts from real or BigInteger retain the source rounding path. Typed public
+casts, Abs/Min/Max and the existing generic containers reuse ordinary bytecode.
+Sum/Average accumulate in double and narrow only the result; the absent source
+single Product/PartialSum overloads are rejected. Single static TryParse carries a
+verified closed parse-mode operand, distinct from PABCSystem NumberStyles.Float;
+Val(single) additionally preserves Convert.ToSingle(nil)=0 and grouped decimal text.
+No host runtime or dynamic type is introduced. Independent development-only golden
+bits/text/arithmetic and original realsingle1 are executed by the native runner.
+Shortest invariant single text is native policy; full CLR formatting/culture,
+NaN/Infinity, nullable and decimal remain outside the current profile.

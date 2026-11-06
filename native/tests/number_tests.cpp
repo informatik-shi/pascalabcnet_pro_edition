@@ -29,8 +29,19 @@ int main() {
         "1,5","nan","-nan","inf","infinity","0x1p0","0x1","1.2.3","1e2e3","1e9999","1e-9999","2e-324"}) {
         double actual=123; check(!abc::parse_real(text,actual),text);
     }
+    const std::pair<std::string_view,float> singles[]={
+        {"0",0.0F},{"-0",-0.0F},{"1.000000059604644775390625",1.0F},
+        {"1.000000059604644775390626",std::nextafter(1.0F,2.0F)},
+        {"1.40129846432481707092372958328991613e-45",std::numeric_limits<float>::denorm_min()},
+        {"7.00649232162408535461864791644958066e-46",std::numeric_limits<float>::denorm_min()},
+        {"7.00649232162408535461864791644958065e-46",0.0F},
+        {"3.40282346638528859811704183484516925440e38",std::numeric_limits<float>::max()},
+        {"1e-9999",0.0F},{"-1e-9999",-0.0F}
+    };
+    for(const auto& [text,expected]:singles){float actual=123;check(abc::parse_single(text,actual) && actual==expected && std::signbit(actual)==std::signbit(expected),text);}
+    for(const auto text:{"","-","nan","inf","0x1p0","1e39","1e9999","+1"," 1","1 ","1e-","1,5"}){float actual=0;check(!abc::parse_single(text,actual),text);}
     const std::string embedded("1\0x",3);
     double actual=123; check(!abc::parse_real(embedded,actual),"Embedded NUL");
-    std::cout<<(checks-failures)<<'/'<<checks<<" fallback real checks passed\n";
+    std::cout<<(checks-failures)<<'/'<<checks<<" fallback floating checks passed\n";
     return failures ? 1 : 0;
 }

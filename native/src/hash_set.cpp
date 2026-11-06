@@ -88,7 +88,7 @@ std::size_t hash(Work& work,const Value& value){
             if(kind==CompoundKind::sequence && v->sequence && (collection_sequence(v->sequence->provider) || v->sequence->provider==SequenceProvider::hash_set))return std::hash<const void*>{}(v->sequence->source.get());
             return std::hash<const void*>{}(v.get());
         }else if constexpr(std::is_same_v<T,std::shared_ptr<Cell>> || std::is_same_v<T,std::shared_ptr<TextFile>>)return std::hash<const void*>{}(v.get());
-        else if constexpr(std::is_same_v<T,double>)return std::isnan(v) ? 0x7ff80000U : std::hash<double>{}(v);
+        else if constexpr(std::is_floating_point_v<T>)return std::isnan(v) ? 0x7ff80000U : std::hash<T>{}(v);
         else return std::hash<T>{}(v);
     },value);
 }

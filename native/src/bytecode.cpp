@@ -2,6 +2,7 @@
 #include "stdlib.hpp"
 #include "encoding.hpp"
 #include "type_names.hpp"
+#include "single.hpp"
 #include "enumeration.hpp"
 #include "comparable.hpp"
 #include "ini_file.hpp"
@@ -282,7 +283,7 @@ private:
         case hir::ExprKind::number_conversion:
             expression(*node.left); reference(*node.right);
             for (const auto& argument:node.arguments) reference(*argument);
-            emit(node.local==0 ? Op::convert_string : node.local==1 ? Op::try_parse : Op::val,node.local==0 ? node.left->type : node.right->type,0,node.location); break;
+            emit(node.local==0 ? Op::convert_string : node.local==2 ? Op::val : Op::try_parse,node.local==0 ? node.left->type : node.right->type,node.local==3 ? 1U : 0U,node.location); break;
         case hir::ExprKind::try_read:
             reference(*node.left); expression(*node.right); emit(Op::try_read,node.left->type,0,node.location); break;
         case hir::ExprKind::type_operation:
@@ -830,7 +831,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         case Op::sequence_aggregate: case Op::sequence_partial:
             if (!compound(type) || type_info(program,type).kind!=CompoundKind::sequence || !numeric_sequence_element(type_info(program,type).element)) invalid(instruction,"Invalid numeric sequence metadata");
             if (instruction.op==Op::sequence_aggregate) {
-                if (instruction.operand>static_cast<std::size_t>(SequenceAggregate::product)) invalid(instruction,"Invalid numeric aggregate operation");
+                if (instruction.operand>static_cast<std::size_t>(SequenceAggregate::product) || (instruction.operand==static_cast<std::size_t>(SequenceAggregate::product) && type_info(program,type).element==Type::single)) invalid(instruction,"Invalid numeric aggregate operation");
             } else if (instruction.operand || !partial_sum_element(type_info(program,type).element)) invalid(instruction,"Invalid PartialSum element or flags");
             break;
         case Op::sequence_cartesian_value: case Op::sequence_zip_value: {
@@ -975,7 +976,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if ((!numeric(type) && type!=Type::string) || instruction.operand) invalid(instruction,"Invalid Str conversion");
             break;
         case Op::try_parse: case Op::val:
-            if (!numeric(type) || instruction.operand) invalid(instruction,"Invalid number parsing");
+            if (!numeric(type) || instruction.operand>1 || (instruction.operand && (type!=Type::single || instruction.op!=Op::try_parse))) invalid(instruction,"Invalid number parsing");
             break;
         case Op::try_read:
             if ((!numeric(type) && type!=Type::boolean) || instruction.operand) invalid(instruction,"Invalid typed TryRead");
@@ -1188,6 +1189,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
                 || type != value_type(program.constants[instruction.operand])) invalid(instruction, "Invalid constant");
             if(std::holds_alternative<EnumValue>(program.constants[instruction.operand]) && !enumeration(program,type))invalid(instruction,"Invalid enumeration constant");
             if(const auto* descriptor=std::get_if<ReflectedType>(&program.constants[instruction.operand]);descriptor && !reflected_type_valid(program,*descriptor))invalid(instruction,"Invalid type descriptor");
+            if(const auto* value=std::get_if<float>(&program.constants[instruction.operand]);value && !std::isfinite(*value))invalid(instruction,"Non-finite single constant");
             if (const auto* value = std::get_if<double>(&program.constants[instruction.operand]); value && !std::isfinite(*value))
                 invalid(instruction, "Non-finite real constant");
             break;
@@ -1227,7 +1229,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if (!numeric(type) || small_integer(type) || type==Type::longword) invalid(instruction, "Invalid arithmetic type");
             break;
         case Op::divide_real:
-            if (type != Type::real) invalid(instruction, "Real division requires real");
+            if (type != Type::real && type!=Type::single) invalid(instruction, "Real division requires real");
             break;
         case Op::divide_int: case Op::modulo:
             if (type != Type::integer && type != Type::int64 && type!=Type::uint64 && type!=Type::big_integer) invalid(instruction, "Integer division requires integer");
@@ -1656,10 +1658,10 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         }
         case Op::push: case Op::load: stack.push_back(instruction.type); break;
         case Op::fresh_local: case Op::store: case Op::print: require(instruction.type); break;
-        case Op::convert:
-            if (!can_widen(pop(), instruction.type)) invalid(instruction, "Invalid conversion");
+        case Op::convert: {
+            const auto source=pop();if (!can_widen(source, instruction.type) && !(source==Type::real && instruction.type==Type::single)) invalid(instruction, "Invalid conversion");
             stack.push_back(instruction.type);
-            break;
+            break; }
         case Op::negate: case Op::logical_not: case Op::bit_not: require(instruction.type); stack.push_back(instruction.type); break;
         case Op::shift_left: case Op::shift_right:
             require(Type::integer); require(instruction.type); stack.push_back(instruction.type); break;

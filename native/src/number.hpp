@@ -6,18 +6,20 @@
 #include <locale.h>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #ifdef __APPLE__
 #include <xlocale.h>
 #endif
 
 namespace abc {
 
-inline bool parse_real(std::string_view text, double& value) {
+template<class Float> inline bool parse_binary_float(std::string_view text, Float& value,bool allow_underflow=false) {
     if (text.empty() || text.front() == '+') return false;
 #ifdef ABC_HAS_FLOAT_FROM_CHARS
     const auto result = std::from_chars(text.data(), text.data() + text.size(), value);
-    return result.ec == std::errc{} && result.ptr == text.data() + text.size() && std::isfinite(value);
-#else
+    if(result.ec == std::errc{} && result.ptr == text.data() + text.size() && std::isfinite(value))return true;
+    if(!allow_underflow || result.ec!=std::errc::result_out_of_range || result.ptr!=text.data()+text.size())return false;
+#endif
     // Older libc++ releases lack floating from_chars. Use a private C locale:
     // iostream conversion on libc++ rejects representable subnormal numbers.
     std::size_t position=text.front()=='-' ? 1 : 0;
@@ -52,15 +54,16 @@ inline bool parse_real(std::string_view text, double& value) {
     const std::string terminated(text);
     char* end=nullptr;
 #ifdef _WIN32
-    const double parsed=_strtod_l(terminated.c_str(),&end,classic.handle);
+    const Float parsed=[&]{if constexpr(std::is_same_v<Float,float>)return _strtof_l(terminated.c_str(),&end,classic.handle);else return _strtod_l(terminated.c_str(),&end,classic.handle);}();
 #else
-    const double parsed=strtod_l(terminated.c_str(),&end,classic.handle);
+    const Float parsed=[&]{if constexpr(std::is_same_v<Float,float>)return strtof_l(terminated.c_str(),&end,classic.handle);else return strtod_l(terminated.c_str(),&end,classic.handle);}();
 #endif
     // ERANGE also describes valid subnormals; reject only overflow or a
     // nonzero mantissa rounded all the way to zero (source literal policy).
-    if (end!=terminated.c_str()+terminated.size() || !std::isfinite(parsed) || (parsed==0 && nonzero)) return false;
+    if (end!=terminated.c_str()+terminated.size() || !std::isfinite(parsed) || (parsed==0 && nonzero && !allow_underflow)) return false;
     value=parsed; return true;
-#endif
 }
+inline bool parse_real(std::string_view text,double& value){return parse_binary_float(text,value);}
+inline bool parse_single(std::string_view text,float& value){return parse_binary_float(text,value,true);}
 
 } // namespace abc

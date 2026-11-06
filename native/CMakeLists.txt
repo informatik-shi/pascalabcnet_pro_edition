@@ -68,6 +68,7 @@ add_library(abc_core
     src/matrix_construction.cpp
     src/list_operations.cpp
     src/timing.cpp
+    src/single.cpp
     src/type_names.cpp
     src/environment.cpp
     src/disk_space.cpp
@@ -123,6 +124,16 @@ if(BUILD_TESTING)
     add_executable(abc_big_integer_tests tests/big_integer_tests.cpp)
     target_link_libraries(abc_big_integer_tests PRIVATE abc_core)
     add_test(NAME core COMMAND abc_tests)
+    add_executable(abc_single_tests tests/single_tests.cpp)
+    target_link_libraries(abc_single_tests PRIVATE abc_core)
+    if(MSVC)
+        target_compile_options(abc_single_tests PRIVATE /utf-8)
+    endif()
+    add_test(NAME single_precision COMMAND abc_single_tests)
+    add_test(NAME single_numbers_compatibility COMMAND ${CMAKE_COMMAND}
+        "-DABC_RUNNER=$<TARGET_FILE:abc>" "-DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
+        -DABC_FIXTURE_NAME=single-numbers-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")
+    add_test(NAME original_realsingle1 COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/../TestSuite/realsingle1.pas")
     add_test(NAME cli_bilingual_diagnostics COMMAND ${CMAKE_COMMAND}
         "-DABC_RUNNER=$<TARGET_FILE:abc>" "-DABC_SOURCE=${CMAKE_CURRENT_SOURCE_DIR}/examples/sum.pas"
         -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/cli-diagnostics.cmake")

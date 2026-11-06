@@ -34,7 +34,7 @@ F8 — проверить программу. F9 — запустить.
 Ошибки выполнения показываются на английском (EN) и русском (RU),
 с кодом ошибки, строкой и столбцом исходника.
 
-Поддерживаются integer, int64, real/double, boolean, char, byte, shortint, smallint, word, longword, uint64, string,
+Поддерживаются integer, int64, single, real/double, boolean, char, byte, shortint, smallint, word, longword, uint64, string,
 динамические и двумерные прямоугольные массивы, записи, пользовательские функции и процедуры с var-параметрами,
 условия if, циклы while/for/repeat и foreach по строкам/массивам/List<T>, break/continue, базовая математика, строки, List<T>, Stack<T>, Queue<T>,
 DynArray<T>, SimpleSet<T>, AssocArray<K,V>, LinkedList<T>, LinkedListNode<T>, SingleNode<T> и текстовые файлы с выбором кодировки.
@@ -96,6 +96,7 @@ RealRange, Random2/Random3 и случайные массивы по диапа�
 Halt завершает программу с кодом 0; Halt(integer) задаёт код завершения: examples/halt.pas.
 Стандартные функции как типизированные значения: examples/builtin-callables.pas.
 Имена типов, typeof и GetType без .NET: examples/type-names.pas.
+Числа single с округлением до 32 бит, вводом и коллекциями: examples/single-numbers.pas.
 Типизированный NewSet<T>, SetOf, копирование и процедуры: examples/new-sets.pas.
 Литералы [1..4,9], EmptyCollection, ToSet и ToHashSet: examples/set-literals.pas.
 Print/Println, PrintLines(map), матрицы и Include/Exclude: examples/print-extensions.pas.

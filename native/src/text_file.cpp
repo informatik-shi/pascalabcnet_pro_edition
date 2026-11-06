@@ -204,9 +204,9 @@ Value text_read(TextFile& file, Type type, SourceLocation location) {
         if (token==u"false") return false;
         throw runtime_error(RuntimeError::number_text,location,"boolean");
     }
-    if (type==Type::real) {
+    if (type==Type::real || type==Type::single) {
         const Value argument=std::move(token);
-        return *stdlib::invoke_text(stdlib::Function::str_to_real,std::span<const Value>(&argument,1),location);
+        return *stdlib::invoke_text(type==Type::single ? stdlib::Function::str_to_single : stdlib::Function::str_to_real,std::span<const Value>(&argument,1),location);
     }
     while (!token.empty() && token.back()==0) token.pop_back();
     auto text=std::u16string_view(token);

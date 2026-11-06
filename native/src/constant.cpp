@@ -11,7 +11,7 @@ std::unique_ptr<Expr> clone_constant(const Expr& source,const std::vector<TypeIn
     case ExprKind::binary: case ExprKind::default_value: case ExprKind::conditional: break;
     case ExprKind::call: {
         const auto function=stdlib::signatures()[source.local].function;
-        if (function!=stdlib::Function::integer_cast && function!=stdlib::Function::ordinal
+        if (function!=stdlib::Function::integer_cast && function!=stdlib::Function::single_cast && function!=stdlib::Function::ordinal
             && function!=stdlib::Function::character && function!=stdlib::Function::successor
             && function!=stdlib::Function::predecessor) return {};
         break;

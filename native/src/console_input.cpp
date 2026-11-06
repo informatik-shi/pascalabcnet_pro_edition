@@ -86,8 +86,8 @@ Value ConsoleInput::read(Type type, SourceLocation location) {
     if (text.starts_with('+')) text.remove_prefix(1);
     const auto parse=[&]<class T>()->Value {
         if constexpr (std::is_floating_point_v<T>) {
-            double value=0;
-            if (!parse_real(text,value)) throw runtime_error(RuntimeError::input_real,location);
+            T value=0;const auto valid=[&]{if constexpr(std::is_same_v<T,float>)return parse_single(text,value);else return parse_real(text,value);}();
+            if (!valid) throw runtime_error(RuntimeError::input_real,location);
             return value;
         } else {
             T value{};
@@ -106,6 +106,7 @@ Value ConsoleInput::read(Type type, SourceLocation location) {
     case Type::integer: return parse.operator()<std::int32_t>();
     case Type::int64: return parse.operator()<std::int64_t>();
     case Type::real: return parse.operator()<double>();
+    case Type::single:return parse.operator()<float>();
     case Type::byte: return parse.operator()<std::uint8_t>();
     case Type::shortint: return parse.operator()<std::int8_t>();
     case Type::smallint: return parse.operator()<std::int16_t>();

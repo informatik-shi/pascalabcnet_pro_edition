@@ -24,7 +24,7 @@ std::u16string byref_name(const Program& program,Type type,Work& work){
     std::u16string name;
     switch(type){
     case Type::integer:name=u"Int32";break;case Type::int64:name=u"Int64";break;case Type::real:name=u"Double";break;
-    case Type::boolean:name=u"Boolean";break;case Type::string:name=u"String";break;case Type::character:name=u"Char";break;
+    case Type::single:name=u"Single";break;case Type::boolean:name=u"Boolean";break;case Type::string:name=u"String";break;case Type::character:name=u"Char";break;
     case Type::byte:name=u"Byte";break;case Type::shortint:name=u"SByte";break;case Type::word:name=u"UInt16";break;
     case Type::smallint:name=u"Int16";break;case Type::longword:name=u"UInt32";break;case Type::uint64:name=u"UInt64";break;
     case Type::big_integer:name=u"BigInteger";break;case Type::text_file:name=u"Text";break;
