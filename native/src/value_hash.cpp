@@ -10,6 +10,7 @@ void ValueHashWork::step(){if(done>=options.instruction_limit)throw runtime_erro
 namespace {std::size_t mix(std::size_t seed,std::size_t value){return (seed^value)*static_cast<std::size_t>(1099511628211ULL);}}
 bool value_equal(ValueHashWork& work,const Value& a,const Value& b){
     work.step();
+    if(const auto* x=std::get_if<float>(&a)){const auto y=std::get<float>(b);return *x==y || (std::isnan(*x) && std::isnan(y));}
     if(const auto* x=std::get_if<double>(&a)){const auto y=std::get<double>(b);return *x==y || (std::isnan(*x) && std::isnan(y));}
     if(const auto* x=std::get_if<std::u16string>(&a)){const auto* y=std::get_if<std::u16string>(&b);if(!y || x->size()!=y->size())return false;for(std::size_t i=0;i<x->size();++i){work.step();if((*x)[i]!=(*y)[i])return false;}return true;}
     if(const auto* x=std::get_if<std::shared_ptr<Aggregate>>(&a)){

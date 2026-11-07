@@ -1,5 +1,6 @@
 #include "type_names.hpp"
 #include "comparison.hpp"
+#include "equality.hpp"
 #include "enumeration.hpp"
 #include "runtime_values.hpp"
 #include "file_encoding.hpp"
@@ -50,6 +51,7 @@ std::u16string byref_name(const Program& program,Type type,Work& work){
         case CompoundKind::association:name=u"AssocArray";arity=2;break;case CompoundKind::linked_list:name=u"LinkedList";break;
         case CompoundKind::linked_node:name=u"LinkedListNode";break;case CompoundKind::single_node:name=u"SingleNode";break;
         case CompoundKind::sequence:name=u"IEnumerable";break;case CompoundKind::enumerator:name=u"IEnumerator";break;
+        case CompoundKind::equatable_interface:name=u"IEquatable";break;case CompoundKind::equality_comparer_interface:name=u"IEqualityComparer";break;case CompoundKind::equality_comparer:name=u"EqualityComparer";break;
         case CompoundKind::comparable_interface:name=u"IComparable";break;case CompoundKind::comparer_interface:name=u"IComparer";break;case CompoundKind::comparer:name=u"Comparer";break;
         case CompoundKind::tuple:name=u"Tuple";arity=info.fields.size();break;
         case CompoundKind::callable:name=info.element==Type::unit ? u"Action" : u"Func";arity=info.parameters.size()+(info.element==Type::unit ? 0U : 1U);break;
@@ -69,6 +71,7 @@ bool reflected_type_valid(const Program& program,const ReflectedType& type){
     if(!type.implementation)return type.source==Type::invalid;
     if(type.implementation==runtime_type_implementation)return type.target==Type::type_descriptor && type.source==Type::invalid;
     if(type.implementation>=2 && type.implementation<=6)return compound(type.target) && type_info(program,type.target).kind==CompoundKind::encoding && type.source==Type::invalid;
+    if(type.implementation>=18 && type.implementation<=21)return compound(type.target) && type_info(program,type.target).kind==CompoundKind::equality_comparer && type.source==Type::invalid && type.implementation==equality_implementation(program,type_info(program,type.target).element);
     if(type.implementation==16 || type.implementation==17)return compound(type.target) && type_info(program,type.target).kind==CompoundKind::comparer && type.source==Type::invalid;
     if(type.implementation<sequence_implementation || type.implementation>=sequence_implementation+(static_cast<unsigned>(SequenceProvider::dictionary_values)+1U)*16U)return false;
     const auto provider=static_cast<SequenceProvider>((type.implementation-sequence_implementation)/16U);
@@ -105,6 +108,7 @@ ReflectedType reflected_value_type(const Program& program,const Value& value,Typ
             const auto variant=sequence.provider==SequenceProvider::transform ? static_cast<unsigned>(sequence.transform_method) : sequence.provider==SequenceProvider::generated ? static_cast<unsigned>(sequence.generator_method) : sequence.provider==SequenceProvider::slice ? static_cast<unsigned>(sequence.slice_method) : 0U;
             return {current->type,sequence_implementation+static_cast<unsigned>(sequence.provider)*16U+variant,sequence.source ? sequence.source->type : Type::invalid};
         }
+        if(info.kind==CompoundKind::equality_comparer)return {current->type,equality_implementation(program,info.element)};
         if(info.kind==CompoundKind::comparer)return {current->type,comparer_is_default(*current) ? 16U : 17U};
         if(info.kind==CompoundKind::encoding){
             if(!current->encoding)throw runtime_error(RuntimeError::invalid_bytecode,location);
@@ -142,6 +146,7 @@ std::u16string reflected_type_name(const Program& program,const ReflectedType& t
         constexpr std::u16string_view names[]={u"UTF8Encoding",u"UnicodeEncoding",u"UTF32Encoding",u"ASCIIEncoding",u"SBCSCodePageEncoding"};text(std::u16string(names[type.implementation-2]));
     }
     else if(type.implementation==16 || type.implementation==17){text(u">");child(type_info(program,type.target).element);text(type.implementation==17 ? u"ComparisonComparer<" : default_comparable(program.types,type_info(program,type.target).element) && !enumeration(program,type_info(program,type.target).element) ? u"GenericComparer<" : u"ObjectComparer<");}
+    else if(type.implementation>=18 && type.implementation<=21){if(type.implementation==20)text(u"ByteEqualityComparer");else{text(u">");child(type_info(program,type.target).element);text(type.implementation==18 ? u"GenericEqualityComparer<" : type.implementation==19 ? u"ObjectEqualityComparer<" : u"EnumEqualityComparer<");}}
     else if(type.implementation>=sequence_implementation){if(type_info(program,type.target).kind==CompoundKind::enumerator)child(type.target);else{child(type_info(program,type.target).element);text(u"sequence of ");}}
     else child(type.target);
     while(!pending.empty()){
@@ -161,6 +166,7 @@ std::u16string reflected_type_name(const Program& program,const ReflectedType& t
                 case CompoundKind::dynarray:name=u"DynArray";break;case CompoundKind::simple_set:name=u"SimpleSet";break;case CompoundKind::hash_set:name=u"HashSet";break;
                 case CompoundKind::new_set:name=u"NewSet";break;case CompoundKind::linked_list:name=u"LinkedList";break;case CompoundKind::linked_node:name=u"LinkedListNode";break;
                 case CompoundKind::single_node:name=u"SingleNode";break;case CompoundKind::sequence:name=u"IEnumerable";break;case CompoundKind::enumerator:name=u"IEnumerator";break;
+        case CompoundKind::equatable_interface:name=u"IEquatable";break;case CompoundKind::equality_comparer_interface:name=u"IEqualityComparer";break;case CompoundKind::equality_comparer:name=u"EqualityComparer";break;
         case CompoundKind::comparable_interface:name=u"IComparable";break;case CompoundKind::comparer_interface:name=u"IComparer";break;case CompoundKind::comparer:name=u"Comparer";break;
                 case CompoundKind::record:if(key_value_pair_type(info)){name=u"KeyValuePair";for(const auto& field:info.fields)arguments.push_back(field.type);}else if(dictionary_enumerator_type(info)){name=u"Enumerator";for(const auto& field:enumerator_pair(program,info).fields)arguments.push_back(field.type);}else if(collection_enumerator_type(info)){name=u"Enumerator";arguments.push_back(info.element);}break;
                 case CompoundKind::dictionary:name=u"Dictionary";arguments.push_back(info.key);arguments.push_back(type_info(program,info.element).fields[1].type);break;
@@ -218,6 +224,7 @@ std::u16string reflected_type_name(const Program& program,const ReflectedType& t
         case CompoundKind::linked_node:name=u"LinkedListNode";break;case CompoundKind::linked_list:name=u"LinkedList";break;
         case CompoundKind::single_node:name=u"SingleNode";break;case CompoundKind::hash_set:name=u"HashSet";break;
         case CompoundKind::sequence:name=u"IEnumerable";break;case CompoundKind::enumerator:name=u"IEnumerator";break;
+        case CompoundKind::equatable_interface:name=u"IEquatable";break;case CompoundKind::equality_comparer_interface:name=u"IEqualityComparer";break;case CompoundKind::equality_comparer:name=u"EqualityComparer";break;
         case CompoundKind::comparable_interface:name=u"IComparable";break;case CompoundKind::comparer_interface:name=u"IComparer";break;case CompoundKind::comparer:name=u"Comparer";break;
         default:throw runtime_error(RuntimeError::invalid_bytecode,location);
         }

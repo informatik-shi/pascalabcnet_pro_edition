@@ -12,13 +12,15 @@ bool valid(const std::vector<TypeInfo>& types,Type type){return compound(type) &
 const TypeInfo& info(const std::vector<TypeInfo>& types,Type type){return types.at(static_cast<unsigned>(type)-64U);}
 const InterfaceImplementation* implementation(const TypeInfo& type,Type target){for(const auto& item:type.interfaces.read().implementations)if(item.target==target)return &item;return nullptr;}
 }
-bool interface_kind(const TypeInfo& type){return type.kind==CompoundKind::user_interface || type.kind==CompoundKind::enumerator || type.kind==CompoundKind::sequence || type.kind==CompoundKind::comparable_interface || type.kind==CompoundKind::comparer_interface;}
+bool interface_kind(const TypeInfo& type){return type.kind==CompoundKind::user_interface || type.kind==CompoundKind::enumerator || type.kind==CompoundKind::sequence || type.kind==CompoundKind::comparable_interface || type.kind==CompoundKind::comparer_interface || type.kind==CompoundKind::equatable_interface || type.kind==CompoundKind::equality_comparer_interface;}
 std::vector<InterfaceMember> interface_contract(const std::vector<TypeInfo>& types,Type type){
  if(!valid(types,type))return {};
  const auto& t=info(types,type);if(t.kind==CompoundKind::user_interface)return t.interfaces.read().members;
  if(t.kind==CompoundKind::sequence){for(std::size_t i=0;i<types.size();++i)if(types[i].kind==CompoundKind::enumerator && types[i].element==t.element)return {{"getenumerator",static_cast<Type>(64+i),{},InterfaceMemberKind::method}};throw Error("E_BYTECODE",{},"Invalid interface metadata");}
  if(t.kind==CompoundKind::comparable_interface)return {{"compareto",Type::integer,{{t.element,false,false}},InterfaceMemberKind::method}};
  if(t.kind==CompoundKind::comparer_interface)return {{"compare",Type::integer,{{t.element,false,false},{t.element,false,false}},InterfaceMemberKind::method}};
+ if(t.kind==CompoundKind::equatable_interface)return {{"equals",Type::boolean,{{t.element,false,false}},InterfaceMemberKind::method}};
+ if(t.kind==CompoundKind::equality_comparer_interface)return {{"equals",Type::boolean,{{t.element,false,false},{t.element,false,false}},InterfaceMemberKind::method},{"gethashcode",Type::integer,{{t.element,false,false}},InterfaceMemberKind::method}};
  if(t.kind==CompoundKind::enumerator)return {{"movenext",Type::boolean,{},InterfaceMemberKind::method},{"current",t.element,{},InterfaceMemberKind::get},{"dispose",Type::unit,{},InterfaceMemberKind::method},{"reset",Type::unit,{},InterfaceMemberKind::method}};
  return {};
 }
@@ -26,6 +28,7 @@ bool interface_compatible(const std::vector<TypeInfo>& types,Type from,Type to){
  if(!valid(types,from) || !valid(types,to) || !interface_kind(info(types,to)))return false;
  if(from==to)return true;const auto& source=info(types,from);
  if(source.kind==CompoundKind::object_class)return implementation(source,to)!=nullptr;
+ if(source.kind==CompoundKind::equality_comparer)return info(types,to).kind==CompoundKind::equality_comparer_interface && source.element==info(types,to).element;
  if(source.kind==CompoundKind::comparer)return info(types,to).kind==CompoundKind::comparer_interface && source.element==info(types,to).element;
  if(!interface_kind(source))return false;
  std::vector<Type> pending{from};std::set<Type> seen;
@@ -33,7 +36,9 @@ bool interface_compatible(const std::vector<TypeInfo>& types,Type from,Type to){
  return false;
 }
 bool interface_cast_valid(const Program& p,Type from,Type to,bool checked){
- return interface_compatible(p.types,from,to) || (checked && valid(p.types,from) && valid(p.types,to) && interface_kind(info(p.types,from)) && interface_kind(info(p.types,to)));
+ if(interface_compatible(p.types,from,to))return true;
+ if(!checked || !valid(p.types,from) || !valid(p.types,to) || !interface_kind(info(p.types,from)))return false;
+ return interface_kind(info(p.types,to)) || (info(p.types,to).kind==CompoundKind::object_class && interface_compatible(p.types,to,from));
 }
 void verify_interfaces(const Program& p){
  std::size_t names=0;
@@ -68,10 +73,11 @@ Value interface_cast(Values& values,Type from,Type to,bool checked,const Value& 
  if(!interface_cast_valid(values.program,from,to,checked))throw runtime_error(RuntimeError::invalid_bytecode,values.location);
  auto object=std::get<std::shared_ptr<Aggregate>>(value);if(!object || object->nil)return values.zero(to);
  if(object->sequence && object->sequence->provider==SequenceProvider::user_source)object=object->sequence->source;
- if(object && !object->nil && interface_compatible(values.program.types,object->type,to)){
+ if(object && !object->nil && (object->type==to || interface_compatible(values.program.types,object->type,to))){
   if(type_info(values.program,to).kind==CompoundKind::sequence){const auto key=std::make_pair(reinterpret_cast<std::uintptr_t>(object.get()),to);auto found=values.user_enumerables.find(key);if(found!=values.user_enumerables.end())if(auto cached=found->second.lock())return cached;
    auto result=sequence_create(values,to,object,SequenceProvider::user_source);values.user_enumerables[key]=result;return result;}return object;
  }
+ if(type_info(values.program,to).kind==CompoundKind::object_class)throw Error("E_CAST",values.location,"Value cannot be converted to the requested class","Нельзя преобразовать значение к заданному классу");
  throw Error("E_CAST",values.location,"Value does not implement the requested interface","Значение не реализует требуемый интерфейс");
 }
 std::size_t interface_target(Values& values,Type owner,std::size_t slot,const Value& receiver,const ExecutionOptions& options){

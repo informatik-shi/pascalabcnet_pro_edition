@@ -38,6 +38,7 @@ struct Values {
     std::shared_ptr<Aggregate> empty_collection{};
     std::vector<std::pair<Type,std::weak_ptr<Aggregate>>> empty_enumerators{};
     std::vector<std::pair<Type,std::weak_ptr<Aggregate>>> default_comparers{};
+    std::vector<std::pair<Type,std::weak_ptr<Aggregate>>> default_equalities{};
     std::size_t sequence_depth=0;
     std::map<std::pair<std::uintptr_t,Type>,std::weak_ptr<Aggregate>> user_enumerables{};
     std::size_t cleanup_depth=0;

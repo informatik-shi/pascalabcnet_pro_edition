@@ -1,0 +1,41 @@
+type
+ C=class(IEquatable<C>) public n:integer;constructor Create(v:integer);begin n:=v;end;function Equals(other:C):boolean;begin Touch('E('+Tag(Self)+','+Tag(other)+');',Self);Result:=(mode<>1) and (other<>nil) and (n=other.n);end;end;
+ N=class public n:integer;constructor Create(v:integer);begin n:=v;end;end;
+ W=class(IEquatable<C>) public n:integer;constructor Create(v:integer);begin n:=v;end;function Equals(other:C):boolean;begin Touch('W;',nil);Result:=True;end;end;
+ R=record n:integer;c:C;end;
+ INamed=interface(IEqualityComparer<C>) end;
+ Order=class(IEqualityComparer<C>) public function Equals(a,b:C):boolean;begin Touch('Q('+Tag(a)+','+Tag(b)+');',a);Result:=(mode<>1) and ((a=nil) and (b=nil) or (a<>nil) and (b<>nil) and (a.n=b.n));end;function GetHashCode(a:C):integer;begin Touch('H('+Tag(a)+');',a);Result:=if a=nil then -77 else a.n;end;end;
+ NamedOrder=class(INamed) public function Equals(a,b:C):boolean;begin Touch('N('+Tag(a)+','+Tag(b)+');',a);Result:=(mode<>1) and ((a=nil) and (b=nil) or (a<>nil) and (b<>nil) and (a.n=b.n));end;function GetHashCode(a:C):integer;begin Touch('J('+Tag(a)+');',a);Result:=if a=nil then -77 else a.n;end;end;
+var mode,calls,scenario,ai,bi:integer;
+function Tag(a:C):string:=if a=nil then 'nil' else IntToStr(a.n);
+procedure Touch(text:string;a:C);begin Write(text);calls+=1;if (mode=2) and (calls=3) then begin var zero:=0;var q:=1 div zero;end;if (mode=4) and (calls=1) and (a<>nil) then a.n+=1;end;
+function TagN(a:N):string:=if a=nil then 'nil' else IntToStr(a.n);
+function TagW(a:W):string:=if a=nil then 'nil' else IntToStr(a.n);
+function TagI(a:IEquatable<C>):string;begin Result:=Tag(C(a));end;
+function TagArray(a:array of integer):string:=if a=nil then 'nil' else IntToStr(a[0]);
+function TagRecord(a:R):string:=IntToStr(a.n)+':'+Tag(a.c);
+procedure PrintTail(x,y,z,stable,zero:boolean;ta,tb,labelText:string);
+begin Write('R',x,',',y,',',z,';H',stable,';Z',zero,';',ta,',',tb,';',labelText);end;
+function Label(text:string):string:=if Pos('ByteEqualityComparer',text)=1 then 'B' else if Pos('EnumEqualityComparer',text)=1 then 'E' else if Pos('GenericEqualityComparer',text)=1 then 'G' else 'O';
+procedure RunC(cmp:IEqualityComparer<C>;a,b:C);
+begin var x:=cmp.Equals(a,b);var h:=cmp.GetHashCode(a);var h2:=cmp.GetHashCode(a);var y:=cmp.Equals(b,a);var z:=cmp.Equals(a,a);PrintTail(x,y,z,h=h2,if Tag(a)='nil' then h=0 else True,Tag(a),Tag(b),Label(TypeName(cmp)));end;
+procedure RunN(cmp:IEqualityComparer<N>;a,b:N);
+begin var x:=cmp.Equals(a,b);var h:=cmp.GetHashCode(a);var h2:=cmp.GetHashCode(a);var y:=cmp.Equals(b,a);var z:=cmp.Equals(a,a);PrintTail(x,y,z,h=h2,if TagN(a)='nil' then h=0 else True,TagN(a),TagN(b),Label(TypeName(cmp)));end;
+procedure RunW(cmp:IEqualityComparer<W>;a,b:W);
+begin var x:=cmp.Equals(a,b);var h:=cmp.GetHashCode(a);var h2:=cmp.GetHashCode(a);var y:=cmp.Equals(b,a);var z:=cmp.Equals(a,a);PrintTail(x,y,z,h=h2,if TagW(a)='nil' then h=0 else True,TagW(a),TagW(b),Label(TypeName(cmp)));end;
+procedure RunI(cmp:IEqualityComparer<IEquatable<C>>;a,b:IEquatable<C>);
+begin var x:=cmp.Equals(a,b);var h:=cmp.GetHashCode(a);var h2:=cmp.GetHashCode(a);var y:=cmp.Equals(b,a);var z:=cmp.Equals(a,a);PrintTail(x,y,z,h=h2,if TagI(a)='nil' then h=0 else True,TagI(a),TagI(b),Label(TypeName(cmp)));end;
+procedure RunArray(cmp:IEqualityComparer<array of integer>;a,b:array of integer);
+begin var x:=cmp.Equals(a,b);var h:=cmp.GetHashCode(a);var h2:=cmp.GetHashCode(a);var y:=cmp.Equals(b,a);var z:=cmp.Equals(a,a);PrintTail(x,y,z,h=h2,if TagArray(a)='nil' then h=0 else True,TagArray(a),TagArray(b),Label(TypeName(cmp)));end;
+procedure RunRecord(cmp:IEqualityComparer<R>;a,b:R);
+begin var x:=cmp.Equals(a,b);var h:=cmp.GetHashCode(a);var h2:=cmp.GetHashCode(a);var y:=cmp.Equals(b,a);var z:=cmp.Equals(a,a);PrintTail(x,y,z,h=h2,if TagRecord(a)='nil' then h=0 else True,TagRecord(a),TagRecord(b),Label(TypeName(cmp)));end;
+begin
+ Readln(scenario,ai,bi,mode);var c0:=new C(0);var cp:=Arr(nil,c0,new C(1),c0,new C(0));var a:=cp[ai];var b:=cp[bi];
+ if (scenario=0) or (scenario=1) or (scenario=2) then begin var cmp:IEqualityComparer<C>;if scenario=0 then cmp:=EqualityComparer<C>.Default else if scenario=1 then cmp:=new Order else cmp:=new NamedOrder;if mode=3 then cmp:=nil;RunC(cmp,a,b);end;
+ if scenario=3 then begin var n0:=new N(0);var ns:=Arr(nil,n0,new N(1),n0,new N(0));var cmp:IEqualityComparer<N>:=EqualityComparer<N>.Default;if mode=3 then cmp:=nil;RunN(cmp,ns[ai],ns[bi]);end;
+ if scenario=4 then begin var w0:=new W(0);var ws:=Arr(nil,w0,new W(1),w0,new W(0));var cmp:IEqualityComparer<W>:=EqualityComparer<W>.Default;if mode=3 then cmp:=nil;RunW(cmp,ws[ai],ws[bi]);end;
+ if scenario=5 then begin var cmp:IEqualityComparer<IEquatable<C>>:=EqualityComparer<IEquatable<C>>.Default;if mode=3 then cmp:=nil;RunI(cmp,a,b);end;
+ if scenario=6 then begin var receiver:IEquatable<C>:=a;if mode=3 then receiver:=nil;var x:=receiver.Equals(b);var h:=EqualityComparer<C>.Default.GetHashCode(a);var h2:=EqualityComparer<C>.Default.GetHashCode(a);var y:=receiver.Equals(a);var z:=receiver.Equals(b);PrintTail(x,y,z,h=h2,if a=nil then h=0 else True,Tag(a),Tag(b),'D');end;
+ if scenario=7 then begin var ar0:=Arr(0);var arrays:=Arr(nil,ar0,Arr(1),ar0,Arr(0));var cmp:IEqualityComparer<array of integer>:=EqualityComparer<array of integer>.Default;if mode=3 then cmp:=nil;RunArray(cmp,arrays[ai],arrays[bi]);end;
+ if scenario=8 then begin var ra,rb:R;ra.n:=ai mod 2;ra.c:=a;rb.n:=bi mod 2;rb.c:=b;var cmp:IEqualityComparer<R>:=EqualityComparer<R>.Default;if mode=3 then cmp:=nil;RunRecord(cmp,ra,rb);end;
+end.

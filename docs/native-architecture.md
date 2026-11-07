@@ -1082,3 +1082,31 @@ Cleanup reserves are host-configurable through ExecutionOptions, with defaults
 shared one-second deadline, native-stack bound, error replacement and cancellation
 contracts remain. Large reference observers explicitly request bounded larger
 reserves; dedicated tests verify default exhaustion and configured completion.
+
+### Closed equality contracts and native default factories
+
+IEquatable<T> and IEqualityComparer<T> use the existing interface sidecar and
+canonical member slots. EqualityComparer<T>.Default reuses the native factory
+opcode with a distinct verified class kind and zero operands; no nonexistent
+Framework 4.7.2 EqualityComparer.Create surface is invented. Default caches are
+weak per execution, and live references retain identity. TypeInfo/Value/Cell
+representations are unchanged. Reflected implementation tags 18–21 describe
+generic/object/byte/enum default comparer runtime classes.
+
+Default equality consults only IEquatable<declared T>, preserves nil short
+circuits and actual same-reference calls, copies record arguments and propagates
+user errors directly. Scalar equality/hash kernels are native; Framework x64
+primitive, UTF16 legacy-string and BigInteger hashes have independent exact
+references, including noncanonical IEEE NaNs. Object/record/tuple hash layouts
+remain implementation-dependent. Single NaNs now follow Equals in the shared
+structural value-equality helper.
+
+Checked interface casts can target a compatible known object class. Verification
+proves the static class implements the source contract; runtime checks exact
+nominal identity (class inheritance remains pending), preserves nil and emits
+a bilingual class-specific E_CAST on mismatch.
+
+Independent fixtures contain 942 scalar/hash/implementation pairs and 1125
+source-level class traces, plus native signature, metadata, record, cast and
+resource checks. Collection comparer policies, Object virtual overrides, scalar
+boxing, variance and record interface methods remain separate required work.

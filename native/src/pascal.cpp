@@ -509,8 +509,8 @@ private:
             if (result->kind=="system") {
                 result->system_qualified=true; expect("."); result->kind=is("type") ? consume().text : name().text;
                 if(result->kind=="text") {expect(".");result->kind=name().text;if(result->kind!="encoding")throw Error("E_UNSUPPORTED",result->token.location,"Unknown or unsupported Encoding type");}
-                else if(result->kind=="collections"){expect(".");const auto generic=name();if(generic.text!="generic")throw Error("E_UNSUPPORTED",generic.location,"Unknown System.Collections namespace");expect(".");result->kind=name().text;if(result->kind!="dictionary" && result->kind!="keyvaluepair" && result->kind!="ienumerable" && result->kind!="ienumerator" && result->kind!="list" && result->kind!="hashset" && result->kind!="icomparer" && result->kind!="comparer")throw Error("E_UNSUPPORTED",result->token.location,"Unknown generic collection type");}
-                else if (result->kind!="func" && result->kind!="action" && result->kind!="predicate" && result->kind!="type" && result->kind!="void" && result->kind!="single" && result->kind!="icomparable")
+                else if(result->kind=="collections"){expect(".");const auto generic=name();if(generic.text!="generic")throw Error("E_UNSUPPORTED",generic.location,"Unknown System.Collections namespace");expect(".");result->kind=name().text;if(result->kind!="dictionary" && result->kind!="keyvaluepair" && result->kind!="ienumerable" && result->kind!="ienumerator" && result->kind!="list" && result->kind!="hashset" && result->kind!="icomparer" && result->kind!="comparer" && result->kind!="iequalitycomparer" && result->kind!="equalitycomparer")throw Error("E_UNSUPPORTED",result->token.location,"Unknown generic collection type");}
+                else if (result->kind!="func" && result->kind!="action" && result->kind!="predicate" && result->kind!="type" && result->kind!="void" && result->kind!="single" && result->kind!="icomparable" && result->kind!="iequatable")
                     throw Error("E_UNSUPPORTED",result->token.location,"Unknown or unsupported type 'System."+result->kind+"'");
             }
             if (result->kind=="func" || result->kind=="func0" || result->kind=="func2" || result->kind=="func3"
@@ -536,7 +536,7 @@ private:
                         if(is(".") && [&]{auto probe=lexer_;return probe.next().text=="enumerator";}()){expect(".");const auto member=name();if(member.text!="enumerator")throw Error("E_UNSUPPORTED",member.location,"Unknown Dictionary nested type");result->kind=nested.text=="keycollection" ? "dictionary_key_enumerator" : "dictionary_value_enumerator";}
                     }else throw Error("E_UNSUPPORTED",nested.location,"Unknown Dictionary nested type");
                 }
-            } else if ((result->kind=="icomparable" || result->kind=="icomparer" || result->kind=="comparer" || result->kind=="ienumerable" || result->kind=="ienumerator" || result->kind == "list" || result->kind == "hashset" || result->kind=="newset" || result->kind == "stack" || result->kind == "queue" || result->kind == "dynarray" || result->kind == "simpleset" || result->kind == "linkedlist" || result->kind == "linkedlistnode" || result->kind == "singlenode") && accept("<")) {
+            } else if ((result->kind=="icomparable" || result->kind=="icomparer" || result->kind=="comparer" || result->kind=="iequatable" || result->kind=="iequalitycomparer" || result->kind=="equalitycomparer" || result->kind=="ienumerable" || result->kind=="ienumerator" || result->kind == "list" || result->kind == "hashset" || result->kind=="newset" || result->kind == "stack" || result->kind == "queue" || result->kind == "dynarray" || result->kind == "simpleset" || result->kind == "linkedlist" || result->kind == "linkedlistnode" || result->kind == "singlenode") && accept("<")) {
                 result->named=false; result->element = type_syntax(); expect(">");
             }
         }
@@ -913,8 +913,8 @@ private:
         return postfix(std::move(result));
     }
     ABC_PASCAL_NOINLINE bool comparison_reference() const {
-        if(!is("comparer") && !is("system"))return false;
-        auto probe=lexer_;auto token=current_;if(token.text=="system"){for(const auto word:{".","collections",".","generic",".","comparer"})if(probe.next().text!=word)return false;token=probe.next();}else token=probe.next();
+        if(!is("comparer") && !is("equalitycomparer") && !is("system"))return false;
+        auto probe=lexer_;auto token=current_;if(token.text=="system"){for(const auto word:{".","collections",".","generic","."})if(probe.next().text!=word)return false;token=probe.next();if(token.text!="comparer" && token.text!="equalitycomparer")return false;token=probe.next();}else token=probe.next();
             if(token.text!="<")return false;unsigned depth=1;for(unsigned count=0;count<1024;++count){token=probe.next();if(token.kind==TokenKind::eof)return false;if(token.text=="<")++depth;else if(token.text==">" && !--depth)return probe.next().text==".";}return false;
     }
     ABC_PASCAL_NOINLINE std::unique_ptr<SyntaxExpr> prefix() {
@@ -1663,17 +1663,18 @@ private:
         for(std::size_t i=0;i<module_.types.size();++i)if(module_.types[i].kind==kind && module_.types[i].element==element)return static_cast<Type>(64+i);
         const auto key=kind==CompoundKind::comparer ? function_type(Type::integer,{{element,false,false},{element,false,false}},{}) : Type::invalid;
         if(kind==CompoundKind::comparer)(void)comparison_type(CompoundKind::comparer_interface,element);
+        if(kind==CompoundKind::equality_comparer)(void)comparison_type(CompoundKind::equality_comparer_interface,element);
         if(module_.types.size()>=1024)throw Error("E_LIMIT",{},"Type limit exceeded");
-        module_.types.push_back({kind==CompoundKind::comparer ? "comparer" : kind==CompoundKind::comparer_interface ? "icomparer" : "icomparable",kind,element,{},key});return static_cast<Type>(63+module_.types.size());
+        module_.types.push_back({kind==CompoundKind::equality_comparer ? "equalitycomparer" : kind==CompoundKind::equality_comparer_interface ? "iequalitycomparer" : kind==CompoundKind::equatable_interface ? "iequatable" : kind==CompoundKind::comparer ? "comparer" : kind==CompoundKind::comparer_interface ? "icomparer" : "icomparable",kind,element,{},key});return static_cast<Type>(63+module_.types.size());
     }
     ABC_PASCAL_NOINLINE bool bind_comparison_static(hir::Expr& result,const SyntaxExpr& source){
         const auto& base=*source.left;Type owner=Type::invalid;
         if(base.kind==SyntaxExprKind::type_reference)owner=resolve_type(*base.constructed);
         else if(base.kind==SyntaxExprKind::name && !lookup(base.token) && aliases_.contains(base.token.text))owner=aliases_.at(base.token.text);
-        if(!compound(owner) || info(owner,result.location).kind!=CompoundKind::comparer)return false;
+        if(!compound(owner) || (info(owner,result.location).kind!=CompoundKind::comparer && info(owner,result.location).kind!=CompoundKind::equality_comparer))return false;
         const auto shape=info(owner,result.location);
         if(source.token.text=="default"){if(source.kind!=SyntaxExprKind::field || !source.arguments.empty())throw Error("E_TYPE",result.location,"Comparer.Default is a property");}
-        else if(source.token.text=="create"){if(source.arguments.size()!=1)throw Error("E_TYPE",result.location,"Comparer.Create requires one comparison callback");result.arguments.push_back(convert(expression(*source.arguments[0],shape.key),shape.key));}
+        else if(source.token.text=="create" && shape.kind==CompoundKind::comparer){if(source.arguments.size()!=1)throw Error("E_TYPE",result.location,"Comparer.Create requires one comparison callback");result.arguments.push_back(convert(expression(*source.arguments[0],shape.key),shape.key));}
         else throw Error("E_NAME",result.location,"Unknown Comparer member");
         result.kind=hir::ExprKind::comparer_create;result.type=owner;result.local=result.arguments.size();return true;
     }
@@ -1918,7 +1919,7 @@ private:
             if (!imported_units_.contains("school")) throw Error("E_UNSUPPORTED",syntax.token.location,"IPv4 classes require uses School");
             return school_ip_type(syntax.kind=="addr32" ? CompoundKind::school_address : CompoundKind::school_ip);
         }
-        if((syntax.kind=="icomparable" || syntax.kind=="icomparer" || syntax.kind=="comparer") && syntax.element)return comparison_type(syntax.kind=="icomparable" ? CompoundKind::comparable_interface : syntax.kind=="icomparer" ? CompoundKind::comparer_interface : CompoundKind::comparer,resolve_type(*syntax.element));
+        if((syntax.kind=="icomparable" || syntax.kind=="icomparer" || syntax.kind=="comparer" || syntax.kind=="iequatable" || syntax.kind=="iequalitycomparer" || syntax.kind=="equalitycomparer") && syntax.element)return comparison_type(syntax.kind=="iequatable" ? CompoundKind::equatable_interface : syntax.kind=="iequalitycomparer" ? CompoundKind::equality_comparer_interface : syntax.kind=="equalitycomparer" ? CompoundKind::equality_comparer : syntax.kind=="icomparable" ? CompoundKind::comparable_interface : syntax.kind=="icomparer" ? CompoundKind::comparer_interface : CompoundKind::comparer,resolve_type(*syntax.element));
         if(syntax.kind=="ienumerator" && syntax.element)return enumerator_type(resolve_type(*syntax.element));
         if ((syntax.kind=="sequence" || syntax.kind=="ienumerable") && syntax.element) return sequence_type(CompoundKind::sequence,resolve_type(*syntax.element));
         if(syntax.kind=="intrange" || syntax.kind=="charrange")return ordinal_range_record(syntax.kind=="intrange" ? Type::integer : Type::character);
@@ -2278,7 +2279,7 @@ private:
  {
             auto type = resolve_type(*source.constructed);
             if(!source.array_construction && enumeration(type)) {if(!source.arguments.empty())throw Error("E_TYPE",result->location,"Enumeration constructor takes no arguments");result->kind=hir::ExprKind::default_value;result->type=type;break;}
-            if(!source.array_construction && compound(type) && (info(type,result->location).kind==CompoundKind::comparer || info(type,result->location).kind==CompoundKind::comparable_interface || info(type,result->location).kind==CompoundKind::comparer_interface))throw Error("E_TYPE",result->location,"An interface or abstract Comparer cannot be constructed directly");
+            if(!source.array_construction && compound(type) && (info(type,result->location).kind==CompoundKind::comparer || info(type,result->location).kind==CompoundKind::comparable_interface || info(type,result->location).kind==CompoundKind::comparer_interface || info(type,result->location).kind==CompoundKind::equality_comparer || info(type,result->location).kind==CompoundKind::equatable_interface || info(type,result->location).kind==CompoundKind::equality_comparer_interface))throw Error("E_TYPE",result->location,"An interface or abstract Comparer cannot be constructed directly");
             if(!source.array_construction && compound(type) && info(type,result->location).kind==CompoundKind::encoding)throw Error("E_TYPE",result->location,"Encoding cannot be constructed directly");
             if (type==Type::big_integer && !source.array_construction) {
                 if (source.arguments.empty()) { result->kind=hir::ExprKind::literal; result->type=type; result->value=BigInteger{}; break; }
@@ -3071,8 +3072,8 @@ private:
     }
     ABC_PASCAL_NOINLINE bool bind_callable_cast(hir::Expr& result,const SyntaxExpr& source){
         if(routine_names_.contains(source.token.text))return false;Type cast=Type::invalid;
-        if(const auto alias=aliases_.find(source.token.text);alias!=aliases_.end()){if(callable_type(alias->second) || (compound(alias->second) && (interface_kind(info(alias->second,result.location)) || info(alias->second,result.location).kind==CompoundKind::sequence)))cast=alias->second;}else if(source.token.text=="action0")cast=function_type(Type::unit,{},result.location);
-        if(cast==Type::invalid)return false;if(source.arguments.size()!=1)throw Error("E_TYPE",result.location,callable_type(cast) ? "Callable constructor requires one matching routine value" : "Interface conversion requires one value");auto input=expression(*source.arguments[0],cast);if(compound(cast) && interface_kind(info(cast,result.location)) && compound(input->type) && interface_kind(info(input->type,result.location)) && input->type!=cast)input=interface_conversion(std::move(input),cast,true);else input=convert(std::move(input),cast);result=std::move(*input);return true;
+        if(const auto alias=aliases_.find(source.token.text);alias!=aliases_.end()){if(callable_type(alias->second) || (compound(alias->second) && (interface_kind(info(alias->second,result.location)) || info(alias->second,result.location).kind==CompoundKind::sequence || info(alias->second,result.location).kind==CompoundKind::object_class)))cast=alias->second;}else if(source.token.text=="action0")cast=function_type(Type::unit,{},result.location);
+        if(cast==Type::invalid)return false;if(source.arguments.size()!=1)throw Error("E_TYPE",result.location,callable_type(cast) ? "Callable constructor requires one matching routine value" : "Interface conversion requires one value");auto input=expression(*source.arguments[0],cast);if(compound(cast) && (interface_kind(info(cast,result.location)) || info(cast,result.location).kind==CompoundKind::object_class) && compound(input->type) && interface_kind(info(input->type,result.location)) && input->type!=cast){if(info(cast,result.location).kind==CompoundKind::object_class && !interface_compatible(module_.types,cast,input->type))throw Error("E_TYPE",result.location,"The class must implement the source interface for this conversion");input=interface_conversion(std::move(input),cast,true);}else input=convert(std::move(input),cast);result=std::move(*input);return true;
     }
     ABC_PASCAL_NOINLINE std::unique_ptr<hir::Expr> bind_call_expression(const SyntaxExpr& source,Type expected,std::unique_ptr<hir::Expr> result) {
         (void)expected;
@@ -3687,7 +3688,7 @@ private:
         result->left=std::move(argument);return result;
     }
     ABC_PASCAL_NOINLINE bool bind_user_interface_member(hir::Expr& result,const SyntaxExpr& source){
-        auto owner=result.left->type;if(!compound(owner))return false;auto kind=info(owner,result.location).kind;if(kind==CompoundKind::comparer){if(source.token.text!="compare")return false;owner=comparison_type(CompoundKind::comparer_interface,info(owner,result.location).element);result.left=convert(std::move(result.left),owner);kind=CompoundKind::comparer_interface;}if(kind!=CompoundKind::user_interface && kind!=CompoundKind::comparable_interface && kind!=CompoundKind::comparer_interface)return false;const auto contract=interface_contract(module_.types,owner);
+        auto owner=result.left->type;if(!compound(owner))return false;auto kind=info(owner,result.location).kind;if(kind==CompoundKind::equality_comparer){if(source.token.text!="equals" && source.token.text!="gethashcode")return false;owner=comparison_type(CompoundKind::equality_comparer_interface,info(owner,result.location).element);result.left=convert(std::move(result.left),owner);kind=CompoundKind::equality_comparer_interface;}if(kind==CompoundKind::comparer){if(source.token.text!="compare")return false;owner=comparison_type(CompoundKind::comparer_interface,info(owner,result.location).element);result.left=convert(std::move(result.left),owner);kind=CompoundKind::comparer_interface;}if(kind!=CompoundKind::user_interface && kind!=CompoundKind::comparable_interface && kind!=CompoundKind::comparer_interface && kind!=CompoundKind::equatable_interface && kind!=CompoundKind::equality_comparer_interface)return false;const auto contract=interface_contract(module_.types,owner);
         std::optional<std::size_t> method,get,set;for(std::size_t i=0;i<contract.size();++i)if(contract[i].name==source.token.text){if(contract[i].kind==InterfaceMemberKind::method)method=i;else if(contract[i].kind==InterfaceMemberKind::get)get=i;else set=i;}
         if(get || set){if(source.kind==SyntaxExprKind::member_call || !source.arguments.empty())throw Error("E_TYPE",result.location,"Interface property is not callable");result.kind=hir::ExprKind::property_access;result.type=get ? contract[*get].result : contract[*set].parameters[0].type;result.getter=get;result.setter=set;result.operation="interface";result.operation_type=owner;return true;}
         if(!method)throw Error("E_NAME",result.location,"Unknown interface member");

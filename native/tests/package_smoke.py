@@ -244,6 +244,7 @@ def main():
                 ("user-enumerables.pas", "1\n2\nclosed\nclosed\n6\n"),
                 ("comparers.pas", "True\n25\n-5\n5\n"),
                 ("sorting.pas", "Boris: 95\nVera: 80\nAlice: 70\n[1,2,3,4,5]\n[5,4,3,2,1]\n"),
+                ("equality.pas", "True 7\nTrue\nTrue\nTrue 1\n"),
                 ("paired-sorting.pas", "[10,20,30]\n[Аня,Борис,Вера]\n[30,20,10]\n[Вера,Борис,Аня]\n"),
                 ("array-sorting.pas", "[9,1,2,3,8]\n[9,8,3,2,1]\n[1,2,3,8,9]\n"),
                 ("list-sorting.pas", "[5,4,3,2,1]\n[1,2,3,4,5]\n[5,4,3,2,1]\nFalse\n[1,2,3,4,5]\n"),
@@ -1695,6 +1696,18 @@ def main():
                         or f"EN: {english}" not in invalid.stderr or f"RU: {russian}" not in invalid.stderr or f"{paired_sort_error}:2:" not in invalid.stderr):
                     raise RuntimeError(f"{name} paired sort bilingual failure: {invalid.stdout!r} {invalid.stderr!r}")
             results[-1]["native_paired_array_sorting_and_bilingual_errors"] = "passed"
+            equality_error = folder / "Ошибки равенства.pas"
+            for source, code, english, russian in [
+                ("type C=class(IEquatable<C>) public function Equals(x:C):boolean;begin\nvar zero:=0;Result:=1 div zero=0;end;end;begin Write('before');var a:=new C;EqualityComparer<C>.Default.Equals(a,a);end.", "E_DIV_ZERO", "Division by zero", "Деление на ноль"),
+                ("type C=class(IEquatable<C>) public function Equals(x:C):boolean:=False;end;D=class(IEquatable<C>) public function Equals(x:C):boolean:=False;end;\nbegin Write('before');var x:IEquatable<C>:=new D;C(x);end.", "E_CAST", "Value cannot be converted to the requested class", "Нельзя преобразовать значение к заданному классу"),
+                ("begin\nWrite('before');var e:IEqualityComparer<integer>;e.GetHashCode(7);end.", "E_NIL", "Cannot access a nil reference", "Нельзя обратиться к пустой ссылке nil"),
+            ]:
+                equality_error.write_text(source, encoding="utf-8")
+                invalid = subprocess.run([runner, "run", str(equality_error)], text=True, encoding="utf-8", capture_output=True, cwd=folder, env=env, timeout=10)
+                if (invalid.returncode != 1 or invalid.stdout != "before" or code not in invalid.stderr
+                        or f"EN: {english}" not in invalid.stderr or f"RU: {russian}" not in invalid.stderr or f"{equality_error}:2:" not in invalid.stderr):
+                    raise RuntimeError(f"{name} equality bilingual failure: {invalid.stdout!r} {invalid.stderr!r}")
+            results[-1]["native_typed_equality_and_bilingual_errors"] = "passed"
             iterator_data = folder / "iterator-resource.txt"
             iterator_data.write_text("one\ntwo\n", encoding="utf-8")
             iterator_source = folder / "Ресурсы перечислителя.pas"

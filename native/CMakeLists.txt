@@ -33,6 +33,7 @@ add_library(abc_core
     src/enumeration.cpp
     src/comparable.cpp
     src/comparison.cpp
+    src/equality.cpp
     src/sorting.cpp
     src/ini_file.cpp
     src/compound.cpp
@@ -208,6 +209,12 @@ if(BUILD_TESTING)
     if(MSVC)
         target_compile_options(abc_paired_sorting_tests PRIVATE /utf-8)
     endif()
+    add_executable(abc_equality_tests tests/equality_tests.cpp)
+    target_link_libraries(abc_equality_tests PRIVATE abc_core)
+    if(MSVC)
+        target_compile_options(abc_equality_tests PRIVATE /utf-8)
+    endif()
+    add_test(NAME typed_equality COMMAND abc_equality_tests)
     add_test(NAME paired_sorting COMMAND abc_paired_sorting_tests)
     add_test(NAME paired_sorting_example COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/examples/paired-sorting.pas")
     add_test(NAME system_array_sorting COMMAND abc_array_sorting_tests)
