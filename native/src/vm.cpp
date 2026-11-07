@@ -72,8 +72,7 @@ __declspec(noinline) std::uintptr_t native_stack_address(){return reinterpret_ca
 #else
 __attribute__((noinline)) std::uintptr_t native_stack_address(){return reinterpret_cast<std::uintptr_t>(__builtin_frame_address(0));}
 #endif
-constexpr std::size_t native_callback_stack_limit=256*1024,native_cleanup_stack_limit=384*1024,cleanup_cell_limit=4096;
-constexpr std::uint64_t cleanup_work_limit=10'000;
+constexpr std::size_t native_callback_stack_limit=256*1024,native_cleanup_stack_limit=384*1024;
 
 [[noreturn]] void trap(const Instruction& instruction, RuntimeError id, std::string_view context = {}) {
     throw runtime_error(id, instruction.location, context);
@@ -194,7 +193,7 @@ void append_collection_text(const Program& program,std::u16string& text, const V
 static std::int32_t execute_impl(const Program& program, std::istream& input, std::ostream& output, const ExecutionOptions& requested_options, Value* constant_result) {
     auto options=requested_options;
     auto cleanup_deadline=std::chrono::steady_clock::time_point::max();bool cleanup_started=false;
-    auto cleanup_options=requested_options;cleanup_options.cancelled=[&]{return std::chrono::steady_clock::now()>=cleanup_deadline;};cleanup_options.instruction_limit=cleanup_work_limit;cleanup_options.allocation_limit=cleanup_cell_limit;
+    auto cleanup_options=requested_options;cleanup_options.cancelled=[&]{return std::chrono::steady_clock::now()>=cleanup_deadline;};cleanup_options.instruction_limit=requested_options.cleanup_instruction_limit;cleanup_options.allocation_limit=requested_options.cleanup_allocation_limit;
     const auto stack_origin=native_stack_address();
     try { verify(program); }
     catch (const Error& error) {
@@ -233,7 +232,7 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
     std::vector<Value> stack;
     std::uint64_t steps = 0,cleanup_steps=0;
     // Keep a bounded reserve for user finally code after the normal budget expires.
-    std::size_t cleanup_cells=cleanup_cell_limit,cleanup_storage=cleanup_cell_limit;
+    std::size_t cleanup_cells=requested_options.cleanup_allocation_limit,cleanup_storage=requested_options.cleanup_allocation_limit;
     values.cleanup_mode=[&](bool enter){if(enter && !cleanup_started){cleanup_started=true;cleanup_deadline=std::chrono::steady_clock::now()+std::chrono::seconds{1};}std::swap(options,cleanup_options);std::swap(values.remaining,cleanup_cells);std::swap(values.list_storage_remaining,cleanup_storage);};
     ConsoleOutput console_output(output,options);
     auto write = [&](std::u16string_view text, const Instruction& instruction) {
@@ -1253,7 +1252,7 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
         case Op::sort_call: {
             const bool has_callback=sort_callback(instruction.operand)!=Type::invalid;auto callback=has_callback ? pop() : Value{std::int32_t{0}};
             const bool range=(instruction.operand&sort_range)!=0;const auto count=range ? std::get<std::int32_t>(pop()) : -1,index=range ? std::get<std::int32_t>(pop()) : 0;
-            auto array=pop();sort_array(values,instruction.type,instruction.operand,array,has_callback ? &callback : nullptr,options,index,count);break;
+            auto items=sort_paired(instruction.operand) ? pop() : Value{std::int32_t{0}};auto array=pop();sort_array(values,instruction.type,instruction.operand,array,has_callback ? &callback : nullptr,options,index,count,sort_paired(instruction.operand) ? &items : nullptr);break;
         }
         case Op::sequence_sort: {
             auto source=pop();const auto code=(type_info(program,instruction.type).element==Type::string ? static_cast<unsigned>(SortMethod::ordinal_order) : 0U)|(instruction.operand ? sort_descending : 0U);sort_array(values,instruction.type,code,source,nullptr,options);break;

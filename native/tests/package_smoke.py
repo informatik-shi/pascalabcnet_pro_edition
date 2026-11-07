@@ -244,6 +244,7 @@ def main():
                 ("user-enumerables.pas", "1\n2\nclosed\nclosed\n6\n"),
                 ("comparers.pas", "True\n25\n-5\n5\n"),
                 ("sorting.pas", "Boris: 95\nVera: 80\nAlice: 70\n[1,2,3,4,5]\n[5,4,3,2,1]\n"),
+                ("paired-sorting.pas", "[10,20,30]\n[Аня,Борис,Вера]\n[30,20,10]\n[Вера,Борис,Аня]\n"),
                 ("array-sorting.pas", "[9,1,2,3,8]\n[9,8,3,2,1]\n[1,2,3,8,9]\n"),
                 ("list-sorting.pas", "[5,4,3,2,1]\n[1,2,3,4,5]\n[5,4,3,2,1]\nFalse\n[1,2,3,4,5]\n"),
                 ("enumerator-interfaces.pas", "10 20\n30\n1 2\n1\n2\n4\nFalse\n"),
@@ -1683,6 +1684,17 @@ def main():
                         or f"EN: {english}" not in invalid.stderr or f"RU: {russian}" not in invalid.stderr or f"{system_sort_error}:2:" not in invalid.stderr):
                     raise RuntimeError(f"{name} System.Array sort bilingual failure: {invalid.stdout!r} {invalid.stderr!r}")
             results[-1]["native_system_array_sorting_and_bilingual_errors"] = "passed"
+            paired_sort_error = folder / "Ошибки парных массивов.pas"
+            for source, code, english, russian in [
+                ("begin\nWrite('before');Array.Sort(Arr(2,1),new string[0]);end.", "E_RANGE", "Array sort range exceeds the array length", "Диапазон сортировки выходит за границы массива"),
+                ("begin\nWrite('before');var zero:=0;Array.Sort(Arr(2,1),Arr('b','a'),Comparer<integer>.Create((a,b)->1 div zero));end.", "E_SORT", "Failed to compare two elements in the array: Division by zero", "Не удалось сравнить два элемента массива: Деление на ноль"),
+            ]:
+                paired_sort_error.write_text(source, encoding="utf-8")
+                invalid = subprocess.run([runner, "run", str(paired_sort_error)], text=True, encoding="utf-8", capture_output=True, cwd=folder, env=env, timeout=10)
+                if (invalid.returncode != 1 or invalid.stdout != "before" or code not in invalid.stderr
+                        or f"EN: {english}" not in invalid.stderr or f"RU: {russian}" not in invalid.stderr or f"{paired_sort_error}:2:" not in invalid.stderr):
+                    raise RuntimeError(f"{name} paired sort bilingual failure: {invalid.stdout!r} {invalid.stderr!r}")
+            results[-1]["native_paired_array_sorting_and_bilingual_errors"] = "passed"
             iterator_data = folder / "iterator-resource.txt"
             iterator_data.write_text("one\ntwo\n", encoding="utf-8")
             iterator_source = folder / "Ресурсы перечислителя.pas"

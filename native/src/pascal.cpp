@@ -4087,22 +4087,33 @@ private:
     }
     ABC_PASCAL_NOINLINE bool bind_system_array_sort(hir::Expr& result,const SyntaxExpr& source,std::span<const Type> declared={}){
         if(!source.left || !array_type_name(*source.left) || source.token.text!="sort")return false;
-        const auto count=source.arguments.size();if(count<1 || count>4 || declared.size()>1)throw Error("E_TYPE",result.location,"System.Array.Sort requires a supported closed array overload");
-        auto receiver=expression(*source.arguments[0]);const auto owner=receiver->type;
+        const auto count=source.arguments.size();if(count<1 || count>5 || declared.size()>2)throw Error("E_TYPE",result.location,"System.Array.Sort requires a supported closed array overload");
+        const auto context=declared.empty() ? Type::invalid : sequence_type(CompoundKind::array,declared[0]);
+        auto receiver=expression(*source.arguments[0],context);if(receiver->type==Type::nil && context!=Type::invalid)receiver=convert(std::move(receiver),context);const auto owner=receiver->type;
         if(!compound(owner) || info(owner,result.location).kind!=CompoundKind::array || info(owner,result.location).rank!=1)throw Error("E_TYPE",result.location,"System.Array.Sort requires a rank-one array");
         const auto element=info(owner,result.location).element;if(!declared.empty() && declared[0]!=element)throw Error("E_TYPE",result.location,"System.Array.Sort explicit type must match the array element");
+        std::unique_ptr<hir::Expr> second;
+        if(count>=2){const auto& syntax=*source.arguments[1];if(syntax.kind!=SyntaxExprKind::lambda && !(syntax.kind==SyntaxExprKind::name && !lookup(syntax.token) && !routine_names_.contains(syntax.token.text)))second=expression(syntax,declared.size()==2 ? sequence_type(CompoundKind::array,declared[1]) : Type::invalid);}
+        const bool pair=declared.size()==2 || count==5 || (second && compound(second->type) && info(second->type,result.location).kind==CompoundKind::array);
         std::size_t code=static_cast<unsigned>(SortMethod::system_default);
-        if(count>=3){
-            code|=sort_range;result.arguments.push_back(convert(expression(*source.arguments[1],Type::integer),Type::integer));result.arguments.push_back(convert(expression(*source.arguments[2],Type::integer),Type::integer));
+        if(pair){
+            if(count<2 || declared.size()==1 || !second)throw Error("E_TYPE",result.location,"Paired Array.Sort requires two known array types");
+            if(second->type==Type::nil && declared.size()==2)second=convert(std::move(second),sequence_type(CompoundKind::array,declared[1]));const auto items=second->type;
+            if(!compound(items) || info(items,result.location).kind!=CompoundKind::array || info(items,result.location).rank!=1 || (declared.size()==2 && info(items,result.location).element!=declared[1]))throw Error("E_TYPE",result.location,"Paired Array.Sort requires a matching rank-one item array");
+            code=static_cast<unsigned>(SortMethod::system_pair_default)|(static_cast<std::size_t>(items)<<20U);result.arguments.push_back(std::move(second));
+            if(count>=4){code|=sort_range;result.arguments.push_back(convert(expression(*source.arguments[2],Type::integer),Type::integer));result.arguments.push_back(convert(expression(*source.arguments[3],Type::integer),Type::integer));}
+            if(count==3 || count==5){const auto order=comparison_type(CompoundKind::comparer_interface,element);result.right=convert(expression(*source.arguments[count-1],order),order);code=(code&~std::size_t{15})|static_cast<unsigned>(SortMethod::system_pair_comparer)|(static_cast<std::size_t>(order)<<8U);}
+        }else if(count>=3){
+            if(count>4 || !second)throw Error("E_TYPE",result.location,"Array.Sort range requires an index and count");
+            code|=sort_range;result.arguments.push_back(convert(std::move(second),Type::integer));result.arguments.push_back(convert(expression(*source.arguments[2],Type::integer),Type::integer));
             if(count==4){const auto order=comparison_type(CompoundKind::comparer_interface,element);result.right=convert(expression(*source.arguments[3],order),order);code=(code&~std::size_t{15})|static_cast<unsigned>(SortMethod::system_comparer)|(static_cast<std::size_t>(order)<<8U);}
         }else if(count==2){
-            const auto& syntax=*source.arguments[1];std::unique_ptr<hir::Expr> value;
-            if(syntax.kind!=SyntaxExprKind::lambda && !(syntax.kind==SyntaxExprKind::name && !lookup(syntax.token) && !routine_names_.contains(syntax.token.text)))value=expression(syntax);
-            if(value && !callable_type(value->type)){
-                if(value->type==Type::nil)throw Error("E_TYPE",result.location,"System.Array.Sort requires a typed comparison or comparer");
-                const auto order=comparison_type(CompoundKind::comparer_interface,element);result.right=convert(std::move(value),order);code=static_cast<unsigned>(SortMethod::system_comparer)|(static_cast<std::size_t>(order)<<8U);
+            const auto& syntax=*source.arguments[1];
+            if(second && !callable_type(second->type)){
+                if(second->type==Type::nil)throw Error("E_TYPE",result.location,"System.Array.Sort requires a typed comparison or comparer");
+                const auto order=comparison_type(CompoundKind::comparer_interface,element);result.right=convert(std::move(second),order);code=static_cast<unsigned>(SortMethod::system_comparer)|(static_cast<std::size_t>(order)<<8U);
             }else{
-                auto callback=value ? library_callback_value(std::move(value)) : library_callback(syntax,{element,element});
+                auto callback=second ? library_callback_value(std::move(second)) : library_callback(syntax,{element,element});
                 if(callback.signature.result!=Type::integer || callback.signature.parameters.size()!=2 || std::any_of(callback.signature.parameters.begin(),callback.signature.parameters.end(),[&](const auto& parameter){return parameter.type!=element || parameter.by_reference || parameter.variadic;}))throw Error("E_TYPE",result.location,"System.Array.Sort comparison must accept two elements and return integer");
                 result.right=callback.value ? std::move(callback.value) : routine_value(*callback.named,result.location);code=static_cast<unsigned>(SortMethod::system_comparison)|(static_cast<std::size_t>(result.right->type)<<8U);
             }

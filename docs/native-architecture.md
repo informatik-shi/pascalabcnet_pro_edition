@@ -985,8 +985,8 @@ binding accepts a lightweight span instead of a temporary type vector.
 
 List callback/backing mutation, var key selectors and List comparer/range
 overloads are now implemented as described below. Typed System.Array comparer/range
-overloads are implemented in the following section; public paired key/item overloads
-remain separate work. No bin/Lib unit is marked complete by sorting.
+overloads and public typed paired key/item overloads are implemented below.
+No bin/Lib unit is marked complete by sorting.
 
 
 ### Physical List storage and typed List sorting
@@ -1048,4 +1048,37 @@ A dedicated Framework 4.7.2 oracle has 3791 exact executions covering 11
 overload scenarios, sizes around insertion/introsort boundaries, nils, reversed
 orders, partial states/faults, mutations and external receiver replacement,
 225 boundary ranges and two independently confirmed heap fallbacks. Paired
-public key/item overloads and nongeneric/boxed Array APIs remain pending.
+public key/item overloads are implemented below. Nongeneric/boxed Array APIs remain pending.
+
+### Public paired Array.Sort and primitive CLR fast path
+
+The sort operand packs flags/method in eight bits, callback type in twelve bits
+and optional closed item-array type in twelve bits. The compiler type limit
+keeps IDs below 4096; verification rejects primitive/invalid callback payloads,
+unknown or non-array item types, illegal flags and excess high bits. Stack
+forms are keys, items, optional index/count, optional comparer, preserving
+once-only source argument evaluation and captured array identities.
+
+Paired moves/swaps write keys before reading/writing items, rather than treating
+a key/item pair as an atomic swap. This preserves same-array aliasing, retained
+record copies, callback mutations and partially written failures. Item accesses
+remain checked when inconsistent comparers escape the selected range.
+
+Matching primitive or nominal-enum items (or nil items) with Default comparison
+use CLR native-helper behavior: bounded pivot scans, selected-range depth,
+heap ties and NaN prepass with IEEE relational comparisons. Nonmatching item
+types, user comparers and nonprimitive keys keep the Framework managed helper.
+Default List and internal key sorts share this selection where applicable.
+
+Independent Framework fixtures cover 13101 class executions, 846 primitive
+key/payload executions, 704 exact binary32/binary64 states and 154 nominal-enum
+executions. Floating tests invoke the typed native sorting ABI using compiler
+verified metadata and inspect bits, without inventing source BitConverter APIs.
+User Dispose observers retain complete post-fault states in source-level tests.
+This does not add general source try/finally support.
+
+Cleanup reserves are host-configurable through ExecutionOptions, with defaults
+10000 instructions/4096 cells and list positions unchanged. The existing
+shared one-second deadline, native-stack bound, error replacement and cancellation
+contracts remain. Large reference observers explicitly request bounded larger
+reserves; dedicated tests verify default exhaustion and configured completion.

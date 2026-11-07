@@ -539,6 +539,9 @@ struct ExecutionOptions {
     std::size_t call_limit = 128;
     std::vector<std::u16string> arguments;
     std::u16string executable_name;
+    // Separate bounded reserve for user Dispose during fault unwinding.
+    std::uint64_t cleanup_instruction_limit = 10'000;
+    std::size_t cleanup_allocation_limit = 4096;
 };
 
 // Returns the native program exit code; Halt stops this execution, not the host.

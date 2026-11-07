@@ -37,5 +37,5 @@ and bilingual errors. Limits/cancellation remain native diagnostic categories.
 Primary source contracts: Framework reference-source
 [Array](https://github.com/microsoft/referencesource/blob/main/mscorlib/system/array.cs)
 and [ArraySortHelper](https://github.com/microsoft/referencesource/blob/main/mscorlib/system/collections/generic/arraysorthelper.cs).
-Paired public key/item Array.Sort, nongeneric/boxed Array APIs and full library
-migration remain pending. No bin/Lib unit is marked complete by this step.
+Paired public key/item Array.Sort is now covered by paired-sorting-reference.md.
+Nongeneric/boxed Array APIs and full library migration remain pending. No bin/Lib unit is marked complete by this step.
