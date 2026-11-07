@@ -1,5 +1,6 @@
 #include "hash_set.hpp"
 #include "value_hash.hpp"
+#include "equality.hpp"
 #include "ordinal_range.hpp"
 #include "real_interval.hpp"
 #include "runtime_values.hpp"
@@ -22,8 +23,9 @@ Type array_type(const std::vector<TypeInfo>& types,Type element){for(std::size_t
 }
 bool hash_set_sequence_method(HashSetMethod method){return sequence_method(method);}
 bool hash_set_signature(const Program& p,Type owner,Type sequence,HashSetMethod m){
-    if(m>HashSetMethod::copy_value || !compound(owner) || static_cast<unsigned>(owner)-64U>=p.types.size() || type_info(p,owner).kind!=CompoundKind::hash_set)return false;
+    if(m>HashSetMethod::comparer || !compound(owner) || static_cast<unsigned>(owner)-64U>=p.types.size() || type_info(p,owner).kind!=CompoundKind::hash_set)return false;
     const auto element=type_info(p,owner).element;
+    if(m==HashSetMethod::construct_comparer || m==HashSetMethod::construct_sequence_comparer || m==HashSetMethod::comparer)return compound(sequence) && valid_value_type(p,sequence) && type_info(p,sequence).kind==CompoundKind::equality_comparer_interface && type_info(p,sequence).element==element;
     if(m==HashSetMethod::remove_where){
         if(!compound(sequence) || static_cast<unsigned>(sequence)-64U>=p.types.size())return false;
         const auto& callback=type_info(p,sequence);
@@ -34,6 +36,9 @@ bool hash_set_signature(const Program& p,Type owner,Type sequence,HashSetMethod 
     return compound(sequence) && static_cast<unsigned>(sequence)-64U<p.types.size() && type_info(p,sequence).kind==CompoundKind::sequence && type_info(p,sequence).element==type_info(p,owner).element;
 }
 std::vector<Type> hash_set_parameters(const std::vector<TypeInfo>& types,Type owner,Type sequence,HashSetMethod m){
+    if(m==HashSetMethod::construct_comparer)return {sequence};
+    if(m==HashSetMethod::construct_sequence_comparer)return {info(types,owner).key,sequence};
+    if(m==HashSetMethod::comparer)return {owner};
     if(m==HashSetMethod::construct)return {};
     if(m==HashSetMethod::construct_sequence)return {sequence};
     if(m==HashSetMethod::construct_copy)return {owner};
@@ -48,7 +53,9 @@ std::vector<Type> hash_set_parameters(const std::vector<TypeInfo>& types,Type ow
     else result.push_back(owner);
     return result;
 }
-Type hash_set_result(Type owner,HashSetMethod m){
+Type hash_set_result(Type owner,HashSetMethod m,Type payload){
+    if(m==HashSetMethod::comparer)return payload;
+    if(m==HashSetMethod::construct_comparer || m==HashSetMethod::construct_sequence_comparer)return owner;
     if(m<=HashSetMethod::construct_copy || m==HashSetMethod::copy_value || (m>=HashSetMethod::unite && m<=HashSetMethod::remove_copy))return owner;
     if(m==HashSetMethod::count || m==HashSetMethod::remove_where)return Type::integer;
     if((m>=HashSetMethod::copy_array && m<=HashSetMethod::copy_count) || m==HashSetMethod::trim_excess || m==HashSetMethod::clear || (m>=HashSetMethod::union_with && m<=HashSetMethod::symmetric_with) || hash_set_reference(m))return Type::unit;
@@ -62,41 +69,61 @@ std::size_t prime(std::size_t minimum){
     for(const auto n:table)if(n>=minimum)return n;
     throw std::length_error("HashSet storage limit");
 }
-void reserve(const std::shared_ptr<Aggregate>& set,std::size_t size){set->items.reserve(size);set->hash_set->hashes.reserve(size);set->hash_set->free.reserve(size);set->hash_set->capacity=size;}
 constexpr auto absent=std::numeric_limits<std::size_t>::max();
-std::size_t find(Work& work,const std::shared_ptr<Aggregate>& set,const Value& item,std::size_t code){
-    const auto range=set->hash_set->lookup.equal_range(code);
-    for(auto it=range.first;it!=range.second;++it){work.step();if(value_equal(work,set->items[it->second]->value,item))return it->second;}
-    return absent;
+Type element(Work& work,const std::shared_ptr<Aggregate>& set){return type_info(work.values.program,set->type).element;}
+bool null_item(const Value& v){if(std::holds_alternative<NilString>(v))return true;if(const auto* p=std::get_if<std::shared_ptr<Aggregate>>(&v))return !*p || (*p)->nil;if(const auto* p=std::get_if<std::shared_ptr<TextFile>>(&v))return !*p;if(const auto* p=std::get_if<ReflectedType>(&v))return p->target==Type::invalid;return false;}
+std::size_t hash(Work& work,const std::shared_ptr<Aggregate>& set,const Value& value){work.step();return null_item(value) ? 0U : static_cast<std::uint32_t>(equality_policy_hash(work.values,element(work,set),set->hash_set->comparer,value,work.options))&0x7fffffffU;}
+bool same_policy(Work& work,const std::shared_ptr<Aggregate>& a,const std::shared_ptr<Aggregate>& b){return equality_policy_same(work.values.program,a->hash_set->comparer,b->hash_set->comparer);}
+std::shared_ptr<Cell> physical(Work& work,const std::shared_ptr<Aggregate>& set,std::size_t index){auto& state=*set->hash_set;if(!state.capacity)throw runtime_error(RuntimeError::nil_reference,work.values.location);if(index>=state.slots.size())throw runtime_error(RuntimeError::index_bounds,work.values.location);auto& cell=state.slots[index];if(!cell)cell=work.values.cell(element(work,set),work.values.zero(element(work,set),false,true));return cell;}
+std::int32_t& bucket_at(Work& work,const std::shared_ptr<Aggregate>& set,std::size_t index){auto& buckets=set->hash_set->buckets;if(buckets.empty())throw runtime_error(RuntimeError::nil_reference,work.values.location);if(index>=buckets.size())throw runtime_error(RuntimeError::index_bounds,work.values.location);return buckets[index];}
+std::int32_t next_at(Work& work,const std::shared_ptr<Aggregate>& set,std::size_t index){(void)physical(work,set,index);return set->hash_set->next[index];}
+void reserve(Work& work,const std::shared_ptr<Aggregate>& set,std::size_t size){
+ auto& state=*set->hash_set;if(size<static_cast<std::size_t>(state.last_index) || size>INT32_MAX || size>work.values.list_storage_remaining)throw runtime_error(RuntimeError::allocation_limit,work.values.location);
+ std::vector<std::shared_ptr<Cell>> cells(size);std::vector<std::int32_t> codes(size),next(size),buckets(size);
+ for(std::size_t i=0;i<static_cast<std::size_t>(state.last_index);++i){work.step();codes[i]=state.codes[i];next[i]=state.next[i];if(state.slots[i])cells[i]=work.values.cell(element(work,set),work.values.copy(state.slots[i]->value));if(codes[i]>=0){const auto bucket=static_cast<std::size_t>(codes[i])%size;next[i]=buckets[bucket]-1;buckets[bucket]=static_cast<std::int32_t>(i+1);}}
+ set->items.reserve(size);state.slots=std::move(cells);state.codes=std::move(codes);state.next=std::move(next);state.buckets=std::move(buckets);state.capacity=size;set->items.resize(static_cast<std::size_t>(state.last_index));for(std::size_t i=0;i<set->items.size();++i)set->items[i]=state.codes[i]>=0 ? state.slots[i] : nullptr;work.values.list_storage_remaining-=size;
 }
-std::size_t find(Work& work,const std::shared_ptr<Aggregate>& set,const Value& item){return find(work,set,item,value_hash(work,item));}
+std::size_t bucket(Work& work,const std::shared_ptr<Aggregate>& set,std::size_t code){if(set->hash_set->buckets.empty())throw runtime_error(RuntimeError::nil_reference,work.values.location);return code%set->hash_set->buckets.size();}
+bool matches(Work& work,const std::shared_ptr<Aggregate>& set,std::size_t index,const Value& value,std::size_t code){auto cell=physical(work,set,index);return set->hash_set->codes[index]==static_cast<std::int32_t>(code) && equality_policy_value(work.values,element(work,set),set->hash_set->comparer,cell->value,value,work.options);}
+std::size_t find(Work& work,const std::shared_ptr<Aggregate>& set,const Value& item,std::size_t code){
+ const auto start=bucket(work,set,code);for(auto i=bucket_at(work,set,start)-1;i>=0;i=next_at(work,set,static_cast<std::size_t>(i))){work.step();if(matches(work,set,static_cast<std::size_t>(i),item,code))return static_cast<std::size_t>(i);}return absent;
+}
+std::size_t find(Work& work,const std::shared_ptr<Aggregate>& set,const Value& item){if(set->hash_set->buckets.empty())return absent;return find(work,set,item,hash(work,set,item));}
 std::pair<bool,std::size_t> add(Work& work,const std::shared_ptr<Aggregate>& set,const Value& item){
-    const auto code=value_hash(work,item),found=find(work,set,item,code);if(found!=absent)return {false,found};
-    auto& state=*set->hash_set;const bool reuse=!state.free.empty();const auto slot=reuse ? state.free.back() : set->items.size();
-    if(!reuse && slot>=state.capacity)reserve(set,prime(state.capacity ? state.capacity*2 : 0));
-    auto cell=work.values.cell(type_info(work.values.program,set->type).element,work.values.copy(item));
-    state.lookup.emplace(code,slot);
-    if(reuse){state.free.pop_back();set->items[slot]=std::move(cell);state.hashes[slot]=code;}
-    else{set->items.push_back(std::move(cell));state.hashes.push_back(code);}
-    ++set->count;++set->version;return {true,slot};
+ auto& state=*set->hash_set;if(state.buckets.empty())reserve(work,set,prime(0));const auto code=hash(work,set,item);auto destination=bucket(work,set,code);const auto found=find(work,set,item,code);if(found!=absent)return {false,found};
+ std::int32_t index;std::shared_ptr<Cell> cell;
+ if(state.free_head>=0){index=state.free_head;cell=physical(work,set,static_cast<std::size_t>(index));state.free_head=next_at(work,set,static_cast<std::size_t>(index));}
+ else{if(static_cast<std::size_t>(state.last_index)==state.slots.size()){reserve(work,set,prime(set->count*2));destination=bucket(work,set,code);}index=state.last_index;cell=physical(work,set,static_cast<std::size_t>(index));++state.last_index;set->items.resize(static_cast<std::size_t>(state.last_index));}
+ state.codes[static_cast<std::size_t>(index)]=static_cast<std::int32_t>(code);work.values.write(cell,item,false);state.next[static_cast<std::size_t>(index)]=bucket_at(work,set,destination)-1;bucket_at(work,set,destination)=index+1;
+ if(static_cast<std::size_t>(index)<set->items.size())set->items[static_cast<std::size_t>(index)]=cell;++set->count;++set->version;return {true,static_cast<std::size_t>(index)};
 }
 bool remove(Work& work,const std::shared_ptr<Aggregate>& set,const Value& item){
-    const auto code=value_hash(work,item),slot=find(work,set,item,code);if(slot==absent)return false;
-    auto& state=*set->hash_set;const auto range=state.lookup.equal_range(code);for(auto it=range.first;it!=range.second;++it)if(it->second==slot){state.lookup.erase(it);break;}
-    set->items[slot].reset();--set->count;++set->version;
-    if(!set->count){set->items.clear();state.hashes.clear();state.free.clear();}else state.free.push_back(slot);
-    return true;
+ auto& state=*set->hash_set;if(state.buckets.empty())return false;const auto code=hash(work,set,item),destination=bucket(work,set,code);std::int32_t last=-1;
+ for(auto i=bucket_at(work,set,destination)-1;i>=0;last=i,i=next_at(work,set,static_cast<std::size_t>(i))){work.step();const auto index=static_cast<std::size_t>(i);if(!matches(work,set,index,item,code))continue;
+  if(last<0)bucket_at(work,set,destination)=next_at(work,set,index)+1;else{(void)physical(work,set,static_cast<std::size_t>(last));state.next[static_cast<std::size_t>(last)]=next_at(work,set,index);}
+  state.codes[index]=-1;work.values.write(physical(work,set,index),work.values.zero(element(work,set),false,true),false);state.next[index]=state.free_head;if(index<set->items.size())set->items[index].reset();--set->count;++set->version;
+  if(!set->count){state.last_index=0;state.free_head=-1;set->items.clear();}else state.free_head=i;return true;
+ }return false;
 }
-void clear(const std::shared_ptr<Aggregate>& set){set->items.clear();set->hash_set->hashes.clear();set->hash_set->free.clear();set->hash_set->lookup.clear();set->count=0;++set->version;}
-std::shared_ptr<Aggregate> copy(Work& work,Type owner,const std::shared_ptr<Aggregate>& source){
-    auto result=std::get<std::shared_ptr<Aggregate>>(work.values.zero(owner,true));if(!source->count)return result;
-    const auto capacity=source->hash_set->capacity;const bool clone=prime((source->count+1)*2)>=capacity;
-    reserve(result,clone ? capacity : prime(source->count));
-    if(clone){result->hash_set->free=source->hash_set->free;result->hash_set->hashes=source->hash_set->hashes;
-        for(std::size_t i=0;i<source->items.size();++i){work.step();const auto& cell=source->items[i];if(cell){result->items.push_back(work.values.cell(cell->type,work.values.copy(cell->value)));result->hash_set->lookup.emplace(source->hash_set->hashes[i],i);}else result->items.push_back({});}
-        result->count=source->count;
-    }else{for(const auto& cell:source->items){work.step();if(cell)(void)add(work,result,cell->value);}result->version=0;}
-    return result;
+void clear(Work& work,const std::shared_ptr<Aggregate>& set){auto& state=*set->hash_set;if(state.last_index>0){for(std::size_t i=0;i<static_cast<std::size_t>(state.last_index);++i){work.step();if(state.slots[i])work.values.write(state.slots[i],work.values.zero(element(work,set),false,true),false);state.codes[i]=state.next[i]=0;}std::fill(state.buckets.begin(),state.buckets.end(),0);state.last_index=0;state.free_head=-1;set->items.clear();set->count=0;}++set->version;}
+void append_cached(Work& work,const std::shared_ptr<Aggregate>& set,std::size_t code,const Value& value){auto& state=*set->hash_set;const auto i=static_cast<std::size_t>(state.last_index++);auto cell=physical(work,set,i);work.values.write(cell,value,false);state.codes[i]=static_cast<std::int32_t>(code);const auto b=bucket(work,set,code);state.next[i]=state.buckets[b]-1;state.buckets[b]=static_cast<std::int32_t>(i+1);set->items.push_back(cell);++set->count;}
+void update(Work&,const std::shared_ptr<Aggregate>&,const std::shared_ptr<Aggregate>&,HashSetMethod);
+void trim_storage(Work&,const std::shared_ptr<Aggregate>&);
+std::shared_ptr<Aggregate> copy(Work& work,Type owner,const std::shared_ptr<Aggregate>& source,std::shared_ptr<Aggregate> comparer={}){
+ auto result=std::get<std::shared_ptr<Aggregate>>(work.values.zero(owner,true));result->hash_set->comparer=std::move(comparer);
+ if(!same_policy(work,result,source)){reserve(work,result,prime(source->count));auto sequence=sequence_create(work.values,type_info(work.values.program,owner).key,source,SequenceProvider::hash_set);update(work,result,sequence,HashSetMethod::union_with);if(result->count && result->hash_set->capacity/result->count>3)trim_storage(work,result);return result;}
+ if(!source->count)return result;
+ const auto capacity=source->hash_set->capacity;const bool clone=prime((source->count+1)*2)>=capacity;
+ reserve(work,result,clone ? capacity : prime(source->count));
+ if(clone){auto& state=*result->hash_set;const auto& original=*source->hash_set;state.codes=original.codes;state.next=original.next;state.buckets=original.buckets;state.last_index=original.last_index;state.free_head=original.free_head;result->items.resize(static_cast<std::size_t>(state.last_index));for(std::size_t i=0;i<result->items.size();++i){work.step();if(original.slots[i])state.slots[i]=work.values.cell(element(work,source),work.values.copy(original.slots[i]->value));if(state.codes[i]>=0)result->items[i]=state.slots[i];}result->count=source->count;}
+ else for(std::size_t i=0;i<source->items.size();++i){work.step();if(source->items[i])append_cached(work,result,static_cast<std::size_t>(source->hash_set->codes[i]),source->items[i]->value);}
+ return result;
+}
+void trim_storage(Work& work,const std::shared_ptr<Aggregate>& set){
+ if(!set->count){auto policy=set->hash_set->comparer;HashSetState fresh;fresh.comparer=std::move(policy);std::swap(*set->hash_set,fresh);set->items.clear();++set->version;return;}
+ auto compact=std::get<std::shared_ptr<Aggregate>>(work.values.zero(set->type,true));compact->hash_set->comparer=set->hash_set->comparer;reserve(work,compact,prime(set->count));
+ for(std::size_t i=0;i<set->items.size();++i){work.step();if(set->items[i])append_cached(work,compact,static_cast<std::size_t>(set->hash_set->codes[i]),set->items[i]->value);}
+ set->items.swap(compact->items);std::swap(*set->hash_set,*compact->hash_set);
 }
 std::shared_ptr<Aggregate> direct_set(const std::shared_ptr<Aggregate>& sequence){return sequence && sequence->sequence && sequence->sequence->provider==SequenceProvider::hash_set ? sequence->sequence->source : nullptr;}
 std::optional<std::size_t> collection_count(const std::shared_ptr<Aggregate>& sequence){
@@ -122,7 +149,7 @@ std::pair<std::size_t,std::size_t> unique(Work& work,const std::shared_ptr<Aggre
 }
 bool relation(Work& work,const std::shared_ptr<Aggregate>& set,const std::shared_ptr<Aggregate>& other,HashSetMethod method){
     if(!other || other->nil)throw runtime_error(RuntimeError::nil_reference,work.values.location);
-    const auto direct=direct_set(other);const auto count=collection_count(other);
+    auto direct=direct_set(other);if(direct && !same_policy(work,set,direct))direct.reset();const auto count=collection_count(other);
     if(method==HashSetMethod::subset && !set->count)return true;
     if(method==HashSetMethod::proper_superset && !set->count)return false;
     if(method==HashSetMethod::overlaps){if(!set->count)return false;bool found=false;each(work,other,[&](const Value& item){found=find(work,set,item)!=absent;return !found;});return found;}
@@ -131,7 +158,7 @@ bool relation(Work& work,const std::shared_ptr<Aggregate>& set,const std::shared
     if(method==HashSetMethod::set_equals && !set->count && count && *count>0)return false;
     if(direct){
         if((method==HashSetMethod::set_equals && set->count!=direct->count) || (method==HashSetMethod::subset && set->count>direct->count) || (method==HashSetMethod::proper_subset && set->count>=direct->count) || (method==HashSetMethod::superset && set->count<direct->count) || (method==HashSetMethod::proper_superset && set->count<=direct->count))return false;
-        if(method==HashSetMethod::subset || method==HashSetMethod::proper_subset){for(const auto& cell:set->items){work.step();if(cell && find(work,direct,cell->value)==absent)return false;}return true;}
+        if(method==HashSetMethod::subset || method==HashSetMethod::proper_subset){auto source=sequence_create(work.values,type_info(work.values.program,set->type).key,set,SequenceProvider::hash_set);return each(work,source,[&](const Value& item){return find(work,direct,item)!=absent;});}
     }
     if(method==HashSetMethod::superset || (direct && (method==HashSetMethod::set_equals || method==HashSetMethod::proper_superset))){return each(work,other,[&](const Value& item){return find(work,set,item)!=absent;});}
     const auto [matched,missing]=unique(work,set,other,method==HashSetMethod::set_equals || method==HashSetMethod::proper_superset);
@@ -143,16 +170,16 @@ void update(Work& work,const std::shared_ptr<Aggregate>& set,const std::shared_p
     const auto direct=direct_set(other);
     if(method==HashSetMethod::union_with){each(work,other,[&](const Value& item){(void)add(work,set,item);return true;});return;}
     if(!set->count){if(method==HashSetMethod::symmetric_with)update(work,set,other,HashSetMethod::union_with);return;}
-    if(method==HashSetMethod::except_with){if(direct==set){clear(set);return;}each(work,other,[&](const Value& item){(void)remove(work,set,item);return true;});return;}
+    if(method==HashSetMethod::except_with){if(direct==set){clear(work,set);return;}each(work,other,[&](const Value& item){(void)remove(work,set,item);return true;});return;}
     if(method==HashSetMethod::intersect_with){
-        if(const auto count=collection_count(other);count && !*count){clear(set);return;}
-        if(direct){const auto size=set->items.size();for(std::size_t i=0;i<size;++i){work.step();if(i<set->items.size() && set->items[i]){const auto item=work.values.copy(set->items[i]->value);if(find(work,direct,item)==absent)(void)remove(work,set,item);}}return;}
+        if(const auto count=collection_count(other);count && !*count){clear(work,set);return;}
+        if(direct && same_policy(work,set,direct)){for(std::size_t i=0;i<set->items.size();++i){work.step();if(i<set->items.size() && set->items[i]){const auto item=work.values.copy(set->items[i]->value);if(find(work,direct,item)==absent)(void)remove(work,set,item);}}return;}
         const auto size=set->items.size();std::vector<bool> marked((size+31)/32*32);
         each(work,other,[&](const Value& item){const auto at=find(work,set,item);if(at<marked.size())marked[at]=true;return true;});
         for(std::size_t i=0;i<size;++i){work.step();if(i<set->items.size() && set->items[i] && !marked[i]){const auto item=work.values.copy(set->items[i]->value);(void)remove(work,set,item);}}return;
     }
-    if(direct==set){clear(set);return;}
-    if(direct){each(work,other,[&](const Value& item){if(!remove(work,set,item))(void)add(work,set,item);return true;});return;}
+    if(direct==set){clear(work,set);return;}
+    if(direct && same_policy(work,set,direct)){each(work,other,[&](const Value& item){if(!remove(work,set,item))(void)add(work,set,item);return true;});return;}
     const auto size=set->items.size();std::vector<bool> marked((size+31)/32*32),added(marked.size());
     each(work,other,[&](const Value& item){const auto [fresh,at]=add(work,set,item);if(fresh){if(at<added.size())added[at]=true;}else if(at<size && !added[at])marked[at]=true;return true;});
     for(std::size_t i=0;i<size;++i){work.step();if(marked[i]){auto item=i<set->items.size() && set->items[i] ? work.values.copy(set->items[i]->value) : work.values.zero(type_info(work.values.program,set->type).element,false,true);(void)remove(work,set,item);}}
@@ -163,13 +190,21 @@ Value hash_set_invoke(Values& values,Type owner,Type sequence,HashSetMethod meth
     try{
         Work work{values,options};
         if(method==HashSetMethod::construct)return values.zero(owner,true);
+        if(method==HashSetMethod::construct_comparer){auto result=std::get<std::shared_ptr<Aggregate>>(values.zero(owner,true));auto comparer=std::get<std::shared_ptr<Aggregate>>(arguments[0]);if(comparer && !comparer->nil)result->hash_set->comparer=std::move(comparer);return result;}
         if(method==HashSetMethod::construct_copy){const auto source=std::get<std::shared_ptr<Aggregate>>(arguments[0]);require(source,values.location);return copy(work,owner,source);}
-        if(method==HashSetMethod::construct_sequence){const auto source=std::get<std::shared_ptr<Aggregate>>(arguments[0]);if(!source || source->nil)throw runtime_error(RuntimeError::nil_reference,values.location);if(const auto direct=direct_set(source))return copy(work,owner,direct);auto result=std::get<std::shared_ptr<Aggregate>>(values.zero(owner,true));if(const auto count=collection_count(source);count && *count)reserve(result,prime(*count));update(work,result,source,HashSetMethod::union_with);if(result->count && result->hash_set->capacity/result->count>3){std::vector<std::shared_ptr<Cell>> compact;for(const auto& cell:result->items)if(cell)compact.push_back(cell);result->items=std::move(compact);result->hash_set->hashes.clear();result->hash_set->lookup.clear();result->hash_set->free.clear();reserve(result,prime(result->count));for(std::size_t i=0;i<result->items.size();++i){const auto code=value_hash(work,result->items[i]->value);result->hash_set->hashes.push_back(code);result->hash_set->lookup.emplace(code,i);}}return result;}
+        if(method==HashSetMethod::construct_sequence || method==HashSetMethod::construct_sequence_comparer){
+            const auto source=std::get<std::shared_ptr<Aggregate>>(arguments[0]);if(!source || source->nil)throw runtime_error(RuntimeError::nil_reference,values.location);
+            auto policy=method==HashSetMethod::construct_sequence_comparer ? std::get<std::shared_ptr<Aggregate>>(arguments[1]) : std::shared_ptr<Aggregate>{};if(policy && policy->nil)policy.reset();
+            if(const auto direct=direct_set(source))return copy(work,owner,direct,policy);
+            auto result=std::get<std::shared_ptr<Aggregate>>(values.zero(owner,true));result->hash_set->comparer=std::move(policy);reserve(work,result,prime(collection_count(source).value_or(0)));update(work,result,source,HashSetMethod::union_with);
+            if(result->count && result->hash_set->capacity/result->count>3)trim_storage(work,result);return result;
+        }
         if(method==HashSetMethod::membership){const auto set=std::get<std::shared_ptr<Aggregate>>(arguments[1]);require(set,values.location);return find(work,set,arguments[0])!=absent;}
         const auto object=hash_set_reference(method) ? std::get<std::shared_ptr<Aggregate>>(std::get<std::shared_ptr<Cell>>(arguments[0])->value) : std::get<std::shared_ptr<Aggregate>>(arguments[0]);
-        if(method==HashSetMethod::copy_value){if(!object || object->nil)return object;require(object,values.location);return copy(work,owner,object);}
+        if(method==HashSetMethod::copy_value){if(!object || object->nil)return object;require(object,values.location);return copy(work,owner,object,object->hash_set->comparer);}
         if(method==HashSetMethod::equal || method==HashSetMethod::not_equal){const auto right=std::get<std::shared_ptr<Aggregate>>(arguments[1]);bool equal=(object && !object->nil)==(right && !right->nil);if(equal && object && !object->nil){require(object,values.location);require(right,values.location);const auto seq=sequence_create(values,sequence==Type::invalid ? type_info(values.program,owner).key : sequence,right,SequenceProvider::hash_set);equal=relation(work,object,seq,HashSetMethod::set_equals);}return method==HashSetMethod::equal ? equal : !equal;}
         require(object,values.location);
+        if(method==HashSetMethod::comparer){if(!object->hash_set->comparer){Type factory=Type::invalid;for(std::size_t i=0;i<values.program.types.size();++i)if(values.program.types[i].kind==CompoundKind::equality_comparer && values.program.types[i].element==element(work,object)){factory=static_cast<Type>(64+i);break;}if(factory==Type::invalid)throw runtime_error(RuntimeError::invalid_bytecode,values.location);object->hash_set->comparer=std::get<std::shared_ptr<Aggregate>>(equality_create(values,factory,options));}return object->hash_set->comparer;}
         if(method==HashSetMethod::count)return static_cast<std::int32_t>(object->count);
         if(method>=HashSetMethod::copy_array && method<=HashSetMethod::copy_count){
             const auto array=std::get<std::shared_ptr<Aggregate>>(arguments[1]);
@@ -186,7 +221,7 @@ Value hash_set_invoke(Values& values,Type owner,Type sequence,HashSetMethod meth
         if(method==HashSetMethod::try_get_value){
             const auto slot=find(work,object,arguments[1]);
             const auto target=std::get<std::shared_ptr<Cell>>(arguments[2]);
-            values.write(target,slot==absent ? values.zero(type_info(values.program,owner).element,false,true) : values.copy(object->items[slot]->value));
+            values.write(target,slot==absent ? values.zero(type_info(values.program,owner).element,false,true) : values.copy(physical(work,object,slot)->value));
             return slot!=absent;
         }
         if(method==HashSetMethod::remove_where){
@@ -199,24 +234,11 @@ Value hash_set_invoke(Values& values,Type owner,Type sequence,HashSetMethod meth
             }}
             return removed;
         }
-        if(method==HashSetMethod::trim_excess){
-            if(!object->count){
-                std::vector<std::shared_ptr<Cell>>{}.swap(object->items);
-                HashSetState fresh;std::swap(*object->hash_set,fresh);++object->version;return false;
-            }
-            auto compact=std::get<std::shared_ptr<Aggregate>>(values.zero(owner,true));reserve(compact,prime(object->count));
-            // Cached hashes and physical order survive compaction; the nonempty source does not change version.
-            for(std::size_t i=0;i<object->items.size();++i){work.step();if(const auto& cell=object->items[i]){
-                const auto at=compact->items.size(),code=object->hash_set->hashes[i];
-                compact->items.push_back(values.cell(cell->type,values.copy(cell->value)));
-                compact->hash_set->hashes.push_back(code);compact->hash_set->lookup.emplace(code,at);
-            }}
-            object->items.swap(compact->items);std::swap(*object->hash_set,*compact->hash_set);return false;
-        }
+        if(method==HashSetMethod::trim_excess){trim_storage(work,object);return false;}
         if(method==HashSetMethod::contains)return find(work,object,arguments[1])!=absent;
         if(method==HashSetMethod::add || method==HashSetMethod::ref_add){const auto added=add(work,object,arguments[1]).first;return method==HashSetMethod::add ? Value{added} : Value{false};}
         if(method==HashSetMethod::remove || method==HashSetMethod::ref_remove){const auto removed=remove(work,object,arguments[1]);return method==HashSetMethod::remove ? Value{removed} : Value{false};}
-        if(method==HashSetMethod::clear){clear(object);return false;}
+        if(method==HashSetMethod::clear){clear(work,object);return false;}
         if(method>=HashSetMethod::union_with && method<=HashSetMethod::overlaps){const auto source=std::get<std::shared_ptr<Aggregate>>(arguments[1]);if(method>=HashSetMethod::set_equals)return relation(work,object,source,method);update(work,object,source,method);return false;}
         if(method==HashSetMethod::ref_union || method==HashSetMethod::ref_except){update(work,object,std::get<std::shared_ptr<Aggregate>>(arguments[1]),method==HashSetMethod::ref_union ? HashSetMethod::union_with : HashSetMethod::except_with);return false;}
         if(method==HashSetMethod::add_copy || method==HashSetMethod::remove_copy){auto result=copy(work,owner,object);if(method==HashSetMethod::add_copy)(void)add(work,result,arguments[1]);else(void)remove(work,result,arguments[1]);return result;}

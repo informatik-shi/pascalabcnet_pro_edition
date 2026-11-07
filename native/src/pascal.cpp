@@ -1687,6 +1687,7 @@ private:
             : kind == CompoundKind::dynarray ? "dynarray" : kind == CompoundKind::linked_node ? "linkedlistnode"
             : kind == CompoundKind::single_node ? "singlenode" : kind==CompoundKind::sequence ? "sequence" : "simpleset";
         const auto key=kind==CompoundKind::hash_set ? sequence_type(CompoundKind::sequence,element) : Type::invalid;
+        if(kind==CompoundKind::hash_set)(void)comparison_type(CompoundKind::equality_comparer,element);
         if(module_.types.size()>=1024)throw Error("E_LIMIT",{},"Type limit exceeded");
         module_.types.push_back({name,kind,element,{},key,rank});
         const auto result=static_cast<Type>(63+module_.types.size());if(kind==CompoundKind::list || kind==CompoundKind::hash_set)(void)collection_enumerator(result);return result;
@@ -2354,6 +2355,9 @@ private:
                 if(info(type,result->location).kind==CompoundKind::hash_set){
                     std::vector<std::unique_ptr<hir::Expr>> arguments;for(const auto& argument:source.arguments)arguments.push_back(expression(*argument));
                     if(arguments.size()==1 && arguments[0]->type==Type::nil)throw Error("E_TYPE",result->location,"HashSet constructor requires a typed collection");
+                    const auto comparer=comparison_type(CompoundKind::equality_comparer_interface,info(type,result->location).element);
+                    if(arguments.size()==2)return hash_set_expression(type,HashSetMethod::construct_sequence_comparer,std::move(arguments),result->location,comparer);
+                    if(arguments.size()==1 && (arguments[0]->type==comparer || interface_compatible(module_.types,arguments[0]->type,comparer)))return hash_set_expression(type,HashSetMethod::construct_comparer,std::move(arguments),result->location,comparer);
                     const auto method=arguments.empty() ? HashSetMethod::construct : arguments.size()==1 && arguments[0]->type==type ? HashSetMethod::construct_copy : HashSetMethod::construct_sequence;
                     return hash_set_expression(type,method,std::move(arguments),result->location);
                 }
@@ -2811,6 +2815,7 @@ private:
                 }
             }
             if(type.kind==CompoundKind::hash_set){
+                if(source.token.text=="comparer"){if(source.kind==SyntaxExprKind::member_call || !source.arguments.empty())throw Error("E_TYPE",result->location,"HashSet.Comparer is a property");const auto payload=comparison_type(CompoundKind::equality_comparer_interface,type.element);std::vector<std::unique_ptr<hir::Expr>> args;args.push_back(std::move(result->left));return hash_set_expression(receiver,HashSetMethod::comparer,std::move(args),result->location,payload);}
                 if(auto call=bind_hash_set_extra(source,*result,receiver))return call;
                 static const std::map<std::string,HashSetMethod> methods{{"count",HashSetMethod::count},{"add",HashSetMethod::add},{"remove",HashSetMethod::remove},{"contains",HashSetMethod::contains},{"clear",HashSetMethod::clear},{"unionwith",HashSetMethod::union_with},{"exceptwith",HashSetMethod::except_with},{"intersectwith",HashSetMethod::intersect_with},{"symmetricexceptwith",HashSetMethod::symmetric_with},{"setequals",HashSetMethod::set_equals},{"issubsetof",HashSetMethod::subset},{"ispropersubsetof",HashSetMethod::proper_subset},{"issupersetof",HashSetMethod::superset},{"ispropersupersetof",HashSetMethod::proper_superset},{"overlaps",HashSetMethod::overlaps}};
                 if(const auto found=methods.find(source.token.text);found!=methods.end()){
@@ -3928,7 +3933,7 @@ private:
         const auto sequence=hash_set_sequence_method(method) ? info(owner,location).key : payload;
         const auto parameters=hash_set_parameters(module_.types,owner,sequence,method);
         if(arguments.size()!=parameters.size())throw Error("E_TYPE",location,"Wrong HashSet argument count");
-        auto result=std::make_unique<hir::Expr>();result->kind=hir::ExprKind::hash_set_call;result->type=hash_set_result(owner,method);result->location=location;result->operation_type=owner;result->local=static_cast<std::size_t>(method)|(static_cast<std::size_t>(sequence)<<8U);
+        auto result=std::make_unique<hir::Expr>();result->kind=hir::ExprKind::hash_set_call;result->type=hash_set_result(owner,method,sequence);result->location=location;result->operation_type=owner;result->local=static_cast<std::size_t>(method)|(static_cast<std::size_t>(sequence)<<8U);
         for(std::size_t i=0;i<arguments.size();++i)result->arguments.push_back((i==0 && hash_set_reference(method)) || (i==2 && method==HashSetMethod::try_get_value) ? std::move(arguments[i]) : convert(std::move(arguments[i]),parameters[i]));return result;
     }
     std::unique_ptr<hir::Expr> compound_expression(Type owner,CompoundMethod method,std::unique_ptr<hir::Expr> left,std::unique_ptr<hir::Expr> right,SourceLocation location) {

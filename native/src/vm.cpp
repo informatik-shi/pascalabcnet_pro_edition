@@ -1183,7 +1183,7 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
         case Op::hash_set_call: {
             const auto method=static_cast<HashSetMethod>(instruction.operand&255U);const auto sequence=static_cast<Type>(instruction.operand>>8U);const auto parameters=hash_set_parameters(program.types,instruction.type,sequence,method);
             std::vector<Value> arguments(parameters.size());for(std::size_t i=arguments.size();i>0;--i)arguments[i-1]=pop();auto result=hash_set_invoke(values,instruction.type,sequence,method,arguments,options);
-            if(hash_set_result(instruction.type,method)!=Type::unit)stack.push_back(std::move(result));break;
+            if(hash_set_result(instruction.type,method,sequence)!=Type::unit)stack.push_back(std::move(result));break;
         }
         case Op::ordinal_range_call: {
             const auto method=static_cast<OrdinalRangeMethod>(instruction.operand);const auto parameters=ordinal_range_parameters(program.types,instruction.type,method);

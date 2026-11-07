@@ -1110,3 +1110,28 @@ Independent fixtures contain 942 scalar/hash/implementation pairs and 1125
 source-level class traces, plus native signature, metadata, record, cast and
 resource checks. Collection comparer policies, Object virtual overrides, scalar
 boxing, variance and record interface methods remain separate required work.
+
+### HashSet equality policy and physical storage
+
+Closed HashSet constructor/property opcodes retain an exact IEqualityComparer<T>
+payload and use the existing native equality service. Null policies normalize to
+Default; retained defaults preserve live identity. The set's physical capacity
+contains cached 31-bit hashes, next indices, bucket heads and lazy value cells;
+Aggregate.items is the active prefix with holes. Dictionary keeps its old lookup
+until its own policy migration. No mutable unordered-map iterator crosses a
+HashSet user callback. Hashing skips null set elements, while equality calls keep
+source order and live index reads across reentrant callbacks.
+
+CopyFrom with matching policies clones or compacts cached slots without user
+calls; differing policies use a version-checked source cursor and rehash under
+the destination policy. PABCSystem Copy retains the source policy explicitly;
+ordinary constructors and set operators use Default. Same-policy subset checks
+use source foreach version behavior; intersection retains live slot scanning.
+Clear and trim retain policies and their distinct empty/nonempty version rules.
+
+7976 independent Framework executions compare exact call order, results, final
+slots/count/policies, fault timing and old cursor state. Selected reentrant cases
+are finite; a legacy infinite corrupted-chain reference case is documented and
+excluded. No claim of arbitrary corrupted-state equivalence, general source
+try/finally, custom comparer Object.Equals overrides, serialization or complete
+HashSet/Dictionary/standard-library compatibility follows from this profile.

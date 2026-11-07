@@ -1751,7 +1751,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         }
         case Op::hash_set_call: {
             const auto method=static_cast<HashSetMethod>(instruction.operand&255U);const auto parameters=hash_set_parameters(program.types,instruction.type,static_cast<Type>(instruction.operand>>8U),method);
-            for(auto it=parameters.rbegin();it!=parameters.rend();++it)require(*it);const auto result=hash_set_result(instruction.type,method);if(result!=Type::unit)stack.push_back(result);break;
+            for(auto it=parameters.rbegin();it!=parameters.rend();++it)require(*it);const auto result=hash_set_result(instruction.type,method,static_cast<Type>(instruction.operand>>8U));if(result!=Type::unit)stack.push_back(result);break;
         }
         case Op::ordinal_range_call: {
             const auto method=static_cast<OrdinalRangeMethod>(instruction.operand);const auto parameters=ordinal_range_parameters(program.types,instruction.type,method);

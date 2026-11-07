@@ -27,7 +27,7 @@ struct ReferenceObjects {
     void observe(const std::shared_ptr<Aggregate>& object) { entries.push_back({object,{}}); }
     ~ReferenceObjects() {
         for (auto& entry:entries) entry.retained=entry.object.lock();
-        for (auto& entry:entries) if (entry.retained) {entry.retained->enumerator.reset();entry.retained->list_storage.reset();entry.retained->items.clear();}
+        for (auto& entry:entries) if (entry.retained) {entry.retained->enumerator.reset();entry.retained->list_storage.reset();entry.retained->hash_set.reset();entry.retained->items.clear();}
     }
 };
 struct Values {
@@ -111,7 +111,7 @@ struct Values {
                 aggregate->ends = std::make_unique<std::deque<std::shared_ptr<Cell>>>();
             if (info.kind == CompoundKind::record || (object && constructed))
                 for (const auto& field : info.fields) aggregate->items.push_back(cell(field.type, zero(field.type,false,generic || object || key_value_pair_type(info) || dictionary_enumerator_type(info) || collection_enumerator_type(info))));
-            if ((object || iterator || dictionary || info.kind==CompoundKind::list) && constructed && observe_object) observe_object(aggregate);
+            if ((object || iterator || dictionary || info.kind==CompoundKind::list || info.kind==CompoundKind::hash_set) && constructed && observe_object) observe_object(aggregate);
             return aggregate;
         }
         }

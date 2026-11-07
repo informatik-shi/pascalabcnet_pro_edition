@@ -121,6 +121,7 @@ IComparable<T>, IComparer<T>, Comparer<T>.Default/Create: examples/comparers.pas
 Статическая сортировка System.Array и диапазоны: examples/array-sorting.pas.
 Парная сортировка ключей и элементов: examples/paired-sorting.pas.
 Типизированное равенство и хеши: examples/equality.pas.
+HashSet с пользовательским IEqualityComparer<T> и сохранением сравнителя в Copy: examples/hashset-comparers.pas.
 Обход автоматически вызывает Dispose при завершении, break, Exit и ошибке; общие пользовательские обобщения ещё переносятся.
 Нативный IniFile.TIniFile: uses IniFile; пример examples/ini-files.pas.
 WriteString/WriteInteger/WriteBoolean меняют память, Save записывает файл. Наследование TIniFile ещё не перенесено.
