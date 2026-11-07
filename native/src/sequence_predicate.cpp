@@ -1,4 +1,5 @@
 #include "sequences.hpp"
+#include "sequence_scope.hpp"
 #include "runtime_values.hpp"
 #include <array>
 
@@ -7,7 +8,8 @@ Value sequence_predicate(Values& values,const std::shared_ptr<Aggregate>& source
     if (!source || source->nil) throw runtime_error(RuntimeError::nil_reference,values.location);
     if (callable) (void)values.callable_target(callable);
     if (!values.invoke || (!callable && callback>=values.program.routines.size())) throw runtime_error(RuntimeError::invalid_bytecode,values.location);
-    const auto iterator=sequence_begin(values,source);
+    const auto iterator=sequence_begin(values,source,options);
+    return sequence_finally(values,iterator,options,[&]() -> Value {
     std::int32_t count=0; std::optional<Value> kept;
     for (std::uint64_t index=0;;++index) {
         if (index>=options.instruction_limit) throw runtime_error(RuntimeError::instruction_limit,values.location);
@@ -31,5 +33,6 @@ Value sequence_predicate(Values& values,const std::shared_ptr<Aggregate>& source
     if (method==PredicateQuery::first_default || method==PredicateQuery::last_default || method==PredicateQuery::single_default)
         return values.zero(type_info(values.program,source->type).element,false,true);
     throw runtime_error(RuntimeError::sequence_no_match,values.location);
+    });
 }
 } // namespace abc

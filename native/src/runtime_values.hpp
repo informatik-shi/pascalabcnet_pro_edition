@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <new>
 #include <stdexcept>
+#include <map>
 
 namespace abc {
 inline const TypeInfo& type_info(const Program& program, Type type) {
@@ -37,6 +38,9 @@ struct Values {
     std::shared_ptr<Aggregate> empty_collection{};
     std::vector<std::pair<Type,std::weak_ptr<Aggregate>>> empty_enumerators{};
     std::size_t sequence_depth=0;
+    std::map<std::pair<std::uintptr_t,Type>,std::weak_ptr<Aggregate>> user_enumerables{};
+    std::size_t cleanup_depth=0;
+    std::function<void(bool)> cleanup_mode{};
     std::size_t list_storage_remaining=remaining;
     std::function<Value(std::size_t,std::span<const Value>)> invoke{};
     std::function<Value(const std::shared_ptr<Aggregate>&,std::span<const Value>)> invoke_closure{};

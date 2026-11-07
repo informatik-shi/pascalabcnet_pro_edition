@@ -28,9 +28,9 @@ bool sequence_transform_resume(Values& values,const std::shared_ptr<Aggregate>& 
                 cursor.current=sequence_at(values,cursor.inner,static_cast<std::int64_t>(cursor.inner_index),options); ++cursor.inner_index;
                 cursor.positioned=true; cursor.available=true; cursor.index=index; return true;
             }
-            cursor.inner.reset();
+            auto completed=std::move(cursor.inner);sequence_dispose(values,completed,options);
         }
-        if (!cursor.iterator) cursor.iterator=sequence_begin(values,state.source);
+        if (!cursor.iterator) cursor.iterator=sequence_begin(values,state.source,options);
         if (cursor.source_index>static_cast<std::uint64_t>(INT64_MAX)) throw runtime_error(RuntimeError::integer_overflow,values.location);
         if (!sequence_resume(values,cursor.iterator,cursor.source_index,options)) { cursor.ended=true; break; }
         auto item=sequence_at(values,cursor.iterator,static_cast<std::int64_t>(cursor.source_index),options);
@@ -51,7 +51,7 @@ bool sequence_transform_resume(Values& values,const std::shared_ptr<Aggregate>& 
                 const auto kind=type_info(values.program,returned).kind;
                 if (kind!=CompoundKind::sequence) source=sequence_create(values,sequence->type,source,kind==CompoundKind::array ? SequenceProvider::array : SequenceProvider::list);
             }
-            cursor.inner=sequence_begin(values,source); cursor.inner_index=0; continue;
+            cursor.inner=sequence_begin(values,source,options); cursor.inner_index=0; continue;
         }
         if (predicate_transform(state.transform_method)) {
             const bool matched=std::get<bool>(value);

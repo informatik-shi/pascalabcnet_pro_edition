@@ -29,7 +29,7 @@ bool sequence_zip_resume(Values& values,const std::shared_ptr<Aggregate>& sequen
     if (cursor.iterators.empty()) {
         // The iterator body checks the function before opening even empty sources.
         if (state.callable) (void)values.callable_target(state.callable);
-        for (const auto& source:state.sources) cursor.iterators.push_back(sequence_begin(values,source));
+        for (const auto& source:state.sources) cursor.iterators.push_back(sequence_begin(values,source,options));
     }
     std::array<Value,5> arguments{};
     for (std::size_t i=0;i<cursor.iterators.size();++i) {

@@ -1194,7 +1194,7 @@ private:
             if(done.contains(owner))return;if(!active.insert(owner).second)throw Error("E_TYPE",{},"Cyclic interface inheritance");
             const auto& syntax=*declarations.at(owner);std::vector<Type> parents;std::vector<InterfaceMember> members;
             auto add=[&](InterfaceMember member){for(const auto& existing:members)if(existing.name==member.name){if(existing.kind==member.kind){if(existing!=member)throw Error("E_TYPE",syntax.token.location,"Conflicting inherited interface member");return;}if(existing.kind==InterfaceMemberKind::method || member.kind==InterfaceMemberKind::method || (existing.kind==InterfaceMemberKind::get ? existing.result : existing.parameters[0].type)!=(member.kind==InterfaceMemberKind::get ? member.result : member.parameters[0].type))throw Error("E_TYPE",syntax.token.location,"Conflicting inherited interface member");}if(members.size()>=256)throw Error("E_LIMIT",syntax.token.location,"Interface member limit exceeded");members.push_back(std::move(member));};
-            for(const auto& parent:syntax.parents){const auto type=resolve_type(*parent);if(!compound(type) || !interface_kind(info(type,syntax.token.location)))throw Error("E_TYPE",syntax.token.location,"Interface parent must be an interface");if(std::find(parents.begin(),parents.end(),type)!=parents.end())throw Error("E_TYPE",syntax.token.location,"Duplicate interface parent");if(declarations.contains(type))bind(type);parents.push_back(type);for(auto member:interface_contract(module_.types,type))add(std::move(member));}
+            for(const auto& parent:syntax.parents){const auto type=resolve_type(*parent);if(!compound(type) || !interface_kind(info(type,syntax.token.location)))throw Error("E_TYPE",syntax.token.location,"Interface parent must be an interface");if(std::find(parents.begin(),parents.end(),type)!=parents.end())throw Error("E_TYPE",syntax.token.location,"Duplicate interface parent");if(declarations.contains(type))bind(type);if(info(type,syntax.token.location).kind==CompoundKind::sequence)(void)enumerator_type(info(type,syntax.token.location).element);parents.push_back(type);for(auto member:interface_contract(module_.types,type))add(std::move(member));}
             std::set<std::string> own_names;
             for(const auto& method:syntax.methods){if(!own_names.insert(method->name.text).second)throw Error("E_DUPLICATE",method->name.location,"Duplicate interface member");InterfaceMember member;member.name=method->name.text;member.result=method->result ? resolve_type(*method->result) : Type::unit;
                 std::set<std::string> parameter_names;for(const auto& argument:method->parameters){if(!parameter_names.insert(argument.name.text).second)throw Error("E_DUPLICATE",argument.name.location,"Duplicate parameter");if(argument.default_value)throw Error("E_UNSUPPORTED",argument.name.location,"Default interface arguments are not ported yet");member.parameters.push_back({resolve_type(*argument.type),argument.by_reference,argument.variadic});}if(member.parameters.size()>15)throw Error("E_TYPE",method->name.location,"Interface methods accept at most fifteen parameters");
@@ -1205,7 +1205,7 @@ private:
     }
     void register_interface_implementations(const SyntaxStmt& source){
         for(const auto& [name,syntax]:source.type_declarations)if(syntax->kind=="class" && !syntax->named){const auto owner=aliases_.at(name.text);std::vector<Type> targets;
-            std::function<void(Type)> add=[&](Type target){if(!compound(target))throw Error("E_TYPE",name.location,"Class parent must be an interface");const auto shape=info(target,name.location);if(shape.kind==CompoundKind::sequence)throw Error("E_UNSUPPORTED",name.location,"User IEnumerable implementations require iterator disposal support");if(!interface_kind(shape))throw Error("E_UNSUPPORTED",name.location,"Class inheritance is not ported yet");if(std::find(targets.begin(),targets.end(),target)!=targets.end())return;if(targets.size()>=64)throw Error("E_LIMIT",name.location,"Interface implementation limit exceeded");targets.push_back(target);for(auto parent:shape.interfaces.read().parents)add(parent);};for(const auto& parent:syntax->parents)add(resolve_type(*parent));
+            std::function<void(Type)> add=[&](Type target){if(!compound(target))throw Error("E_TYPE",name.location,"Class parent must be an interface");const auto shape=info(target,name.location);if(shape.kind==CompoundKind::sequence)(void)enumerator_type(shape.element);if(!interface_kind(shape))throw Error("E_UNSUPPORTED",name.location,"Class inheritance is not ported yet");if(std::find(targets.begin(),targets.end(),target)!=targets.end())return;if(targets.size()>=64)throw Error("E_LIMIT",name.location,"Interface implementation limit exceeded");targets.push_back(target);for(auto parent:shape.interfaces.read().parents)add(parent);};for(const auto& parent:syntax->parents)add(resolve_type(*parent));
             std::vector<InterfaceImplementation> implementations;for(auto target:targets){InterfaceImplementation entry;entry.target=target;for(const auto& member:interface_contract(module_.types,target)){std::optional<std::size_t> id;
                 if(member.kind==InterfaceMemberKind::method){const auto methods=class_methods_.find(owner);if(methods!=class_methods_.end()){const auto method=methods->second.find(member.name);if(method!=methods->second.end())id=method->second;}}
                 else {const auto properties=class_properties_.find(owner);if(properties!=class_properties_.end()){const auto property=properties->second.find(member.name);if(property!=properties->second.end())id=member.kind==InterfaceMemberKind::get ? property->second.getter : property->second.setter;}const auto declaration=std::find_if(syntax->properties.begin(),syntax->properties.end(),[&](const auto& p){return p->name.text==member.name;});if(declaration==syntax->properties.end() || (*declaration)->access!=MemberAccess::public_member)id.reset();}
@@ -2524,7 +2524,7 @@ private:
                 bind_builtin(*result,source.token.text,source.left->token.text); break;
             }
             if(enum_static_member(*result,source))break;
-            if(!result->left)result->left=expression(*source.left);const auto receiver=result->left->type;
+            if(!result->left)result->left=expression(*source.left);adapt_enumerable_member(*result,source.token.text);const auto receiver=result->left->type;
             if(source.token.text=="gettype"){
                 const bool own=compound(receiver) && info(receiver,result->location).kind==CompoundKind::object_class
                     && ((class_methods_.contains(receiver) && class_methods_.at(receiver).contains("gettype"))
@@ -3040,6 +3040,7 @@ private:
         do {
  {
             if (const auto local=lookup(source.token); local && source.token.text!=current_name_) {
+                if(!callable_type(module_.locals[*local].type) && bind_callable_cast(*result,source))break;
                 capture_local(*local,result->location);
                 result->left=std::make_unique<hir::Expr>(); result->left->kind=hir::ExprKind::local;
                 result->left->local=*local; result->left->type=module_.locals[*local].type; result->left->location=result->location;
@@ -3169,8 +3170,8 @@ private:
             else if (a==Type::nil || b==Type::nil) {
                 type=a==Type::nil ? b : a;
                 if (!reference(type)) throw Error("E_UNSUPPORTED",result->location,"Conditional nil with a value type requires Nullable support");
-            } else if (can_widen(a,b) || sequence_view(a,b,result->location)) type=b;
-            else if (can_widen(b,a) || sequence_view(b,a,result->location)) type=a;
+            } else if (can_widen(a,b) || sequence_view(a,b,result->location) || interface_compatible(module_.types,a,b)) type=b;
+            else if (can_widen(b,a) || sequence_view(b,a,result->location) || interface_compatible(module_.types,b,a)) type=a;
             else if (integer_type(a) && integer_type(b)) {
                 // Source LUB promotes unrelated small integer types to integer.
                 if (a==Type::uint64 || b==Type::uint64) type=Type::uint64;
@@ -3284,7 +3285,7 @@ private:
         case SyntaxExprKind::binary: {
             result->kind = hir::ExprKind::binary;
             if(source.token.text=="in"){
-                result->right=expression(*source.right);const auto owner=result->right->type;Type element=Type::invalid;
+                result->right=expression(*source.right);if(const auto target=enumerable_contract(result->right->type,result->location);target!=Type::invalid && target!=result->right->type)result->right=convert(std::move(result->right),target);const auto owner=result->right->type;Type element=Type::invalid;
                 if(owner==Type::string || owner==Type::character)element=Type::string;
                 else if(compound(owner)){const auto shape=info(owner,result->location);if(shape.kind==CompoundKind::sequence || enumerable_collection(shape))element=shape.element;}
                 result->left=expression(*source.left,element);
@@ -3301,6 +3302,7 @@ private:
             auto left = result->left->type;
             auto right = result->right->type;
             const auto& op = result->operation;
+            if((op=="=" || op=="<>") && left!=right){if(interface_compatible(module_.types,left,right)){result->left=convert(std::move(result->left),right);left=right;}else if(interface_compatible(module_.types,right,left)){result->right=convert(std::move(result->right),left);right=left;}}
             if(op==".."){
                 if(left==Type::real || right==Type::real || ((left==Type::int64 || right==Type::int64) && can_widen(left,Type::real) && can_widen(right,Type::real))){
                     std::vector<std::unique_ptr<hir::Expr>> args;args.push_back(std::move(result->left));args.push_back(std::move(result->right));return real_interval_expression(real_interval_record(),RealIntervalMethod::construct,std::move(args),result->location);
@@ -4372,9 +4374,26 @@ private:
         result.kind=hir::ExprKind::sequence_snapshot;
         result.type=sequence_type(CompoundKind::sequence,info(result.left->type,result.location).element); return true;
     }
+    Type enumerable_contract(Type source,SourceLocation location) const {
+        if(!compound(source))return Type::invalid;const auto& type=info(source,location);if(type.kind==CompoundKind::sequence)return source;
+        std::vector<Type> pending;for(const auto& target:type.interfaces.read().implementations)pending.push_back(target.target);for(auto parent:type.interfaces.read().parents)pending.push_back(parent);
+        std::set<Type> seen;Type result=Type::invalid;while(!pending.empty()){const auto current=pending.back();pending.pop_back();if(!seen.insert(current).second)continue;const auto& target=info(current,location);if(target.kind==CompoundKind::sequence){if(result!=Type::invalid && result!=current)throw Error("E_TYPE",location,"Ambiguous IEnumerable element type");result=current;}else for(auto parent:target.interfaces.read().parents)pending.push_back(parent);}
+        return result;
+    }
+    bool declared_member(Type owner,std::string_view name)const{
+        if(!compound(owner))return false;const auto& type=info(owner,{});if(std::any_of(type.fields.begin(),type.fields.end(),[&](const auto& f){return f.name==name;}))return true;
+        if(class_methods_.contains(owner) && class_methods_.at(owner).contains(std::string(name)))return true;
+        if(class_properties_.contains(owner) && class_properties_.at(owner).contains(std::string(name)))return true;
+        return std::any_of(type.interfaces.read().members.begin(),type.interfaces.read().members.end(),[&](const auto& member){return member.name==name;});
+    }
+    void adapt_enumerable_member(hir::Expr& result,std::string_view name){
+        if(name=="gettype" || name=="tostring" || declared_member(result.left->type,name))return;const auto target=enumerable_contract(result.left->type,result.location);
+        if(target!=Type::invalid && target!=result.left->type)result.left=convert(std::move(result.left),target);
+    }
     TypeInfo sequence_source(Type source,SourceLocation location) const {
         if (source==Type::string) return TypeInfo{"string",CompoundKind::sequence,Type::character,{}};
         if (!compound(source)) throw Error("E_TYPE",location,"Operation requires a typed sequence, string, array or List");
+        const auto contract=enumerable_contract(source,location);if(contract!=Type::invalid)return info(contract,location);
         const auto result=info(source,location);
         if ((result.kind!=CompoundKind::sequence && !enumerable_collection(result)) || result.rank!=1)
             throw Error("E_TYPE",location,"Operation requires a rank-one sequence, string, array or List");
@@ -5852,6 +5871,7 @@ private:
             break;
         case SyntaxStmtKind::foreach_loop: {
             result.kind=hir::StmtKind::foreach_loop; result.expression=expression(*source.expression);
+            if(const auto protocol=enumerable_contract(result.expression->type,result.location);protocol!=Type::invalid && protocol!=result.expression->type)result.expression=convert(std::move(result.expression),protocol);
             if(compound(result.expression->type)){const auto shape=info(result.expression->type,result.location);if(shape.kind==CompoundKind::hash_set || shape.kind==CompoundKind::new_set || ordinal_range_type(shape) || shape.kind==CompoundKind::dictionary || shape.kind==CompoundKind::dictionary_keys || shape.kind==CompoundKind::dictionary_values){const auto target=shape.kind==CompoundKind::dictionary || shape.kind==CompoundKind::dictionary_keys || shape.kind==CompoundKind::dictionary_values ? sequence_type(CompoundKind::sequence,shape.element) : shape.kind==CompoundKind::new_set ? info(shape.key,result.location).key : shape.key;result.expression=convert(std::move(result.expression),target);}}
             const auto sequence=result.expression->type;
             const bool lazy=compound(sequence) && info(sequence,result.location).kind==CompoundKind::sequence;
@@ -5874,7 +5894,7 @@ private:
                     throw Error("E_UNSUPPORTED",name.location,"Function Result as foreach variable is not supported");
             }
             const auto type=module_.locals[control].type;
-            if (!can_widen(element,type) && !sequence_view(element,type,name.location)) throw Error("E_TYPE",name.location,"Foreach element cannot be converted to the iteration variable type");
+            if (!can_widen(element,type) && !sequence_view(element,type,name.location) && !interface_compatible(module_.types,element,type)) throw Error("E_TYPE",name.location,"Foreach element cannot be converted to the iteration variable type");
             auto temporary=[&](Type type) {
                 const auto local=module_.locals.size(); module_.locals.push_back({"$foreach_"+std::to_string(local),type,!in_routine_}); return local;
             };

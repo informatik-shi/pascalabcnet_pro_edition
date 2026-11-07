@@ -3,6 +3,7 @@
 #include "encoding.hpp"
 #include "runtime_values.hpp"
 #include "sequences.hpp"
+#include "sequence_scope.hpp"
 #include "file_reader.hpp"
 
 namespace abc {
@@ -106,11 +107,13 @@ void file_write_lines(Values& values,FileContext& files,const Value& path,const 
 #endif
     };
     if(type_info(values.program,source->type).kind==CompoundKind::sequence) {
-        const auto cursor=sequence_begin(values,source);
+        const auto cursor=sequence_begin(values,source,options);
+    sequence_finally(values,cursor,options,[&]() -> void {
         for(std::uint64_t i=0;sequence_resume(values,cursor,i,options);++i) {
             if(i>static_cast<std::uint64_t>(INT64_MAX))throw runtime_error(RuntimeError::integer_overflow,location);
             const auto line=sequence_at(values,cursor,static_cast<std::int64_t>(i),options);write(line);
         }
+        });
     } else for(const auto& line:source->items)write(line->value);
     output->close(location);
 }

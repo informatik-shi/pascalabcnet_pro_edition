@@ -1,4 +1,5 @@
 #include "sequences.hpp"
+#include "sequence_scope.hpp"
 #include "runtime_values.hpp"
 #include "big_integer_runtime.hpp"
 #include "sequence_guard.hpp"
@@ -49,7 +50,8 @@ Value sequence_numeric_step(Values& values,Type type,const Value& left,const Val
     throw runtime_error(RuntimeError::invalid_bytecode,values.location);
 }
 Value sequence_aggregate(Values& values,const std::shared_ptr<Aggregate>& sequence,SequenceAggregate method,const ExecutionOptions& options) {
-    const auto iterator=sequence_begin(values,sequence);
+    const auto iterator=sequence_begin(values,sequence,options);
+    return sequence_finally(values,iterator,options,[&]() -> Value {
     const auto element=type_info(values.program,sequence->type).element;
     const bool average=method==SequenceAggregate::average,product=method==SequenceAggregate::product;
     const auto accumulator=element==Type::single ? Type::real : (average || product) && element==Type::integer ? Type::int64 : element;
@@ -79,6 +81,7 @@ Value sequence_aggregate(Values& values,const std::shared_ptr<Aggregate>& sequen
         : accumulator==Type::real ? std::get<double>(total) : static_cast<double>(std::get<std::int64_t>(total));
     const auto result=finite(sum/static_cast<double>(count),values.location);
     return element==Type::single ? Value{single_number(Value{result},values.location)} : Value{result};
+    });
 }
 std::shared_ptr<Aggregate> sequence_partial(Values& values,Type type,const std::shared_ptr<Aggregate>& source,const ExecutionOptions& options) {
     return sequence_composed(values,type,source,SequenceProvider::partial_sum,options);
@@ -91,7 +94,7 @@ bool sequence_partial_resume(Values& values,const std::shared_ptr<Aggregate>& se
     if (partial.positioned && index==partial.index) return partial.available;
     if (!partial.positioned) {
         if (index) throw runtime_error(RuntimeError::invalid_bytecode,values.location);
-        partial.iterator=sequence_begin(values,state.source);
+        partial.iterator=sequence_begin(values,state.source,options);
     } else if (!partial.available || index<=partial.index || index-partial.index!=1) throw runtime_error(RuntimeError::invalid_bytecode,values.location);
     if (index>=options.instruction_limit) throw runtime_error(RuntimeError::instruction_limit,values.location);
     if ((index&255U)==0 && options.cancelled && options.cancelled()) throw runtime_error(RuntimeError::cancelled,values.location);

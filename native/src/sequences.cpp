@@ -1,4 +1,8 @@
 #include "sequences.hpp"
+#include "sequence_scope.hpp"
+#include "enumerator.hpp"
+#include "interfaces.hpp"
+#include "termination.hpp"
 #include "school_ip.hpp"
 #include "runtime_values.hpp"
 #include "big_integer_runtime.hpp"
@@ -48,41 +52,86 @@ std::shared_ptr<Aggregate> sequence_create(Values& values,Type type,const std::s
     auto result=std::make_shared<Aggregate>(); result->type=type; result->sequence=std::make_unique<SequenceState>();
     result->sequence->source=source; result->sequence->provider=provider; return result;
 }
-void sequence_dispose(const std::shared_ptr<Aggregate>& sequence) noexcept {
-    if(!sequence || !sequence->sequence || !sequence->sequence->started || sequence->sequence->disposed)return;
-    auto& state=*sequence->sequence;state.disposed=true;
+namespace {
+struct CleanupMode {
+    Values& values;bool active;
+    CleanupMode(Values& v,bool enabled=true):values(v),active(enabled){if(active && values.cleanup_depth++==0 && values.cleanup_mode)values.cleanup_mode(true);}
+    ~CleanupMode(){if(active && --values.cleanup_depth==0 && values.cleanup_mode)values.cleanup_mode(false);}
+};
+bool termination(const std::exception_ptr& error){if(!error)return false;try{std::rethrow_exception(error);}catch(const ProgramTermination&){return true;}catch(...){return false;}}
+bool legacy_transform(const Values& values,const SequenceState& state){
+    if(state.provider!=SequenceProvider::transform || (state.transform_method!=SequenceTransform::select && state.transform_method!=SequenceTransform::where))return false;
+    return (state.callable ? type_info(values.program,state.callable->type).parameters.size() : values.program.routines.at(state.callback).parameters.size())==1;
+}
+void release_native(SequenceState& state) noexcept {
     if(state.file_line)file_sequence_dispose(*state.file_line);
     if(state.directory)directory_sequence_dispose(*state.directory);
-    // Close actual inner cursors even if a native operation temporarily retains their state.
-    // Input prototypes and numeric range descriptors remain available for a new traversal.
-    const auto close=[](std::shared_ptr<Aggregate>& inner){sequence_dispose(inner);inner.reset();};
+    state.partial.reset();state.slice.reset();state.concat.reset();state.transform.reset();state.zip.reset();
+    state.generator.reset();state.cartesian.reset();state.power.reset();state.combinator.reset();
+    state.view.reset();state.matrix_line.reset();state.text_line.reset();state.hash_cursor.reset();
+    state.random.reset();state.protocol_cursor.reset();
+}
+template<class F>void visit_children(SequenceState& state,F close){
     if(state.partial)close(state.partial->iterator);
     if(state.slice)close(state.slice->iterator);
     if(state.concat)close(state.concat->iterator);
     if(state.transform){close(state.transform->inner);close(state.transform->iterator);}
-    if(state.zip)for(auto& inner:state.zip->iterators)close(inner);
-    if(state.cartesian)for(auto& inner:state.cartesian->iterators)close(inner);
-    state.partial.reset();state.slice.reset();state.concat.reset();state.transform.reset();state.zip.reset();
-    state.generator.reset();state.cartesian.reset();state.power.reset();state.combinator.reset();
-    state.view.reset();state.matrix_line.reset();state.text_line.reset();state.hash_cursor.reset();
-    state.random.reset();
+    if(state.zip)for(auto it=state.zip->iterators.rbegin();it!=state.zip->iterators.rend();++it)close(*it);
+    if(state.cartesian)for(auto it=state.cartesian->iterators.rbegin();it!=state.cartesian->iterators.rend();++it)close(*it);
 }
+}
+void sequence_dispose(const std::shared_ptr<Aggregate>& sequence) noexcept {
+    if(!sequence || !sequence->sequence || !sequence->sequence->started || sequence->sequence->disposed)return;
+    auto& state=*sequence->sequence;state.disposed=true;
+    visit_children(state,[](auto& inner){sequence_dispose(inner);inner.reset();});
+    release_native(state);
+}
+void sequence_dispose(Values& values,const std::shared_ptr<Aggregate>& sequence,const ExecutionOptions& options){
+    if(!sequence || !sequence->sequence || !sequence->sequence->started || sequence->sequence->disposed)return;
+    auto& state=*sequence->sequence;state.disposed=true;
+    // Legacy unary Select/Where retain their enumerator when its Dispose throws.
+    // A consuming finally then calls Dispose again; generated iterators do not.
+    if(legacy_transform(values,state) && state.transform && state.transform->iterator){
+        try{sequence_dispose(values,state.transform->iterator,options);}catch(...){state.disposed=false;throw;}
+        release_native(state);return;
+    }
+    std::exception_ptr failure;
+    visit_children(state,[&](auto& inner){try{sequence_finish(values,inner,options,failure);}catch(...){failure=std::current_exception();}inner.reset();});
+    if(!termination(failure) && state.protocol_cursor && std::get<std::shared_ptr<Aggregate>>(state.protocol_cursor->receiver) && !std::get<std::shared_ptr<Aggregate>>(state.protocol_cursor->receiver)->nil)try{CleanupMode cleanup(values,bool(failure));enumerator_invoke(values,state.protocol_cursor->protocol,Type::invalid,EnumeratorMethod::dispose,state.protocol_cursor->receiver,options);}catch(...){failure=std::current_exception();}
+    if(failure && state.protocol_cursor){state.disposed=false;std::rethrow_exception(failure);}
+    release_native(state);
+    if(failure)std::rethrow_exception(failure);
+}
+void sequence_finish(Values& values,const std::shared_ptr<Aggregate>& sequence,const ExecutionOptions& options,std::exception_ptr failure){
+    if(!failure){sequence_dispose(values,sequence,options);return;}
+    try{std::rethrow_exception(failure);}catch(const ProgramTermination&){sequence_dispose(sequence);throw;}catch(...){}
+    CleanupMode cleanup(values);
+    sequence_dispose(values,sequence,options);
+    std::rethrow_exception(failure);
+}
+
 namespace {
 std::shared_ptr<Aggregate> cursor_lease(std::shared_ptr<Aggregate> owner) {
     auto* pointer=owner.get();
     return std::shared_ptr<Aggregate>(pointer,[owner=std::move(owner)](Aggregate*) noexcept {sequence_dispose(owner);});
 }
 }
-std::shared_ptr<Aggregate> sequence_begin(Values& values,const std::shared_ptr<Aggregate>& sequence) {
+std::shared_ptr<Aggregate> sequence_begin(Values& values,const std::shared_ptr<Aggregate>& sequence,const ExecutionOptions& options) {
     require(sequence,values.location);
     if (!sequence->sequence) throw runtime_error(RuntimeError::invalid_bytecode,values.location);
-    if(sequence->sequence->provider==SequenceProvider::ordinal_range)return sequence_begin(values,ordinal_range_begin(values,sequence->type,sequence->sequence->source));
+    if(sequence->sequence->provider==SequenceProvider::ordinal_range)return sequence_begin(values,ordinal_range_begin(values,sequence->type,sequence->sequence->source),options);
     reserve_state(values);
     if(sequence->sequence->provider==SequenceProvider::file_lines)return cursor_lease(file_sequence_begin(values,sequence));
     if(sequence->sequence->provider==SequenceProvider::directory)return cursor_lease(directory_sequence_begin(values,sequence));
     auto result=std::make_shared<Aggregate>(); result->type=sequence->type;
     result->sequence=std::make_unique<SequenceState>(*sequence->sequence);
     auto& state=*result->sequence; state.started=true;state.disposed=false; state.first=0;
+    if(state.provider==SequenceProvider::user_source){
+        reserve_state(values);state.protocol_cursor=std::make_shared<ProtocolCursor>();
+        state.protocol_cursor->protocol=interface_contract(values.program.types,sequence->type).at(0).result;
+        state.protocol_cursor->receiver=interface_invoke(values,sequence->type,0,state.source,{},options);
+        return cursor_lease(std::move(result));
+    }
     if(state.provider==SequenceProvider::random){
         if(!state.random)throw runtime_error(RuntimeError::invalid_bytecode,values.location);
         reserve_state(values);state.random=std::make_shared<RandomSequenceState>(*state.random);state.random->positioned=false;state.random->available=false;state.random->index=0;state.random->current=values.zero(type_info(values.program,sequence->type).element);return cursor_lease(std::move(result));
@@ -145,10 +194,16 @@ void sequence_check(const std::shared_ptr<Aggregate>& sequence,SourceLocation lo
     if(dictionary_provider(state.provider) && state.version!=dictionary_sequence_source(state,location)->version)throw runtime_error(RuntimeError::collection_changed,location);
     if ((state.provider==SequenceProvider::list || state.provider==SequenceProvider::hash_set || state.provider==SequenceProvider::new_set) && state.version!=state.source->version) throw runtime_error(RuntimeError::collection_changed,location);
 }
-bool sequence_resume(Values& values,const std::shared_ptr<Aggregate>& sequence,std::uint64_t index,const ExecutionOptions& options) {
+static bool sequence_resume_impl(Values& values,const std::shared_ptr<Aggregate>& sequence,std::uint64_t index,const ExecutionOptions& options) {
     const auto location=values.location;
     sequence_check(sequence,location); auto& state=*sequence->sequence;
     if(state.disposed)return false;
+    if(state.provider==SequenceProvider::user_source){
+        if(!state.protocol_cursor)throw runtime_error(RuntimeError::invalid_bytecode,location);auto& c=*state.protocol_cursor;
+        if(c.positioned && c.index==index)return c.available;
+        if((!c.positioned && index) || (c.positioned && (!c.available || index<=c.index || index-c.index!=1)))throw runtime_error(RuntimeError::invalid_bytecode,location);
+        c.available=std::get<bool>(enumerator_invoke(values,c.protocol,Type::invalid,EnumeratorMethod::move,c.receiver,options));c.index=index;c.positioned=true;return c.available;
+    }
     if(state.provider==SequenceProvider::random)return random_sequence_resume(values,sequence,index,options);
     if(state.provider==SequenceProvider::directory)return directory_sequence_resume(values,sequence,index,options);
     if(dictionary_provider(state.provider))return dictionary_sequence_resume(values,sequence,index,options);
@@ -218,10 +273,20 @@ bool sequence_resume(Values& values,const std::shared_ptr<Aggregate>& sequence,s
     }
     return index<state.count;
 }
+bool sequence_resume(Values& values,const std::shared_ptr<Aggregate>& sequence,std::uint64_t index,const ExecutionOptions& options) try {
+    const auto available=sequence_resume_impl(values,sequence,index,options);
+    const auto& s=*sequence->sequence;
+    if(!available && (s.partial || s.slice || s.concat || s.transform || s.zip || s.cartesian))sequence_dispose(values,sequence,options);
+    return available;
+}catch(const Error& error){
+    if(error.code=="E_CANCELLED" || error.code=="E_LIMIT" || error.code=="E_BYTECODE")throw;
+    if(sequence && sequence->sequence){const auto& s=*sequence->sequence;if((s.partial || s.slice || s.concat || s.transform || s.zip || s.cartesian) && !legacy_transform(values,s))sequence_finish(values,sequence,options,std::current_exception());}
+    throw;
+}
 std::optional<std::uint64_t> sequence_known_length(const std::shared_ptr<Aggregate>& sequence,SourceLocation location) {
     const auto& state=cursor(sequence,location);
     if(state.disposed)return std::uint64_t{0};
-    if(state.provider==SequenceProvider::random || state.provider==SequenceProvider::directory)return std::nullopt;
+    if(state.provider==SequenceProvider::random || state.provider==SequenceProvider::directory || state.provider==SequenceProvider::user_source)return std::nullopt;
     if (state.provider==SequenceProvider::text_lines || state.provider==SequenceProvider::file_lines || state.provider==SequenceProvider::matrix_lines || state.provider==SequenceProvider::array_view || state.provider==SequenceProvider::combinatorics || state.provider==SequenceProvider::cartesian || state.provider==SequenceProvider::cartesian_power || state.provider==SequenceProvider::generated || state.provider==SequenceProvider::zip || state.provider==SequenceProvider::transform || state.provider==SequenceProvider::concat || state.provider==SequenceProvider::slice || state.provider==SequenceProvider::partial_sum || state.provider==SequenceProvider::big_range || (state.provider==SequenceProvider::real_range && !state.real_range->initialized)) return std::nullopt;
     return state.count;
 }
@@ -233,6 +298,7 @@ std::uint64_t sequence_length(const std::shared_ptr<Aggregate>& sequence,SourceL
 Value sequence_at(Values& values,const std::shared_ptr<Aggregate>& sequence,std::int64_t index,const ExecutionOptions& options) {
     sequence_check(sequence,values.location); const auto& state=*sequence->sequence;
     if (index<0 || !sequence_resume(values,sequence,static_cast<std::uint64_t>(index),options)) throw runtime_error(RuntimeError::index_bounds,values.location);
+    if(state.provider==SequenceProvider::user_source){if(!state.protocol_cursor)throw runtime_error(RuntimeError::invalid_bytecode,values.location);return enumerator_invoke(values,state.protocol_cursor->protocol,Type::invalid,EnumeratorMethod::current,state.protocol_cursor->receiver,options);}
     if (state.provider==SequenceProvider::real_range) {
         const auto& range=*state.real_range; const auto first=std::get<double>(state.seed->value);
         if (range.direct) return first;
@@ -272,7 +338,8 @@ Value sequence_at(Values& values,const std::shared_ptr<Aggregate>& sequence,std:
 }
 Value sequence_collect(Values& values,const std::shared_ptr<Aggregate>& sequence,Type collection,const ExecutionOptions& options) {
     if(sequence && !sequence->nil && sequence->sequence && sequence->sequence->provider==SequenceProvider::ordinal_range)return ordinal_range_collect(values,sequence->sequence->source,collection,options);
-    const auto iterator=sequence_begin(values,sequence);
+    const auto iterator=sequence_begin(values,sequence,options);
+    return sequence_finally(values,iterator,options,[&]() -> Value {
     if(iterator->sequence->provider!=SequenceProvider::hash_set && !dictionary_provider(iterator->sequence->provider))(void)sequence_resume(values,iterator,0,options);
     const auto known_count=sequence_known_length(iterator,values.location);
     const bool materialize=collection!=Type::invalid;
@@ -295,15 +362,18 @@ Value sequence_collect(Values& values,const std::shared_ptr<Aggregate>& sequence
         const auto i=count;
         if (i>=options.instruction_limit) throw runtime_error(RuntimeError::instruction_limit,values.location);
         if ((i&255U)==0 && options.cancelled && options.cancelled()) throw runtime_error(RuntimeError::cancelled,values.location);
-        auto value=sequence_at(values,iterator,static_cast<std::int64_t>(i),options);
         if (materialize) {
+            auto value=sequence_at(values,iterator,static_cast<std::int64_t>(i),options);
             auto item=values.cell(element,std::move(value));
             if (list) { values.grow_list(result,result->items.size()+1);values.own_list_cell(item,result); }
             result->items.push_back(std::move(item));
         }
-        else if (i>=INT32_MAX) throw runtime_error(RuntimeError::integer_overflow,values.location);
+        // Native providers may defer producing a yield value until sequence_at.
+        // A user IEnumerator Count must call MoveNext without requesting Current.
+        else {if(iterator->sequence->provider!=SequenceProvider::user_source)(void)sequence_at(values,iterator,static_cast<std::int64_t>(i),options);if(i>=INT32_MAX)throw runtime_error(RuntimeError::integer_overflow,values.location);}
     }
     return materialize ? Value{result} : Value{static_cast<std::int32_t>(count)};
+    });
 }
 Value sequence_query(Values& values,const std::shared_ptr<Aggregate>& sequence,SequenceQuery method,const Value& argument,const ExecutionOptions& options) {
     require(sequence,values.location);
@@ -318,7 +388,8 @@ Value sequence_query(Values& values,const std::shared_ptr<Aggregate>& sequence,S
     };
     const auto index=indexed ? std::get<std::int32_t>(argument) : 0;
     if (indexed && index<0) return absent();
-    const auto iterator=sequence_begin(values,sequence);
+    const auto iterator=sequence_begin(values,sequence,options);
+    return sequence_finally(values,iterator,options,[&]() -> Value {
     if (!sequence_resume(values,iterator,0,options)) {
         if (method==SequenceQuery::any || method==SequenceQuery::contains) return false;
         return absent();
@@ -343,8 +414,11 @@ Value sequence_query(Values& values,const std::shared_ptr<Aggregate>& sequence,S
     }
     Value last=std::int32_t{0};
     for (std::uint64_t i=0;sequence_resume(values,iterator,i,options);++i) {
-        check(); auto value=sequence_at(values,iterator,static_cast<std::int64_t>(i),options);
-        if (method==SequenceQuery::any) return true;
+        check();
+        if (method==SequenceQuery::any){if(iterator->sequence->provider!=SequenceProvider::user_source)(void)sequence_at(values,iterator,static_cast<std::int64_t>(i),options);return true;}
+        if(indexed && i!=static_cast<std::uint64_t>(index)){if(iterator->sequence->provider!=SequenceProvider::user_source)(void)sequence_at(values,iterator,static_cast<std::int64_t>(i),options);continue;}
+        if(single && i){if(iterator->sequence->provider!=SequenceProvider::user_source)(void)sequence_at(values,iterator,static_cast<std::int64_t>(i),options);throw runtime_error(RuntimeError::sequence_multiple,values.location);}
+        auto value=sequence_at(values,iterator,static_cast<std::int64_t>(i),options);
         if (method==SequenceQuery::contains) { if (values.equal(value,argument)) return true; }
         else if ((indexed && i==static_cast<std::uint64_t>(index)) || method==SequenceQuery::first || method==SequenceQuery::first_default) return value;
         else if (single) {
@@ -356,6 +430,7 @@ Value sequence_query(Values& values,const std::shared_ptr<Aggregate>& sequence,S
     if (method==SequenceQuery::contains) return false;
     if (method==SequenceQuery::last || method==SequenceQuery::last_default || single) return last;
     return absent();
+    });
 }
 std::shared_ptr<Aggregate> sequence_snapshot(Values& values,Type type,const std::shared_ptr<Aggregate>& array,const ExecutionOptions& options) {
     require(array,values.location);

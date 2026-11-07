@@ -1,5 +1,6 @@
 #include "collection_operations.hpp"
 #include "sequences.hpp"
+#include "sequence_scope.hpp"
 #include <array>
 #include <algorithm>
 
@@ -69,7 +70,8 @@ Value collection_operation(Values& values,Type type,const std::shared_ptr<Aggreg
     const bool eager=!fill && (convert || action || (generator ? list || matrix : !list));
     if (eager) (void)values.callable_target(callback);
     if (sequence) {
-        auto cursor=sequence_begin(values,source); std::uint64_t index=0;
+        auto cursor=sequence_begin(values,source,options);
+    return sequence_finally(values,cursor,options,[&]() -> Value { std::uint64_t index=0;
         const auto count=type_info(values.program,callback->type).parameters.size();
         while (sequence_resume(values,cursor,index,options)) {
             work(values,used,options);
@@ -81,6 +83,7 @@ Value collection_operation(Values& values,Type type,const std::shared_ptr<Aggreg
             ++index;
         }
         return std::int32_t{0};
+        });
     }
     require(source,values.location);
     const auto bound=source->items.size();

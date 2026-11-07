@@ -1,6 +1,7 @@
 #include "print.hpp"
 #include "runtime_values.hpp"
 #include "sequences.hpp"
+#include "sequence_scope.hpp"
 #include "formatting.hpp"
 #include <algorithm>
 #include <array>
@@ -57,7 +58,9 @@ Value print_invoke(Values& values,Type self,PrintMethod method,Type callback,std
         delim=std::u16string{u"\n"};
 #endif
     }else delim=args[1];
-    const auto cursor=sequence_begin(values,source);for(std::uint64_t i=0;sequence_resume(values,cursor,i,options);++i){step();if(i>static_cast<std::uint64_t>(INT64_MAX))throw runtime_error(RuntimeError::integer_overflow,values.location);const auto value=sequence_at(values,cursor,static_cast<std::int64_t>(i),options);if(i)separator(delim);emit(text(value,element));}
+    const auto cursor=sequence_begin(values,source,options);
+    sequence_finally(values,cursor,options,[&]{for(std::uint64_t i=0;sequence_resume(values,cursor,i,options);++i){step();if(i>static_cast<std::uint64_t>(INT64_MAX))throw runtime_error(RuntimeError::integer_overflow,values.location);const auto value=sequence_at(values,cursor,static_cast<std::int64_t>(i),options);if(i)separator(delim);emit(text(value,element));}
+    });
     if(method!=PrintMethod::sequence_print)emit(u"\n");return args[0];
 }
 }

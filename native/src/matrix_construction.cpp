@@ -1,5 +1,6 @@
 #include "matrix_construction.hpp"
 #include "sequences.hpp"
+#include "sequence_scope.hpp"
 #include <algorithm>
 
 namespace abc {
@@ -24,13 +25,15 @@ template<class F> void visit(Values& values,const std::shared_ptr<Aggregate>& so
         }
         return;
     }
-    auto cursor=sequence_begin(values,source);
+    auto cursor=sequence_begin(values,source,options);
+    return sequence_finally(values,cursor,options,[&]() -> void {
     for (std::uint64_t i=0;sequence_resume(values,cursor,i,options);++i) {
         work(values,used,options);
         if (i>static_cast<std::uint64_t>(INT64_MAX)) throw runtime_error(RuntimeError::integer_overflow,values.location);
         auto value=sequence_at(values,cursor,static_cast<std::int64_t>(i),options);
         if (!action(value,i)) return;
     }
+    });
 }
 }
 bool matrix_build_signature_valid(const Program& program,Type result,Type input,MatrixBuild method) {

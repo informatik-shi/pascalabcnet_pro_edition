@@ -2,6 +2,7 @@
 #include "runtime_values.hpp"
 #include "value_hash.hpp"
 #include "sequences.hpp"
+#include "sequence_scope.hpp"
 #include "formatting.hpp"
 #include <algorithm>
 #include <array>
@@ -179,8 +180,10 @@ Object copy(ValueHashWork& work,Type owner,const Object& source){
  return result;
 }
 template<class F>void each(ValueHashWork& work,const Object& source,F action){
- const auto cursor=sequence_begin(work.values,source);
+ const auto cursor=sequence_begin(work.values,source,work.options);
+    return sequence_finally(work.values,cursor,work.options,[&]() -> void {
  for(std::uint64_t i=0;sequence_resume(work.values,cursor,i,work.options);++i){work.step();action(sequence_at(work.values,cursor,static_cast<std::int64_t>(i),work.options));}
+    });
 }
 void update(ValueHashWork& work,const Object& target,const Object& source){
  if(!source || source->nil)return;require(source,work.values.location);const auto version=source->version;
@@ -295,11 +298,16 @@ Value dictionary_invoke(Values& values,Type owner,Type payload,DictionaryMethod 
    for(const auto& item:snapshot){work.step();const auto& pair=std::get<Object>(item);insert(work,result,pair->items[0]->value,pair->items[1]->value,true);}return result;
   }
   if(m==DictionaryMethod::from_sequences){
-   auto result=make(values,owner);const auto keys=sequence_begin(values,std::get<Object>(args[0])),items=sequence_begin(values,std::get<Object>(args[1]));
+   auto result=make(values,owner);const auto keys=sequence_begin(values,std::get<Object>(args[0]),options);
+   return sequence_finally(values,keys,options,[&]() -> Value {
+   const auto items=sequence_begin(values,std::get<Object>(args[1]),options);
+   return sequence_finally(values,items,options,[&]() -> Value {
    for(std::uint64_t i=0;;++i){work.step();const auto k=sequence_resume(values,keys,i,options),v=sequence_resume(values,items,i,options);
     if(k!=v)throw runtime_error(RuntimeError::dictionary_lengths,values.location);if(!k)break;
     insert(work,result,sequence_at(values,keys,static_cast<std::int64_t>(i),options),sequence_at(values,items,static_cast<std::int64_t>(i),options),true);
    }return result;
+   });
+   });
   }
   const auto object=std::get<Object>(args[m==DictionaryMethod::membership ? 1 : 0]);
   if(m==DictionaryMethod::update){update(work,object,std::get<Object>(args[1]));return false;}

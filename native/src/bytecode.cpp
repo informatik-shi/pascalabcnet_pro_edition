@@ -630,7 +630,8 @@ private:
             local(Op::load,node.sequence_local,node.location); local(Op::load,node.index_local,node.location);
             emit(Op::get_index,sequence,sequence==Type::string || type_info(program_,sequence).rank==2 ? 1 : 0,node.location);
             if (element!=node.target->type) {
-                if (compound(node.target->type) && type_info(program_,node.target->type).kind==CompoundKind::sequence)
+                if(interface_compatible(program_.types,element,node.target->type))emit(Op::interface_cast,element,static_cast<std::size_t>(node.target->type)<<1U,node.location);
+                else if (compound(node.target->type) && type_info(program_,node.target->type).kind==CompoundKind::sequence)
                     emit(Op::sequence_wrap,element,static_cast<std::size_t>(node.target->type),node.location);
                 else emit(Op::convert,node.target->type,0,node.location);
             }

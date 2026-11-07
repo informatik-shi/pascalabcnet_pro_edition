@@ -44,12 +44,12 @@ bool sequence_cartesian_resume(Values& values,const std::shared_ptr<Aggregate>& 
         work(values,cursor.work,options);
         const auto depth=cursor.depth;
         if (!cursor.iterators[depth]) {
-            cursor.iterators[depth]=sequence_begin(values,state.sources[depth]);
+            cursor.iterators[depth]=sequence_begin(values,state.sources[depth],options);
             cursor.indices[depth]=0;
         }
         const auto source_index=cursor.indices[depth];
         if (!sequence_resume(values,cursor.iterators[depth],source_index,options)) {
-            cursor.iterators[depth].reset();
+            auto completed=std::move(cursor.iterators[depth]);sequence_dispose(values,completed,options);
             if (!depth) return finish(cursor,index,false);
             --cursor.depth; continue;
         }

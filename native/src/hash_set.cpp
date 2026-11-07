@@ -4,6 +4,7 @@
 #include "real_interval.hpp"
 #include "runtime_values.hpp"
 #include "sequences.hpp"
+#include "sequence_scope.hpp"
 #include "big_integer_runtime.hpp"
 #include <cmath>
 #include <array>
@@ -107,9 +108,11 @@ std::optional<std::size_t> collection_count(const std::shared_ptr<Aggregate>& se
     return {};
 }
 template<class F> bool each(Work& work,const std::shared_ptr<Aggregate>& source,F action){
-    const auto cursor=sequence_begin(work.values,source);
+    const auto cursor=sequence_begin(work.values,source,work.options);
+    return sequence_finally(work.values,cursor,work.options,[&]() -> bool {
     for(std::uint64_t i=0;sequence_resume(work.values,cursor,i,work.options);++i){work.step();auto value=sequence_at(work.values,cursor,static_cast<std::int64_t>(i),work.options);if(!action(value))return false;}
     return true;
+    });
 }
 std::pair<std::size_t,std::size_t> unique(Work& work,const std::shared_ptr<Aggregate>& set,const std::shared_ptr<Aggregate>& other,bool stop){
     if(!set->count){bool found=false;each(work,other,[&](const Value&){found=true;return false;});return {0,found ? 1U : 0U};}

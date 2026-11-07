@@ -81,6 +81,7 @@ Value enumerator_invoke(Values& values,Type owner,Type payload,EnumeratorMethod 
  if(method>=EnumeratorMethod::move && method<=EnumeratorMethod::reset && type_info(values.program,object->type).kind==CompoundKind::object_class){const auto slot=method==EnumeratorMethod::move ? 0U : method==EnumeratorMethod::current ? 1U : method==EnumeratorMethod::dispose ? 2U : 3U;return interface_invoke(values,owner,slot,argument,{},options);}
  if(method==EnumeratorMethod::box_dictionary || method==EnumeratorMethod::box_collection){auto result=make(values,payload);result->enumerator->boxed=values.cell(owner,values.copy(argument));return result;}
  if(method==EnumeratorMethod::get){
+  if(object->sequence && object->sequence->provider==SequenceProvider::user_source)return interface_invoke(values,owner,0,object->sequence->source,{},options);
   if(object->sequence && (object->sequence->provider==SequenceProvider::list || object->sequence->provider==SequenceProvider::hash_set || object->sequence->provider==SequenceProvider::new_set)){
    const auto& sequence=*object->sequence;const auto source=sequence.provider==SequenceProvider::new_set ? (sequence.seed ? new_set_hash(values,std::get<NewSetValue>(sequence.seed->value)) : Object{}) : sequence.source;
    if(!source || source->nil)throw runtime_error(RuntimeError::nil_reference,values.location);
@@ -102,7 +103,7 @@ Value enumerator_invoke(Values& values,Type owner,Type payload,EnumeratorMethod 
   }
   const bool empty=prototype->sequence && prototype->sequence->provider==SequenceProvider::array && prototype->sequence->source && prototype->sequence->source->items.empty();
   if(empty)for(const auto& entry:values.empty_enumerators){work.step();if(entry.first==payload)if(const auto existing=entry.second.lock())return existing;}
-  auto result=make(values,payload);auto& state=*result->enumerator;state.prototype=prototype;state.cursor=sequence_begin(values,prototype);
+  auto result=make(values,payload);auto& state=*result->enumerator;state.prototype=prototype;state.cursor=sequence_begin(values,prototype,options);
   if(empty){bool replaced=false;for(auto& entry:values.empty_enumerators){work.step();if(entry.first==payload){entry.second=result;replaced=true;break;}}if(!replaced)values.empty_enumerators.push_back({payload,result});}
   return result;
  }
@@ -127,14 +128,14 @@ Value enumerator_invoke(Values& values,Type owner,Type payload,EnumeratorMethod 
  if(method==EnumeratorMethod::dispose){
   if(provider==SequenceProvider::string){if(!state.disposed)state.index=state.cursor->sequence->count+1;state.disposed=true;state.available=false;return false;}
   if(!no_dispose(*state.cursor->sequence)){
-   const bool clear=clears(values,*state.cursor->sequence);sequence_dispose(state.cursor);state.disposed=true;state.finished=true;
+   const bool clear=clears(values,*state.cursor->sequence);sequence_dispose(values,state.cursor,options);state.disposed=true;state.finished=true;
    if(clear)values.write(object->items[0],values.zero(type_info(values.program,owner).element,false,true));
   }return false;
  }
  if(method==EnumeratorMethod::reset){
   if(provider==SequenceProvider::string && state.disposed){state.index=0;state.available=false;values.write(object->items[0],char16_t{0});return false;}
   if(!collection)throw runtime_error(RuntimeError::iterator_reset,values.location);
-  sequence_check(state.cursor,values.location);state.cursor=sequence_begin(values,state.prototype);state.index=0;state.available=false;state.finished=false;state.disposed=false;
+  sequence_check(state.cursor,values.location);state.cursor=sequence_begin(values,state.prototype,options);state.index=0;state.available=false;state.finished=false;state.disposed=false;
   values.write(object->items[0],values.zero(type_info(values.program,owner).element,false,true));return false;
  }
  if(provider==SequenceProvider::string && state.disposed)throw runtime_error(RuntimeError::nil_reference,values.location);
@@ -144,7 +145,7 @@ Value enumerator_invoke(Values& values,Type owner,Type payload,EnumeratorMethod 
  if(next){values.write(object->items[0],sequence_at(values,state.cursor,static_cast<std::int64_t>(state.index),options));++state.index;state.available=true;return true;}
  state.available=false;state.finished=true;
  if(collection || clears(values,*state.cursor->sequence))values.write(object->items[0],values.zero(type_info(values.program,owner).element,false,true));
- if(!collection)sequence_dispose(state.cursor);
+ if(!collection)sequence_dispose(values,state.cursor,options);
  return false;
 }catch(const std::bad_alloc&){throw runtime_error(RuntimeError::allocation_limit,values.location);}
 }

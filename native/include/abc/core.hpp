@@ -89,7 +89,7 @@ struct GeneratorState {
     std::uint64_t index=0;
     bool positioned=false, available=false;
 };
-enum class SequenceProvider { school_ip_hosts, school_ip_binary, array, list, repeat, range, stepped_range, big_range, partition, real_range, partial_sum, slice, concat, string, transform, zip, generated, cartesian, cartesian_power, combinatorics, array_view, matrix_lines, file_lines, text_lines, hash_set, new_set, ordinal_range, random, directory, dictionary_entries, dictionary_keys, dictionary_values };
+enum class SequenceProvider { school_ip_hosts, school_ip_binary, array, list, repeat, range, stepped_range, big_range, partition, real_range, partial_sum, slice, concat, string, transform, zip, generated, cartesian, cartesian_power, combinatorics, array_view, matrix_lines, file_lines, text_lines, hash_set, new_set, ordinal_range, random, directory, dictionary_entries, dictionary_keys, dictionary_values, user_source };
 inline bool dictionary_provider(SequenceProvider provider){return provider==SequenceProvider::dictionary_entries || provider==SequenceProvider::dictionary_keys || provider==SequenceProvider::dictionary_values;}
 inline bool collection_sequence(SequenceProvider provider) { return provider==SequenceProvider::array || provider==SequenceProvider::list; }
 struct BigRangeState {
@@ -186,6 +186,7 @@ struct MatrixLineState {
     bool initialized=false,positioned=false,available=false;
 };
 struct FileLineState;struct TextLineState;struct RandomSequenceState;struct DirectorySequenceState;
+struct ProtocolCursor {Type protocol=Type::invalid;Value receiver=std::int32_t{0};std::uint64_t index=0;bool positioned=false,available=false;};
 struct SequenceState {
     std::shared_ptr<Aggregate> source;
     SequenceProvider provider=SequenceProvider::school_ip_hosts;
@@ -231,6 +232,7 @@ struct SequenceState {
     std::shared_ptr<HashSetCursor> hash_cursor;
     std::shared_ptr<RandomSequenceState> random;
     std::shared_ptr<DirectorySequenceState> directory;
+    std::shared_ptr<ProtocolCursor> protocol_cursor{};
 };
 struct EnumeratorState {
     std::shared_ptr<Aggregate> prototype,cursor;

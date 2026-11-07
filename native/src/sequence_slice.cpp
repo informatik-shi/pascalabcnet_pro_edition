@@ -35,14 +35,14 @@ bool sequence_slice_resume(Values& values,const std::shared_ptr<Aggregate>& sequ
     // post-yield arithmetic and version check. Empty TakeLast also avoids nil.
     if ((method==SequenceSlice::take && index>=count) || (method==SequenceSlice::take_last && !count)) return finish(false);
     const auto element=type_info(values.program,sequence->type).element;
-    const auto pull=[&](Value& item) {
+    const auto pull=[&](Value& item,bool current=true) {
         if (slice.ended) return false;
         if (slice.work>=options.instruction_limit) throw runtime_error(RuntimeError::instruction_limit,values.location);
         if ((slice.work++&255U)==0 && options.cancelled && options.cancelled()) throw runtime_error(RuntimeError::cancelled,values.location);
-        if (!slice.iterator) slice.iterator=sequence_begin(values,state.source);
+        if (!slice.iterator) slice.iterator=sequence_begin(values,state.source,options);
         if (slice.source_index>static_cast<std::uint64_t>(INT64_MAX)) throw runtime_error(RuntimeError::integer_overflow,values.location);
-        if (!sequence_resume(values,slice.iterator,slice.source_index,options)) { slice.ended=true; return false; }
-        item=sequence_at(values,slice.iterator,static_cast<std::int64_t>(slice.source_index),options);
+        if (!sequence_resume(values,slice.iterator,slice.source_index,options)) { slice.ended=true;auto completed=std::move(slice.iterator);sequence_dispose(values,completed,options);return false; }
+        if(current)item=sequence_at(values,slice.iterator,static_cast<std::int64_t>(slice.source_index),options);
         ++slice.source_index; return true;
     };
     const auto enqueue=[&](Value item) {
@@ -61,7 +61,7 @@ bool sequence_slice_resume(Values& values,const std::shared_ptr<Aggregate>& sequ
     if (method==SequenceSlice::skip) {
         if (!slice.positioned) {
             Value ignored;
-            for (std::uint32_t skipped=0;skipped<count;++skipped) if (!pull(ignored)) return finish(false);
+            for (std::uint32_t skipped=0;skipped<count;++skipped) if (!pull(ignored,false)) return finish(false);
         }
         return finish(pull(slice.current));
     }

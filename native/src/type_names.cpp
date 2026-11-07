@@ -110,6 +110,7 @@ ReflectedType reflected_value_type(const Program& program,const Value& value,Typ
         if(!current->sequence)throw runtime_error(RuntimeError::invalid_bytecode,location);
         const auto& sequence=*current->sequence;
         if(sequence.provider==SequenceProvider::string){if(sequence.seed && std::holds_alternative<NilString>(sequence.seed->value))return {};return {Type::string};}
+        if(sequence.provider==SequenceProvider::user_source){current=sequence.source;continue;}
         if(sequence.provider==SequenceProvider::ordinal_range && sequence.source)return {sequence.source->type};
         if(collection_sequence(sequence.provider) || sequence.provider==SequenceProvider::hash_set || dictionary_provider(sequence.provider)){current=sequence.source;continue;}
         if(sequence.provider==SequenceProvider::new_set){

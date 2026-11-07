@@ -1,10 +1,12 @@
 #include "sequences.hpp"
+#include "sequence_scope.hpp"
 #include "runtime_values.hpp"
 #include "formatting.hpp"
 
 namespace abc {
 std::u16string sequence_join(Values& values,const std::shared_ptr<Aggregate>& source,const Value& delimiter,const ExecutionOptions& options) {
-    auto cursor=sequence_begin(values,source);const auto element=type_info(values.program,source->type).element;
+    auto cursor=sequence_begin(values,source,options);
+    return sequence_finally(values,cursor,options,[&]() -> std::u16string {const auto element=type_info(values.program,source->type).element;
     std::u16string result;std::uint64_t used=0;bool first=true;
     const auto work=[&] {
         if (used>=options.instruction_limit) throw runtime_error(RuntimeError::instruction_limit,values.location);
@@ -26,5 +28,6 @@ std::u16string sequence_join(Values& values,const std::shared_ptr<Aggregate>& so
         first=false;
     }
     return result;
+    });
 }
 }

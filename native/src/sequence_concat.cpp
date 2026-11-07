@@ -23,13 +23,13 @@ bool sequence_concat_resume(Values& values,const std::shared_ptr<Aggregate>& seq
     while (!cursor.ended) {
         if (cursor.work>=options.instruction_limit) throw runtime_error(RuntimeError::instruction_limit,values.location);
         if ((cursor.work++&255U)==0 && options.cancelled && options.cancelled()) throw runtime_error(RuntimeError::cancelled,values.location);
-        if (!cursor.iterator) cursor.iterator=sequence_begin(values,cursor.second ? state.second_source : state.source);
+        if (!cursor.iterator) cursor.iterator=sequence_begin(values,cursor.second ? state.second_source : state.source,options);
         if (cursor.source_index>static_cast<std::uint64_t>(INT64_MAX)) throw runtime_error(RuntimeError::integer_overflow,values.location);
         if (sequence_resume(values,cursor.iterator,cursor.source_index,options)) {
             cursor.current=sequence_at(values,cursor.iterator,static_cast<std::int64_t>(cursor.source_index),options);
             ++cursor.source_index; cursor.positioned=true; cursor.index=index; cursor.available=true; return true;
         }
-        cursor.iterator.reset(); cursor.source_index=0;
+        auto completed=std::move(cursor.iterator);sequence_dispose(values,completed,options);cursor.source_index=0;
         if (cursor.second) cursor.ended=true;
         else cursor.second=true;
     }

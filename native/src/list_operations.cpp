@@ -1,5 +1,6 @@
 #include "list_operations.hpp"
 #include "sequences.hpp"
+#include "sequence_scope.hpp"
 #include "ordinal_range.hpp"
 #include <bit>
 
@@ -106,7 +107,8 @@ void list_bulk(Values& values,const std::shared_ptr<Aggregate>& target,const std
         // Freeze source cells before insertion, including insertion into Self.
         target->items.insert(target->items.begin()+static_cast<std::ptrdiff_t>(position),added.begin(),added.end());++target->version;return;
     }
-    auto cursor=sequence_begin(values,input);std::uint64_t position=static_cast<std::uint32_t>(index);
+    auto cursor=sequence_begin(values,input,options);
+    return sequence_finally(values,cursor,options,[&]() -> void {std::uint64_t position=static_cast<std::uint32_t>(index);
     for (std::uint64_t i=0;sequence_resume(values,cursor,i,options);++i) {
         work(values,used,options);
         if (i>static_cast<std::uint64_t>(INT64_MAX)) throw runtime_error(RuntimeError::integer_overflow,values.location);
@@ -120,6 +122,7 @@ void list_bulk(Values& values,const std::shared_ptr<Aggregate>& target,const std
         target->items.insert(target->items.begin()+static_cast<std::ptrdiff_t>(destination),std::move(cell));++target->version;
         if (insert) ++position;
     }
+    });
 }
 bool list_operation_signature_valid(const Program& program,Type source,Type result,ListOperation method) {
     if (static_cast<unsigned>(method)>static_cast<unsigned>(ListOperation::last_range) || !compound(source)) return false;

@@ -4,6 +4,7 @@
 #include "unicode.hpp"
 #include "big_integer_runtime.hpp"
 #include "sequences.hpp"
+#include "sequence_scope.hpp"
 #include <algorithm>
 #include <cmath>
 #include <numbers>
@@ -604,11 +605,12 @@ std::shared_ptr<Aggregate> school_minmax(Values& values,const std::shared_ptr<Ag
     if (sequence->nil) throw runtime_error(RuntimeError::nil_reference,values.location);
     const auto& info=type_info(values.program,sequence->type); const auto version=sequence->version;
     const bool lazy=info.kind==CompoundKind::sequence;
-    const auto iterator=lazy ? sequence_begin(values,sequence) : sequence;
+    const auto iterator=lazy ? sequence_begin(values,sequence,options) : sequence;
     const auto count=lazy ? 0 : sequence->items.size();
     const auto calculate=[&]<class T>() {
         T low{},high{};
         if constexpr (!std::is_same_v<T,BigInteger>) { low=std::numeric_limits<T>::max(); high=std::numeric_limits<T>::lowest(); }
+        sequence_finally(values,iterator,options,[&]{
         for (std::uint64_t i=0;lazy ? sequence_resume(values,iterator,i,options) : i<count;++i) {
             if (i>=options.instruction_limit) throw runtime_error(RuntimeError::instruction_limit,values.location);
             if ((i&255U)==0 && options.cancelled && options.cancelled()) throw runtime_error(RuntimeError::cancelled,values.location);
@@ -618,6 +620,7 @@ std::shared_ptr<Aggregate> school_minmax(Values& values,const std::shared_ptr<Ag
             if (number<low) low=number;
             if (number>high) high=number;
         }
+        });
         auto result=std::make_shared<Aggregate>(); result->type=tuple;
         result->items.push_back(values.cell(info.element,low)); result->items.push_back(values.cell(info.element,high));
         return result;

@@ -571,3 +571,4 @@
     {"Incompatible interface implementation routine","Несовместимая подпрограмма реализации интерфейса"},
     {"Missing inherited interface implementation","Отсутствует реализация родительского интерфейса"},
     {"Invalid interface params parameter","Некорректный параметр params интерфейса"},
+    {"Ambiguous IEnumerable element type","Неоднозначный тип элементов IEnumerable"},

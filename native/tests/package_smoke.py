@@ -241,6 +241,7 @@ def main():
                 ("dictionaries.pas", "{(чай,130),(кофе,180)}\n[чай,кофе,сок]\n{(чай,140),(вода,60)}\n{(2,2),(1,1),(3,1)}\n{(1,1),(2,4),(3,9)}\nчай: 130\nкофе: 180\nсок: 90\n"),
                 ("collection-enumerators.pas", "two one\nthree two\none\nred\nblue\n"),
                 ("user-interfaces.pas", "8\n10\n16\nCounter\n"),
+                ("user-enumerables.pas", "1\n2\nclosed\nclosed\n6\n"),
                 ("enumerator-interfaces.pas", "10 20\n30\n1 2\n1\n2\n4\nFalse\n"),
                 ("dictionary-enumerators.pas", "Original: two=2\nCopy: one=1\ntwo=2\nthree=3\none\ntwo\nthree\n"),
                 ("single-numbers.pas", "16777216 single\n1.0000001\n1 0.33333334\n16777216\nTrue 1E-45\n3.4028235E+38 1E-45\n"),
@@ -1629,6 +1630,13 @@ def main():
             if invalid.returncode != 1 or invalid.stdout or "E_TYPE" not in invalid.stderr or "RU:" not in invalid.stderr:
                 raise RuntimeError(f"{name} incomplete user interface implementation was not rejected before output")
             results[-1]["native_user_interfaces_dispatch_and_bilingual_errors"] = "passed"
+            enumerable_error = folder / "Ошибки пользовательской последовательности.pas"
+            enumerable_error.write_text("type C=class(IEnumerator<integer>) public function MoveNext:boolean:=True;property Current:integer read One;function One:integer:=1;procedure Reset;begin end;procedure Dispose;begin Write('closed');end;end;S=class(IEnumerable<integer>) public function GetEnumerator:IEnumerator<integer>:=new C;end;\nbegin var s:=new S;foreach var x in s do begin var zero:=0;Writeln(1 div zero);end;end.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(enumerable_error)], text=True, encoding="utf-8", capture_output=True, cwd=folder, env=env, timeout=10)
+            if (invalid.returncode != 1 or invalid.stdout != "closed" or "E_DIV_ZERO" not in invalid.stderr
+                    or "EN: Division by zero" not in invalid.stderr or "RU: Деление на ноль" not in invalid.stderr or f"{enumerable_error}:2:" not in invalid.stderr):
+                raise RuntimeError(f"{name} user enumerable unwind/bilingual error failed: {invalid.stdout!r} {invalid.stderr!r}")
+            results[-1]["native_user_enumerables_finally_and_bilingual_errors"] = "passed"
             iterator_data = folder / "iterator-resource.txt"
             iterator_data.write_text("one\ntwo\n", encoding="utf-8")
             iterator_source = folder / "Ресурсы перечислителя.pas"

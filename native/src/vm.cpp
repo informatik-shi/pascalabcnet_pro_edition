@@ -17,6 +17,7 @@
 #include "school.hpp"
 #include "school_ip.hpp"
 #include "sequences.hpp"
+#include "sequence_scope.hpp"
 #include "generators.hpp"
 #include "random_sequence.hpp"
 #include "directory_sequence.hpp"
@@ -55,9 +56,22 @@
 #include <type_traits>
 #include <array>
 #include <bit>
+#include <chrono>
+#if defined(_MSC_VER) && !defined(__clang__)
+#include <intrin.h>
+#endif
 
 namespace abc {
 namespace {
+
+// Read real frames rather than local addresses, which ASan may place on a fake stack.
+#if defined(_MSC_VER) && !defined(__clang__)
+__declspec(noinline) std::uintptr_t native_stack_address(){return reinterpret_cast<std::uintptr_t>(_AddressOfReturnAddress());}
+#else
+__attribute__((noinline)) std::uintptr_t native_stack_address(){return reinterpret_cast<std::uintptr_t>(__builtin_frame_address(0));}
+#endif
+constexpr std::size_t native_callback_stack_limit=256*1024,native_cleanup_stack_limit=384*1024,cleanup_cell_limit=4096;
+constexpr std::uint64_t cleanup_work_limit=10'000;
 
 [[noreturn]] void trap(const Instruction& instruction, RuntimeError id, std::string_view context = {}) {
     throw runtime_error(id, instruction.location, context);
@@ -175,7 +189,11 @@ void append_collection_text(const Program& program,std::u16string& text, const V
 
 } // namespace
 
-static std::int32_t execute_impl(const Program& program, std::istream& input, std::ostream& output, const ExecutionOptions& options, Value* constant_result) {
+static std::int32_t execute_impl(const Program& program, std::istream& input, std::ostream& output, const ExecutionOptions& requested_options, Value* constant_result) {
+    auto options=requested_options;
+    auto cleanup_deadline=std::chrono::steady_clock::time_point::max();bool cleanup_started=false;
+    auto cleanup_options=requested_options;cleanup_options.cancelled=[&]{return std::chrono::steady_clock::now()>=cleanup_deadline;};cleanup_options.instruction_limit=cleanup_work_limit;cleanup_options.allocation_limit=cleanup_cell_limit;
+    const auto stack_origin=native_stack_address();
     try { verify(program); }
     catch (const Error& error) {
         throw Error(error.code, error.location, error.what(), "Некорректный байт-код: выполнение невозможно");
@@ -207,10 +225,14 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
         const Routine* routine;
         std::vector<std::shared_ptr<Cell>> locals;
         std::size_t pc = 0, base = 0;
+        std::vector<std::shared_ptr<Aggregate>> cursors{};
     };
-    std::vector<Frame> frames{{&program.code,nullptr,globals,0,0}};
+    std::deque<Frame> frames{{&program.code,nullptr,globals,0,0}};
     std::vector<Value> stack;
-    std::uint64_t steps = 0;
+    std::uint64_t steps = 0,cleanup_steps=0;
+    // Keep a bounded reserve for user finally code after the normal budget expires.
+    std::size_t cleanup_cells=cleanup_cell_limit,cleanup_storage=cleanup_cell_limit;
+    values.cleanup_mode=[&](bool enter){if(enter && !cleanup_started){cleanup_started=true;cleanup_deadline=std::chrono::steady_clock::now()+std::chrono::seconds{1};}std::swap(options,cleanup_options);std::swap(values.remaining,cleanup_cells);std::swap(values.list_storage_remaining,cleanup_storage);};
     ConsoleOutput console_output(output,options);
     auto write = [&](std::u16string_view text, const Instruction& instruction) {
         console_output.write(text,instruction.location);
@@ -259,13 +281,15 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
     std::function<void(std::size_t)> run_to;
     const auto invoke_result=[&](std::size_t id,std::span<const Value> arguments,std::span<const std::shared_ptr<Cell>> captured)->Value {
         const auto location=values.location;
+        const auto address=native_stack_address(),used=address>stack_origin ? address-stack_origin : stack_origin-address;
+        if(used>(values.cleanup_depth ? native_cleanup_stack_limit : native_callback_stack_limit))throw Error("E_LIMIT",location,"Call stack limit exceeded","Превышен предел стека вызовов");
         struct RestoreLocation { Values& values; SourceLocation saved; ~RestoreLocation(){values.location=saved;} } restore{values,location};
         if (id>=program.routines.size() || program.routines[id].parameters.size()!=arguments.size())
             throw runtime_error(RuntimeError::invalid_bytecode,location);
         const auto procedure=program.routines[id].result==Type::unit;
         const auto depth=frames.size(),base=stack.size();
         for (const auto& argument:arguments) stack.push_back(values.copy(argument));
-        enter_routine(id,location,captured); run_to(depth);
+        try{enter_routine(id,location,captured);run_to(depth);}catch(...){if(stack.size()>base)stack.resize(base);throw;}
         if (frames.size()!=depth || stack.size()!=base+(procedure ? 0U : 1U)) throw runtime_error(RuntimeError::invalid_bytecode,location);
         // Procedure callbacks return no operand; callers use only their side effects.
         return procedure ? Value{std::int32_t{0}} : pop();
@@ -275,10 +299,11 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
         return invoke_result(values.callable_target(callable),arguments,callable->captures);
     };
     run_to=[&](std::size_t depth) {
+    try{
     while (frames.size()>depth) {
         auto& frame = frames.back(); auto& locals = frame.locals;
         const auto& instruction = (*frame.code)[frame.pc++]; values.location = instruction.location;
-        if (steps++ >= options.instruction_limit) trap(instruction, RuntimeError::instruction_limit);
+        if ((values.cleanup_depth ? cleanup_steps++ : steps++) >= options.instruction_limit) trap(instruction, RuntimeError::instruction_limit);
         if (options.cancelled && options.cancelled()) trap(instruction, RuntimeError::cancelled);
         switch (instruction.op) {
         case Op::sequence_snapshot: {
@@ -415,10 +440,16 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
             if(ordinal_range_type(type_info(program,instruction.type))){stack.emplace_back(sequence_create(values,static_cast<Type>(instruction.operand),std::get<std::shared_ptr<Aggregate>>(values.copy(source)),SequenceProvider::ordinal_range));break;}
             stack.emplace_back(sequence_create(values,static_cast<Type>(instruction.operand),source,type_info(program,instruction.type).kind==CompoundKind::dictionary ? SequenceProvider::dictionary_entries : type_info(program,instruction.type).kind==CompoundKind::dictionary_keys ? SequenceProvider::dictionary_keys : type_info(program,instruction.type).kind==CompoundKind::dictionary_values ? SequenceProvider::dictionary_values : type_info(program,instruction.type).kind==CompoundKind::array ? SequenceProvider::array : type_info(program,instruction.type).kind==CompoundKind::hash_set ? SequenceProvider::hash_set : SequenceProvider::list)); break;
         }
-        case Op::sequence_dispose:
-            sequence_dispose(std::get<std::shared_ptr<Aggregate>>(pop()));break;
-        case Op::sequence_begin:
-            stack.emplace_back(sequence_begin(values,std::get<std::shared_ptr<Aggregate>>(pop()))); break;
+        case Op::sequence_dispose: {
+            const auto cursor=std::get<std::shared_ptr<Aggregate>>(pop());
+            auto& active=frame.cursors;const auto found=std::find(active.rbegin(),active.rend(),cursor);if(found!=active.rend())active.erase(std::next(found).base());
+            sequence_dispose(values,cursor,options);break;
+        }
+        case Op::sequence_begin: {
+            const auto cursor=sequence_begin(values,std::get<std::shared_ptr<Aggregate>>(pop()),options);
+            try{frame.cursors.push_back(cursor);}catch(...){sequence_finish(values,cursor,options,std::current_exception());}
+            stack.emplace_back(cursor);break;
+        }
         case Op::sequence_aggregate: {
             const auto sequence=std::get<std::shared_ptr<Aggregate>>(pop());
             stack.push_back(sequence_aggregate(values,sequence,static_cast<SequenceAggregate>(instruction.operand),options)); break;
@@ -1391,6 +1422,7 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
             std::optional<Value> result;
             if (frame.routine->constructor) result=frame.locals[frame.routine->parameters.front().local]->value;
             else if (frame.routine->result != Type::unit) result = values.copy(frame.locals[frame.routine->result_local]->value);
+            while(!frame.cursors.empty()){auto cursor=std::move(frame.cursors.back());frame.cursors.pop_back();sequence_dispose(values,cursor,options);}
             stack.resize(frame.base); frames.pop_back();
             if (result) stack.push_back(std::move(*result)); break;
         }
@@ -1527,8 +1559,18 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
             const auto value=console.read(instruction.type,instruction.location); account_number(value);
             values.write((program.locals[instruction.operand].global ? globals : locals)[instruction.operand],value); console.skip_line(instruction.location); break;
         }
-        case Op::halt: frames.clear(); break;
+        case Op::halt:
+            while(!frame.cursors.empty()){auto cursor=std::move(frame.cursors.back());frame.cursors.pop_back();sequence_dispose(values,cursor,options);}
+            frames.clear();break;
         }
+    }
+    }catch(const ProgramTermination&){throw;}catch(...){
+        auto failure=std::current_exception();
+        while(frames.size()>depth){
+            auto failed=std::move(frames.back());frames.pop_back();if(stack.size()>failed.base)stack.resize(failed.base);
+            for(auto it=failed.cursors.rbegin();it!=failed.cursors.rend();++it)try{sequence_finish(values,*it,options,failure);}catch(...){failure=std::current_exception();}
+        }
+        std::rethrow_exception(failure);
     }
     };
     std::int32_t exit_code=0;

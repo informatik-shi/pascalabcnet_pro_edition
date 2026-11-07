@@ -823,8 +823,8 @@ closed reflection names do not enumerate sources. Bounded native work, allocatio
 cancellation and execution cycle cleanup remain shared with the VM. Independent
 Framework struct-array probes avoid accidental interface boxing during copy tests.
 Closed generic IEnumerator conversion and inherited interface Reset are now handled
-by the native interface adapter described below. Nongeneric interfaces and custom
-user implementations still require further interface/type-system work.
+by the native interface adapter described below. Nongeneric interfaces and user
+generic declarations still require further interface/type-system work.
 
 IEnumerator<T> has a closed static element type and reference identity. Its dedicated
 verified operation distinguishes GetEnumerator, concrete Dictionary boxing, MoveNext,
@@ -891,9 +891,38 @@ existing deeply nested expression tests with the normal 1 MiB Windows stack.
 
 User classes can implement the closed IEnumerator<T> contract, including named
 interfaces inheriting it. Explicit calls to MoveNext/Current/Dispose/Reset execute
-real class bodies and preserve object identity. User IEnumerable<T> implementation
-is rejected until sequence cursor adapters provide automatic disposal and proper
-unwind semantics. User generics, class inheritance, explicit implementations,
+real class bodies and preserve object identity. User IEnumerable<T> classes now
+use the explicit cursor scopes and frame cleanup described below. User generics,
+class inheritance, explicit implementations,
 interface-to-class downcasts, nongeneric protocols and variance remain pending.
 Independent Framework probes cover 1152 operations; original interface1.pas runs
 unchanged on the native interpreter. This remains a partial library migration.
+
+User IEnumerable<T> is a native closed interface contract with a verified
+GetEnumerator -> IEnumerator<T> result. A weak execution-scoped adapter cache
+retains class reference identity; reflection unwraps the adapter to the actual
+class. Class and inherited-interface sequence views are resolved statically.
+Protocol cursors execute real GetEnumerator/MoveNext/Current/Dispose routines;
+raw user Count/Any/Skip/indexed operations do not read unnecessary Current values.
+Existing deferred native yield providers retain their production/overflow checks.
+
+sequence_scope.hpp provides explicit finally scopes for eager native consumers.
+They close on success, early return and failure, allowing Dispose to replace an
+earlier error. Shared-pointer destructors perform native-only fallback cleanup
+and never execute throwing Pascal callbacks. Lazy providers explicitly detach
+completed inner cursors and retain source-specific generated/legacy semantics,
+including unary Select/Where retrying a failed source Dispose. VM frames own
+active foreach cursors, close them in reverse acquisition order on return/error,
+and use stable deque storage across reentrant callbacks. Operand stacks are
+restored after failed callbacks. Immediate Halt bypasses user finally callbacks.
+
+Error-unwind callbacks share a bounded reserve of 10000 VM instructions, 4096 value
+cells and 4096 List storage cells per execution. Original cancellation is replaced
+by a shared one-second cleanup deadline, including cooperative infinite Sleep. Real-file tests verify Dispose writes and closes after normal
+instruction/allocation/cancellation budgets expire. Native callback entry checks
+real frame addresses (not ASan fake-stack locals) against 256 KiB, with 384 KiB
+reserved for cleanup, and emits bilingual E_LIMIT before a host stack overflow.
+Pure Pascal/interface calls continue using ordinary interpreter frame limits.
+Independent Framework traces cover 1161 executions across 43 foreach/LINQ/collection
+scenarios, including nested faults and disposal errors. This does not complete
+user generics, explicit implementations, nongeneric protocols or bin/Lib.

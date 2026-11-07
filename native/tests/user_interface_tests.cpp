@@ -110,7 +110,7 @@ void rejected(){
  error([]{abc::compile("type I=interface procedure P;procedure P;end;begin end.");},"E_DUPLICATE");
  error([]{abc::compile("type I=interface property P:integer read;property P:integer read;end;begin end.");},"E_DUPLICATE");
  error([]{abc::compile("type I=interface function F:integer;begin Result:=1;end;end;begin end.");},"E_TYPE");
- error([]{abc::compile("type C=class(IEnumerable<integer>) end;begin end.");},"E_UNSUPPORTED");
+ error([]{abc::compile("type C=class(IEnumerable<integer>) end;begin end.");},"E_TYPE");
 }
 void metadata(){
  const auto p=abc::compile(declarations+"begin var i:IValue:=new A;i.Value:=1;Writeln(i.Add(2));end.");abc::verify(p);std::size_t iface=0,cls=0;

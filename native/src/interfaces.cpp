@@ -1,5 +1,6 @@
 #include "interfaces.hpp"
 #include "runtime_values.hpp"
+#include "sequences.hpp"
 #include <array>
 #include <set>
 namespace abc {
@@ -11,10 +12,11 @@ bool valid(const std::vector<TypeInfo>& types,Type type){return compound(type) &
 const TypeInfo& info(const std::vector<TypeInfo>& types,Type type){return types.at(static_cast<unsigned>(type)-64U);}
 const InterfaceImplementation* implementation(const TypeInfo& type,Type target){for(const auto& item:type.interfaces.read().implementations)if(item.target==target)return &item;return nullptr;}
 }
-bool interface_kind(const TypeInfo& type){return type.kind==CompoundKind::user_interface || type.kind==CompoundKind::enumerator;}
+bool interface_kind(const TypeInfo& type){return type.kind==CompoundKind::user_interface || type.kind==CompoundKind::enumerator || type.kind==CompoundKind::sequence;}
 std::vector<InterfaceMember> interface_contract(const std::vector<TypeInfo>& types,Type type){
  if(!valid(types,type))return {};
  const auto& t=info(types,type);if(t.kind==CompoundKind::user_interface)return t.interfaces.read().members;
+ if(t.kind==CompoundKind::sequence){for(std::size_t i=0;i<types.size();++i)if(types[i].kind==CompoundKind::enumerator && types[i].element==t.element)return {{"getenumerator",static_cast<Type>(64+i),{},InterfaceMemberKind::method}};throw Error("E_BYTECODE",{},"Invalid interface metadata");}
  if(t.kind==CompoundKind::enumerator)return {{"movenext",Type::boolean,{},InterfaceMemberKind::method},{"current",t.element,{},InterfaceMemberKind::get},{"dispose",Type::unit,{},InterfaceMemberKind::method},{"reset",Type::unit,{},InterfaceMemberKind::method}};
  return {};
 }
@@ -61,8 +63,12 @@ void verify_interfaces(const Program& p){
 }
 Value interface_cast(Values& values,Type from,Type to,bool checked,const Value& value){
  if(!interface_cast_valid(values.program,from,to,checked))throw runtime_error(RuntimeError::invalid_bytecode,values.location);
- const auto object=std::get<std::shared_ptr<Aggregate>>(value);if(!object || object->nil)return values.zero(to);
- if(interface_compatible(values.program.types,object->type,to))return value;
+ auto object=std::get<std::shared_ptr<Aggregate>>(value);if(!object || object->nil)return values.zero(to);
+ if(object->sequence && object->sequence->provider==SequenceProvider::user_source)object=object->sequence->source;
+ if(object && !object->nil && interface_compatible(values.program.types,object->type,to)){
+  if(type_info(values.program,to).kind==CompoundKind::sequence){const auto key=std::make_pair(reinterpret_cast<std::uintptr_t>(object.get()),to);auto found=values.user_enumerables.find(key);if(found!=values.user_enumerables.end())if(auto cached=found->second.lock())return cached;
+   auto result=sequence_create(values,to,object,SequenceProvider::user_source);values.user_enumerables[key]=result;return result;}return object;
+ }
  throw Error("E_CAST",values.location,"Value does not implement the requested interface","Значение не реализует требуемый интерфейс");
 }
 std::size_t interface_target(Values& values,Type owner,std::size_t slot,const Value& receiver,const ExecutionOptions& options){
