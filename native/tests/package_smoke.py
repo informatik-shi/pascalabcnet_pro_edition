@@ -244,6 +244,7 @@ def main():
                 ("user-enumerables.pas", "1\n2\nclosed\nclosed\n6\n"),
                 ("comparers.pas", "True\n25\n-5\n5\n"),
                 ("sorting.pas", "Boris: 95\nVera: 80\nAlice: 70\n[1,2,3,4,5]\n[5,4,3,2,1]\n"),
+                ("array-sorting.pas", "[9,1,2,3,8]\n[9,8,3,2,1]\n[1,2,3,8,9]\n"),
                 ("list-sorting.pas", "[5,4,3,2,1]\n[1,2,3,4,5]\n[5,4,3,2,1]\nFalse\n[1,2,3,4,5]\n"),
                 ("enumerator-interfaces.pas", "10 20\n30\n1 2\n1\n2\n4\nFalse\n"),
                 ("dictionary-enumerators.pas", "Original: two=2\nCopy: one=1\ntwo=2\nthree=3\none\ntwo\nthree\n"),
@@ -1670,6 +1671,18 @@ def main():
                         or f"EN: {english}" not in invalid.stderr or f"RU: {russian}" not in invalid.stderr or f"{list_sort_error}:2:" not in invalid.stderr):
                     raise RuntimeError(f"{name} List sort bilingual failure: {invalid.stdout!r} {invalid.stderr!r}")
             results[-1]["native_list_sorting_and_bilingual_errors"] = "passed"
+            system_sort_error = folder / "Ошибки System.Array.pas"
+            for source, code, english, russian in [
+                ("begin\nWrite('before');var a:=Arr(2,1);Array.Sort(a,-1,1);end.", "E_RANGE", "Array sort index must be nonnegative", "Индекс сортировки массива должен быть неотрицательным"),
+                ("begin\nWrite('before');var a:=Arr(2,1);Array.Sort(a,0,3,nil);end.", "E_RANGE", "Array sort range exceeds the array length", "Диапазон сортировки выходит за границы массива"),
+                ("begin\nWrite('before');var a:=Arr(2,1);var zero:=0;System.Array.Sort(a,(a,b)->1 div zero);end.", "E_SORT", "Failed to compare two elements in the array: Division by zero", "Не удалось сравнить два элемента массива: Деление на ноль"),
+            ]:
+                system_sort_error.write_text(source, encoding="utf-8")
+                invalid = subprocess.run([runner, "run", str(system_sort_error)], text=True, encoding="utf-8", capture_output=True, cwd=folder, env=env, timeout=10)
+                if (invalid.returncode != 1 or invalid.stdout != "before" or code not in invalid.stderr
+                        or f"EN: {english}" not in invalid.stderr or f"RU: {russian}" not in invalid.stderr or f"{system_sort_error}:2:" not in invalid.stderr):
+                    raise RuntimeError(f"{name} System.Array sort bilingual failure: {invalid.stdout!r} {invalid.stderr!r}")
+            results[-1]["native_system_array_sorting_and_bilingual_errors"] = "passed"
             iterator_data = folder / "iterator-resource.txt"
             iterator_data.write_text("one\ntwo\n", encoding="utf-8")
             iterator_source = folder / "Ресурсы перечислителя.pas"

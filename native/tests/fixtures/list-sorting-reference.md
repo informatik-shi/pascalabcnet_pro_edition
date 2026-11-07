@@ -57,5 +57,5 @@ Primary source contracts:
 Pascal wrappers are the supplied bin/Lib/PABCSystem.pas Sort/SortDescending bodies.
 
 This prerequisite does not complete List/PABCSystem/Collections or bin/Lib.
-System.Array comparer/range APIs, custom equality comparers, nongeneric protocols,
+Public paired System.Array key/item APIs, custom equality comparers, nongeneric protocols,
 variance, general source-unit loading and remaining source modules are pending.

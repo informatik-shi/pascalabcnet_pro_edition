@@ -118,6 +118,7 @@ SortedSet, TypedSet, числовые преобразования множес�
 IComparable<T>, IComparer<T>, Comparer<T>.Default/Create: examples/comparers.pas.
 Сортировка массивов записей/классов по сравнению и ключу: examples/sorting.pas.
 Сортировки List<T>, IComparer<T>, диапазоны и ключи: examples/list-sorting.pas.
+Статическая сортировка System.Array и диапазоны: examples/array-sorting.pas.
 Обход автоматически вызывает Dispose при завершении, break, Exit и ошибке; общие пользовательские обобщения ещё переносятся.
 Нативный IniFile.TIniFile: uses IniFile; пример examples/ini-files.pas.
 WriteString/WriteInteger/WriteBoolean меняют память, Save записывает файл. Наследование TIniFile ещё не перенесено.

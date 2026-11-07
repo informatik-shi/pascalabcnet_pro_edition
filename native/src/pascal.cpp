@@ -720,8 +720,8 @@ private:
             }
         } else if(comparison_reference()){
             result.kind=SyntaxStmtKind::call;result.expression=prefix();
-        } else if (current_.kind == TokenKind::name && (current_.escaped || !reserved(current_.text))) {
-            const auto target = name();
+        } else if (current_.kind == TokenKind::name && (current_.escaped || !reserved(current_.text) || is("array"))) {
+            const auto target = is("array") ? consume() : name();
             result.names.push_back(target);
             if ((target.text == "inc" || target.text == "dec") && accept("(")) {
                 result.kind = SyntaxStmtKind::increment;
@@ -972,7 +972,7 @@ private:
         if(comparison_reference()){
             const auto token=current_;auto type=type_syntax();auto result=make_expression(SyntaxExprKind::type_reference,token);result->constructed=std::move(type);return postfix(std::move(result));
         }
-        if (current_.kind == TokenKind::name && (current_.escaped || !reserved(current_.text)))
+        if (current_.kind == TokenKind::name && (current_.escaped || !reserved(current_.text) || is("array")))
             return postfix(make_expression(SyntaxExprKind::name, consume()));
         fail("Expected an expression");
     }
@@ -1011,7 +1011,7 @@ private:
                 expect("]");
             } else if (accept(".")) {
                 // These standard Text methods also have statement keyword spellings.
-                const auto field = is("write") || is("writeln") || is("readln") || is("foreach") || is("default") ? consume() : name();
+                const auto field = is("write") || is("writeln") || is("readln") || is("foreach") || is("default") || is("array") ? consume() : name();
                 result = make_expression(SyntaxExprKind::field, field, std::move(result));
             } else if (accept("(")) {
                 if (result->kind==SyntaxExprKind::name) result->kind=SyntaxExprKind::call;
@@ -2463,6 +2463,7 @@ private:
  {
             if(bind_inifile_static(*result,source))break;
             if(bind_comparison_static(*result,source))break;
+            if(bind_system_array_sort(*result,source))break;
             if(bind_encoding_static(*result,source))break;
             if (source.left->kind==SyntaxExprKind::name && !lookup(source.left->token) && source.left->token.text=="regex" && source.token.text=="ismatch") {
                 for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
@@ -4072,6 +4073,42 @@ private:
         }
         result.kind=hir::ExprKind::comparable_call;result.operation_type=type;result.local=static_cast<std::size_t>(method);result.type=comparable_result(type,method);return true;
     }
+    bool array_type_name(const SyntaxExpr& source) const {
+        const auto hidden=[&](const Token& token){
+            if(lookup(token) || routine_names_.contains(token.text) || aliases_.contains(token.text))return true;
+            if(current_owner_==Type::invalid)return false;const auto& fields=info(current_owner_,token.location).fields;
+            return std::any_of(fields.begin(),fields.end(),[&](const auto& field){return field.name==token.text;})
+                || (class_methods_.contains(current_owner_) && class_methods_.at(current_owner_).contains(token.text))
+                || (class_properties_.contains(current_owner_) && class_properties_.at(current_owner_).contains(token.text));
+        };
+        if(source.kind==SyntaxExprKind::name)return source.token.text=="array" && !hidden(source.token);
+        return source.kind==SyntaxExprKind::field && source.token.text=="array" && source.left && source.left->kind==SyntaxExprKind::name
+            && source.left->token.text=="system" && !hidden(source.left->token);
+    }
+    ABC_PASCAL_NOINLINE bool bind_system_array_sort(hir::Expr& result,const SyntaxExpr& source,std::span<const Type> declared={}){
+        if(!source.left || !array_type_name(*source.left) || source.token.text!="sort")return false;
+        const auto count=source.arguments.size();if(count<1 || count>4 || declared.size()>1)throw Error("E_TYPE",result.location,"System.Array.Sort requires a supported closed array overload");
+        auto receiver=expression(*source.arguments[0]);const auto owner=receiver->type;
+        if(!compound(owner) || info(owner,result.location).kind!=CompoundKind::array || info(owner,result.location).rank!=1)throw Error("E_TYPE",result.location,"System.Array.Sort requires a rank-one array");
+        const auto element=info(owner,result.location).element;if(!declared.empty() && declared[0]!=element)throw Error("E_TYPE",result.location,"System.Array.Sort explicit type must match the array element");
+        std::size_t code=static_cast<unsigned>(SortMethod::system_default);
+        if(count>=3){
+            code|=sort_range;result.arguments.push_back(convert(expression(*source.arguments[1],Type::integer),Type::integer));result.arguments.push_back(convert(expression(*source.arguments[2],Type::integer),Type::integer));
+            if(count==4){const auto order=comparison_type(CompoundKind::comparer_interface,element);result.right=convert(expression(*source.arguments[3],order),order);code=(code&~std::size_t{15})|static_cast<unsigned>(SortMethod::system_comparer)|(static_cast<std::size_t>(order)<<8U);}
+        }else if(count==2){
+            const auto& syntax=*source.arguments[1];std::unique_ptr<hir::Expr> value;
+            if(syntax.kind!=SyntaxExprKind::lambda && !(syntax.kind==SyntaxExprKind::name && !lookup(syntax.token) && !routine_names_.contains(syntax.token.text)))value=expression(syntax);
+            if(value && !callable_type(value->type)){
+                if(value->type==Type::nil)throw Error("E_TYPE",result.location,"System.Array.Sort requires a typed comparison or comparer");
+                const auto order=comparison_type(CompoundKind::comparer_interface,element);result.right=convert(std::move(value),order);code=static_cast<unsigned>(SortMethod::system_comparer)|(static_cast<std::size_t>(order)<<8U);
+            }else{
+                auto callback=value ? library_callback_value(std::move(value)) : library_callback(syntax,{element,element});
+                if(callback.signature.result!=Type::integer || callback.signature.parameters.size()!=2 || std::any_of(callback.signature.parameters.begin(),callback.signature.parameters.end(),[&](const auto& parameter){return parameter.type!=element || parameter.by_reference || parameter.variadic;}))throw Error("E_TYPE",result.location,"System.Array.Sort comparison must accept two elements and return integer");
+                result.right=callback.value ? std::move(callback.value) : routine_value(*callback.named,result.location);code=static_cast<unsigned>(SortMethod::system_comparison)|(static_cast<std::size_t>(result.right->type)<<8U);
+            }
+        }
+        result.kind=hir::ExprKind::sort_call;result.left=std::move(receiver);result.operation_type=owner;result.local=code;result.type=Type::unit;return true;
+    }
     ABC_PASCAL_NOINLINE bool bind_sort(hir::Expr& result,const SyntaxExpr& source,std::string_view unit={},bool member=false,std::span<const Type> declared={}){
         const auto& name=source.token.text;if((name!="sort" && name!="sortdescending") || (!unit.empty() && unit!="pabcsystem" && unit!="arrays"))return false;
         if(!member && source.arguments.empty())return false;
@@ -4274,6 +4311,7 @@ private:
         if((name=="sort" || name=="sortdescending") && (standard_call || qualified)){
             const bool unit_call=qualified && source.left && source.left->kind==SyntaxExprKind::name && !lookup(source.left->token) && (source.left->token.text=="pabcsystem" || (source.left->token.text=="arrays" && imported_units_.contains("arrays")));
             std::vector<Type> declared;for(const auto& type:source.type_arguments)declared.push_back(resolve_type(*type));auto result=std::make_unique<hir::Expr>();result->location=source.token.location;
+            if(qualified && bind_system_array_sort(*result,source,declared))return result;
             if(qualified && !unit_call)result->left=expression(*source.left);
             if(bind_sort(*result,source,unit_call ? std::string_view(source.left->token.text) : std::string_view{},qualified && !unit_call,declared))return result;
         }

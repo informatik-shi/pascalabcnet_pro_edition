@@ -984,8 +984,9 @@ depth limits are unchanged; no executable stack increase is used. Generic sort
 binding accepts a lightweight span instead of a temporary type vector.
 
 List callback/backing mutation, var key selectors and List comparer/range
-overloads are now implemented as described below. System.Array comparer/range
-overloads remain separate work. No bin/Lib unit is marked complete by sorting.
+overloads are now implemented as described below. Typed System.Array comparer/range
+overloads are implemented in the following section; public paired key/item overloads
+remain separate work. No bin/Lib unit is marked complete by sorting.
 
 
 ### Physical List storage and typed List sorting
@@ -1027,3 +1028,24 @@ callback mutations, default/create/user comparers, ranges, four confirmed heap
 fallbacks, 150 boundary ranges and a physically borrowed record field across
 Capacity/TrimExcess. Additional static, metadata, record, cancellation and
 recursive-comparer checks use the native interpreter alone.
+
+### Typed static System.Array.Sort
+
+Closed rank-one arrays support static default, Comparison<T>, IComparer<T>,
+index/count default and index/count/IComparer overloads. Static sort metadata
+uses distinct method tags while retaining existing receiver/range/callback
+stack forms and the common bounded Framework sort engine. Verification rejects
+unsupported extension, descending, key and range/comparison combinations.
+
+The binder resolves qualified and unqualified Array with local, routine, type
+and class-member shadowing. The parser accepts reserved Array in static names.
+Explicit generic element types remain exact. Arguments are evaluated in source
+order before array nil/range checks; the array is value-captured across callbacks.
+Typed nil comparison delegates fail before sorting empty input; nil IComparer
+selects the specialized Default path. Array ranges have their own EN/RU errors.
+
+A dedicated Framework 4.7.2 oracle has 3791 exact executions covering 11
+overload scenarios, sizes around insertion/introsort boundaries, nils, reversed
+orders, partial states/faults, mutations and external receiver replacement,
+225 boundary ranges and two independently confirmed heap fallbacks. Paired
+public key/item overloads and nongeneric/boxed Array APIs remain pending.

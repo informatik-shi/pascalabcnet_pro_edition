@@ -48,7 +48,7 @@ class Sorter {
  }
  void intro(int first,int last,int depth){while(first<last){step();const auto size=last-first+1;if(size<=16){if(size==2)ordered_pair(first,last);else if(size==3){ordered_pair(first,last-1);ordered_pair(first,last);ordered_pair(last-1,last);}else insertion(first,last);return;}if(depth==0){heap(first,last);return;}--depth;const auto pivot=partition(first,last);intro(pivot+1,last,depth);last=pivot-1;}}
 public:
- Sorter(Values& v,const ExecutionOptions& o,Object target,Type type,std::size_t code,Object function):values(v),options(o),array(std::move(target)),element(type_info(v.program,type).element),key_type(sort_method(code)==SortMethod::key ? type_info(v.program,sort_callback(code)).element : element),slots(&array->items),logical_size(array->items.size()),callback(std::move(function)),method(sort_method(code)),interface_type(sort_callback(code)),specialized(false),ordinal(method==SortMethod::ordinal_order || (method==SortMethod::key && key_type==Type::string && !(code&sort_generic_key))){
+ Sorter(Values& v,const ExecutionOptions& o,Object target,Type type,std::size_t code,Object function):values(v),options(o),array(std::move(target)),element(type_info(v.program,type).element),key_type(sort_method(code)==SortMethod::key ? type_info(v.program,sort_callback(code)).element : element),slots(&array->items),logical_size(array->items.size()),callback(std::move(function)),method(sort_algorithm(code)),interface_type(sort_callback(code)),specialized(false),ordinal(method==SortMethod::ordinal_order || (method==SortMethod::key && key_type==Type::string && !(code&sort_generic_key))){
   if(type_info(v.program,type).kind==CompoundKind::list){backing=values.list_backing(array);slots=&backing->cells;}
   if(method==SortMethod::comparer)interface_default=!callback || callback->nil || (type_info(v.program,callback->type).kind==CompoundKind::comparer && comparer_is_default(*callback));
   specialized=(method==SortMethod::default_order || method==SortMethod::key || (method==SortMethod::comparer && interface_default)) && default_comparable(v.program.types,key_type) && !enumeration(v.program,key_type);
@@ -68,8 +68,15 @@ std::vector<Type> sort_parameters(const Program& program,Type owner,std::size_t 
 }
 bool sort_signature(const Program& program,Type owner,std::size_t code){
  if((code>>8U)>64U+program.types.size() || !compound(owner) || !valid_value_type(program,owner))return false;const auto& array=type_info(program,owner);const bool list=array.kind==CompoundKind::list;
- if((array.kind!=CompoundKind::array && !list) || array.rank!=1 || static_cast<unsigned>(sort_method(code))>static_cast<unsigned>(SortMethod::comparer))return false;
- const auto method=sort_method(code);const auto callback=sort_callback(code);
+ if((array.kind!=CompoundKind::array && !list) || array.rank!=1 || static_cast<unsigned>(sort_method(code))>static_cast<unsigned>(SortMethod::system_comparer))return false;
+ const auto method=sort_algorithm(code);const auto callback=sort_callback(code);
+ if(sort_system(code)){
+  if(list || (code&(sort_extension|sort_descending|sort_generic_key)) || ((code&sort_range) && method==SortMethod::comparison))return false;
+  if(method==SortMethod::default_order)return callback==Type::invalid;
+  if(!compound(callback) || !valid_value_type(program,callback))return false;const auto& function=type_info(program,callback);
+  if(method==SortMethod::comparer)return function.kind==CompoundKind::comparer_interface && function.element==array.element;
+  return function.kind==CompoundKind::callable && function.element==Type::integer && function.parameters==std::vector<CallableParameter>(2,{array.element,false,false});
+ }
  if((code&sort_range) && (!list || !(code&sort_extension) || method!=SortMethod::comparer || (code&sort_descending)))return false;
  if((code&sort_generic_key) && method!=SortMethod::key)return false;
  if(method==SortMethod::default_order || method==SortMethod::ordinal_order)return callback==Type::invalid && (method!=SortMethod::ordinal_order || array.element==Type::string);
@@ -82,14 +89,18 @@ bool sort_signature(const Program& program,Type owner,std::size_t code){
 }
 void sort_array(Values& values,Type owner,std::size_t code,const Value& source,const Value* callback,const ExecutionOptions& options,std::int32_t index,std::int32_t count){
  if(!sort_signature(values.program,owner,code))throw runtime_error(RuntimeError::invalid_bytecode,values.location);
- const bool list=type_info(values.program,owner).kind==CompoundKind::list,by_reference=sort_reference(values.program,owner,code);const auto method=sort_method(code);
+ const bool list=type_info(values.program,owner).kind==CompoundKind::list,by_reference=sort_reference(values.program,owner,code);const auto method=sort_algorithm(code);
  const auto reference=by_reference ? std::get<std::shared_ptr<Cell>>(source) : std::shared_ptr<Cell>{};
  auto array=std::get<Object>(by_reference ? reference->value : source);Object function;
  const auto check_callback=[&]{if(callback){function=std::get<Object>(*callback);if(method!=SortMethod::comparer)(void)values.callable_target(function);}};
  if(!list && (code&sort_extension))check_callback();
  if(!array || array->nil)throw runtime_error(RuntimeError::nil_reference,values.location);
  if(list || !(code&sort_extension))check_callback();
- if(code&sort_range){if(index<0)throw runtime_error(RuntimeError::list_index,values.location);if(count<0)throw runtime_error(RuntimeError::list_count,values.location);if(static_cast<std::size_t>(index)>array->items.size() || static_cast<std::size_t>(count)>array->items.size()-static_cast<std::size_t>(index))throw runtime_error(RuntimeError::list_range,values.location);}
+ if(code&sort_range){
+  if(index<0){if(list)throw runtime_error(RuntimeError::list_index,values.location);throw Error("E_RANGE",values.location,"Array sort index must be nonnegative","Индекс сортировки массива должен быть неотрицательным");}
+  if(count<0){if(list)throw runtime_error(RuntimeError::list_count,values.location);throw Error("E_RANGE",values.location,"Array sort count must be nonnegative","Число элементов для сортировки массива должно быть неотрицательным");}
+  if(static_cast<std::size_t>(index)>array->items.size() || static_cast<std::size_t>(count)>array->items.size()-static_cast<std::size_t>(index)){if(list)throw runtime_error(RuntimeError::list_range,values.location);throw Error("E_RANGE",values.location,"Array sort range exceeds the array length","Диапазон сортировки выходит за границы массива");}
+ }
  if(by_reference){auto snapshot=values.array(owner,array->items.size(),true);for(std::size_t i=0;i<array->items.size();++i)values.write(snapshot->items[i],array->items[i]->value,false);array=std::move(snapshot);}
  Sorter sorter(values,options,array,owner,code,function);sorter.extract();
  try{sorter.run(index,count);}catch(const Error& failure){if(failure.code=="E_LIMIT" || failure.code=="E_CANCELLED" || failure.code=="E_COMPARER")throw;if(failure.code=="E_BOUNDS")bad_order(values.location);throw Error("E_SORT",values.location,std::string("Failed to compare two elements in the array: ")+failure.what(),std::string("Не удалось сравнить два элемента массива: ")+failure.russian);}
