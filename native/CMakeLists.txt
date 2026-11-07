@@ -38,6 +38,7 @@ add_library(abc_core
     src/value_hash.cpp
     src/dictionary.cpp
     src/enumerator.cpp
+    src/interfaces.cpp
     src/ordinal_range.cpp
     src/real_interval.cpp
     src/new_set.cpp
@@ -165,6 +166,14 @@ if(BUILD_TESTING)
         target_compile_options(abc_collection_enumerator_tests PRIVATE /utf-8)
     endif()
     add_test(NAME collection_enumerators COMMAND abc_collection_enumerator_tests)
+    add_executable(abc_user_interface_tests tests/user_interface_tests.cpp)
+    target_link_libraries(abc_user_interface_tests PRIVATE abc_core)
+    if(MSVC)
+        target_compile_options(abc_user_interface_tests PRIVATE /utf-8)
+    endif()
+    add_test(NAME user_interfaces COMMAND abc_user_interface_tests)
+    add_test(NAME user_interfaces_example COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/examples/user-interfaces.pas")
+    add_test(NAME original_interface_class COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/../TestSuite/interface1.pas")
     add_test(NAME single_numbers_compatibility COMMAND ${CMAKE_COMMAND}
         "-DABC_RUNNER=$<TARGET_FILE:abc>" "-DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
         -DABC_FIXTURE_NAME=single-numbers-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")

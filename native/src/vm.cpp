@@ -39,6 +39,7 @@
 #include "hash_set.hpp"
 #include "dictionary.hpp"
 #include "enumerator.hpp"
+#include "interfaces.hpp"
 #include "ordinal_range.hpp"
 #include "real_interval.hpp"
 #include "new_set.hpp"
@@ -1127,8 +1128,12 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
             std::vector<Value> arguments(parameters.size());for(std::size_t i=arguments.size();i>0;--i)arguments[i-1]=pop();auto result=new_set_invoke(values,instruction.type,method,ref,arguments,options);
             if(new_set_result(program.types,instruction.type,method)!=Type::unit)stack.push_back(std::move(result));break;
         }
+        case Op::interface_cast: {auto value=pop();stack.push_back(interface_cast(values,instruction.type,static_cast<Type>(instruction.operand>>1U),(instruction.operand&1U)!=0,value));break;}
+        case Op::interface_call: {const auto count=interface_contract(program.types,instruction.type).at(instruction.operand).parameters.size();const auto id=interface_target(values,instruction.type,instruction.operand,stack[stack.size()-count-1],options);enter_routine(id,instruction.location);break;}
         case Op::enumerator_call: {
-            const auto method=static_cast<EnumeratorMethod>(instruction.operand&255U);const auto payload=static_cast<Type>(instruction.operand>>8U);auto argument=pop();auto result=enumerator_invoke(values,instruction.type,payload,method,argument,options);if(enumerator_result(program,instruction.type,payload,method)!=Type::unit)stack.push_back(std::move(result));break;
+            const auto method=static_cast<EnumeratorMethod>(instruction.operand&255U);const auto payload=static_cast<Type>(instruction.operand>>8U);
+            if(compound(instruction.type) && type_info(program,instruction.type).kind==CompoundKind::enumerator){const auto object=std::get<std::shared_ptr<Aggregate>>(stack.back());if(object && !object->nil && type_info(program,object->type).kind==CompoundKind::object_class){const auto slot=method==EnumeratorMethod::move ? 0U : method==EnumeratorMethod::current ? 1U : method==EnumeratorMethod::dispose ? 2U : 3U;enter_routine(interface_target(values,instruction.type,slot,stack.back(),options),instruction.location);break;}}
+            auto argument=pop();auto result=enumerator_invoke(values,instruction.type,payload,method,argument,options);if(enumerator_result(program,instruction.type,payload,method)!=Type::unit)stack.push_back(std::move(result));break;
         }
         case Op::dictionary_call: {
             const auto method=static_cast<DictionaryMethod>(instruction.operand&255U);const auto payload=static_cast<Type>(instruction.operand>>8U);const auto parameters=dictionary_parameters(program.types,instruction.type,payload,method);

@@ -10,6 +10,7 @@
 #include "hash_set.hpp"
 #include "dictionary.hpp"
 #include "enumerator.hpp"
+#include "interfaces.hpp"
 #include "ordinal_range.hpp"
 #include "real_interval.hpp"
 #include "new_set.hpp"
@@ -99,6 +100,11 @@ private:
             emit(Op::ref_field,node.left->type,node.local,node.location);
         } else if(node.kind==hir::ExprKind::new_set_hash){reference(*node.left);emit(Op::new_set_call,node.left->type,static_cast<std::size_t>(NewSetMethod::raw_reference)|128U,node.location);}
         else throw Error("E_HIR",node.location,"Expression is not assignable");
+    }
+    ABC_BYTECODE_NOINLINE void interface_expression(const hir::Expr& node) {
+        expression(*node.left);const auto method=interface_contract(program_.types,node.operation_type).at(node.local);
+        for(std::size_t i=0;i<node.arguments.size();++i)if(method.parameters[i].by_reference)reference(*node.arguments[i]);else expression(*node.arguments[i]);
+        emit(Op::interface_call,node.operation_type,node.local,node.location);
     }
     void expression(const hir::Expr& node) {
         if (node.type == Type::invalid) throw Error("E_HIR", node.location, "Unresolved expression type");
@@ -348,6 +354,9 @@ private:
             for(std::size_t i=0;i<node.arguments.size();++i)if(i==0 && ref)reference(*node.arguments[i]);else expression(*node.arguments[i]);
             emit(Op::new_set_call,node.operation_type,node.local,node.location);break;
         }
+        case hir::ExprKind::interface_cast:
+            expression(*node.left);emit(Op::interface_cast,node.left->type,(static_cast<std::size_t>(node.type)<<1U)|node.local,node.location);break;
+        case hir::ExprKind::interface_call: interface_expression(node);break;
         case hir::ExprKind::enumerator_call:
             if(enumerator_parameter(node.operation_type,static_cast<EnumeratorMethod>(node.local&255U))==reference_type(node.operation_type))reference(*node.left);else expression(*node.left);emit(Op::enumerator_call,node.operation_type,node.local,node.location);break;
         case hir::ExprKind::dictionary_call: {
@@ -447,7 +456,7 @@ private:
         }
         case hir::ExprKind::property_access:
             if (!node.getter) throw Error("E_TYPE",node.location,"Property is write-only");
-            expression(*node.left);emit(Op::call_user,node.type,*node.getter,node.location);break;
+            expression(*node.left);emit(node.operation=="interface" ? Op::interface_call : Op::call_user,node.operation=="interface" ? node.operation_type : node.type,*node.getter,node.location);break;
         case hir::ExprKind::user_call: {
             const auto& signature = program_.routines[node.local];
             for (std::size_t n = 0; n < node.arguments.size(); ++n) {
@@ -1091,6 +1100,11 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if(instruction.operand>static_cast<std::size_t>(EmptyMethod::to_set) || !empty_signature(program,type,static_cast<EmptyMethod>(instruction.operand)))invalid(instruction,"Invalid EmptyCollection call metadata");break;
         case Op::new_set_call:
             if((instruction.operand>>8U) || !new_set_signature(program,type,static_cast<NewSetMethod>(instruction.operand&127U),(instruction.operand&128U)!=0))invalid(instruction,"Invalid NewSet call metadata");break;
+        case Op::interface_cast:
+            if((instruction.operand>>1U)>65535U || !interface_cast_valid(program,type,static_cast<Type>(instruction.operand>>1U),(instruction.operand&1U)!=0))invalid(instruction,"Invalid interface conversion metadata");break;
+        case Op::interface_call: {
+            if(!compound(type) || !interface_kind(type_info(program,type)) || instruction.operand>=interface_contract(program.types,type).size())invalid(instruction,"Invalid interface call metadata");break;
+        }
         case Op::enumerator_call:
             if((instruction.operand>>8U)>65535U || !enumerator_signature(program,type,static_cast<Type>(instruction.operand>>8U),static_cast<EnumeratorMethod>(instruction.operand&255U)))invalid(instruction,"Invalid enumerator call metadata");break;
         case Op::dictionary_call:
@@ -1143,7 +1157,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if (instruction.op==Op::make_default && instruction.operand==1 && compound(type) && type_info(program,type).kind==CompoundKind::object_class
                 && std::any_of(program.routines.begin(),program.routines.end(),[type](const auto& candidate){return candidate.constructor && candidate.owner==type;}))
                 invalid(instruction,"Class constructor cannot be bypassed");
-            if (instruction.op==Op::make_default && instruction.operand==1 && compound(type) && (node_kind(type_info(program,type).kind) || type_info(program,type).kind==CompoundKind::tuple || type_info(program,type).kind==CompoundKind::sequence || type_info(program,type).kind==CompoundKind::enumerator || type_info(program,type).kind==CompoundKind::callable || type_info(program,type).kind==CompoundKind::encoding || type_info(program,type).kind==CompoundKind::ini_file || type_info(program,type).kind==CompoundKind::hash_set || type_info(program,type).kind==CompoundKind::dictionary || type_info(program,type).kind==CompoundKind::dictionary_keys || type_info(program,type).kind==CompoundKind::dictionary_values || school_ip_kind(type_info(program,type).kind)))
+            if (instruction.op==Op::make_default && instruction.operand==1 && compound(type) && (node_kind(type_info(program,type).kind) || type_info(program,type).kind==CompoundKind::tuple || type_info(program,type).kind==CompoundKind::sequence || type_info(program,type).kind==CompoundKind::enumerator || type_info(program,type).kind==CompoundKind::user_interface || type_info(program,type).kind==CompoundKind::callable || type_info(program,type).kind==CompoundKind::encoding || type_info(program,type).kind==CompoundKind::ini_file || type_info(program,type).kind==CompoundKind::hash_set || type_info(program,type).kind==CompoundKind::dictionary || type_info(program,type).kind==CompoundKind::dictionary_keys || type_info(program,type).kind==CompoundKind::dictionary_values || school_ip_kind(type_info(program,type).kind)))
                 invalid(instruction,"Nodes and tuples require the typed constructor");
             break;
         case Op::routine_value:
@@ -1548,6 +1562,8 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             const auto method=static_cast<NewSetMethod>(instruction.operand&127U);const auto parameters=new_set_parameters(program.types,instruction.type,method,(instruction.operand&128U)!=0);
             for(auto it=parameters.rbegin();it!=parameters.rend();++it)require(*it);const auto result=new_set_result(program.types,instruction.type,method);if(result!=Type::unit)stack.push_back(result);break;
         }
+        case Op::interface_cast: require(instruction.type);stack.push_back(static_cast<Type>(instruction.operand>>1U));break;
+        case Op::interface_call: {const auto member=interface_contract(program.types,instruction.type).at(instruction.operand);for(auto it=member.parameters.rbegin();it!=member.parameters.rend();++it)require(it->by_reference ? reference_type(it->type) : it->type);require(instruction.type);if(member.result!=Type::unit)stack.push_back(member.result);break;}
         case Op::enumerator_call:
             require(enumerator_parameter(instruction.type,static_cast<EnumeratorMethod>(instruction.operand&255U)));{const auto result=enumerator_result(program,instruction.type,static_cast<Type>(instruction.operand>>8U),static_cast<EnumeratorMethod>(instruction.operand&255U));if(result!=Type::unit)stack.push_back(result);}break;
         case Op::dictionary_call: {
@@ -1775,6 +1791,8 @@ void verify(const Program& program) {
         } else if(type.kind==CompoundKind::encoding) {
             if(type.name!="encoding" || !type.fields.empty() || !encoding_signature_valid(program,static_cast<Type>(64+i),EncodingMethod::utf8))throw Error("E_BYTECODE",{},"Invalid Encoding type metadata");
             prior(type.element);prior(type.key);
+        } else if(type.kind==CompoundKind::user_interface){
+            if(type.name.empty() || type.element!=Type::invalid || type.key!=Type::invalid || !type.fields.empty())throw Error("E_BYTECODE",{},"Invalid interface metadata");
         } else if(type.kind==CompoundKind::enumerator){
             if(type.name!="ienumerator" || type.key!=Type::invalid || !type.fields.empty())throw Error("E_BYTECODE",{},"Invalid IEnumerator type metadata");prior(type.element);
         } else if (type.kind==CompoundKind::sequence) {
@@ -1842,6 +1860,7 @@ void verify(const Program& program) {
         else throw Error("E_BYTECODE",{},"Invalid compound kind");
         if (level > 32) throw Error("E_BYTECODE",{},"Type nesting limit exceeded"); depth[i] = level;
     }
+    verify_interfaces(program);
     std::vector<bool> owned_locals(program.locals.size());
     for (const auto& routine:program.routines) for (auto local:routine.locals) {
         if (local>=program.locals.size() || program.locals[local].global || owned_locals[local]) throw Error("E_BYTECODE",{},"Invalid or shared routine local ownership");

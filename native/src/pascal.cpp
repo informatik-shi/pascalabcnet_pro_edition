@@ -17,6 +17,7 @@
 #include "hash_set.hpp"
 #include "dictionary.hpp"
 #include "enumerator.hpp"
+#include "interfaces.hpp"
 #include "ordinal_range.hpp"
 #include "real_interval.hpp"
 #include "new_set.hpp"
@@ -213,6 +214,7 @@ struct SyntaxType {
     std::string kind;
     std::string unit{};
     std::vector<std::string> nested{};
+    std::vector<std::shared_ptr<SyntaxType>> parents{};
     std::shared_ptr<SyntaxType> element;
     std::vector<std::pair<Token, std::shared_ptr<SyntaxType>>> fields;
     std::shared_ptr<SyntaxType> key;
@@ -227,7 +229,7 @@ struct SyntaxType {
     std::map<std::string,MemberAccess> field_access{};
     std::shared_ptr<SyntaxRoutine> initializer{};
 };
-struct SyntaxProperty { Token name;std::shared_ptr<SyntaxType> type;std::optional<Token> getter,setter; };
+struct SyntaxProperty { Token name;std::shared_ptr<SyntaxType> type;std::optional<Token> getter,setter;MemberAccess access=MemberAccess::public_member; };
 struct SyntaxRoutine;
 struct SyntaxExpr {
     SyntaxExprKind kind;
@@ -297,7 +299,7 @@ bool reserved(std::string_view text) {
         "program", "begin", "end", "var", "if", "then", "else", "while", "do", "and", "or", "not",
         "div", "mod", "xor", "shl", "shr", "true", "false", "uses", "unit", "type", "const", "function", "procedure",
         "for", "to", "downto", "repeat", "until", "foreach", "in", "case", "of", "array", "record", "class", "nil",
-        "constructor", "property", "public", "private", "protected", "internal",
+        "constructor", "property", "interface", "public", "private", "protected", "internal",
         "new", "default", "typeof", "out", "params", "set", "try", "except", "finally", "raise", "break", "continue", "exit", "writeln", "write", "readln", "read"};
     return words.contains(text);
 }
@@ -437,10 +439,20 @@ private:
         else if (accept("sequence")) {
             result->kind="sequence"; expect("of"); result->element=type_syntax(false,allow_arrow);
         }
+        else if(accept("interface")){
+            result->kind="interface";
+            if(accept("(")){do{if(result->parents.size()>=16)throw Error("E_LIMIT",current_.location,"Interface parent limit exceeded");result->parents.push_back(type_syntax());}while(accept(","));expect(")");}
+            while(!is("end")){
+                if(is("function") || is("procedure")){auto member=routine(true);if(!member->declaration_only)throw Error("E_TYPE",member->name.location,"Interface members cannot have bodies");result->methods.push_back(std::move(member));}
+                else if(accept("property")){auto property=std::make_shared<SyntaxProperty>();property->name=name();expect(":");property->type=type_syntax();while(is("read") || is("write")){const bool get=accept("read");if(!get)expect("write");auto& accessor=get ? property->getter : property->setter;if(accessor)throw Error("E_TYPE",property->name.location,"Duplicate interface property accessor");accessor=property->name;}if(!property->getter && !property->setter)throw Error("E_TYPE",property->name.location,"Property requires a getter or setter");expect(";");result->properties.push_back(std::move(property));}
+                else fail("Expected interface method or property");
+                if(result->methods.size()+result->properties.size()>256)throw Error("E_LIMIT",current_.location,"Interface member limit exceeded");
+            }expect("end");
+        }
         else if (is("record") || is("class")) {
             const bool object=accept("class");if (!object) expect("record");
             result->kind=object ? "class" : "record";
-            if (object && is("(")) throw Error("E_UNSUPPORTED",current_.location,"Class inheritance is not ported yet");
+            if(object && accept("(")){do{if(result->parents.size()>=16)throw Error("E_LIMIT",current_.location,"Interface parent limit exceeded");result->parents.push_back(type_syntax());}while(accept(","));expect(")");}
             if (object && is(";")) throw Error("E_UNSUPPORTED",current_.location,"Forward class declarations are not ported yet");
             auto access=object ? MemberAccess::private_member : MemberAccess::public_member;
             while (!is("end")) {
@@ -453,7 +465,7 @@ private:
                     auto method=routine(true);method->access=access;result->methods.push_back(std::move(method));continue;
                 }
                 if (object && accept("property")) {
-                    auto property=std::make_shared<SyntaxProperty>();property->name=name();
+                    auto property=std::make_shared<SyntaxProperty>();property->access=access;property->name=name();
                     if (is("[")) throw Error("E_UNSUPPORTED",current_.location,"Indexed properties are not ported yet");
                     expect(":");property->type=type_syntax();
                     while (is("read") || is("write")) {
@@ -1074,16 +1086,17 @@ public:
         std::set<std::string> declared_types;
         for (const auto& [name,syntax]:source.type_declarations) {
             if (!declared_types.insert(name.text).second || find_type(name.text)) throw Error("E_DUPLICATE",name.location,"Duplicate type");
-            if (syntax->kind=="class" && !syntax->named) {
+            if ((syntax->kind=="class" || syntax->kind=="interface") && !syntax->named) {
                 if (module_.types.size()>=1024) throw Error("E_LIMIT",name.location,"Type limit exceeded");
                 const auto type=static_cast<Type>(64+module_.types.size());
-                module_.types.push_back({name.text,CompoundKind::object_class,Type::invalid,{}});
+                module_.types.push_back({name.text,syntax->kind=="interface" ? CompoundKind::user_interface : CompoundKind::object_class,Type::invalid,{}});
                 module_.types.back().display_name=name.spelling.empty() ? name.text : name.spelling;
                 aliases_[name.text]=type;resolved_types_[syntax.get()]=type;
             }
         }
         for (const auto& [name,syntax]:source.type_declarations)
-            if (syntax->kind!="class" || syntax->named) aliases_[name.text]=resolve_type(*syntax);
+            if ((syntax->kind!="class" && syntax->kind!="interface") || syntax->named) aliases_[name.text]=resolve_type(*syntax);
+        register_interface_contracts(source);
         for (const auto& [name,syntax]:source.type_declarations) if (syntax->kind=="class" && !syntax->named) {
             std::vector<Local> fields;
             for (const auto& [field,type]:syntax->fields) {
@@ -1119,6 +1132,7 @@ public:
             routine_names_[qualified] = module_.routines.size(); module_.routines.push_back(std::move(body));
         }
         register_properties(source);
+        register_interface_implementations(source);
         register_defaults(source);
         for (std::size_t i=0;i+1<source.statements.size();++i)if(!enum_bound_constants_.contains(&source.statements[i])) {
             module_.body.statements.push_back(statement(source.statements[i]));
@@ -1174,6 +1188,31 @@ public:
     }
 
 private:
+    void register_interface_contracts(const SyntaxStmt& source){
+        std::map<Type,const SyntaxType*> declarations;for(const auto& [name,syntax]:source.type_declarations)if(syntax->kind=="interface" && !syntax->named)declarations[aliases_.at(name.text)]=syntax.get();
+        std::set<Type> active,done;std::function<void(Type)> bind=[&](Type owner){
+            if(done.contains(owner))return;if(!active.insert(owner).second)throw Error("E_TYPE",{},"Cyclic interface inheritance");
+            const auto& syntax=*declarations.at(owner);std::vector<Type> parents;std::vector<InterfaceMember> members;
+            auto add=[&](InterfaceMember member){for(const auto& existing:members)if(existing.name==member.name){if(existing.kind==member.kind){if(existing!=member)throw Error("E_TYPE",syntax.token.location,"Conflicting inherited interface member");return;}if(existing.kind==InterfaceMemberKind::method || member.kind==InterfaceMemberKind::method || (existing.kind==InterfaceMemberKind::get ? existing.result : existing.parameters[0].type)!=(member.kind==InterfaceMemberKind::get ? member.result : member.parameters[0].type))throw Error("E_TYPE",syntax.token.location,"Conflicting inherited interface member");}if(members.size()>=256)throw Error("E_LIMIT",syntax.token.location,"Interface member limit exceeded");members.push_back(std::move(member));};
+            for(const auto& parent:syntax.parents){const auto type=resolve_type(*parent);if(!compound(type) || !interface_kind(info(type,syntax.token.location)))throw Error("E_TYPE",syntax.token.location,"Interface parent must be an interface");if(std::find(parents.begin(),parents.end(),type)!=parents.end())throw Error("E_TYPE",syntax.token.location,"Duplicate interface parent");if(declarations.contains(type))bind(type);parents.push_back(type);for(auto member:interface_contract(module_.types,type))add(std::move(member));}
+            std::set<std::string> own_names;
+            for(const auto& method:syntax.methods){if(!own_names.insert(method->name.text).second)throw Error("E_DUPLICATE",method->name.location,"Duplicate interface member");InterfaceMember member;member.name=method->name.text;member.result=method->result ? resolve_type(*method->result) : Type::unit;
+                std::set<std::string> parameter_names;for(const auto& argument:method->parameters){if(!parameter_names.insert(argument.name.text).second)throw Error("E_DUPLICATE",argument.name.location,"Duplicate parameter");if(argument.default_value)throw Error("E_UNSUPPORTED",argument.name.location,"Default interface arguments are not ported yet");member.parameters.push_back({resolve_type(*argument.type),argument.by_reference,argument.variadic});}if(member.parameters.size()>15)throw Error("E_TYPE",method->name.location,"Interface methods accept at most fifteen parameters");
+                for(std::size_t n=0;n<member.parameters.size();++n){const auto& p=member.parameters[n];if(p.variadic && (n+1!=member.parameters.size() || p.by_reference || !compound(p.type) || info(p.type,method->name.location).kind!=CompoundKind::array || info(p.type,method->name.location).rank!=1))throw Error("E_TYPE",method->name.location,"Invalid interface params parameter");}add(std::move(member));}
+            for(const auto& property:syntax.properties){if(!own_names.insert(property->name.text).second)throw Error("E_DUPLICATE",property->name.location,"Duplicate interface member");const auto type=resolve_type(*property->type);if(property->getter)add({property->name.text,type,{},InterfaceMemberKind::get});if(property->setter)add({property->name.text,Type::unit,{{type,false,false}},InterfaceMemberKind::set});}
+            auto& metadata=module_.types[static_cast<unsigned>(owner)-64U];metadata.interfaces.edit().parents=std::move(parents);metadata.interfaces.edit().members=std::move(members);active.erase(owner);done.insert(owner);
+        };for(const auto& [owner,syntax]:declarations){(void)syntax;bind(owner);}
+    }
+    void register_interface_implementations(const SyntaxStmt& source){
+        for(const auto& [name,syntax]:source.type_declarations)if(syntax->kind=="class" && !syntax->named){const auto owner=aliases_.at(name.text);std::vector<Type> targets;
+            std::function<void(Type)> add=[&](Type target){if(!compound(target))throw Error("E_TYPE",name.location,"Class parent must be an interface");const auto shape=info(target,name.location);if(shape.kind==CompoundKind::sequence)throw Error("E_UNSUPPORTED",name.location,"User IEnumerable implementations require iterator disposal support");if(!interface_kind(shape))throw Error("E_UNSUPPORTED",name.location,"Class inheritance is not ported yet");if(std::find(targets.begin(),targets.end(),target)!=targets.end())return;if(targets.size()>=64)throw Error("E_LIMIT",name.location,"Interface implementation limit exceeded");targets.push_back(target);for(auto parent:shape.interfaces.read().parents)add(parent);};for(const auto& parent:syntax->parents)add(resolve_type(*parent));
+            std::vector<InterfaceImplementation> implementations;for(auto target:targets){InterfaceImplementation entry;entry.target=target;for(const auto& member:interface_contract(module_.types,target)){std::optional<std::size_t> id;
+                if(member.kind==InterfaceMemberKind::method){const auto methods=class_methods_.find(owner);if(methods!=class_methods_.end()){const auto method=methods->second.find(member.name);if(method!=methods->second.end())id=method->second;}}
+                else {const auto properties=class_properties_.find(owner);if(properties!=class_properties_.end()){const auto property=properties->second.find(member.name);if(property!=properties->second.end())id=member.kind==InterfaceMemberKind::get ? property->second.getter : property->second.setter;}const auto declaration=std::find_if(syntax->properties.begin(),syntax->properties.end(),[&](const auto& p){return p->name.text==member.name;});if(declaration==syntax->properties.end() || (*declaration)->access!=MemberAccess::public_member)id.reset();}
+                if(!id)throw Error("E_TYPE",name.location,"Interface member has no compatible public implementation");const auto& actual=module_.routines[*id].signature;if(actual.constructor || (member.kind==InterfaceMemberKind::method && actual.access!=MemberAccess::public_member) || actual.result!=member.result || actual.parameters.size()!=member.parameters.size()+1)throw Error("E_TYPE",name.location,"Interface member has no compatible public implementation");for(std::size_t a=0;a<member.parameters.size();++a){const auto& wanted=member.parameters[a];const auto& have=actual.parameters[a+1];if(have.type!=wanted.type || have.by_reference!=wanted.by_reference || have.variadic!=wanted.variadic)throw Error("E_TYPE",name.location,"Interface member has no compatible public implementation");}entry.routines.push_back(*id);
+            }implementations.push_back(std::move(entry));}module_.types[static_cast<unsigned>(owner)-64U ].interfaces.edit().implementations=std::move(implementations);
+        }
+    }
     void bind_method_definitions(SyntaxStmt& source) {
         for (const auto& definition:source.method_definitions) {
             const auto owner=aliases_.find(definition->owner);
@@ -1964,7 +2003,11 @@ private:
         return compound(from) && compound(to) && enumerable_collection(info(from,location)) && info(from,location).rank==1
             && info(to,location).kind==CompoundKind::sequence && info(from,location).element==info(to,location).element;
     }
-    std::unique_ptr<hir::Expr> convert(std::unique_ptr<hir::Expr> expression, Type type) {
+    ABC_PASCAL_NOINLINE std::unique_ptr<hir::Expr> interface_conversion(std::unique_ptr<hir::Expr> value,Type target,bool checked){
+        auto node=std::make_unique<hir::Expr>();node->kind=hir::ExprKind::interface_cast;node->type=target;node->location=value->location;node->local=checked ? 1U : 0U;node->left=std::move(value);return node;
+    }
+    ABC_PASCAL_NOINLINE std::unique_ptr<hir::Expr> convert(std::unique_ptr<hir::Expr> expression, Type type) {
+        if(expression->type!=type && interface_compatible(module_.types,expression->type,type))return interface_conversion(std::move(expression),type,false);
         if(compound(type) && info(type,expression->location).kind==CompoundKind::enumerator && compound(expression->type) && (dictionary_enumerator_type(info(expression->type,expression->location)) || collection_enumerator_type(info(expression->type,expression->location)))){
             if(info(expression->type,expression->location).element!=info(type,expression->location).element)throw Error("E_TYPE",expression->location,"Enumerator element types must match exactly");
             const auto method=collection_enumerator_type(info(expression->type,expression->location)) ? EnumeratorMethod::box_collection : EnumeratorMethod::box_dictionary;return enumerator_expression(method,std::move(expression),type);
@@ -2246,7 +2289,7 @@ private:
                     result->kind=hir::ExprKind::default_value; result->type=type; result->operation="new"; break;
                 }
                 if (!compound(type)) throw Error("E_TYPE",result->location,"new requires an array length, record or collection type");
-                if(info(type,result->location).kind==CompoundKind::enumerator || info(type,result->location).kind==CompoundKind::sequence)throw Error("E_TYPE",result->location,"An interface cannot be constructed");
+                if(interface_kind(info(type,result->location)) || info(type,result->location).kind==CompoundKind::sequence)throw Error("E_TYPE",result->location,"An interface cannot be constructed");
                 if(real_interval_type(info(type,result->location))){
                     if(source.arguments.empty()){result->kind=hir::ExprKind::default_value;result->type=type;return result;}
                     std::vector<std::unique_ptr<hir::Expr>> args;for(const auto& argument:source.arguments)args.push_back(expression(*argument,Type::real));return real_interval_expression(type,RealIntervalMethod::construct,std::move(args),result->location);
@@ -2494,6 +2537,7 @@ private:
                 }
             }
             if(bind_print_extension(*result,source,true))break;
+            if(bind_user_interface_member(*result,source))break;
             if(bind_enumerator_member(*result,source))break;
             if(bind_dictionary_member(*result,source))break;
             if(bind_inifile_member(*result,source))break;
@@ -2988,8 +3032,8 @@ private:
     }
     ABC_PASCAL_NOINLINE bool bind_callable_cast(hir::Expr& result,const SyntaxExpr& source){
         if(routine_names_.contains(source.token.text))return false;Type cast=Type::invalid;
-        if(const auto alias=aliases_.find(source.token.text);alias!=aliases_.end()){if(callable_type(alias->second) || (compound(alias->second) && (info(alias->second,result.location).kind==CompoundKind::enumerator || info(alias->second,result.location).kind==CompoundKind::sequence)))cast=alias->second;}else if(source.token.text=="action0")cast=function_type(Type::unit,{},result.location);
-        if(cast==Type::invalid)return false;if(source.arguments.size()!=1)throw Error("E_TYPE",result.location,callable_type(cast) ? "Callable constructor requires one matching routine value" : "Interface conversion requires one value");result=std::move(*convert(expression(*source.arguments[0],cast),cast));return true;
+        if(const auto alias=aliases_.find(source.token.text);alias!=aliases_.end()){if(callable_type(alias->second) || (compound(alias->second) && (interface_kind(info(alias->second,result.location)) || info(alias->second,result.location).kind==CompoundKind::sequence)))cast=alias->second;}else if(source.token.text=="action0")cast=function_type(Type::unit,{},result.location);
+        if(cast==Type::invalid)return false;if(source.arguments.size()!=1)throw Error("E_TYPE",result.location,callable_type(cast) ? "Callable constructor requires one matching routine value" : "Interface conversion requires one value");auto input=expression(*source.arguments[0],cast);if(compound(cast) && interface_kind(info(cast,result.location)) && compound(input->type) && interface_kind(info(input->type,result.location)) && input->type!=cast)input=interface_conversion(std::move(input),cast,true);else input=convert(std::move(input),cast);result=std::move(*input);return true;
     }
     ABC_PASCAL_NOINLINE std::unique_ptr<hir::Expr> bind_call_expression(const SyntaxExpr& source,Type expected,std::unique_ptr<hir::Expr> result) {
         (void)expected;
@@ -3461,7 +3505,7 @@ private:
                 auto property=std::move(result.target);
                 if (!property->setter) throw Error("E_TYPE",property->location,"Property is read-only");
                 auto setter=std::make_unique<hir::Expr>();setter->kind=hir::ExprKind::user_call;setter->type=Type::unit;setter->location=property->location;setter->local=*property->setter;
-                setter->arguments.push_back(std::move(property->left));setter->arguments.push_back(convert(value(property->type),property->type));
+                if(property->operation=="interface"){setter->kind=hir::ExprKind::interface_call;setter->operation_type=property->operation_type;setter->left=std::move(property->left);}else setter->arguments.push_back(std::move(property->left));setter->arguments.push_back(convert(value(property->type),property->type));
                 result.kind=hir::StmtKind::call;result.expression=std::move(setter);return result;
             }
             if (result.target->kind==hir::ExprKind::list_capacity && result.target->local==static_cast<std::size_t>(ListCapacity::get)) {
@@ -3598,6 +3642,13 @@ private:
         if(method==EnumeratorMethod::get || method==EnumeratorMethod::box_dictionary || method==EnumeratorMethod::get_collection || method==EnumeratorMethod::box_collection)result->type=payload;
         else result->type=method==EnumeratorMethod::move || method==EnumeratorMethod::collection_move || method==EnumeratorMethod::collection_move_copy ? Type::boolean : method==EnumeratorMethod::current || method==EnumeratorMethod::collection_current ? info(argument->type,argument->location).element : Type::unit;
         result->left=std::move(argument);return result;
+    }
+    ABC_PASCAL_NOINLINE bool bind_user_interface_member(hir::Expr& result,const SyntaxExpr& source){
+        const auto owner=result.left->type;if(!compound(owner) || info(owner,result.location).kind!=CompoundKind::user_interface)return false;const auto contract=interface_contract(module_.types,owner);
+        std::optional<std::size_t> method,get,set;for(std::size_t i=0;i<contract.size();++i)if(contract[i].name==source.token.text){if(contract[i].kind==InterfaceMemberKind::method)method=i;else if(contract[i].kind==InterfaceMemberKind::get)get=i;else set=i;}
+        if(get || set){if(source.kind==SyntaxExprKind::member_call || !source.arguments.empty())throw Error("E_TYPE",result.location,"Interface property is not callable");result.kind=hir::ExprKind::property_access;result.type=get ? contract[*get].result : contract[*set].parameters[0].type;result.getter=get;result.setter=set;result.operation="interface";result.operation_type=owner;return true;}
+        if(!method)throw Error("E_NAME",result.location,"Unknown interface member");
+        auto receiver=std::move(result.left);result.left=std::make_unique<hir::Expr>();result.left->kind=hir::ExprKind::default_value;result.left->type=function_type(contract[*method].result,contract[*method].parameters,result.location);bind_value_call(result,source.arguments);result.left=std::move(receiver);result.kind=hir::ExprKind::interface_call;result.local=*method;result.operation_type=owner;return true;
     }
     ABC_PASCAL_NOINLINE bool bind_enumerator_member(hir::Expr& result,const SyntaxExpr& source){
         const auto owner=result.left->type;if(!compound(owner))return false;const auto shape=info(owner,result.location);const auto& name=source.token.text;

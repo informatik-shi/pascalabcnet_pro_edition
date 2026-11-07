@@ -851,7 +851,7 @@ leases on Dispose. Execution-scoped object cleanup releases interface state befo
 clearing fields, breaking closure/class/dictionary ownership cycles. Closed native
 reflection tags retain provider/source identity without loading CLR-private types.
 Independent Framework interface probes cover 4488 operations over22sources. General
-object boxing, nongeneric interfaces, user implementations, variance, bound method
+object boxing, nongeneric interfaces, user generic declarations, variance, bound method
 values remain separate work. Concrete List/HashSet public enumerator structs now use the
 record implementation below.
 
@@ -868,5 +868,32 @@ Private owner links are checked as prior reference dependencies, while Current o
 its value depth, preserving the existing 32-level bound without counting the owner
 collection as recursive value initialization. Independent legacy Framework probes
 cover 7584 operations through real Pascal collection mutations and struct/interface
-copy behavior. User-defined interface implementations and remaining collection APIs
+copy behavior. Named user interfaces and closed IEnumerator class implementations now use the
+dispatch mechanism below. Generic declarations and remaining collection APIs
 remain necessary future work.
+
+Named user interfaces have compile-time contracts with fixed method/getter/setter
+slots and exact result/ref/params types. Inheritance is flattened after checking
+cycles and signature conflicts; diamond parents share identical contracts. Classes
+carry explicit verified maps from each implemented interface (including parents)
+to Pascal methods and property accessors after public source-member checks. Metadata lives in an optional deep-copy side store,
+avoiding three vectors on every TypeInfo and preserving isolated Program copies.
+
+Class/interface values share the actual class aggregate. Implicit upcasts and
+checked interface cross-casts preserve reference identity and nil; the latter
+checks actual implementation tables and reports bilingual E_CAST. Dispatch selects
+a fixed slot rather than resolving member names or overloads at runtime. Interface
+bytecode enters the same interpreter frame vector as ordinary calls; user
+IEnumerator calls follow this path too. Native helper callbacks still use shared
+VM services. Recursive user interface calls therefore respect interpreter limits
+without growing the host VM stack. Outlined interface bytecode emission preserves
+existing deeply nested expression tests with the normal 1 MiB Windows stack.
+
+User classes can implement the closed IEnumerator<T> contract, including named
+interfaces inheriting it. Explicit calls to MoveNext/Current/Dispose/Reset execute
+real class bodies and preserve object identity. User IEnumerable<T> implementation
+is rejected until sequence cursor adapters provide automatic disposal and proper
+unwind semantics. User generics, class inheritance, explicit implementations,
+interface-to-class downcasts, nongeneric protocols and variance remain pending.
+Independent Framework probes cover 1152 operations; original interface1.pas runs
+unchanged on the native interpreter. This remains a partial library migration.

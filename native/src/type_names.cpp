@@ -38,7 +38,7 @@ std::u16string byref_name(const Program& program,Type type,Work& work){
         else if(dictionary_enumerator_type(info)){name=u"Enumerator";arity=2;}
         else if(collection_enumerator_type(info)){name=u"Enumerator";arity=1;}
         else switch(info.kind){
-        case CompoundKind::record:case CompoundKind::object_class:case CompoundKind::enumeration:name=named(info);arity=0;break;
+        case CompoundKind::record:case CompoundKind::object_class:case CompoundKind::enumeration:case CompoundKind::user_interface:name=named(info);arity=0;break;
         case CompoundKind::list:name=u"List";break;case CompoundKind::stack:name=u"Stack";break;case CompoundKind::queue:name=u"Queue";break;
         case CompoundKind::dynarray:name=u"DynArray";break;case CompoundKind::simple_set:name=u"SimpleSet";break;
         case CompoundKind::hash_set:name=u"HashSet";break;case CompoundKind::new_set:name=u"NewSet";break;
@@ -186,7 +186,7 @@ std::u16string reflected_type_name(const Program& program,const ReflectedType& t
             const auto name=key_value_pair_type(info) ? u"KeyValuePair" : info.kind==CompoundKind::dictionary ? u"Dictionary" : info.kind==CompoundKind::dictionary_keys ? u"KeyCollection" : u"ValueCollection";
             text(u">");child(pair.fields[1].type);text(u", ");child(pair.fields[0].type);text(std::u16string(name)+u"<");continue;
         }
-        if(info.kind==CompoundKind::record || info.kind==CompoundKind::object_class || info.kind==CompoundKind::enumeration){text(named(info));continue;}
+        if(info.kind==CompoundKind::record || info.kind==CompoundKind::object_class || info.kind==CompoundKind::enumeration || info.kind==CompoundKind::user_interface){text(named(info));continue;}
         if(info.kind==CompoundKind::array){child(info.element);text(info.rank==2 ? u"array[,] of " : u"array of ");continue;}
         if(info.kind==CompoundKind::new_set){child(info.element);text(u"set of ");continue;}
         if(info.kind==CompoundKind::tuple){

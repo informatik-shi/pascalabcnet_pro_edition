@@ -1,0 +1,11 @@
+Independent .NET Framework CLR 4.0.30319.42000 corpus of named interfaces implemented by real classes. The original Pascal compiler is never executed. C# and Windows PowerShell 5 are development tools excluded from application packages.
+
+Regenerate using Windows PowerShell 5 and native/tests/reference/generate-user-interfaces.ps1. The TSV contains 1152 outcomes: 24 fresh blocks of 48 operations with Random(2671). SHA-256: 0f3d7f3be464bfe1353a7cc6177e997c71b525ee763de49d53b25460e60e064b.
+
+IValue exposes a read/write integer property, mutating Add, Change(ref int), and Sum(params int[]). IDouble inherits IValue and adds Twice. A and B implement different arithmetic. Four interface slots exercise class construction, nil, aliases, reference identity, virtual method/property dispatch and checked interface cross-casts. Columns are block, operation, destination slot, argument, expected result. NullReferenceException maps to E_NIL and InvalidCastException to E_CAST.
+
+Each row compiles a native Pascal program reconstructing earlier successful mutations of the same block. Reads and failed operations that preserve state are omitted from the prefix. Change initializes a fresh scalar for each call. Expected values come only from the independent CLR implementation; the native test does not manufacture dispatch tables or object state.
+
+Additional native cases cover inherited/diamond/empty interfaces, forward class/interface references, exact signatures, public implementations including private property accessors, property compound-assignment behavior, var/params, class identity through interfaces, user implementations of the closed IEnumerator<T> protocol, ownership cycles, malformed metadata/deep copies, English/Russian errors, source locations, cancellation, instruction budgets and recursive call limits. TestSuite/interface1.pas runs unchanged using the native interpreter.
+
+This stage does not include user generic declarations, explicit interface-qualified implementations, general class inheritance, interface-to-class casts, variance, nongeneric CLR protocols, separate IDisposable, or user IEnumerable<T> implementations with automatic disposal and unwind semantics. It does not claim a complete standard library.

@@ -113,6 +113,8 @@ SortedSet, TypedSet, числовые преобразования множес�
 Составные присваивания +=, -=, *=, /=: examples/compound-assignments.pas.
 Целочисленное /= запрещено; string/BigInteger и коллекции используют исходные перегрузки.
 Пользовательские операторы, multicast-делегаты и полный набор типов ещё переносятся.
+Пользовательские interface, наследуемые контракты, методы, свойства и var/params: examples/user-interfaces.pas.
+Классы могут реализовывать IEnumerator<T>; пользовательский IEnumerable<T> и общие обобщения ещё переносятся.
 Нативный IniFile.TIniFile: uses IniFile; пример examples/ini-files.pas.
 WriteString/WriteInteger/WriteBoolean меняют память, Save записывает файл. Наследование TIniFile ещё не перенесено.
 Обобщённые строковые проверки используют en-US, строковые методы InRange/Between — порядок UTF-16.

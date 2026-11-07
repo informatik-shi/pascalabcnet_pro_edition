@@ -240,6 +240,7 @@ def main():
                 ("builtin-callables.pas", "7 2500000000\n[ONE,ДВА]\n101 3.2.0.1364\n"),
                 ("dictionaries.pas", "{(чай,130),(кофе,180)}\n[чай,кофе,сок]\n{(чай,140),(вода,60)}\n{(2,2),(1,1),(3,1)}\n{(1,1),(2,4),(3,9)}\nчай: 130\nкофе: 180\nсок: 90\n"),
                 ("collection-enumerators.pas", "two one\nthree two\none\nred\nblue\n"),
+                ("user-interfaces.pas", "8\n10\n16\nCounter\n"),
                 ("enumerator-interfaces.pas", "10 20\n30\n1 2\n1\n2\n4\nFalse\n"),
                 ("dictionary-enumerators.pas", "Original: two=2\nCopy: one=1\ntwo=2\nthree=3\none\ntwo\nthree\n"),
                 ("single-numbers.pas", "16777216 single\n1.0000001\n1 0.33333334\n16777216\nTrue 1E-45\n3.4028235E+38 1E-45\n"),
@@ -1612,6 +1613,22 @@ def main():
             invalid = subprocess.run([runner, "run", str(dictionary_error)], text=True, encoding="utf-8", capture_output=True, cwd=folder, env=env, timeout=10)
             if invalid.returncode != 1 or invalid.stdout or "E_TYPE" not in invalid.stderr or "RU:" not in invalid.stderr:
                 raise RuntimeError(f"{name} interface element type mismatch was not rejected before output")
+            interface_error = folder / "Ошибки пользовательского интерфейса.pas"
+            interface_prefix = "type I=interface procedure P;end;J=interface procedure Q;end;C=class(I) public procedure P;begin end;end;"
+            for body, code, english, russian in [
+                ("begin var i:I;i.P;end.", "E_NIL", "Cannot access a nil reference", "Нельзя обратиться к пустой ссылке nil"),
+                ("begin var i:I:=new C;J(i).Q;end.", "E_CAST", "Value does not implement the requested interface", "Значение не реализует требуемый интерфейс"),
+            ]:
+                interface_error.write_text(interface_prefix + "\n" + body, encoding="utf-8")
+                invalid = subprocess.run([runner, "run", str(interface_error)], text=True, encoding="utf-8", capture_output=True, cwd=folder, env=env, timeout=10)
+                if (invalid.returncode != 1 or code not in invalid.stderr or f"EN: {english}" not in invalid.stderr
+                        or f"RU: {russian}" not in invalid.stderr or f"{interface_error}:2:" not in invalid.stderr):
+                    raise RuntimeError(f"{name} bilingual user interface error failed: {invalid.stderr!r}")
+            interface_error.write_text("type I=interface procedure P;end;C=class(I) end;begin Writeln('must never run');end.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(interface_error)], text=True, encoding="utf-8", capture_output=True, cwd=folder, env=env, timeout=10)
+            if invalid.returncode != 1 or invalid.stdout or "E_TYPE" not in invalid.stderr or "RU:" not in invalid.stderr:
+                raise RuntimeError(f"{name} incomplete user interface implementation was not rejected before output")
+            results[-1]["native_user_interfaces_dispatch_and_bilingual_errors"] = "passed"
             iterator_data = folder / "iterator-resource.txt"
             iterator_data.write_text("one\ntwo\n", encoding="utf-8")
             iterator_source = folder / "Ресурсы перечислителя.pas"

@@ -37,7 +37,7 @@ public:
 protected:
     void highlightBlock(const QString& text) override {
         const QRegularExpression tokens(QStringLiteral(
-            "(?<!&)\\b(begin|end|program|uses|type|var|const|out|params|array|of|record|class|constructor|property|self|public|private|protected|internal|function|procedure|new|default|nil|exit|result|list|stack|queue|dynarray|simpleset|assocarray|linkedlist|linkedlistnode|singlenode|dictionary|keyvaluepair|ienumerable|ienumerator|integer|int64|single|real|double|boolean|string|char|word|byte|shortint|smallint|longword|uint64|biginteger|encoding|addr32|calcip|sequence|text|textfile|if|then|else|while|do|for|foreach|in|to|downto|step|repeat|until|break|continue|and|or|xor|not|shl|shr|div|mod|true|false)\\b"),
+            "(?<!&)\\b(begin|end|program|uses|type|var|const|out|params|array|of|record|class|interface|constructor|property|self|public|private|protected|internal|function|procedure|new|default|nil|exit|result|list|stack|queue|dynarray|simpleset|assocarray|linkedlist|linkedlistnode|singlenode|dictionary|keyvaluepair|ienumerable|ienumerator|integer|int64|single|real|double|boolean|string|char|word|byte|shortint|smallint|longword|uint64|biginteger|encoding|addr32|calcip|sequence|text|textfile|if|then|else|while|do|for|foreach|in|to|downto|step|repeat|until|break|continue|and|or|xor|not|shl|shr|div|mod|true|false)\\b"),
             QRegularExpression::CaseInsensitiveOption | QRegularExpression::UseUnicodePropertiesOption);
         auto matches = tokens.globalMatch(text);
         while (matches.hasNext()) {
