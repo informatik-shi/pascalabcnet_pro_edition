@@ -132,7 +132,7 @@ Value compound_invoke(Values& values,Type owner,CompoundMethod method,std::span<
             object->ends->push_back(values.cell(element,values.copy(arguments[1])));return false;
         }
         if(method==CompoundMethod::list_add){
-            values.grow_list(object,object->items.size()+1);auto cell=values.cell(element,values.copy(arguments[1]));values.own_list_cell(cell,object);object->items.push_back(std::move(cell));++object->version;return false;
+            values.grow_list(object,object->items.size()+1);auto cell=values.cell(element,values.copy(arguments[1]));values.own_list_cell(cell,object);values.list_append_cell(object,std::move(cell));++object->version;return false;
         }
         if(method==CompoundMethod::list_range || method==CompoundMethod::list_concat){
             const auto right=std::get<std::shared_ptr<Aggregate>>(arguments[1]);require(right,values.location);

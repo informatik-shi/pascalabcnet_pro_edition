@@ -3,6 +3,7 @@
 #include "sequence_scope.hpp"
 #include "ordinal_range.hpp"
 #include <bit>
+#include <array>
 
 namespace abc {
 namespace {
@@ -94,21 +95,21 @@ void list_bulk(Values& values,const std::shared_ptr<Aggregate>& target,const std
         collection=std::get<std::shared_ptr<Aggregate>>(ordinal_range_collect(values,input->sequence->source,array,options));
     }
     if (collection) {
-        const auto count=collection->items.size();if (!count) return;
+        const auto count=collection->items.size();if (!count){++target->version;return;}
         if (target->items.size()>INT32_MAX || count>static_cast<std::size_t>(INT32_MAX)-target->items.size() || count>values.remaining)
             throw runtime_error(RuntimeError::allocation_limit,values.location);
         const auto position=insert ? static_cast<std::size_t>(index) : target->items.size();
         charge(values,used,target->items.size()-position,options);
-        std::vector<std::shared_ptr<Cell>> added;added.reserve(count);
+        std::vector<Value> added;added.reserve(count);
         for (const auto& item:collection->items) {
-            work(values,used,options);auto cell=values.cell(element,values.copy(item->value));values.own_list_cell(cell,target);added.push_back(std::move(cell));
+            work(values,used,options);added.push_back(values.copy(item->value));
         }
         values.grow_list(target,target->items.size()+count);
         // Freeze source cells before insertion, including insertion into Self.
-        target->items.insert(target->items.begin()+static_cast<std::ptrdiff_t>(position),added.begin(),added.end());++target->version;return;
+        values.list_insert_values(target,position,added);++target->version;return;
     }
     auto cursor=sequence_begin(values,input,options);
-    return sequence_finally(values,cursor,options,[&]() -> void {std::uint64_t position=static_cast<std::uint32_t>(index);
+    sequence_finally(values,cursor,options,[&]() -> void {std::uint64_t position=static_cast<std::uint32_t>(index);
     for (std::uint64_t i=0;sequence_resume(values,cursor,i,options);++i) {
         work(values,used,options);
         if (i>static_cast<std::uint64_t>(INT64_MAX)) throw runtime_error(RuntimeError::integer_overflow,values.location);
@@ -118,11 +119,11 @@ void list_bulk(Values& values,const std::shared_ptr<Aggregate>& target,const std
         if (target->items.size()>=INT32_MAX) throw runtime_error(RuntimeError::allocation_limit,values.location);
         charge(values,used,target->items.size()-static_cast<std::size_t>(destination)+1,options);
         values.grow_list(target,target->items.size()+1);
-        auto cell=values.cell(element,values.copy(value));values.own_list_cell(cell,target);
-        target->items.insert(target->items.begin()+static_cast<std::ptrdiff_t>(destination),std::move(cell));++target->version;
+        const std::array<Value,1> added{value};values.list_insert_values(target,static_cast<std::size_t>(destination),added);++target->version;
         if (insert) ++position;
     }
     });
+    ++target->version;
 }
 bool list_operation_signature_valid(const Program& program,Type source,Type result,ListOperation method) {
     if (static_cast<unsigned>(method)>static_cast<unsigned>(ListOperation::last_range) || !compound(source)) return false;
@@ -138,8 +139,7 @@ Value list_operation(Values& values,const std::shared_ptr<Aggregate>& source,Lis
         if (size==INT32_MAX) throw runtime_error(RuntimeError::allocation_limit,values.location);
         charge(values,used,static_cast<std::size_t>(size-index)+1,options);
         values.grow_list(source,source->items.size()+1);
-        auto cell=values.cell(type_info(values.program,source->type).element,values.copy(arguments[1]));
-        values.own_list_cell(cell,source);source->items.insert(source->items.begin()+index,std::move(cell));++source->version;
+        const std::array<Value,1> added{arguments[1]};values.list_insert_values(source,static_cast<std::size_t>(index),added);++source->version;
         return std::int32_t{0};
     }
     if (method==ListOperation::get_range || method==ListOperation::remove_range) {
@@ -155,7 +155,7 @@ Value list_operation(Values& values,const std::shared_ptr<Aggregate>& source,Lis
         }
         if (count) {
             charge(values,used,static_cast<std::size_t>(size-index),options);
-            source->items.erase(source->items.begin()+index,source->items.begin()+index+count);++source->version;
+            values.list_erase(source,static_cast<std::size_t>(index),static_cast<std::size_t>(count));++source->version;
         }
         return std::int32_t{0};
     }
@@ -189,7 +189,7 @@ Value list_operation(Values& values,const std::shared_ptr<Aggregate>& source,Lis
         if (!values.equal(source->items[static_cast<std::size_t>(index)]->value,arguments[0])) continue;
         if (method!=ListOperation::remove) return index;
         charge(values,used,static_cast<std::size_t>(size-index),options);
-        source->items.erase(source->items.begin()+index);++source->version;return true;
+        values.list_erase(source,static_cast<std::size_t>(index),1);++source->version;return true;
     }
     return method==ListOperation::remove ? Value{false} : Value{std::int32_t{-1}};
 }

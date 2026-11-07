@@ -476,7 +476,7 @@ Replace использует collection_operation с режимом replace и �
 
 Методы поиска/диапазонов List имеют list_operation с типом источника, фиксированным результатом и режимом перегрузки. Сигнатуры восстанавливают точный T и integer-индексы/числа, стек и тип результата проверяются до исполнения. Runtime сохраняет отдельные порядки IndexOf/LastIndexOf/GetRange и пустой LastIndexOf; арифметика границ избегает переполнения. GetRange создаёт собственные типизированные ячейки с own_list_cell. Remove без совпадения и RemoveRange(…,0) сохраняют версию, успешные структурные изменения увеличивают её. Все актуальные аргументы принадлежат локальному вектору VM; сдвиг сначала проверяет квоту и отмену, затем меняет вектор ячеек. Сравнение использует существующее Values.equal без пользовательских callback-сравнений.
 
-AddRange/InsertRange используют list_bulk с типом назначения и точным типом источника в метаданных, без результата на стеке. Верификатор допускает только rank-one array/List/sequence с одинаковым T; string переводится в sequence of char перед инструкцией. Runtime различает массив/List и прямой sequence-адаптер такого контейнера от общего ленивого источника. Первый путь заранее сохраняет новые ячейки, поддерживает Self и увеличивает версию один раз; второй получает каждый Current, заново читает текущий размер назначения и изменяет его по одному элементу. Входные дескрипторы удерживаются независимо от подвижного стека callback. Nil источника предшествует индексу, ячейки получают own_list_cell. Общий счётчик работы включает сдвиги и предотвращает квадратичный неограниченный обход; ошибки позднего источника сохраняют ранее внесённые элементы.
+AddRange/InsertRange используют list_bulk с типом назначения и точным типом источника в метаданных, без результата на стеке. Верификатор допускает только rank-one array/List/sequence с одинаковым T; string переводится в sequence of char перед инструкцией. Runtime различает массив/List и прямой sequence-адаптер такого контейнера от общего ленивого источника. Первый путь заранее сохраняет значения для вставки, поддерживает Self и увеличивает версию один раз, включая пустой вход; второй получает каждый Current, заново читает текущий размер назначения и изменяет его по одному элементу, затем увеличивает версию после Dispose источника. Входные дескрипторы удерживаются независимо от подвижного стека callback. Nil источника предшествует индексу, ячейки получают own_list_cell. Общий счётчик работы включает сдвиги и предотвращает квадратичный неограниченный обход; ошибки позднего источника сохраняют ранее внесённые элементы.
 
 JoinToString/JoinIntoString используют sequence_join с конкретным sequence<T> и строковым разделителем. Верификатор допускает скалярный T, требует правильный стек и возвращает string; runtime перечисляет источник без ToArray, пропускает текст nil-строки как Convert.ToString и сохраняет разделители. UTF-16 результат и работа ограничены, отмена проверяется внутри добавления длинных частей. Flatten по исходному Self.SelectMany(x->x) создаёт типизированную внутреннюю лямбду без захватов, после чего использует существующий HIR sequence_transform/SelectMany и верификацию входного/внутреннего/выходного типа. Дублирования курсоров, обработки nil и VM callback нет; действуют прежние глубина, копии записей, ссылочная семантика и контроль версии.
 
@@ -484,7 +484,7 @@ JoinToString/JoinIntoString используют sequence_join с конкрет
 
 TimeContext создаётся один раз на execute_impl и передаётся по ссылке в общий stdlib::Context, поэтому callback и пользовательские функции разделяют начало и отметку delta. Clock возвращает монотонные наносекунды; total не меняет delta, delta сохраняет новую отметку перед проверяемым преобразованием в integer, как текущий исходник. Мьютекс защищает только delta; общий VM ещё не предоставляет пользовательские потоки. Sleep имеет native clock/pause hooks для детерминированных проверок, использует steady_clock/sleep_for/yield без внешнего рантайма, проверяет отмену не реже одного короткого интервала и сохраняет -1 как бесконечное ожидание. Каталог фиксирует integer-вход и integer/unit-выходы до исполнения; CMake связывает Threads::Threads для переносимости.
 
-List capacity has explicit metadata independent of std::vector allocation policy. Values.grow_list/set_list_capacity preserve shared Cell identities and list owners across storage changes; all List builders and mutations maintain it. A separate cumulative pointer-buffer budget bounds reserves without constructing unused T cells or consuming their cell budget. Typed list_capacity bytecode carries concrete List<T> and a validated get/set/ensure/trim/construct mode; output and argument stack follow the mode. The property setter lowers to a unit call with receiver-before-value evaluation and nil checking after arguments. Sequence constructors reuse verified sequence_list; direct collection adapters reserve exact count, general sources use incremental growth. Explicit reallocations precharge copying work and cancellation, keeping Count/version unchanged.
+List capacity has explicit metadata independent of std::vector allocation policy. Values.grow_list/set_list_capacity replace the physical backing while preserving List identity, live values, Count and enumerator version; active records are copied and contained references remain shared. ListStorage retains fixed-position cells across insert/remove/clear and permits an in-flight sort to own an old backing after reallocation. A separate cumulative pointer-buffer budget bounds physical reserves; unused cells are initialized lazily only when needed. Typed list_capacity bytecode carries concrete List<T> and a validated get/set/ensure/trim/construct mode; output and argument stack follow the mode. The property setter lowers to a unit call with receiver-before-value evaluation and nil checking after arguments. Sequence constructors reuse verified sequence_list; direct collection adapters reserve exact count, general sources use incremental growth. Explicit reallocations precharge copying work and cancellation, keeping Count/version unchanged.
 
 List factories resolve generic params versus sequence before VM execution. Lst/LstInt/LstStr lower to existing typed array_literal, sequence_wrap and sequence_list; no runtime overload lookup is added. Exact string/List arguments remain single expanded params elements, declared sequence uses the enumerable overload, rank-one arrays are the params buffer. Fixed factories convert scalar elements and require exact array element types. Record value copies and nested reference sharing use the same Values paths as constructors; empty fixed factories carry their explicit element type.
 
@@ -983,8 +983,47 @@ in handlers (344 bytes in the sequence handler). Opcode semantics and source
 depth limits are unchanged; no executable stack increase is used. Generic sort
 binding accepts a lightweight span instead of a temporary type vector.
 
-List callback sorting still requires faithful backing-array mutation/reallocation
-semantics before being exposed, including source List.Sort(Comparison<T>) version
-behavior. List key selectors must replace the var List only after successful
-sorting; comparer/range System.Array and List overloads remain separate work.
-No bin/Lib unit was marked complete by this prerequisite.
+List callback/backing mutation, var key selectors and List comparer/range
+overloads are now implemented as described below. System.Array comparer/range
+overloads remain separate work. No bin/Lib unit is marked complete by sorting.
+
+
+### Physical List storage and typed List sorting
+
+ListStorage owns capacity-sized fixed-position cells separately from the active
+items prefix. Capacity changes copy active value records into fresh cells, share
+contained references and detach previous cell owners. Old backings remain alive
+for sorts that captured them; callbacks can grow, trim, clear, remove, insert,
+reuse slots or recursively sort without invalidating native references. Inactive
+slots retain source backing contents and use generic defaults when cleared;
+previously unused cells are created lazily with the closed element type.
+
+Values.write can suppress version changes for internal backing writes and counts
+a public record/NewSet assignment once. Insert/remove copy values through fixed
+slots instead of moving Cell identities. All builders and mutators maintain the
+active-prefix invariant. List headers, physical reserves, copied cells and
+temporaries are bounded by execution allocation/storage budgets; reference
+tracking clears ListStorage edges on exit to break cycles.
+
+The typed sort opcode carries a closed List<T>, callback/comparer type and
+optional index/count. Stack verification distinguishes value receivers from
+assignable var List key targets. Runtime preserves evaluation order, nil
+comparer fallback, recognized native Default/Create comparers, inherited user
+IComparer contracts, source CompareTo order and physical backing length in the
+introsort depth budget. List.Sort(Comparison<T>) retains the Framework version
+rule; default/IComparer/range forms increment only after success. Descending
+sort uses the current Count/backing of its value-captured List.
+
+Key sorting copies a complete snapshot, evaluates keys before sorting, sorts
+paired values and creates a new List with exact Count capacity before assigning
+the var cell. A failed selector/comparison never performs the replacement;
+callback mutations remain observable on the prior object. Explicit key-result
+types provide lambda conversion context before execution.
+
+The independent 14231-execution Framework 4.7.2 corpus observes method/delegate/
+key traces, actual List/alias contents, reference identity, retained old
+enumerators and finally/Dispose error replacement. It covers unused capacity,
+callback mutations, default/create/user comparers, ranges, four confirmed heap
+fallbacks, 150 boundary ranges and a physically borrowed record field across
+Capacity/TrimExcess. Additional static, metadata, record, cancellation and
+recursive-comparer checks use the native interpreter alone.

@@ -73,6 +73,7 @@ add_library(abc_core
     src/collection_operations.cpp
     src/matrix_construction.cpp
     src/list_operations.cpp
+    src/list_storage.cpp
     src/timing.cpp
     src/single.cpp
     src/type_names.cpp
@@ -192,6 +193,13 @@ if(BUILD_TESTING)
         target_compile_options(abc_sorting_tests PRIVATE /utf-8)
     endif()
     add_test(NAME typed_sorting COMMAND abc_sorting_tests)
+    add_executable(abc_list_sorting_tests tests/list_sorting_tests.cpp)
+    target_link_libraries(abc_list_sorting_tests PRIVATE abc_core)
+    if(MSVC)
+        target_compile_options(abc_list_sorting_tests PRIVATE /utf-8)
+    endif()
+    add_test(NAME list_sorting COMMAND abc_list_sorting_tests)
+    add_test(NAME list_sorting_example COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/examples/list-sorting.pas")
     add_test(NAME sorting_example COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/examples/sorting.pas")
     add_test(NAME comparers_example COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/examples/comparers.pas")
     add_test(NAME user_enumerables_example COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/examples/user-enumerables.pas")

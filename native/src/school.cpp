@@ -259,7 +259,7 @@ struct SchoolLists {
     void add(const std::shared_ptr<Aggregate>& list, std::int32_t value) {
         values.grow_list(list,list->items.size()+1);
         auto cell=values.cell(Type::integer,value); values.own_list_cell(cell,list);
-        list->items.push_back(std::move(cell)); ++list->version;
+        values.list_append_cell(list,std::move(cell)); ++list->version;
     }
     std::shared_ptr<Aggregate> cache() {
         if (context.primes) return context.primes;
@@ -349,7 +349,7 @@ struct SchoolFactors {
         if (!wide && (n<INT32_MIN || n>INT32_MAX)) throw runtime_error(RuntimeError::integer_overflow,service.values.location);
         service.values.grow_list(list,list->items.size()+1);
         auto cell=service.values.cell(element,wide ? Value{n} : Value{static_cast<std::int32_t>(n)});
-        service.values.own_list_cell(cell,list); list->items.push_back(std::move(cell)); ++list->version;
+        service.values.own_list_cell(cell,list); service.values.list_append_cell(list,std::move(cell)); ++list->version;
     }
     std::int64_t number(const std::shared_ptr<Cell>& cell) const {
         return wide ? std::get<std::int64_t>(cell->value) : std::int64_t(std::get<std::int32_t>(cell->value));

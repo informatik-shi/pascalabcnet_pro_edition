@@ -1251,19 +1251,12 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
             stack.emplace_back(static_cast<std::int32_t>(type_info(program,instruction.type).rank==2 ? array->rows : array->items.size())-1); break;
         }
         case Op::sort_call: {
-            const bool has_callback=sort_callback(instruction.operand)!=Type::invalid;auto callback=has_callback ? pop() : Value{std::int32_t{0}};auto array=pop();sort_array(values,instruction.type,instruction.operand,array,has_callback ? &callback : nullptr,options);break;
+            const bool has_callback=sort_callback(instruction.operand)!=Type::invalid;auto callback=has_callback ? pop() : Value{std::int32_t{0}};
+            const bool range=(instruction.operand&sort_range)!=0;const auto count=range ? std::get<std::int32_t>(pop()) : -1,index=range ? std::get<std::int32_t>(pop()) : 0;
+            auto array=pop();sort_array(values,instruction.type,instruction.operand,array,has_callback ? &callback : nullptr,options,index,count);break;
         }
         case Op::sequence_sort: {
-            auto sequence=std::get<std::shared_ptr<Aggregate>>(pop());
-            if (sequence->nil) trap(instruction,RuntimeError::nil_reference);
-            if (type_info(program,instruction.type).kind==CompoundKind::list) ++sequence->version;
-            std::vector<Value> items;
-            for (const auto& item:sequence->items) items.push_back(item->value);
-            std::sort(items.begin(),items.end(),[&](const Value& a,const Value& b){
-                if (value_type(a)==Type::string) return instruction.operand ? compare_strings(a,b)>0 : compare_strings(a,b)<0;
-                return instruction.operand ? a>b : a<b;
-            });
-            for (std::size_t i=0;i<items.size();++i) values.write(sequence->items[i],items[i]); break;
+            auto source=pop();const auto code=(type_info(program,instruction.type).element==Type::string ? static_cast<unsigned>(SortMethod::ordinal_order) : 0U)|(instruction.operand ? sort_descending : 0U);sort_array(values,instruction.type,code,source,nullptr,options);break;
         }
         case Op::sequence_fill: {
             const auto value=pop(); auto sequence=std::get<std::shared_ptr<Aggregate>>(pop());
@@ -1283,9 +1276,9 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
             const auto value=pop();const auto last=std::int64_t(std::get<std::int32_t>(pop()));
             const bool matrix=type_info(program,instruction.type).rank==2;const auto first=matrix ? std::int64_t(std::get<std::int32_t>(pop())) : last;
             const auto array=std::get<std::shared_ptr<Aggregate>>(pop());if(!array || array->nil)trap(instruction,RuntimeError::nil_reference);
-            if(first<0 || last<0 || (matrix && (static_cast<std::uint64_t>(first)>=array->rows || static_cast<std::uint64_t>(last)>=array->columns)))trap(instruction,RuntimeError::index_bounds);
+            if(first<0 || last<0 || (matrix && (static_cast<std::uint64_t>(first)>=array->rows || static_cast<std::uint64_t>(last)>=array->columns)))trap(instruction,type_info(program,instruction.type).kind==CompoundKind::list ? RuntimeError::list_index : RuntimeError::index_bounds);
             const auto index=matrix ? static_cast<std::uint64_t>(first)*array->columns+static_cast<std::uint64_t>(last) : static_cast<std::uint64_t>(first);
-            if(index>=array->items.size())trap(instruction,RuntimeError::index_bounds);values.write(array->items[static_cast<std::size_t>(index)],value);break;
+            if(index>=array->items.size())trap(instruction,type_info(program,instruction.type).kind==CompoundKind::list ? RuntimeError::list_index : RuntimeError::index_bounds);values.write(array->items[static_cast<std::size_t>(index)],value);break;
         }
         case Op::store_field: {
             const auto value=pop();const auto object=std::get<std::shared_ptr<Aggregate>>(pop());if(!object || object->nil)trap(instruction,RuntimeError::nil_reference);values.write(object->items[instruction.operand],value);break;
@@ -1313,7 +1306,7 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
                     trap(instruction,RuntimeError::index_bounds);
                 index=static_cast<std::int64_t>(static_cast<std::size_t>(first)*array->columns+static_cast<std::size_t>(last));
             }
-            if (index < 0 || static_cast<std::size_t>(index) >= array->items.size()) trap(instruction,RuntimeError::index_bounds);
+            if (index < 0 || static_cast<std::size_t>(index) >= array->items.size()) trap(instruction,type_info(program,instruction.type).kind==CompoundKind::list ? RuntimeError::list_index : RuntimeError::index_bounds);
             auto cell = array->items[static_cast<std::size_t>(index)];
             if (instruction.op == Op::ref_index) stack.emplace_back(cell); else stack.push_back(values.copy(cell->value));
             break;
@@ -1379,17 +1372,17 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
             if (list->nil) trap(instruction,RuntimeError::nil_reference);
             values.grow_list(list,list->items.size()+1);
             auto item=values.cell(type_info(program,instruction.type).element,values.copy(value)); values.own_list_cell(item,list);
-            list->items.push_back(std::move(item)); ++list->version; break;
+            values.list_append_cell(list,std::move(item)); ++list->version; break;
         }
         case Op::list_clear: {
             auto list=std::get<std::shared_ptr<Aggregate>>(pop()); if (list->nil) trap(instruction,RuntimeError::nil_reference);
-            list->items.clear(); ++list->version; break;
+            values.list_erase(list,0,list->items.size()); ++list->version; break;
         }
         case Op::list_remove: {
             const auto index = std::get<std::int32_t>(pop()); auto list = std::get<std::shared_ptr<Aggregate>>(pop());
             if (list->nil) trap(instruction,RuntimeError::nil_reference);
-            if (index < 0 || static_cast<std::size_t>(index) >= list->items.size()) trap(instruction,RuntimeError::index_bounds);
-            list->items.erase(list->items.begin()+index); ++list->version; break;
+            if (index < 0 || static_cast<std::size_t>(index) >= list->items.size()) trap(instruction,RuntimeError::list_index);
+            values.list_erase(list,static_cast<std::size_t>(index),1); ++list->version; break;
         }
         case Op::list_contains: {
             auto value = pop(); auto list = std::get<std::shared_ptr<Aggregate>>(pop());

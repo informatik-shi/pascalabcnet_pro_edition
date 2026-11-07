@@ -240,12 +240,14 @@ struct EnumeratorState {
     std::uint64_t index=0;
     bool available=false,finished=false,disposed=false;
 };
+struct ListStorage { std::vector<std::shared_ptr<Cell>> cells; };
 struct Aggregate {
     Type type;
     std::vector<std::shared_ptr<Cell>> items;
     bool nil = false;
     std::size_t count = 0; // Logical size of DynArray and SimpleSet; items holds capacity.
-    std::size_t list_capacity = 0; // Pascal List capacity, independent of vector allocation policy.
+    std::size_t list_capacity = 0; // Logical capacity of the current physical List backing array.
+    std::shared_ptr<ListStorage> list_storage{};
     std::size_t rows = 0, columns = 0; // Shape of a rectangular rank-two array.
     std::uint64_t version = 0; // List enumerators detect successful writes and structural changes.
     // Allocate deque storage only for constructed stacks and queues.

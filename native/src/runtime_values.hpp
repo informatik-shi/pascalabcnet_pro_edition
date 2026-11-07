@@ -27,7 +27,7 @@ struct ReferenceObjects {
     void observe(const std::shared_ptr<Aggregate>& object) { entries.push_back({object,{}}); }
     ~ReferenceObjects() {
         for (auto& entry:entries) entry.retained=entry.object.lock();
-        for (auto& entry:entries) if (entry.retained) {entry.retained->enumerator.reset();entry.retained->items.clear();}
+        for (auto& entry:entries) if (entry.retained) {entry.retained->enumerator.reset();entry.retained->list_storage.reset();entry.retained->items.clear();}
     }
 };
 struct Values {
@@ -98,7 +98,7 @@ struct Values {
             const bool object=info.kind==CompoundKind::object_class;
             const bool iterator=info.kind==CompoundKind::enumerator;
             const bool dictionary=info.kind==CompoundKind::dictionary || info.kind==CompoundKind::dictionary_keys || info.kind==CompoundKind::dictionary_values;
-            if ((object || iterator || dictionary || info.kind==CompoundKind::hash_set || info.kind==CompoundKind::empty_collection) && constructed) {
+            if ((object || iterator || dictionary || info.kind==CompoundKind::list || info.kind==CompoundKind::hash_set || info.kind==CompoundKind::empty_collection) && constructed) {
                 if (!remaining) throw runtime_error(RuntimeError::allocation_limit,location);
                 --remaining;
             }
@@ -110,7 +110,7 @@ struct Values {
                 aggregate->ends = std::make_unique<std::deque<std::shared_ptr<Cell>>>();
             if (info.kind == CompoundKind::record || (object && constructed))
                 for (const auto& field : info.fields) aggregate->items.push_back(cell(field.type, zero(field.type,false,generic || object || key_value_pair_type(info) || dictionary_enumerator_type(info) || collection_enumerator_type(info))));
-            if ((object || iterator || dictionary) && constructed && observe_object) observe_object(aggregate);
+            if ((object || iterator || dictionary || info.kind==CompoundKind::list) && constructed && observe_object) observe_object(aggregate);
             return aggregate;
         }
         }
@@ -131,14 +131,14 @@ struct Values {
         if (compound(cell->type) && type_info(program,cell->type).kind==CompoundKind::record)
             for (const auto& field:std::get<std::shared_ptr<Aggregate>>(cell->value)->items) own_list_cell(field,list);
     }
-    void write(const std::shared_ptr<Cell>& target, const Value& value) {
-        if (const auto owner=target->list_owner.lock()) ++owner->version;
-        if(const auto* set=std::get_if<NewSetValue>(&target->value)){const auto& source=std::get<NewSetValue>(value);write(set->storage,source.storage->value);return;}
+    void write(const std::shared_ptr<Cell>& target, const Value& value,bool versioned=true) {
+        if(versioned)if (const auto owner=target->list_owner.lock()) ++owner->version;
+        if(const auto* set=std::get_if<NewSetValue>(&target->value)){const auto& source=std::get<NewSetValue>(value);write(set->storage,source.storage->value,false);return;}
         if (compound(target->type) && type_info(program,target->type).kind == CompoundKind::record) {
             const auto original = std::get<std::shared_ptr<Aggregate>>(target->value);
             const auto source = std::get<std::shared_ptr<Aggregate>>(value);
             if (original == source) return;
-            for (std::size_t i = 0; i < original->items.size(); ++i) write(original->items[i],source->items[i]->value);
+            for (std::size_t i = 0; i < original->items.size(); ++i) write(original->items[i],source->items[i]->value,false);
         } else target->value = value;
     }
     bool equal(const Value& left, const Value& right) const {
@@ -157,19 +157,11 @@ struct Values {
         }
         return left == right;
     }
-    void set_list_capacity(const std::shared_ptr<Aggregate>& list, std::size_t capacity) {
-        if (capacity<list->items.size()) throw runtime_error(RuntimeError::list_capacity,location);
-        if (capacity==list->list_capacity) return;
-        if (capacity>INT32_MAX || capacity>list_storage_remaining) throw runtime_error(RuntimeError::allocation_limit,location);
-        try {
-            // Reallocation copies cell pointers, preserving record field aliases and owners.
-            std::vector<std::shared_ptr<Cell>> storage; storage.reserve(capacity);
-            storage.insert(storage.end(),list->items.begin(),list->items.end());
-            list->items.swap(storage);
-        } catch (const std::bad_alloc&) { throw runtime_error(RuntimeError::allocation_limit,location); }
-          catch (const std::length_error&) { throw runtime_error(RuntimeError::allocation_limit,location); }
-        list_storage_remaining-=capacity; list->list_capacity=capacity;
-    }
+    std::shared_ptr<ListStorage> list_backing(const std::shared_ptr<Aggregate>&);
+    void set_list_capacity(const std::shared_ptr<Aggregate>&,std::size_t);
+    void list_append_cell(const std::shared_ptr<Aggregate>&,std::shared_ptr<Cell>);
+    void list_insert_values(const std::shared_ptr<Aggregate>&,std::size_t,std::span<const Value>);
+    void list_erase(const std::shared_ptr<Aggregate>&,std::size_t,std::size_t);
     void grow_list(const std::shared_ptr<Aggregate>& list, std::size_t required) {
         if (required<=list->list_capacity) return;
         if (required>INT32_MAX) throw runtime_error(RuntimeError::allocation_limit,location);
@@ -181,7 +173,9 @@ struct Values {
         auto result = std::make_shared<Aggregate>(); result->type = type;
         const auto element = type_info(program, type).element;
         if (type_info(program,type).kind==CompoundKind::list) set_list_capacity(result,size);
-        for (std::size_t i = 0; i < size; ++i) result->items.push_back(cell(element, zero(element,false,generic)));
+        const bool list=type_info(program,type).kind==CompoundKind::list;
+        for (std::size_t i = 0; i < size; ++i) {auto item=cell(element,zero(element,false,generic));if(list)list_append_cell(result,std::move(item));else result->items.push_back(std::move(item));}
+        if(list && observe_object){if(!remaining)throw runtime_error(RuntimeError::allocation_limit,location);--remaining;observe_object(result);}
         return result;
     }
     std::shared_ptr<Aggregate> matrix(Type type, std::int32_t rows, std::int32_t columns, bool generic = false) {

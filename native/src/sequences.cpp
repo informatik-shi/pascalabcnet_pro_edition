@@ -366,7 +366,7 @@ Value sequence_collect(Values& values,const std::shared_ptr<Aggregate>& sequence
             auto value=sequence_at(values,iterator,static_cast<std::int64_t>(i),options);
             auto item=values.cell(element,std::move(value));
             if (list) { values.grow_list(result,result->items.size()+1);values.own_list_cell(item,result); }
-            result->items.push_back(std::move(item));
+            if(list)values.list_append_cell(result,std::move(item));else result->items.push_back(std::move(item));
         }
         // Native providers may defer producing a yield value until sequence_at.
         // A user IEnumerator Count must call MoveNext without requesting Current.

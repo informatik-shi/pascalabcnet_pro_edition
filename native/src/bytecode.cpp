@@ -556,7 +556,8 @@ private:
             for(const auto& argument:node.arguments)expression(*argument);
             emit(Op::write_lines,node.arguments[1]->type,node.arguments.size()==3 ? static_cast<std::size_t>(node.arguments.back()->type) : 0,node.location);break;
         case hir::ExprKind::sort_call:
-            expression(*node.left);if(node.right)expression(*node.right);emit(Op::sort_call,node.operation_type,node.local,node.location);break;
+            if(sort_reference(program_,node.operation_type,node.local))reference(*node.left);else expression(*node.left);
+            for(const auto& argument:node.arguments)expression(*argument);if(node.right)expression(*node.right);emit(Op::sort_call,node.operation_type,node.local,node.location);break;
         case hir::ExprKind::array_copy: case hir::ExprKind::array_high: case hir::ExprKind::sequence_sort: case hir::ExprKind::sequence_fill:
             expression(*node.left);
             if (node.right) expression(*node.right);
@@ -1720,7 +1721,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             const auto parameters=enum_parameters(instruction.type,method,other);
             for(auto p=parameters.rbegin();p!=parameters.rend();++p)require(*p);stack.push_back(enum_result(instruction.type,method));break;
         }
-        case Op::sort_call: if(sort_callback(instruction.operand)!=Type::invalid)require(sort_callback(instruction.operand));require(instruction.type);break;
+        case Op::sort_call: {const auto parameters=sort_parameters(program,instruction.type,instruction.operand);for(auto it=parameters.rbegin();it!=parameters.rend();++it)require(*it);break;}
         case Op::comparer_create: if(instruction.operand)require(type_info(program,instruction.type).key);stack.push_back(instruction.type);break;
         case Op::comparable_call: {
             const auto method=static_cast<ComparableMethod>(instruction.operand);const auto parameters=comparable_parameters(instruction.type,method);

@@ -4076,21 +4076,36 @@ private:
         const auto& name=source.token.text;if((name!="sort" && name!="sortdescending") || (!unit.empty() && unit!="pabcsystem" && unit!="arrays"))return false;
         if(!member && source.arguments.empty())return false;
         auto receiver=member ? std::move(result.left) : expression(*source.arguments[0]);const auto owner=receiver->type;
-        if(!compound(owner) || info(owner,result.location).kind!=CompoundKind::array){if(member)result.left=std::move(receiver);return false;}
-        const auto shape=info(owner,result.location);const auto first=member ? 0U : 1U;
-        if(shape.rank!=1 || source.arguments.size()>first+1 || declared.size()>2 || (!declared.empty() && declared[0]!=shape.element))throw Error("E_TYPE",result.location,"Sort requires a rank-one array and matching static element type");
-        const bool descending=name=="sortdescending";std::size_t code=descending ? sort_descending : 0;if(member)code|=sort_extension;
-        if(source.arguments.size()==first){if(declared.size()>1)throw Error("E_TYPE",result.location,"Sort key type requires a selector");code|=static_cast<unsigned>(shape.element==Type::string && declared.empty() && unit!="arrays" ? SortMethod::ordinal_order : SortMethod::default_order);}
-        else{
+        if(!compound(owner) || (info(owner,result.location).kind!=CompoundKind::array && info(owner,result.location).kind!=CompoundKind::list)){if(member)result.left=std::move(receiver);return false;}
+        const auto shape=info(owner,result.location);const bool list=shape.kind==CompoundKind::list;const auto first=member ? 0U : 1U;
+        const bool descending=name=="sortdescending",range=list && member && !descending && source.arguments.size()==3;
+        if(shape.rank!=1 || (!range && source.arguments.size()>first+1) || declared.size()>2 || (!declared.empty() && declared[0]!=shape.element) || (list && unit=="arrays") || (list && member && !declared.empty()))throw Error("E_TYPE",result.location,"Sort requires a matching rank-one array or List and a supported overload");
+        std::size_t code=descending ? sort_descending : 0;if(member)code|=sort_extension;
+        if(range){
+            const auto order=comparison_type(CompoundKind::comparer_interface,shape.element);
+            result.arguments.push_back(convert(expression(*source.arguments[0],Type::integer),Type::integer));result.arguments.push_back(convert(expression(*source.arguments[1],Type::integer),Type::integer));
+            result.right=convert(expression(*source.arguments[2],order),order);code|=sort_range|static_cast<unsigned>(SortMethod::comparer)|(static_cast<std::size_t>(order)<<8U);
+        }else if(source.arguments.size()==first){
+            if(declared.size()>1)throw Error("E_TYPE",result.location,"Sort key type requires a selector");
+            code|=static_cast<unsigned>(shape.element==Type::string && declared.empty() && unit!="arrays" && !(list && member) ? SortMethod::ordinal_order : SortMethod::default_order);
+        }else{
             if(unit=="arrays")throw Error("E_TYPE",result.location,"Arrays.Sort accepts only the array");
-            auto callback=library_callback(*source.arguments[first],{shape.element,shape.element});const auto& signature=callback.signature;
-            if(signature.parameters.size()!=1 && signature.parameters.size()!=2)throw Error("E_TYPE",result.location,"Sort callback requires one or two parameters");
-            for(const auto& parameter:signature.parameters)if(parameter.type!=shape.element || parameter.by_reference || parameter.variadic)throw Error("E_TYPE",result.location,"Sort callback parameters must match the array element type");
-            SortMethod method=SortMethod::key;
-            if(signature.parameters.size()==2){if(descending || declared.size()>1 || (member && signature.result==Type::boolean) || (signature.result!=Type::integer && signature.result!=Type::boolean))throw Error("E_TYPE",result.location,"Sort comparison requires an integer result or a supported less predicate");method=signature.result==Type::integer ? SortMethod::comparison : SortMethod::less;}
-            else if(signature.result==Type::unit || (declared.size()==2 && declared[1]!=signature.result))throw Error("E_TYPE",result.location,"Sort selector key type must match its result");
-            auto value=callback.value ? std::move(callback.value) : routine_value(*callback.named,result.location);
-            code|=static_cast<unsigned>(method);code|=static_cast<std::size_t>(value->type)<<8U;if(declared.size()==2)code|=sort_generic_key;result.right=std::move(value);
+            const auto& syntax=*source.arguments[first];std::unique_ptr<hir::Expr> value;
+            if(list && member && syntax.kind!=SyntaxExprKind::lambda && !(syntax.kind==SyntaxExprKind::name && !lookup(syntax.token) && !routine_names_.contains(syntax.token.text)))value=expression(syntax);
+            if(value && !callable_type(value->type)){
+                if(descending || value->type==Type::nil)throw Error("E_TYPE",result.location,"List.Sort requires a typed comparison or comparer");
+                const auto order=comparison_type(CompoundKind::comparer_interface,shape.element);result.right=convert(std::move(value),order);code|=static_cast<unsigned>(SortMethod::comparer)|(static_cast<std::size_t>(order)<<8U);
+            }else{
+                auto callback=value ? library_callback_value(std::move(value)) : syntax.kind==SyntaxExprKind::lambda && declared.size()==2 ? library_callback_value(bind_lambda(syntax,function_type(declared[1],{{shape.element,false,false}},result.location))) : library_callback(syntax,{shape.element,shape.element});const auto& signature=callback.signature;
+                if(signature.parameters.size()!=1 && signature.parameters.size()!=2)throw Error("E_TYPE",result.location,"Sort callback requires one or two parameters");
+                for(const auto& parameter:signature.parameters)if(parameter.type!=shape.element || parameter.by_reference || parameter.variadic)throw Error("E_TYPE",result.location,"Sort callback parameters must match the element type");
+                SortMethod method=SortMethod::key;
+                if(signature.parameters.size()==2){if(descending || declared.size()>1 || (member && signature.result==Type::boolean) || (signature.result!=Type::integer && signature.result!=Type::boolean))throw Error("E_TYPE",result.location,"Sort comparison requires an integer result or a supported less predicate");method=signature.result==Type::integer ? SortMethod::comparison : SortMethod::less;}
+                else if(signature.result==Type::unit || (list && member) || (declared.size()==2 && declared[1]!=signature.result))throw Error("E_TYPE",result.location,"Sort selector requires a matching key type and a source overload");
+                if(list && method==SortMethod::key && !new_set_addressable(*receiver))throw Error("E_TYPE",result.location,"List key sorting requires an assignable List variable");
+                auto bound=callback.value ? std::move(callback.value) : routine_value(*callback.named,result.location);
+                code|=static_cast<unsigned>(method);code|=static_cast<std::size_t>(bound->type)<<8U;if(declared.size()==2)code|=sort_generic_key;result.right=std::move(bound);
+            }
         }
         result.kind=hir::ExprKind::sort_call;result.left=std::move(receiver);result.operation_type=owner;result.local=code;result.type=Type::unit;return true;
     }

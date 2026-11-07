@@ -620,7 +620,7 @@ void list_capacity_library() {
     result("begin var l:=Arr(1,2,3).ToList;foreach var x in l do begin l.Capacity:=10;l.EnsureCapacity(20);l.TrimExcess;Write(x);end;Writeln(' ',l.Capacity);end.","123 3\n");
     result("begin var l:=new List<integer>(9);l.AddRange(Arr(1,2,3));Writeln(Copy(l).Capacity,' ',l.GetRange(1,2).Capacity,' ',l.ConvertAll(x->x+1).Capacity,' ',l.ToList.Capacity);l.AddRange(Arr(4,5,6,7,8,9,10));Writeln(l.Capacity);var m:=Arr(1,2).ToList;m.InsertRange(0,m);Writeln(m.Capacity,' ',m);end.","3 2 3 3\n18\n4 [1,2,1,2]\n");
     result("type R=record n:integer;a:array of integer;end;begin var r:R;r.n:=1;r.a:=Arr(2);var l:=new List<R>(Arr(r));l.Capacity:=10;var c:=new List<R>(l);c[0].n:=9;c[0].a[0]:=7;Writeln(l[0].n,' ',r.a[0]);end.","1 7\n");
-    result("type R=record n:integer;end;var l:List<R>;procedure P(var n:integer);begin l.Capacity:=20;l.TrimExcess;n:=7;end;begin var r:R;l:=new List<R>(Arr(r));P(l[0].n);Writeln(l[0].n,' ',l.Capacity);end.","7 1\n");
+    result("type R=record n:integer;end;var l:List<R>;procedure P(var n:integer);begin l.Capacity:=20;l.TrimExcess;n:=7;end;begin var r:R;l:=new List<R>(Arr(r));P(l[0].n);Writeln(l[0].n,' ',l.Capacity);end.","0 1\n");
     result("begin var l:=new List<integer>(word(2));l.Add(7);Writeln(l.Capacity);var calls:=0;var c:=new List<integer>(SeqGen(3,i->begin Inc(calls);Result:=i;end));Writeln(c,' ',calls);end.","2\n[0,1,2] 3\n");
     result("begin var l:=Arr(1,2,3).ToList;var c:=l.ConvertAll(x->begin if x=1 then l.RemoveAt(2);Result:=x;end);Writeln(c,' ',c.Capacity);end.","[1,2] 3\n");
     result("begin var l:=new List<char>(#55356#57101);Writeln(l.Count,' ',Ord(l[0]),' ',Ord(l[1]));end.","2 55356 57101\n");
@@ -639,7 +639,7 @@ void list_capacity_library() {
     const auto type=p.locals[0].type;abc::Values values{p,1000};auto l=values.array(type,100);const auto cell=l->items[0];abc::ExecutionOptions options;options.instruction_limit=10;
     error([&]{(void)abc::list_capacity(values,type,l,abc::ListCapacity::set,200,options);},"E_LIMIT");require(l->list_capacity==100 && l->items[0]==cell,"Capacity work quota is checked before allocation and preserves cells");
     options={};options.cancelled=[] {return true;};error([&]{(void)abc::list_capacity(values,type,l,abc::ListCapacity::ensure,200,options);},"E_CANCELLED");require(l->list_capacity==100,"Cancelled capacity change leaves storage unchanged");
-    options={};(void)abc::list_capacity(values,type,l,abc::ListCapacity::ensure,200,options);require(l->items[0]==cell && l->items.size()==100 && l->version==0 && l->list_capacity==200,"Capacity growth preserves identity, count and enumerator version");
+    options={};(void)abc::list_capacity(values,type,l,abc::ListCapacity::ensure,200,options);require(l->items[0]!=cell && l->items[0]->value==cell->value && l->items.size()==100 && l->version==0 && l->list_capacity==200,"Capacity growth replaces physical slots while preserving values, count and enumerator version");
     abc::Values limited{p,10};auto empty=limited.array(type,0);limited.set_list_capacity(empty,6);error([&]{limited.set_list_capacity(empty,5);},"E_LIMIT");require(empty->list_capacity==6,"Every replacement buffer is charged against cumulative List storage quota");
     options={};options.allocation_limit=10;error([&]{(void)run("begin var l:=new List<integer>(11);end.","",options);},"E_LIMIT");
     for(int kind=0;kind<4;++kind){auto bad=p;for(auto& op:bad.code)if(op.op==abc::Op::list_capacity){if(kind==0)op.operand=std::numeric_limits<std::size_t>::max();if(kind==1)op.type=abc::Type::integer;if(kind==2)op.operand=static_cast<std::size_t>(abc::ListCapacity::trim);if(kind==3)op.type=abc::Type::unit;}error([&]{abc::verify(bad);},"E_BYTECODE");}
@@ -715,7 +715,7 @@ void list_bulk_ranges() {
     result("begin var calls:=0;var l:=new List<integer>;l.AddRange(SeqGen(3,i->begin Inc(calls);Result:=i;end));Writeln(l,' ',calls);var m:=Arr(9).ToList;m.InsertRange(0,SeqGen(2,i->begin m.Add(100+i);Result:=i+1;end));Writeln(m);end.","[0,1,2] 3\n[1,2,9,100,101]\n");
     result("begin var l:=Arr(9).ToList;l.AddRange(SeqGen(2,i->begin if i=1 then l.Clear;Result:=i;end));Writeln(l);end.","[1]\n");
     result("type R=record n:integer;a:array of integer;end;begin var r:R;r.n:=1;r.a:=Arr(2);var a:=Arr(r);var l:=new List<R>;l.AddRange(a);l.InsertRange(0,l);l[0].n:=9;l[0].a[0]:=7;Writeln(l[1].n,' ',a[0].n,' ',r.a[0]);end.","1 1 7\n");
-    result("begin var l:=Arr(1,2).ToList;foreach var x in l do begin l.AddRange(new integer[0]);l.InsertRange(0,Seq(1).Where(v->False));Write(x);end;end.","12");
+    runtime_error("begin var l:=Arr(1,2).ToList;foreach var x in l do begin l.AddRange(new integer[0]);l.InsertRange(0,Seq(1).Where(v->False));Write(x);end;end.","E_MODIFIED");
     for(int size=0;size<=5;++size)for(int index=0;index<=size;++index) {
         std::ostringstream expected;for(int i=1;i<=index;++i)expected<<i<<' ';for(int i=1;i<=size;++i)expected<<i<<' ';for(int i=index+1;i<=size;++i)expected<<i<<' ';
         result("begin var l:=Range(1,"+std::to_string(size)+").ToList;l.InsertRange("+std::to_string(index)+",l);foreach var x in l do Write(x,' ');end.",expected.str());

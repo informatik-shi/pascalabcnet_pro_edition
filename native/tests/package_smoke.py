@@ -244,6 +244,7 @@ def main():
                 ("user-enumerables.pas", "1\n2\nclosed\nclosed\n6\n"),
                 ("comparers.pas", "True\n25\n-5\n5\n"),
                 ("sorting.pas", "Boris: 95\nVera: 80\nAlice: 70\n[1,2,3,4,5]\n[5,4,3,2,1]\n"),
+                ("list-sorting.pas", "[5,4,3,2,1]\n[1,2,3,4,5]\n[5,4,3,2,1]\nFalse\n[1,2,3,4,5]\n"),
                 ("enumerator-interfaces.pas", "10 20\n30\n1 2\n1\n2\n4\nFalse\n"),
                 ("dictionary-enumerators.pas", "Original: two=2\nCopy: one=1\ntwo=2\nthree=3\none\ntwo\nthree\n"),
                 ("single-numbers.pas", "16777216 single\n1.0000001\n1 0.33333334\n16777216\nTrue 1E-45\n3.4028235E+38 1E-45\n"),
@@ -1658,6 +1659,17 @@ def main():
                     or "RU: Не удалось сравнить два элемента массива: Деление на ноль" not in invalid.stderr or f"{sorting_error}:2:" not in invalid.stderr):
                 raise RuntimeError(f"{name} native sort bilingual failure: {invalid.stdout!r} {invalid.stderr!r}")
             results[-1]["native_array_sorting_and_bilingual_errors"] = "passed"
+            list_sort_error = folder / "Ошибки сортировки списка.pas"
+            for source, code, english, russian in [
+                ("begin\nWrite('before');var l:=Lst(2,1);var zero:=0;l.Sort((a,b)->1 div zero);end.", "E_SORT", "Failed to compare two elements in the array: Division by zero", "Не удалось сравнить два элемента массива: Деление на ноль"),
+                ("begin\nWrite('before');var l:=Lst(2,1);l.Sort(-1,0,nil);end.", "E_RANGE", "List index is outside the allowed range", "Индекс списка находится вне допустимого диапазона"),
+            ]:
+                list_sort_error.write_text(source, encoding="utf-8")
+                invalid = subprocess.run([runner, "run", str(list_sort_error)], text=True, encoding="utf-8", capture_output=True, cwd=folder, env=env, timeout=10)
+                if (invalid.returncode != 1 or invalid.stdout != "before" or code not in invalid.stderr
+                        or f"EN: {english}" not in invalid.stderr or f"RU: {russian}" not in invalid.stderr or f"{list_sort_error}:2:" not in invalid.stderr):
+                    raise RuntimeError(f"{name} List sort bilingual failure: {invalid.stdout!r} {invalid.stderr!r}")
+            results[-1]["native_list_sorting_and_bilingual_errors"] = "passed"
             iterator_data = folder / "iterator-resource.txt"
             iterator_data.write_text("one\ntwo\n", encoding="utf-8")
             iterator_source = folder / "Ресурсы перечислителя.pas"
