@@ -1108,8 +1108,9 @@ a bilingual class-specific E_CAST on mismatch.
 
 Independent fixtures contain 942 scalar/hash/implementation pairs and 1125
 source-level class traces, plus native signature, metadata, record, cast and
-resource checks. Collection comparer policies, Object virtual overrides, scalar
-boxing, variance and record interface methods remain separate required work.
+resource checks. HashSet/Dictionary policies are covered below; comparer-aware
+queries, Object virtual overrides, scalar boxing, variance and record interface
+methods remain separate required work.
 
 ### HashSet equality policy and physical storage
 
@@ -1117,9 +1118,9 @@ Closed HashSet constructor/property opcodes retain an exact IEqualityComparer<T>
 payload and use the existing native equality service. Null policies normalize to
 Default; retained defaults preserve live identity. The set's physical capacity
 contains cached 31-bit hashes, next indices, bucket heads and lazy value cells;
-Aggregate.items is the active prefix with holes. Dictionary keeps its old lookup
-until its own policy migration. No mutable unordered-map iterator crosses a
-HashSet user callback. Hashing skips null set elements, while equality calls keep
+Aggregate.items is the active prefix with holes. Dictionary now shares these
+physical arrays with its distinct entry-count and version rules, as detailed
+below. No mutable unordered-map iterator crosses either container user callback. Hashing skips null set elements, while equality calls keep
 source order and live index reads across reentrant callbacks.
 
 CopyFrom with matching policies clones or compacts cached slots without user
@@ -1135,3 +1136,46 @@ are finite; a legacy infinite corrupted-chain reference case is documented and
 excluded. No claim of arbitrary corrupted-state equivalence, general source
 try/finally, custom comparer Object.Equals overrides, serialization or complete
 HashSet/Dictionary/standard-library compatibility follows from this profile.
+
+### Dictionary policies and declared value equality
+
+Dictionary constructor/property opcodes append distinct methods with exact
+IEqualityComparer<K> payloads; verifier and runtime bound the preceding enumerator
+method range explicitly. The compiler ensures canonical key equality factories
+without changing TypeInfo/Value/Cell representations. User/named interfaces and
+typed nil policies retain ordinary checked conversion and Default semantics.
+
+The old unordered-map/hash/free-vector representation is removed. Dictionary
+shares capacity-sized physical cells/codes/links/buckets with HashSet, while
+keeping its own source rules: physical last_index survives the final removal,
+Clear changes version only after physical use, fresh searches reject nil keys
+before skipping hash work, and all key hashes use the 31-bit source mask.
+Rehashing and resize retain cached hash codes, source prime capacities and
+record-value copies with shared contained references. Searches and mutations
+follow current indices after callbacks; found getters, TryGetValue and setters
+read current physical entries even when a callback cleared or removed that slot.
+Allocation quotas are checked before advancing entry metadata, allowing a failed
+cell allocation to resume after the host replenishes its bounded quota.
+
+Every Dictionary copy enumerates and rehashes, even for identical policies.
+Source version is checked before every step and after completion; copy/update
+freeze key and value argument values before user callbacks. PABCSystem Copy
+retains d.Comparer and returns nil for nil sources; ordinary copy constructors
+and dictionary operators select Default. Constructor argument evaluation completes
+before nil/capacity validation. The previous Copy(nil) native error expectation
+was corrected against the original PABCSystem implementation.
+
+ContainsValue and Values.Contains dispatch through EqualityComparer<declared V>,
+with nil short paths and real same-reference IEquatable<V> calls. Interface-typed
+V preserves object identity fallback instead of inferring a runtime class contract.
+These APIs scan live physical entry count without version-checked enumeration,
+so callback growth, clear, removal and value-object mutation follow the source.
+
+Two independent Framework corpora verify 9040 key-policy operations and 4940
+string-key/user-value operations, including exact calls, results, nil/fault
+timing, final states and old cursor behavior. Source Dispose observers request
+100000 cleanup instructions/65536 cells; application defaults remain unchanged.
+Additional native tests cover named interfaces, records, argument order, corrupt
+metadata and quota recovery. IDictionary/nongeneric protocols, serialization,
+general inheritance/Object virtual overrides, record interfaces, boxing/variance,
+StringComparer, comparer-aware queries and full library loading remain required.

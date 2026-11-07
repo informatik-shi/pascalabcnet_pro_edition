@@ -1,6 +1,7 @@
 #include "dictionary.hpp"
 #include "runtime_values.hpp"
 #include "value_hash.hpp"
+#include "equality.hpp"
 #include "sequences.hpp"
 #include "sequence_scope.hpp"
 #include "formatting.hpp"
@@ -36,9 +37,9 @@ bool dictionary_enumerator_metadata(const Program& p,Type iterator){
  return true;
 }
 bool dictionary_signature(const Program& p,Type owner,Type payload,DictionaryMethod m){
- if(m>DictionaryMethod::enumerator_reset || !valid(p,owner))return false;const auto& d=type_info(p,owner);
+ if(m>DictionaryMethod::comparer || !valid(p,owner))return false;const auto& d=type_info(p,owner);
  if(m==DictionaryMethod::get_enumerator)return dictionary_enumerator_metadata(p,payload) && type_info(p,payload).key==owner;
- if(m>=DictionaryMethod::enumerator_move)return payload==Type::invalid && dictionary_enumerator_metadata(p,owner);
+ if(m>=DictionaryMethod::enumerator_move && m<=DictionaryMethod::enumerator_reset)return payload==Type::invalid && dictionary_enumerator_metadata(p,owner);
  if(m==DictionaryMethod::pair_construct || m==DictionaryMethod::pair_to_string)
   return d.kind==CompoundKind::record && key_value_pair_type(d) && d.fields.size()==2 && payload==Type::invalid;
  if(m==DictionaryMethod::view_count || m==DictionaryMethod::view_contains || m==DictionaryMethod::view_copy_to){
@@ -49,6 +50,7 @@ bool dictionary_signature(const Program& p,Type owner,Type payload,DictionaryMet
  if(d.kind!=CompoundKind::dictionary || !valid(p,d.element))return false;
  const auto& pair=type_info(p,d.element);if(pair.fields.size()!=2 || !pair_shape(p,d.element,d.key,pair.fields[1].type,false))return false;
  const auto value=pair.fields[1].type;
+ if(m>=DictionaryMethod::construct_comparer)return valid(p,payload) && valid_value_type(p,payload) && type_info(p,payload).kind==CompoundKind::equality_comparer_interface && type_info(p,payload).element==d.key;
  if(m==DictionaryMethod::each_count || m==DictionaryMethod::each || m==DictionaryMethod::to_dictionary || m==DictionaryMethod::to_dictionary_elements){
   if(!valid(p,payload) || type_info(p,payload).kind!=CompoundKind::sequence)return false;const auto source=type_info(p,payload).element;
   if(m==DictionaryMethod::each_count)return source==d.key && value==Type::integer;
@@ -81,6 +83,10 @@ std::vector<Type> dictionary_parameters(const std::vector<TypeInfo>& types,Type 
  if(m==DictionaryMethod::view_copy_to)return {owner,payload,Type::integer};
  if(m==DictionaryMethod::pair_construct)return {info(types,owner).fields[0].type,info(types,owner).fields[1].type};
  if(m==DictionaryMethod::pair_to_string)return {owner};
+ if(m==DictionaryMethod::construct_comparer)return {payload};
+ if(m==DictionaryMethod::construct_capacity_comparer)return {Type::integer,payload};
+ if(m==DictionaryMethod::construct_copy_comparer)return {owner,payload};
+ if(m==DictionaryMethod::comparer)return {owner};
  if(m==DictionaryMethod::construct)return {};
  if(m==DictionaryMethod::construct_capacity)return {Type::integer};
  if(m==DictionaryMethod::construct_copy || m==DictionaryMethod::copy_value)return {owner};
@@ -104,6 +110,8 @@ std::vector<Type> dictionary_parameters(const std::vector<TypeInfo>& types,Type 
  return result;
 }
 Type dictionary_result(const std::vector<TypeInfo>& types,Type owner,Type payload,DictionaryMethod m){
+ if(m==DictionaryMethod::comparer)return payload;
+ if(m==DictionaryMethod::construct_comparer || m==DictionaryMethod::construct_capacity_comparer || m==DictionaryMethod::construct_copy_comparer)return owner;
  if(m==DictionaryMethod::get_enumerator)return payload;
  if(m==DictionaryMethod::enumerator_move || m==DictionaryMethod::enumerator_move_copy)return Type::boolean;
  if(m==DictionaryMethod::enumerator_current)return info(types,owner).element;
@@ -135,49 +143,50 @@ void require(const Object& d,SourceLocation location){
  if(!d->hash_set)throw runtime_error(RuntimeError::invalid_bytecode,location);
 }
 const Object& entry(const Object& d,std::size_t slot){return std::get<Object>(d->items[slot]->value);}
-void reserve(ValueHashWork& work,const Object& d,std::size_t size){
- if(size<=d->hash_set->capacity)return;
- const auto growth=size-d->hash_set->capacity;
- if(size>static_cast<std::size_t>(INT32_MAX) || growth>work.values.list_storage_remaining)throw runtime_error(RuntimeError::allocation_limit,work.values.location);
- work.values.list_storage_remaining-=growth;
- d->items.reserve(size);d->hash_set->hashes.reserve(size);d->hash_set->free.reserve(size);d->hash_set->capacity=size;
+std::size_t prime(std::size_t minimum){
+    static constexpr std::size_t table[]={3,7,11,17,23,29,37,47,59,71,89,107,131,163,197,239,293,353,431,521,631,761,919,1103,1327,1597,1931,2333,2801,3371,4049,4861,5839,7013,8419,10103,12143,14591,17519,21023,25229,30293,36353,43627,52361,62851,75431,90523,108631,130363,156437,187751,225307,270371,324449,389357,467237,560689,672827,807403,968897,1162687,1395263,1674319,2009191,2411033,2893249,3471899,4166287,4999559,5999471,7199369};
+    for(const auto n:table)if(n>=minimum)return n;
+    throw std::length_error("HashSet storage limit");
 }
+Type key_type(ValueHashWork& work,const Object& d){return type_info(work.values.program,d->type).key;}
+Object make(Values& values,Type owner){return std::get<Object>(values.zero(owner,true));}
+std::shared_ptr<Cell> physical(ValueHashWork& work,const Object& d,std::size_t index){auto& s=*d->hash_set;if(!s.capacity)throw runtime_error(RuntimeError::nil_reference,work.values.location);if(index>=s.slots.size())throw runtime_error(RuntimeError::index_bounds,work.values.location);auto& cell=s.slots[index];if(!cell){const auto pair=type_info(work.values.program,d->type).element;cell=work.values.cell(pair,work.values.zero(pair,false,true));}return cell;}
+Object physical_entry(ValueHashWork& work,const Object& d,std::size_t index){return std::get<Object>(physical(work,d,index)->value);}
+std::int32_t& bucket_at(ValueHashWork& work,const Object& d,std::size_t index){auto& buckets=d->hash_set->buckets;if(buckets.empty())throw runtime_error(RuntimeError::nil_reference,work.values.location);if(index>=buckets.size())throw runtime_error(RuntimeError::index_bounds,work.values.location);return buckets[index];}
+std::int32_t next_at(ValueHashWork& work,const Object& d,std::size_t index){(void)physical(work,d,index);return d->hash_set->next[index];}
+std::size_t hash(ValueHashWork& work,const Object& d,const Value& key){work.step();return static_cast<std::uint32_t>(equality_policy_hash(work.values,key_type(work,d),d->hash_set->comparer,key,work.options))&0x7fffffffU;}
+std::size_t bucket(ValueHashWork& work,const Object& d,std::size_t code){if(d->hash_set->buckets.empty())throw runtime_error(RuntimeError::nil_reference,work.values.location);return code%d->hash_set->buckets.size();}
+void reserve(ValueHashWork& work,const Object& d,std::size_t requested){
+ auto& s=*d->hash_set;if(requested<=s.capacity)return;const auto size=prime(requested);if(size>INT32_MAX || size>work.values.list_storage_remaining)throw runtime_error(RuntimeError::allocation_limit,work.values.location);
+ std::vector<std::shared_ptr<Cell>> slots(size);std::vector<std::int32_t> codes(size),next(size),buckets(size);const auto pair=type_info(work.values.program,d->type).element;
+ for(std::size_t i=0;i<static_cast<std::size_t>(s.last_index);++i){work.step();codes[i]=s.codes[i];next[i]=s.next[i];if(s.slots[i])slots[i]=work.values.cell(pair,work.values.copy(s.slots[i]->value));if(codes[i]>=0){const auto b=static_cast<std::size_t>(codes[i])%size;next[i]=buckets[b]-1;buckets[b]=static_cast<std::int32_t>(i+1);}}
+ d->items.reserve(size);s.slots=std::move(slots);s.codes=std::move(codes);s.next=std::move(next);s.buckets=std::move(buckets);s.capacity=size;for(std::size_t i=0;i<d->items.size();++i)d->items[i]=s.codes[i]>=0 ? s.slots[i] : nullptr;work.values.list_storage_remaining-=size;
+}
+bool matches(ValueHashWork& work,const Object& d,std::size_t index,const Value& key,std::size_t code){const auto p=physical_entry(work,d,index);return d->hash_set->codes[index]==static_cast<std::int32_t>(code) && equality_policy_value(work.values,key_type(work,d),d->hash_set->comparer,p->items[0]->value,key,work.options);}
 std::size_t find(ValueHashWork& work,const Object& d,const Value& key,std::size_t code){
- const auto range=d->hash_set->lookup.equal_range(code);
- for(auto it=range.first;it!=range.second;++it){work.step();if(value_equal(work,entry(d,it->second)->items[0]->value,key))return it->second;}
- return missing;
+ if(d->hash_set->buckets.empty())return missing;const auto start=bucket(work,d,code);for(auto i=bucket_at(work,d,start)-1;i>=0;i=next_at(work,d,static_cast<std::size_t>(i))){work.step();if(matches(work,d,static_cast<std::size_t>(i),key,code))return static_cast<std::size_t>(i);}return missing;
 }
-std::size_t find(ValueHashWork& work,const Object& d,const Value& key){
- require_key(key,work.values.location);return find(work,d,key,value_hash(work,key));
-}
-Object make_pair(Values& values,Type pair,const Value& key,const Value& value){
- auto result=std::get<Object>(values.zero(pair));values.write(result->items[0],key);values.write(result->items[1],value);return result;
-}
+std::size_t find(ValueHashWork& work,const Object& d,const Value& key){require_key(key,work.values.location);if(d->hash_set->buckets.empty())return missing;return find(work,d,key,hash(work,d,key));}
+Object make_pair(Values& values,Type pair,const Value& key,const Value& value){auto result=std::get<Object>(values.zero(pair));values.write(result->items[0],key);values.write(result->items[1],value);return result;}
 void insert(ValueHashWork& work,const Object& d,const Value& key,const Value& value,bool add,bool allow_nil=false){
- if(!allow_nil)require_key(key,work.values.location);const auto code=value_hash(work,key);const auto found=find(work,d,key,code);
- if(found!=missing){
-  if(add)throw runtime_error(RuntimeError::dictionary_duplicate_key,work.values.location);
-  work.values.write(entry(d,found)->items[1],value);++d->version;return;
- }
- auto& state=*d->hash_set;const bool reuse=!state.free.empty();const auto slot=reuse ? state.free.back() : d->items.size();
- if(!reuse && slot==state.capacity)reserve(work,d,state.capacity ? state.capacity*2U : 3U);
- const auto pair=type_info(work.values.program,d->type).element;
- auto cell=work.values.cell(pair,make_pair(work.values,pair,key,value));state.lookup.emplace(code,slot);
- if(reuse){state.free.pop_back();d->items[slot]=std::move(cell);state.hashes[slot]=code;}
- else{d->items.push_back(std::move(cell));state.hashes.push_back(code);}
- ++d->count;++d->version;
+ if(!allow_nil)require_key(key,work.values.location);auto& s=*d->hash_set;if(s.buckets.empty())reserve(work,d,3);const auto code=hash(work,d,key);auto destination=bucket(work,d,code);const auto found=find(work,d,key,code);
+ if(found!=missing){if(add)throw runtime_error(RuntimeError::dictionary_duplicate_key,work.values.location);work.values.write(physical_entry(work,d,found)->items[1],value,false);++d->version;return;}
+ std::int32_t index;std::shared_ptr<Cell> cell;if(s.free_head>=0){index=s.free_head;cell=physical(work,d,static_cast<std::size_t>(index));s.free_head=next_at(work,d,static_cast<std::size_t>(index));}
+ else{if(static_cast<std::size_t>(s.last_index)==s.slots.size()){reserve(work,d,static_cast<std::size_t>(s.last_index)*2U);destination=bucket(work,d,code);}index=s.last_index;cell=physical(work,d,static_cast<std::size_t>(index));++s.last_index;d->items.resize(static_cast<std::size_t>(s.last_index));}
+ const auto i=static_cast<std::size_t>(index);const auto p=std::get<Object>(cell->value);s.codes[i]=static_cast<std::int32_t>(code);s.next[i]=bucket_at(work,d,destination)-1;work.values.write(p->items[0],key,false);work.values.write(p->items[1],value,false);bucket_at(work,d,destination)=index+1;d->items[i]=cell;++d->count;++d->version;
 }
 bool remove(ValueHashWork& work,const Object& d,const Value& key){
- const auto slot=find(work,d,key);if(slot==missing)return false;
- auto& state=*d->hash_set;const auto range=state.lookup.equal_range(state.hashes[slot]);
- for(auto it=range.first;it!=range.second;++it)if(it->second==slot){state.lookup.erase(it);break;}
- d->items[slot].reset();state.free.push_back(slot);--d->count;++d->version;return true;
+ require_key(key,work.values.location);auto& s=*d->hash_set;if(s.buckets.empty())return false;const auto code=hash(work,d,key),destination=bucket(work,d,code);std::int32_t last=-1;
+ for(auto i=bucket_at(work,d,destination)-1;i>=0;last=i,i=next_at(work,d,static_cast<std::size_t>(i))){work.step();const auto index=static_cast<std::size_t>(i);if(!matches(work,d,index,key,code))continue;
+ if(last<0)bucket_at(work,d,destination)=next_at(work,d,index)+1;else{(void)physical(work,d,static_cast<std::size_t>(last));s.next[static_cast<std::size_t>(last)]=next_at(work,d,index);}s.codes[index]=-1;s.next[index]=s.free_head;const auto p=physical_entry(work,d,index);for(const auto& field:p->items)work.values.write(field,work.values.zero(field->type,false,true),false);s.free_head=i;if(index<d->items.size())d->items[index].reset();--d->count;++d->version;return true;
+ }return false;
 }
-Object make(Values& values,Type owner){return std::get<Object>(values.zero(owner,true));}
-Object copy(ValueHashWork& work,Type owner,const Object& source){
- require(source,work.values.location);auto result=make(work.values,owner);reserve(work,result,source->count);
- for(const auto& cell:source->items){work.step();if(cell){const auto& p=std::get<Object>(cell->value);insert(work,result,p->items[0]->value,p->items[1]->value,true);}}
- return result;
+void clear(ValueHashWork& work,const Object& d){auto& s=*d->hash_set;if(!s.last_index)return;for(std::size_t i=0;i<static_cast<std::size_t>(s.last_index);++i){work.step();if(s.slots[i]){const auto p=std::get<Object>(s.slots[i]->value);for(const auto& field:p->items)work.values.write(field,work.values.zero(field->type,false,true),false);}s.codes[i]=s.next[i]=0;}std::fill(s.buckets.begin(),s.buckets.end(),0);s.last_index=0;s.free_head=-1;d->items.clear();d->count=0;++d->version;}
+bool contains_value(ValueHashWork& work,const Object& d,const Value& value){const auto type=dictionary_value_type(work.values.program.types,d->type);for(std::size_t i=0;i<static_cast<std::size_t>(d->hash_set->last_index);++i){work.step();if(d->hash_set->codes[i]>=0){const auto p=physical_entry(work,d,i);if(nil(value) ? nil(p->items[1]->value) : equality_value(work.values,type,p->items[1]->value,value,work.options))return true;}}return false;}
+Object copy(ValueHashWork& work,Type owner,const Object& source,Object policy={}){
+ require(source,work.values.location);auto result=make(work.values,owner);result->hash_set->comparer=std::move(policy);reserve(work,result,source->count);const auto version=source->version;
+ for(std::size_t i=0;i<source->items.size();++i){work.step();if(source->version!=version)throw runtime_error(RuntimeError::collection_changed,work.values.location);if(const auto cell=source->items[i]){const auto p=std::get<Object>(cell->value);const auto key=work.values.copy(p->items[0]->value),value=work.values.copy(p->items[1]->value);insert(work,result,key,value,true);}}
+ if(source->version!=version)throw runtime_error(RuntimeError::collection_changed,work.values.location);return result;
 }
 template<class F>void each(ValueHashWork& work,const Object& source,F action){
  const auto cursor=sequence_begin(work.values,source,work.options);
@@ -189,7 +198,7 @@ void update(ValueHashWork& work,const Object& target,const Object& source){
  if(!source || source->nil)return;require(source,work.values.location);const auto version=source->version;
  for(std::size_t i=0;i<source->items.size();++i){
   work.step();if(source->version!=version)throw runtime_error(RuntimeError::collection_changed,work.values.location);
-  if(const auto& cell=source->items[i]){const auto pair=std::get<Object>(cell->value);require(target,work.values.location);insert(work,target,pair->items[0]->value,pair->items[1]->value,false);}
+  if(const auto& cell=source->items[i]){const auto pair=std::get<Object>(cell->value);const auto key=work.values.copy(pair->items[0]->value),value=work.values.copy(pair->items[1]->value);require(target,work.values.location);insert(work,target,key,value,false);}
  }
  if(source->version!=version)throw runtime_error(RuntimeError::collection_changed,work.values.location);
 }
@@ -231,7 +240,7 @@ Value dictionary_invoke(Values& values,Type owner,Type payload,DictionaryMethod 
    require(d,values.location);auto iterator=std::get<Object>(values.zero(payload));
    values.write(iterator->items[0],d);values.write(iterator->items[1],d->version);return iterator;
   }
-  if(m>=DictionaryMethod::enumerator_move){
+  if(m>=DictionaryMethod::enumerator_move && m<=DictionaryMethod::enumerator_reset){
    const auto iterator=(m==DictionaryMethod::enumerator_move || m==DictionaryMethod::enumerator_reset) ? std::get<Object>(std::get<std::shared_ptr<Cell>>(args[0])->value)
     : std::get<Object>(m==DictionaryMethod::enumerator_move_copy ? values.copy(args[0]) : args[0]);
    if(!iterator || iterator->nil || iterator->items.size()!=4)throw runtime_error(RuntimeError::invalid_bytecode,values.location);
@@ -259,7 +268,7 @@ Value dictionary_invoke(Values& values,Type owner,Type payload,DictionaryMethod 
    if(view->items.size()!=1)throw runtime_error(RuntimeError::invalid_bytecode,values.location);const auto d=std::get<Object>(view->items[0]->value);require(d,values.location);
    const bool keys=type_info(values.program,owner).kind==CompoundKind::dictionary_keys;
    if(m==DictionaryMethod::view_count)return static_cast<std::int32_t>(d->count);
-   if(m==DictionaryMethod::view_contains){if(keys)return find(work,d,args[1])!=missing;for(const auto& cell:d->items){work.step();if(cell && value_equal(work,std::get<Object>(cell->value)->items[1]->value,args[1]))return true;}return false;}
+   if(m==DictionaryMethod::view_contains)return keys ? find(work,d,args[1])!=missing : contains_value(work,d,args[1]);
    const auto array=std::get<Object>(args[1]);if(!array || array->nil)throw runtime_error(RuntimeError::nil_reference,values.location);
    const auto index=std::get<std::int32_t>(args[2]);if(index<0 || static_cast<std::size_t>(index)>array->items.size())throw runtime_error(RuntimeError::dictionary_copy_index,values.location);
    if(d->count>array->items.size()-static_cast<std::size_t>(index))throw runtime_error(RuntimeError::dictionary_copy_range,values.location);
@@ -274,16 +283,16 @@ Value dictionary_invoke(Values& values,Type owner,Type payload,DictionaryMethod 
    }
    if(text.size()>=1'048'576)throw runtime_error(RuntimeError::string_limit,values.location);text+=u"]";return text;
   }
-  if(m==DictionaryMethod::construct || m==DictionaryMethod::construct_capacity){
-   if(m==DictionaryMethod::construct_capacity && std::get<std::int32_t>(args[0])<0)throw runtime_error(RuntimeError::dictionary_capacity,values.location);
-   auto result=make(values,owner);if(m==DictionaryMethod::construct_capacity)reserve(work,result,static_cast<std::uint32_t>(std::get<std::int32_t>(args[0])));return result;
+  if(m==DictionaryMethod::construct || m==DictionaryMethod::construct_capacity || m==DictionaryMethod::construct_comparer || m==DictionaryMethod::construct_capacity_comparer){
+   const bool capacity=m==DictionaryMethod::construct_capacity || m==DictionaryMethod::construct_capacity_comparer;const auto count=capacity ? std::get<std::int32_t>(args[0]) : 0;if(count<0)throw runtime_error(RuntimeError::dictionary_capacity,values.location);
+   auto result=make(values,owner);if(m==DictionaryMethod::construct_comparer || m==DictionaryMethod::construct_capacity_comparer){auto policy=std::get<Object>(args.back());if(policy && !policy->nil)result->hash_set->comparer=std::move(policy);}if(count)reserve(work,result,static_cast<std::uint32_t>(count));return result;
   }
-  if(m==DictionaryMethod::construct_copy || m==DictionaryMethod::copy_value){const auto source=std::get<Object>(args[0]);if(m==DictionaryMethod::copy_value && (!source || source->nil))throw runtime_error(RuntimeError::dictionary_nil_copy,values.location);return copy(work,owner,source);}
+  if(m==DictionaryMethod::construct_copy || m==DictionaryMethod::copy_value || m==DictionaryMethod::construct_copy_comparer){const auto source=std::get<Object>(args[0]);if(m==DictionaryMethod::copy_value && (!source || source->nil))return source;Object policy;if(m==DictionaryMethod::copy_value){require(source,values.location);policy=source->hash_set->comparer;}if(m==DictionaryMethod::construct_copy_comparer){policy=std::get<Object>(args[1]);if(policy && policy->nil)policy.reset();}return copy(work,owner,source,policy);}
   if(m==DictionaryMethod::each_count || m==DictionaryMethod::each || m==DictionaryMethod::to_dictionary || m==DictionaryMethod::to_dictionary_elements){
    const auto source=std::get<Object>(args[0]);if(!source || source->nil)throw runtime_error(RuntimeError::nil_reference,values.location);
    if(m!=DictionaryMethod::each_count)for(std::size_t i=1;i<args.size();++i)(void)values.callable_target(std::get<Object>(args[i]));
    if(m==DictionaryMethod::each_count){
-    auto groups=make(values,owner);each(work,source,[&](const Value& key){const auto code=value_hash(work,key),slot=find(work,groups,key,code);if(slot==missing)insert(work,groups,key,std::int32_t{1},true,true);else{const auto cell=entry(groups,slot)->items[1];const auto count=std::get<std::int32_t>(cell->value);if(count==INT32_MAX)throw runtime_error(RuntimeError::integer_overflow,values.location);values.write(cell,std::int32_t{count+1});}});
+    auto groups=make(values,owner);each(work,source,[&](const Value& key){const auto code=hash(work,groups,key),slot=find(work,groups,key,code);if(slot==missing)insert(work,groups,key,std::int32_t{1},true,true);else{const auto cell=entry(groups,slot)->items[1];const auto count=std::get<std::int32_t>(cell->value);if(count==INT32_MAX)throw runtime_error(RuntimeError::integer_overflow,values.location);values.write(cell,std::int32_t{count+1});}});
     auto result=make(values,owner);reserve(work,result,groups->count);for(const auto& cell:groups->items){work.step();if(cell){const auto& pair=std::get<Object>(cell->value);insert(work,result,pair->items[0]->value,pair->items[1]->value,true);}}return result;
    }
    auto result=make(values,owner);each(work,source,[&](const Value& item){const std::array<Value,1> input{item};const auto key=m==DictionaryMethod::each ? values.copy(item) : values.invoke_value(std::get<Object>(args[1]),input);const auto value=m==DictionaryMethod::to_dictionary ? values.copy(item) : values.invoke_value(std::get<Object>(args[m==DictionaryMethod::each ? 1U : 2U]),input);insert(work,result,key,value,true);});return result;
@@ -313,6 +322,7 @@ Value dictionary_invoke(Values& values,Type owner,Type payload,DictionaryMethod 
   if(m==DictionaryMethod::update){update(work,object,std::get<Object>(args[1]));return false;}
   if(m==DictionaryMethod::remove_keys){const auto source=std::get<Object>(args[1]);if(source && !source->nil)each(work,source,[&](const Value& key){require(object,values.location);remove(work,object,key);});return false;}
   require(object,values.location);
+  if(m==DictionaryMethod::comparer){if(!object->hash_set->comparer){Type factory=Type::invalid;for(std::size_t i=0;i<values.program.types.size();++i)if(values.program.types[i].kind==CompoundKind::equality_comparer && values.program.types[i].element==key_type(work,object)){factory=static_cast<Type>(64+i);break;}if(factory==Type::invalid)throw runtime_error(RuntimeError::invalid_bytecode,values.location);object->hash_set->comparer=std::get<Object>(equality_create(values,factory,options));}return object->hash_set->comparer;}
   if(m==DictionaryMethod::count)return static_cast<std::int32_t>(object->count);
   if(m==DictionaryMethod::keys || m==DictionaryMethod::values){
    auto& cached=m==DictionaryMethod::keys ? object->dictionary_keys : object->dictionary_values;if(auto view=cached.lock())return view;
@@ -325,22 +335,18 @@ Value dictionary_invoke(Values& values,Type owner,Type payload,DictionaryMethod 
    if(source && !source->nil)each(work,source,[&](const Value& key){remove(work,result,key);});
    return m==DictionaryMethod::without_keys ? Value{result} : Value{false};
   }
-  if(m==DictionaryMethod::contains_value){
-   for(const auto& cell:object->items){work.step();if(cell && value_equal(work,std::get<Object>(cell->value)->items[1]->value,args[1]))return true;}return false;
-  }
-  if(m==DictionaryMethod::clear){
-   if(!object->items.empty()){object->items.clear();object->hash_set->hashes.clear();object->hash_set->lookup.clear();object->hash_set->free.clear();object->count=0;++object->version;}return false;
-  }
+  if(m==DictionaryMethod::contains_value)return contains_value(work,object,args[1]);
+  if(m==DictionaryMethod::clear){clear(work,object);return false;}
   const auto& key=args[m==DictionaryMethod::membership ? 0 : 1];
   if(m==DictionaryMethod::add || m==DictionaryMethod::set_item){insert(work,object,key,args[2],m==DictionaryMethod::add);return false;}
   if(m==DictionaryMethod::remove)return remove(work,object,key);
   const auto slot=find(work,object,key);
   if(m==DictionaryMethod::contains_key || m==DictionaryMethod::membership)return slot!=missing;
   if(m==DictionaryMethod::try_get_value){
-   const auto target=std::get<std::shared_ptr<Cell>>(args[2]);const auto value=slot==missing ? values.zero(dictionary_value_type(values.program.types,owner),false,true) : entry(object,slot)->items[1]->value;
+   const auto target=std::get<std::shared_ptr<Cell>>(args[2]);const auto value=slot==missing ? values.zero(dictionary_value_type(values.program.types,owner),false,true) : physical_entry(work,object,slot)->items[1]->value;
    values.write(target,value);return slot!=missing;
   }
-  if(slot!=missing)return values.copy(entry(object,slot)->items[1]->value);
+  if(slot!=missing)return values.copy(physical_entry(work,object,slot)->items[1]->value);
   if(m==DictionaryMethod::get_default)return values.copy(args[2]);
   if(m==DictionaryMethod::get_or_add_value || m==DictionaryMethod::get_or_add_factory){
    Value result=args[2];if(m==DictionaryMethod::get_or_add_factory){const std::array<Value,1> input{key};result=values.invoke_value(std::get<Object>(args[2]),input);}

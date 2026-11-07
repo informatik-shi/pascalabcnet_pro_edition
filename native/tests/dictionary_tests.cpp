@@ -70,7 +70,7 @@ void language(){
  error([]{run("begin var d:=DictInt((1,2));d.Values.CopyTo(new integer[1],-1);end.");},"E_RANGE");
  error([]{run("begin var d:=DictInt((1,2));d.Values.CopyTo(new integer[0],0);end.");},"E_RANGE");
  error([]{run("begin Dict(Seq(1),Seq(1,2));end.");},"E_RANGE");
- error([]{run("begin var d:Dictionary<integer,integer>;Copy(d);end.");},"E_NIL");
+ result("begin var d:Dictionary<integer,integer>;Writeln(Copy(d)=nil,' ',PABCSystem.Copy&<integer,integer>(d)=nil);end.","True True\n");
  error([]{run("begin DictStr(nil);end.");},"E_NIL");
  error_output("begin var d:=DictInt((1,2),(2,3));foreach var p in d do begin Write(p.Value);d[p.Key]:=p.Value;end;end.","E_MODIFIED","2");
  error_output("begin var d:=DictInt((1,2),(2,3));foreach var k in d.Keys do begin Write(k);d.Remove(k);end;end.","E_MODIFIED","1");

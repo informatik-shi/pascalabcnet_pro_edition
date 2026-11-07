@@ -1,15 +1,12 @@
 #pragma once
 #include "abc/core.hpp"
 #include <span>
-#include <unordered_map>
 
 namespace abc {
 struct Values;
 struct HashSetState {
-    std::unordered_multimap<std::size_t,std::size_t> lookup;
-    std::vector<std::size_t> hashes,free;
     std::size_t capacity=0;
-    // HashSet physical slot/bucket arrays; Dictionary retains its existing lookup.
+    // Physical entry arrays shared by the native HashSet and Dictionary runtimes.
     std::shared_ptr<Aggregate> comparer;
     std::vector<std::shared_ptr<Cell>> slots;
     std::vector<std::int32_t> codes,next,buckets;

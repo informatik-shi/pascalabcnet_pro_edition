@@ -246,6 +246,7 @@ def main():
                 ("sorting.pas", "Boris: 95\nVera: 80\nAlice: 70\n[1,2,3,4,5]\n[5,4,3,2,1]\n"),
                 ("equality.pas", "True 7\nTrue\nTrue\nTrue 1\n"),
                 ("hashset-comparers.pas", "2 True\nTrue 1\nTrue False\nTrue True\n"),
+                ("dictionary-comparers.pas", "1 same last digit\nTrue True\nTrue False\nTrue\n"),
                 ("paired-sorting.pas", "[10,20,30]\n[Аня,Борис,Вера]\n[30,20,10]\n[Вера,Борис,Аня]\n"),
                 ("array-sorting.pas", "[9,1,2,3,8]\n[9,8,3,2,1]\n[1,2,3,8,9]\n"),
                 ("list-sorting.pas", "[5,4,3,2,1]\n[1,2,3,4,5]\n[5,4,3,2,1]\nFalse\n[1,2,3,4,5]\n"),
@@ -1720,6 +1721,19 @@ def main():
                         or f"EN: {english}" not in invalid.stderr or f"RU: {russian}" not in invalid.stderr or f"{hashset_error}:2:" not in invalid.stderr):
                     raise RuntimeError(f"{name} HashSet comparer bilingual failure: {invalid.stdout!r} {invalid.stderr!r}")
             results[-1]["native_hashset_comparer_policies_and_bilingual_errors"] = "passed"
+            dictionary_policy_error = folder / "Ошибки сравнителя словаря.pas"
+            for source, code, english, russian in [
+                ("type C=class(IEqualityComparer<integer>) public function Equals(a,b:integer):boolean:=a=b;function GetHashCode(a:integer):integer;begin\nvar zero:=0;Result:=a div zero;end;end;begin Write('before');var c:IEqualityComparer<integer>:=new C;var d:=new Dictionary<integer,integer>(c);d.Add(7,1);end.", "E_DIV_ZERO", "Division by zero", "Деление на ноль"),
+                ("type C=class(IEqualityComparer<string>) public function Equals(a,b:string):boolean:=False;function GetHashCode(a:string):integer;begin var zero:=0;Result:=1 div zero;end;end;\nbegin Write('before');var c:IEqualityComparer<string>:=new C;var d:=new Dictionary<string,integer>(c);d.Add(nil,7);end.", "E_NIL", "Dictionary key cannot be nil", "Ключ словаря не может быть nil"),
+                ("type C=class(IEqualityComparer<integer>) public function Equals(a,b:integer):boolean:=a mod 10=b mod 10;function GetHashCode(a:integer):integer:=a mod 10;end;\nbegin Write('before');var d:=new Dictionary<integer,integer>(new C);d.Add(1,1);d.Add(11,2);end.", "E_KEY_DUPLICATE", "An item with the same key has already been added", "Элемент с таким ключом уже добавлен"),
+                ("begin\nWrite('before');var d:Dictionary<integer,integer>;var c:=d.Comparer;end.", "E_NIL", "Cannot access a nil reference", "Нельзя обратиться к пустой ссылке nil"),
+            ]:
+                dictionary_policy_error.write_text(source, encoding="utf-8")
+                invalid = subprocess.run([runner, "run", str(dictionary_policy_error)], text=True, encoding="utf-8", capture_output=True, cwd=folder, env=env, timeout=10)
+                if (invalid.returncode != 1 or invalid.stdout != "before" or code not in invalid.stderr
+                        or f"EN: {english}" not in invalid.stderr or f"RU: {russian}" not in invalid.stderr or f"{dictionary_policy_error}:2:" not in invalid.stderr):
+                    raise RuntimeError(f"{name} Dictionary comparer bilingual failure: {invalid.stdout!r} {invalid.stderr!r}")
+            results[-1]["native_dictionary_comparer_policies_and_bilingual_errors"] = "passed"
             iterator_data = folder / "iterator-resource.txt"
             iterator_data.write_text("one\ntwo\n", encoding="utf-8")
             iterator_source = folder / "Ресурсы перечислителя.pas"

@@ -1842,7 +1842,7 @@ private:
     }
     ABC_PASCAL_NOINLINE Type dictionary_type(Type key,Type value){
         const auto pair=pair_type(key,value);for(std::size_t i=0;i<module_.types.size();++i)if(module_.types[i].kind==CompoundKind::dictionary && module_.types[i].key==key && module_.types[i].element==pair)return static_cast<Type>(64+i);
-        if(module_.types.size()>=1024)throw Error("E_LIMIT",{},"Type limit exceeded");module_.types.push_back({"dictionary",CompoundKind::dictionary,pair,{},key});const auto result=static_cast<Type>(63+module_.types.size());(void)sequence_type(CompoundKind::sequence,pair);(void)dictionary_enumerator(result);return result;
+        (void)comparison_type(CompoundKind::equality_comparer,key);if(module_.types.size()>=1024)throw Error("E_LIMIT",{},"Type limit exceeded");module_.types.push_back({"dictionary",CompoundKind::dictionary,pair,{},key});const auto result=static_cast<Type>(63+module_.types.size());(void)sequence_type(CompoundKind::sequence,pair);(void)dictionary_enumerator(result);return result;
     }
     ABC_PASCAL_NOINLINE Type dictionary_view_type(Type owner,bool keys){
         const auto kind=keys ? CompoundKind::dictionary_keys : CompoundKind::dictionary_values;for(std::size_t i=0;i<module_.types.size();++i)if(module_.types[i].kind==kind && module_.types[i].key==owner)return static_cast<Type>(64+i);
@@ -2350,7 +2350,10 @@ private:
                     std::vector<std::unique_ptr<hir::Expr>> args;for(const auto& argument:source.arguments)args.push_back(expression(*argument));
                     if(key_value_pair_type(info(type,result->location))){if(args.empty()){result->kind=hir::ExprKind::default_value;result->type=type;result->operation="default";return result;}return dictionary_expression(type,DictionaryMethod::pair_construct,std::move(args),result->location);}
                     if(args.size()==1 && args[0]->type==Type::nil)throw Error("E_TYPE",result->location,"Dictionary constructor requires a typed argument");
-                    const auto method=args.empty() ? DictionaryMethod::construct : args.size()==1 && args[0]->type==type ? DictionaryMethod::construct_copy : DictionaryMethod::construct_capacity;return dictionary_expression(type,method,std::move(args),result->location);
+                    const auto comparer=comparison_type(CompoundKind::equality_comparer_interface,info(type,result->location).key);
+                    if(args.size()==2){const auto method=(args[0]->type==type || args[0]->type==Type::nil || (compound(args[0]->type) && info(args[0]->type,result->location).kind==CompoundKind::empty_collection)) ? DictionaryMethod::construct_copy_comparer : DictionaryMethod::construct_capacity_comparer;return dictionary_expression(type,method,std::move(args),result->location,comparer);}
+                    if(args.size()==1 && (args[0]->type==comparer || interface_compatible(module_.types,args[0]->type,comparer)))return dictionary_expression(type,DictionaryMethod::construct_comparer,std::move(args),result->location,comparer);
+                    const auto method=args.empty() ? DictionaryMethod::construct : args.size()==1 && (args[0]->type==type || (compound(args[0]->type) && info(args[0]->type,result->location).kind==CompoundKind::empty_collection)) ? DictionaryMethod::construct_copy : DictionaryMethod::construct_capacity;return dictionary_expression(type,method,std::move(args),result->location);
                 }
                 if(info(type,result->location).kind==CompoundKind::hash_set){
                     std::vector<std::unique_ptr<hir::Expr>> arguments;for(const auto& argument:source.arguments)arguments.push_back(expression(*argument));
@@ -3750,6 +3753,7 @@ private:
             result=std::move(*dictionary_expression(owner,method,std::move(args),result.location,payload));return true;
         }
         if(shape.kind!=CompoundKind::dictionary)return false;
+        if(name=="comparer"){if(source.kind==SyntaxExprKind::member_call)throw Error("E_TYPE",result.location,"Dictionary property is not callable");std::vector<std::unique_ptr<hir::Expr>> args;args.push_back(std::move(result.left));const auto policy=comparison_type(CompoundKind::equality_comparer_interface,shape.key);result=std::move(*dictionary_expression(owner,DictionaryMethod::comparer,std::move(args),result.location,policy));return true;}
         static const std::map<std::string,DictionaryMethod> methods{{"count",DictionaryMethod::count},{"add",DictionaryMethod::add},{"containskey",DictionaryMethod::contains_key},{"containsvalue",DictionaryMethod::contains_value},{"trygetvalue",DictionaryMethod::try_get_value},{"remove",DictionaryMethod::remove},{"clear",DictionaryMethod::clear},{"get",DictionaryMethod::get_default},{"getoradd",DictionaryMethod::get_or_add_value},{"keys",DictionaryMethod::keys},{"values",DictionaryMethod::values},{"update",DictionaryMethod::update}};
         const auto found=methods.find(name);if(found==methods.end())return false;
         auto method=found->second;const auto value=dictionary_value_type(module_.types,owner);
