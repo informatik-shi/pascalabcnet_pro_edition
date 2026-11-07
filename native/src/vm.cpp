@@ -35,6 +35,7 @@
 #include "single.hpp"
 #include "enumeration.hpp"
 #include "comparable.hpp"
+#include "comparison.hpp"
 #include "ini_file.hpp"
 #include "compound.hpp"
 #include "hash_set.hpp"
@@ -1160,7 +1161,14 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
             if(new_set_result(program.types,instruction.type,method)!=Type::unit)stack.push_back(std::move(result));break;
         }
         case Op::interface_cast: {auto value=pop();stack.push_back(interface_cast(values,instruction.type,static_cast<Type>(instruction.operand>>1U),(instruction.operand&1U)!=0,value));break;}
-        case Op::interface_call: {const auto count=interface_contract(program.types,instruction.type).at(instruction.operand).parameters.size();const auto id=interface_target(values,instruction.type,instruction.operand,stack[stack.size()-count-1],options);enter_routine(id,instruction.location);break;}
+        case Op::interface_call: {
+            const auto count=interface_contract(program.types,instruction.type).at(instruction.operand).parameters.size();
+            const auto& receiver=std::get<std::shared_ptr<Aggregate>>(stack[stack.size()-count-1]);
+            if(receiver && !receiver->nil && type_info(program,receiver->type).kind==CompoundKind::comparer){
+                std::vector<Value> arguments(count);for(auto it=arguments.rbegin();it!=arguments.rend();++it)*it=pop();auto object=pop();stack.emplace_back(comparer_invoke(values,instruction.type,object,arguments,options));
+            }else{const auto id=interface_target(values,instruction.type,instruction.operand,stack[stack.size()-count-1],options);enter_routine(id,instruction.location);}break;
+        }
+        case Op::comparer_create: {auto callback=instruction.operand ? pop() : Value{std::int32_t{0}};stack.emplace_back(comparer_create(values,instruction.type,instruction.operand ? &callback : nullptr,options));break;}
         case Op::enumerator_call: {
             const auto method=static_cast<EnumeratorMethod>(instruction.operand&255U);const auto payload=static_cast<Type>(instruction.operand>>8U);
             if(compound(instruction.type) && type_info(program,instruction.type).kind==CompoundKind::enumerator){const auto object=std::get<std::shared_ptr<Aggregate>>(stack.back());if(object && !object->nil && type_info(program,object->type).kind==CompoundKind::object_class){const auto slot=method==EnumeratorMethod::move ? 0U : method==EnumeratorMethod::current ? 1U : method==EnumeratorMethod::dispose ? 2U : 3U;enter_routine(interface_target(values,instruction.type,slot,stack.back(),options),instruction.location);break;}}
@@ -1199,7 +1207,7 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
         case Op::comparable_call: {
             const auto method=static_cast<ComparableMethod>(instruction.operand);std::vector<Value> arguments(comparable_parameters(instruction.type,method).size());
             for(std::size_t i=arguments.size();i>0;--i)arguments[i-1]=pop();
-            stack.emplace_back(comparable_invoke(program,instruction.type,method,arguments,instruction.location,options));break;
+            stack.emplace_back(comparable_invoke(values,instruction.type,method,arguments,options));break;
         }
         case Op::enum_call: {
             const auto method=static_cast<EnumMethod>(instruction.operand&255U);const auto other=method==EnumMethod::has_flag ? static_cast<Type>(instruction.operand>>8U) : Type::invalid;

@@ -115,6 +115,7 @@ SortedSet, TypedSet, числовые преобразования множес�
 Пользовательские операторы, multicast-делегаты и полный набор типов ещё переносятся.
 Пользовательские interface, наследуемые контракты, методы, свойства и var/params: examples/user-interfaces.pas.
 Классы могут реализовывать IEnumerable<T>/IEnumerator<T>: examples/user-enumerables.pas.
+IComparable<T>, IComparer<T>, Comparer<T>.Default/Create: examples/comparers.pas.
 Обход автоматически вызывает Dispose при завершении, break, Exit и ошибке; общие пользовательские обобщения ещё переносятся.
 Нативный IniFile.TIniFile: uses IniFile; пример examples/ini-files.pas.
 WriteString/WriteInteger/WriteBoolean меняют память, Save записывает файл. Наследование TIniFile ещё не перенесено.

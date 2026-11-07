@@ -32,6 +32,7 @@ add_library(abc_core
     src/encoding.cpp
     src/enumeration.cpp
     src/comparable.cpp
+    src/comparison.cpp
     src/ini_file.cpp
     src/compound.cpp
     src/hash_set.cpp
@@ -178,6 +179,13 @@ if(BUILD_TESTING)
         target_compile_options(abc_user_enumerable_tests PRIVATE /utf-8)
     endif()
     add_test(NAME user_enumerables COMMAND abc_user_enumerable_tests)
+    add_executable(abc_comparer_tests tests/comparer_tests.cpp)
+    target_link_libraries(abc_comparer_tests PRIVATE abc_core)
+    if(MSVC)
+        target_compile_options(abc_comparer_tests PRIVATE /utf-8)
+    endif()
+    add_test(NAME comparers COMMAND abc_comparer_tests)
+    add_test(NAME comparers_example COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/examples/comparers.pas")
     add_test(NAME user_enumerables_example COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/examples/user-enumerables.pas")
     add_test(NAME user_interfaces_example COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/examples/user-interfaces.pas")
     add_test(NAME original_interface_class COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/../TestSuite/interface1.pas")

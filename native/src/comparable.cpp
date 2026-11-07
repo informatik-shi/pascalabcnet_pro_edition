@@ -1,4 +1,6 @@
 #include "comparable.hpp"
+#include "comparison.hpp"
+#include "runtime_values.hpp"
 #include "enumeration.hpp"
 #include "big_integer_runtime.hpp"
 #include <type_traits>
@@ -12,17 +14,18 @@
 #endif
 
 namespace abc {
-bool comparable_type(const std::vector<TypeInfo>& types,Type type) {return scalar(type) || enumeration(types,type);}
+bool comparable_type(const std::vector<TypeInfo>& types,Type type) {return default_comparable(types,type);}
 std::vector<Type> comparable_parameters(Type type,ComparableMethod method) {
-    if(method==ComparableMethod::clamp_top || method==ComparableMethod::clamp_bottom)return {type,type};
+    if(method==ComparableMethod::compare_to || method==ComparableMethod::clamp_top || method==ComparableMethod::clamp_bottom)return {type,type};
     if(method==ComparableMethod::between || method==ComparableMethod::ordinal_between)return {type,type,type,Type::boolean};
     return {type,type,type};
 }
 Type comparable_result(Type type,ComparableMethod method) {
+    if(method==ComparableMethod::compare_to)return Type::integer;
     return method==ComparableMethod::clamp || method==ComparableMethod::clamp_top || method==ComparableMethod::clamp_bottom ? type : Type::boolean;
 }
 bool comparable_signature(const Program& program,Type type,ComparableMethod method) {
-    if(method>ComparableMethod::clamp_bottom || !comparable_type(program.types,type))return false;
+    if(method>ComparableMethod::compare_to || !comparable_type(program.types,type))return false;
     if(method==ComparableMethod::ordinal_in_range || method==ComparableMethod::ordinal_between)return type==Type::string;
     if(method==ComparableMethod::clamp_top || method==ComparableMethod::clamp_bottom)return type==Type::integer || type==Type::real;
     return true;
@@ -48,28 +51,16 @@ int compare_culture_strings(std::u16string_view a,std::u16string_view b,SourceLo
     return static_cast<int>(ucol_strcoll(collator.value,reinterpret_cast<const UChar*>(a.data()),static_cast<int32_t>(a.size()),reinterpret_cast<const UChar*>(b.data()),static_cast<int32_t>(b.size())));
 #endif
 }
-namespace {
-int compare(const Value& a,const Value& b,bool ordinal_strings,SourceLocation location,const ExecutionOptions& options) {
-    if(value_type(a)==Type::string) {
-        if(ordinal_strings)return compare_strings(a,b);
-        if(std::holds_alternative<NilString>(a))throw runtime_error(RuntimeError::nil_reference,location);
-        if(std::holds_alternative<NilString>(b))return 1;
-        return compare_culture_strings(string_text(a),string_text(b),location,options);
-    }
-    if(const auto* value=std::get_if<BigInteger>(&a))big_work((value->bits()+std::get<BigInteger>(b).bits())/28+1,location,options);
-    return std::visit([&](const auto& left)->int {
-        using T=std::decay_t<decltype(left)>;
-        if constexpr(std::is_arithmetic_v<T> || std::is_same_v<T,BigInteger>) {const auto& right=std::get<T>(b);return left<right ? -1 : left>right ? 1 : 0;}
-        else if constexpr(std::is_same_v<T,EnumValue>){const auto right=std::get<T>(b);return left.value<right.value ? -1 : left.value>right.value ? 1 : 0;}
-        else throw runtime_error(RuntimeError::invalid_bytecode,location);
-    },a);
-}
-}
 Value comparable_invoke(const Program& program,Type type,ComparableMethod method,std::span<const Value> arguments,SourceLocation location,const ExecutionOptions& options) {
+    Values values{program,options.allocation_limit,location};return comparable_invoke(values,type,method,arguments,options);
+}
+Value comparable_invoke(Values& values,Type type,ComparableMethod method,std::span<const Value> arguments,const ExecutionOptions& options) {
+    const auto& program=values.program;const auto location=values.location;
     if(!comparable_signature(program,type,method) || arguments.size()!=comparable_parameters(type,method).size())throw runtime_error(RuntimeError::invalid_bytecode,location);
     const bool ordinal=method==ComparableMethod::ordinal_in_range || method==ComparableMethod::ordinal_between;
-    const auto order=[&](const Value& a,const Value& b){return compare(a,b,ordinal,location,options);};
+    const auto order=[&](const Value& a,const Value& b){return comparison_value(values,type,a,b,false,ordinal,options);};
     const auto& value=arguments[0];const auto& low=arguments[1];
+    if(method==ComparableMethod::compare_to)return std::int32_t{order(value,low)};
     if(method==ComparableMethod::clamp_top)return order(value,low)<0 ? value : low;
     if(method==ComparableMethod::clamp_bottom)return order(value,low)>0 ? value : low;
     const auto& high=arguments[2];

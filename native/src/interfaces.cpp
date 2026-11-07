@@ -12,11 +12,13 @@ bool valid(const std::vector<TypeInfo>& types,Type type){return compound(type) &
 const TypeInfo& info(const std::vector<TypeInfo>& types,Type type){return types.at(static_cast<unsigned>(type)-64U);}
 const InterfaceImplementation* implementation(const TypeInfo& type,Type target){for(const auto& item:type.interfaces.read().implementations)if(item.target==target)return &item;return nullptr;}
 }
-bool interface_kind(const TypeInfo& type){return type.kind==CompoundKind::user_interface || type.kind==CompoundKind::enumerator || type.kind==CompoundKind::sequence;}
+bool interface_kind(const TypeInfo& type){return type.kind==CompoundKind::user_interface || type.kind==CompoundKind::enumerator || type.kind==CompoundKind::sequence || type.kind==CompoundKind::comparable_interface || type.kind==CompoundKind::comparer_interface;}
 std::vector<InterfaceMember> interface_contract(const std::vector<TypeInfo>& types,Type type){
  if(!valid(types,type))return {};
  const auto& t=info(types,type);if(t.kind==CompoundKind::user_interface)return t.interfaces.read().members;
  if(t.kind==CompoundKind::sequence){for(std::size_t i=0;i<types.size();++i)if(types[i].kind==CompoundKind::enumerator && types[i].element==t.element)return {{"getenumerator",static_cast<Type>(64+i),{},InterfaceMemberKind::method}};throw Error("E_BYTECODE",{},"Invalid interface metadata");}
+ if(t.kind==CompoundKind::comparable_interface)return {{"compareto",Type::integer,{{t.element,false,false}},InterfaceMemberKind::method}};
+ if(t.kind==CompoundKind::comparer_interface)return {{"compare",Type::integer,{{t.element,false,false},{t.element,false,false}},InterfaceMemberKind::method}};
  if(t.kind==CompoundKind::enumerator)return {{"movenext",Type::boolean,{},InterfaceMemberKind::method},{"current",t.element,{},InterfaceMemberKind::get},{"dispose",Type::unit,{},InterfaceMemberKind::method},{"reset",Type::unit,{},InterfaceMemberKind::method}};
  return {};
 }
@@ -24,6 +26,7 @@ bool interface_compatible(const std::vector<TypeInfo>& types,Type from,Type to){
  if(!valid(types,from) || !valid(types,to) || !interface_kind(info(types,to)))return false;
  if(from==to)return true;const auto& source=info(types,from);
  if(source.kind==CompoundKind::object_class)return implementation(source,to)!=nullptr;
+ if(source.kind==CompoundKind::comparer)return info(types,to).kind==CompoundKind::comparer_interface && source.element==info(types,to).element;
  if(!interface_kind(source))return false;
  std::vector<Type> pending{from};std::set<Type> seen;
  while(!pending.empty()){const auto current=pending.back();pending.pop_back();if(current==to)return true;if(!valid(types,current) || !seen.insert(current).second)continue;for(auto parent:info(types,current).interfaces.read().parents)pending.push_back(parent);}

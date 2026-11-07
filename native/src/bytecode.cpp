@@ -382,6 +382,8 @@ private:
         case hir::ExprKind::ini_call:
             for(const auto& argument:node.arguments)expression(*argument);
             emit(Op::ini_call,node.operation_type,node.local,node.location);break;
+        case hir::ExprKind::comparer_create:
+            for(const auto& argument:node.arguments)expression(*argument);emit(Op::comparer_create,node.type,node.local,node.location);break;
         case hir::ExprKind::comparable_call:
             for(const auto& argument:node.arguments)expression(*argument);
             emit(Op::comparable_call,node.operation_type,node.local,node.location);break;
@@ -1124,8 +1126,10 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if(!compound(type) || type_info(program,type).kind!=CompoundKind::object_class || instruction.operand>=type_info(program,type).fields.size())invalid(instruction,"Invalid deferred field store");break;
         case Op::ini_call:
             if(instruction.operand>static_cast<std::size_t>(IniMethod::read_boolean) || !ini_signature(program,type,static_cast<IniMethod>(instruction.operand)))invalid(instruction,"Invalid TIniFile call metadata");break;
+        case Op::comparer_create:
+            if(!compound(type) || type_info(program,type).kind!=CompoundKind::comparer || instruction.operand>1)invalid(instruction,"Invalid Comparer factory metadata");break;
         case Op::comparable_call:
-            if(instruction.operand>static_cast<std::size_t>(ComparableMethod::clamp_bottom) || !comparable_signature(program,type,static_cast<ComparableMethod>(instruction.operand)))invalid(instruction,"Invalid comparable call metadata");break;
+            if(instruction.operand>static_cast<std::size_t>(ComparableMethod::compare_to) || !comparable_signature(program,type,static_cast<ComparableMethod>(instruction.operand)))invalid(instruction,"Invalid comparable call metadata");break;
         case Op::enum_call: {
             const auto method=static_cast<EnumMethod>(instruction.operand&255U);const auto raw_other=instruction.operand>>8U;
             if(!enumeration(program,type) || method>EnumMethod::has_flag_nil)invalid(instruction,"Invalid enumeration call metadata");
@@ -1158,7 +1162,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if (instruction.op==Op::make_default && instruction.operand==1 && compound(type) && type_info(program,type).kind==CompoundKind::object_class
                 && std::any_of(program.routines.begin(),program.routines.end(),[type](const auto& candidate){return candidate.constructor && candidate.owner==type;}))
                 invalid(instruction,"Class constructor cannot be bypassed");
-            if (instruction.op==Op::make_default && instruction.operand==1 && compound(type) && (node_kind(type_info(program,type).kind) || type_info(program,type).kind==CompoundKind::tuple || type_info(program,type).kind==CompoundKind::sequence || type_info(program,type).kind==CompoundKind::enumerator || type_info(program,type).kind==CompoundKind::user_interface || type_info(program,type).kind==CompoundKind::callable || type_info(program,type).kind==CompoundKind::encoding || type_info(program,type).kind==CompoundKind::ini_file || type_info(program,type).kind==CompoundKind::hash_set || type_info(program,type).kind==CompoundKind::dictionary || type_info(program,type).kind==CompoundKind::dictionary_keys || type_info(program,type).kind==CompoundKind::dictionary_values || school_ip_kind(type_info(program,type).kind)))
+            if (instruction.op==Op::make_default && instruction.operand==1 && compound(type) && (node_kind(type_info(program,type).kind) || type_info(program,type).kind==CompoundKind::tuple || type_info(program,type).kind==CompoundKind::sequence || type_info(program,type).kind==CompoundKind::enumerator || type_info(program,type).kind==CompoundKind::user_interface || type_info(program,type).kind==CompoundKind::comparer || type_info(program,type).kind==CompoundKind::comparable_interface || type_info(program,type).kind==CompoundKind::comparer_interface || type_info(program,type).kind==CompoundKind::callable || type_info(program,type).kind==CompoundKind::encoding || type_info(program,type).kind==CompoundKind::ini_file || type_info(program,type).kind==CompoundKind::hash_set || type_info(program,type).kind==CompoundKind::dictionary || type_info(program,type).kind==CompoundKind::dictionary_keys || type_info(program,type).kind==CompoundKind::dictionary_values || school_ip_kind(type_info(program,type).kind)))
                 invalid(instruction,"Nodes and tuples require the typed constructor");
             break;
         case Op::routine_value:
@@ -1545,6 +1549,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             const auto parameters=enum_parameters(instruction.type,method,other);
             for(auto p=parameters.rbegin();p!=parameters.rend();++p)require(*p);stack.push_back(enum_result(instruction.type,method));break;
         }
+        case Op::comparer_create: if(instruction.operand)require(type_info(program,instruction.type).key);stack.push_back(instruction.type);break;
         case Op::comparable_call: {
             const auto method=static_cast<ComparableMethod>(instruction.operand);const auto parameters=comparable_parameters(instruction.type,method);
             for(auto p=parameters.rbegin();p!=parameters.rend();++p)require(*p);stack.push_back(comparable_result(instruction.type,method));break;
@@ -1792,6 +1797,11 @@ void verify(const Program& program) {
         } else if(type.kind==CompoundKind::encoding) {
             if(type.name!="encoding" || !type.fields.empty() || !encoding_signature_valid(program,static_cast<Type>(64+i),EncodingMethod::utf8))throw Error("E_BYTECODE",{},"Invalid Encoding type metadata");
             prior(type.element);prior(type.key);
+        } else if(type.kind==CompoundKind::comparable_interface || type.kind==CompoundKind::comparer_interface || type.kind==CompoundKind::comparer){
+            if(type.name!=(type.kind==CompoundKind::comparer ? "comparer" : type.kind==CompoundKind::comparer_interface ? "icomparer" : "icomparable") || !type.fields.empty())throw Error("E_BYTECODE",{},"Invalid comparison type metadata");prior(type.element);
+            if(type.kind==CompoundKind::comparer){prior(type.key);const auto& callback=type_info(program,type.key);if(callback.kind!=CompoundKind::callable || callback.element!=Type::integer || callback.parameters!=std::vector<CallableParameter>{{type.element,false,false},{type.element,false,false}})throw Error("E_BYTECODE",{},"Invalid Comparer callback metadata");
+                if(std::none_of(program.types.begin(),program.types.end(),[&](const auto& t){return t.kind==CompoundKind::comparer_interface && t.element==type.element;}))throw Error("E_BYTECODE",{},"Missing IComparer type");
+            }else if(type.key!=Type::invalid)throw Error("E_BYTECODE",{},"Invalid comparison interface metadata");
         } else if(type.kind==CompoundKind::user_interface){
             if(type.name.empty() || type.element!=Type::invalid || type.key!=Type::invalid || !type.fields.empty())throw Error("E_BYTECODE",{},"Invalid interface metadata");
         } else if(type.kind==CompoundKind::enumerator){
