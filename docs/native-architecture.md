@@ -852,4 +852,21 @@ clearing fields, breaking closure/class/dictionary ownership cycles. Closed nati
 reflection tags retain provider/source identity without loading CLR-private types.
 Independent Framework interface probes cover 4488 operations over22sources. General
 object boxing, nongeneric interfaces, user implementations, variance, bound method
-values and concrete List/HashSet public enumerator structs remain separate work.
+values remain separate work. Concrete List/HashSet public enumerator structs now use the
+record implementation below.
+
+List<T>.Enumerator and HashSet<T>.Enumerator are distinct native value types. Their
+validated hidden fields keep the typed owner, captured version, raw index and copied
+Current. Dense/sparse traversal shares bounded work/cancellation and preserves
+physical HashSet slot behavior through non-versioning TrimExcess. Concrete methods
+use verified ref receivers only for writable storage, copying temporary/const/List
+index receivers. Interface boxing copies once and dispatches MoveNext/Current/Dispose/
+Reset to the actual record kind. IEnumerable and NewSet adapters preserve the same
+concrete runtime type identity. Nested type names resolve through both generic type
+syntax and aliases; record equality retains owner identity and snapshot state.
+Private owner links are checked as prior reference dependencies, while Current owns
+its value depth, preserving the existing 32-level bound without counting the owner
+collection as recursive value initialization. Independent legacy Framework probes
+cover 7584 operations through real Pascal collection mutations and struct/interface
+copy behavior. User-defined interface implementations and remaining collection APIs
+remain necessary future work.

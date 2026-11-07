@@ -239,6 +239,7 @@ def main():
                 ("halt.pas", "Завершение программы\n"),
                 ("builtin-callables.pas", "7 2500000000\n[ONE,ДВА]\n101 3.2.0.1364\n"),
                 ("dictionaries.pas", "{(чай,130),(кофе,180)}\n[чай,кофе,сок]\n{(чай,140),(вода,60)}\n{(2,2),(1,1),(3,1)}\n{(1,1),(2,4),(3,9)}\nчай: 130\nкофе: 180\nсок: 90\n"),
+                ("collection-enumerators.pas", "two one\nthree two\none\nred\nblue\n"),
                 ("enumerator-interfaces.pas", "10 20\n30\n1 2\n1\n2\n4\nFalse\n"),
                 ("dictionary-enumerators.pas", "Original: two=2\nCopy: one=1\ntwo=2\nthree=3\none\ntwo\nthree\n"),
                 ("single-numbers.pas", "16777216 single\n1.0000001\n1 0.33333334\n16777216\nTrue 1E-45\n3.4028235E+38 1E-45\n"),
@@ -1589,6 +1590,8 @@ def main():
                 ("type E=Dictionary<integer,integer>.Enumerator;begin\n var e:E;e.MoveNext;\nend.", "E_NIL", "Cannot access a nil reference", "Нельзя обратиться к пустой ссылке nil"),
                 ("begin\n var s:IEnumerable<integer>:=Arr(1);var e:=s.GetEnumerator;Writeln(e.Current);\nend.", "E_ITERATOR_STATE", "Enumeration has not started or has already finished", "Перебор ещё не начат или уже завершён"),
                 ("begin\n var e:=Range(1,3).GetEnumerator;e.Reset;\nend.", "E_NOT_SUPPORTED", "Reset is not supported by this enumerator", "Этот перечислитель не поддерживает Reset"),
+                ("begin\n var l:=Lst(1,2);var e:=l.GetEnumerator;l[0]:=3;e.MoveNext;\nend.", "E_MODIFIED", "Collection was modified during enumeration", "Коллекция изменена во время перебора"),
+                ("begin\n var h:=HSet(1,2);var e:=h.GetEnumerator;h.Add(3);e.MoveNext;\nend.", "E_MODIFIED", "Collection was modified during enumeration", "Коллекция изменена во время перебора"),
                 ("begin\n var d:=DictInt();Writeln(d[1]);\nend.", "E_KEY_NOT_FOUND", "The given key was not present in the dictionary", "Указанный ключ отсутствует в словаре"),
                 ("begin\n var d:=new Dictionary<string,integer>;d.Add(nil,1);\nend.", "E_NIL", "Dictionary key cannot be nil", "Ключ словаря не может быть nil"),
             ):

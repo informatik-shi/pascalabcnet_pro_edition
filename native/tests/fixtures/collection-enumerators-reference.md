@@ -1,0 +1,15 @@
+This independent .NET Framework CLR 4.0.30319.42000 corpus exercises the concrete public List<int>.Enumerator and HashSet<int>.Enumerator structs and their boxed IEnumerator<int> references. The original Pascal compiler is never invoked. The [C# generator](../reference/collection-enumerators.cs) and Windows PowerShell 5 are development tools excluded from the application and portable packages.
+
+Regenerate with:
+
+```powershell
+& "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File native/tests/reference/generate-collection-enumerators.ps1
+```
+
+There are 7584 rows: 48 fresh blocks for each collection, with a fixed protocol and 40 Random(4197) actions per block. Columns are kind, block, operation, slot, integer argument and expected outcome. Four concrete struct slots and four interface slots distinguish value copying from boxing, interface aliases and reference equality. Mutations use the actual collection methods: Add/Remove/Clear/TrimExcess plus List index replacement and Reverse. The probe covers defaults, holes, independent copies, Current before/after traversal and source mutation, no-op Dispose, failed moves, boxed Reset, public GetType identity and inherited struct equality.
+
+Each row is checked through a separately compiled native Pascal program reconstructing all earlier successful state-changing operations in the same block. Read-only operations and failed operations that preserve state are omitted from the prefix. Thus the tests exercise the real native collection mutations and language bindings, without manually predicting or setting the implementation's version counter. InvalidOperationException from MoveNext/Reset maps to E_MODIFIED; NullReferenceException to E_NIL.
+
+Source contracts were checked against [legacy List](https://github.com/microsoft/referencesource/blob/main/mscorlib/system/collections/generic/list.cs) and [legacy HashSet](https://github.com/microsoft/referencesource/blob/main/System.Core/System/Collections/Generic/HashSet.cs). Generic Current returns saved/default T without a version check. MoveNext checks the version even after exhaustion, and HashSet skips free slots. Dispose is a no-op. Reset exists through IEnumerator only, checks the version and resets the boxed struct, not the original unboxed copy. Nonempty HashSet TrimExcess preserves the version and can change subsequent physical slot traversal; the reference includes this behavior.
+
+Additional tests check string generic nil defaults, user records and class/reference ownership cycles, function/var/const receivers, arrays versus List index copies, closed nested types and alias-qualified nested names, List/HashSet type distinctions, NewSet returning a boxed HashSet enumerator, static type failures, malformed bytecode, depth limits, allocation/work budgets and cancellation. This does not claim complete collection interfaces, user-defined generic/interface support, general object boxing, all inherited Object APIs, or a complete standard-library port.

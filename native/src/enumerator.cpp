@@ -3,6 +3,7 @@
 #include "dictionary.hpp"
 #include "value_hash.hpp"
 #include "sequences.hpp"
+#include "new_set.hpp"
 #include <array>
 namespace abc {
 namespace {
@@ -28,28 +29,61 @@ Value boxed(Values& values,const std::shared_ptr<Cell>& cell,DictionaryMethod me
  return dictionary_invoke(values,cell->type,Type::invalid,method,args,options);
 }
 }
+bool collection_enumerator_metadata(const Program& p,Type type){
+ if(!valid(p,type))return false;const auto& e=type_info(p,type);
+ if(!collection_enumerator_type(e) || e.kind!=CompoundKind::record || e.name!="collectionenumerator" || !valid(p,e.key) || e.fields.size()!=4)return false;
+ const auto& owner=type_info(p,e.key);if((owner.kind!=CompoundKind::list && owner.kind!=CompoundKind::hash_set) || e.element!=owner.element)return false;
+ const std::array<std::string_view,4> names{"$source","$version","$index","$current"};const std::array<Type,4> fields{e.key,Type::uint64,Type::integer,e.element};
+ for(std::size_t i=0;i<4;++i)if(e.fields[i].name!=names[i] || e.fields[i].type!=fields[i] || e.fields[i].global)return false;
+ return true;
+}
+Type enumerator_parameter(Type owner,EnumeratorMethod method){return method==EnumeratorMethod::collection_move || method==EnumeratorMethod::collection_reset ? reference_type(owner) : owner;}
 bool enumerator_signature(const Program& p,Type owner,Type payload,EnumeratorMethod method){
- if(method>EnumeratorMethod::reset || !valid(p,owner))return false;
+ if(method>EnumeratorMethod::collection_reset || !valid(p,owner))return false;
  const auto& source=type_info(p,owner);
- if(method==EnumeratorMethod::get || method==EnumeratorMethod::box_dictionary){
+ if(method==EnumeratorMethod::get_collection)return collection_enumerator_metadata(p,payload) && type_info(p,payload).key==owner;
+ if(method>=EnumeratorMethod::collection_move)return payload==Type::invalid && collection_enumerator_metadata(p,owner);
+ if(method==EnumeratorMethod::get || method==EnumeratorMethod::box_dictionary || method==EnumeratorMethod::box_collection){
   if(!valid(p,payload) || type_info(p,payload).kind!=CompoundKind::enumerator || type_info(p,payload).element!=source.element)return false;
-  return method==EnumeratorMethod::get ? source.kind==CompoundKind::sequence : dictionary_enumerator_metadata(p,owner);
+  return method==EnumeratorMethod::get ? source.kind==CompoundKind::sequence : method==EnumeratorMethod::box_collection ? collection_enumerator_metadata(p,owner) : dictionary_enumerator_metadata(p,owner);
  }
  return payload==Type::invalid && source.kind==CompoundKind::enumerator;
 }
 Type enumerator_result(const Program& p,Type owner,Type payload,EnumeratorMethod method){
- if(method==EnumeratorMethod::get || method==EnumeratorMethod::box_dictionary)return payload;
- if(method==EnumeratorMethod::move)return Type::boolean;
- if(method==EnumeratorMethod::current)return type_info(p,owner).element;
+ if(method==EnumeratorMethod::get || method==EnumeratorMethod::box_dictionary || method==EnumeratorMethod::get_collection || method==EnumeratorMethod::box_collection)return payload;
+ if(method==EnumeratorMethod::move || method==EnumeratorMethod::collection_move || method==EnumeratorMethod::collection_move_copy)return Type::boolean;
+ if(method==EnumeratorMethod::current || method==EnumeratorMethod::collection_current)return type_info(p,owner).element;
  return Type::unit;
 }
 Value enumerator_invoke(Values& values,Type owner,Type payload,EnumeratorMethod method,const Value& argument,const ExecutionOptions& options) try {
  if(!enumerator_signature(values.program,owner,payload,method))throw runtime_error(RuntimeError::invalid_bytecode,values.location);
  ValueHashWork work{values,options};work.step();
+ if(method>=EnumeratorMethod::collection_move){
+  auto iterator=std::get<Object>(method==EnumeratorMethod::collection_move || method==EnumeratorMethod::collection_reset ? std::get<std::shared_ptr<Cell>>(argument)->value : method==EnumeratorMethod::collection_move_copy ? values.copy(argument) : argument);
+  if(!iterator || iterator->nil || iterator->items.size()!=4)throw runtime_error(RuntimeError::invalid_bytecode,values.location);
+  if(method==EnumeratorMethod::collection_current)return values.copy(iterator->items[3]->value);
+  if(method==EnumeratorMethod::collection_dispose)return false;
+  const auto source=std::get<Object>(iterator->items[0]->value);if(!source || source->nil)throw runtime_error(RuntimeError::nil_reference,values.location);
+  if(std::get<std::uint64_t>(iterator->items[1]->value)!=source->version)throw runtime_error(RuntimeError::collection_changed,values.location);
+  const auto element=type_info(values.program,owner).element;
+  if(method==EnumeratorMethod::collection_reset){values.write(iterator->items[2],std::int32_t{0});values.write(iterator->items[3],values.zero(element,false,true));return false;}
+  auto index=static_cast<std::uint32_t>(std::get<std::int32_t>(iterator->items[2]->value));
+  while(index<source->items.size()){
+   work.step();const auto cell=source->items[index++];values.write(iterator->items[2],static_cast<std::int32_t>(index));
+   if(cell){values.write(iterator->items[3],cell->value);return true;}
+  }
+  values.write(iterator->items[2],static_cast<std::int32_t>(static_cast<std::uint32_t>(source->items.size())+1U));values.write(iterator->items[3],values.zero(element,false,true));return false;
+ }
  const auto object=std::get<Object>(argument);
  if(!object || object->nil)throw runtime_error(RuntimeError::nil_reference,values.location);
- if(method==EnumeratorMethod::box_dictionary){auto result=make(values,payload);result->enumerator->boxed=values.cell(owner,values.copy(argument));return result;}
+ if(method==EnumeratorMethod::get_collection){auto result=std::get<Object>(values.zero(payload));values.write(result->items[0],argument);values.write(result->items[1],object->version);return result;}
+ if(method==EnumeratorMethod::box_dictionary || method==EnumeratorMethod::box_collection){auto result=make(values,payload);result->enumerator->boxed=values.cell(owner,values.copy(argument));return result;}
  if(method==EnumeratorMethod::get){
+  if(object->sequence && (object->sequence->provider==SequenceProvider::list || object->sequence->provider==SequenceProvider::hash_set || object->sequence->provider==SequenceProvider::new_set)){
+   const auto& sequence=*object->sequence;const auto source=sequence.provider==SequenceProvider::new_set ? (sequence.seed ? new_set_hash(values,std::get<NewSetValue>(sequence.seed->value)) : Object{}) : sequence.source;
+   if(!source || source->nil)throw runtime_error(RuntimeError::nil_reference,values.location);
+   for(std::size_t i=0;i<values.program.types.size();++i){work.step();const auto& type=values.program.types[i];if(collection_enumerator_type(type) && type.key==source->type){const auto record=static_cast<Type>(64+i);auto iterator=enumerator_invoke(values,source->type,record,EnumeratorMethod::get_collection,source,options);return enumerator_invoke(values,record,payload,EnumeratorMethod::box_collection,iterator,options);}}
+  }
   if(object->sequence && dictionary_provider(object->sequence->provider)){
    const auto source=object->sequence->source;if(!source || source->nil)throw runtime_error(RuntimeError::nil_reference,values.location);
    for(std::size_t i=0;i<values.program.types.size();++i){work.step();const auto& t=values.program.types[i];if(dictionary_enumerator_type(t) && t.key==source->type){
@@ -73,6 +107,10 @@ Value enumerator_invoke(Values& values,Type owner,Type payload,EnumeratorMethod 
  if(!object->enumerator || object->items.size()!=1)throw runtime_error(RuntimeError::invalid_bytecode,values.location);
  auto& state=*object->enumerator;
  if(state.boxed){
+  if(collection_enumerator_type(type_info(values.program,state.boxed->type))){
+   const auto operation=method==EnumeratorMethod::move ? EnumeratorMethod::collection_move : method==EnumeratorMethod::current ? EnumeratorMethod::collection_current : method==EnumeratorMethod::reset ? EnumeratorMethod::collection_reset : EnumeratorMethod::collection_dispose;
+   return enumerator_invoke(values,state.boxed->type,Type::invalid,operation,enumerator_parameter(state.boxed->type,operation)==reference_type(state.boxed->type) ? Value{state.boxed} : state.boxed->value,options);
+  }
   const auto operation=method==EnumeratorMethod::move ? DictionaryMethod::enumerator_move : method==EnumeratorMethod::current ? DictionaryMethod::enumerator_current : method==EnumeratorMethod::reset ? DictionaryMethod::enumerator_reset : DictionaryMethod::enumerator_dispose;
   return boxed(values,state.boxed,operation,options);
  }

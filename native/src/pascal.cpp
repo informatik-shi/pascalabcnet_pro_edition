@@ -212,6 +212,7 @@ struct SyntaxType {
     Token token;
     std::string kind;
     std::string unit{};
+    std::vector<std::string> nested{};
     std::shared_ptr<SyntaxType> element;
     std::vector<std::pair<Token, std::shared_ptr<SyntaxType>>> fields;
     std::shared_ptr<SyntaxType> key;
@@ -494,7 +495,7 @@ private:
             if (result->kind=="system") {
                 result->system_qualified=true; expect("."); result->kind=is("type") ? consume().text : name().text;
                 if(result->kind=="text") {expect(".");result->kind=name().text;if(result->kind!="encoding")throw Error("E_UNSUPPORTED",result->token.location,"Unknown or unsupported Encoding type");}
-                else if(result->kind=="collections"){expect(".");const auto generic=name();if(generic.text!="generic")throw Error("E_UNSUPPORTED",generic.location,"Unknown System.Collections namespace");expect(".");result->kind=name().text;if(result->kind!="dictionary" && result->kind!="keyvaluepair" && result->kind!="ienumerable" && result->kind!="ienumerator")throw Error("E_UNSUPPORTED",result->token.location,"Unknown generic collection type");}
+                else if(result->kind=="collections"){expect(".");const auto generic=name();if(generic.text!="generic")throw Error("E_UNSUPPORTED",generic.location,"Unknown System.Collections namespace");expect(".");result->kind=name().text;if(result->kind!="dictionary" && result->kind!="keyvaluepair" && result->kind!="ienumerable" && result->kind!="ienumerator" && result->kind!="list" && result->kind!="hashset")throw Error("E_UNSUPPORTED",result->token.location,"Unknown generic collection type");}
                 else if (result->kind!="func" && result->kind!="action" && result->kind!="predicate" && result->kind!="type" && result->kind!="void" && result->kind!="single")
                     throw Error("E_UNSUPPORTED",result->token.location,"Unknown or unsupported type 'System."+result->kind+"'");
             }
@@ -524,6 +525,9 @@ private:
             } else if ((result->kind=="ienumerable" || result->kind=="ienumerator" || result->kind == "list" || result->kind == "hashset" || result->kind=="newset" || result->kind == "stack" || result->kind == "queue" || result->kind == "dynarray" || result->kind == "simpleset" || result->kind == "linkedlist" || result->kind == "linkedlistnode" || result->kind == "singlenode") && accept("<")) {
                 result->named=false; result->element = type_syntax(); expect(">");
             }
+        }
+        while(is(".") && [&]{auto probe=lexer_;const auto next=probe.next();return next.text=="enumerator" || next.text=="keycollection" || next.text=="valuecollection";}()){
+            expect(".");if(result->nested.size()>=16)throw Error("E_LIMIT",result->token.location,"Nested type limit exceeded");result->nested.push_back(name().text);
         }
         if (allow_arrow && accept("->")) {
             if (!result->named && (result->kind=="record" || result->kind=="callable"))
@@ -1615,7 +1619,7 @@ private:
         const auto key=kind==CompoundKind::hash_set ? sequence_type(CompoundKind::sequence,element) : Type::invalid;
         if(module_.types.size()>=1024)throw Error("E_LIMIT",{},"Type limit exceeded");
         module_.types.push_back({name,kind,element,{},key,rank});
-        return static_cast<Type>(63+module_.types.size());
+        const auto result=static_cast<Type>(63+module_.types.size());if(kind==CompoundKind::list || kind==CompoundKind::hash_set)(void)collection_enumerator(result);return result;
     }
     Type empty_type(){
         if(const auto type=empty_collection_type(module_.types);type!=Type::invalid)return type;
@@ -1751,6 +1755,12 @@ private:
         }
         return false;
     }
+    ABC_PASCAL_NOINLINE Type collection_enumerator(Type owner){
+        for(std::size_t i=0;i<module_.types.size();++i)if(collection_enumerator_type(module_.types[i]) && module_.types[i].key==owner)return static_cast<Type>(64+i);
+        if(module_.types.size()>=1024)throw Error("E_LIMIT",{},"Type limit exceeded");const auto element=info(owner,{}).element;
+        TypeInfo type{"collectionenumerator",CompoundKind::record,element,{{"$source",owner,false},{"$version",Type::uint64,false},{"$index",Type::integer,false},{"$current",element,false}},owner};
+        type.native_record=NativeRecord::collection_enumerator;module_.types.push_back(std::move(type));return static_cast<Type>(63+module_.types.size());
+    }
     ABC_PASCAL_NOINLINE Type enumerator_type(Type element){
         for(std::size_t i=0;i<module_.types.size();++i)if(module_.types[i].kind==CompoundKind::enumerator && module_.types[i].element==element)return static_cast<Type>(64+i);
         if(module_.types.size()>=1024)throw Error("E_LIMIT",{},"Type limit exceeded");module_.types.push_back({"ienumerator",CompoundKind::enumerator,element,{}});return static_cast<Type>(63+module_.types.size());
@@ -1783,8 +1793,17 @@ private:
         module_.types.push_back({"assocarray",CompoundKind::association,element,{},key});
         return static_cast<Type>(63+module_.types.size());
     }
-    Type resolve_type(const SyntaxType& syntax) {
-        if (auto found=resolved_types_.find(&syntax); found!=resolved_types_.end()) return found->second;
+    Type resolve_type(const SyntaxType& syntax,bool base_only=false) {
+        if(!base_only)if(auto found=resolved_types_.find(&syntax);found!=resolved_types_.end())return found->second;
+        if(!base_only && !syntax.nested.empty()){
+            auto type=resolve_type(syntax,true);for(const auto& member:syntax.nested){if(!compound(type))throw Error("E_TYPE",syntax.token.location,"Unknown collection nested type");const auto shape=info(type,syntax.token.location);
+                if(member=="enumerator" && (shape.kind==CompoundKind::list || shape.kind==CompoundKind::hash_set))type=collection_enumerator(type);
+                else if(member=="enumerator" && (shape.kind==CompoundKind::dictionary || shape.kind==CompoundKind::dictionary_keys || shape.kind==CompoundKind::dictionary_values))type=dictionary_enumerator(type);
+                else if((member=="keycollection" || member=="valuecollection") && shape.kind==CompoundKind::dictionary)type=dictionary_view_type(type,member=="keycollection");
+                else throw Error("E_TYPE",syntax.token.location,"Unknown collection nested type");
+            }return type;
+        }
+
         if (syntax.named && !syntax.system_qualified && syntax.unit.empty() && !syntax.element && syntax.fields.empty())
             if (const auto found=aliases_.find(syntax.kind);found!=aliases_.end()) {
                 if(syntax.enum_flags){if(!enumeration(found->second))throw Error("E_TYPE",syntax.token.location,"FlagsAttribute requires an enumeration");module_.types[static_cast<unsigned>(found->second)-64U].enum_flags=true;}
@@ -1946,9 +1965,9 @@ private:
             && info(to,location).kind==CompoundKind::sequence && info(from,location).element==info(to,location).element;
     }
     std::unique_ptr<hir::Expr> convert(std::unique_ptr<hir::Expr> expression, Type type) {
-        if(compound(type) && info(type,expression->location).kind==CompoundKind::enumerator && compound(expression->type) && dictionary_enumerator_type(info(expression->type,expression->location))){
+        if(compound(type) && info(type,expression->location).kind==CompoundKind::enumerator && compound(expression->type) && (dictionary_enumerator_type(info(expression->type,expression->location)) || collection_enumerator_type(info(expression->type,expression->location)))){
             if(info(expression->type,expression->location).element!=info(type,expression->location).element)throw Error("E_TYPE",expression->location,"Enumerator element types must match exactly");
-            return enumerator_expression(EnumeratorMethod::box_dictionary,std::move(expression),type);
+            const auto method=collection_enumerator_type(info(expression->type,expression->location)) ? EnumeratorMethod::box_collection : EnumeratorMethod::box_dictionary;return enumerator_expression(method,std::move(expression),type);
         }
         if(expression->type!=type && compound(expression->type) && info(expression->type,expression->location).kind==CompoundKind::empty_collection && compound(type)){
             const auto target=info(type,expression->location);
@@ -3576,12 +3595,21 @@ private:
     }
     ABC_PASCAL_NOINLINE std::unique_ptr<hir::Expr> enumerator_expression(EnumeratorMethod method,std::unique_ptr<hir::Expr> argument,Type payload=Type::invalid){
         auto result=std::make_unique<hir::Expr>();result->kind=hir::ExprKind::enumerator_call;result->location=argument->location;result->operation_type=argument->type;result->local=static_cast<std::size_t>(method)|(static_cast<std::size_t>(payload)<<8U);
-        if(method==EnumeratorMethod::get || method==EnumeratorMethod::box_dictionary)result->type=payload;
-        else result->type=method==EnumeratorMethod::move ? Type::boolean : method==EnumeratorMethod::current ? info(argument->type,argument->location).element : Type::unit;
+        if(method==EnumeratorMethod::get || method==EnumeratorMethod::box_dictionary || method==EnumeratorMethod::get_collection || method==EnumeratorMethod::box_collection)result->type=payload;
+        else result->type=method==EnumeratorMethod::move || method==EnumeratorMethod::collection_move || method==EnumeratorMethod::collection_move_copy ? Type::boolean : method==EnumeratorMethod::current || method==EnumeratorMethod::collection_current ? info(argument->type,argument->location).element : Type::unit;
         result->left=std::move(argument);return result;
     }
     ABC_PASCAL_NOINLINE bool bind_enumerator_member(hir::Expr& result,const SyntaxExpr& source){
         const auto owner=result.left->type;if(!compound(owner))return false;const auto shape=info(owner,result.location);const auto& name=source.token.text;
+        if((shape.kind==CompoundKind::list || shape.kind==CompoundKind::hash_set) && name=="getenumerator"){
+            if(!source.arguments.empty())throw Error("E_TYPE",result.location,"Wrong enumerator argument count");const auto target=collection_enumerator(owner);auto bound=enumerator_expression(EnumeratorMethod::get_collection,std::move(result.left),target);bound->location=result.location;result=std::move(*bound);return true;
+        }
+        if(collection_enumerator_type(shape)){
+            const auto method=name=="movenext" ? (new_set_addressable(*result.left) ? EnumeratorMethod::collection_move : EnumeratorMethod::collection_move_copy) : name=="current" ? EnumeratorMethod::collection_current : name=="dispose" ? EnumeratorMethod::collection_dispose : static_cast<EnumeratorMethod>(255);
+            if(method==static_cast<EnumeratorMethod>(255))return false;if(!source.arguments.empty())throw Error("E_TYPE",result.location,"Wrong enumerator argument count");
+            if(method==EnumeratorMethod::collection_current && source.kind==SyntaxExprKind::member_call)throw Error("E_TYPE",result.location,"Enumerator property is not callable");
+            auto bound=enumerator_expression(method,std::move(result.left));bound->location=result.location;result=std::move(*bound);return true;
+        }
         if((shape.kind==CompoundKind::sequence || shape.kind==CompoundKind::new_set || ordinal_range_type(shape)) && name=="getenumerator"){
             if(!source.arguments.empty())throw Error("E_TYPE",result.location,"Wrong enumerator argument count");
             (void)sequence_type(CompoundKind::array,shape.element);const auto target=enumerator_type(shape.element);

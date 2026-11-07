@@ -535,3 +535,6 @@
     {"Invalid IEnumerator type metadata","Некорректные метаданные типа IEnumerator"},
     {"Interface conversion requires one type and one value","Преобразование интерфейса требует один тип и одно значение"},
     {"Interface conversion requires one value","Преобразование интерфейса требует одно значение"},
+    {"Nested type limit exceeded","Превышен предел вложенности имён типов"},
+    {"Unknown collection nested type","Неизвестный вложенный тип коллекции"},
+    {"Invalid collection enumerator metadata","Некорректные метаданные перечислителя коллекции"},

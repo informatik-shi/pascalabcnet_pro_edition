@@ -349,7 +349,7 @@ private:
             emit(Op::new_set_call,node.operation_type,node.local,node.location);break;
         }
         case hir::ExprKind::enumerator_call:
-            expression(*node.left);emit(Op::enumerator_call,node.operation_type,node.local,node.location);break;
+            if(enumerator_parameter(node.operation_type,static_cast<EnumeratorMethod>(node.local&255U))==reference_type(node.operation_type))reference(*node.left);else expression(*node.left);emit(Op::enumerator_call,node.operation_type,node.local,node.location);break;
         case hir::ExprKind::dictionary_call: {
             const auto method=static_cast<DictionaryMethod>(node.local&255U);
             for(std::size_t i=0;i<node.arguments.size();++i)if((method==DictionaryMethod::try_get_value && i==2) || method==DictionaryMethod::enumerator_move || method==DictionaryMethod::enumerator_reset)reference(*node.arguments[i]);else expression(*node.arguments[i]);
@@ -1187,7 +1187,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             break;
         case Op::get_field: case Op::ref_field:
             if (!compound(type) || (type_info(program,type).kind!=CompoundKind::record && type_info(program,type).kind!=CompoundKind::object_class && !(instruction.op==Op::get_field && type_info(program,type).kind==CompoundKind::tuple))
-                || dictionary_enumerator_type(type_info(program,type)) || ordinal_range_type(type_info(program,type)) || real_interval_type(type_info(program,type)) || (instruction.op==Op::ref_field && key_value_pair_type(type_info(program,type))) || instruction.operand>=type_info(program,type).fields.size()) invalid(instruction,"Invalid or writable tuple/record access");
+                || collection_enumerator_type(type_info(program,type)) || dictionary_enumerator_type(type_info(program,type)) || ordinal_range_type(type_info(program,type)) || real_interval_type(type_info(program,type)) || (instruction.op==Op::ref_field && key_value_pair_type(type_info(program,type))) || instruction.operand>=type_info(program,type).fields.size()) invalid(instruction,"Invalid or writable tuple/record access");
             break;
         case Op::list_add: case Op::list_remove: case Op::list_clear: case Op::list_contains:
             if (!compound(type) || type_info(program,type).kind != CompoundKind::list) invalid(instruction,"Invalid list instruction"); break;
@@ -1549,7 +1549,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             for(auto it=parameters.rbegin();it!=parameters.rend();++it)require(*it);const auto result=new_set_result(program.types,instruction.type,method);if(result!=Type::unit)stack.push_back(result);break;
         }
         case Op::enumerator_call:
-            require(instruction.type);{const auto result=enumerator_result(program,instruction.type,static_cast<Type>(instruction.operand>>8U),static_cast<EnumeratorMethod>(instruction.operand&255U));if(result!=Type::unit)stack.push_back(result);}break;
+            require(enumerator_parameter(instruction.type,static_cast<EnumeratorMethod>(instruction.operand&255U)));{const auto result=enumerator_result(program,instruction.type,static_cast<Type>(instruction.operand>>8U),static_cast<EnumeratorMethod>(instruction.operand&255U));if(result!=Type::unit)stack.push_back(result);}break;
         case Op::dictionary_call: {
             const auto method=static_cast<DictionaryMethod>(instruction.operand&255U);const auto payload=static_cast<Type>(instruction.operand>>8U);const auto parameters=dictionary_parameters(program.types,instruction.type,payload,method);
             for(auto it=parameters.rbegin();it!=parameters.rend();++it)require(*it);const auto result=dictionary_result(program.types,instruction.type,payload,method);if(result!=Type::unit)stack.push_back(result);break;
@@ -1721,11 +1721,12 @@ void verify(const Program& program) {
     std::vector<unsigned> depth(program.types.size());std::size_t enum_text_bytes=0;
     for (std::size_t i = 0; i < program.types.size(); ++i) {
         const auto& type = program.types[i]; unsigned level = 1;
-        if(type.native_record!=NativeRecord::none && ((type.native_record!=NativeRecord::ordinal_range && type.native_record!=NativeRecord::real_interval && type.native_record!=NativeRecord::key_value_pair && type.native_record!=NativeRecord::dictionary_enumerator) || type.kind!=CompoundKind::record))throw Error("E_BYTECODE",{},"Invalid native record metadata");
+        if(type.native_record!=NativeRecord::none && ((type.native_record!=NativeRecord::ordinal_range && type.native_record!=NativeRecord::real_interval && type.native_record!=NativeRecord::key_value_pair && type.native_record!=NativeRecord::dictionary_enumerator && type.native_record!=NativeRecord::collection_enumerator) || type.kind!=CompoundKind::record))throw Error("E_BYTECODE",{},"Invalid native record metadata");
         for (const auto& field:type.fields) if (!valid_member_access(field.access)
             || (type.kind!=CompoundKind::object_class && field.access!=MemberAccess::public_member))
             throw Error("E_BYTECODE",{},"Invalid class member visibility metadata");
         if (type.rank<1 || type.rank>2 || (type.kind!=CompoundKind::array && type.rank!=1)) throw Error("E_BYTECODE",{},"Invalid array rank");
+        auto prior_reference = [&](Type t){if(!valid_value_type(program,t) || (compound(t) && static_cast<unsigned>(t)-64>=i))throw Error("E_BYTECODE",{},"Invalid or cyclic type dependency");};
         auto prior = [&](Type t) {
             if (!valid_value_type(program,t) || (compound(t) && static_cast<unsigned>(t)-64 >= i)) throw Error("E_BYTECODE",{},"Invalid or cyclic type dependency");
             if (compound(t)) level = std::max(level,depth[static_cast<unsigned>(t)-64]+1);
@@ -1816,8 +1817,11 @@ void verify(const Program& program) {
                 if(!compound(type.key) || type_info(program,type.key).kind!=CompoundKind::sequence || type_info(program,type.key).element!=type.element)throw Error("E_BYTECODE",{},"Invalid ordinal range sequence");
             }
             if(dictionary_enumerator_type(type)){
-                prior(type.key);prior(type.element);
+                prior_reference(type.key);prior(type.element);
                 if(!dictionary_enumerator_metadata(program,static_cast<Type>(64+i)))throw Error("E_BYTECODE",{},"Invalid Dictionary enumerator metadata");
+            }
+            if(collection_enumerator_type(type)){
+                prior_reference(type.key);prior(type.element);if(!collection_enumerator_metadata(program,static_cast<Type>(64+i)))throw Error("E_BYTECODE",{},"Invalid collection enumerator metadata");
             }
             if(key_value_pair_type(type) && (type.name!="keyvaluepair" || type.element!=Type::invalid || type.key!=Type::invalid || type.fields.size()!=2 || type.fields[0].name!="key" || type.fields[1].name!="value" || type.fields[0].global || type.fields[1].global))throw Error("E_BYTECODE",{},"Invalid KeyValuePair metadata");
             if (type.fields.size() > 256) throw Error("E_BYTECODE",{},"Too many record fields");
@@ -1827,7 +1831,7 @@ void verify(const Program& program) {
                 for (std::size_t n=0;n<type.fields.size();++n) if (type.fields[n].global || type.fields[n].name!="item"+std::to_string(n+1))
                     throw Error("E_BYTECODE",{},"Invalid tuple field metadata");
             }
-            for (const auto& field : type.fields) prior(field.type);
+            for (std::size_t n=0;n<type.fields.size();++n)if(n==0 && (dictionary_enumerator_type(type) || collection_enumerator_type(type)))prior_reference(type.fields[n].type);else prior(type.fields[n].type);
         } else if (type.kind == CompoundKind::association) { prior(type.key); prior(type.element); }
         else if (type.kind == CompoundKind::linked_list) {
             prior(type.element); prior(type.key);
