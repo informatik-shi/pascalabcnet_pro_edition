@@ -13,6 +13,7 @@
 #include "enumeration.hpp"
 #include "comparable.hpp"
 #include "comparison.hpp"
+#include "sorting.hpp"
 #include "ini_file.hpp"
 #include "compound.hpp"
 #include "hash_set.hpp"
@@ -2512,6 +2513,7 @@ private:
                     }
                 }
                 result->kind=hir::ExprKind::call;
+                if(bind_sort(*result,source,source.left->token.text))break;
                 if (bind_fixed_dictionary_factory(*result,source,source.left->token.text)) break;
                 if (bind_dictionary_extension(*result,source,source.left->token.text)) break;
                 if (bind_generators(*result,source,source.left->token.text)) break;
@@ -2692,6 +2694,7 @@ private:
                 result->right=std::make_unique<hir::Expr>(); result->right->kind=hir::ExprKind::literal; result->right->type=Type::integer;
                 result->right->value=std::int32_t{source.token.text=="rowcount" ? 0 : 1}; result->right->location=result->location; break;
             }
+            if(bind_sort(*result,source,{},true))break;
             if (compound(receiver) && (info(receiver,result->location).kind==CompoundKind::array
                 || (info(receiver,result->location).kind==CompoundKind::list && (source.token.text=="sort" || source.token.text=="sortdescending")))
                 && (source.token.text=="copy" || source.token.text=="high" || source.token.text=="sort" || source.token.text=="sortdescending")) {
@@ -3084,6 +3087,7 @@ private:
             result->kind = hir::ExprKind::call;
             if(bind_callable_cast(*result,source))break;
             if(!routine_names_.contains(source.token.text) && (bind_set_mutation(*result,source) || bind_print_extension(*result,source,false)))break;
+            if(!routine_names_.contains(source.token.text) && bind_sort(*result,source))break;
             if (!routine_names_.contains(source.token.text) && bind_fixed_dictionary_factory(*result,source)) break;
             if (!routine_names_.contains(source.token.text) && bind_dictionary_extension(*result,source)) break;
             if (!routine_names_.contains(source.token.text) && bind_generators(*result,source)) break;
@@ -4068,6 +4072,28 @@ private:
         }
         result.kind=hir::ExprKind::comparable_call;result.operation_type=type;result.local=static_cast<std::size_t>(method);result.type=comparable_result(type,method);return true;
     }
+    ABC_PASCAL_NOINLINE bool bind_sort(hir::Expr& result,const SyntaxExpr& source,std::string_view unit={},bool member=false,std::span<const Type> declared={}){
+        const auto& name=source.token.text;if((name!="sort" && name!="sortdescending") || (!unit.empty() && unit!="pabcsystem" && unit!="arrays"))return false;
+        if(!member && source.arguments.empty())return false;
+        auto receiver=member ? std::move(result.left) : expression(*source.arguments[0]);const auto owner=receiver->type;
+        if(!compound(owner) || info(owner,result.location).kind!=CompoundKind::array){if(member)result.left=std::move(receiver);return false;}
+        const auto shape=info(owner,result.location);const auto first=member ? 0U : 1U;
+        if(shape.rank!=1 || source.arguments.size()>first+1 || declared.size()>2 || (!declared.empty() && declared[0]!=shape.element))throw Error("E_TYPE",result.location,"Sort requires a rank-one array and matching static element type");
+        const bool descending=name=="sortdescending";std::size_t code=descending ? sort_descending : 0;if(member)code|=sort_extension;
+        if(source.arguments.size()==first){if(declared.size()>1)throw Error("E_TYPE",result.location,"Sort key type requires a selector");code|=static_cast<unsigned>(shape.element==Type::string && declared.empty() && unit!="arrays" ? SortMethod::ordinal_order : SortMethod::default_order);}
+        else{
+            if(unit=="arrays")throw Error("E_TYPE",result.location,"Arrays.Sort accepts only the array");
+            auto callback=library_callback(*source.arguments[first],{shape.element,shape.element});const auto& signature=callback.signature;
+            if(signature.parameters.size()!=1 && signature.parameters.size()!=2)throw Error("E_TYPE",result.location,"Sort callback requires one or two parameters");
+            for(const auto& parameter:signature.parameters)if(parameter.type!=shape.element || parameter.by_reference || parameter.variadic)throw Error("E_TYPE",result.location,"Sort callback parameters must match the array element type");
+            SortMethod method=SortMethod::key;
+            if(signature.parameters.size()==2){if(descending || declared.size()>1 || (member && signature.result==Type::boolean) || (signature.result!=Type::integer && signature.result!=Type::boolean))throw Error("E_TYPE",result.location,"Sort comparison requires an integer result or a supported less predicate");method=signature.result==Type::integer ? SortMethod::comparison : SortMethod::less;}
+            else if(signature.result==Type::unit || (declared.size()==2 && declared[1]!=signature.result))throw Error("E_TYPE",result.location,"Sort selector key type must match its result");
+            auto value=callback.value ? std::move(callback.value) : routine_value(*callback.named,result.location);
+            code|=static_cast<unsigned>(method);code|=static_cast<std::size_t>(value->type)<<8U;if(declared.size()==2)code|=sort_generic_key;result.right=std::move(value);
+        }
+        result.kind=hir::ExprKind::sort_call;result.left=std::move(receiver);result.operation_type=owner;result.local=code;result.type=Type::unit;return true;
+    }
     bool bind_sequence_library(hir::Expr& result, std::string_view name, std::string_view unit = {}) {
         const bool sort=name=="sort" || name=="sortdescending", fill=name=="fillbyvalue";
         if ((!sort && !fill && name!="copy" && name!="high") || result.arguments.empty() || !compound(result.arguments[0]->type) || enumeration(result.arguments[0]->type)) return false;
@@ -4230,6 +4256,12 @@ private:
         const auto& name=source.token.text;
         const bool qualified_unit=qualified && source.left && source.left->kind==SyntaxExprKind::name && source.left->token.text=="pabcsystem" && !lookup(source.left->token);
         const bool standard_call=(source.kind==SyntaxExprKind::call && !lookup(source.token) && !routine_names_.contains(name)) || qualified_unit;
+        if((name=="sort" || name=="sortdescending") && (standard_call || qualified)){
+            const bool unit_call=qualified && source.left && source.left->kind==SyntaxExprKind::name && !lookup(source.left->token) && (source.left->token.text=="pabcsystem" || (source.left->token.text=="arrays" && imported_units_.contains("arrays")));
+            std::vector<Type> declared;for(const auto& type:source.type_arguments)declared.push_back(resolve_type(*type));auto result=std::make_unique<hir::Expr>();result->location=source.token.location;
+            if(qualified && !unit_call)result->left=expression(*source.left);
+            if(bind_sort(*result,source,unit_call ? std::string_view(source.left->token.text) : std::string_view{},qualified && !unit_call,declared))return result;
+        }
         if((name=="ienumerator" || name=="ienumerable") && standard_call){
             if(source.type_arguments.size()!=1 || source.arguments.size()!=1)throw Error("E_TYPE",source.token.location,"Interface conversion requires one type and one value");const auto element=resolve_type(*source.type_arguments[0]),target=name=="ienumerator" ? enumerator_type(element) : sequence_type(CompoundKind::sequence,element);return convert(expression(*source.arguments[0],target),target);
         }

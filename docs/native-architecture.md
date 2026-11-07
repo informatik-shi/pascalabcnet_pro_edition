@@ -953,3 +953,38 @@ sorting and queries remains future work; nongeneric comparison, scalar boxing,
 record interfaces, variance and distinct tuple order remain unimplemented.
 The bin/Lib inventory is unchanged: only two empty compatibility units complete,
 six partial and 92 pending.
+
+
+### Native array sorting
+
+sorting.cpp owns the source library's typed array sorting pipeline. A closed
+SortMethod plus statically known callable type selects default/ordinal order,
+comparison, less predicate or key extraction. Packed opcode metadata is checked
+before execution, including array rank, flags, callback signatures and operand
+types. PABCSystem array/global overloads and Arrays generic wrappers retain their
+different string policies and nil-check order. Explicit generic element/key
+arguments determine source overload selection before execution.
+
+The sorter operates on original array Cells, copies value-type temporaries, and
+extracts all keys before paired sorting. It preserves source default-comparable
+nil/pivot/insertion/heap behavior, comparison call order, equal-key identities,
+partial writes and callback mutations. Descending paths sort ascending and then
+reverse. Callback index faults become E_COMPARER; other comparison faults become
+bilingual E_SORT with cause details. Extraction failures and native cancellation/
+resource limits propagate with their own categories. Native work and recursion
+remain bounded. Framework 4.7.2 golden data uses 3842 executions, including two
+1024-element heap fallbacks confirmed by actual Framework stack frames.
+
+Bytecode generation now dispatches expressions through nine outlined handlers.
+The former approximately 5 KiB recursive frame grew enough to overflow the normal
+Windows 1 MiB stack on an existing 100-level nested Take/Count program. Measured
+Clang unwind metadata now shows 296 bytes in the main dispatcher and 336–840 bytes
+in handlers (344 bytes in the sequence handler). Opcode semantics and source
+depth limits are unchanged; no executable stack increase is used. Generic sort
+binding accepts a lightweight span instead of a temporary type vector.
+
+List callback sorting still requires faithful backing-array mutation/reallocation
+semantics before being exposed, including source List.Sort(Comparison<T>) version
+behavior. List key selectors must replace the var List only after successful
+sorting; comparer/range System.Array and List overloads remain separate work.
+No bin/Lib unit was marked complete by this prerequisite.

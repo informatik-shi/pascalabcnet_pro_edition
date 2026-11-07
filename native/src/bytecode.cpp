@@ -5,6 +5,7 @@
 #include "single.hpp"
 #include "enumeration.hpp"
 #include "comparable.hpp"
+#include "sorting.hpp"
 #include "ini_file.hpp"
 #include "compound.hpp"
 #include "hash_set.hpp"
@@ -106,9 +107,127 @@ private:
         for(std::size_t i=0;i<node.arguments.size();++i)if(method.parameters[i].by_reference)reference(*node.arguments[i]);else expression(*node.arguments[i]);
         emit(Op::interface_call,node.operation_type,node.local,node.location);
     }
-    void expression(const hir::Expr& node) {
+    ABC_BYTECODE_NOINLINE void expression(const hir::Expr& node) {
         if (node.type == Type::invalid) throw Error("E_HIR", node.location, "Unresolved expression type");
-        switch (node.kind) {
+        switch(node.kind) {
+        case hir::ExprKind::conditional:
+        case hir::ExprKind::generator:
+        case hir::ExprKind::sequence_wrap:
+        case hir::ExprKind::sequence_snapshot:
+        case hir::ExprKind::sequence_repeat:
+        case hir::ExprKind::sequence_range:
+        case hir::ExprKind::directory_sequence:
+        case hir::ExprKind::random_sequence:
+        case hir::ExprKind::sequence_partition:
+        case hir::ExprKind::sequence_call:
+        case hir::ExprKind::sequence_aggregate:
+        case hir::ExprKind::sequence_partial: expression_part_0(node);break;
+        case hir::ExprKind::sequence_join:
+        case hir::ExprKind::list_copy:
+        case hir::ExprKind::list_capacity:
+        case hir::ExprKind::list_bulk:
+        case hir::ExprKind::list_operation:
+        case hir::ExprKind::matrix_build:
+        case hir::ExprKind::collection_operation:
+        case hir::ExprKind::array_operation:
+        case hir::ExprKind::matrix_operation:
+        case hir::ExprKind::array_view:
+        case hir::ExprKind::next_permutation:
+        case hir::ExprKind::combinatorics: expression_part_1(node);break;
+        case hir::ExprKind::cartesian_power:
+        case hir::ExprKind::sequence_zip:
+        case hir::ExprKind::sequence_predicate:
+        case hir::ExprKind::sequence_transform:
+        case hir::ExprKind::sequence_concat:
+        case hir::ExprKind::sequence_equal:
+        case hir::ExprKind::sequence_default:
+        case hir::ExprKind::sequence_slice:
+        case hir::ExprKind::sequence_query:
+        case hir::ExprKind::encoding_call:
+        case hir::ExprKind::school_ip:
+        case hir::ExprKind::school_minmax:
+        case hir::ExprKind::school_table_print:
+        case hir::ExprKind::school_table: expression_part_2(node);break;
+        case hir::ExprKind::tuple_literal:
+        case hir::ExprKind::tuple_construct:
+        case hir::ExprKind::school_pair:
+        case hir::ExprKind::school_fold:
+        case hir::ExprKind::replace_last:
+        case hir::ExprKind::swap_substrings:
+        case hir::ExprKind::replace_many:
+        case hir::ExprKind::school_list:
+        case hir::ExprKind::string_array:
+        case hir::ExprKind::string_read:
+        case hir::ExprKind::number_conversion:
+        case hir::ExprKind::try_read:
+        case hir::ExprKind::type_operation:
+        case hir::ExprKind::object_text:
+        case hir::ExprKind::write_matrix: expression_part_3(node);break;
+        case hir::ExprKind::array_query:
+        case hir::ExprKind::read_array:
+        case hir::ExprKind::write_array:
+        case hir::ExprKind::swap_values:
+        case hir::ExprKind::sequence_mutate:
+        case hir::ExprKind::literal:
+        case hir::ExprKind::local:
+        case hir::ExprKind::file_output:
+        case hir::ExprKind::linked_call:
+        case hir::ExprKind::association_call:
+        case hir::ExprKind::buffer_call:
+        case hir::ExprKind::endpoint_call: expression_part_4(node);break;
+        case hir::ExprKind::cache_value:
+        case hir::ExprKind::evaluate_then:
+        case hir::ExprKind::new_set_hash:
+        case hir::ExprKind::print_call:
+        case hir::ExprKind::empty_call:
+        case hir::ExprKind::new_set_call:
+        case hir::ExprKind::interface_cast:
+        case hir::ExprKind::interface_call:
+        case hir::ExprKind::enumerator_call:
+        case hir::ExprKind::dictionary_call:
+        case hir::ExprKind::hash_set_call:
+        case hir::ExprKind::ordinal_range_call: expression_part_5(node);break;
+        case hir::ExprKind::real_interval_call:
+        case hir::ExprKind::compound_call:
+        case hir::ExprKind::ini_call:
+        case hir::ExprKind::comparer_create:
+        case hir::ExprKind::comparable_call:
+        case hir::ExprKind::enum_call:
+        case hir::ExprKind::text_lines:
+        case hir::ExprKind::read_lines:
+        case hir::ExprKind::write_lines:
+        case hir::ExprKind::sort_call:
+        case hir::ExprKind::array_copy:
+        case hir::ExprKind::array_high:
+        case hir::ExprKind::sequence_sort:
+        case hir::ExprKind::sequence_fill:
+        case hir::ExprKind::null_literal: expression_part_6(node);break;
+        case hir::ExprKind::random_array:
+        case hir::ExprKind::fill_random_array:
+        case hir::ExprKind::default_value:
+        case hir::ExprKind::index:
+        case hir::ExprKind::field:
+        case hir::ExprKind::length:
+        case hir::ExprKind::array_new:
+        case hir::ExprKind::array_initialized:
+        case hir::ExprKind::array_literal:
+        case hir::ExprKind::routine_value:
+        case hir::ExprKind::value_call:
+        case hir::ExprKind::class_construct:
+        case hir::ExprKind::property_access: expression_part_7(node);break;
+        case hir::ExprKind::user_call:
+        case hir::ExprKind::list_add:
+        case hir::ExprKind::list_remove:
+        case hir::ExprKind::list_clear:
+        case hir::ExprKind::list_contains:
+        case hir::ExprKind::convert:
+        case hir::ExprKind::call:
+        case hir::ExprKind::unary:
+        case hir::ExprKind::binary: expression_part_8(node);break;
+        }
+    }
+    ABC_BYTECODE_NOINLINE void expression_part_0(const hir::Expr& node) {
+        switch(node.kind) {
         case hir::ExprKind::conditional: {
             expression(*node.left);const auto otherwise=emit(Op::jump_false,Type::invalid,0,node.location);
             expression(*node.right);const auto finish=emit(Op::jump,Type::invalid,0,node.location);
@@ -141,6 +260,12 @@ private:
             expression(*node.left); emit(Op::sequence_aggregate,node.left->type,node.local,node.location); break;
         case hir::ExprKind::sequence_partial:
             expression(*node.left); emit(Op::sequence_partial,node.left->type,0,node.location); break;
+
+        default: throw Error("E_HIR",node.location,"Invalid expression dispatch");
+        }
+    }
+    ABC_BYTECODE_NOINLINE void expression_part_1(const hir::Expr& node) {
+        switch(node.kind) {
         case hir::ExprKind::sequence_join:
             expression(*node.left);expression(*node.right);emit(Op::sequence_join,node.left->type,0,node.location);break;
         case hir::ExprKind::list_copy:
@@ -177,6 +302,12 @@ private:
             const auto method=static_cast<CombinatorMethod>(node.local);
             emit(method==CombinatorMethod::combinations ? Op::combinations : method==CombinatorMethod::permutations ? Op::permutations : Op::partial_permutations,node.left->type,(static_cast<std::size_t>(node.type)<<16)|static_cast<std::size_t>(node.operation_type),node.location); break;
         }
+
+        default: throw Error("E_HIR",node.location,"Invalid expression dispatch");
+        }
+    }
+    ABC_BYTECODE_NOINLINE void expression_part_2(const hir::Expr& node) {
+        switch(node.kind) {
         case hir::ExprKind::cartesian_power:
             expression(*node.left); expression(*node.right);
             emit(Op::cartesian_power,node.left->type,(static_cast<std::size_t>(node.type)<<16)|static_cast<std::size_t>(node.operation_type),node.location); break;
@@ -267,6 +398,12 @@ private:
             operation(Op::store_ref,Type::boolean);
             increment(row); emit(Op::jump,Type::invalid,start,node.location); (*code_)[finish].operand=code_->size(); load(matrix); break;
         }
+
+        default: throw Error("E_HIR",node.location,"Invalid expression dispatch");
+        }
+    }
+    ABC_BYTECODE_NOINLINE void expression_part_3(const hir::Expr& node) {
+        switch(node.kind) {
         case hir::ExprKind::tuple_literal: case hir::ExprKind::tuple_construct: case hir::ExprKind::school_pair:
             for (const auto& argument:node.arguments) expression(*argument);
             emit(node.kind==hir::ExprKind::school_pair ? Op::school_pair : Op::tuple_literal,node.type,0,node.location); break;
@@ -302,6 +439,12 @@ private:
         case hir::ExprKind::write_matrix:
             expression(*node.left); for (const auto& argument:node.arguments) expression(*argument);
             emit(Op::write_matrix,node.left->type,node.local,node.location); break;
+
+        default: throw Error("E_HIR",node.location,"Invalid expression dispatch");
+        }
+    }
+    ABC_BYTECODE_NOINLINE void expression_part_4(const hir::Expr& node) {
+        switch(node.kind) {
         case hir::ExprKind::array_query:
             expression(*node.left); if (node.right) expression(*node.right);
             emit(Op::array_query,node.left->type,node.local,node.location); break;
@@ -339,6 +482,12 @@ private:
             expression(*node.left);
             for (const auto& argument : node.arguments) expression(*argument);
             emit(Op::endpoint_call,node.left->type,node.local,node.location); break;
+
+        default: throw Error("E_HIR",node.location,"Invalid expression dispatch");
+        }
+    }
+    ABC_BYTECODE_NOINLINE void expression_part_5(const hir::Expr& node) {
+        switch(node.kind) {
         case hir::ExprKind::cache_value:
             expression(*node.left);local(Op::store,node.local,node.location);local(Op::load,node.local,node.location);break;
         case hir::ExprKind::evaluate_then:
@@ -372,6 +521,12 @@ private:
         case hir::ExprKind::ordinal_range_call:
             for(const auto& argument:node.arguments)expression(*argument);
             emit(Op::ordinal_range_call,node.operation_type,node.local,node.location);break;
+
+        default: throw Error("E_HIR",node.location,"Invalid expression dispatch");
+        }
+    }
+    ABC_BYTECODE_NOINLINE void expression_part_6(const hir::Expr& node) {
+        switch(node.kind) {
         case hir::ExprKind::real_interval_call:
             for(const auto& argument:node.arguments)expression(*argument);
             emit(Op::real_interval_call,node.operation_type,node.local,node.location);break;
@@ -400,12 +555,20 @@ private:
         case hir::ExprKind::write_lines:
             for(const auto& argument:node.arguments)expression(*argument);
             emit(Op::write_lines,node.arguments[1]->type,node.arguments.size()==3 ? static_cast<std::size_t>(node.arguments.back()->type) : 0,node.location);break;
+        case hir::ExprKind::sort_call:
+            expression(*node.left);if(node.right)expression(*node.right);emit(Op::sort_call,node.operation_type,node.local,node.location);break;
         case hir::ExprKind::array_copy: case hir::ExprKind::array_high: case hir::ExprKind::sequence_sort: case hir::ExprKind::sequence_fill:
             expression(*node.left);
             if (node.right) expression(*node.right);
             emit(node.kind==hir::ExprKind::array_copy ? Op::array_copy : node.kind==hir::ExprKind::array_high ? Op::array_high
                 : node.kind==hir::ExprKind::sequence_sort ? Op::sequence_sort : Op::sequence_fill,node.left->type,node.local,node.location); break;
         case hir::ExprKind::null_literal: throw Error("E_HIR",node.location,"Unresolved nil type");
+
+        default: throw Error("E_HIR",node.location,"Invalid expression dispatch");
+        }
+    }
+    ABC_BYTECODE_NOINLINE void expression_part_7(const hir::Expr& node) {
+        switch(node.kind) {
         case hir::ExprKind::random_array: case hir::ExprKind::fill_random_array:
             if (node.left) expression(*node.left);
             for (const auto& argument:node.arguments) expression(*argument);
@@ -459,6 +622,12 @@ private:
         case hir::ExprKind::property_access:
             if (!node.getter) throw Error("E_TYPE",node.location,"Property is write-only");
             expression(*node.left);emit(node.operation=="interface" ? Op::interface_call : Op::call_user,node.operation=="interface" ? node.operation_type : node.type,*node.getter,node.location);break;
+
+        default: throw Error("E_HIR",node.location,"Invalid expression dispatch");
+        }
+    }
+    ABC_BYTECODE_NOINLINE void expression_part_8(const hir::Expr& node) {
+        switch(node.kind) {
         case hir::ExprKind::user_call: {
             const auto& signature = program_.routines[node.local];
             for (std::size_t n = 0; n < node.arguments.size(); ++n) {
@@ -501,6 +670,7 @@ private:
             emit(binary_operation(node.operation), node.left->type, 0, node.location);
             break;
         }
+        default: throw Error("E_HIR",node.location,"Invalid expression dispatch");
         }
     }
     void statement(const hir::Stmt& node) {
@@ -1126,6 +1296,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if(!compound(type) || type_info(program,type).kind!=CompoundKind::object_class || instruction.operand>=type_info(program,type).fields.size())invalid(instruction,"Invalid deferred field store");break;
         case Op::ini_call:
             if(instruction.operand>static_cast<std::size_t>(IniMethod::read_boolean) || !ini_signature(program,type,static_cast<IniMethod>(instruction.operand)))invalid(instruction,"Invalid TIniFile call metadata");break;
+        case Op::sort_call: if(!sort_signature(program,type,instruction.operand))invalid(instruction,"Invalid typed sort metadata");break;
         case Op::comparer_create:
             if(!compound(type) || type_info(program,type).kind!=CompoundKind::comparer || instruction.operand>1)invalid(instruction,"Invalid Comparer factory metadata");break;
         case Op::comparable_call:
@@ -1549,6 +1720,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             const auto parameters=enum_parameters(instruction.type,method,other);
             for(auto p=parameters.rbegin();p!=parameters.rend();++p)require(*p);stack.push_back(enum_result(instruction.type,method));break;
         }
+        case Op::sort_call: if(sort_callback(instruction.operand)!=Type::invalid)require(sort_callback(instruction.operand));require(instruction.type);break;
         case Op::comparer_create: if(instruction.operand)require(type_info(program,instruction.type).key);stack.push_back(instruction.type);break;
         case Op::comparable_call: {
             const auto method=static_cast<ComparableMethod>(instruction.operand);const auto parameters=comparable_parameters(instruction.type,method);

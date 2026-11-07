@@ -36,6 +36,7 @@
 #include "enumeration.hpp"
 #include "comparable.hpp"
 #include "comparison.hpp"
+#include "sorting.hpp"
 #include "ini_file.hpp"
 #include "compound.hpp"
 #include "hash_set.hpp"
@@ -1248,6 +1249,9 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
         case Op::array_high: {
             auto array=std::get<std::shared_ptr<Aggregate>>(pop());
             stack.emplace_back(static_cast<std::int32_t>(type_info(program,instruction.type).rank==2 ? array->rows : array->items.size())-1); break;
+        }
+        case Op::sort_call: {
+            const bool has_callback=sort_callback(instruction.operand)!=Type::invalid;auto callback=has_callback ? pop() : Value{std::int32_t{0}};auto array=pop();sort_array(values,instruction.type,instruction.operand,array,has_callback ? &callback : nullptr,options);break;
         }
         case Op::sequence_sort: {
             auto sequence=std::get<std::shared_ptr<Aggregate>>(pop());

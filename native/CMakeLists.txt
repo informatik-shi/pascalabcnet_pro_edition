@@ -33,6 +33,7 @@ add_library(abc_core
     src/enumeration.cpp
     src/comparable.cpp
     src/comparison.cpp
+    src/sorting.cpp
     src/ini_file.cpp
     src/compound.cpp
     src/hash_set.cpp
@@ -185,6 +186,13 @@ if(BUILD_TESTING)
         target_compile_options(abc_comparer_tests PRIVATE /utf-8)
     endif()
     add_test(NAME comparers COMMAND abc_comparer_tests)
+    add_executable(abc_sorting_tests tests/sorting_tests.cpp)
+    target_link_libraries(abc_sorting_tests PRIVATE abc_core)
+    if(MSVC)
+        target_compile_options(abc_sorting_tests PRIVATE /utf-8)
+    endif()
+    add_test(NAME typed_sorting COMMAND abc_sorting_tests)
+    add_test(NAME sorting_example COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/examples/sorting.pas")
     add_test(NAME comparers_example COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/examples/comparers.pas")
     add_test(NAME user_enumerables_example COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/examples/user-enumerables.pas")
     add_test(NAME user_interfaces_example COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/examples/user-interfaces.pas")

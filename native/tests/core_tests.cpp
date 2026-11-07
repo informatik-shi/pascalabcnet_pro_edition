@@ -6673,7 +6673,7 @@ void text_files() {
     for (auto source:{"begin var f:Text; var n:integer:=f; end.",
          "begin var f:Text; var n:integer; Read(f,1); end.",
          "begin var f:Text; Writeln(1,f); end.","begin var f:Text; Readln(1); end.",
-         "begin var a:=new Text[2]; Sort(a); end.","begin var f:Text; Reset(f,1); end.",
+         "begin var f:Text; Reset(f,1); end.",
          "begin var f:=new Text(1); end.","begin var f:Text; Read(f,f); end."}) compile_error(source,"E_TYPE");
     compile_error("uses Collections; begin var s:=new Stack<Text>; Writeln(s.ToString); end.","E_UNSUPPORTED");
     error([&]{ (void)run("begin var f:=OpenWrite("+other+"); Writeln(f,'must not run'); var n:integer:='bad'; end."); },"E_TYPE");

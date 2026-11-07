@@ -243,6 +243,7 @@ def main():
                 ("user-interfaces.pas", "8\n10\n16\nCounter\n"),
                 ("user-enumerables.pas", "1\n2\nclosed\nclosed\n6\n"),
                 ("comparers.pas", "True\n25\n-5\n5\n"),
+                ("sorting.pas", "Boris: 95\nVera: 80\nAlice: 70\n[1,2,3,4,5]\n[5,4,3,2,1]\n"),
                 ("enumerator-interfaces.pas", "10 20\n30\n1 2\n1\n2\n4\nFalse\n"),
                 ("dictionary-enumerators.pas", "Original: two=2\nCopy: one=1\ntwo=2\nthree=3\none\ntwo\nthree\n"),
                 ("single-numbers.pas", "16777216 single\n1.0000001\n1 0.33333334\n16777216\nTrue 1E-45\n3.4028235E+38 1E-45\n"),
@@ -1649,6 +1650,14 @@ def main():
                         or f"EN: {english}" not in invalid.stderr or f"RU: {russian}" not in invalid.stderr or f"{comparer_error}:2:" not in invalid.stderr):
                     raise RuntimeError(f"{name} comparer bilingual failure: {invalid.stdout!r} {invalid.stderr!r}")
             results[-1]["native_comparers_and_bilingual_errors"] = "passed"
+            sorting_error = folder / "Ошибки сортировки массива.pas"
+            sorting_error.write_text("begin\nWrite('before');var zero:=0;Sort(Arr(2,1),(a,b)->1 div zero);end.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(sorting_error)], text=True, encoding="utf-8", capture_output=True, cwd=folder, env=env, timeout=10)
+            if (invalid.returncode != 1 or invalid.stdout != "before" or "E_SORT" not in invalid.stderr
+                    or "EN: Failed to compare two elements in the array: Division by zero" not in invalid.stderr
+                    or "RU: Не удалось сравнить два элемента массива: Деление на ноль" not in invalid.stderr or f"{sorting_error}:2:" not in invalid.stderr):
+                raise RuntimeError(f"{name} native sort bilingual failure: {invalid.stdout!r} {invalid.stderr!r}")
+            results[-1]["native_array_sorting_and_bilingual_errors"] = "passed"
             iterator_data = folder / "iterator-resource.txt"
             iterator_data.write_text("one\ntwo\n", encoding="utf-8")
             iterator_source = folder / "Ресурсы перечислителя.pas"
