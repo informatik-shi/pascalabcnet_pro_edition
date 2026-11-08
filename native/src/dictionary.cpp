@@ -37,7 +37,7 @@ bool dictionary_enumerator_metadata(const Program& p,Type iterator){
  return true;
 }
 bool dictionary_signature(const Program& p,Type owner,Type payload,DictionaryMethod m){
- if(m>DictionaryMethod::comparer || !valid(p,owner))return false;const auto& d=type_info(p,owner);
+ if(m>DictionaryMethod::pair_contains || !valid(p,owner))return false;const auto& d=type_info(p,owner);
  if(m==DictionaryMethod::get_enumerator)return dictionary_enumerator_metadata(p,payload) && type_info(p,payload).key==owner;
  if(m>=DictionaryMethod::enumerator_move && m<=DictionaryMethod::enumerator_reset)return payload==Type::invalid && dictionary_enumerator_metadata(p,owner);
  if(m==DictionaryMethod::pair_construct || m==DictionaryMethod::pair_to_string)
@@ -50,6 +50,7 @@ bool dictionary_signature(const Program& p,Type owner,Type payload,DictionaryMet
  if(d.kind!=CompoundKind::dictionary || !valid(p,d.element))return false;
  const auto& pair=type_info(p,d.element);if(pair.fields.size()!=2 || !pair_shape(p,d.element,d.key,pair.fields[1].type,false))return false;
  const auto value=pair.fields[1].type;
+ if(m==DictionaryMethod::pair_contains)return payload==Type::invalid;
  if(m>=DictionaryMethod::construct_comparer)return valid(p,payload) && valid_value_type(p,payload) && type_info(p,payload).kind==CompoundKind::equality_comparer_interface && type_info(p,payload).element==d.key;
  if(m==DictionaryMethod::each_count || m==DictionaryMethod::each || m==DictionaryMethod::to_dictionary || m==DictionaryMethod::to_dictionary_elements){
   if(!valid(p,payload) || type_info(p,payload).kind!=CompoundKind::sequence)return false;const auto source=type_info(p,payload).element;
@@ -83,6 +84,7 @@ std::vector<Type> dictionary_parameters(const std::vector<TypeInfo>& types,Type 
  if(m==DictionaryMethod::view_copy_to)return {owner,payload,Type::integer};
  if(m==DictionaryMethod::pair_construct)return {info(types,owner).fields[0].type,info(types,owner).fields[1].type};
  if(m==DictionaryMethod::pair_to_string)return {owner};
+ if(m==DictionaryMethod::pair_contains)return {owner,info(types,owner).element};
  if(m==DictionaryMethod::construct_comparer)return {payload};
  if(m==DictionaryMethod::construct_capacity_comparer)return {Type::integer,payload};
  if(m==DictionaryMethod::construct_copy_comparer)return {owner,payload};
@@ -110,6 +112,7 @@ std::vector<Type> dictionary_parameters(const std::vector<TypeInfo>& types,Type 
  return result;
 }
 Type dictionary_result(const std::vector<TypeInfo>& types,Type owner,Type payload,DictionaryMethod m){
+ if(m==DictionaryMethod::pair_contains)return Type::boolean;
  if(m==DictionaryMethod::comparer)return payload;
  if(m==DictionaryMethod::construct_comparer || m==DictionaryMethod::construct_capacity_comparer || m==DictionaryMethod::construct_copy_comparer)return owner;
  if(m==DictionaryMethod::get_enumerator)return payload;
@@ -335,6 +338,7 @@ Value dictionary_invoke(Values& values,Type owner,Type payload,DictionaryMethod 
    if(source && !source->nil)each(work,source,[&](const Value& key){remove(work,result,key);});
    return m==DictionaryMethod::without_keys ? Value{result} : Value{false};
   }
+  if(m==DictionaryMethod::pair_contains){const auto pair=std::get<Object>(args[1]);const auto key=values.copy(pair->items[0]->value),value=values.copy(pair->items[1]->value);const auto slot=find(work,object,key);return slot!=missing && equality_value(values,dictionary_value_type(values.program.types,owner),physical_entry(work,object,slot)->items[1]->value,value,options);}
   if(m==DictionaryMethod::contains_value)return contains_value(work,object,args[1]);
   if(m==DictionaryMethod::clear){clear(work,object);return false;}
   const auto& key=args[m==DictionaryMethod::membership ? 0 : 1];

@@ -4,6 +4,10 @@ namespace abc {
 Error runtime_error(RuntimeError id, SourceLocation location, std::string_view context) {
     const char *code, *english, *russian;
     switch (id) {
+    case RuntimeError::array_search_index:
+        code="E_RANGE";english="Array search start index is outside the array";russian="Начальный индекс поиска находится вне массива";break;
+    case RuntimeError::array_search_count:
+        code="E_RANGE";english="Array search count is outside the valid range";russian="Количество элементов поиска находится вне допустимого диапазона";break;
     case RuntimeError::dictionary_nil_copy:
         code="E_NIL";english="Dictionary is nil";russian="Словарь равен nil";break;
     case RuntimeError::dictionary_copy_index:

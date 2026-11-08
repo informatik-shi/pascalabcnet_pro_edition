@@ -1179,3 +1179,62 @@ Additional native tests cover named interfaces, records, argument order, corrupt
 metadata and quota recovery. IDictionary/nongeneric protocols, serialization,
 general inheritance/Object virtual overrides, record interfaces, boxing/variance,
 StringComparer, comparer-aware queries and full library loading remain required.
+
+### Search kernels and Contains collection delegation
+
+Six ArrayOperation methods append rank-one generic Array.IndexOf/LastIndexOf
+whole/from/range contracts without adding an opcode or another Generator
+dispatch frame. HIR retains ordered source/item/index/count arguments and exact
+closed element types. Verifier checks owner/rank/result/mode and the argument
+stack. Bounds are checked before computing derived counts to avoid signed
+overflow; empty backward array searches retain their source-specific rules,
+distinct from List empty shortcuts. EN/RU index and count errors remain distinct.
+
+The equality_index kernel captures a span of physical cells and compares through
+EqualityComparer<declared T>, retaining values before callbacks. List IndexOf,
+LastIndexOf and Remove keep ListStorage alive across capacity replacement and
+freeze the initial range. List.Contains instead re-reads current size/storage
+after each callback. Remove uses the found index in the current list, revalidates
+it after callbacks and charges current shifts together with accumulated scan work.
+This avoids invalidated C++ iterators without changing the source-visible result
+or pretending to reject every callback mutation with an enumerator version error.
+
+SequenceQuery appends contains_comparer. Its low eight operand bits select the
+method; upper bits carry the exact canonical IEqualityComparer<T> for the explicit
+overload only. The verifier checks raw high bits before narrowing and checks
+typed source/item/policy stack arguments. Other query modes require zero payload.
+Source, item and policy evaluate in order before validation. Explicit nil and
+Default policies still take the foreach/finally path; custom policies call Equals
+with nil values and never hash. User cursor calls, early return, faults, version
+checks and Dispose retain their existing bounded execution/cleanup contexts.
+
+Missing-policy Contains delegates before cursor creation only to actual native
+ICollection implementations: arrays, List, HashSet and Dictionary entries/keys/
+values. NewSet implements IEnumerable only, so it must enumerate using declared
+element equality even when its wrapped HashSet stores a custom policy. Dictionary
+pair_contains validates KVP arguments, captures key/value before callbacks, finds
+the key with the stored policy and compares the current physical value with
+Default equality of declared V. It does not expose a complete ICollection API.
+
+Legacy Framework array ICollection.Contains uses Object.Equals, not generic
+IEquatable, unlike generic Array.IndexOf/LastIndexOf. The native fast path uses
+object equality, including NaN equality. Reading Array source requires observing
+ARRAY_GENERIC_METHODS: the installed implementation is independently exercised,
+not inferred from the conditional generic branch. Explicit Contains(nil policy)
+bypasses this shortcut and uses declared-T default equality during enumeration.
+
+Independent corpora verify 33416 mutation/search/range traces, 3800 provider/policy/
+user-cursor traces and 80 exact IEEE input rows. The first two use paired Pascal
+programs with Dispose observers and explicitly bounded cleanup reserves; the last
+uses the compiler-verified native typed ABI and makes no source BitConverter claim.
+Application cleanup defaults, instruction/allocation/cancellation bounds and the
+normal native stack remain unchanged. Object virtual overrides, inheritance,
+record interfaces, boxing/variance, nongeneric protocols, generic builtin function
+values and other equality-aware queries remain separate requirements. ArrEqual/
+matrix membership operator dispatch requires a separate language-contract audit.
+
+Both Release toolchains passed 47367 search checks, including canonical zero
+payloads for ordinary queries and rejection of forged unused payloads. Full suites
+passed 214/214 without Qt and 216/216 with Qt, retaining all 12068 core checks.
+Legacy array equality charges one scalar comparison once, preserving first-match
+search under an instruction limit of one while keeping recursive work bounded.

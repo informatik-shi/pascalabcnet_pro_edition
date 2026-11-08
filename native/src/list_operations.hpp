@@ -30,5 +30,6 @@ inline std::vector<Type> list_operation_parameters(Type element,ListOperation me
 bool list_bulk_signature_valid(const Program& program,Type target,Type input);
 void list_bulk(Values& values,const std::shared_ptr<Aggregate>& target,const std::shared_ptr<Aggregate>& input,bool insert,std::int32_t index,const ExecutionOptions& options);
 bool list_operation_signature_valid(const Program& program,Type source,Type result,ListOperation method);
+bool list_contains(Values&,const std::shared_ptr<Aggregate>&,const Value&,const ExecutionOptions&);
 Value list_operation(Values& values,const std::shared_ptr<Aggregate>& source,ListOperation method,std::span<const Value> arguments,const ExecutionOptions& options);
 }

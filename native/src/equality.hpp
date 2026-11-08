@@ -15,4 +15,5 @@ bool equality_policy_same(const Program&,const std::shared_ptr<Aggregate>&,const
 bool equality_policy_value(Values&,Type,const std::shared_ptr<Aggregate>&,const Value&,const Value&,const ExecutionOptions&);
 std::int32_t equality_policy_hash(Values&,Type,const std::shared_ptr<Aggregate>&,const Value&,const ExecutionOptions&);
 std::uint32_t equality_implementation(const Program&,Type);
+std::int32_t equality_index(Values&,Type,std::span<const std::shared_ptr<Cell>>,const Value&,std::int32_t,std::int32_t,bool,const ExecutionOptions&,std::uint64_t* budget=nullptr);
 }

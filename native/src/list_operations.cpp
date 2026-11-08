@@ -1,4 +1,5 @@
 #include "list_operations.hpp"
+#include "equality.hpp"
 #include "sequences.hpp"
 #include "sequence_scope.hpp"
 #include "ordinal_range.hpp"
@@ -130,6 +131,10 @@ bool list_operation_signature_valid(const Program& program,Type source,Type resu
     const auto& type=type_info(program,source);
     return type.kind==CompoundKind::list && type.rank==1 && result==list_operation_result(source,method);
 }
+bool list_contains(Values& values,const std::shared_ptr<Aggregate>& source,const Value& item,const ExecutionOptions& options){
+ if(!source || source->nil)throw runtime_error(RuntimeError::nil_reference,values.location);const auto element=type_info(values.program,source->type).element;std::uint64_t used=0;
+ for(std::size_t i=0;i<source->items.size();++i){work(values,used,options);const auto cell=source->items[i];const auto value=cell->value;if(equality_value(values,element,value,item,options))return true;}return false;
+}
 Value list_operation(Values& values,const std::shared_ptr<Aggregate>& source,ListOperation method,std::span<const Value> arguments,const ExecutionOptions& options) {
     if (!source || source->nil) throw runtime_error(RuntimeError::nil_reference,values.location);
     const auto size=static_cast<std::int32_t>(source->items.size());std::uint64_t used=0;
@@ -184,13 +189,11 @@ Value list_operation(Values& values,const std::shared_ptr<Aggregate>& source,Lis
             if (from) count=size-start;
         }
     }
-    for (std::int32_t i=0;i<count;++i) {
-        work(values,used,options);const auto index=last ? start-i : start+i;
-        if (!values.equal(source->items[static_cast<std::size_t>(index)]->value,arguments[0])) continue;
-        if (method!=ListOperation::remove) return index;
-        charge(values,used,static_cast<std::size_t>(size-index),options);
-        values.list_erase(source,static_cast<std::size_t>(index),1);++source->version;return true;
-    }
-    return method==ListOperation::remove ? Value{false} : Value{std::int32_t{-1}};
+    const auto location=values.location;const auto storage=values.list_backing(source);const auto element=type_info(values.program,source->type).element;
+    const auto index=equality_index(values,element,storage->cells,arguments[0],start,count,last,options,&used);
+    if(method!=ListOperation::remove)return index;if(index<0)return false;
+    if(static_cast<std::size_t>(index)>=source->items.size())throw runtime_error(RuntimeError::list_index,location);
+    charge(values,used,source->items.size()-static_cast<std::size_t>(index),options);
+    values.list_erase(source,static_cast<std::size_t>(index),1);++source->version;return true;
 }
 }

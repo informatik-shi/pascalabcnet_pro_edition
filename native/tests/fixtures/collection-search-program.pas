@@ -1,0 +1,37 @@
+type
+ Item=class(IEquatable<Item>) public id,n:integer;constructor Create(i,value:integer);begin id:=i;n:=value;end;function Equals(b:Item):boolean;begin Touch('E',Self,b);Result:=(mode<>1) and (b<>nil) and (n=b.n);end;end;
+ Order=class(IEqualityComparer<Item>) public function Equals(a,b:Item):boolean;begin Touch('C',a,b);Result:=(mode<>1) and (if a=nil then b=nil else (b<>nil) and (a.n=b.n));end;function GetHashCode(a:Item):integer;begin Write('HASH;');Result:=1;end;end;
+ GuardCursor=class(IEnumerator<integer>) private n:integer;public function MoveNext:boolean;begin n+=1;Result:=n=1;end;property Current:integer read Zero;function Zero:integer:=0;procedure Reset;begin n:=0;end;procedure Dispose;begin Finish;end;end;
+ GuardSource=class(IEnumerable<integer>) public function GetEnumerator:IEnumerator<integer>:=new GuardCursor;end;
+var list,aliasList:List<Item>;a,aliasArray:array of Item;old:IEnumerator<Item>;primed,active,busy:boolean;kind,mode,trigger,calls,observe:integer;
+function Tag(x:Item):string:=if x=nil then 'nil' else IntToStr(x.id)+':'+IntToStr(x.n);
+procedure Touch(labelText:string;x,y:Item);
+begin if not active or busy then exit;Write(labelText,'(',Tag(x),',',Tag(y),');');calls+=1;if (mode=0) or (mode=1) or (calls<>trigger) then exit;busy:=True;Write('M',mode,';');if mode=2 then begin var zero:=0;var q:=1 div zero;end;if mode=3 then begin var missing:=Arr(1);var q:=missing[999];end;
+ if mode=4 then begin if kind=0 then for var i:=0 to 19 do list.Add(new Item(100+i,i mod 3)) else begin var n:=a.Length;SetLength(a,n+7);for var i:=n to a.Length-1 do a[i]:=new Item(100+i,i mod 3);end;end;
+ if mode=5 then begin if kind=0 then begin list.Capacity:=list.Count+9;if list.Count>1 then list[1]:=new Item(999,9);end else begin a:=Copy(a);if a.Length>1 then a[1]:=new Item(999,9);end;end;
+ if mode=6 then begin if kind=0 then list.Clear else for var i:=0 to a.Length-1 do a[i]:=nil;end;
+ if mode=7 then begin if kind=0 then begin if list.Count>0 then list.RemoveAt(0);end else if a.Length>0 then begin for var i:=0 to a.Length-2 do a[i]:=a[i+1];a[a.Length-1]:=nil;end;end;
+ if mode=8 then begin if kind=0 then list.Insert(0,new Item(998,8)) else begin SetLength(a,a.Length+1);for var i:=a.Length-1 downto 1 do a[i]:=a[i-1];a[0]:=new Item(998,8);end;end;
+ if mode=9 then begin if kind=0 then list.Reverse else Reverse(a);end;
+ if mode=10 then begin if kind=0 then list:=new List<Item>(list) else a:=Copy(a);end;
+ if mode=11 then begin if kind=0 then list:=nil else a:=nil;end;
+ if (mode=12) and (x<>nil) then x.n+=3;if (mode=13) and (y<>nil) then y.n+=3;
+ if mode=14 then begin if kind=0 then begin if list.Count>0 then list[0]:=new Item(997,9);end else if a.Length>0 then a[0]:=new Item(997,9);end;
+ if mode=15 then begin if kind=0 then begin list.Clear;list.Add(new Item(996,8));end else begin for var i:=0 to a.Length-1 do a[i]:=nil;a:=Arr(new Item(996,8));end;end;
+ if mode=16 then begin if kind=0 then begin list.TrimExcess;if list.Count>1 then list[1]:=new Item(995,9);end else begin a:=Copy(a);if a.Length>1 then a[1]:=new Item(995,9);end;end;
+ if mode=17 then begin if kind=0 then list.RemoveRange(0,Min(2,list.Count)) else begin var n:=Min(2,a.Length);for var i:=0 to a.Length-n-1 do a[i]:=a[i+n];for var i:=a.Length-n to a.Length-1 do a[i]:=nil;end;end;
+ if (mode=18) and (kind=0) then list.AddRange(new Item[0]);if mode=19 then begin if kind=0 then list.Capacity:=-1 else begin var missing:=Arr(1);var q:=missing[999];end;end;busy:=False;
+end;
+function DumpList(data:List<Item>):string;begin if data=nil then exit('nil');Result:='[';var first:=True;foreach var x in data do begin if not first then Result+=',';first:=False;Result+=Tag(x);end;Result+=']';end;
+function DumpArray(data:array of Item):string;begin if data=nil then exit('nil');Result:='[';var first:=True;foreach var x in data do begin if not first then Result+=',';first:=False;Result+=Tag(x);end;Result+=']';end;
+procedure Finish;
+begin active:=False;if kind=0 then Write('Z',DumpList(list),'|',DumpList(aliasList),'|S',if list=nil then -1 else list.Count,'|C',if list=nil then -1 else list.Capacity) else Write('Z',DumpArray(a),'|',DumpArray(aliasArray),'|S',if a=nil then -1 else a.Length,'|C',if a=nil then -1 else a.Length);Write('|O',if primed then Tag(old.Current) else '-');if observe<>0 then begin Write('|E');if old=nil then Write('-') else begin var n:=old.MoveNext;Write(n);if n then Write(':',Tag(old.Current));end;end;Write(';');end;
+procedure Run(op:integer;item:Item;index,count:integer);
+begin var source:sequence of Item;if kind=0 then source:=list else source:=a;
+ if op=0 then begin if kind=0 then Write(list.Contains(item)) else Write(a.Contains(item));end;
+ if op=1 then begin if kind=0 then Write(list.IndexOf(item)) else Write(Array.IndexOf(a,item));end;if op=2 then begin if kind=0 then Write(list.IndexOf(item,index)) else Write(Array.IndexOf(a,item,index));end;if op=3 then begin if kind=0 then Write(list.IndexOf(item,index,count)) else Write(Array.IndexOf(a,item,index,count));end;
+ if op=4 then begin if kind=0 then Write(list.LastIndexOf(item)) else Write(Array.LastIndexOf(a,item));end;if op=5 then begin if kind=0 then Write(list.LastIndexOf(item,index)) else Write(Array.LastIndexOf(a,item,index));end;if op=6 then begin if kind=0 then Write(list.LastIndexOf(item,index,count)) else Write(Array.LastIndexOf(a,item,index,count));end;if op=7 then Write(list.Remove(item));
+ if op=8 then Write(source.Contains(item));if op=9 then Write(source.Contains(item,nil));if op=10 then Write(source.Contains(item,new Order));if op=11 then Write(source.Where(x->True).Contains(item));if op=12 then Write(source.Where(x->True).Contains(item,new Order));if op=13 then begin if kind=0 then Write(item in list) else Write(item in a);end;Write('DONE;');end;
+begin var op,size,pad,probe,index,count:integer;Readln(op,kind,size,pad,probe,mode,index,count,observe,trigger);if size>=0 then begin a:=new Item[size];list:=new List<Item>(size+pad);for var i:=0 to size-1 do begin var value:Item;if (i+1) mod 4<>0 then value:=new Item(i,(i*7+1) mod 3);a[i]:=value;list.Add(value);end;end;aliasList:=list;aliasArray:=a;if size>=0 then begin if kind=0 then old:=list.GetEnumerator else begin var view:sequence of Item:=a;old:=view.GetEnumerator;end;primed:=old.MoveNext;end;
+ var q:Item;if probe=0 then q:=nil else if (probe=1) and (size>0) then q:=a[0] else if (probe=2) and (size>1) then q:=a[1] else q:=new Item(990+probe,if probe=4 then 99 else 1);active:=True;foreach var ignored in new GuardSource do Run(op,q,index,count);
+end.

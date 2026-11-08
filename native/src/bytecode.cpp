@@ -339,7 +339,7 @@ private:
         case hir::ExprKind::sequence_slice:
             expression(*node.left); expression(*node.right); emit(Op::sequence_slice,node.left->type,node.local,node.location); break;
         case hir::ExprKind::sequence_query:
-            expression(*node.left); if (node.right) expression(*node.right);
+            expression(*node.left); if (node.right) expression(*node.right);for(const auto& argument:node.arguments)expression(*argument);
             emit(Op::sequence_query,node.left->type,node.local,node.location); break;
         case hir::ExprKind::encoding_call:
             for(const auto& argument:node.arguments)expression(*argument);
@@ -962,8 +962,8 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         }
         case Op::array_operation: {
             const auto output=instruction.operand>>8,method=instruction.operand&255U;
-            if ((output!=static_cast<std::size_t>(Type::boolean) && (output<64 || output>=64+program.types.size()))
-                || method>static_cast<std::size_t>(ArrayOperation::equal_matrix)
+            if ((output!=static_cast<std::size_t>(Type::boolean) && output!=static_cast<std::size_t>(Type::integer) && (output<64 || output>=64+program.types.size()))
+                || method>static_cast<std::size_t>(ArrayOperation::last_range)
                 || !array_operation_signature_valid(program,type,static_cast<Type>(output),static_cast<ArrayOperation>(method)))
                 invalid(instruction,"Invalid array operation signature");
             break;
@@ -1093,8 +1093,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if (!compound(type) || type_info(program,type).kind!=CompoundKind::sequence || instruction.operand>static_cast<std::size_t>(SequenceSlice::reverse)) invalid(instruction,"Invalid sequence slicing metadata");
             break;
         case Op::sequence_query:
-            if (!compound(type) || type_info(program,type).kind!=CompoundKind::sequence
-                || instruction.operand>static_cast<std::size_t>(SequenceQuery::single_default)) invalid(instruction,"Invalid sequence query metadata");
+            if (!sequence_query_signature_valid(program,type,instruction.operand)) invalid(instruction,"Invalid sequence query metadata");
             break;
         case Op::sequence_dispose: case Op::sequence_resume: case Op::sequence_begin: case Op::sequence_count: case Op::sequence_array: case Op::sequence_list:
             if (!compound(type) || type_info(program,type).kind!=CompoundKind::sequence) invalid(instruction,"Sequence instruction requires a statically typed sequence");
@@ -1591,9 +1590,10 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         case Op::sequence_default: require(type_info(program,instruction.type).element); require(instruction.type); stack.push_back(instruction.type); break;
         case Op::sequence_slice: require(Type::integer); require(instruction.type); stack.push_back(instruction.type); break;
         case Op::sequence_query: {
-            const auto method=static_cast<SequenceQuery>(instruction.operand); const auto element=type_info(program,instruction.type).element;
+            const auto method=static_cast<SequenceQuery>(instruction.operand&255U); const auto element=type_info(program,instruction.type).element;
+            if(method==SequenceQuery::contains_comparer)require(static_cast<Type>(instruction.operand>>8U));
             if (sequence_query_index(method)) require(Type::integer);
-            else if (method==SequenceQuery::contains) require(element);
+            else if (sequence_query_contains(method)) require(element);
             require(instruction.type); stack.push_back(sequence_query_result(element,method)); break;
         }
         case Op::sequence_array: case Op::sequence_list: require(instruction.type); stack.push_back(static_cast<Type>(instruction.operand)); break;

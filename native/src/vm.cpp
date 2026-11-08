@@ -506,10 +506,10 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
             stack.emplace_back(sequence_slice(values,instruction.type,sequence,static_cast<SequenceSlice>(instruction.operand),count,options)); break;
         }
         case Op::sequence_query: {
-            const auto method=static_cast<SequenceQuery>(instruction.operand);
-            const auto argument=sequence_query_index(method) || method==SequenceQuery::contains ? pop() : Value{std::int32_t{0}};
+            const auto method=static_cast<SequenceQuery>(instruction.operand&255U);const auto policy=method==SequenceQuery::contains_comparer ? std::get<std::shared_ptr<Aggregate>>(pop()) : std::shared_ptr<Aggregate>{};
+            const auto argument=sequence_query_index(method) || sequence_query_contains(method) ? pop() : Value{std::int32_t{0}};
             const auto sequence=std::get<std::shared_ptr<Aggregate>>(pop());
-            stack.push_back(sequence_query(values,sequence,method,argument,options)); break;
+            stack.push_back(sequence_query(values,sequence,method,argument,options,policy)); break;
         }
         case Op::sequence_count: case Op::sequence_array: case Op::sequence_list: {
             const auto sequence=std::get<std::shared_ptr<Aggregate>>(pop());
@@ -1386,10 +1386,7 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
         }
         case Op::list_contains: {
             auto value = pop(); auto list = std::get<std::shared_ptr<Aggregate>>(pop());
-            if (list->nil) trap(instruction,RuntimeError::nil_reference);
-            bool found = false;
-            for (const auto& item : list->items) if (values.equal(item->value,value)) { found = true; break; }
-            stack.emplace_back(found); break;
+            stack.emplace_back(list_contains(values,list,value,options)); break;
         }
         case Op::fresh_local: {
             const auto value=values.copy(pop()); const auto cell=values.cell(instruction.type,value);

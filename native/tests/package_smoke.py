@@ -247,6 +247,7 @@ def main():
                 ("equality.pas", "True 7\nTrue\nTrue\nTrue 1\n"),
                 ("hashset-comparers.pas", "2 True\nTrue 1\nTrue False\nTrue True\n"),
                 ("dictionary-comparers.pas", "1 same last digit\nTrue True\nTrue False\nTrue\n"),
+                ("collection-search.pas", "0 3\n3 0\n0 3 True\nTrue False\nTrue True\n"),
                 ("paired-sorting.pas", "[10,20,30]\n[Аня,Борис,Вера]\n[30,20,10]\n[Вера,Борис,Аня]\n"),
                 ("array-sorting.pas", "[9,1,2,3,8]\n[9,8,3,2,1]\n[1,2,3,8,9]\n"),
                 ("list-sorting.pas", "[5,4,3,2,1]\n[1,2,3,4,5]\n[5,4,3,2,1]\nFalse\n[1,2,3,4,5]\n"),
@@ -1734,6 +1735,24 @@ def main():
                         or f"EN: {english}" not in invalid.stderr or f"RU: {russian}" not in invalid.stderr or f"{dictionary_policy_error}:2:" not in invalid.stderr):
                     raise RuntimeError(f"{name} Dictionary comparer bilingual failure: {invalid.stdout!r} {invalid.stderr!r}")
             results[-1]["native_dictionary_comparer_policies_and_bilingual_errors"] = "passed"
+            search_error = folder / "Ошибки поиска.pas"
+            for source, code, english, russian in [
+                ("begin\nWrite('before');Array.IndexOf(Arr(1),1,-1);end.", "E_RANGE", "Array search start index is outside the array", "Начальный индекс поиска находится вне массива"),
+                ("begin\nWrite('before');Array.IndexOf(Arr(1),1,0,2);end.", "E_RANGE", "Array search count is outside the valid range", "Количество элементов поиска находится вне допустимого диапазона"),
+                ("begin\nWrite('before');Array.LastIndexOf(new integer[0],1,0,1);end.", "E_RANGE", "Array search count is outside the valid range", "Количество элементов поиска находится вне допустимого диапазона"),
+                ("begin\nWrite('before');Array.IndexOf(nil,1,-1,-1);end.", "E_NIL", "Cannot access a nil reference", "Нельзя обратиться к пустой ссылке nil"),
+                ("type C=class(IEquatable<C>) public function Equals(x:C):boolean;begin\nvar zero:=0;Result:=1 div zero=0;end;end;begin Write('before');var c:=new C;Array.IndexOf(Arr(c),c);end.", "E_DIV_ZERO", "Division by zero", "Деление на ноль"),
+            ]:
+                search_error.write_text(source, encoding="utf-8")
+                invalid = subprocess.run([runner, "run", str(search_error)], text=True, encoding="utf-8", capture_output=True, cwd=folder, env=env, timeout=10)
+                if (invalid.returncode != 1 or invalid.stdout != "before" or code not in invalid.stderr
+                        or f"EN: {english}" not in invalid.stderr or f"RU: {russian}" not in invalid.stderr or f"{search_error}:2:" not in invalid.stderr):
+                    raise RuntimeError(f"{name} collection search bilingual failure: {invalid.stdout!r} {invalid.stderr!r}")
+            search_error.write_text("begin Write('must never run');Contains(Arr(1),1,EqualityComparer<string>.Default);end.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(search_error)], text=True, encoding="utf-8", capture_output=True, cwd=folder, env=env, timeout=10)
+            if invalid.returncode != 1 or invalid.stdout or "E_TYPE" not in invalid.stderr or "RU:" not in invalid.stderr:
+                raise RuntimeError(f"{name} Contains comparer type mismatch was not rejected before output")
+            results[-1]["native_collection_search_policies_and_bilingual_errors"] = "passed"
             iterator_data = folder / "iterator-resource.txt"
             iterator_data.write_text("one\ntwo\n", encoding="utf-8")
             iterator_source = folder / "Ресурсы перечислителя.pas"

@@ -572,3 +572,7 @@
     {"Missing inherited interface implementation","Отсутствует реализация родительского интерфейса"},
     {"Invalid interface params parameter","Некорректный параметр params интерфейса"},
     {"Ambiguous IEnumerable element type","Неоднозначный тип элементов IEnumerable"},
+    {"Array search requires an array, value and optional index/count","Для поиска требуются массив, значение и необязательные индекс/количество"},
+    {"Array search requires a known element type","Для поиска в массиве нужен известный тип элемента"},
+    {"Array search requires a rank-one array","Поиск требует одномерный массив"},
+    {"Array search explicit type must match the element type","Явный тип поиска должен совпадать с типом элемента массива"},

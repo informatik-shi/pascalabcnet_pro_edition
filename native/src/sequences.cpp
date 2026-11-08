@@ -1,4 +1,7 @@
 #include "sequences.hpp"
+#include "equality.hpp"
+#include "value_hash.hpp"
+#include "list_operations.hpp"
 #include "sequence_scope.hpp"
 #include "enumerator.hpp"
 #include "interfaces.hpp"
@@ -375,9 +378,21 @@ Value sequence_collect(Values& values,const std::shared_ptr<Aggregate>& sequence
     return materialize ? Value{result} : Value{static_cast<std::int32_t>(count)};
     });
 }
-Value sequence_query(Values& values,const std::shared_ptr<Aggregate>& sequence,SequenceQuery method,const Value& argument,const ExecutionOptions& options) {
+bool sequence_query_signature_valid(const Program& p,Type owner,std::size_t operand){
+ if(!compound(owner) || !valid_value_type(p,owner) || type_info(p,owner).kind!=CompoundKind::sequence)return false;const auto method=static_cast<SequenceQuery>(operand&255U);const auto raw=operand>>8U;if(method>SequenceQuery::contains_comparer)return false;
+ if(method!=SequenceQuery::contains_comparer)return raw==0;
+ if(raw<64 || raw>=64+p.types.size())return false;const auto payload=static_cast<Type>(raw);return type_info(p,payload).kind==CompoundKind::equality_comparer_interface && type_info(p,payload).element==type_info(p,owner).element;
+}
+Value sequence_query(Values& values,const std::shared_ptr<Aggregate>& sequence,SequenceQuery method,const Value& argument,const ExecutionOptions& options,const std::shared_ptr<Aggregate>& comparer) {
     require(sequence,values.location);
     const auto element=type_info(values.program,sequence->type).element;
+    if(method==SequenceQuery::contains && sequence->sequence){
+        const auto& state=*sequence->sequence;const auto source=state.source;
+        if(state.provider==SequenceProvider::array && source && type_info(values.program,source->type).kind==CompoundKind::array){require(source,values.location);ValueHashWork work{values,options};for(const auto& cell:source->items){if(value_equal(work,cell->value,argument))return true;}return false;}
+        if(state.provider==SequenceProvider::list && source && type_info(values.program,source->type).element==element)return list_contains(values,source,argument,options);
+        if(state.provider==SequenceProvider::hash_set && source && type_info(values.program,source->type).element==element){require(source,values.location);const std::array<Value,2> args{source,argument};return hash_set_invoke(values,source->type,Type::invalid,HashSetMethod::contains,args,options);}
+        if(dictionary_provider(state.provider) && source && type_info(values.program,source->type).element==element){require(source,values.location);const std::array<Value,2> args{source,argument};return dictionary_invoke(values,source->type,Type::invalid,state.provider==SequenceProvider::dictionary_entries ? DictionaryMethod::pair_contains : DictionaryMethod::view_contains,args,options);}
+    }
     const bool indexed=sequence_query_index(method);
     const bool single=method==SequenceQuery::single || method==SequenceQuery::single_default;
     const bool defaults=method==SequenceQuery::first_default || method==SequenceQuery::last_default
@@ -391,7 +406,7 @@ Value sequence_query(Values& values,const std::shared_ptr<Aggregate>& sequence,S
     const auto iterator=sequence_begin(values,sequence,options);
     return sequence_finally(values,iterator,options,[&]() -> Value {
     if (!sequence_resume(values,iterator,0,options)) {
-        if (method==SequenceQuery::any || method==SequenceQuery::contains) return false;
+        if (method==SequenceQuery::any || sequence_query_contains(method)) return false;
         return absent();
     }
     std::uint64_t work=0;
@@ -402,7 +417,7 @@ Value sequence_query(Values& values,const std::shared_ptr<Aggregate>& sequence,S
     };
     // IList-backed views retain direct access. Generator queries visit and produce
     // each preceding value, so allocation, cancellation and work limits still apply.
-    if (collection_sequence(iterator->sequence->provider) && method!=SequenceQuery::contains) {
+    if (collection_sequence(iterator->sequence->provider) && !sequence_query_contains(method)) {
         const auto count=sequence_length(iterator,values.location);
         check();
         if (method==SequenceQuery::any) return true;
@@ -419,7 +434,7 @@ Value sequence_query(Values& values,const std::shared_ptr<Aggregate>& sequence,S
         if(indexed && i!=static_cast<std::uint64_t>(index)){if(iterator->sequence->provider!=SequenceProvider::user_source)(void)sequence_at(values,iterator,static_cast<std::int64_t>(i),options);continue;}
         if(single && i){if(iterator->sequence->provider!=SequenceProvider::user_source)(void)sequence_at(values,iterator,static_cast<std::int64_t>(i),options);throw runtime_error(RuntimeError::sequence_multiple,values.location);}
         auto value=sequence_at(values,iterator,static_cast<std::int64_t>(i),options);
-        if (method==SequenceQuery::contains) { if (values.equal(value,argument)) return true; }
+        if (sequence_query_contains(method)) { if (equality_policy_value(values,element,comparer,value,argument,options)) return true; }
         else if ((indexed && i==static_cast<std::uint64_t>(index)) || method==SequenceQuery::first || method==SequenceQuery::first_default) return value;
         else if (single) {
             if (i) throw runtime_error(RuntimeError::sequence_multiple,values.location);
@@ -427,7 +442,7 @@ Value sequence_query(Values& values,const std::shared_ptr<Aggregate>& sequence,S
         }
         else if (method==SequenceQuery::last || method==SequenceQuery::last_default) last=std::move(value);
     }
-    if (method==SequenceQuery::contains) return false;
+    if (sequence_query_contains(method)) return false;
     if (method==SequenceQuery::last || method==SequenceQuery::last_default || single) return last;
     return absent();
     });

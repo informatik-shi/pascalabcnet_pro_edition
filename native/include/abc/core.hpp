@@ -177,7 +177,7 @@ enum class ListCapacity { get, set, ensure, trim, construct };
 enum class ListOperation { remove, insert, get_range, remove_range, index, index_from, index_range, last, last_from, last_range };
 enum class MatrixBuild { flat_values, jagged_values, rows_arrays, columns_arrays, rows_sequences, columns_sequences, rows_flat, columns_flat };
 enum class CollectionOperation { fill_value, fill_function, transform, convert_all, for_each, replace };
-enum class ArrayOperation { fill_array, fill_matrix, transpose, size, equal_array, equal_matrix };
+enum class ArrayOperation { fill_array, fill_matrix, transpose, size, equal_array, equal_matrix, index, index_from, index_range, last, last_from, last_range };
 enum class MatrixMethod { row, column, row_sequence, column_sequence, rows, columns, row_sequences, column_sequences, swap_rows, swap_columns, set_row, set_column, slice_indices, slice_range };
 struct MatrixLineState {
     Value current=std::int32_t{0};
@@ -283,10 +283,11 @@ enum class Op {
     bit_not, bit_and, bit_or, bit_xor, shift_left, shift_right, read_console, read_array, console_output, array_query, write_matrix, object_text, print_output, try_read, convert_string, try_parse, val, string_read, string_array, school_list, replace_last, replace_many, school_fold, tuple_literal, school_pair, school_minmax, school_table_print, school_table_new, school_ip, sequence_begin, sequence_count, sequence_array, sequence_wrap, swap_substrings, sequence_list, sequence_query, sequence_snapshot, sequence_repeat, sequence_range, sequence_resume, sequence_partition, sequence_aggregate, sequence_partial, sequence_slice, sequence_concat, sequence_equal, sequence_default, sequence_select, sequence_where, sequence_predicate, sequence_flatmap, sequence_zip, sequence_takewhile, sequence_skipwhile, routine_value, call_value, sequence_select_value, sequence_where_value, sequence_flatmap_value, sequence_takewhile_value, sequence_skipwhile_value, sequence_predicate_value, sequence_zip_value, fresh_local, generator, sequence_cartesian, sequence_cartesian_value, cartesian_power, combinations, permutations, partial_permutations, next_permutation, array_view, matrix_operation, array_operation, collection_operation, matrix_build, list_operation, list_bulk, list_capacity, list_copy, construct_user, encoding_call, sequence_dispose, text_lines, for_step_check, enum_call, comparable_call, ini_call, compound_call, store_index, store_field, hash_set_call, new_set_call, empty_call, print_call, sequence_join, ordinal_range_call, real_interval_call, random_sequence, directory_sequence, type_operation, dictionary_call, enumerator_call, interface_cast, interface_call, comparer_create, sort_call
 };
 
-enum class SequenceQuery { any, first, last, first_default, last_default, element, element_default, contains, single, single_default };
+enum class SequenceQuery { any, first, last, first_default, last_default, element, element_default, contains, single, single_default, contains_comparer };
+inline bool sequence_query_contains(SequenceQuery method) { return method==SequenceQuery::contains || method==SequenceQuery::contains_comparer; }
 inline bool sequence_query_index(SequenceQuery method) { return method==SequenceQuery::element || method==SequenceQuery::element_default; }
 inline Type sequence_query_result(Type element,SequenceQuery method) {
-    return method==SequenceQuery::any || method==SequenceQuery::contains ? Type::boolean : element;
+    return method==SequenceQuery::any || sequence_query_contains(method) ? Type::boolean : element;
 }
 enum class PredicateQuery { any,all,count,first,first_default,last,last_default,single,single_default };
 inline Type predicate_query_result(Type element,PredicateQuery method) {

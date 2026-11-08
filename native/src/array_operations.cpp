@@ -1,4 +1,5 @@
 #include "array_operations.hpp"
+#include "equality.hpp"
 #include <array>
 
 namespace abc {
@@ -13,10 +14,11 @@ void work(Values& values,std::uint64_t& used,const ExecutionOptions& options) {
 }
 }
 bool array_operation_signature_valid(const Program& program,Type array,Type result,ArrayOperation method) {
-    if (static_cast<unsigned>(method)>static_cast<unsigned>(ArrayOperation::equal_matrix) || !compound(array)) return false;
+    if (static_cast<unsigned>(method)>static_cast<unsigned>(ArrayOperation::last_range) || !compound(array)) return false;
     const auto& input=type_info(program,array);
-    const auto rank=method==ArrayOperation::fill_array || method==ArrayOperation::equal_array ? 1U : 2U;
+    const auto rank=method==ArrayOperation::fill_array || method==ArrayOperation::equal_array || method>=ArrayOperation::index ? 1U : 2U;
     if (input.kind!=CompoundKind::array || input.rank!=rank) return false;
+    if (method>=ArrayOperation::index)return result==Type::integer;
     if (method==ArrayOperation::equal_array || method==ArrayOperation::equal_matrix) return result==Type::boolean;
     if (method!=ArrayOperation::size) return result==array;
     if (!compound(result)) return false;
@@ -50,6 +52,15 @@ Value array_operation(Values& values,Type array,Type result_type,ArrayOperation 
         return true;
     }
     require(source,values.location);
+    if(method>=ArrayOperation::index){
+        const bool last=method>=ArrayOperation::last;const bool from=method==ArrayOperation::index_from || method==ArrayOperation::last_from;const bool range=method==ArrayOperation::index_range || method==ArrayOperation::last_range;
+        const auto size=static_cast<std::int32_t>(source->items.size());const auto start=from || range ? std::get<std::int32_t>(arguments[2]) : last ? size-1 : 0;
+        if(last && !size){if(start!=-1 && start!=0)throw runtime_error(RuntimeError::array_search_index,values.location);if(range && std::get<std::int32_t>(arguments[3])!=0)throw runtime_error(RuntimeError::array_search_count,values.location);return std::int32_t{-1};}
+        if(start<0 || (last ? start>=size : start>size))throw runtime_error(RuntimeError::array_search_index,values.location);
+        const auto count=range ? std::get<std::int32_t>(arguments[3]) : last ? start+1 : size-start;
+        if(count<0 || (last ? count>start+1 : count>size-start))throw runtime_error(RuntimeError::array_search_count,values.location);
+        return equality_index(values,type_info(values.program,array).element,source->items,arguments[1],start,count,last,options);
+    }
     if (method==ArrayOperation::size) {
         auto result=std::make_shared<Aggregate>(); result->type=result_type;
         result->items.push_back(values.cell(Type::integer,static_cast<std::int32_t>(source->rows)));

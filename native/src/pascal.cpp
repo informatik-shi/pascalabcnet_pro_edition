@@ -2471,6 +2471,7 @@ private:
  {
             if(bind_inifile_static(*result,source))break;
             if(bind_comparison_static(*result,source))break;
+            if(bind_system_array_search(*result,source))break;
             if(bind_system_array_sort(*result,source))break;
             if(bind_encoding_static(*result,source))break;
             if (source.left->kind==SyntaxExprKind::name && !lookup(source.left->token) && source.left->token.text=="regex" && source.token.text=="ismatch") {
@@ -2585,6 +2586,7 @@ private:
             if(bind_print_extension(*result,source,true))break;
             if(bind_user_interface_member(*result,source))break;
             if(bind_enumerator_member(*result,source))break;
+            if(source.token.text=="contains" && source.arguments.size()==2 && !declared_member(receiver,"contains")){bool iterable=receiver==Type::string;if(compound(receiver)){const auto& shape=info(receiver,result->location);iterable=shape.kind==CompoundKind::sequence || enumerable_collection(shape);}if(iterable){result->arguments.push_back(std::move(result->left));for(const auto& argument:source.arguments)result->arguments.push_back(expression(*argument));if(bind_sequence_query(*result,"contains"))break;}}
             if(bind_dictionary_member(*result,source))break;
             if(bind_inifile_member(*result,source))break;
             if(bind_encoding_member(*result,source))break;
@@ -4095,6 +4097,17 @@ private:
         return source.kind==SyntaxExprKind::field && source.token.text=="array" && source.left && source.left->kind==SyntaxExprKind::name
             && source.left->token.text=="system" && !hidden(source.left->token);
     }
+    ABC_PASCAL_NOINLINE bool bind_system_array_search(hir::Expr& result,const SyntaxExpr& source,std::span<const Type> declared={}){
+        if(!source.left || !array_type_name(*source.left) || (source.token.text!="indexof" && source.token.text!="lastindexof"))return false;
+        const auto count=source.arguments.size();if(count<2 || count>4 || declared.size()>1)throw Error("E_TYPE",result.location,"Array search requires an array, value and optional index/count");
+        const auto context=declared.empty() ? Type::invalid : sequence_type(CompoundKind::array,declared[0]);auto receiver=expression(*source.arguments[0],context);std::unique_ptr<hir::Expr> item;
+        if(receiver->type==Type::nil || (compound(receiver->type) && info(receiver->type,result.location).kind==CompoundKind::empty_collection)){
+            item=expression(*source.arguments[1],declared.empty() ? Type::invalid : declared[0]);const auto element=declared.empty() ? item->type : declared[0];if(element==Type::nil || element==Type::unit)throw Error("E_TYPE",result.location,"Array search requires a known element type");const auto owner=sequence_type(CompoundKind::array,element);receiver=convert(std::move(receiver),owner);
+        }
+        const auto owner=receiver->type;if(!compound(owner) || info(owner,result.location).kind!=CompoundKind::array || info(owner,result.location).rank!=1)throw Error("E_TYPE",result.location,"Array search requires a rank-one array");const auto element=info(owner,result.location).element;if(!declared.empty() && declared[0]!=element)throw Error("E_TYPE",result.location,"Array search explicit type must match the element type");if(!item)item=expression(*source.arguments[1],element);
+        const bool last=source.token.text=="lastindexof";const auto method=last ? (count==2 ? ArrayOperation::last : count==3 ? ArrayOperation::last_from : ArrayOperation::last_range) : (count==2 ? ArrayOperation::index : count==3 ? ArrayOperation::index_from : ArrayOperation::index_range);
+        result.kind=hir::ExprKind::array_operation;result.type=Type::integer;result.operation_type=owner;result.local=static_cast<std::size_t>(method);result.arguments.push_back(std::move(receiver));result.arguments.push_back(convert(std::move(item),element));for(std::size_t i=2;i<count;++i)result.arguments.push_back(convert(expression(*source.arguments[i],Type::integer),Type::integer));return true;
+    }
     ABC_PASCAL_NOINLINE bool bind_system_array_sort(hir::Expr& result,const SyntaxExpr& source,std::span<const Type> declared={}){
         if(!source.left || !array_type_name(*source.left) || source.token.text!="sort")return false;
         const auto count=source.arguments.size();if(count<1 || count>5 || declared.size()>2)throw Error("E_TYPE",result.location,"System.Array.Sort requires a supported closed array overload");
@@ -4329,6 +4342,7 @@ private:
         const auto& name=source.token.text;
         const bool qualified_unit=qualified && source.left && source.left->kind==SyntaxExprKind::name && source.left->token.text=="pabcsystem" && !lookup(source.left->token);
         const bool standard_call=(source.kind==SyntaxExprKind::call && !lookup(source.token) && !routine_names_.contains(name)) || qualified_unit;
+        if(qualified && source.left && array_type_name(*source.left) && (name=="indexof" || name=="lastindexof")){std::vector<Type> declared;for(const auto& type:source.type_arguments)declared.push_back(resolve_type(*type));auto result=std::make_unique<hir::Expr>();result->location=source.token.location;if(bind_system_array_search(*result,source,declared))return result;}
         if((name=="sort" || name=="sortdescending") && (standard_call || qualified)){
             const bool unit_call=qualified && source.left && source.left->kind==SyntaxExprKind::name && !lookup(source.left->token) && (source.left->token.text=="pabcsystem" || (source.left->token.text=="arrays" && imported_units_.contains("arrays")));
             std::vector<Type> declared;for(const auto& type:source.type_arguments)declared.push_back(resolve_type(*type));auto result=std::make_unique<hir::Expr>();result->location=source.token.location;
@@ -5243,15 +5257,18 @@ private:
         const auto method=sequence_query_method(name);
         if (!method || (!unit.empty() && unit!="pabcsystem")) return false;
         if(name=="single" && unit.empty() && result.arguments.size()==1 && (numeric(result.arguments[0]->type) || result.arguments[0]->type==Type::character))return false;
+        const bool explicit_comparer=*method==SequenceQuery::contains && result.arguments.size()==3;
+        const auto selected=explicit_comparer ? SequenceQuery::contains_comparer : *method;
         const bool extra=sequence_query_index(*method) || *method==SequenceQuery::contains;
-        if (result.arguments.size()!=(extra ? 2U : 1U)) throw Error("E_TYPE",result.location,"Wrong sequence query argument count");
+        if (result.arguments.size()!=(explicit_comparer ? 3U : extra ? 2U : 1U)) throw Error("E_TYPE",result.location,"Wrong sequence query argument count");
         const auto source=result.arguments[0]->type;
         const auto source_info=sequence_source(source,result.location);
         if (extra) result.right=convert(std::move(result.arguments[1]),sequence_query_index(*method) ? Type::integer : source_info.element);
-        auto argument=std::move(result.arguments[0]); result.arguments.clear();
+        Type policy_type=Type::invalid;std::unique_ptr<hir::Expr> policy;if(explicit_comparer){policy_type=comparison_type(CompoundKind::equality_comparer_interface,source_info.element);policy=convert(std::move(result.arguments[2]),policy_type);}
+        auto argument=std::move(result.arguments[0]); result.arguments.clear();if(policy)result.arguments.push_back(std::move(policy));
         argument=convert(std::move(argument),sequence_type(CompoundKind::sequence,source_info.element));
-        result.left=std::move(argument); result.kind=hir::ExprKind::sequence_query; result.local=static_cast<std::size_t>(*method);
-        result.type=sequence_query_result(source_info.element,*method); return true;
+        result.left=std::move(argument); result.kind=hir::ExprKind::sequence_query; result.local=static_cast<std::size_t>(selected)|(explicit_comparer ? static_cast<std::size_t>(policy_type)<<8U : 0U);
+        result.type=sequence_query_result(source_info.element,selected); return true;
     }
     void bind_school_ip(hir::Expr& result,Type owner,SchoolIPMethod method) {
         const auto parameters=school_ip_parameters(owner,method);
