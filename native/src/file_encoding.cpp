@@ -97,6 +97,9 @@ std::string_view text_encoding_preamble(TextEncoding encoding) {
 namespace {
 void detect_encoding(std::string_view& bytes,TextEncoding& encoding) {
     const auto expected=text_encoding_preamble(encoding);
+    // StreamReader keeps an incomplete configured preamble for the decoder at EOF.
+    // In particular, FF FE alone is incomplete UTF-32LE, not a UTF-16LE switch.
+    if(!expected.empty() && bytes.size()<expected.size() && expected.starts_with(bytes))return;
     if(!expected.empty() && bytes.starts_with(expected))bytes.remove_prefix(expected.size());
     else for(auto kind:{TextEncodingKind::utf32_le,TextEncodingKind::utf32_be,TextEncodingKind::utf16_le,TextEncodingKind::utf16_be,TextEncodingKind::utf8}) {
         const auto mark=text_encoding_preamble({kind,true,false});

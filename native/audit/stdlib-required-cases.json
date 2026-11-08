@@ -17,7 +17,7 @@
     {"id":"system-iset","module":"PABCSystem","source_line":189,"source":"begin var value:ISet<integer>; end."},
     {"id":"system-stringbuilder","module":"PABCSystem","source_line":194,"source":"begin var value:StringBuilder; end."},
     {"id":"system-numberformatinfo","module":"PABCSystem","source_line":290,"source":"begin var value:NumberFormatInfo; end."},
-    {"id":"arrays-fill-generic","module":"Arrays","source_line":25,"source":"uses Arrays; begin var a:=new integer[2]; Arrays.FillByValue<integer>(a,1); end."},
+    {"id":"arrays-fill-generic","module":"Arrays","source_line":25,"source":"uses Arrays; begin var a:=new integer[2]; Arrays.FillByValue&<integer>(a,1); end."},
     {"id":"arrays-record-output","module":"Arrays","source_line":41,"source":"uses Arrays; type Item=record x:integer; end; begin var a:=new Item[1]; WriteArray(a); end."},
     {"id":"collections-scalar-output","module":"Collections","source_line":61,"source":"uses Collections; begin var s:=new Stack<integer>; Writeln(s.ToString); end."},
     {"id":"collections-class-output","module":"Collections","source_line":61,"source":"uses Collections; type Item=class public x:integer; end; begin var s:=new Stack<Item>; Writeln(s.ToString); end."},

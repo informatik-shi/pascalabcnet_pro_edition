@@ -665,7 +665,7 @@
       "name": "FilesOperations",
       "source": "bin/Lib/FilesOperations.pas",
       "status": "partial",
-      "notes": "Both exported routines implemented natively with source line-normalization semantics, unit scope and qualified calls. Native mutable DefaultEncoding now starts with CP1251; full streaming/sharing compatibility remains pending."
+      "notes": "Both exported routines implemented natively with source line-normalization semantics, unit scope and qualified calls. Mutable DefaultEncoding starts with CP1251. Independent .NET 10 recipes cover 2198 complete reads, 238 complete writes and 2023 direct decoding cases for seven code pages; Windows sharing covers all 42 selected access/share/operation combinations. Incomplete configured UTF-32LE preamble is preserved for decoder fallback. Full dependency API/code-page coverage, other-platform sharing/error parity and source-unit interoperability remain pending; this is not a complete module port."
     },
     {
       "name": "FormsABC",

@@ -1327,3 +1327,33 @@ none of those larger requirements and does not complete a library unit.
 
 Both Release toolchains pass 47476 set-query checks; full suites pass 218/218
 without Qt and 220/220 with Qt, retaining all 12068 previous core checks.
+
+## Complete file stream recipes and configured preamble prefixes
+
+The FilesOperations audit now compares both whole native routines against
+independent .NET 10 stream recipes: 2198 reads, 238 writes and 2023 direct decoder
+outcomes across the seven current code pages, plus 42 Windows external-handle
+sharing combinations. Inputs include invalid/truncated sequences, nil text,
+surrogates and byte/character buffer boundaries. Host checks cover repeated
+failed opens, bounded work, cancellation and release before reopening.
+
+The shared preamble detector must retain a partial match of the configured
+preamble at EOF. FF FE with configured UTF-32LE remains decoder input and yields
+U+FFFD, rather than switching to UTF-16LE and disappearing as a complete BOM.
+The correction is shared by Text, ReadAllText, line readers and FilesOperations.
+The runtime remains native C++; reference generation uses only an independent
+development executable under the installed .NET 10 host. No original Pascal
+compiler, reference assemblies or managed hosts participate in the application.
+
+Framework and .NET 10 differ in malformed UTF-8 fallback and decoder flushing
+at EOF. The file/codec baseline is explicitly .NET 10, consistent with the
+existing Unicode decoder contract, rather than mixing incompatible versions.
+This evidence does not cover all encoding pages, inherited dependency APIs,
+source-unit interoperability or platform-specific Unix sharing/error behavior;
+FilesOperations and all other partial units remain partial.
+
+Local validation: both Release toolchains pass all 4787 file-operation checks;
+the complete suites pass 220/220 without Qt and 222/222 with Qt. The selected
+source-audit generic-call example now uses the original `&<T>` syntax; its
+remaining native binding failure is recorded as E_UNSUPPORTED, rather than
+mistaking a malformed test for a parser compatibility gap.

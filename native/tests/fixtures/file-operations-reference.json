@@ -1,0 +1,31 @@
+{
+  "schema": 1,
+  "runtime": ".NET 10.0.12",
+  "generation_platform": "Windows x64",
+  "generator": "native/tests/reference/generate-file-operations.ps1",
+  "independent_source": "native/tests/reference/file-operations.cs",
+  "independent_source_sha256_lf": "4d31628b9da369209934ad995956a9ace9ebeaa6dac53f7f3cfab0322b7bc831",
+  "original_source": "bin/Lib/FilesOperations.pas",
+  "original_compiler_executed": false,
+  "fixtures": [
+    {
+      "path": "file-operations-reference.tsv",
+      "sha256_lf": "305fca2d2f9714342e79a50ee0c5e2637913d56b3d62c4d0d179b4aa9ab431b7",
+      "rows": 4459,
+      "read_routine_outcomes": 2198,
+      "write_routine_outcomes": 238,
+      "direct_decoder_outcomes": 2023,
+      "code_pages": [1251,20127,65001,1200,1201,12000,12001],
+      "format": "Kind R/W/D, code page, input hex or nil, output hex; byte hex uses two digits and UTF-16 text hex four digits per code unit. A dash is empty. Only complete read results canonicalize host newlines to LF. Direct decoding retains BOM and raw newlines."
+    },
+    {
+      "path": "file-operations-sharing-windows.tsv",
+      "sha256_lf": "2ef59b60c469418eb04091ab36f56bea3d9118a52e8fcc0a2a026d3eec7f201d",
+      "rows": 42,
+      "access_modes": [1,2,3],
+      "share_modes": [0,1,2,3,4,5,7],
+      "format": "External FileAccess, FileShare, operation R/W, outcome, canonical result text hex, final file bytes hex. Failed opens must preserve the existing file; native tests close the external holder and verify successful reopening."
+    }
+  ],
+  "scope": "Independent stream and codec recipes for seven current encodings, not the complete Encoding API or complete library coverage. Windows sharing results are asserted only on Windows. The old Framework has different invalid UTF-8 grouping and decoder EOF flushing and is not the chosen file/codec baseline. Normal native builds and application execution need neither this generator nor any managed runtime."
+}

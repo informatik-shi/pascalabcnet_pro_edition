@@ -1,13 +1,19 @@
 {
   "schema": 1,
-  "runtime_source_revision": "a2f8ee36590dea821c84bcb33c5f91f634640149",
-  "scope": "Selected positive compile requirements, observed in two local native builds. Not API coverage or runtime validation. Unsupported cases remain requirements, not expected failures.",
+  "runtime_source_base_revision": "da0ed9bd09924003956e07a565023fe82d73df9f",
+  "runtime_source_changes": [
+    {
+      "path": "native/src/file_encoding.cpp",
+      "sha256_lf": "bf16147d0208de4649b83ea7c4efa3a9d54163453ca044361293ff36fbe2e8a9"
+    }
+  ],
+  "scope": "Selected positive compile requirements, observed in two local native builds. Not API coverage or runtime validation. Unsupported cases remain requirements, not expected failures. Explicit generic call uses the original ampersand syntax.",
   "runs": [
     {
       "schema": 1,
       "scope": "Selected required positive compile cases derived from shipped interfaces. Every case must eventually compile. This is a growing gap list, not complete API coverage; accepting a case does not prove its runtime semantics. No expected failure is made a compatibility requirement.",
       "runner": "native/build/clang-incremental/abc.exe",
-      "runner_sha256": "722a8c2e7bd978e0914136805b249ce48f84f363a50ec9d586123ea3874159e7",
+      "runner_sha256": "d3c8936770ab8c1bcc1a8a010b3102639a6172ca0cefed264269faf8f53fa23a",
       "version": "ABC Native 0.1.0-dev (Pascal prototype)",
       "cases": [
         {
@@ -136,7 +142,7 @@
           "source_line": 25,
           "source_anchor": "procedure FillByValue<T>(a: array of T; x: T);",
           "accepted": false,
-          "diagnostic": "arrays-fill-generic.pas:1:61: E_SYNTAX\nEN: Expected ';' between statements\nRU: Между операторами ожидается ';'"
+          "diagnostic": "arrays-fill-generic.pas:1:50: E_UNSUPPORTED\nEN: Explicit generic calls are not ported for this routine\nRU: Явные generic-вызовы этой подпрограммы ещё не перенесены"
         },
         {
           "id": "arrays-record-output",
@@ -244,7 +250,7 @@
       "schema": 1,
       "scope": "Selected required positive compile cases derived from shipped interfaces. Every case must eventually compile. This is a growing gap list, not complete API coverage; accepting a case does not prove its runtime semantics. No expected failure is made a compatibility requirement.",
       "runner": "native/build/qt-editor/Release/abc.exe",
-      "runner_sha256": "0f9194c6de90f85c31953af148b88b4cd762a9afe87ac69926ac08d38d85cb90",
+      "runner_sha256": "01abb24e772b1e8cf074419564a4732c4bfddc70c67f8e7b40f88b3e436a1f70",
       "version": "ABC Native 0.1.0-dev (Pascal prototype)",
       "cases": [
         {
@@ -373,7 +379,7 @@
           "source_line": 25,
           "source_anchor": "procedure FillByValue<T>(a: array of T; x: T);",
           "accepted": false,
-          "diagnostic": "arrays-fill-generic.pas:1:61: E_SYNTAX\nEN: Expected ';' between statements\nRU: Между операторами ожидается ';'"
+          "diagnostic": "arrays-fill-generic.pas:1:50: E_UNSUPPORTED\nEN: Explicit generic calls are not ported for this routine\nRU: Явные generic-вызовы этой подпрограммы ещё не перенесены"
         },
         {
           "id": "arrays-record-output",

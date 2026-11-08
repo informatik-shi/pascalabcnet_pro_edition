@@ -1,6 +1,7 @@
 {
   "schema": 1,
-  "runtime_source_revision": "a2f8ee36590dea821c84bcb33c5f91f634640149",
+  "runtime_source_base_revision": "da0ed9bd09924003956e07a565023fe82d73df9f",
+  "runtime_changes_in_this_review": ["native/src/file_encoding.cpp: preserve incomplete configured preamble at EOF"],
   "scope": "Work planning from shipped interfaces and the current native implementation. Declaration inventory is not implementation coverage. Complete semantic review of all declarations, inherited/imported APIs, lifecycle effects and all supported platforms remains open. No module status is promoted by this audit.",
   "source_notice": "Extracted declarations retain PascalABC.NET source authorship: Ivan Bondarev, Stanislav Mikhalkovich; see ../../doc/copyright.txt and ../../doc/license.txt. These audit files and development tools are not installed with the application.",
   "baselines": {
@@ -26,12 +27,13 @@
         {"name":"ReadFileToEnd","line":7,"implementation":"native/src/file_operations.cpp:file_operations_read","required_semantics":"Text reset, read each logical line and append the host newline, including the unterminated final line; BOM/default codec; close on normal completion."},
         {"name":"WriteStringToFile","line":8,"implementation":"native/src/file_operations.cpp:file_operations_write","required_semantics":"Text rewrite and Write(Text,object); nil string writes nil as text; preserve embedded line endings and close on normal completion."}
       ],
-      "existing_verification": ["native/tests/core_tests.cpp:text_files", "native/tests/fixtures/file-operations-compat.pas", "native/tests/fixtures/file-operations-compat.out"],
+      "existing_verification": ["native/tests/core_tests.cpp:text_files", "native/tests/file_operations_tests.cpp", "native/tests/fixtures/file-operations-compat.pas", "native/tests/fixtures/file-operations-compat.out", "native/tests/fixtures/file-operations-reference.tsv", "native/tests/fixtures/file-operations-sharing-windows.tsv"],
+      "new_evidence": "Independent .NET 10.0.12 outcomes cover 2198 complete reads, 238 complete writes, 2023 direct decoding cases and 42 Windows sharing combinations. Native recovery checks cover repeated failed opens, cancellation, bounded work and reopening. Incomplete configured UTF-32LE preamble fallback corrected in the shared decoder.",
       "remaining_gates": [
-        "Independent stream/sharing and failure-path compatibility evidence on Windows, Linux and macOS; existing native expected-output tests alone do not close this gate.",
-        "Review common Text, path, encoding and execution-resource limits for both routines; source-unit interoperability is still incomplete."
+        "Full dependency/code-page coverage beyond the seven implemented encodings, and platform-specific sharing/error compatibility on Linux/macOS, remain open.",
+        "Review the remaining common Text/path/encoding API and execution-resource policies for both routines; source-unit interoperability is still incomplete."
       ],
-      "next_action": "Build an independent Text recipe corpus for both complete routines, including sharing conflicts and release after failure, then resolve demonstrated native differences."
+      "next_action": "Extend dependency coverage and platform-specific sharing/error evidence; the independent complete-routine recipes now provide a regression gate for the seven current encodings."
     },
     {
       "name": "IniFile",
@@ -58,7 +60,7 @@
       "existing_profiles": ["Array.Write/Writeln", "FillByRandom and random array/matrix factories", "FillByValue", "ReadArray(integer/real/string)", "WriteArray/WritelnArray", "Sort/SortDescending", "WriteMatrix"],
       "implementation_evidence": ["native/src/pascal.cpp:bind_sort", "native/src/pascal.cpp:bind_random_array", "native/src/pascal.cpp:bind_array_output", "native/src/sorting.cpp", "native/src/random.cpp"],
       "remaining_gates": [
-        "Explicit generic source calls are not generally supported: Arrays.FillByValue<integer>(a,1) is a concrete required case that currently fails to parse.",
+        "Explicit generic source calls are not generally supported: Arrays.FillByValue&<integer>(a,1) is a concrete required case. The original parser requires the ampersand before explicit type arguments; acceptance and binding must be checked using that syntax.",
         "Complete per-overload review of type constraints, defaults, nil/error paths and generic element behavior; declared generic T ranges over more types than the native type system currently implements.",
         "Source-unit interoperability and platform compatibility remain unproven. User comparison interfaces have been ported and must not remain listed as wholly absent."
       ],
