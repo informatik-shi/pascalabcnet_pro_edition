@@ -127,6 +127,7 @@ Dictionary со сравнителем ключей, Copy и равенство�
 Сравнение последовательностей по типу элемента или пользовательскому сравнителю: examples/sequence-equality.pas.
 Отложенные Distinct, Union, Intersect и Except со сравнителем: examples/sequence-sets.pas.
 Неполная сигнатура файла и выбор кодировки: examples/file-streams.pas.
+Явные обобщённые вызовы и значения процедур Arrays: examples/array-generics.pas.
 Contains без сравнителя сохраняет правила исходной коллекции; явный nil выбирает стандартное сравнение элементов.
 Обход автоматически вызывает Dispose при завершении, break, Exit и ошибке; общие пользовательские обобщения ещё переносятся.
 Нативный IniFile.TIniFile: uses IniFile; пример examples/ini-files.pas.

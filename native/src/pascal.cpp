@@ -247,6 +247,7 @@ struct SyntaxExpr {
     std::vector<std::unique_ptr<SyntaxExpr>> initializers{};
     std::shared_ptr<SyntaxRoutine> lambda{};
     std::vector<std::shared_ptr<SyntaxType>> type_arguments{};
+    bool invocation_parentheses=false;
 };
 
 std::unique_ptr<SyntaxExpr> make_expression(SyntaxExprKind kind, Token token,
@@ -1033,6 +1034,7 @@ private:
                     result->arguments.push_back(std::move(argument));
                 } while (accept(","));
                 expect(")");
+                result->invocation_parentheses=true;
             } else break;
         }
         return result;
@@ -3177,7 +3179,10 @@ private:
         return result;
     }
     std::unique_ptr<hir::Expr> expression(const SyntaxExpr& source,Type expected=Type::invalid) {
-        if (!source.type_arguments.empty()) return explicit_factory(source);
+        if (!source.type_arguments.empty()) {
+            if(auto result=explicit_array_library(source,expected))return result;
+            return explicit_factory(source);
+        }
         if((source.token.text=="low" || source.token.text=="high") && source.arguments.size()==1
             && source.arguments[0]->kind==SyntaxExprKind::name && !lookup(source.arguments[0]->token)
             && ((source.kind==SyntaxExprKind::call && !lookup(source.token) && !routine_names_.contains(source.token.text))
@@ -4337,6 +4342,71 @@ private:
         }
         // Self is allocated by construct_user only after all explicit/default arguments.
         result.arguments.erase(result.arguments.begin());
+    }
+    ABC_PASCAL_NOINLINE std::unique_ptr<hir::Expr> array_library_operation(std::string_view name,Type element,std::vector<std::unique_ptr<hir::Expr>> arguments,SourceLocation location) {
+        const bool fill=name=="fillbyvalue",sort=name=="sort"||name=="sortdescending",matrix=name=="writematrix";
+        if(arguments.empty() || arguments.size()>(sort?1U:2U) || (fill&&arguments.size()!=2))
+            throw Error("E_TYPE",location,"Wrong generic array procedure argument count","Неверное число аргументов обобщённой процедуры массивов");
+        const auto owner=arguments[0]->type;
+        if(!compound(owner) || info(owner,location).kind!=CompoundKind::array || info(owner,location).element!=element
+            || (fill ? info(owner,location).rank>2 : info(owner,location).rank!=(matrix?2U:1U)))
+            throw Error("E_TYPE",location,"Explicit array element type and rank must match the parameter","Явный тип элементов и размерность массива должны совпадать с параметром");
+        auto result=std::make_unique<hir::Expr>();result->location=location;result->arguments=std::move(arguments);
+        if(sort){result->kind=hir::ExprKind::sort_call;result->type=Type::unit;result->operation_type=owner;result->local=static_cast<unsigned>(SortMethod::default_order)|(name=="sortdescending"?sort_descending:0U);result->left=std::move(result->arguments[0]);result->arguments.clear();}
+        else if(fill)(void)bind_sequence_library(*result,name,"arrays");
+        else (void)bind_array_output(*result,name,"arrays",false,matrix);
+        return result;
+    }
+    ABC_PASCAL_NOINLINE std::unique_ptr<hir::Expr> explicit_array_library(const SyntaxExpr& source,Type expected) {
+        const auto& name=source.token.text;const bool fill=name=="fillbyvalue",sort=name=="sort"||name=="sortdescending",matrix=name=="writematrix";
+        if(!fill&&!sort&&!matrix&&name!="writearray"&&name!="writelnarray")return {};
+        const bool reference=source.arguments.empty()&&!source.invocation_parentheses;
+        const bool qualified=(source.kind==SyntaxExprKind::field||source.kind==SyntaxExprKind::member_call)&&source.left&&source.left->kind==SyntaxExprKind::name
+            &&source.left->token.text=="arrays"&&!lookup(source.left->token)&&imported_units_.contains("arrays");
+        const bool global=(source.kind==SyntaxExprKind::name||source.kind==SyntaxExprKind::call)&&!sort&&!lookup(source.token)&&!routine_names_.contains(name)&&imported_units_.contains("arrays");
+        if(!qualified&&!global)return {};
+        if(source.type_arguments.size()!=1)throw Error("E_TYPE",source.token.location,"Array procedure requires exactly one explicit element type","Процедуре массивов нужен ровно один явный тип элементов");
+        const auto element=resolve_type(*source.type_arguments[0]);const auto location=source.token.location;
+        if(element==Type::unit||element==Type::nil||element==Type::invalid)throw Error("E_TYPE",location,"Invalid array element type","Недопустимый тип элементов массива");
+        unsigned rank=matrix?2U:1U;
+        if(reference){
+            const auto context=callable_type(expected)?std::optional<TypeInfo>{info(expected,location)}:std::nullopt;
+            if(fill){
+                if(!context||context->parameters.empty()||!compound(context->parameters[0].type)||info(context->parameters[0].type,location).kind!=CompoundKind::array)
+                    throw Error("E_TYPE",location,"FillByValue procedure value needs a known array rank","Для значения процедуры FillByValue нужна известная размерность массива");
+                rank=info(context->parameters[0].type,location).rank;
+                if(rank!=1&&rank!=2)throw Error("E_TYPE",location,"Explicit array element type and rank must match the parameter","Явный тип элементов и размерность массива должны совпадать с параметром");
+            }
+            const auto array=sequence_type(CompoundKind::array,element,rank);std::vector<CallableParameter> parameters{{array,false,false}};
+            if(!sort)parameters.push_back({fill?element:matrix?Type::integer:Type::string,false,false});
+            const auto signature=function_type(Type::unit,parameters,location);
+            if(expected!=Type::invalid&&expected!=signature)throw Error("E_TYPE",location,"Generic array procedure value requires its exact full signature","Значению обобщённой процедуры массивов нужна точная полная сигнатура");
+            const auto key=std::make_pair(name,signature);auto found=array_library_routines_.find(key);
+            if(found==array_library_routines_.end()){
+                if(module_.routines.size()>=256)throw Error("E_LIMIT",location,"Routine limit exceeded");
+                hir::RoutineBody body;body.signature.name="$arrays_"+name+"_"+std::to_string(static_cast<unsigned>(signature));body.signature.result=Type::unit;
+                std::vector<std::unique_ptr<hir::Expr>> arguments;
+                for(const auto& parameter:parameters){
+                    if(module_.locals.size()>=4096)throw Error("E_LIMIT",location,"Local and constant limit exceeded");
+                    const auto slot=module_.locals.size();module_.locals.push_back({"$argument",parameter.type,false});body.signature.locals.push_back(slot);lambda_locals_.insert(slot);body.signature.parameters.push_back({slot,parameter.type});
+                    auto value=std::make_unique<hir::Expr>();value->kind=hir::ExprKind::local;value->type=parameter.type;value->local=slot;value->location=location;arguments.push_back(std::move(value));
+                }
+                body.body.kind=hir::StmtKind::call;body.body.location=location;body.body.expression=array_library_operation(name,element,std::move(arguments),location);
+                const auto id=module_.routines.size();module_.routines.push_back(std::move(body));found=array_library_routines_.emplace(key,id).first;
+            }
+            return routine_value(found->second,location,expected);
+        }
+        if(source.arguments.empty()||source.arguments.size()>(sort?1U:2U)||(fill&&source.arguments.size()!=2))
+            throw Error("E_TYPE",location,"Wrong generic array procedure argument count","Неверное число аргументов обобщённой процедуры массивов");
+        auto array=expression(*source.arguments[0],sequence_type(CompoundKind::array,element,rank));
+        if(fill){
+            if(array->type==Type::nil)throw Error("E_TYPE",location,"FillByValue with untyped nil has an ambiguous array rank","У FillByValue с нетипизированным nil неоднозначная размерность массива");
+            if(compound(array->type)&&info(array->type,location).kind==CompoundKind::array)rank=info(array->type,location).rank;
+        }
+        const auto owner=sequence_type(CompoundKind::array,element,rank);array=convert(std::move(array),owner);
+        std::vector<std::unique_ptr<hir::Expr>> arguments;arguments.push_back(std::move(array));
+        for(std::size_t n=1;n<source.arguments.size();++n){const auto type=fill?element:matrix?Type::integer:Type::string;arguments.push_back(convert(expression(*source.arguments[n],type),type));}
+        return array_library_operation(name,element,std::move(arguments),location);
     }
     ABC_PASCAL_NOINLINE std::unique_ptr<hir::Expr> explicit_factory(const SyntaxExpr& source) {
         const bool qualified=source.kind==SyntaxExprKind::member_call;
@@ -5570,11 +5640,11 @@ private:
         result.arguments.clear(); result.kind=hir::ExprKind::object_text; result.type=Type::string; result.local=width ? 1U : 0U;
         return true;
     }
-    bool bind_array_output(hir::Expr& result, std::string_view name, std::string_view unit = {}, bool member = false) {
+    bool bind_array_output(hir::Expr& result, std::string_view name, std::string_view unit = {}, bool member = false,bool generic_matrix=false) {
         if ((member ? name!="write" && name!="writeln" : name!="writearray" && name!="writelnarray" && name!="readarray" && name!="writematrix")
             || (unit.empty() ? !imported_units_.contains("arrays") : unit!="arrays")) return false;
         if (name=="writematrix") {
-            if (result.arguments.empty() || result.arguments.size()>3) throw Error("E_TYPE",result.location,"WriteMatrix requires a matrix, optional width and real precision");
+            if (result.arguments.empty() || result.arguments.size()>(generic_matrix?2U:3U)) throw Error("E_TYPE",result.location,"WriteMatrix requires a matrix, optional width and real precision");
             auto args=std::move(result.arguments); result.arguments.clear(); result.left=std::move(args[0]);
             const auto& type=info(result.left->type,result.location);
             if (type.kind!=CompoundKind::array || type.rank!=2 || (type.element!=Type::real && args.size()>2)) throw Error("E_TYPE",result.location,"WriteMatrix requires a rectangular matrix");
@@ -5583,8 +5653,9 @@ private:
                 auto node=std::make_unique<hir::Expr>(); node->kind=hir::ExprKind::literal; node->type=Type::integer; node->value=value; node->location=result.location; return node;
             };
             result.arguments.push_back(args.size()>1 ? convert(std::move(args[1]),Type::integer) : literal(0));
-            if (type.element==Type::real) result.arguments.push_back(args.size()>2 ? convert(std::move(args[2]),Type::integer) : literal(2));
-            result.kind=hir::ExprKind::write_matrix; result.type=Type::unit; result.local=type.element==Type::real ? 1U : 0U; return true;
+            const bool fixed_real=type.element==Type::real&&!generic_matrix;
+            if (fixed_real) result.arguments.push_back(args.size()>2 ? convert(std::move(args[2]),Type::integer) : literal(2));
+            result.kind=hir::ExprKind::write_matrix; result.type=Type::unit; result.local=fixed_real ? 1U : 0U; return true;
         }
         if (result.arguments.size()!=1 && result.arguments.size()!=2) throw Error("E_TYPE",result.location,"Array output requires an array and optional delimiter");
         result.left=std::move(result.arguments[0]);
@@ -6200,6 +6271,7 @@ private:
     std::map<Type,std::map<std::string,std::size_t>> class_methods_;
     std::map<Type,std::size_t> class_constructors_;
     std::map<std::size_t,std::size_t> builtin_routines_;
+    std::map<std::pair<std::string,Type>,std::size_t> array_library_routines_;
     struct ClassProperty { Type type;std::optional<std::size_t> getter,setter; };
     std::map<Type,std::map<std::string,ClassProperty>> class_properties_;
     Type current_owner_=Type::invalid;

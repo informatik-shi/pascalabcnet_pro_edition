@@ -340,6 +340,7 @@ def main():
                 ("characters.pas", "Буква: Б\nКод UTF-16: 1041\nИмя: Инна\nАлфавит: абвгде\nСимволы: И|н|н|а|\n"),
                 ("file-operations.pas", "Прочитано:\nПервая строка\nВторая строка\nФайл удалён: True\n"),
                 ("file-streams.pas", "Код замены: 65533\nЧисло символов: 1\nText: 65533\nУдалён: True\n"),
+                ("array-generics.pas", "1/2/3\n3|2|1\n7,7,7\n1.5 1.5 \n1.50 1.50 \n"),
                 ("small-integers.pas", "Значения: 255 -128 -32768\nСумма с расширением: 256\nКвадрат: 65025\nГраница byte: 254|255|\nМассив smallint: 1 -2\n"),
                 ("unsigned-integers.pas", "Граница 32 бит: 4294967295\nС расширением: 4294967296\nГраница 64 бит: 18446744073709551615\nКвадрат word: 4294836225\nПредыдущее: 18446744073709551614\nПереключение: True False\n"),
                 ("random-arrays.pas", "Arrays, 0..99: 24|11|46|\nPABCSystem, 0..100: 25|11|47|\nПосле заполнения: 10|10|11|\nВещественное: 0.25\n"),
@@ -1792,6 +1793,18 @@ def main():
             if invalid.returncode != 1 or invalid.stdout or "E_TYPE" not in invalid.stderr or "RU:" not in invalid.stderr:
                 raise RuntimeError(f"{name} set-query policy type mismatch was not rejected before output")
             results[-1]["native_lazy_sequence_sets_policies_and_bilingual_errors"] = "passed"
+            generic_array_error = folder / "Ошибки обобщённых процедур.pas"
+            for expression, english, russian in [
+                ("WriteArray&<integer,string>(Arr(1))", "Array procedure requires exactly one explicit element type", "Процедуре массивов нужен ровно один явный тип элементов"),
+                ("WriteMatrix&<real>(new real[1,1],0,2)", "Wrong generic array procedure argument count", "Неверное число аргументов обобщённой процедуры массивов"),
+            ]:
+                generic_array_error.write_text(f"uses Arrays;\nbegin\n Write('must never run');{expression};\nend.", encoding="utf-8")
+                invalid = subprocess.run([runner, "run", str(generic_array_error)], text=True, encoding="utf-8", capture_output=True, cwd=folder, env=env, timeout=10)
+                if (invalid.returncode != 1 or invalid.stdout or "E_TYPE" not in invalid.stderr
+                        or f"EN: {english}" not in invalid.stderr or f"RU: {russian}" not in invalid.stderr
+                        or f"{generic_array_error}:3:" not in invalid.stderr):
+                    raise RuntimeError(f"{name} generic array static bilingual error failed: {invalid.stdout!r} {invalid.stderr!r}")
+            results[-1]["native_closed_generic_array_procedures_and_bilingual_errors"] = "passed"
             iterator_data = folder / "iterator-resource.txt"
             iterator_data.write_text("one\ntwo\n", encoding="utf-8")
             iterator_source = folder / "Ресурсы перечислителя.pas"

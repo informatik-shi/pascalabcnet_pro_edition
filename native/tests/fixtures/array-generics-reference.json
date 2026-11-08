@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "runtime": ".NET 10.0.12",
+  "culture": "en-US",
+  "generator": "native/tests/reference/generate-array-generics.ps1",
+  "source": "native/tests/reference/array-generics.cs",
+  "source_sha256_lf": "a5baf5c3c4732ffa3b3af5430af72a741646335466db28a99e6ec352500c33ba",
+  "corpus": "array-generics-reference.tsv",
+  "corpus_sha256_lf": "9796572fbb2d41bde86c8b7f42fe64501a0a9975dc05d1ce75949929b4b6d801",
+  "program": "array-generics-program.pas",
+  "program_sha256_lf": "3a732fd9b7570b15b2a7e94ad1104e617744c75f507e43bacd7d22a04b9af096",
+  "rows": 720,
+  "format": "Operation, size, nil flag, call form, width, UTF-16 output hex, error code. A dash is empty output; expected text uses LF. Every closed source type is known before execution.",
+  "source_exports": [
+    "FillByValue<T>(array of T,T)",
+    "FillByValue<T>(array[,] of T,T)",
+    "WriteArray<T>",
+    "WritelnArray<T>",
+    "Sort<T>",
+    "SortDescending<T>",
+    "WriteMatrix<T>"
+  ],
+  "original_source": "bin/Lib/Arrays.pas",
+  "delegate_parameter_count_source": "TreeConverter/TreeRealization/types.cs:4833",
+  "scope": "Independent lowered generic array operations and output/fault recipes; original Pascal compiler not invoked. Tests compare direct, qualified and typed procedure-value forms using existing native element and formatting capabilities. These selected recipes do not prove full generic language support, covariance, class output or complete module coverage. Generators and managed runtimes are not installed with the application."
+}

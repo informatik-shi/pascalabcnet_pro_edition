@@ -1357,3 +1357,38 @@ the complete suites pass 220/220 without Qt and 222/222 with Qt. The selected
 source-audit generic-call example now uses the original `&<T>` syntax; its
 remaining native binding failure is recorded as E_UNSUPPORTED, rather than
 mistaking a malformed test for a parser compatibility gap.
+
+## Closed generic procedures from Arrays
+
+The analyzer binds explicit closed calls and typed procedure values for the
+seven generic declarations in Arrays, using existing element/formatting
+capabilities. This includes both FillByValue ranks, WriteArray, WritelnArray,
+Sort, SortDescending and generic WriteMatrix. The syntax tree records actual
+invocation parentheses so a bare generic procedure reference is not confused
+with an empty explicit call. Runtime Value/Cell/TypeInfo layouts are unchanged.
+
+Full procedure signatures are statically checked. FillByValue values require
+an array-rank context; bare nil remains ambiguous between the two source
+overloads. Noncapturing wrappers are cached by operation and canonical callable
+type, retain ordinary argument order and copy records through existing typed
+operations. The full delegate parameter count matches the original conversion
+check in TreeConverter/TreeRealization/types.cs around line 4833.
+
+Generic WriteMatrix<real> emits general element formatting with a width alone,
+while the nongeneric real overload retains its width/precision stack contract.
+The verifier now permits general formatting for a real matrix and still limits
+the precision form to real elements; forged mode/stack/type metadata is rejected.
+Existing VM operations implement the bodies; no new opcode or managed bridge
+is introduced. Independent .NET 10 recipes cover 720 outputs/faults across
+direct, qualified and procedure-value calls. Additional host checks cover
+record copies, shared nested arrays, enums, nil strings, evaluation order,
+closures, wrapper caching, static rejections and forged bytecode.
+
+This does not complete generic source routines, class formatting, covariance,
+all types, source-unit loading or the per-overload compatibility audit. Arrays
+and the other incomplete library units remain partial.
+
+Both local Release toolchains pass all 1047 generic-array checks. Complete
+suites pass 222/222 without Qt and 224/224 with Qt; the previous 12068 core
+checks remain unchanged. The targeted positive audit now accepts the explicit
+FillByValue example, with all unresolved requirements left open.

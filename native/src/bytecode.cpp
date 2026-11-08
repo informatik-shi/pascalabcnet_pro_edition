@@ -1189,7 +1189,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         case Op::write_matrix:
             if (!compound(type) || type_info(program,type).kind!=CompoundKind::array || type_info(program,type).rank!=2
                 || !object_text_supported(program.types,type_info(program,type).element) || instruction.operand>1
-                || (instruction.operand==1)!=(type_info(program,type).element==Type::real)) invalid(instruction,"Invalid matrix output");
+                || (instruction.operand==1 && type_info(program,type).element!=Type::real)) invalid(instruction,"Invalid matrix output");
             break;
         case Op::array_query:
             if (!compound(type) || type_info(program,type).kind!=CompoundKind::array || instruction.operand>static_cast<std::size_t>(ArrayQuery::length_or_zero))

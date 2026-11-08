@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "runtime_source_base_revision": "da0ed9bd09924003956e07a565023fe82d73df9f",
-  "runtime_changes_in_this_review": ["native/src/file_encoding.cpp: preserve incomplete configured preamble at EOF"],
+  "runtime_source_base_revision": "0b853e4ad7f44d66a4863b4c373f6027f46ed2df",
+  "runtime_changes_in_this_review": ["native/src/pascal.cpp: closed generic Arrays procedures and typed values", "native/src/bytecode.cpp: generic real matrix formatting contract"],
   "scope": "Work planning from shipped interfaces and the current native implementation. Declaration inventory is not implementation coverage. Complete semantic review of all declarations, inherited/imported APIs, lifecycle effects and all supported platforms remains open. No module status is promoted by this audit.",
   "source_notice": "Extracted declarations retain PascalABC.NET source authorship: Ivan Bondarev, Stanislav Mikhalkovich; see ../../doc/copyright.txt and ../../doc/license.txt. These audit files and development tools are not installed with the application.",
   "baselines": {
@@ -59,12 +59,13 @@
       "source_surface": {"module_callables":29,"types":0,"constants":0,"variables":0,"explicit_lifecycle_blocks":0},
       "existing_profiles": ["Array.Write/Writeln", "FillByRandom and random array/matrix factories", "FillByValue", "ReadArray(integer/real/string)", "WriteArray/WritelnArray", "Sort/SortDescending", "WriteMatrix"],
       "implementation_evidence": ["native/src/pascal.cpp:bind_sort", "native/src/pascal.cpp:bind_random_array", "native/src/pascal.cpp:bind_array_output", "native/src/sorting.cpp", "native/src/random.cpp"],
+      "new_evidence": "Closed explicit calls and typed procedure values for seven generic declarations, backed by native/tests/array_generics_tests.cpp and 720 independent .NET 10 outcomes. Generic real matrix output uses general formatting; the nongeneric real overload retains precision. Exact full delegate parameter counts are confirmed by the original converter source.",
       "remaining_gates": [
-        "Explicit generic source calls are not generally supported: Arrays.FillByValue&<integer>(a,1) is a concrete required case. The original parser requires the ampersand before explicit type arguments; acceptance and binding must be checked using that syntax.",
+        "Explicit closed calls and typed procedure values for the seven generic declarations now use the existing native element/formatting profiles. The original ampersand syntax is retained; the required Arrays.FillByValue&<integer>(a,1) case now passes. Class output, general generic source routines and complete generic type interoperability remain open.",
         "Complete per-overload review of type constraints, defaults, nil/error paths and generic element behavior; declared generic T ranges over more types than the native type system currently implements.",
         "Source-unit interoperability and platform compatibility remain unproven. User comparison interfaces have been ported and must not remain listed as wholly absent."
       ],
-      "next_action": "Map all 29 declarations to exact bindings and runtime evidence; address general explicit generic binding and any demonstrated overload/type gaps."
+      "next_action": "Continue the per-overload/type review of all 29 declarations, including source-unit, covariance and class/formatting foundations; explicit closed generic procedure binding now has independent regression evidence."
     },
     {
       "name": "Collections",
