@@ -1,0 +1,481 @@
+{
+  "schema": 1,
+  "runtime_source_revision": "a2f8ee36590dea821c84bcb33c5f91f634640149",
+  "scope": "Selected positive compile requirements, observed in two local native builds. Not API coverage or runtime validation. Unsupported cases remain requirements, not expected failures.",
+  "runs": [
+    {
+      "schema": 1,
+      "scope": "Selected required positive compile cases derived from shipped interfaces. Every case must eventually compile. This is a growing gap list, not complete API coverage; accepting a case does not prove its runtime semantics. No expected failure is made a compatibility requirement.",
+      "runner": "native/build/clang-incremental/abc.exe",
+      "runner_sha256": "722a8c2e7bd978e0914136805b249ce48f84f363a50ec9d586123ea3874159e7",
+      "version": "ABC Native 0.1.0-dev (Pascal prototype)",
+      "cases": [
+        {
+          "id": "system-bigint",
+          "module": "PABCSystem",
+          "source_line": 110,
+          "source_anchor": "BigInteger = System.Numerics.BigInteger;",
+          "accepted": true,
+          "diagnostic": ""
+        },
+        {
+          "id": "system-object",
+          "module": "PABCSystem",
+          "source_line": 91,
+          "source_anchor": "Object = System.Object;",
+          "accepted": false,
+          "diagnostic": "system-object.pas:1:17: E_UNSUPPORTED\nEN: Unknown or unsupported type 'object'\nRU: Неизвестный или неподдерживаемый тип 'object'"
+        },
+        {
+          "id": "system-decimal",
+          "module": "PABCSystem",
+          "source_line": 107,
+          "source_anchor": "decimal = System.Decimal;",
+          "accepted": false,
+          "diagnostic": "system-decimal.pas:1:17: E_UNSUPPORTED\nEN: Unknown or unsupported type 'decimal'\nRU: Неизвестный или неподдерживаемый тип 'decimal'"
+        },
+        {
+          "id": "system-datetime",
+          "module": "PABCSystem",
+          "source_line": 113,
+          "source_anchor": "DateTime = System.DateTime;",
+          "accepted": false,
+          "diagnostic": "system-datetime.pas:1:17: E_UNSUPPORTED\nEN: Unknown or unsupported type 'datetime'\nRU: Неизвестный или неподдерживаемый тип 'datetime'"
+        },
+        {
+          "id": "system-complex",
+          "module": "PABCSystem",
+          "source_line": 116,
+          "source_anchor": "Complex = System.Numerics.Complex;",
+          "accepted": false,
+          "diagnostic": "system-complex.pas:1:17: E_UNSUPPORTED\nEN: Unknown or unsupported type 'complex'\nRU: Неизвестный или неподдерживаемый тип 'complex'"
+        },
+        {
+          "id": "system-shortstring",
+          "module": "PABCSystem",
+          "source_line": 119,
+          "source_anchor": "ShortString = string[255];",
+          "accepted": false,
+          "diagnostic": "system-shortstring.pas:1:17: E_UNSUPPORTED\nEN: Unknown or unsupported type 'shortstring'\nRU: Неизвестный или неподдерживаемый тип 'shortstring'"
+        },
+        {
+          "id": "system-sortedset",
+          "module": "PABCSystem",
+          "source_line": 139,
+          "source_anchor": "SortedSet<T> = System.Collections.Generic.SortedSet<T>;",
+          "accepted": false,
+          "diagnostic": "system-sortedset.pas:1:26: E_SYNTAX\nEN: Expected ';' between statements\nRU: Между операторами ожидается ';'"
+        },
+        {
+          "id": "system-sorteddictionary",
+          "module": "PABCSystem",
+          "source_line": 145,
+          "source_anchor": "SortedDictionary<Key, Value> = System.Collections.Generic.SortedDictionary<Key, Value>;",
+          "accepted": false,
+          "diagnostic": "system-sorteddictionary.pas:1:33: E_SYNTAX\nEN: Expected ';' between statements\nRU: Между операторами ожидается ';'"
+        },
+        {
+          "id": "system-sortedlist",
+          "module": "PABCSystem",
+          "source_line": 148,
+          "source_anchor": "SortedList<Key, Value> = System.Collections.Generic.SortedList<Key, Value>;",
+          "accepted": false,
+          "diagnostic": "system-sortedlist.pas:1:27: E_SYNTAX\nEN: Expected ';' between statements\nRU: Между операторами ожидается ';'"
+        },
+        {
+          "id": "system-icollection",
+          "module": "PABCSystem",
+          "source_line": 168,
+          "source_anchor": "ICollection<T> = System.Collections.Generic.ICollection<T>;",
+          "accepted": false,
+          "diagnostic": "system-icollection.pas:1:28: E_SYNTAX\nEN: Expected ';' between statements\nRU: Между операторами ожидается ';'"
+        },
+        {
+          "id": "system-idictionary",
+          "module": "PABCSystem",
+          "source_line": 174,
+          "source_anchor": "IDictionary<Key, Value> = System.Collections.Generic.IDictionary<Key, Value>;",
+          "accepted": false,
+          "diagnostic": "system-idictionary.pas:1:28: E_SYNTAX\nEN: Expected ';' between statements\nRU: Между операторами ожидается ';'"
+        },
+        {
+          "id": "system-ilist",
+          "module": "PABCSystem",
+          "source_line": 186,
+          "source_anchor": "IList<T> = System.Collections.Generic.IList<T>;",
+          "accepted": false,
+          "diagnostic": "system-ilist.pas:1:22: E_SYNTAX\nEN: Expected ';' between statements\nRU: Между операторами ожидается ';'"
+        },
+        {
+          "id": "system-iset",
+          "module": "PABCSystem",
+          "source_line": 189,
+          "source_anchor": "ISet<T> = System.Collections.Generic.ISet<T>;",
+          "accepted": false,
+          "diagnostic": "system-iset.pas:1:21: E_SYNTAX\nEN: Expected ';' between statements\nRU: Между операторами ожидается ';'"
+        },
+        {
+          "id": "system-stringbuilder",
+          "module": "PABCSystem",
+          "source_line": 194,
+          "source_anchor": "StringBuilder = System.Text.StringBuilder;",
+          "accepted": false,
+          "diagnostic": "system-stringbuilder.pas:1:17: E_UNSUPPORTED\nEN: Unknown or unsupported type 'stringbuilder'\nRU: Неизвестный или неподдерживаемый тип 'stringbuilder'"
+        },
+        {
+          "id": "system-numberformatinfo",
+          "module": "PABCSystem",
+          "source_line": 290,
+          "source_anchor": "NumberFormatInfo = System.Globalization.NumberFormatInfo;",
+          "accepted": false,
+          "diagnostic": "system-numberformatinfo.pas:1:17: E_UNSUPPORTED\nEN: Unknown or unsupported type 'numberformatinfo'\nRU: Неизвестный или неподдерживаемый тип 'numberformatinfo'"
+        },
+        {
+          "id": "arrays-fill-generic",
+          "module": "Arrays",
+          "source_line": 25,
+          "source_anchor": "procedure FillByValue<T>(a: array of T; x: T);",
+          "accepted": false,
+          "diagnostic": "arrays-fill-generic.pas:1:61: E_SYNTAX\nEN: Expected ';' between statements\nRU: Между операторами ожидается ';'"
+        },
+        {
+          "id": "arrays-record-output",
+          "module": "Arrays",
+          "source_line": 41,
+          "source_anchor": "procedure WriteArray<T>(a: array of T; delimiter: string := ' ');",
+          "accepted": true,
+          "diagnostic": ""
+        },
+        {
+          "id": "collections-scalar-output",
+          "module": "Collections",
+          "source_line": 61,
+          "source_anchor": "function ToString: string; override;",
+          "accepted": true,
+          "diagnostic": ""
+        },
+        {
+          "id": "collections-class-output",
+          "module": "Collections",
+          "source_line": 61,
+          "source_anchor": "function ToString: string; override;",
+          "accepted": false,
+          "diagnostic": "collections-class-output.pas:1:98: E_UNSUPPORTED\nEN: Collection text output currently requires scalar elements\nRU: Текстовый вывод коллекции пока требует скалярных элементов"
+        },
+        {
+          "id": "school-ilist-replace",
+          "module": "School",
+          "source_line": 367,
+          "source_anchor": "function ReplaceMany(s: string; source, target: IList<string>): string;",
+          "accepted": false,
+          "diagnostic": "school-ilist-replace.pas:1:31: E_SYNTAX\nEN: Expected ';' between statements\nRU: Между операторами ожидается ';'"
+        },
+        {
+          "id": "files-exports",
+          "module": "FilesOperations",
+          "source_line": 7,
+          "source_anchor": "function ReadFileToEnd(name: string): string;",
+          "accepted": true,
+          "diagnostic": ""
+        },
+        {
+          "id": "ini-read",
+          "module": "IniFile",
+          "source_line": 20,
+          "source_anchor": "function ReadString(Section,Ident: string; DefaultValue: string): string;",
+          "accepted": true,
+          "diagnostic": ""
+        },
+        {
+          "id": "ini-gettype",
+          "module": "IniFile",
+          "source_line": 10,
+          "source_anchor": "TIniFile = class",
+          "accepted": false,
+          "diagnostic": "ini-gettype.pas:1:55: E_TYPE\nEN: Compound type required\nRU: Требуется составной тип"
+        },
+        {
+          "id": "ini-gettype-basic",
+          "module": "IniFile",
+          "source_line": 10,
+          "source_anchor": "TIniFile = class",
+          "accepted": true,
+          "diagnostic": ""
+        },
+        {
+          "id": "ini-object-tostring",
+          "module": "IniFile",
+          "source_line": 10,
+          "source_anchor": "TIniFile = class",
+          "accepted": false,
+          "diagnostic": "ini-object-tostring.pas:1:47: E_NAME\nEN: Unknown TIniFile member\nRU: Неизвестный член TIniFile"
+        },
+        {
+          "id": "ini-object-equals",
+          "module": "IniFile",
+          "source_line": 10,
+          "source_anchor": "TIniFile = class",
+          "accepted": false,
+          "diagnostic": "ini-object-equals.pas:1:47: E_NAME\nEN: Unknown TIniFile member\nRU: Неизвестный член TIniFile"
+        },
+        {
+          "id": "ini-object-hash",
+          "module": "IniFile",
+          "source_line": 10,
+          "source_anchor": "TIniFile = class",
+          "accepted": false,
+          "diagnostic": "ini-object-hash.pas:1:47: E_NAME\nEN: Unknown TIniFile member\nRU: Неизвестный член TIniFile"
+        },
+        {
+          "id": "ini-inheritance",
+          "module": "IniFile",
+          "source_line": 10,
+          "source_anchor": "TIniFile = class",
+          "accepted": false,
+          "diagnostic": "ini-inheritance.pas:1:20: E_UNSUPPORTED\nEN: Class inheritance is not ported yet\nRU: Наследование классов ещё не перенесено"
+        }
+      ],
+      "summary": {
+        "accepted": 6,
+        "required": 28
+      }
+    },
+    {
+      "schema": 1,
+      "scope": "Selected required positive compile cases derived from shipped interfaces. Every case must eventually compile. This is a growing gap list, not complete API coverage; accepting a case does not prove its runtime semantics. No expected failure is made a compatibility requirement.",
+      "runner": "native/build/qt-editor/Release/abc.exe",
+      "runner_sha256": "0f9194c6de90f85c31953af148b88b4cd762a9afe87ac69926ac08d38d85cb90",
+      "version": "ABC Native 0.1.0-dev (Pascal prototype)",
+      "cases": [
+        {
+          "id": "system-bigint",
+          "module": "PABCSystem",
+          "source_line": 110,
+          "source_anchor": "BigInteger = System.Numerics.BigInteger;",
+          "accepted": true,
+          "diagnostic": ""
+        },
+        {
+          "id": "system-object",
+          "module": "PABCSystem",
+          "source_line": 91,
+          "source_anchor": "Object = System.Object;",
+          "accepted": false,
+          "diagnostic": "system-object.pas:1:17: E_UNSUPPORTED\nEN: Unknown or unsupported type 'object'\nRU: Неизвестный или неподдерживаемый тип 'object'"
+        },
+        {
+          "id": "system-decimal",
+          "module": "PABCSystem",
+          "source_line": 107,
+          "source_anchor": "decimal = System.Decimal;",
+          "accepted": false,
+          "diagnostic": "system-decimal.pas:1:17: E_UNSUPPORTED\nEN: Unknown or unsupported type 'decimal'\nRU: Неизвестный или неподдерживаемый тип 'decimal'"
+        },
+        {
+          "id": "system-datetime",
+          "module": "PABCSystem",
+          "source_line": 113,
+          "source_anchor": "DateTime = System.DateTime;",
+          "accepted": false,
+          "diagnostic": "system-datetime.pas:1:17: E_UNSUPPORTED\nEN: Unknown or unsupported type 'datetime'\nRU: Неизвестный или неподдерживаемый тип 'datetime'"
+        },
+        {
+          "id": "system-complex",
+          "module": "PABCSystem",
+          "source_line": 116,
+          "source_anchor": "Complex = System.Numerics.Complex;",
+          "accepted": false,
+          "diagnostic": "system-complex.pas:1:17: E_UNSUPPORTED\nEN: Unknown or unsupported type 'complex'\nRU: Неизвестный или неподдерживаемый тип 'complex'"
+        },
+        {
+          "id": "system-shortstring",
+          "module": "PABCSystem",
+          "source_line": 119,
+          "source_anchor": "ShortString = string[255];",
+          "accepted": false,
+          "diagnostic": "system-shortstring.pas:1:17: E_UNSUPPORTED\nEN: Unknown or unsupported type 'shortstring'\nRU: Неизвестный или неподдерживаемый тип 'shortstring'"
+        },
+        {
+          "id": "system-sortedset",
+          "module": "PABCSystem",
+          "source_line": 139,
+          "source_anchor": "SortedSet<T> = System.Collections.Generic.SortedSet<T>;",
+          "accepted": false,
+          "diagnostic": "system-sortedset.pas:1:26: E_SYNTAX\nEN: Expected ';' between statements\nRU: Между операторами ожидается ';'"
+        },
+        {
+          "id": "system-sorteddictionary",
+          "module": "PABCSystem",
+          "source_line": 145,
+          "source_anchor": "SortedDictionary<Key, Value> = System.Collections.Generic.SortedDictionary<Key, Value>;",
+          "accepted": false,
+          "diagnostic": "system-sorteddictionary.pas:1:33: E_SYNTAX\nEN: Expected ';' between statements\nRU: Между операторами ожидается ';'"
+        },
+        {
+          "id": "system-sortedlist",
+          "module": "PABCSystem",
+          "source_line": 148,
+          "source_anchor": "SortedList<Key, Value> = System.Collections.Generic.SortedList<Key, Value>;",
+          "accepted": false,
+          "diagnostic": "system-sortedlist.pas:1:27: E_SYNTAX\nEN: Expected ';' between statements\nRU: Между операторами ожидается ';'"
+        },
+        {
+          "id": "system-icollection",
+          "module": "PABCSystem",
+          "source_line": 168,
+          "source_anchor": "ICollection<T> = System.Collections.Generic.ICollection<T>;",
+          "accepted": false,
+          "diagnostic": "system-icollection.pas:1:28: E_SYNTAX\nEN: Expected ';' between statements\nRU: Между операторами ожидается ';'"
+        },
+        {
+          "id": "system-idictionary",
+          "module": "PABCSystem",
+          "source_line": 174,
+          "source_anchor": "IDictionary<Key, Value> = System.Collections.Generic.IDictionary<Key, Value>;",
+          "accepted": false,
+          "diagnostic": "system-idictionary.pas:1:28: E_SYNTAX\nEN: Expected ';' between statements\nRU: Между операторами ожидается ';'"
+        },
+        {
+          "id": "system-ilist",
+          "module": "PABCSystem",
+          "source_line": 186,
+          "source_anchor": "IList<T> = System.Collections.Generic.IList<T>;",
+          "accepted": false,
+          "diagnostic": "system-ilist.pas:1:22: E_SYNTAX\nEN: Expected ';' between statements\nRU: Между операторами ожидается ';'"
+        },
+        {
+          "id": "system-iset",
+          "module": "PABCSystem",
+          "source_line": 189,
+          "source_anchor": "ISet<T> = System.Collections.Generic.ISet<T>;",
+          "accepted": false,
+          "diagnostic": "system-iset.pas:1:21: E_SYNTAX\nEN: Expected ';' between statements\nRU: Между операторами ожидается ';'"
+        },
+        {
+          "id": "system-stringbuilder",
+          "module": "PABCSystem",
+          "source_line": 194,
+          "source_anchor": "StringBuilder = System.Text.StringBuilder;",
+          "accepted": false,
+          "diagnostic": "system-stringbuilder.pas:1:17: E_UNSUPPORTED\nEN: Unknown or unsupported type 'stringbuilder'\nRU: Неизвестный или неподдерживаемый тип 'stringbuilder'"
+        },
+        {
+          "id": "system-numberformatinfo",
+          "module": "PABCSystem",
+          "source_line": 290,
+          "source_anchor": "NumberFormatInfo = System.Globalization.NumberFormatInfo;",
+          "accepted": false,
+          "diagnostic": "system-numberformatinfo.pas:1:17: E_UNSUPPORTED\nEN: Unknown or unsupported type 'numberformatinfo'\nRU: Неизвестный или неподдерживаемый тип 'numberformatinfo'"
+        },
+        {
+          "id": "arrays-fill-generic",
+          "module": "Arrays",
+          "source_line": 25,
+          "source_anchor": "procedure FillByValue<T>(a: array of T; x: T);",
+          "accepted": false,
+          "diagnostic": "arrays-fill-generic.pas:1:61: E_SYNTAX\nEN: Expected ';' between statements\nRU: Между операторами ожидается ';'"
+        },
+        {
+          "id": "arrays-record-output",
+          "module": "Arrays",
+          "source_line": 41,
+          "source_anchor": "procedure WriteArray<T>(a: array of T; delimiter: string := ' ');",
+          "accepted": true,
+          "diagnostic": ""
+        },
+        {
+          "id": "collections-scalar-output",
+          "module": "Collections",
+          "source_line": 61,
+          "source_anchor": "function ToString: string; override;",
+          "accepted": true,
+          "diagnostic": ""
+        },
+        {
+          "id": "collections-class-output",
+          "module": "Collections",
+          "source_line": 61,
+          "source_anchor": "function ToString: string; override;",
+          "accepted": false,
+          "diagnostic": "collections-class-output.pas:1:98: E_UNSUPPORTED\nEN: Collection text output currently requires scalar elements\nRU: Текстовый вывод коллекции пока требует скалярных элементов"
+        },
+        {
+          "id": "school-ilist-replace",
+          "module": "School",
+          "source_line": 367,
+          "source_anchor": "function ReplaceMany(s: string; source, target: IList<string>): string;",
+          "accepted": false,
+          "diagnostic": "school-ilist-replace.pas:1:31: E_SYNTAX\nEN: Expected ';' between statements\nRU: Между операторами ожидается ';'"
+        },
+        {
+          "id": "files-exports",
+          "module": "FilesOperations",
+          "source_line": 7,
+          "source_anchor": "function ReadFileToEnd(name: string): string;",
+          "accepted": true,
+          "diagnostic": ""
+        },
+        {
+          "id": "ini-read",
+          "module": "IniFile",
+          "source_line": 20,
+          "source_anchor": "function ReadString(Section,Ident: string; DefaultValue: string): string;",
+          "accepted": true,
+          "diagnostic": ""
+        },
+        {
+          "id": "ini-gettype",
+          "module": "IniFile",
+          "source_line": 10,
+          "source_anchor": "TIniFile = class",
+          "accepted": false,
+          "diagnostic": "ini-gettype.pas:1:55: E_TYPE\nEN: Compound type required\nRU: Требуется составной тип"
+        },
+        {
+          "id": "ini-gettype-basic",
+          "module": "IniFile",
+          "source_line": 10,
+          "source_anchor": "TIniFile = class",
+          "accepted": true,
+          "diagnostic": ""
+        },
+        {
+          "id": "ini-object-tostring",
+          "module": "IniFile",
+          "source_line": 10,
+          "source_anchor": "TIniFile = class",
+          "accepted": false,
+          "diagnostic": "ini-object-tostring.pas:1:47: E_NAME\nEN: Unknown TIniFile member\nRU: Неизвестный член TIniFile"
+        },
+        {
+          "id": "ini-object-equals",
+          "module": "IniFile",
+          "source_line": 10,
+          "source_anchor": "TIniFile = class",
+          "accepted": false,
+          "diagnostic": "ini-object-equals.pas:1:47: E_NAME\nEN: Unknown TIniFile member\nRU: Неизвестный член TIniFile"
+        },
+        {
+          "id": "ini-object-hash",
+          "module": "IniFile",
+          "source_line": 10,
+          "source_anchor": "TIniFile = class",
+          "accepted": false,
+          "diagnostic": "ini-object-hash.pas:1:47: E_NAME\nEN: Unknown TIniFile member\nRU: Неизвестный член TIniFile"
+        },
+        {
+          "id": "ini-inheritance",
+          "module": "IniFile",
+          "source_line": 10,
+          "source_anchor": "TIniFile = class",
+          "accepted": false,
+          "diagnostic": "ini-inheritance.pas:1:20: E_UNSUPPORTED\nEN: Class inheritance is not ported yet\nRU: Наследование классов ещё не перенесено"
+        }
+      ],
+      "summary": {
+        "accepted": 6,
+        "required": 28
+      }
+    }
+  ]
+}

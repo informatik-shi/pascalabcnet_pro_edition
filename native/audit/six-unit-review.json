@@ -1,0 +1,111 @@
+{
+  "schema": 1,
+  "runtime_source_revision": "a2f8ee36590dea821c84bcb33c5f91f634640149",
+  "scope": "Work planning from shipped interfaces and the current native implementation. Declaration inventory is not implementation coverage. Complete semantic review of all declarations, inherited/imported APIs, lifecycle effects and all supported platforms remains open. No module status is promoted by this audit.",
+  "source_notice": "Extracted declarations retain PascalABC.NET source authorship: Ivan Bondarev, Stanislav Mikhalkovich; see ../../doc/copyright.txt and ../../doc/license.txt. These audit files and development tools are not installed with the application.",
+  "baselines": {
+    "interfaces": "stdlib-interface-source.json",
+    "explicit_dependencies_all_100_modules": "stdlib-dependencies-source.json",
+    "selected_required_positive_cases": "stdlib-required-cases.json",
+    "observed_native_checks": "stdlib-required-observed.json"
+  },
+  "counting_rules": [
+    "Count declarations, not distinct names: overloads, forward type declarations and preprocessor branches remain separate.",
+    "Exposed means module-level, public or protected declarations; hidden compiler helper exports remain included.",
+    "Type aliases do not enumerate the APIs of their targets. Fields, constants and variables are counted separately from callables/properties.",
+    "Missing methods cannot be inferred from declaration names alone. Every callable/property starts unreviewed.",
+    "The required-case corpus deliberately includes known gaps. Its pass ratio is not a progress estimate or full module coverage."
+  ],
+  "modules": [
+    {
+      "name": "FilesOperations",
+      "source": "bin/Lib/FilesOperations.pas",
+      "status": "partial",
+      "source_surface": {"module_callables":2,"types":0,"constants":0,"variables":0,"explicit_lifecycle_blocks":0},
+      "reviewed_exports": [
+        {"name":"ReadFileToEnd","line":7,"implementation":"native/src/file_operations.cpp:file_operations_read","required_semantics":"Text reset, read each logical line and append the host newline, including the unterminated final line; BOM/default codec; close on normal completion."},
+        {"name":"WriteStringToFile","line":8,"implementation":"native/src/file_operations.cpp:file_operations_write","required_semantics":"Text rewrite and Write(Text,object); nil string writes nil as text; preserve embedded line endings and close on normal completion."}
+      ],
+      "existing_verification": ["native/tests/core_tests.cpp:text_files", "native/tests/fixtures/file-operations-compat.pas", "native/tests/fixtures/file-operations-compat.out"],
+      "remaining_gates": [
+        "Independent stream/sharing and failure-path compatibility evidence on Windows, Linux and macOS; existing native expected-output tests alone do not close this gate.",
+        "Review common Text, path, encoding and execution-resource limits for both routines; source-unit interoperability is still incomplete."
+      ],
+      "next_action": "Build an independent Text recipe corpus for both complete routines, including sharing conflicts and release after failure, then resolve demonstrated native differences."
+    },
+    {
+      "name": "IniFile",
+      "source": "bin/Lib/IniFile.pas",
+      "status": "partial",
+      "source_surface": {"public_callables_properties":9,"public_types":1,"private_helpers":2,"private_fields":2,"explicit_lifecycle_blocks":0},
+      "reviewed_exports": ["TIniFile.Create", "TIniFile.Save", "TIniFile.FileName", "TIniFile.WriteString", "TIniFile.ReadString", "TIniFile.WriteInteger", "TIniFile.WriteBoolean", "TIniFile.ReadInteger", "TIniFile.ReadBoolean"],
+      "implementation_evidence": ["native/src/ini_file.cpp:IniCall", "native/src/ini_file.cpp:ini_invoke", "native/src/pascal.cpp:bind_inifile_member"],
+      "existing_verification": ["native/tests/core_tests.cpp:ini_files", "native/tests/fixtures/inifile-reference.json", "native/tests/fixtures/ini-files-compat.pas"],
+      "remaining_gates": [
+        "Native TIniFile is a closed special type: class inheritance and inherited Object members are incomplete. Required positive cases now reproduce inheritance, ToString, Equals and GetHashCode failures.",
+        "GetType is available, but System.Type.Name is not; selected positive cases separate these two facts.",
+        "SortedList current-culture semantics are only covered by the en-US native profile; mutable culture, inherited/imported APIs and full platform error/sharing parity need review.",
+        "IndexOfSection, IndexOfIdent, fname and sl are private in the original class; they must not be added as missing public exports."
+      ],
+      "downstream_source_users": ["DrawManField", "RobotField"],
+      "next_action": "Implement required common class/Object foundations and file compatibility, rather than invent additional IniFile exports."
+    },
+    {
+      "name": "Arrays",
+      "source": "bin/Lib/Arrays.pas",
+      "status": "partial",
+      "source_surface": {"module_callables":29,"types":0,"constants":0,"variables":0,"explicit_lifecycle_blocks":0},
+      "existing_profiles": ["Array.Write/Writeln", "FillByRandom and random array/matrix factories", "FillByValue", "ReadArray(integer/real/string)", "WriteArray/WritelnArray", "Sort/SortDescending", "WriteMatrix"],
+      "implementation_evidence": ["native/src/pascal.cpp:bind_sort", "native/src/pascal.cpp:bind_random_array", "native/src/pascal.cpp:bind_array_output", "native/src/sorting.cpp", "native/src/random.cpp"],
+      "remaining_gates": [
+        "Explicit generic source calls are not generally supported: Arrays.FillByValue<integer>(a,1) is a concrete required case that currently fails to parse.",
+        "Complete per-overload review of type constraints, defaults, nil/error paths and generic element behavior; declared generic T ranges over more types than the native type system currently implements.",
+        "Source-unit interoperability and platform compatibility remain unproven. User comparison interfaces have been ported and must not remain listed as wholly absent."
+      ],
+      "next_action": "Map all 29 declarations to exact bindings and runtime evidence; address general explicit generic binding and any demonstrated overload/type gaps."
+    },
+    {
+      "name": "Collections",
+      "source": "bin/Lib/Collections.pas",
+      "status": "partial",
+      "source_surface": {"public_callables_properties":62,"public_types":8,"public_constants":2,"private_helpers":4,"explicit_lifecycle_blocks":0},
+      "reviewed_types": ["SingleNode<T>", "Stack<T>", "Queue<T>", "DynArray<T>", "SimpleSet<T>", "AssocArray<KeyType,ValueType>", "LinkedListNode<T>", "LinkedList<T>"],
+      "reviewed_constants": ["MIN_CAP", "INC_CAP_FACTOR"],
+      "implementation_evidence": ["native/src/compound.cpp", "native/src/linked.hpp", "native/src/pascal.cpp"],
+      "remaining_gates": [
+        "Compound/class element ToString/Print/Println, inherited Object/override behavior and full generic element semantics; Stack<Item>.ToString has a concrete compile-time gap.",
+        "Audit property references and nested record writes against original source semantics before treating them as supported or unsupported contracts.",
+        "General source classes, inheritance and source-unit interoperability are incomplete; review every public overload and both module constants."
+      ],
+      "next_action": "Use the 62-member declaration baseline to close class/output/reference foundations across all eight families."
+    },
+    {
+      "name": "School",
+      "source": "bin/Lib/School.pas",
+      "status": "partial",
+      "source_surface": {"module_callables":63,"public_callables_properties":25,"public_types":2,"private_helpers":20,"explicit_lifecycle_blocks":0},
+      "reviewed_types": ["Addr32", "CalcIP"],
+      "implementation_evidence": ["native/src/school.cpp", "native/src/school_text.cpp", "native/src/school_ip.cpp", "native/src/regex.cpp"],
+      "remaining_gates": [
+        "ReplaceMany(s,source,target:IList<string>) requires a real typed IList interface; the selected required case currently fails before binding this overload.",
+        "Complete per-overload class/delegate/interface, culture and regex behavior; native regex profiles are not the entire original regex API/dialect.",
+        "Source-unit interoperability and full platform/error compatibility remain unproven."
+      ],
+      "next_action": "Review all 88 exposed declarations, prioritize shared IList/class foundations and record exact remaining runtime differences."
+    },
+    {
+      "name": "PABCSystem",
+      "source": "bin/Lib/PABCSystem.pas",
+      "status": "partial",
+      "source_surface": {"module_callables":844,"public_callables_properties":309,"type_declarations_including_forwards":108,"exposed_constants":22,"exposed_variables":12,"exposed_fields":11,"explicit_lifecycle_blocks":2},
+      "lifecycle_source": {"initialization_line":17496,"finalization_line":17498},
+      "remaining_gates": [
+        "Full individual semantic review of 1157 callable/property declarations, including compiler helpers and private members, plus all type aliases, fields, constants, variables and lifecycle effects.",
+        "Positive native checks demonstrate missing Object, decimal, DateTime, Complex, ShortString, sorted collections, collection interfaces, StringBuilder and NumberFormatInfo. This is a selected list, not the full remaining API.",
+        "Aliased imported types expose APIs beyond the declaration baseline; full boxing, inheritance, overrides, exceptions, generic source routines and source-unit loading must be audited and implemented.",
+        "Full Windows/Linux/macOS behavior and portable Qt GUI deployment are not established by passing native core checks."
+      ],
+      "next_action": "Create per-declaration evidence and implement shared language/type foundations needed by whole source units; retain the full bin/Lib scope."
+    }
+  ]
+}

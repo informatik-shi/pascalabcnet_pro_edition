@@ -572,7 +572,7 @@
       "name": "Arrays",
       "source": "bin/Lib/Arrays.pas",
       "status": "partial",
-      "notes": "Native rank-one/two profile: sort/fill, array/matrix random factories/fill, ReadArray(integer/real/string), WriteArray/WritelnArray, WriteMatrix and array output methods with qualified names. User comparison interfaces and complete source-unit loading/compatibility remain pending; not a complete module port."
+      "notes": "Native rank-one/two profile: sort/fill, array/matrix random factories/fill, ReadArray(integer/real/string), WriteArray/WritelnArray, WriteMatrix and array output methods with qualified names. Native user comparison interfaces are supported. General explicit generic calls, complete per-overload/type review and source-unit loading/compatibility remain pending; not a complete module port."
     },
     {
       "name": "BBCMicrobit",
