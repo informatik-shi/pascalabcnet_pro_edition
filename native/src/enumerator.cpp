@@ -1,4 +1,5 @@
 #include "enumerator.hpp"
+#include "sequence_set.hpp"
 #include "runtime_values.hpp"
 #include "dictionary.hpp"
 #include "value_hash.hpp"
@@ -11,7 +12,7 @@ namespace {
 using Object=std::shared_ptr<Aggregate>;
 bool valid(const Program& p,Type type){return compound(type) && static_cast<unsigned>(type)-64U<p.types.size();}
 bool flat(SequenceProvider p){return collection_sequence(p) || p==SequenceProvider::hash_set || p==SequenceProvider::new_set || dictionary_provider(p) || p==SequenceProvider::string;}
-bool no_dispose(const SequenceState& s){return flat(s.provider) || (s.provider==SequenceProvider::generated && (s.generator_method==GeneratorMethod::iterate_one || s.generator_method==GeneratorMethod::iterate_two)) || s.provider==SequenceProvider::repeat || ((s.provider==SequenceProvider::range || s.provider==SequenceProvider::stepped_range) && s.seed && s.seed->type!=Type::character) || s.provider==SequenceProvider::big_range || s.provider==SequenceProvider::partition || s.provider==SequenceProvider::real_range;}
+bool no_dispose(const SequenceState& s){return (s.provider==SequenceProvider::set_query && s.set_query && !s.set_query->initialized) || flat(s.provider) || (s.provider==SequenceProvider::generated && (s.generator_method==GeneratorMethod::iterate_one || s.generator_method==GeneratorMethod::iterate_two)) || s.provider==SequenceProvider::repeat || ((s.provider==SequenceProvider::range || s.provider==SequenceProvider::stepped_range) && s.seed && s.seed->type!=Type::character) || s.provider==SequenceProvider::big_range || s.provider==SequenceProvider::partition || s.provider==SequenceProvider::real_range;}
 bool clears(Values& values,const SequenceState& s){
  if(s.provider==SequenceProvider::generated && s.generator_method==GeneratorMethod::index_sequence)return true;
  if((s.provider==SequenceProvider::range || s.provider==SequenceProvider::stepped_range) && s.seed && s.seed->type==Type::character)return true;
@@ -126,6 +127,7 @@ Value enumerator_invoke(Values& values,Type owner,Type payload,EnumeratorMethod 
   return values.copy(object->items[0]->value);
  }
  if(method==EnumeratorMethod::dispose){
+  if(provider==SequenceProvider::set_query && state.cursor->sequence->set_query && state.cursor->sequence->set_query->running){sequence_set_running_dispose(values,*state.cursor->sequence->set_query,options);return false;}
   if(provider==SequenceProvider::string){if(!state.disposed)state.index=state.cursor->sequence->count+1;state.disposed=true;state.available=false;return false;}
   if(!no_dispose(*state.cursor->sequence)){
    const bool clear=clears(values,*state.cursor->sequence);sequence_dispose(values,state.cursor,options);state.disposed=true;state.finished=true;
@@ -141,8 +143,10 @@ Value enumerator_invoke(Values& values,Type owner,Type payload,EnumeratorMethod 
  if(provider==SequenceProvider::string && state.disposed)throw runtime_error(RuntimeError::nil_reference,values.location);
  if(state.disposed || (state.finished && !collection))return false;
  if(state.index>static_cast<std::uint64_t>(INT64_MAX))throw runtime_error(RuntimeError::integer_overflow,values.location);
+ if(provider==SequenceProvider::set_query && state.cursor->sequence->set_query && state.cursor->sequence->set_query->running)return false;
+ const auto transform=state.cursor->sequence->transform;
  const bool next=sequence_resume(values,state.cursor,state.index,options);
- if(next){values.write(object->items[0],sequence_at(values,state.cursor,static_cast<std::int64_t>(state.index),options));++state.index;state.available=true;return true;}
+ if(next){values.write(object->items[0],transform && state.cursor->sequence->disposed ? values.copy(transform->current) : sequence_at(values,state.cursor,static_cast<std::int64_t>(state.index),options));++state.index;state.available=true;return true;}
  state.available=false;state.finished=true;
  if(collection || clears(values,*state.cursor->sequence))values.write(object->items[0],values.zero(type_info(values.program,owner).element,false,true));
  if(!collection)sequence_dispose(values,state.cursor,options);

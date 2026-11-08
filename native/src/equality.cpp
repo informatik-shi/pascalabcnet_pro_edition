@@ -16,6 +16,7 @@ bool nil(const Value& v){if(std::holds_alternative<NilString>(v))return true;if(
 void guard(Values& values,const ExecutionOptions& options){if(!options.instruction_limit)throw runtime_error(RuntimeError::instruction_limit,values.location);if(options.cancelled && options.cancelled())throw runtime_error(RuntimeError::cancelled,values.location);}
 std::int32_t signed_hash(std::uint32_t n){return std::bit_cast<std::int32_t>(n);}
 }
+bool equality_nil(const Value& value){return nil(value);}
 Type equatable_contract(const std::vector<TypeInfo>& types,Type element){for(std::size_t i=0;i<types.size();++i)if(types[i].kind==CompoundKind::equatable_interface && types[i].element==element)return static_cast<Type>(64+i);return Type::invalid;}
 bool default_equatable(const std::vector<TypeInfo>& types,Type element){if(scalar(element))return true;const auto contract=equatable_contract(types,element);return contract!=Type::invalid && interface_compatible(types,element,contract);}
 bool equality_value(Values& values,Type type,const Value& a,const Value& b,const ExecutionOptions& options){

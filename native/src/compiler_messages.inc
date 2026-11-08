@@ -577,3 +577,5 @@
     {"Array search requires a rank-one array","Поиск требует одномерный массив"},
     {"Array search explicit type must match the element type","Явный тип поиска должен совпадать с типом элемента массива"},
     {"SequenceEqual requires two sources and an optional equality comparer","SequenceEqual требует два источника и необязательный сравнитель равенства"},
+    {"Sequence set operation requires typed sources and an optional equality comparer","Операции множеств над последовательностями требуют типизированные источники и необязательный сравнитель равенства"},
+    {"Ambiguous set-query equality comparer element type","Неоднозначный тип элемента сравнителя равенства для запроса множеств"},

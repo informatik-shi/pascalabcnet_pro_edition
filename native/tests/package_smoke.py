@@ -249,6 +249,7 @@ def main():
                 ("dictionary-comparers.pas", "1 same last digit\nTrue True\nTrue False\nTrue\n"),
                 ("collection-search.pas", "0 3\n3 0\n0 3 True\nTrue False\nTrue True\n"),
                 ("sequence-equality.pas", "False\nTrue\nFalse\nTrue\n"),
+                ("sequence-sets.pas", "[1,2,3]\n[1,2,3,4]\n[3]\n[1,2]\n[1,2,3]\n[1,2]\n"),
                 ("paired-sorting.pas", "[10,20,30]\n[Аня,Борис,Вера]\n[30,20,10]\n[Вера,Борис,Аня]\n"),
                 ("array-sorting.pas", "[9,1,2,3,8]\n[9,8,3,2,1]\n[1,2,3,8,9]\n"),
                 ("list-sorting.pas", "[5,4,3,2,1]\n[1,2,3,4,5]\n[5,4,3,2,1]\nFalse\n[1,2,3,4,5]\n"),
@@ -1772,6 +1773,24 @@ def main():
             if invalid.returncode != 1 or invalid.stdout or "E_TYPE" not in invalid.stderr or "RU:" not in invalid.stderr:
                 raise RuntimeError(f"{name} SequenceEqual policy type mismatch was not rejected before output")
             results[-1]["native_sequence_equality_policies_disposal_and_bilingual_errors"] = "passed"
+            set_query_error = folder / "Ошибки операций множеств.pas"
+            for source, code, english, russian in [
+                ("begin\nWrite('before');Union(Arr(1),nil,EqualityComparer<integer>.Default);end.", "E_NIL", "Cannot access a nil reference", "Нельзя обратиться к пустой ссылке nil"),
+                ("type C=class(IEqualityComparer<integer>) public function Equals(a,b:integer):boolean:=a=b;function GetHashCode(a:integer):integer;begin\nvar zero:=0;Result:=a div zero;end;end;begin Write('before');Arr(1).Distinct(new C).Count;end.", "E_DIV_ZERO", "Division by zero", "Деление на ноль"),
+                ("type C=class(IEqualityComparer<integer>) public function Equals(a,b:integer):boolean;begin\nvar zero:=0;Result:=1 div zero=0;end;function GetHashCode(a:integer):integer:=0;end;begin Write('before');Arr(1,2).Except(new integer[0],new C).Count;end.", "E_DIV_ZERO", "Division by zero", "Деление на ноль"),
+                ("type S=class(IEnumerable<integer>) public function GetEnumerator:IEnumerator<integer>:=nil;end;\nbegin Write('before');var q:=Intersect(Arr(1),new S,nil);q.Any;end.", "E_NIL", "Cannot access a nil reference", "Нельзя обратиться к пустой ссылке nil"),
+                ("type E=class(IEnumerator<integer>) private n:integer;public function MoveNext:boolean;begin n+=1;Result:=n<=2;end;property Current:integer read One;function One:integer:=1;procedure Reset;begin n:=0;end;procedure Dispose;begin\nvar a:=Arr(1);var x:=a[999];end;end;S=class(IEnumerable<integer>) public function GetEnumerator:IEnumerator<integer>:=new E;end;begin Write('before');(new S).Distinct.Count;end.", "E_BOUNDS", "Index is outside sequence bounds", "Индекс находится за границами строки, массива или списка"),
+            ]:
+                set_query_error.write_text(source, encoding="utf-8")
+                invalid = subprocess.run([runner, "run", str(set_query_error)], text=True, encoding="utf-8", capture_output=True, cwd=folder, env=env, timeout=10)
+                if (invalid.returncode != 1 or invalid.stdout != "before" or code not in invalid.stderr
+                        or f"EN: {english}" not in invalid.stderr or f"RU: {russian}" not in invalid.stderr or f"{set_query_error}:2:" not in invalid.stderr):
+                    raise RuntimeError(f"{name} lazy set-query bilingual failure: {invalid.stdout!r} {invalid.stderr!r}")
+            set_query_error.write_text("begin Write('must never run');Distinct(Arr(1),EqualityComparer<string>.Default);end.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(set_query_error)], text=True, encoding="utf-8", capture_output=True, cwd=folder, env=env, timeout=10)
+            if invalid.returncode != 1 or invalid.stdout or "E_TYPE" not in invalid.stderr or "RU:" not in invalid.stderr:
+                raise RuntimeError(f"{name} set-query policy type mismatch was not rejected before output")
+            results[-1]["native_lazy_sequence_sets_policies_and_bilingual_errors"] = "passed"
             iterator_data = folder / "iterator-resource.txt"
             iterator_data.write_text("one\ntwo\n", encoding="utf-8")
             iterator_source = folder / "Ресурсы перечислителя.pas"

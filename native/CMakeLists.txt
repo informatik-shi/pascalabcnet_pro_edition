@@ -62,6 +62,7 @@ add_library(abc_core
     src/sequence_slice.cpp
     src/sequence_concat.cpp
     src/sequence_compare.cpp
+    src/sequence_set.cpp
     src/sequence_transform.cpp
     src/sequence_join.cpp
     src/sequence_predicate.cpp
@@ -224,6 +225,13 @@ if(BUILD_TESTING)
     if(MSVC)
         target_compile_options(abc_sequence_equality_tests PRIVATE /utf-8)
     endif()
+    add_executable(abc_sequence_set_tests tests/sequence_set_tests.cpp)
+    target_link_libraries(abc_sequence_set_tests PRIVATE abc_core)
+    if(MSVC)
+        target_compile_options(abc_sequence_set_tests PRIVATE /utf-8)
+    endif()
+    add_test(NAME sequence_sets COMMAND abc_sequence_set_tests)
+    add_test(NAME sequence_sets_example COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/examples/sequence-sets.pas")
     add_test(NAME sequence_equality COMMAND abc_sequence_equality_tests)
     add_test(NAME sequence_equality_example COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/examples/sequence-equality.pas")
     add_test(NAME collection_search COMMAND abc_collection_search_tests)

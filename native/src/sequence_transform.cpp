@@ -15,7 +15,8 @@ bool sequence_transform_resume(Values& values,const std::shared_ptr<Aggregate>& 
     if (!state.transform || !values.invoke || (!state.callable && state.callback>=values.program.routines.size())) throw runtime_error(RuntimeError::invalid_bytecode,values.location);
     const bool indexed=state.callable ? type_info(values.program,state.callable->type).parameters.size()==2
         : values.program.routines[state.callback].parameters.size()==2;
-    auto& cursor=*state.transform;
+    const auto retained=state.transform;auto& cursor=*retained;
+    struct Running {bool& value;bool before;explicit Running(bool& flag):value(flag),before(flag){value=true;}~Running(){value=before;}} running(cursor.running);
     if (cursor.positioned && index==cursor.index) return cursor.available;
     if ((!cursor.positioned && index) || (cursor.positioned && (!cursor.available || index<=cursor.index || index-cursor.index!=1)))
         throw runtime_error(RuntimeError::invalid_bytecode,values.location);
@@ -30,7 +31,7 @@ bool sequence_transform_resume(Values& values,const std::shared_ptr<Aggregate>& 
             }
             auto completed=std::move(cursor.inner);sequence_dispose(values,completed,options);
         }
-        if (!cursor.iterator) cursor.iterator=sequence_begin(values,state.source,options);
+        if (!cursor.iterator){if(state.disposed && !indexed && (state.transform_method==SequenceTransform::where || state.transform_method==SequenceTransform::select))throw runtime_error(RuntimeError::nil_reference,values.location);cursor.iterator=sequence_begin(values,state.source,options);}
         if (cursor.source_index>static_cast<std::uint64_t>(INT64_MAX)) throw runtime_error(RuntimeError::integer_overflow,values.location);
         if (!sequence_resume(values,cursor.iterator,cursor.source_index,options)) { cursor.ended=true; break; }
         auto item=sequence_at(values,cursor.iterator,static_cast<std::int64_t>(cursor.source_index),options);

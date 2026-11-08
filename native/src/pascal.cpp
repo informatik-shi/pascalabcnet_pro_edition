@@ -19,6 +19,7 @@
 #include "hash_set.hpp"
 #include "dictionary.hpp"
 #include "enumerator.hpp"
+#include "sequence_set.hpp"
 #include "interfaces.hpp"
 #include "ordinal_range.hpp"
 #include "real_interval.hpp"
@@ -1011,7 +1012,7 @@ private:
                 expect("]");
             } else if (accept(".")) {
                 // These standard Text methods also have statement keyword spellings.
-                const auto field = is("write") || is("writeln") || is("readln") || is("foreach") || is("default") || is("array") ? consume() : name();
+                const auto field = is("write") || is("writeln") || is("readln") || is("foreach") || is("default") || is("array") || is("except") ? consume() : name();
                 result = make_expression(SyntaxExprKind::field, field, std::move(result));
             } else if (accept("(")) {
                 if (result->kind==SyntaxExprKind::name) result->kind=SyntaxExprKind::call;
@@ -2438,7 +2439,7 @@ private:
         const bool slice=sequence_slice_method(name).has_value(),query=sequence_query_method(name).has_value();
         const bool numeric=name=="sum" || name=="average" || name=="product" || name=="partialsum";
         const bool conversion=name=="toset" || name=="tohashset" || name=="asenumerable";
-        if(!slice && !query && !numeric && !conversion && name!="defaultifempty" && name!="concat" && name!="sequenceequal")return false;
+        if(!slice && !query && !numeric && !conversion && !sequence_set_method(name) && name!="defaultifempty" && name!="concat" && name!="sequenceequal")return false;
         result.arguments.push_back(std::move(result.left));
         for(const auto& argument:source.arguments)result.arguments.push_back(expression(*argument));
         if(slice)return bind_sequence_slice(result,name,"pabcsystem");
@@ -2622,7 +2623,7 @@ private:
                 && (bind_dictionary_query(*result,source,{},true) || bind_sequence_zip(*result,source,{},true) || bind_sequence_numeric_selector(*result,source,{},true) || bind_sequence_predicate(*result,source,{},true) || bind_sequence_transform(*result,source,{},true))) break;
             if (receiver==Type::string && (sequence_slice_method(source.token.text) || sequence_query_method(source.token.text)
                 || source.token.text=="count" || source.token.text=="toarray" || source.token.text=="tolist" || source.token.text=="toset" || source.token.text=="tohashset" || source.token.text=="concat"
-                || source.token.text=="asenumerable" || source.token.text=="sequenceequal" || source.token.text=="defaultifempty")) {
+                || source.token.text=="asenumerable" || source.token.text=="sequenceequal" || source.token.text=="defaultifempty" || sequence_set_method(source.token.text))) {
                 result->arguments.push_back(convert(std::move(result->left),sequence_type(CompoundKind::sequence,Type::character)));
                 for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
                 if (bind_sequence_default(*result,source.token.text,"pabcsystem") || bind_sequence_slice(*result,source.token.text,"pabcsystem") || bind_sequence_query(*result,source.token.text,"pabcsystem")
@@ -2835,7 +2836,7 @@ private:
                 for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
                 (void)bind_sequence_default(*result,source.token.text,"pabcsystem"); break;
             }
-            if ((type.kind==CompoundKind::sequence || enumerable_collection(type)) && (source.token.text=="concat" || source.token.text=="sequenceequal")) {
+            if ((type.kind==CompoundKind::sequence || enumerable_collection(type)) && (source.token.text=="concat" || source.token.text=="sequenceequal" || sequence_set_method(source.token.text))) {
                 result->arguments.push_back(std::move(result->left));
                 for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
                 (void)bind_sequence_concat(*result,source.token.text,"pabcsystem"); break;
@@ -5176,7 +5177,25 @@ private:
         else { result.right=std::make_unique<hir::Expr>(); result.right->kind=hir::ExprKind::default_value; result.right->operation="default"; result.right->type=source.element; result.right->location=result.location; }
         result.arguments.clear(); result.kind=hir::ExprKind::sequence_default; result.type=sequence; return true;
     }
+    static std::optional<SequenceSetMethod> sequence_set_method(std::string_view name){
+        if(name=="distinct")return SequenceSetMethod::distinct;if(name=="union")return SequenceSetMethod::unite;if(name=="intersect")return SequenceSetMethod::intersect;if(name=="except")return SequenceSetMethod::subtract;return {};
+    }
+    ABC_PASCAL_NOINLINE bool bind_sequence_set(hir::Expr& result,std::string_view name,std::string_view unit={}){
+        const auto method=sequence_set_method(name);if(!method || (!unit.empty() && unit!="pabcsystem"))return false;
+        const auto sources=sequence_set_binary(*method) ? 2U : 1U;const auto count=result.arguments.size();if(count!=sources && count!=sources+1)throw Error("E_TYPE",result.location,"Sequence set operation requires typed sources and an optional equality comparer");
+        const bool policy=count==sources+1;auto first=result.arguments[0]->type;if(sources==2 && (first==Type::nil || (compound(first) && info(first,result.location).kind==CompoundKind::empty_collection)))first=result.arguments[1]->type;
+        Type element=Type::invalid;
+        if(policy && (first==Type::nil || (compound(first) && info(first,result.location).kind==CompoundKind::empty_collection))){
+            const auto actual=result.arguments[sources]->type;
+            if(compound(actual))for(std::size_t n=0;n<module_.types.size();++n){const auto& candidate=module_.types[n];if(candidate.kind!=CompoundKind::equality_comparer_interface || !interface_compatible(module_.types,actual,static_cast<Type>(64+n)))continue;if(element!=Type::invalid && element!=candidate.element)throw Error("E_TYPE",result.location,"Ambiguous set-query equality comparer element type");element=candidate.element;}
+        }
+        if(element==Type::invalid)element=sequence_source(first,result.location).element;const auto sequence=sequence_type(CompoundKind::sequence,element);(void)enumerator_type(element);(void)sequence_type(CompoundKind::array,element);
+        for(unsigned n=0;n<sources;++n)result.arguments[n]=convert(std::move(result.arguments[n]),sequence);
+        Type payload=Type::invalid;if(policy){payload=comparison_type(CompoundKind::equality_comparer_interface,element);result.arguments[sources]=convert(std::move(result.arguments[sources]),payload);}
+        result.kind=hir::ExprKind::sequence_set;result.type=sequence;result.local=static_cast<std::size_t>(*method)|(policy ? static_cast<std::size_t>(payload)<<8U : 0U);return true;
+    }
     bool bind_sequence_concat(hir::Expr& result,std::string_view name,std::string_view unit={}) {
+        if(bind_sequence_set(result,name,unit))return true;
         const bool compare=name=="sequenceequal";
         if ((name!="concat" && !compare) || (!unit.empty() && unit!="pabcsystem")) return false;
         // Preserve the existing string Concat overloads.

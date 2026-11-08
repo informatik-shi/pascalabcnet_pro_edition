@@ -89,7 +89,7 @@ struct GeneratorState {
     std::uint64_t index=0;
     bool positioned=false, available=false;
 };
-enum class SequenceProvider { school_ip_hosts, school_ip_binary, array, list, repeat, range, stepped_range, big_range, partition, real_range, partial_sum, slice, concat, string, transform, zip, generated, cartesian, cartesian_power, combinatorics, array_view, matrix_lines, file_lines, text_lines, hash_set, new_set, ordinal_range, random, directory, dictionary_entries, dictionary_keys, dictionary_values, user_source };
+enum class SequenceProvider { school_ip_hosts, school_ip_binary, array, list, repeat, range, stepped_range, big_range, partition, real_range, partial_sum, slice, concat, string, transform, zip, generated, cartesian, cartesian_power, combinatorics, array_view, matrix_lines, file_lines, text_lines, hash_set, new_set, ordinal_range, random, directory, dictionary_entries, dictionary_keys, dictionary_values, user_source, set_query };
 inline bool dictionary_provider(SequenceProvider provider){return provider==SequenceProvider::dictionary_entries || provider==SequenceProvider::dictionary_keys || provider==SequenceProvider::dictionary_values;}
 inline bool collection_sequence(SequenceProvider provider) { return provider==SequenceProvider::array || provider==SequenceProvider::list; }
 struct BigRangeState {
@@ -132,7 +132,7 @@ struct TransformState {
     std::shared_ptr<Aggregate> iterator,inner;
     Value current=std::int32_t{0};
     std::uint64_t index=0,source_index=0,inner_index=0,work=0;
-    bool positioned=false,available=false,ended=false,prefix_done=false;
+    bool positioned=false,available=false,ended=false,prefix_done=false,running=false;
 };
 struct ZipState {
     std::vector<std::shared_ptr<Aggregate>> iterators;
@@ -186,6 +186,8 @@ struct MatrixLineState {
     bool initialized=false,positioned=false,available=false;
 };
 struct FileLineState;struct TextLineState;struct RandomSequenceState;struct DirectorySequenceState;
+enum class SequenceSetMethod { distinct, unite, intersect, subtract };
+struct SequenceSetState;
 struct ProtocolCursor {Type protocol=Type::invalid;Value receiver=std::int32_t{0};std::uint64_t index=0;bool positioned=false,available=false;};
 struct SequenceState {
     std::shared_ptr<Aggregate> source;
@@ -233,6 +235,8 @@ struct SequenceState {
     std::shared_ptr<RandomSequenceState> random;
     std::shared_ptr<DirectorySequenceState> directory;
     std::shared_ptr<ProtocolCursor> protocol_cursor{};
+    SequenceSetMethod set_method=SequenceSetMethod::distinct;
+    std::shared_ptr<SequenceSetState> set_query{};
 };
 struct EnumeratorState {
     std::shared_ptr<Aggregate> prototype,cursor;
@@ -280,7 +284,7 @@ enum class Op {
     read_lines, write_lines, array_copy, array_high, sequence_sort, sequence_fill, mutate_string, increment, read_value,
     endpoint_call, buffer_call, association_call, linked_call, file_print, file_newline, file_read, file_skip_line, file_output,
     iteration_version, iteration_check, set_character, random_array, fill_random_array, sequence_mutate, swap_values, write_array,
-    bit_not, bit_and, bit_or, bit_xor, shift_left, shift_right, read_console, read_array, console_output, array_query, write_matrix, object_text, print_output, try_read, convert_string, try_parse, val, string_read, string_array, school_list, replace_last, replace_many, school_fold, tuple_literal, school_pair, school_minmax, school_table_print, school_table_new, school_ip, sequence_begin, sequence_count, sequence_array, sequence_wrap, swap_substrings, sequence_list, sequence_query, sequence_snapshot, sequence_repeat, sequence_range, sequence_resume, sequence_partition, sequence_aggregate, sequence_partial, sequence_slice, sequence_concat, sequence_equal, sequence_default, sequence_select, sequence_where, sequence_predicate, sequence_flatmap, sequence_zip, sequence_takewhile, sequence_skipwhile, routine_value, call_value, sequence_select_value, sequence_where_value, sequence_flatmap_value, sequence_takewhile_value, sequence_skipwhile_value, sequence_predicate_value, sequence_zip_value, fresh_local, generator, sequence_cartesian, sequence_cartesian_value, cartesian_power, combinations, permutations, partial_permutations, next_permutation, array_view, matrix_operation, array_operation, collection_operation, matrix_build, list_operation, list_bulk, list_capacity, list_copy, construct_user, encoding_call, sequence_dispose, text_lines, for_step_check, enum_call, comparable_call, ini_call, compound_call, store_index, store_field, hash_set_call, new_set_call, empty_call, print_call, sequence_join, ordinal_range_call, real_interval_call, random_sequence, directory_sequence, type_operation, dictionary_call, enumerator_call, interface_cast, interface_call, comparer_create, sort_call
+    bit_not, bit_and, bit_or, bit_xor, shift_left, shift_right, read_console, read_array, console_output, array_query, write_matrix, object_text, print_output, try_read, convert_string, try_parse, val, string_read, string_array, school_list, replace_last, replace_many, school_fold, tuple_literal, school_pair, school_minmax, school_table_print, school_table_new, school_ip, sequence_begin, sequence_count, sequence_array, sequence_wrap, swap_substrings, sequence_list, sequence_query, sequence_snapshot, sequence_repeat, sequence_range, sequence_resume, sequence_partition, sequence_aggregate, sequence_partial, sequence_slice, sequence_concat, sequence_equal, sequence_default, sequence_select, sequence_where, sequence_predicate, sequence_flatmap, sequence_zip, sequence_takewhile, sequence_skipwhile, routine_value, call_value, sequence_select_value, sequence_where_value, sequence_flatmap_value, sequence_takewhile_value, sequence_skipwhile_value, sequence_predicate_value, sequence_zip_value, fresh_local, generator, sequence_cartesian, sequence_cartesian_value, cartesian_power, combinations, permutations, partial_permutations, next_permutation, array_view, matrix_operation, array_operation, collection_operation, matrix_build, list_operation, list_bulk, list_capacity, list_copy, construct_user, encoding_call, sequence_dispose, text_lines, for_step_check, enum_call, comparable_call, ini_call, compound_call, store_index, store_field, hash_set_call, new_set_call, empty_call, print_call, sequence_join, ordinal_range_call, real_interval_call, random_sequence, directory_sequence, type_operation, dictionary_call, enumerator_call, interface_cast, interface_call, comparer_create, sort_call, sequence_set
 };
 
 enum class SequenceQuery { any, first, last, first_default, last_default, element, element_default, contains, single, single_default, contains_comparer };

@@ -1278,3 +1278,52 @@ and remaining equality-aware APIs remain separate required work.
 
 Validation: 30199 SequenceEqual checks in each Release toolchain; full suites
 216/216 without Qt and 218/218 with Qt, retaining all 12068 previous core checks.
+
+### Lazy sequence set operators
+
+Distinct/Union/Intersect/Except append a sequence_set opcode and HIR kind,
+dispatched through the existing outlined expression handler. Method occupies
+the low eight bits; an optional exact IEqualityComparer<T> type occupies the
+upper bits. Verifier checks raw width, owner/rank, IEnumerator metadata and
+the complete source/source/policy stack. Result and source element types agree
+before execution; nil/empty source inference may use an unambiguous typed policy.
+TypeInfo/Value/Cell representations remain unchanged. SequenceState owns an
+independent SequenceSetState per cursor; prototypes retain the chosen sources
+and policy without enumerating. Member .Except parsing matches School.pas.
+
+Private Set uses the physical slot/hash/link/bucket representation shared with
+HashSetState, but an independent kernel: initial capacity seven, count*2+1 growth,
+cached masked 31-bit hashes, head chains and free slots. Public HashSet prime
+capacity behavior is unchanged. Nil hashes are zero without a user hash call;
+custom Equals receives nil values. Default dispatch uses declared element T,
+never inferred runtime-class contracts. Record values copy with contained
+references shared. Native allocation/work/cancellation bounds remain enforced.
+
+Actual IEnumerator interfaces retain cached collection Current versus live array
+Current. Union closes first before acquiring second; Intersect/Except completely
+preload and close second before acquiring first. Generated query Current retains
+its final value. Dispose before first MoveNext is a no-op and reentrant MoveNext
+returns false. A running Dispose can close an armed yield scope while its current
+MoveNext continues; a later yield rearms it. Non-yield preload loops ignore that
+external Dispose but retain their ordinary fault/completion finally. Fault cleanup
+skips disarmed scopes; normal loop completion still performs its own close.
+
+Unary Select/Where producer states are retained across callback disposal. Native
+Current snapshots retain values returned by a mid-disposed producer; legacy
+array/list traversal and cleared enumerable fields follow their iterator shapes.
+The shape classifier follows unary Where/Select composition with a bounded
+cleanup stack. Cleanup reserves/deadline, error replacement and Halt bypass of
+user Dispose remain shared with existing execution contexts.
+
+34280 independent Framework executions verify exact calls/results/final states
+and IEEE result bits. Dedicated host checks cover record copies, named interfaces,
+static rejection, nine forged metadata cases, nil inference, work/cancellation,
+infinite Dispose, Halt and 100 nested Distinct operations on the normal stack.
+Observer cleanup reserves are explicit; application defaults are unchanged.
+Full source unit loading/generics, Object virtual overrides/inheritance, record
+interfaces, boxing/variance, reflection/nongeneric protocols, StringComparer and
+remaining equality-aware APIs are separate required work. This profile completes
+none of those larger requirements and does not complete a library unit.
+
+Both Release toolchains pass 47476 set-query checks; full suites pass 218/218
+without Qt and 220/220 with Qt, retaining all 12068 previous core checks.

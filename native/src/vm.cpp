@@ -43,6 +43,7 @@
 #include "hash_set.hpp"
 #include "dictionary.hpp"
 #include "enumerator.hpp"
+#include "sequence_set.hpp"
 #include "interfaces.hpp"
 #include "ordinal_range.hpp"
 #include "real_interval.hpp"
@@ -492,6 +493,11 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
         case Op::sequence_default: {
             auto fallback=pop(); const auto source=std::get<std::shared_ptr<Aggregate>>(pop());
             stack.emplace_back(sequence_default(values,instruction.type,source,std::move(fallback),options)); break;
+        }
+        case Op::sequence_set: {
+            const auto method=static_cast<SequenceSetMethod>(instruction.operand&255U);const auto policy=(instruction.operand>>8U) ? std::get<std::shared_ptr<Aggregate>>(pop()) : std::shared_ptr<Aggregate>{};
+            const auto second=sequence_set_binary(method) ? std::get<std::shared_ptr<Aggregate>>(pop()) : std::shared_ptr<Aggregate>{};const auto first=std::get<std::shared_ptr<Aggregate>>(pop());
+            stack.emplace_back(sequence_set(values,instruction.type,method,first,second,policy,options));break;
         }
         case Op::sequence_equal: {
             const auto policy=instruction.operand ? std::get<std::shared_ptr<Aggregate>>(pop()) : std::shared_ptr<Aggregate>{};
