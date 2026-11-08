@@ -576,3 +576,4 @@
     {"Array search requires a known element type","Для поиска в массиве нужен известный тип элемента"},
     {"Array search requires a rank-one array","Поиск требует одномерный массив"},
     {"Array search explicit type must match the element type","Явный тип поиска должен совпадать с типом элемента массива"},
+    {"SequenceEqual requires two sources and an optional equality comparer","SequenceEqual требует два источника и необязательный сравнитель равенства"},

@@ -494,8 +494,9 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
             stack.emplace_back(sequence_default(values,instruction.type,source,std::move(fallback),options)); break;
         }
         case Op::sequence_equal: {
+            const auto policy=instruction.operand ? std::get<std::shared_ptr<Aggregate>>(pop()) : std::shared_ptr<Aggregate>{};
             const auto second=std::get<std::shared_ptr<Aggregate>>(pop()); const auto first=std::get<std::shared_ptr<Aggregate>>(pop());
-            stack.emplace_back(sequence_equal(values,first,second,options)); break;
+            stack.emplace_back(sequence_equal(values,first,second,options,policy)); break;
         }
         case Op::sequence_concat: {
             const auto second=std::get<std::shared_ptr<Aggregate>>(pop()); const auto first=std::get<std::shared_ptr<Aggregate>>(pop());

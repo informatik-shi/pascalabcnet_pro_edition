@@ -334,8 +334,8 @@ private:
             break;
         }
         case hir::ExprKind::sequence_concat: case hir::ExprKind::sequence_equal: case hir::ExprKind::sequence_default:
-            expression(*node.left); expression(*node.right);
-            emit(node.kind==hir::ExprKind::sequence_equal ? Op::sequence_equal : node.kind==hir::ExprKind::sequence_default ? Op::sequence_default : Op::sequence_concat,node.left->type,0,node.location); break;
+            expression(*node.left); expression(*node.right);for(const auto& argument:node.arguments)expression(*argument);
+            emit(node.kind==hir::ExprKind::sequence_equal ? Op::sequence_equal : node.kind==hir::ExprKind::sequence_default ? Op::sequence_default : Op::sequence_concat,node.left->type,node.kind==hir::ExprKind::sequence_equal ? node.local : 0,node.location); break;
         case hir::ExprKind::sequence_slice:
             expression(*node.left); expression(*node.right); emit(Op::sequence_slice,node.left->type,node.local,node.location); break;
         case hir::ExprKind::sequence_query:
@@ -1086,7 +1086,9 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
                 || output.element!=(predicate ? element : returned)) invalid(instruction,"Invalid sequence callback signature");
             break;
         }
-        case Op::sequence_concat: case Op::sequence_equal: case Op::sequence_default:
+        case Op::sequence_equal:
+            if(!sequence_equal_signature_valid(program,type,instruction.operand))invalid(instruction,"Invalid SequenceEqual metadata");break;
+        case Op::sequence_concat: case Op::sequence_default:
             if (!compound(type) || type_info(program,type).kind!=CompoundKind::sequence || instruction.operand) invalid(instruction,"Invalid Concat metadata");
             break;
         case Op::sequence_slice:
@@ -1586,7 +1588,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         case Op::sequence_select_value: case Op::sequence_where_value: case Op::sequence_flatmap_value: case Op::sequence_takewhile_value: case Op::sequence_skipwhile_value:
             require(static_cast<Type>(instruction.operand&65535U)); require(instruction.type); stack.push_back(static_cast<Type>(instruction.operand>>16)); break;
         case Op::sequence_select: case Op::sequence_where: case Op::sequence_flatmap: case Op::sequence_takewhile: case Op::sequence_skipwhile: require(instruction.type); stack.push_back(static_cast<Type>(instruction.operand>>8)); break;
-        case Op::sequence_equal: require(instruction.type); require(instruction.type); stack.push_back(Type::boolean); break;
+        case Op::sequence_equal: if(instruction.operand)require(static_cast<Type>(instruction.operand));require(instruction.type); require(instruction.type); stack.push_back(Type::boolean); break;
         case Op::sequence_default: require(type_info(program,instruction.type).element); require(instruction.type); stack.push_back(instruction.type); break;
         case Op::sequence_slice: require(Type::integer); require(instruction.type); stack.push_back(instruction.type); break;
         case Op::sequence_query: {

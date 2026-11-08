@@ -35,7 +35,8 @@ bool sequence_concat_resume(Values& values,const std::shared_ptr<Aggregate>& seq
 std::shared_ptr<Aggregate> sequence_transform(Values& values,Type type,const std::shared_ptr<Aggregate>& source,std::size_t callback,SequenceTransform method,const ExecutionOptions& options,std::shared_ptr<Aggregate> callable={});
 bool sequence_transform_resume(Values& values,const std::shared_ptr<Aggregate>& sequence,std::uint64_t index,const ExecutionOptions& options);
 Value sequence_predicate(Values& values,const std::shared_ptr<Aggregate>& source,std::size_t callback,PredicateQuery method,const ExecutionOptions& options,std::shared_ptr<Aggregate> callable={});
-bool sequence_equal(Values& values,const std::shared_ptr<Aggregate>& first,const std::shared_ptr<Aggregate>& second,const ExecutionOptions& options);
+bool sequence_equal_signature_valid(const Program&,Type,std::size_t);
+bool sequence_equal(Values& values,const std::shared_ptr<Aggregate>& first,const std::shared_ptr<Aggregate>& second,const ExecutionOptions& options,const std::shared_ptr<Aggregate>& comparer={});
 std::shared_ptr<Aggregate> sequence_default(Values& values,Type type,const std::shared_ptr<Aggregate>& source,Value fallback,const ExecutionOptions& options);
 std::shared_ptr<Aggregate> sequence_zip(Values& values,Type type,std::vector<std::shared_ptr<Aggregate>> sources,std::size_t callback,const ExecutionOptions& options,std::shared_ptr<Aggregate> callable={});
 bool sequence_zip_resume(Values& values,const std::shared_ptr<Aggregate>& sequence,std::uint64_t index,const ExecutionOptions& options);

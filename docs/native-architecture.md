@@ -1238,3 +1238,43 @@ payloads for ordinary queries and rejection of forged unused payloads. Full suit
 passed 214/214 without Qt and 216/216 with Qt, retaining all 12068 core checks.
 Legacy array equality charges one scalar comparison once, preserving first-match
 search under an instruction limit of one while keeping recursive work bounded.
+
+### SequenceEqual through actual interface enumerators
+
+SequenceEqual reuses its opcode with operand zero for the existing overload and
+the exact IEqualityComparer<T> type for an explicit policy. Binder ensures a
+canonical IEnumerator<T> and rank-one array type for the existing empty Range
+adapter; verifier checks owner/rank, raw policy width/kind/element and the typed
+argument stack. HIR emits both sources then the optional policy; VM pops the
+policy before the right and left sources. No additional Generator frame is added.
+
+The kernel calls enumerator_invoke get/move/current rather than reading raw
+sequence cells. This retains boxed List/HashSet/Dictionary Current snapshots
+while array Current reads its current physical cell. User Current is deferred
+until both MoveNext calls succeed. No source identity or collection count shortcut
+changes side effects. Missing/nil policies use declared-T default equality; custom
+policies receive nil arguments and invoke Equals without hashing. Record arguments
+copy fields while sharing contained references; interface-typed T never acquires
+an IEquatable contract from the actual runtime class.
+
+Both interfaces are acquired before moving left. After left exhaustion, right
+moves once more; on success both Current values are read left then right. The
+new enumerator_finally helper uses the same bounded CleanupMode and nested-scope
+error replacement as sequence_finally. Null interfaces skip Dispose; even an
+identical actual enumerator is disposed once per nonnull scope, right then left.
+A failure acquiring right still disposes left. ProgramTermination bypasses user
+Dispose and retains ordinary native ownership/resource leases and exit semantics.
+
+22616 independent Framework executions verify values/policies, arrays/list/user/
+Select/Where/HashSet/NewSet/Dictionary.Values providers, nil and asymmetric lengths,
+source aliases, shared actual enumerators, callback mutation, GetEnumerator/MoveNext/
+Current/Equals/Dispose failures and final states. The target Framework source has
+no newer ICollection count optimization. Host checks cover interfaces, records,
+metadata forgery, argument order, work/cancellation, bounded infinite Dispose and
+Halt. Observer cleanup reserves are explicit; application defaults are unchanged.
+General source try/finally, generic method inference/function values, Object virtual
+overrides and inheritance, record interfaces, boxing/variance, nongeneric protocols
+and remaining equality-aware APIs remain separate required work.
+
+Validation: 30199 SequenceEqual checks in each Release toolchain; full suites
+216/216 without Qt and 218/218 with Qt, retaining all 12068 previous core checks.

@@ -124,6 +124,7 @@ IComparable<T>, IComparer<T>, Comparer<T>.Default/Create: examples/comparers.pas
 HashSet с пользовательским IEqualityComparer<T> и сохранением сравнителя в Copy: examples/hashset-comparers.pas.
 Dictionary со сравнителем ключей, Copy и равенством значений: examples/dictionary-comparers.pas.
 Поиск Array.IndexOf/LastIndexOf, List и Contains со сравнителем: examples/collection-search.pas.
+Сравнение последовательностей по типу элемента или пользовательскому сравнителю: examples/sequence-equality.pas.
 Contains без сравнителя сохраняет правила исходной коллекции; явный nil выбирает стандартное сравнение элементов.
 Обход автоматически вызывает Dispose при завершении, break, Exit и ошибке; общие пользовательские обобщения ещё переносятся.
 Нативный IniFile.TIniFile: uses IniFile; пример examples/ini-files.pas.

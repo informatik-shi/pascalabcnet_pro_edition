@@ -5181,17 +5181,20 @@ private:
         if ((name!="concat" && !compare) || (!unit.empty() && unit!="pabcsystem")) return false;
         // Preserve the existing string Concat overloads.
         if (result.arguments.empty()) { if(compare) throw Error("E_TYPE",result.location,"SequenceEqual requires two sources"); return false; }
-        const auto first=result.arguments[0]->type;
-        const bool inferred_nil=first==Type::nil && result.arguments.size()==2 && (compound(result.arguments[1]->type) || (compare && result.arguments[1]->type==Type::string));
-        const bool inferred_text=first==Type::string && result.arguments.size()==2 && compound(result.arguments[1]->type)
+        const auto first=result.arguments[0]->type;const auto count=result.arguments.size();const bool policy=compare && count==3;
+        const bool inferred_nil=first==Type::nil && count>=2 && (compound(result.arguments[1]->type) || (compare && result.arguments[1]->type==Type::string));
+        const bool inferred_text=first==Type::string && count>=2 && compound(result.arguments[1]->type)
             && info(result.arguments[1]->type,result.location).element==Type::character;
         if (!compound(first) && !inferred_nil && !inferred_text && !compare) return false;
-        if (result.arguments.size()!=2) throw Error("E_TYPE",result.location,"Sequence Concat requires two sources");
+        if (count!=2 && !policy) throw Error("E_TYPE",result.location,compare ? "SequenceEqual requires two sources and an optional equality comparer" : "Sequence Concat requires two sources");
         const auto source=inferred_nil ? result.arguments[1]->type : first; const auto source_info=sequence_source(source,result.location);
         const auto sequence=sequence_type(CompoundKind::sequence,source_info.element);
+        Type payload=Type::invalid;std::unique_ptr<hir::Expr> comparer;if(policy){payload=comparison_type(CompoundKind::equality_comparer_interface,source_info.element);comparer=convert(std::move(result.arguments[2]),payload);}
+        if(compare){(void)enumerator_type(source_info.element);(void)sequence_type(CompoundKind::array,source_info.element);}
         result.left=convert(std::move(result.arguments[0]),sequence);
         result.right=convert(std::move(result.arguments[1]),sequence);
-        result.arguments.clear(); result.kind=compare ? hir::ExprKind::sequence_equal : hir::ExprKind::sequence_concat; result.type=compare ? Type::boolean : sequence; return true;
+        result.arguments.clear();if(comparer)result.arguments.push_back(std::move(comparer));result.local=policy ? static_cast<std::size_t>(payload) : 0U;
+        result.kind=compare ? hir::ExprKind::sequence_equal : hir::ExprKind::sequence_concat; result.type=compare ? Type::boolean : sequence; return true;
     }
     static std::optional<SequenceSlice> sequence_slice_method(std::string_view name) {
         if (name=="take") return SequenceSlice::take;

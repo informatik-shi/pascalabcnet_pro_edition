@@ -113,6 +113,13 @@ void sequence_finish(Values& values,const std::shared_ptr<Aggregate>& sequence,c
     std::rethrow_exception(failure);
 }
 
+void enumerator_finish(Values& values,Type type,const Value& iterator,const ExecutionOptions& options,std::exception_ptr failure){
+    if(termination(failure))std::rethrow_exception(failure);
+    const auto object=std::get<std::shared_ptr<Aggregate>>(iterator);
+    CleanupMode cleanup(values,bool(failure));
+    if(object && !object->nil)(void)enumerator_invoke(values,type,Type::invalid,EnumeratorMethod::dispose,iterator,options);
+    if(failure)std::rethrow_exception(failure);
+}
 namespace {
 std::shared_ptr<Aggregate> cursor_lease(std::shared_ptr<Aggregate> owner) {
     auto* pointer=owner.get();
