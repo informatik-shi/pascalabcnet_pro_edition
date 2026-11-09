@@ -133,6 +133,7 @@ Dictionary со сравнителем ключей, Copy и равенство�
 Типизированный IDictionary<K,V>, перегрузки Add/Remove и представления ключей: examples/dictionary-interfaces.pas.
 Типизированный ISet<T> и отдельный Add через ICollection<T>: examples/set-interfaces.pas.
 Явные реализации методов интерфейсов: examples/explicit-interfaces.pas.
+Явные свойства, выражения чтения и операторы записи: examples/property-interfaces.pas.
 Порядок вычисления объекта и ключа при составной записи в коллекцию: examples/collection-property-writes.pas.
 Интерфейсы пользовательских записей и массовые операции пользовательских коллекций ещё переносятся.
 Contains без сравнителя сохраняет правила исходной коллекции; явный nil выбирает стандартное сравнение элементов.

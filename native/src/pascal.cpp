@@ -212,6 +212,7 @@ enum class SyntaxExprKind { literal, literal_group, name, unary, binary, call, i
 struct SyntaxRoutine;
 struct SyntaxProperty;
 struct SyntaxExpr;
+struct SyntaxStmt;
 struct SyntaxType {
     Token token;
     std::string kind;
@@ -232,7 +233,7 @@ struct SyntaxType {
     std::map<std::string,MemberAccess> field_access{};
     std::shared_ptr<SyntaxRoutine> initializer{};
 };
-struct SyntaxProperty { Token name;std::shared_ptr<SyntaxType> type;std::optional<Token> getter,setter;MemberAccess access=MemberAccess::public_member;std::vector<std::pair<Token,std::shared_ptr<SyntaxType>>> indices{};bool default_indexer=false; };
+struct SyntaxProperty { Token name;std::shared_ptr<SyntaxType> type;std::optional<Token> getter,setter;MemberAccess access=MemberAccess::public_member;std::vector<std::pair<Token,std::shared_ptr<SyntaxType>>> indices{};bool default_indexer=false;std::shared_ptr<SyntaxType> explicit_interface{};std::shared_ptr<SyntaxExpr> getter_expression{};std::shared_ptr<SyntaxStmt> setter_statement{}; };
 struct SyntaxRoutine;
 struct SyntaxExpr {
     SyntaxExprKind kind;
@@ -406,7 +407,23 @@ private:
     void property_default(SyntaxProperty& property){
         if(accept("default")){if(property.indices.empty())throw Error("E_TYPE",property.name.location,"Default property requires index parameters");property.default_indexer=true;expect(";");}
     }
-    std::shared_ptr<SyntaxType> type_syntax(bool allow_empty_result=false,bool allow_arrow=true) {
+    ABC_PASCAL_NOINLINE void property_accessors(SyntaxProperty& property){
+        while(is("read")||is("write")){
+            const bool get=accept("read");if(!get)expect("write");
+            if(get){
+                if(property.getter||property.getter_expression)throw Error("E_SYNTAX",current_.location,"Duplicate property accessor");
+                const bool identifier=current_.kind==TokenKind::name;auto value=expression();
+                if(identifier&&value->kind==SyntaxExprKind::name)property.getter=value->token;else property.getter_expression=std::move(value);
+            }else{
+                if(property.setter||property.setter_statement)throw Error("E_SYNTAX",current_.location,"Duplicate property accessor");
+                const bool identifier=current_.kind==TokenKind::name;auto body=std::make_shared<SyntaxStmt>(statement());
+                if(identifier&&body->kind==SyntaxStmtKind::call&&body->expression&&body->expression->kind==SyntaxExprKind::call&&body->expression->arguments.empty()&&!body->expression->invocation_parentheses&&body->expression->type_arguments.empty())property.setter=body->expression->token;
+                else property.setter_statement=std::move(body);
+            }
+        }
+        if(!property.getter&&!property.getter_expression&&!property.setter&&!property.setter_statement)throw Error("E_TYPE",property.name.location,"Property requires a getter or setter");
+    }
+    std::shared_ptr<SyntaxType> type_syntax(bool allow_empty_result=false,bool allow_arrow=true,bool allow_type_members=true) {
         DepthGuard guard(depth_, current_.location);
         auto result = std::make_shared<SyntaxType>(); result->token = current_;
         if (is("function") || is("procedure")) {
@@ -478,16 +495,11 @@ private:
                     auto method=routine(true);method->access=access;result->methods.push_back(std::move(method));continue;
                 }
                 if (object && accept("property")) {
-                    auto property=std::make_shared<SyntaxProperty>();property->access=access;property->name=name();
+                    auto property=std::make_shared<SyntaxProperty>();property->access=access;
+                    if(!explicit_member_header(property->explicit_interface,property->name))property->name=name();
                     property_indices(*property);
                     expect(":");property->type=type_syntax();
-                    while (is("read") || is("write")) {
-                        const bool get=accept("read");if (!get) expect("write");
-                        auto& accessor=get ? property->getter : property->setter;
-                        if (accessor) throw Error("E_SYNTAX",current_.location,"Duplicate property accessor");
-                        accessor=name();
-                    }
-                    if (!property->getter && !property->setter) throw Error("E_TYPE",property->name.location,"Property requires a getter or setter");
+                    property_accessors(*property);
                     if (!accept(";") && !is("end")) fail("Expected ';' after property");
                     property_default(*property);
                     if (result->properties.size()>=256) throw Error("E_LIMIT",property->name.location,"Class property limit exceeded");
@@ -539,7 +551,7 @@ private:
                 }
             } else if ((result->kind == "assocarray" || result->kind=="dictionary" || result->kind=="keyvaluepair" || result->kind=="idictionary") && accept("<")) {
                 result->named=false; result->key = type_syntax(); expect(","); result->element = type_syntax(); expect(">");
-                if(result->kind=="dictionary" && is(".") && [&]{auto probe=lexer_;const auto next=probe.next();return next.text=="enumerator" || next.text=="keycollection" || next.text=="valuecollection";}()){
+                if(allow_type_members && result->kind=="dictionary" && is(".") && [&]{auto probe=lexer_;const auto next=probe.next();return next.text=="enumerator" || next.text=="keycollection" || next.text=="valuecollection";}()){
                     expect(".");
                     const auto nested=name();
                     if(nested.text=="enumerator")result->kind="dictionary_enumerator";
@@ -552,7 +564,7 @@ private:
                 result->named=false; result->element = type_syntax(); expect(">");
             }
         }
-        while(is(".") && [&]{auto probe=lexer_;const auto next=probe.next();return next.text=="enumerator" || next.text=="keycollection" || next.text=="valuecollection";}()){
+        while(allow_type_members && is(".") && [&]{auto probe=lexer_;const auto next=probe.next();return next.text=="enumerator" || next.text=="keycollection" || next.text=="valuecollection";}()){
             expect(".");if(result->nested.size()>=16)throw Error("E_LIMIT",result->token.location,"Nested type limit exceeded");result->nested.push_back(name().text);
         }
         if (allow_arrow && accept("->")) {
@@ -579,13 +591,13 @@ private:
         }
         return result;
     }
-    ABC_PASCAL_NOINLINE bool explicit_method_header(SyntaxRoutine& routine) {
+    ABC_PASCAL_NOINLINE bool explicit_member_header(std::shared_ptr<SyntaxType>& target,Token& name) {
         Parser trial=*this;
         try {
-            auto qualifier=trial.type_syntax(false);
+            auto qualifier=trial.type_syntax(false,false,false);
             if(!trial.accept("."))return false;
             const auto member=trial.name();
-            routine.explicit_interface=std::move(qualifier);routine.name=member;
+            target=std::move(qualifier);name=member;
             lexer_=std::move(trial.lexer_);current_=std::move(trial.current_);return true;
         }catch(const Error& error){if(error.code=="E_LIMIT")throw;return false;}
     }
@@ -593,12 +605,12 @@ private:
         const auto token=current_;const bool constructor=accept("constructor");
         const bool function=!constructor && accept("function");if (!constructor && !function) expect("procedure");
         auto result=std::make_shared<SyntaxRoutine>();result->constructor=constructor;result->function_header=function;
-        if(!(in_class&&!constructor&&explicit_method_header(*result))){
+        if(!(in_class&&!constructor&&explicit_member_header(result->explicit_interface,result->name))){
             result->name=constructor && (is("(") || is(";") || is(":=")) ? Token{TokenKind::name,"create",token.location} : name();
             if(accept(".")){
                 if(in_class)throw Error("E_SYNTAX",result->name.location,"Invalid explicit interface method header","Неверный заголовок явной реализации метода интерфейса");
                 result->owner=result->name.text;
-                if(constructor||!explicit_method_header(*result))result->name=name();
+                if(constructor||!explicit_member_header(result->explicit_interface,result->name))result->name=name();
             }
         }
         if (constructor && result->name.text!="create") throw Error("E_TYPE",result->name.location,"Class constructor must be named Create");
@@ -1115,6 +1127,7 @@ Value literal(const Token& token) {
 }
 
 class Analyzer {
+    struct ClassProperty;
 public:
     hir::Module analyze(SyntaxStmt source) {
         module_.routines.reserve(256);
@@ -1209,6 +1222,7 @@ public:
             for (auto n = first; n < module_.locals.size(); ++n) if (!module_.locals[n].global && !lambda_locals_.contains(n)) routine.signature.locals.push_back(n);
             scopes_.pop_back(); in_routine_ = false; current_name_.clear();current_owner_=Type::invalid;
         }
+        bind_property_expressions();
         module_.body.statements.push_back(statement(source.statements.back()));
         for (auto& statement:module_.body.statements) constant_initializers_.push_back(std::move(statement));
         module_.body.statements=std::move(constant_initializers_);
@@ -1248,9 +1262,12 @@ private:
             auto& metadata=module_.types[static_cast<unsigned>(owner)-64U];metadata.interfaces.edit().parents=std::move(parents);metadata.interfaces.edit().members=std::move(members);active.erase(owner);done.insert(owner);
         };for(const auto& [owner,syntax]:declarations){(void)syntax;bind(owner);}
     }
-    bool interface_method_matches(std::size_t id,const InterfaceMember& member)const{
+    bool interface_routine_matches(std::size_t id,const InterfaceMember& member)const{
         const auto& signature=module_.routines[id].signature;
-        return member.kind==InterfaceMemberKind::method&&signature.result==member.result&&signature.parameters.size()==member.parameters.size()+1&&std::equal(member.parameters.begin(),member.parameters.end(),signature.parameters.begin()+1,[](const auto& a,const auto& b){return a.type==b.type&&a.by_reference==b.by_reference&&a.variadic==b.variadic;});
+        return signature.result==member.result&&signature.parameters.size()==member.parameters.size()+1&&std::equal(member.parameters.begin(),member.parameters.end(),signature.parameters.begin()+1,[](const auto& a,const auto& b){return a.type==b.type&&a.by_reference==b.by_reference&&a.variadic==b.variadic;});
+    }
+    bool interface_method_matches(std::size_t id,const InterfaceMember& member)const{
+        return member.kind==InterfaceMemberKind::method&&interface_routine_matches(id,member);
     }
     ABC_PASCAL_NOINLINE std::optional<std::size_t> explicit_implementation(Type owner,Type target,const InterfaceMember& member,SourceLocation location)const{
         const auto found=class_explicit_methods_.find(owner);if(found==class_explicit_methods_.end()||member.kind!=InterfaceMemberKind::method)return {};
@@ -1269,6 +1286,17 @@ private:
         }
         return inherited;
     }
+    ABC_PASCAL_NOINLINE const ClassProperty* explicit_property_implementation(Type owner,Type target,std::string_view name,SourceLocation location)const{
+        const auto found=class_explicit_properties_.find(owner);if(found==class_explicit_properties_.end())return nullptr;
+        if(const auto exact=found->second.find(target);exact!=found->second.end())if(const auto property=exact->second.find(std::string(name));property!=exact->second.end())return &property->second;
+        const ClassProperty* inherited=nullptr;
+        for(const auto& [qualifier,properties]:found->second){
+            if(!interface_compatible(module_.types,target,qualifier))continue;
+            const auto property=properties.find(std::string(name));if(property==properties.end())continue;
+            if(inherited&&(inherited->getter!=property->second.getter||inherited->setter!=property->second.setter))throw Error("E_TYPE",location,"Ambiguous inherited explicit property","Неоднозначная унаследованная явная реализация свойства");
+            inherited=&property->second;
+        }return inherited;
+    }
     ABC_PASCAL_NOINLINE void register_interface_implementations(const SyntaxStmt& source){
         for(const auto& [name,syntax]:source.type_declarations)if(syntax->kind=="class" && !syntax->named){const auto owner=aliases_.at(name.text);std::vector<Type> targets;
             std::function<void(Type)> add=[&](Type target){if(!compound(target))throw Error("E_TYPE",name.location,"Class parent must be an interface");const auto shape=info(target,name.location);if(shape.kind==CompoundKind::sequence)(void)enumerator_type(shape.element);if(!interface_kind(shape))throw Error("E_UNSUPPORTED",name.location,"Class inheritance is not ported yet");if(std::find(targets.begin(),targets.end(),target)!=targets.end())return;if(targets.size()>=64)throw Error("E_LIMIT",name.location,"Interface implementation limit exceeded");targets.push_back(target);for(auto parent:shape.interfaces.read().parents)add(parent);};for(const auto& parent:syntax->parents)add(resolve_type(*parent));
@@ -1277,9 +1305,20 @@ private:
                 const auto contract=interface_contract(module_.types,qualifier);
                 for(const auto& [method,overloads]:methods)for(auto id:overloads)if(std::none_of(contract.begin(),contract.end(),[&](const auto& member){return member.name==method&&interface_method_matches(id,member);}))throw Error("E_TYPE",name.location,"Explicit method does not match an interface signature","Явная реализация метода не соответствует сигнатуре интерфейса");
             }
+            if(const auto explicit_properties=class_explicit_properties_.find(owner);explicit_properties!=class_explicit_properties_.end())for(const auto& [qualifier,properties]:explicit_properties->second){
+                if(std::find(targets.begin(),targets.end(),qualifier)==targets.end())throw Error("E_TYPE",name.location,"Explicit property interface is not implemented by the class","Класс не реализует интерфейс явно указанного свойства");
+                const auto contract=interface_contract(module_.types,qualifier);
+                for(const auto& [property,bound]:properties)for(const auto kind:{InterfaceMemberKind::get,InterfaceMemberKind::set}){
+                    const auto id=kind==InterfaceMemberKind::get?bound.getter:bound.setter;if(!id)continue;
+                    if(std::none_of(contract.begin(),contract.end(),[&](const auto& member){return member.name==property&&member.kind==kind&&interface_routine_matches(*id,member);}))throw Error("E_TYPE",name.location,"Explicit property does not match an interface signature","Явное свойство не соответствует сигнатуре интерфейса");
+                }
+            }
             std::vector<InterfaceImplementation> implementations;for(auto target:targets){InterfaceImplementation entry;entry.target=target;for(const auto& member:interface_contract(module_.types,target)){auto id=explicit_implementation(owner,target,member,name.location);
                 if(member.kind==InterfaceMemberKind::method&&!id){const auto methods=class_method_overloads_.find(owner);if(methods!=class_method_overloads_.end()){const auto method=methods->second.find(member.name);if(method!=methods->second.end())for(auto candidate:method->second)if(interface_method_matches(candidate,member))id=candidate;}}
-                else if(member.kind!=InterfaceMemberKind::method){const auto properties=class_properties_.find(owner);if(properties!=class_properties_.end()){const auto property=properties->second.find(member.name);if(property!=properties->second.end())id=member.kind==InterfaceMemberKind::get ? property->second.getter : property->second.setter;}const auto declaration=std::find_if(syntax->properties.begin(),syntax->properties.end(),[&](const auto& p){return p->name.text==member.name;});if(declaration==syntax->properties.end() || (*declaration)->access!=MemberAccess::public_member)id.reset();}
+                else if(member.kind!=InterfaceMemberKind::method){
+                    if(const auto property=explicit_property_implementation(owner,target,member.name,name.location))id=member.kind==InterfaceMemberKind::get?property->getter:property->setter;
+                    else{const auto properties=class_properties_.find(owner);if(properties!=class_properties_.end()){const auto property=properties->second.find(member.name);if(property!=properties->second.end())id=member.kind==InterfaceMemberKind::get ? property->second.getter : property->second.setter;}const auto declaration=std::find_if(syntax->properties.begin(),syntax->properties.end(),[&](const auto& p){return !p->explicit_interface&&p->name.text==member.name;});if(declaration==syntax->properties.end() || (*declaration)->access!=MemberAccess::public_member)id.reset();}
+                }
                 if(!id)throw Error("E_TYPE",name.location,"Interface member has no compatible public implementation");const auto& actual=module_.routines[*id].signature;if(actual.constructor || (member.kind==InterfaceMemberKind::method && actual.access!=MemberAccess::public_member&&actual.access!=MemberAccess::explicit_interface_member) || actual.result!=member.result || actual.parameters.size()!=member.parameters.size()+1)throw Error("E_TYPE",name.location,"Interface member has no compatible public implementation");for(std::size_t a=0;a<member.parameters.size();++a){const auto& wanted=member.parameters[a];const auto& have=actual.parameters[a+1];if(have.type!=wanted.type || have.by_reference!=wanted.by_reference || have.variadic!=wanted.variadic)throw Error("E_TYPE",name.location,"Interface member has no compatible public implementation");}entry.routines.push_back(*id);
             }implementations.push_back(std::move(entry));}module_.types[static_cast<unsigned>(owner)-64U ].interfaces.edit().implementations=std::move(implementations);
         }
@@ -1363,21 +1402,47 @@ private:
         for(std::size_t i=0;i<indices.size();++i)if(signature.parameters[i+1].type!=indices[i]||signature.parameters[i+1].by_reference||signature.parameters[i+1].variadic)throw Error("E_TYPE",accessor.location,"Property method accessor has an incompatible signature");
         return id;
     }
-    void register_properties(const SyntaxStmt& source) {
+    ABC_PASCAL_NOINLINE std::size_t property_expression_accessor(Type owner,Type result,const std::shared_ptr<SyntaxProperty>& property,std::shared_ptr<SyntaxExpr> expression,std::shared_ptr<SyntaxStmt> setter={}){
+        if(module_.routines.size()>=256)throw Error("E_LIMIT",property->name.location,"Routine limit exceeded");
+        hir::RoutineBody helper;helper.signature.name="$property_expression_"+std::to_string(module_.routines.size());helper.signature.owner=owner;helper.signature.result=setter?Type::unit:result;helper.signature.access=MemberAccess::private_member;
+        const auto local=[&](std::string name,Type type){const auto id=module_.locals.size();module_.locals.push_back({std::move(name),type,false});helper.signature.locals.push_back(id);return id;};
+        helper.signature.parameters.push_back({local("$self",owner),owner});
+        for(const auto& index:property->indices){if(setter&&index.first.text=="value")throw Error("E_DUPLICATE",index.first.location,"Property index conflicts with the setter value parameter","Индекс свойства совпадает с параметром value метода записи");const auto type=resolve_type(*index.second);helper.signature.parameters.push_back({local(index.first.text,type),type});}
+        if(setter)helper.signature.parameters.push_back({local("value",result),result});else helper.signature.result_local=local("$result",result);
+        const auto id=module_.routines.size();module_.routines.push_back(std::move(helper));property_expression_bindings_.push_back({id,property,std::move(expression),std::move(setter)});return id;
+    }
+    ABC_PASCAL_NOINLINE void bind_property_expressions(){
+        for(const auto& binding:property_expression_bindings_){
+            auto& helper=module_.routines[binding.id];const auto first=module_.locals.size();
+            in_routine_=true;current_result_=helper.signature.result;current_owner_=helper.signature.owner;current_name_=helper.signature.name;current_self_=helper.signature.parameters[0].local;scopes_.emplace_back();
+            scopes_.back()["self"]=current_self_;constant_parameters_.insert(current_self_);
+            for(std::size_t n=0;n<binding.property->indices.size();++n)scopes_.back()[binding.property->indices[n].first.text]=helper.signature.parameters[n+1].local;
+            if(binding.setter){scopes_.back()["value"]=helper.signature.parameters.back().local;helper.body=statement(*binding.setter);}
+            else{helper.body.kind=hir::StmtKind::return_stmt;helper.body.location=binding.expression->token.location;helper.body.expression=convert(expression(*binding.expression,helper.signature.result),helper.signature.result);}
+            for(auto n=first;n<module_.locals.size();++n)if(!module_.locals[n].global&&!lambda_locals_.contains(n))helper.signature.locals.push_back(n);
+            constant_parameters_.erase(current_self_);scopes_.pop_back();in_routine_=false;current_result_=Type::unit;current_owner_=Type::invalid;current_name_.clear();
+        }
+    }
+    ABC_PASCAL_NOINLINE void register_properties(const SyntaxStmt& source) {
         for (const auto& [name,syntax]:source.type_declarations) if (syntax->kind=="class" && !syntax->named) {
             const auto owner=aliases_.at(name.text);
             for (const auto& property:syntax->properties) {
+                const auto qualifier=property->explicit_interface?resolve_type(*property->explicit_interface):Type::invalid;
+                if(qualifier!=Type::invalid&&(!compound(qualifier)||!interface_kind(info(qualifier,property->name.location))))throw Error("E_TYPE",property->name.location,"Explicit property qualifier must be an interface","Явная реализация свойства требует имени интерфейса");
+                auto& properties=qualifier==Type::invalid?class_properties_[owner]:class_explicit_properties_[owner][qualifier];
                 const auto& fields=info(owner,property->name.location).fields;
-                if ((property->name.text=="create" && class_constructors_.contains(owner)) || class_properties_[owner].contains(property->name.text)
+                if(properties.contains(property->name.text)||(qualifier==Type::invalid&&((property->name.text=="create" && class_constructors_.contains(owner))
                     || (class_methods_.contains(owner) && class_methods_.at(owner).contains(property->name.text))
-                    || std::any_of(fields.begin(),fields.end(),[wanted=property->name.text](const auto& field){return field.name==wanted;}))
+                    || std::any_of(fields.begin(),fields.end(),[wanted=property->name.text](const auto& field){return field.name==wanted;}))))
                     throw Error("E_DUPLICATE",property->name.location,"Duplicate class property or member name");
                 ClassProperty bound{resolve_type(*property->type),{},{},{},property->default_indexer};
                 for(const auto& index:property->indices)bound.indices.push_back(resolve_type(*index.second));
-                if(bound.default_indexer)for(const auto& [key,existing]:class_properties_[owner]){(void)key;if(existing.default_indexer)throw Error("E_TYPE",property->name.location,"Ambiguous default class property");}
-                if (property->getter) bound.getter=property_accessor(owner,bound.type,*property->getter,false,bound.indices);
+                if(bound.default_indexer&&qualifier==Type::invalid)for(const auto& [key,existing]:properties){(void)key;if(existing.default_indexer)throw Error("E_TYPE",property->name.location,"Ambiguous default class property");}
+                if(property->getter)bound.getter=property_accessor(owner,bound.type,*property->getter,false,bound.indices);
+                else if(property->getter_expression)bound.getter=property_expression_accessor(owner,bound.type,property,property->getter_expression);
                 if (property->setter) bound.setter=property_accessor(owner,bound.type,*property->setter,true,bound.indices);
-                class_properties_[owner][property->name.text]=bound;
+                else if(property->setter_statement)bound.setter=property_expression_accessor(owner,bound.type,property,{},property->setter_statement);
+                properties[property->name.text]=bound;
             }
         }
     }
@@ -5931,6 +5996,10 @@ private:
         return true;
     }
     void bind_builtin(hir::Expr& result, std::string_view name, std::string_view unit = {}) {
+        if(name=="boolean"&&(unit.empty()||unit=="pabcsystem")){
+            if(result.arguments.size()!=1||result.arguments[0]->type!=Type::boolean)throw Error("E_TYPE",result.location,"Boolean conversion requires one boolean value","Преобразование в boolean требует одного логического значения");
+            auto argument=std::move(result.arguments[0]);result=std::move(*argument);return;
+        }
         if(bind_range_random(result,name,unit))return;
         if(bind_comparable(result,name,unit))return;
         if(bind_enumeration(result,name,unit))return;
@@ -6406,6 +6475,9 @@ private:
     std::map<std::pair<std::string,Type>,std::size_t> array_library_routines_;
     struct ClassProperty { Type type;std::optional<std::size_t> getter,setter;std::vector<Type> indices{};bool default_indexer=false; };
     std::map<Type,std::map<std::string,ClassProperty>> class_properties_;
+    std::map<Type,std::map<Type,std::map<std::string,ClassProperty>>> class_explicit_properties_;
+    struct PropertyExpressionBinding{std::size_t id;std::shared_ptr<SyntaxProperty> property;std::shared_ptr<SyntaxExpr> expression;std::shared_ptr<SyntaxStmt> setter;};
+    std::vector<PropertyExpressionBinding> property_expression_bindings_;
     Type current_owner_=Type::invalid;
     std::size_t current_self_=0;
     std::vector<std::vector<std::optional<std::size_t>>> parameter_defaults_;

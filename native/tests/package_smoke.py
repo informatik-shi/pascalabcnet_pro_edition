@@ -346,6 +346,7 @@ def main():
                 ("dictionary-interfaces.pas", "3 6 True\n3 True True\ncat=6\ndog=3\nowl=1\nFalse True\n2 2\nTrue\n"),
                 ("set-interfaces.pas", "False True\n4 True\nTrue True\n2 6 \nTrue\n"),
                 ("explicit-interfaces.pas", "class interface\n[4,5]\n"),
+                ("property-interfaces.pas", "99 7 7 False\n12\n"),
                 ("collection-property-writes.pas", "25 20 2\n[11,2] 2\n2 True 26\n"),
                 ("small-integers.pas", "Значения: 255 -128 -32768\nСумма с расширением: 256\nКвадрат: 65025\nГраница byte: 254|255|\nМассив smallint: 1 -2\n"),
                 ("unsigned-integers.pas", "Граница 32 бит: 4294967295\nС расширением: 4294967296\nГраница 64 бит: 18446744073709551615\nКвадрат word: 4294836225\nПредыдущее: 18446744073709551614\nПереключение: True False\n"),
@@ -1892,6 +1893,19 @@ def main():
                     or f"{explicit_interface_error}:3:" not in invalid.stderr):
                 raise RuntimeError(f"{name} Explicit interface argument order/bilingual error failed: {invalid.stdout!r} {invalid.stderr!r}")
             results[-1]["native_explicit_interface_methods_and_bilingual_errors"] = "passed"
+            property_interface_error = folder / "Ошибки выражений свойств.pas"
+            for operation, expected in [("Writeln(i.P)", "before"), ("i.P:=7", "beforeS")]:
+                property_interface_error.write_text(
+                    "type I=interface property P:integer read write;end;C=class(I)private data:array of integer;"
+                    "property I.P:integer read data[0] write begin Write('S');data[0]:=value;end;end;\n"
+                    f"begin Write('before');var i:I:=new C;{operation};end.", encoding="utf-8")
+                invalid = subprocess.run([runner, "run", str(property_interface_error)], text=True, encoding="utf-8", capture_output=True, cwd=folder, env=env, timeout=10)
+                if (invalid.returncode != 1 or invalid.stdout != expected or "E_NIL" not in invalid.stderr
+                        or "EN: Cannot access a nil reference" not in invalid.stderr
+                        or "RU: Нельзя обратиться к пустой ссылке nil" not in invalid.stderr
+                        or f"{property_interface_error}:1:" not in invalid.stderr):
+                    raise RuntimeError(f"{name} Property expression/write statement bilingual error failed: {invalid.stdout!r} {invalid.stderr!r}")
+            results[-1]["native_explicit_properties_expressions_and_bilingual_errors"] = "passed"
             results[-1]["native_generic_enumerators_boxing_resources_and_bilingual_errors"] = "passed"
             results[-1]["native_typed_dictionary_enumerators_and_bilingual_errors"] = "passed"
             results[-1]["native_dictionary_factories_views_callbacks_and_bilingual_errors"] = "passed"

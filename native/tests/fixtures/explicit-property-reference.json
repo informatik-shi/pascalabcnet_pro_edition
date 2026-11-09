@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "runtime": "Windows .NET Framework 4.0.30319.42000",
+  "outcomes": 24,
+  "scope": "Selected explicit properties, getter expressions, indexed writes and captured Self; not full language or library coverage",
+  "artifacts": [
+    {
+      "path": "reference/explicit-property.cs",
+      "sha256_lf": "d15efc98065081a63455c184b64e0fbefad862d030de7eefd4eeeebf3c7b545d"
+    },
+    {
+      "path": "reference/generate-explicit-property.ps1",
+      "sha256_lf": "edb33788f825683fe31cc57a43f5921055bfad53ca032a35f192e8ef19ebd1c0"
+    },
+    {
+      "path": "fixtures/explicit-property-program.pas",
+      "sha256_lf": "aa3a3a8e6eea3318c8b26534f4744c87a1b01a637c4a4c246a7ded82b534bd9c"
+    },
+    {
+      "path": "fixtures/explicit-property-reference.tsv",
+      "sha256_lf": "5e4e804feb230b4c28634332c4baddd74787ecd043d2de6b996637e7692a4c5f"
+    }
+  ]
+}

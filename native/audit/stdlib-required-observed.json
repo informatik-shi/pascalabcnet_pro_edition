@@ -1,43 +1,19 @@
 {
   "schema": 1,
-  "runtime_source_base_revision": "d5bbd219c53a36d6402c2bd0049d85f6c6ebd535",
+  "runtime_source_base_revision": "b9f6496946b91bd08ee691d6a6f9aaf59f968f0d",
   "runtime_source_changes": [
     {
-      "path": "native/include/abc/core.hpp",
-      "sha256_lf": "62efdeb91100fd21a5751f749ee6010abc969fae3420dd21af799f6ba128b422"
-    },
-    {
-      "path": "native/src/bytecode.cpp",
-      "sha256_lf": "682fc0a08c52729b4a85ea52199d5d28e1c6cd8cbe4fb9d8dadeab63feebf830"
-    },
-    {
-      "path": "native/src/collection_interface.cpp",
-      "sha256_lf": "5074a19c976d04ec599cbe1787e52f33f048261f62122f7a6f6fbf77a4a0ea5d"
-    },
-    {
-      "path": "native/src/hash_set.cpp",
-      "sha256_lf": "70dd31f47b56fd5afbe4b286f4f36e59bd9ecb181affb299569d925fbdb8afa4"
-    },
-    {
-      "path": "native/src/interfaces.cpp",
-      "sha256_lf": "bbef6afef283df3d002b689db56f530f12bf12a56bc0e2765e9234646c189eb6"
-    },
-    {
       "path": "native/src/pascal.cpp",
-      "sha256_lf": "67b539bb79dad3d48d3ca99a38236d462bf42f5e6e675f08773b519366504ca8"
-    },
-    {
-      "path": "native/src/type_names.cpp",
-      "sha256_lf": "8331d2f99254f8524ff6710942f52d49132b1d227e202b3845237acfe2ef076a"
+      "sha256_lf": "2b880b1effa5f708fc693738a1a7537ac21e122e3530e460c08e5a428b8ef54f"
     }
   ],
-  "scope": "Selected positive compile requirements in two native builds. Not API coverage or runtime validation. ISet, explicit interface dispatch and HashSet collection callbacks are checked separately; whole standard-library units remain partial.",
+  "scope": "Selected positive compile requirements in two native builds. Not API coverage or runtime validation. Explicit property expressions/writer behavior are validated separately; whole standard-library units remain partial.",
   "runs": [
     {
       "schema": 1,
       "scope": "Selected required positive compile cases derived from shipped interfaces. Every case must eventually compile. This is a growing gap list, not complete API coverage; accepting a case does not prove its runtime semantics. No expected failure is made a compatibility requirement.",
       "runner": "native/build/clang-incremental/abc.exe",
-      "runner_sha256": "4a8e1a4674710a0420dcaa72c424a2cad828d9ad1c351ac617b92945df3469bd",
+      "runner_sha256": "76b7d8a1bd1909d070524611b3bbe38b9f0b230a3858bd6fc5422ecd4307a9c7",
       "version": "ABC Native 0.1.0-dev (Pascal prototype)",
       "cases": [
         {
@@ -274,7 +250,7 @@
       "schema": 1,
       "scope": "Selected required positive compile cases derived from shipped interfaces. Every case must eventually compile. This is a growing gap list, not complete API coverage; accepting a case does not prove its runtime semantics. No expected failure is made a compatibility requirement.",
       "runner": "native/build/qt-editor/Release/abc.exe",
-      "runner_sha256": "dc515c2119a5c9a4950f12899a669e8e5a4d9e2f1aa5e5d93009d368510890e8",
+      "runner_sha256": "58cf5e31ec1a27176cfeb3efa2f5ecb5db5c7e3e4cd4dce6b051dbcb27a15ec7",
       "version": "ABC Native 0.1.0-dev (Pascal prototype)",
       "cases": [
         {
