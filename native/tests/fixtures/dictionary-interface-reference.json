@@ -1,0 +1,24 @@
+{
+    "schema":  1,
+    "runtime":  "Windows .NET Framework 4.0.30319.42000",
+    "outcomes":  1200,
+    "scope":  "Typed IDictionary inheritance and selected caller behavior; not whole standard-library unit coverage",
+    "artifacts":  [
+                      {
+                          "path":  "reference/dictionary-interface.cs",
+                          "sha256_lf":  "5a4e864daa2dc08161d71956d3588c1204875e902a1aca8746dda77b908ca9ca"
+                      },
+                      {
+                          "path":  "reference/generate-dictionary-interface.ps1",
+                          "sha256_lf":  "cf14df64c78d77be5f8f886c8e3675cf7f6e967c75eb271f0a1cc0cb5088a7a9"
+                      },
+                      {
+                          "path":  "fixtures/dictionary-interface-program.pas",
+                          "sha256_lf":  "3a55a1e8807ba907b332b8f3aeb411bd0b44c77032627cad4a22f92d61edbfc5"
+                      },
+                      {
+                          "path":  "fixtures/dictionary-interface-reference.tsv",
+                          "sha256_lf":  "34ff3893222e371b1f6a3a240c6b41f9eb74617371a2c426f1adb668885110da"
+                      }
+                  ]
+}

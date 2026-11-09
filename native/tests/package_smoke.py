@@ -343,6 +343,7 @@ def main():
                 ("array-generics.pas", "1/2/3\n3|2|1\n7,7,7\n1.5 1.5 \n1.50 1.50 \n"),
                 ("collection-interfaces.pas", "2 False True\n[0,7,8]\n7 8 \nTrue 1\nTrue\n1 True\n0\n"),
                 ("list-interfaces.pas", "кот пёс кот\n5 1\n5 7 \nTrue [1,9]\n"),
+                ("dictionary-interfaces.pas", "3 6 True\n3 True True\ncat=6\ndog=3\nowl=1\nFalse True\n2 2\nTrue\n"),
                 ("collection-property-writes.pas", "25 20 2\n[11,2] 2\n2 True 26\n"),
                 ("small-integers.pas", "Значения: 255 -128 -32768\nСумма с расширением: 256\nКвадрат: 65025\nГраница byte: 254|255|\nМассив smallint: 1 -2\n"),
                 ("unsigned-integers.pas", "Граница 32 бит: 4294967295\nС расширением: 4294967296\nГраница 64 бит: 18446744073709551615\nКвадрат word: 4294836225\nПредыдущее: 18446744073709551614\nПереключение: True False\n"),
@@ -1852,6 +1853,19 @@ def main():
                     or f"{dictionary_property_error}:3:" not in invalid.stderr):
                 raise RuntimeError(f"{name} Dictionary property order/bilingual error failed: {invalid.stdout!r} {invalid.stderr!r}")
             results[-1]["native_dictionary_property_order_and_lambda_identity"] = "passed"
+            dictionary_interface_error = folder / "Ошибки интерфейса словаря.pas"
+            for expression, code, english, russian in [
+                ("var d:IDictionary<string,integer>:=new Dictionary<string,integer>;d.Add('a',1);d.Add('a',2)", "E_KEY_DUPLICATE", "An item with the same key has already been added", "Элемент с таким ключом уже добавлен"),
+                ("var d:IDictionary<string,integer>:=new Dictionary<string,integer>;Writeln(d['missing'])", "E_KEY_NOT_FOUND", "The given key was not present in the dictionary", "Указанный ключ отсутствует в словаре"),
+                ("var d:IDictionary<string,integer>:=new Dictionary<string,integer>;d.Keys.Clear", "E_READONLY", "Collection is read-only", "Коллекция доступна только для чтения"),
+            ]:
+                dictionary_interface_error.write_text(f"begin\n Write('before');{expression};\nend.", encoding="utf-8")
+                invalid = subprocess.run([runner, "run", str(dictionary_interface_error)], text=True, encoding="utf-8", capture_output=True, cwd=folder, env=env, timeout=10)
+                if (invalid.returncode != 1 or invalid.stdout != "before" or code not in invalid.stderr
+                        or f"EN: {english}" not in invalid.stderr or f"RU: {russian}" not in invalid.stderr
+                        or f"{dictionary_interface_error}:2:" not in invalid.stderr):
+                    raise RuntimeError(f"{name} IDictionary runtime bilingual error failed: {invalid.stdout!r} {invalid.stderr!r}")
+            results[-1]["native_dictionary_interfaces_and_bilingual_errors"] = "passed"
             results[-1]["native_generic_enumerators_boxing_resources_and_bilingual_errors"] = "passed"
             results[-1]["native_typed_dictionary_enumerators_and_bilingual_errors"] = "passed"
             results[-1]["native_dictionary_factories_views_callbacks_and_bilingual_errors"] = "passed"

@@ -1,19 +1,43 @@
 {
   "schema": 1,
-  "runtime_source_base_revision": "c8292603125aab58f81c2cbbf983f21d1218f180",
+  "runtime_source_base_revision": "d1d6e3112d0bdf6822218f7cacc7d633676deef3",
   "runtime_source_changes": [
     {
+      "path": "native/include/abc/core.hpp",
+      "sha256_lf": "0552ffba9a5037447cf3a934c9090d5f067f00826a12fa73989a2b2856b14a27"
+    },
+    {
+      "path": "native/src/bytecode.cpp",
+      "sha256_lf": "ef17cf68a9ae9fa60924b2b5ea595ecce515259c7151cd971677ebe29a6dff85"
+    },
+    {
+      "path": "native/src/collection_interface.cpp",
+      "sha256_lf": "a204a37b31bb5c19305f7fbe18cb9ee7729bfe6a0ca3723c0d3d7efbdd1b0493"
+    },
+    {
+      "path": "native/src/interfaces.cpp",
+      "sha256_lf": "31529c8d3b257ab56c674ae59190f3b7e234745740b4edf2b758b4eb995692d6"
+    },
+    {
+      "path": "native/src/interfaces.hpp",
+      "sha256_lf": "dbc9133063ddc2f0abb644bca21c6e0644fd7bbf07e626791cbdbf1993cadea4"
+    },
+    {
       "path": "native/src/pascal.cpp",
-      "sha256_lf": "b0a14d784f035f98213e020aed77a4d9512905822393cc24ca2ad91ad7eb01a8"
+      "sha256_lf": "401360891244d82fb51280dff2b9b0cb8276534182d1a11ecb7c090c39ae851e"
+    },
+    {
+      "path": "native/src/type_names.cpp",
+      "sha256_lf": "709736a377b594e640873342b52a3c0287a877aece17f1a6d9936d0a7e5996c5"
     }
   ],
-  "scope": "Selected positive compile requirements in two native builds. Not API coverage or runtime validation. Dictionary property evaluation order/lambda identity are validated separately; whole standard-library units remain partial.",
+  "scope": "Selected positive compile requirements in two native builds. Not API coverage or runtime validation. IDictionary and typed method overload behavior are validated separately; whole standard-library units remain partial.",
   "runs": [
     {
       "schema": 1,
       "scope": "Selected required positive compile cases derived from shipped interfaces. Every case must eventually compile. This is a growing gap list, not complete API coverage; accepting a case does not prove its runtime semantics. No expected failure is made a compatibility requirement.",
       "runner": "native/build/clang-incremental/abc.exe",
-      "runner_sha256": "c775716436bb84cee66f7dc9e8dcb7abf74dfc24b199f0540e073cf0e8e7570a",
+      "runner_sha256": "5cc9073fea341ca4d9ef1a5c4d234d3276fff9345e0ce6ca4d784c969af27418",
       "version": "ABC Native 0.1.0-dev (Pascal prototype)",
       "cases": [
         {
@@ -101,8 +125,8 @@
           "module": "PABCSystem",
           "source_line": 174,
           "source_anchor": "IDictionary<Key, Value> = System.Collections.Generic.IDictionary<Key, Value>;",
-          "accepted": false,
-          "diagnostic": "system-idictionary.pas:1:28: E_SYNTAX\nEN: Expected ';' between statements\nRU: Между операторами ожидается ';'"
+          "accepted": true,
+          "diagnostic": ""
         },
         {
           "id": "system-ilist",
@@ -242,7 +266,7 @@
         }
       ],
       "summary": {
-        "accepted": 10,
+        "accepted": 11,
         "required": 28
       }
     },
@@ -250,7 +274,7 @@
       "schema": 1,
       "scope": "Selected required positive compile cases derived from shipped interfaces. Every case must eventually compile. This is a growing gap list, not complete API coverage; accepting a case does not prove its runtime semantics. No expected failure is made a compatibility requirement.",
       "runner": "native/build/qt-editor/Release/abc.exe",
-      "runner_sha256": "4b4604f113ac00b00c5834cdd3c2e1891949cd387195d2a7050fcdcf835a9833",
+      "runner_sha256": "8ef51a7759bf214b8742ab1210fc75e6a4456c3f675ce3bb93f9f4da28ea4d07",
       "version": "ABC Native 0.1.0-dev (Pascal prototype)",
       "cases": [
         {
@@ -338,8 +362,8 @@
           "module": "PABCSystem",
           "source_line": 174,
           "source_anchor": "IDictionary<Key, Value> = System.Collections.Generic.IDictionary<Key, Value>;",
-          "accepted": false,
-          "diagnostic": "system-idictionary.pas:1:28: E_SYNTAX\nEN: Expected ';' between statements\nRU: Между операторами ожидается ';'"
+          "accepted": true,
+          "diagnostic": ""
         },
         {
           "id": "system-ilist",
@@ -479,7 +503,7 @@
         }
       ],
       "summary": {
-        "accepted": 10,
+        "accepted": 11,
         "required": 28
       }
     }

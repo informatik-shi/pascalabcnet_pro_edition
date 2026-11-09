@@ -45,7 +45,7 @@ std::u16string byref_name(const Program& program,Type type,Work& work){
         case CompoundKind::list:name=u"List";break;case CompoundKind::stack:name=u"Stack";break;case CompoundKind::queue:name=u"Queue";break;
         case CompoundKind::dynarray:name=u"DynArray";break;case CompoundKind::simple_set:name=u"SimpleSet";break;
         case CompoundKind::hash_set:name=u"HashSet";break;case CompoundKind::new_set:name=u"NewSet";break;
-        case CompoundKind::dictionary:name=u"Dictionary";arity=2;break;
+        case CompoundKind::dictionary_interface:name=u"IDictionary";arity=2;break;case CompoundKind::dictionary:name=u"Dictionary";arity=2;break;
         case CompoundKind::dictionary_keys:name=u"KeyCollection";arity=2;break;
         case CompoundKind::dictionary_values:name=u"ValueCollection";arity=2;break;
         case CompoundKind::association:name=u"AssocArray";arity=2;break;case CompoundKind::linked_list:name=u"LinkedList";break;
@@ -169,7 +169,7 @@ std::u16string reflected_type_name(const Program& program,const ReflectedType& t
         case CompoundKind::list_interface:name=u"IList";break;case CompoundKind::collection_interface:name=u"ICollection";break;case CompoundKind::equatable_interface:name=u"IEquatable";break;case CompoundKind::equality_comparer_interface:name=u"IEqualityComparer";break;case CompoundKind::equality_comparer:name=u"EqualityComparer";break;
         case CompoundKind::comparable_interface:name=u"IComparable";break;case CompoundKind::comparer_interface:name=u"IComparer";break;case CompoundKind::comparer:name=u"Comparer";break;
                 case CompoundKind::record:if(key_value_pair_type(info)){name=u"KeyValuePair";for(const auto& field:info.fields)arguments.push_back(field.type);}else if(dictionary_enumerator_type(info)){name=u"Enumerator";for(const auto& field:enumerator_pair(program,info).fields)arguments.push_back(field.type);}else if(collection_enumerator_type(info)){name=u"Enumerator";arguments.push_back(info.element);}break;
-                case CompoundKind::dictionary:name=u"Dictionary";arguments.push_back(info.key);arguments.push_back(type_info(program,info.element).fields[1].type);break;
+                case CompoundKind::dictionary_interface:case CompoundKind::dictionary:name=info.kind==CompoundKind::dictionary_interface?u"IDictionary":u"Dictionary";arguments.push_back(info.key);arguments.push_back(type_info(program,info.element).fields[1].type);break;
                 case CompoundKind::dictionary_keys:case CompoundKind::dictionary_values:{name=info.kind==CompoundKind::dictionary_keys ? u"KeyCollection" : u"ValueCollection";const auto& dictionary=type_info(program,info.key);arguments.push_back(dictionary.key);arguments.push_back(type_info(program,dictionary.element).fields[1].type);break;}
                 case CompoundKind::association:name=u"AssocArray";arguments.push_back(info.key);break;
                 case CompoundKind::tuple:name=u"Tuple";for(const auto& field:info.fields)arguments.push_back(field.type);break;
@@ -178,7 +178,7 @@ std::u16string reflected_type_name(const Program& program,const ReflectedType& t
                     if(info.element!=Type::unit)arguments.push_back(info.element);if(arguments.empty())name.clear();break;
                 default:break;
                 }
-                if(!name.empty() && info.kind!=CompoundKind::tuple && info.kind!=CompoundKind::callable && !key_value_pair_type(info) && !dictionary_enumerator_type(info) && !collection_enumerator_type(info) && info.kind!=CompoundKind::dictionary && info.kind!=CompoundKind::dictionary_keys && info.kind!=CompoundKind::dictionary_values)arguments.push_back(info.element);
+                if(!name.empty() && info.kind!=CompoundKind::tuple && info.kind!=CompoundKind::callable && !key_value_pair_type(info) && !dictionary_enumerator_type(info) && !collection_enumerator_type(info) && info.kind!=CompoundKind::dictionary && info.kind!=CompoundKind::dictionary_interface && info.kind!=CompoundKind::dictionary_keys && info.kind!=CompoundKind::dictionary_values)arguments.push_back(info.element);
             }
             if(!name.empty()){
                 // Reflection forwards root generic arguments through byref/array wrappers.
@@ -195,9 +195,9 @@ std::u16string reflected_type_name(const Program& program,const ReflectedType& t
         if(real_interval_type(info)){text(u"RealRange");continue;}
         if(collection_enumerator_type(info)){text(u">");child(info.element);text(u"Enumerator<");continue;}
         if(dictionary_enumerator_type(info)){const auto& pair=enumerator_pair(program,info);text(u">");child(pair.fields[1].type);text(u", ");child(pair.fields[0].type);text(u"Enumerator<");continue;}
-        if(key_value_pair_type(info) || info.kind==CompoundKind::dictionary || info.kind==CompoundKind::dictionary_keys || info.kind==CompoundKind::dictionary_values){
-            const auto& pair=key_value_pair_type(info) ? info : info.kind==CompoundKind::dictionary ? type_info(program,info.element) : type_info(program,type_info(program,info.key).element);
-            const auto name=key_value_pair_type(info) ? u"KeyValuePair" : info.kind==CompoundKind::dictionary ? u"Dictionary" : info.kind==CompoundKind::dictionary_keys ? u"KeyCollection" : u"ValueCollection";
+        if(key_value_pair_type(info) || info.kind==CompoundKind::dictionary || info.kind==CompoundKind::dictionary_interface || info.kind==CompoundKind::dictionary_keys || info.kind==CompoundKind::dictionary_values){
+            const auto& pair=key_value_pair_type(info) ? info : (info.kind==CompoundKind::dictionary||info.kind==CompoundKind::dictionary_interface) ? type_info(program,info.element) : type_info(program,type_info(program,info.key).element);
+            const auto name=key_value_pair_type(info) ? u"KeyValuePair" : info.kind==CompoundKind::dictionary_interface ? u"IDictionary" : info.kind==CompoundKind::dictionary ? u"Dictionary" : info.kind==CompoundKind::dictionary_keys ? u"KeyCollection" : u"ValueCollection";
             text(u">");child(pair.fields[1].type);text(u", ");child(pair.fields[0].type);text(std::u16string(name)+u"<");continue;
         }
         if(info.kind==CompoundKind::record || info.kind==CompoundKind::object_class || info.kind==CompoundKind::enumeration || info.kind==CompoundKind::user_interface){text(named(info));continue;}
