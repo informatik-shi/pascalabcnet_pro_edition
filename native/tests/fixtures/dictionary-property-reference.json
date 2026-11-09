@@ -1,0 +1,81 @@
+{
+    "schema":  1,
+    "runtime":  "Windows .NET Framework 4.0.30319.42000",
+    "outcomes":  9984,
+    "lambda_outcomes":  6,
+    "scope":  "Independent explicitly lowered Pascal dictionary property assignments, not whole unit coverage",
+    "artifacts":  [
+                      {
+                          "path":  "reference/dictionary-property.cs",
+                          "sha256_lf":  "b3e9f9e8f3b0380354125689db5c85bb889923141c1317aee12075c77e557b05"
+                      },
+                      {
+                          "path":  "reference/generate-dictionary-property.ps1",
+                          "sha256_lf":  "44fdf858a21a9f25801acc5180bb7c8b86789ad8387842077004de2ccd5f93f0"
+                      },
+                      {
+                          "path":  "fixtures/dictionary-property-program.pas.in",
+                          "sha256_lf":  "1830a172c4670197890de217f5e6a9a76e983b082e542b655a62571879cab4c8"
+                      },
+                      {
+                          "path":  "fixtures/dictionary-property-reference.tsv",
+                          "sha256_lf":  "4b6ab6be9df30dac9b327d3b3b964bbb8a349123e85fad120c3bf60985e210cc"
+                      },
+                      {
+                          "path":  "fixtures/dictionary-property-lambda-reference.tsv",
+                          "sha256_lf":  "01035c7755fe7018279c5ef451a5cc05e9ffe813a7ddc0b23cdc4ee569315c20"
+                      },
+                      {
+                          "path":  "fixtures/dictionary-property-0-0.pas",
+                          "sha256_lf":  "b74ca53e0c451f73c72c3b794eacd53e1282d7b6d777ba28a40db85a69d6e097"
+                      },
+                      {
+                          "path":  "fixtures/dictionary-property-0-1.pas",
+                          "sha256_lf":  "3152edaf5ece9708eec7a0e778b3e3cc2b7aa2f4f95ed151fecdda0add30eb1f"
+                      },
+                      {
+                          "path":  "fixtures/dictionary-property-0-2.pas",
+                          "sha256_lf":  "e5e832dbf1777fa70edb13a33d0ef2f5d145368c4865bd97da4213b6ca981e5e"
+                      },
+                      {
+                          "path":  "fixtures/dictionary-property-1-0.pas",
+                          "sha256_lf":  "52f5f7ab987cffe98b5d7b22249d331731f9743c7d4a0856b3f174f9c68da222"
+                      },
+                      {
+                          "path":  "fixtures/dictionary-property-1-1.pas",
+                          "sha256_lf":  "787f339c62002bcf6cf9b0732937d88020e86daed6ef5a2d4dfe72d340276a2f"
+                      },
+                      {
+                          "path":  "fixtures/dictionary-property-1-2.pas",
+                          "sha256_lf":  "01a9fa7d221b31262d89dd5ac08087d17121c717e45ff17c7daa075ca101dbe8"
+                      },
+                      {
+                          "path":  "fixtures/dictionary-property-1-3.pas",
+                          "sha256_lf":  "893b36c4d0546eb4ed4e14ca16e863421e9ac103340db1100080826eeb0e0fb6"
+                      },
+                      {
+                          "path":  "fixtures/dictionary-property-2-0.pas",
+                          "sha256_lf":  "a297fd5e5de08edaf28579bf1319b56cc2910d51ca3cc90c21e7ae9aaec82ce6"
+                      },
+                      {
+                          "path":  "fixtures/dictionary-property-2-2.pas",
+                          "sha256_lf":  "fe82c28d74bba56731cb4e25f5f3df49a120c95a29ff144ba4f357bd31d50664"
+                      },
+                      {
+                          "path":  "fixtures/dictionary-property-3-0.pas",
+                          "sha256_lf":  "87e08e7b453e9a31a846a0b2134466d1ab7e6dc9300605ff460919064ab6daca"
+                      },
+                      {
+                          "path":  "fixtures/dictionary-property-3-2.pas",
+                          "sha256_lf":  "5add53302b527345375cc9b435a5b1cce451b1be5620818dd26347f6254a0ca9"
+                      },
+                      {
+                          "path":  "fixtures/dictionary-property-4-0.pas",
+                          "sha256_lf":  "c9b9d15ff1de70e6abf858720a580b702ba23d90a703815edca5aaa8f5863acf"
+                      },
+                      {
+                          "path":  "fixtures/dictionary-property-4-2.pas",
+                          "sha256_lf":  "3a68645856571cc6881e0ac89d0fae58434c868de05a3e1bd96ba6a20630478e"
+                      }
+                  ]
+}

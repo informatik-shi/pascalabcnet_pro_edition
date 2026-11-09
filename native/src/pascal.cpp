@@ -4006,7 +4006,12 @@ private:
         if(source.arguments.size()+1!=indices.size())throw Error("E_TYPE",source.token.location,"Wrong number of property indices","Неверное число индексов свойства");
         value->arguments.push_back(convert(expression(*source.right,indices[0]),indices[0]));for(std::size_t i=0;i<source.arguments.size();++i)value->arguments.push_back(convert(expression(*source.arguments[i],indices[i+1]),indices[i+1]));return true;
     }
+    ABC_PASCAL_NOINLINE static std::unique_ptr<hir::Expr> clone_expression(const hir::Expr& source){
+        auto result=std::make_unique<hir::Expr>();result->kind=source.kind;result->type=source.type;result->location=source.location;result->value=source.value;result->local=source.local;result->operation=source.operation;result->operation_type=source.operation_type;result->temporaries=source.temporaries;result->getter=source.getter;result->setter=source.setter;
+        if(source.left)result->left=clone_expression(*source.left);if(source.right)result->right=clone_expression(*source.right);for(const auto& argument:source.arguments)result->arguments.push_back(clone_expression(*argument));return result;
+    }
     bool compound_property(const hir::Expr& target) const {
+        if(target.kind==hir::ExprKind::dictionary_call && (target.local&255U)==static_cast<std::size_t>(DictionaryMethod::get_item))return true;
         if(target.kind==hir::ExprKind::property_access || target.kind==hir::ExprKind::list_capacity || target.kind==hir::ExprKind::school_ip
             || target.kind==hir::ExprKind::buffer_call || target.kind==hir::ExprKind::association_call)return true;
         if(target.kind==hir::ExprKind::index)return target.left->type==Type::string || info(target.left->type,target.location).kind==CompoundKind::list;
@@ -4028,13 +4033,9 @@ private:
         if(target->kind==hir::ExprKind::property_access && !target->getter)throw Error("E_TYPE",location,"Property is write-only");
         if(compound_property(*target)) {
             auto value=std::make_unique<hir::Expr>();value->kind=hir::ExprKind::binary;value->operation=op;value->location=location;
-            value->left=expression(*source.target);value->right=initial ? std::move(initial) : expression(*source.expression);
+            value->left=clone_expression(*target);value->right=initial ? std::move(initial) : expression(*source.expression);
             value=bind_binary(std::move(value));value=checked_compound_cast(std::move(value),type,location);
             return bind_assignment(std::move(target),[&](Type){return std::move(value);},location,true);
-        }
-        if(target->kind==hir::ExprKind::dictionary_call && (target->local&255U)==static_cast<std::size_t>(DictionaryMethod::get_item)){
-            std::vector<std::unique_ptr<hir::Expr>> reads;for(auto& argument:target->arguments){if(module_.locals.size()>=4096)throw Error("E_LIMIT",location,"Local and constant limit exceeded");const auto local=module_.locals.size();const auto value_type=argument->type;module_.locals.push_back({"$dictionary_index_"+std::to_string(local),value_type,!in_routine_});auto cache=std::make_unique<hir::Expr>();cache->kind=hir::ExprKind::cache_value;cache->type=value_type;cache->location=argument->location;cache->local=local;cache->left=std::move(argument);argument=std::move(cache);auto read=std::make_unique<hir::Expr>();read->kind=hir::ExprKind::local;read->type=value_type;read->local=local;read->location=location;reads.push_back(std::move(read));}
-            auto value=std::make_unique<hir::Expr>();value->kind=hir::ExprKind::binary;value->operation=op;value->location=location;value->left=dictionary_expression(target->operation_type,DictionaryMethod::get_item,std::move(reads),location);value->right=initial ? std::move(initial) : expression(*source.expression);value=checked_compound_cast(bind_binary(std::move(value)),type,location);return bind_assignment(std::move(target),[&](Type){return std::move(value);},location,true);
         }
         if(compound(type) && info(type,location).kind==CompoundKind::dictionary){auto right=initial ? std::move(initial) : expression(*source.expression);hir::Stmt result;result.kind=hir::StmtKind::call;result.location=location;if(op=="+"){std::vector<std::unique_ptr<hir::Expr>> args;args.push_back(std::move(target));args.push_back(std::move(right));result.expression=dictionary_expression(type,DictionaryMethod::update,std::move(args),location);}else if(op=="-")result.expression=dictionary_removal(type,std::move(target),std::move(right),location,false);else throw Error("E_TYPE",location,"Dictionary compound operation requires += or -=");return result;}
         if(compound(type) && info(type,location).kind==CompoundKind::new_set){

@@ -1,55 +1,19 @@
 {
   "schema": 1,
-  "runtime_source_base_revision": "9efadf61bdbdb1ebc2ef2e8d37043f8f8e47e068",
+  "runtime_source_base_revision": "c8292603125aab58f81c2cbbf983f21d1218f180",
   "runtime_source_changes": [
     {
-      "path": "native/include/abc/core.hpp",
-      "sha256_lf": "9c6ed447a27d8d87fa4131f265d514d7271af116381f122b38e3fbe3e3d8752f"
-    },
-    {
-      "path": "native/src/bytecode.cpp",
-      "sha256_lf": "93ef8aafb37be34079b4078eabafddb861ea8e02c6b3ca5a11af12e2190ad5af"
-    },
-    {
-      "path": "native/src/collection_interface.cpp",
-      "sha256_lf": "81f0bd9708c0e763eada58f2addbda45c02b2d4f4669f61ef6272dd8c0829a9b"
-    },
-    {
-      "path": "native/src/interfaces.cpp",
-      "sha256_lf": "779c2d4be694e0099de2041657c8371e9e05a6191ffa9455148d38947754fe30"
-    },
-    {
-      "path": "native/src/interfaces.hpp",
-      "sha256_lf": "d91c32a9db4b05e90506bb6713000e7cb6de08510b0c1da62337c2521ee7a3fe"
-    },
-    {
       "path": "native/src/pascal.cpp",
-      "sha256_lf": "ed51b1b5151a3b1f31083bb6ed94e2b8bdf2b75887a4d3c100f5b33564af15f2"
-    },
-    {
-      "path": "native/src/school.hpp",
-      "sha256_lf": "1a29fbf03b037a0e1d76b6e917df24efef1d4dd6f0973e8820e8558df3395aab"
-    },
-    {
-      "path": "native/src/school_text.cpp",
-      "sha256_lf": "fcea3f47321cb4233d300c98ddfd1258c55bdbfb68326c0e1e20073f07d41cd1"
-    },
-    {
-      "path": "native/src/type_names.cpp",
-      "sha256_lf": "c8fff51da8103e25856d179be370071160489c0a9693d6bab0f3ae0afa04827a"
-    },
-    {
-      "path": "native/src/vm.cpp",
-      "sha256_lf": "d4350fb1d9c74664b67b9e83e724424f0597f3e46748695e64aa187175082b8d"
+      "sha256_lf": "b0a14d784f035f98213e020aed77a4d9512905822393cc24ca2ad91ad7eb01a8"
     }
   ],
-  "scope": "Selected positive compile requirements in two native builds. Not API coverage or runtime validation. IList and the School IList overload now compile; whole standard-library units remain partial.",
+  "scope": "Selected positive compile requirements in two native builds. Not API coverage or runtime validation. Dictionary property evaluation order/lambda identity are validated separately; whole standard-library units remain partial.",
   "runs": [
     {
       "schema": 1,
       "scope": "Selected required positive compile cases derived from shipped interfaces. Every case must eventually compile. This is a growing gap list, not complete API coverage; accepting a case does not prove its runtime semantics. No expected failure is made a compatibility requirement.",
       "runner": "native/build/clang-incremental/abc.exe",
-      "runner_sha256": "adaa7b47ff1c496ccff80c7249d0f4676120cbf4d0bbe43b9e5770766d71455a",
+      "runner_sha256": "c775716436bb84cee66f7dc9e8dcb7abf74dfc24b199f0540e073cf0e8e7570a",
       "version": "ABC Native 0.1.0-dev (Pascal prototype)",
       "cases": [
         {
@@ -286,7 +250,7 @@
       "schema": 1,
       "scope": "Selected required positive compile cases derived from shipped interfaces. Every case must eventually compile. This is a growing gap list, not complete API coverage; accepting a case does not prove its runtime semantics. No expected failure is made a compatibility requirement.",
       "runner": "native/build/qt-editor/Release/abc.exe",
-      "runner_sha256": "9904ac4083a24223c44ece0de01592c4ee84d823cd75461955951b14eae000b6",
+      "runner_sha256": "4b4604f113ac00b00c5834cdd3c2e1891949cd387195d2a7050fcdcf835a9833",
       "version": "ABC Native 0.1.0-dev (Pascal prototype)",
       "cases": [
         {

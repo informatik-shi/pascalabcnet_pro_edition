@@ -343,6 +343,7 @@ def main():
                 ("array-generics.pas", "1/2/3\n3|2|1\n7,7,7\n1.5 1.5 \n1.50 1.50 \n"),
                 ("collection-interfaces.pas", "2 False True\n[0,7,8]\n7 8 \nTrue 1\nTrue\n1 True\n0\n"),
                 ("list-interfaces.pas", "кот пёс кот\n5 1\n5 7 \nTrue [1,9]\n"),
+                ("collection-property-writes.pas", "25 20 2\n[11,2] 2\n2 True 26\n"),
                 ("small-integers.pas", "Значения: 255 -128 -32768\nСумма с расширением: 256\nКвадрат: 65025\nГраница byte: 254|255|\nМассив smallint: 1 -2\n"),
                 ("unsigned-integers.pas", "Граница 32 бит: 4294967295\nС расширением: 4294967296\nГраница 64 бит: 18446744073709551615\nКвадрат word: 4294836225\nПредыдущее: 18446744073709551614\nПереключение: True False\n"),
                 ("random-arrays.pas", "Arrays, 0..99: 24|11|46|\nPABCSystem, 0..100: 25|11|47|\nПосле заполнения: 10|10|11|\nВещественное: 0.25\n"),
@@ -1838,6 +1839,19 @@ def main():
                         or f"{list_interface_error}:2:" not in invalid.stderr):
                     raise RuntimeError(f"{name} IList runtime bilingual error failed: {invalid.stdout!r} {invalid.stderr!r}")
             results[-1]["native_list_interfaces_school_and_bilingual_errors"] = "passed"
+            dictionary_property_error = folder / "Ошибки составной записи словаря.pas"
+            dictionary_property_error.write_text(
+                "var d:Dictionary<string,integer>;calls:integer;"
+                "function Dst:Dictionary<string,integer>;begin Write('D');Result:=d;end;"
+                "function Key:string;begin Inc(calls);Write('K');if calls=1 then Result:=nil else Result:='a';end;"
+                "function Rhs:integer;begin Write('R');Result:=5;end;\n"
+                "begin d:=new Dictionary<string,integer>;d.Add('a',1);\nDst()[Key()]+=Rhs();end.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(dictionary_property_error)], text=True, encoding="utf-8", capture_output=True, cwd=folder, env=env, timeout=10)
+            if (invalid.returncode != 1 or invalid.stdout != "DKDKR" or "E_NIL" not in invalid.stderr
+                    or "EN: Dictionary key cannot be nil" not in invalid.stderr or "RU: Ключ словаря не может быть nil" not in invalid.stderr
+                    or f"{dictionary_property_error}:3:" not in invalid.stderr):
+                raise RuntimeError(f"{name} Dictionary property order/bilingual error failed: {invalid.stdout!r} {invalid.stderr!r}")
+            results[-1]["native_dictionary_property_order_and_lambda_identity"] = "passed"
             results[-1]["native_generic_enumerators_boxing_resources_and_bilingual_errors"] = "passed"
             results[-1]["native_typed_dictionary_enumerators_and_bilingual_errors"] = "passed"
             results[-1]["native_dictionary_factories_views_callbacks_and_bilingual_errors"] = "passed"
