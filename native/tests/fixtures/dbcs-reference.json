@@ -1,0 +1,50 @@
+{
+  "schema": 2,
+  "mapping_runtime": "Windows .NET Framework 4.0.30319.42000",
+  "file_runtime": "Windows .NET 10.0.12",
+  "codecs": 23,
+  "utf16_encoding_inputs": 1507328,
+  "single_byte_decoding_inputs": 5888,
+  "byte_pair_decoding_inputs": 1507328,
+  "split_decoding_inputs": 1507328,
+  "supplementary_scalar_inputs": 24117248,
+  "eucjp_prefix_triples": 65536,
+  "native_supported_aliases": 63,
+  "modern_file_recipes": 161,
+  "legacy_file_recipes": 161,
+  "scope": "All 22 DBCSCodePageEncoding codecs and EUCJPEncoding 51932 exposed by this Framework, exhaustive BMP/default/exact maps, every byte pair and decoder split, all supplementary scalar fallbacks, throwing-fallback cross-checks and actual encoder carry. File recipes use the modern .NET stream behavior selected by the earlier native file implementation. Framework StreamReader drops a final pending lead in 23 EOF recipes; the native reader intentionally flushes replacement like .NET 10. These legacy differences are preserved, not reported as compatibility passes. Native supports 123 of the 140 Framework code pages; 17 stateful/variable-width codecs and full Encoding/class/module APIs remain open. No Pascal compiler is invoked.",
+  "artifacts": [
+    {
+      "path": "reference/dbcs-encodings.cs",
+      "sha256_lf": "a6adc1c1b634359b06c9499015313358fbe783b08932586065a6c4934be5cb1b"
+    },
+    {
+      "path": "reference/generate-dbcs.ps1",
+      "sha256_lf": "73c0753fc7a352bac849f648bb0d4bbd4b5080d324e3abd217665fb01bd35ec9"
+    },
+    {
+      "path": "fixtures/dbcs-reference.bin",
+      "sha256_bytes": "d59ec648810adaf66244236a77638851e4bcfc112bf95a77caa9262e05cb82dc"
+    },
+    {
+      "path": "fixtures/encoding-aliases-reference.tsv",
+      "sha256_lf": "b6f31da1cf7b9b39c653bfb3a2f6eefcf18fb1aec7a41e0545d5f24a6ff1cfec"
+    },
+    {
+      "path": "fixtures/dbcs-files-reference.tsv",
+      "sha256_lf": "ac7f3029a31a50c35a3b02fe02c8c9917756d2fcff7335aa9460f69175a88195"
+    },
+    {
+      "path": "fixtures/dbcs-files-framework-reference.tsv",
+      "sha256_lf": "4a435cbd4a4854a953bbbe8d40d5a5d6bf45f4748548acaafbf6108867c8027a"
+    },
+    {
+      "path": "fixtures/dbcs-reference.md",
+      "sha256_lf": "8a5ff28b9e46a4b1247321024648eaa8557d472f3e46f606d1a96504be7a1a71"
+    },
+    {
+      "path": "../tools/generate-dbcs.mjs",
+      "sha256_lf": "b7c0356ae206771652c9aac4446a41a371bcc6314da9c255151215174f636c1d"
+    }
+  ]
+}

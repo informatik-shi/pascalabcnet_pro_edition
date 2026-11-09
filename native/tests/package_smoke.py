@@ -360,6 +360,7 @@ def main():
                 ("type-properties.pas", "Int32\nSystem.Int32\nSystem\ntype-properties.Coordinate\nDictionary`2\nEnumerator\nSystem.Int32, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089\n"),
                 ("named-callables.pas", "Check False\nnamed-callables.Check\nTrue\nTrue True\nFalse\n5 RefSecond\n"),
                 ("predicate-generics.pas", "Predicate2`2 False\nPredicate3`3 False\nPABCSystem\nTrue True\nFalse\n4\n"),
+                ("double-byte-encodings.pas", "932 [147,250,150,123,140,234]\n日本語\n936 中文\n950 中文\n949 한국어\nDBCSCodePageEncoding\n51932 日本語 EUCJPEncoding\n"),
                 ("single-byte-encodings.pas", "866 [143,224,168,162,165,226]\nПривет\n20866 Привет\n[128,233]\nLatin1Encoding [233,65]\n37 [193,194,195]\n"),
                 ("collection-property-writes.pas", "25 20 2\n[11,2] 2\n2 True 26\n"),
                 ("small-integers.pas", "Значения: 255 -128 -32768\nСумма с расширением: 256\nКвадрат: 65025\nГраница byte: 254|255|\nМассив smallint: 1 -2\n"),

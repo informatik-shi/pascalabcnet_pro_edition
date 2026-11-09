@@ -4,6 +4,7 @@
 #include "text_file.hpp"
 #include "runtime_values.hpp"
 #include "sbcs.hpp"
+#include "dbcs.hpp"
 
 namespace abc {
 namespace {
@@ -17,7 +18,7 @@ TextEncoding descriptor(std::int32_t code,SourceLocation location) {
     case 1251:return {TextEncodingKind::windows1251,false,false};
     case 20127:return {TextEncodingKind::ascii,false,false};
     default:
-        if(code>0 && code<=65535 && single_byte_codec(static_cast<std::uint16_t>(code)))return {static_cast<TextEncodingKind>(code),false,false};
+        if(code>0 && code<=65535 && (single_byte_codec(static_cast<std::uint16_t>(code)) || double_byte_codec(static_cast<std::uint16_t>(code))))return {static_cast<TextEncodingKind>(code),false,false};
         throw runtime_error(RuntimeError::encoding_kind,location,std::to_string(code));
     }
 }
@@ -25,6 +26,7 @@ std::int32_t named_code(const Value& name,SourceLocation location) {
     if(std::holds_alternative<NilString>(name))throw runtime_error(RuntimeError::nil_reference,location);
     auto text=string_text(name);for(auto& ch:text)if(ch>=u'A' && ch<=u'Z')ch=static_cast<char16_t>(ch+32);
     if(const auto code=encoding_alias_code(text))return code;
+    if(const auto code=double_byte_alias_code(text))return code;
     throw runtime_error(RuntimeError::encoding_kind,location,to_utf8(text,true));
 }
 } // namespace

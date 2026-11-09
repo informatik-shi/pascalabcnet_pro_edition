@@ -30,6 +30,7 @@ add_library(abc_core
     src/directory_sequence.cpp
     src/file_encoding.cpp
     src/sbcs.cpp
+    src/dbcs.cpp
     src/encoding.cpp
     src/enumeration.cpp
     src/comparable.cpp
@@ -362,6 +363,13 @@ if(BUILD_TESTING)
         target_compile_options(abc_sbcs_tests PRIVATE /utf-8)
     endif()
     add_test(NAME single_byte_encodings COMMAND abc_sbcs_tests)
+    add_executable(abc_dbcs_tests tests/dbcs_tests.cpp)
+    target_link_libraries(abc_dbcs_tests PRIVATE abc_core)
+    if(MSVC)
+        target_compile_options(abc_dbcs_tests PRIVATE /utf-8)
+    endif()
+    add_test(NAME double_byte_encodings COMMAND abc_dbcs_tests)
+    add_test(NAME double_byte_encodings_example COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/examples/double-byte-encodings.pas")
     add_test(NAME single_byte_encodings_example COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/examples/single-byte-encodings.pas")
     add_test(NAME predicate_generics_example COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/examples/predicate-generics.pas")
     add_test(NAME named_callables_example COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/examples/named-callables.pas")

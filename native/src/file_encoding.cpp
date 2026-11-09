@@ -1,5 +1,6 @@
 #include "file_encoding.hpp"
 #include "sbcs.hpp"
+#include "dbcs.hpp"
 #include "diagnostics.hpp"
 
 namespace abc {
@@ -8,7 +9,7 @@ constexpr std::size_t data_limit=1'048'576;
 constexpr char16_t replacement=0xfffd;
 bool valid(TextEncodingKind kind) {
     return kind==TextEncodingKind::utf8 || kind==TextEncodingKind::utf16_le || kind==TextEncodingKind::utf16_be
-        || kind==TextEncodingKind::utf32_le || kind==TextEncodingKind::utf32_be || single_byte_codec(static_cast<std::uint16_t>(kind));
+        || kind==TextEncodingKind::utf32_le || kind==TextEncodingKind::utf32_be || single_byte_codec(static_cast<std::uint16_t>(kind)) || double_byte_codec(static_cast<std::uint16_t>(kind));
 }
 void validate(TextEncoding encoding,SourceLocation location) {
     if (!valid(encoding.kind)) throw runtime_error(RuntimeError::encoding_kind,location);
@@ -115,6 +116,17 @@ std::u16string decode_text_bytes(std::string_view bytes,TextEncoding encoding,bo
     if(encoding.kind==TextEncodingKind::utf16_le || encoding.kind==TextEncodingKind::utf16_be)return decode_utf16(bytes,encoding,encoding.kind==TextEncodingKind::utf16_be,location);
     if(encoding.kind==TextEncodingKind::utf32_le || encoding.kind==TextEncodingKind::utf32_be)return decode_utf32(bytes,encoding,encoding.kind==TextEncodingKind::utf32_be,location);
     std::u16string result;result.reserve(bytes.size());
+    if(const auto* codec=double_byte_codec(static_cast<std::uint16_t>(encoding.kind))){
+        for(std::size_t index=0;index<bytes.size();){
+            const auto first=static_cast<std::uint8_t>(bytes[index++]);std::uint32_t value;
+            if(double_byte_lead(*codec,first) && index<bytes.size()){
+                const auto pair=static_cast<std::uint16_t>((static_cast<unsigned>(first)<<8)|static_cast<std::uint8_t>(bytes[index++]));value=double_byte_decode_pair(*codec,pair);
+            }else value=codec->single[first]|(((codec->single_exact[first>>3]>>(first&7))&1U)?0x10000U:0U);
+            if(encoding.strict && !(value&0x10000U))throw runtime_error(RuntimeError::encoding_data,location);
+            result.push_back(static_cast<char16_t>(value));
+        }
+        return result;
+    }
     const auto& codec=*single_byte_codec(static_cast<std::uint16_t>(encoding.kind));
     for(unsigned char value:bytes){
         if(encoding.strict && !(codec.decode_strict[value>>3]&(1U<<(value&7))))throw runtime_error(RuntimeError::encoding_data,location);
@@ -153,6 +165,12 @@ std::u16string TextDecoder::decode(std::string_view bytes,bool final,SourceLocat
             end-=end%2;
             if(end>=2){const auto last=unit(view,end-2,2,encoding_.kind==TextEncodingKind::utf16_be);if(last>=0xd800 && last<=0xdbff)end-=2;}
         } else if(encoding_.kind==TextEncodingKind::utf32_le || encoding_.kind==TextEncodingKind::utf32_be)end-=end%4;
+        else if(const auto* codec=double_byte_codec(static_cast<std::uint16_t>(encoding_.kind))){
+            for(std::size_t index=0;index<view.size();){
+                if(double_byte_lead(*codec,static_cast<std::uint8_t>(view[index]))){if(index+1==view.size()){end=index;break;}index+=2;}
+                else ++index;
+            }
+        }
     }
     auto result=decode_text_bytes(view.substr(0,end),encoding_,false,location);
     if(result.size()>data_limit-produced_)throw runtime_error(RuntimeError::encoding_limit,location);
@@ -163,6 +181,14 @@ std::string encode_text_bytes(std::u16string_view text,TextEncoding encoding,Sou
     if(text.size()>data_limit)throw runtime_error(RuntimeError::encoding_limit,location);
     std::string result;result.reserve(text.size());
     auto append=[&](std::uint32_t value){if(result.size()>=data_limit)throw runtime_error(RuntimeError::encoding_limit,location);result.push_back(static_cast<char>(value));};
+    if(const auto* codec=double_byte_codec(static_cast<std::uint16_t>(encoding.kind))){
+        for(char16_t value:text){
+            const auto encoded=double_byte_encode(*codec,value);
+            if(encoding.strict && !(encoded&0x10000U))throw runtime_error(RuntimeError::encoding_data,location);
+            const auto code=encoded&65535U;if(code>255)append(code>>8);append(code&255U);
+        }
+        return result;
+    }
     if(const auto* codec=single_byte_codec(static_cast<std::uint16_t>(encoding.kind))) {
         for(char16_t value:text) {
             const auto encoded=single_byte_encode(*codec,value);
