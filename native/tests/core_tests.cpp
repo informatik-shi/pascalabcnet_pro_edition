@@ -1978,7 +1978,7 @@ function Make:F; begin Result:=Twice; end;
 begin var f:F:=Twice; var g:=Twice; var p:P:=Add; var n:=4; p(n);
 Writeln(f(n),' ',g(5),' ',Apply(Twice,6),' ',Make()(8),' ',f.Invoke(9));
 var a:=Arr(Twice,Twice); Writeln(a[0](10),' ',a[0]=a[1],' ',f=g);
-end.)","14 10 12 16 18\n20 True True\n");
+end.)","14 10 12 16 18\n20 True False\n");
     result(R"(type F=function:integer; P=procedure;
 var count:integer;
 function Next:integer; begin Inc(count); Result:=count; end;

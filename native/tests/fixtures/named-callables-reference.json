@@ -1,0 +1,28 @@
+{
+  "schema": 1,
+  "runtime": "Windows .NET Framework 4.0.30319.42000",
+  "outcomes": 1296,
+  "scope": "Actual CLR named delegate identities, conversions, invocation and metadata in two source modules, with explicitly source-derived conversion guards. Classic named headers differ from System.Func/Action arrow aliases. No original Pascal compiler is executed; general anonymous/generic delegate and operator overload resolution remain outside this corpus.",
+  "artifacts": [
+    {
+      "path": "reference/named-callables.cs",
+      "sha256_lf": "87a9374a0ff8cd1b66201af7fe3e8589a20e53c6ebf378f5b27558bdd74d0394"
+    },
+    {
+      "path": "reference/generate-named-callables.ps1",
+      "sha256_lf": "546eb2863b017b67432df9a25e83367f6fba527f797e5202db33b0e9feb5d6ab"
+    },
+    {
+      "path": "fixtures/named-callables-program.pas",
+      "sha256_lf": "833ef6d0f216a01189a20c629d65676cc8fe29cd66af481e21c8966a75ae0505"
+    },
+    {
+      "path": "fixtures/named-callables-reference.tsv",
+      "sha256_lf": "1fa74b691765147734676f0633e2386d76a373bc94dc6e71738110ca6387107b"
+    },
+    {
+      "path": "fixtures/named-callables-reference.md",
+      "sha256_lf": "bf309ee58ff7890c6bf77b8730dc864e9f9e1b60349cfffe90746384624fd479"
+    }
+  ]
+}

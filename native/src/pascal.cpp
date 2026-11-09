@@ -229,6 +229,7 @@ struct SyntaxType {
     bool enum_flags=false;
     std::vector<std::unique_ptr<SyntaxExpr>> enum_values{};
     bool named=false;
+    bool modern_callable=false;
     std::vector<std::shared_ptr<SyntaxRoutine>> methods{};
     std::vector<std::shared_ptr<SyntaxProperty>> properties{};
     std::map<std::string,MemberAccess> field_access{};
@@ -572,7 +573,7 @@ private:
         if (allow_arrow && accept("->")) {
             if (!result->named && (result->kind=="record" || result->kind=="callable"))
                 throw Error("E_SYNTAX",result->token.location,"Short callable input type requires parentheses");
-            auto callable=std::make_shared<SyntaxType>(); callable->token=result->token; callable->kind="callable";
+            auto callable=std::make_shared<SyntaxType>(); callable->token=result->token; callable->kind="callable";callable->modern_callable=true;
             if (result->kind=="tuple" && !result->named) callable->fields=std::move(result->fields);
             else callable->fields.emplace_back(result->token,std::move(result));
             if(callable->fields.size()>16)fail("Too many routine parameters");
@@ -2110,6 +2111,11 @@ private:
             std::vector<CallableParameter> parameters;
             for (std::size_t n=0;n<syntax.fields.size();++n) parameters.push_back({resolve_type(*syntax.fields[n].second),syntax.references[n],syntax.variadics[n]});
             const auto result=syntax.element ? resolve_type(*syntax.element) : Type::unit;
+            if(!syntax.modern_callable && syntax_root_ && std::any_of(syntax_root_->type_declarations.begin(),syntax_root_->type_declarations.end(),[&](const auto& declaration){return declaration.second.get()==&syntax;})){
+                const auto type=function_type(result,std::move(parameters),syntax.token.location,"$delegate:"+syntax.token.text);
+                module_.types[static_cast<unsigned>(type)-64].display_name=syntax.token.spelling.empty() ? syntax.token.text : syntax.token.spelling;
+                resolved_types_[&syntax]=type;return type;
+            }
             return function_type(result,std::move(parameters),syntax.token.location);
         }
         if (syntax.kind=="intfunc" || syntax.kind=="realfunc" || syntax.kind=="stringfunc") {
@@ -3791,6 +3797,7 @@ private:
             if ((op=="=" || op=="<>") && (compound(left) || compound(right) || left==Type::text_file || right==Type::text_file || left==Type::type_descriptor || right==Type::type_descriptor)) {
                 if (left==Type::nil) { result->left=convert(std::move(result->left),right); left=right; }
                 if (right==Type::nil) { result->right=convert(std::move(result->right),left); right=left; }
+                if(left!=right && callable_compatible(module_.types,right,left)){result->right=convert(std::move(result->right),left);right=left;}
                 if (left!=right && sequence_view(right,left,result->location)) { result->right=convert(std::move(result->right),left); right=left; }
                 if (left!=right && sequence_view(left,right,result->location)) { result->left=convert(std::move(result->left),right); left=right; }
                 if (left!=right) throw Error("E_TYPE",result->location,"Incompatible aggregate comparison");
@@ -4666,7 +4673,7 @@ private:
             const auto array=sequence_type(CompoundKind::array,element,rank);std::vector<CallableParameter> parameters{{array,false,false}};
             if(!sort)parameters.push_back({fill?element:matrix?Type::integer:Type::string,false,false});
             const auto signature=function_type(Type::unit,parameters,location);
-            if(expected!=Type::invalid&&expected!=signature)throw Error("E_TYPE",location,"Generic array procedure value requires its exact full signature","Значению обобщённой процедуры массивов нужна точная полная сигнатура");
+            if(expected!=Type::invalid && (!callable_type(expected) || info(expected,location).element!=Type::unit || info(expected,location).parameters!=parameters))throw Error("E_TYPE",location,"Generic array procedure value requires its exact full signature","Значению обобщённой процедуры массивов нужна точная полная сигнатура");
             const auto key=std::make_pair(name,signature);auto found=array_library_routines_.find(key);
             if(found==array_library_routines_.end()){
                 if(module_.routines.size()>=256)throw Error("E_LIMIT",location,"Routine limit exceeded");

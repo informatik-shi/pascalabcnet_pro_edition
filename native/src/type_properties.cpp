@@ -125,6 +125,9 @@ Definition definition(const Program& program,ReflectedType type,Work& work){
         case CompoundKind::tuple:
             result.name=u"Tuple";for(const auto& field:info.fields)result.arguments.push_back(field.type);arity(result);break;
         case CompoundKind::callable:
+            if(info.name.starts_with("$delegate:")){
+                result.name=from_utf8(info.display_name);result.name_space=from_utf8(program.module_name);result.source=true;break;
+            }
             for(const auto& parameter:info.parameters){if(parameter.by_reference)unsupported(work.location);result.arguments.push_back(parameter.type);}
             result.name=info.name=="predicate" ? u"Predicate" : info.element==Type::unit ? u"Action" : u"Func";
             if(info.name!="predicate" && info.element!=Type::unit)result.arguments.push_back(info.element);arity(result);break;
