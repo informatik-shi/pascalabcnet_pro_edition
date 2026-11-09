@@ -1,6 +1,7 @@
 #include "file_encoding.hpp"
 #include "sbcs.hpp"
 #include "dbcs.hpp"
+#include "gb18030.hpp"
 #include "diagnostics.hpp"
 
 namespace abc {
@@ -8,7 +9,7 @@ namespace {
 constexpr std::size_t data_limit=1'048'576;
 constexpr char16_t replacement=0xfffd;
 bool valid(TextEncodingKind kind) {
-    return kind==TextEncodingKind::utf8 || kind==TextEncodingKind::utf16_le || kind==TextEncodingKind::utf16_be
+    return kind==TextEncodingKind::utf8 || kind==TextEncodingKind::gb18030 || kind==TextEncodingKind::utf16_le || kind==TextEncodingKind::utf16_be
         || kind==TextEncodingKind::utf32_le || kind==TextEncodingKind::utf32_be || single_byte_codec(static_cast<std::uint16_t>(kind)) || double_byte_codec(static_cast<std::uint16_t>(kind));
 }
 void validate(TextEncoding encoding,SourceLocation location) {
@@ -112,6 +113,7 @@ std::u16string decode_text_bytes(std::string_view bytes,TextEncoding encoding,bo
     validate(encoding,location);
     if(bytes.size()>data_limit)throw runtime_error(RuntimeError::encoding_limit,location);
     if(detect_preamble)detect_encoding(bytes,encoding);
+    if(encoding.kind==TextEncodingKind::gb18030){std::string retained;return gb18030_decode(bytes,0,true,encoding.strict,retained,location);}
     if(encoding.kind==TextEncodingKind::utf8)return decode_utf8(bytes,encoding,location);
     if(encoding.kind==TextEncodingKind::utf16_le || encoding.kind==TextEncodingKind::utf16_be)return decode_utf16(bytes,encoding,encoding.kind==TextEncodingKind::utf16_be,location);
     if(encoding.kind==TextEncodingKind::utf32_le || encoding.kind==TextEncodingKind::utf32_be)return decode_utf32(bytes,encoding,encoding.kind==TextEncodingKind::utf32_be,location);
@@ -141,10 +143,21 @@ std::u16string TextDecoder::decode(std::string_view bytes,bool final,SourceLocat
         return {};
     }
     if(bytes.size()>data_limit-received_)throw runtime_error(RuntimeError::encoding_limit,location);
+    const auto pending=detect_?0:carry_.size();
     received_+=bytes.size();std::string data=std::move(carry_);data.append(bytes);carry_.clear();
-    if(detect_ && data.size()<4 && !final){carry_=std::move(data);return {};}
+    if(detect_ && data.size()<4 && !final){
+        bool wait=encoding_.kind!=TextEncodingKind::gb18030;
+        for(auto kind:{TextEncodingKind::utf8,TextEncodingKind::utf16_le,TextEncodingKind::utf16_be,TextEncodingKind::utf32_le,TextEncodingKind::utf32_be})
+            if(text_encoding_preamble({kind,true,false}).starts_with(data))wait=true;
+        if(wait){carry_=std::move(data);return {};}
+    }
     std::string_view view=data;
     if(detect_){detect_encoding(view,encoding_);detect_=false;}
+    if(encoding_.kind==TextEncodingKind::gb18030){
+        auto result=gb18030_decode(view,pending,final,encoding_.strict,carry_,location);
+        if(result.size()>data_limit-produced_)throw runtime_error(RuntimeError::encoding_limit,location);
+        produced_+=result.size();finished_=final;return result;
+    }
     auto end=view.size();
     if(!final) {
         if(encoding_.kind==TextEncodingKind::utf8) {
@@ -179,6 +192,7 @@ std::u16string TextDecoder::decode(std::string_view bytes,bool final,SourceLocat
 std::string encode_text_bytes(std::u16string_view text,TextEncoding encoding,SourceLocation location) {
     validate(encoding,location);
     if(text.size()>data_limit)throw runtime_error(RuntimeError::encoding_limit,location);
+    if(encoding.kind==TextEncodingKind::gb18030)return gb18030_encode(text,encoding.strict,location);
     std::string result;result.reserve(text.size());
     auto append=[&](std::uint32_t value){if(result.size()>=data_limit)throw runtime_error(RuntimeError::encoding_limit,location);result.push_back(static_cast<char>(value));};
     if(const auto* codec=double_byte_codec(static_cast<std::uint16_t>(encoding.kind))){

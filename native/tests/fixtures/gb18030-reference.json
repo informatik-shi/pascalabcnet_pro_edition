@@ -1,0 +1,57 @@
+{
+    "schema":  2,
+    "mapping_runtimes":  [
+                             "Windows .NET Framework 4.0.30319.42000",
+                             "Windows .NET 10.0.12"
+                         ],
+    "primitive_fixtures_identical":  true,
+    "code_page":  54936,
+    "bmp_encoding_inputs":  65536,
+    "single_byte_inputs":  256,
+    "byte_pair_inputs":  65536,
+    "four_byte_inputs":  1587600,
+    "four_byte_splits_per_input":  4,
+    "supplementary_scalars":  1048576,
+    "variable_streaming_inputs":  134400,
+    "file_recipes_per_runtime":  786,
+    "legacy_file_differences":  490,
+    "scope":  "Actual default/strict and streaming GB18030 primitive outcomes are byte-identical between both reference runtimes, including incomplete EOF prefix differences between stateless and retained decoders. Native implements the Framework GB18030 mapping with modern StreamReader flush behavior; the 490 differing legacy file rows remain explicit compatibility gaps. 124 of 140 Framework pages supported; 16 other codecs, full Encoding/class/module APIs and whole standard library remain unfinished. No Pascal compiler is invoked.",
+    "artifacts":  [
+                      {
+                          "path":  "reference/gb18030-encoding.cs",
+                          "sha256_lf":  "0605732f3ddacee08303a081ce74cea5c7a303742c555646159e436d75569a6c"
+                      },
+                      {
+                          "path":  "reference/gb18030-files.cs",
+                          "sha256_lf":  "249a5be0f54ff7df59729c5dfc5faa73797fc36d825848d8e4f4ee3c67bbdf32"
+                      },
+                      {
+                          "path":  "reference/generate-gb18030.ps1",
+                          "sha256_lf":  "c8f980147850cf696a14fed8325063d43bc0ed083724f8d7c9fb285be0358a48"
+                      },
+                      {
+                          "path":  "fixtures/gb18030-reference.bin",
+                          "sha256_bytes":  "d2fbe9f5208599c6cc2cc1775a670ed27084162aae597a29bd62cfd42192c486"
+                      },
+                      {
+                          "path":  "fixtures/gb18030-files-reference.tsv",
+                          "sha256_lf":  "85c4d369a1d6b0ea59bc812e5cfd05d0a5c3afb1dea66a60b9a9346b704b45fe"
+                      },
+                      {
+                          "path":  "fixtures/gb18030-files-framework-reference.tsv",
+                          "sha256_lf":  "dc3b33eadc66888682aee22776baa4479fec589d282d424013db9a230ed08d13"
+                      },
+                      {
+                          "path":  "fixtures/gb18030-reference.md",
+                          "sha256_lf":  "4136d8ac633e6d239af40690f790a391f6fd645c43c02d262471690f2dda3149"
+                      },
+                      {
+                          "path":  "fixtures/encoding-aliases-reference.tsv",
+                          "sha256_lf":  "b6f31da1cf7b9b39c653bfb3a2f6eefcf18fb1aec7a41e0545d5f24a6ff1cfec"
+                      },
+                      {
+                          "path":  "../tools/generate-gb18030.mjs",
+                          "sha256_lf":  "56dfa772e73a77738e3f68749ea59f3c45b70032540966b5a8409b8c1c0e0dc3"
+                      }
+                  ]
+}

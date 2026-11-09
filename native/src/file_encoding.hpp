@@ -3,7 +3,7 @@
 #include <string_view>
 
 namespace abc {
-enum class TextEncodingKind : std::uint16_t { windows1251=1251,utf16_le=1200,utf16_be=1201,utf32_le=12000,utf32_be=12001,ascii=20127,utf8=65001 };
+enum class TextEncodingKind : std::uint16_t { windows1251=1251,utf16_le=1200,utf16_be=1201,utf32_le=12000,utf32_be=12001,ascii=20127,gb18030=54936,utf8=65001 };
 struct TextEncoding {
     TextEncodingKind kind=TextEncodingKind::utf8;
     bool preamble=false,strict=false;

@@ -360,6 +360,7 @@ def main():
                 ("type-properties.pas", "Int32\nSystem.Int32\nSystem\ntype-properties.Coordinate\nDictionary`2\nEnumerator\nSystem.Int32, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089\n"),
                 ("named-callables.pas", "Check False\nnamed-callables.Check\nTrue\nTrue True\nFalse\n5 RefSecond\n"),
                 ("predicate-generics.pas", "Predicate2`2 False\nPredicate3`3 False\nPABCSystem\nTrue True\nFalse\n4\n"),
+                ("gb18030-encoding.pas", "54936 GB18030Encoding\n中文 日本語 한국어 🌍\n[148,57,177,49]\n[129,48,129,48]\n"),
                 ("double-byte-encodings.pas", "932 [147,250,150,123,140,234]\n日本語\n936 中文\n950 中文\n949 한국어\nDBCSCodePageEncoding\n51932 日本語 EUCJPEncoding\n"),
                 ("single-byte-encodings.pas", "866 [143,224,168,162,165,226]\nПривет\n20866 Привет\n[128,233]\nLatin1Encoding [233,65]\n37 [193,194,195]\n"),
                 ("collection-property-writes.pas", "25 20 2\n[11,2] 2\n2 True 26\n"),
@@ -2041,6 +2042,15 @@ def main():
                     or f"{encoding_error}:2:" not in invalid.stderr):
                 raise RuntimeError(f"{name} Encoding name bilingual error failed: {invalid.stdout!r} {invalid.stderr!r}")
             results[-1]["native_single_byte_codecs_and_bilingual_errors"] = "passed"
+            gb_error = folder / "Предел GB18030.pas"
+            gb_error.write_text("begin Write('before');\nEncoding.GetEncoding(54936).GetBytes(StringOfChar(#128,262145));end.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(gb_error)], text=True, encoding="utf-8", capture_output=True, cwd=folder, env=env, timeout=10)
+            if (invalid.returncode != 1 or invalid.stdout != "before" or "E_LIMIT" not in invalid.stderr
+                    or "EN: Encoding conversion exceeds the native size limit" not in invalid.stderr
+                    or "RU: Превышен допустимый размер преобразования кодировки" not in invalid.stderr
+                    or f"{gb_error}:2:" not in invalid.stderr):
+                raise RuntimeError(f"{name} GB18030 bilingual bound error failed: {invalid.stdout!r} {invalid.stderr!r}")
+            results[-1]["native_gb18030_codecs_and_bilingual_bound"] = "passed"
             results[-1]["native_generic_enumerators_boxing_resources_and_bilingual_errors"] = "passed"
             results[-1]["native_typed_dictionary_enumerators_and_bilingual_errors"] = "passed"
             results[-1]["native_dictionary_factories_views_callbacks_and_bilingual_errors"] = "passed"

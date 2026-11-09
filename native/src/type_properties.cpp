@@ -71,8 +71,8 @@ Definition definition(const Program& program,ReflectedType type,Work& work){
         result.suffix=(info.rank==2 ? u"[,]" : u"[]")+result.suffix;type.target=info.element;
     }
     if(type.implementation==1){result.name=u"RuntimeType";return result;}
-    if(type.implementation>=2 && type.implementation<=9){
-        constexpr std::u16string_view names[]={u"UTF8Encoding",u"UnicodeEncoding",u"UTF32Encoding",u"ASCIIEncoding",u"SBCSCodePageEncoding",u"Latin1Encoding",u"DBCSCodePageEncoding",u"EUCJPEncoding"};
+    if(type.implementation>=2 && type.implementation<=10){
+        constexpr std::u16string_view names[]={u"UTF8Encoding",u"UnicodeEncoding",u"UTF32Encoding",u"ASCIIEncoding",u"SBCSCodePageEncoding",u"Latin1Encoding",u"DBCSCodePageEncoding",u"EUCJPEncoding",u"GB18030Encoding"};
         result.name=names[type.implementation-2];result.name_space=u"System.Text";return result;
     }
     if(type.implementation>=16 && type.implementation<=21){
