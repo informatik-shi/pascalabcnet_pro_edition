@@ -135,6 +135,7 @@ Dictionary со сравнителем ключей, Copy и равенство�
 Явные реализации методов интерфейсов: examples/explicit-interfaces.pas.
 Явные свойства, выражения чтения и операторы записи: examples/property-interfaces.pas.
 Диапазоны через ICollection<T>, IEnumerable<T> и IEquatable<T>: examples/range-interfaces.pas.
+Равенство и упаковка RealRange через IEquatable<T>: examples/real-range-interfaces.pas.
 Порядок вычисления объекта и ключа при составной записи в коллекцию: examples/collection-property-writes.pas.
 Интерфейсы пользовательских записей и массовые операции пользовательских коллекций ещё переносятся.
 Contains без сравнителя сохраняет правила исходной коллекции; явный nil выбирает стандартное сравнение элементов.

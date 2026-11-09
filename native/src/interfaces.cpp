@@ -77,7 +77,7 @@ bool interface_compatible(const std::vector<TypeInfo>& types,Type from,Type to){
 bool interface_cast_valid(const Program& p,Type from,Type to,bool checked){
  if(interface_compatible(p.types,from,to))return true;
  if(!checked || !valid(p.types,from) || !valid(p.types,to) || !interface_kind(info(p.types,from)))return false;
- return interface_kind(info(p.types,to)) || ((info(p.types,to).kind==CompoundKind::object_class || ordinal_range_type(info(p.types,to)) || info(p.types,to).kind==CompoundKind::array || info(p.types,to).kind==CompoundKind::list || info(p.types,to).kind==CompoundKind::hash_set || info(p.types,to).kind==CompoundKind::dictionary || info(p.types,to).kind==CompoundKind::dictionary_keys || info(p.types,to).kind==CompoundKind::dictionary_values) && interface_compatible(p.types,to,from));
+ return interface_kind(info(p.types,to)) || ((info(p.types,to).kind==CompoundKind::object_class || ordinal_range_type(info(p.types,to)) || real_interval_type(info(p.types,to)) || info(p.types,to).kind==CompoundKind::array || info(p.types,to).kind==CompoundKind::list || info(p.types,to).kind==CompoundKind::hash_set || info(p.types,to).kind==CompoundKind::dictionary || info(p.types,to).kind==CompoundKind::dictionary_keys || info(p.types,to).kind==CompoundKind::dictionary_values) && interface_compatible(p.types,to,from));
 }
 void verify_interfaces(const Program& p){
  std::size_t names=0;

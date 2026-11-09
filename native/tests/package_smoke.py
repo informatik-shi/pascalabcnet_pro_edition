@@ -348,6 +348,7 @@ def main():
                 ("explicit-interfaces.pas", "class interface\n[4,5]\n"),
                 ("property-interfaces.pas", "99 7 7 False\n12\n"),
                 ("range-interfaces.pas", "4 True\nTrue False\n[2,3,4,5]\n[2,3]\n2 5 True\nabc\n"),
+                ("real-range-interfaces.pas", "True False\nTrue\n-1.5 2.5\nTrue True\n"),
                 ("collection-property-writes.pas", "25 20 2\n[11,2] 2\n2 True 26\n"),
                 ("small-integers.pas", "Значения: 255 -128 -32768\nСумма с расширением: 256\nКвадрат: 65025\nГраница byte: 254|255|\nМассив smallint: 1 -2\n"),
                 ("unsigned-integers.pas", "Граница 32 бит: 4294967295\nС расширением: 4294967296\nГраница 64 бит: 18446744073709551615\nКвадрат word: 4294836225\nПредыдущее: 18446744073709551614\nПереключение: True False\n"),
@@ -1921,6 +1922,18 @@ def main():
                         or f"{range_interface_error}:2:" not in invalid.stderr):
                     raise RuntimeError(f"{name} Range boxing bilingual error failed: {invalid.stdout!r} {invalid.stderr!r}")
             results[-1]["native_range_interfaces_boxing_and_bilingual_errors"] = "passed"
+            real_range_error = folder / "Ошибки упаковки RealRange.pas"
+            for declaration, operation, code, english, russian in [
+                ("type E=IEquatable<RealRange>;", "var e:E:=nil;var r:=RealRange(e)", "E_NIL", "Cannot access a nil reference", "Нельзя обратиться к пустой ссылке nil"),
+                ("type R=RealRange;E=IEquatable<R>;C=class(E) public function Equals(r:R):boolean:=true;end;", "var e:E:=new C;var r:=R(e)", "E_CAST", "Value cannot be unboxed to the requested record", "Нельзя распаковать значение в заданный тип записи"),
+            ]:
+                real_range_error.write_text(f"{declaration}\nbegin Write('before');{operation};end.", encoding="utf-8")
+                invalid = subprocess.run([runner, "run", str(real_range_error)], text=True, encoding="utf-8", capture_output=True, cwd=folder, env=env, timeout=10)
+                if (invalid.returncode != 1 or invalid.stdout != "before" or code not in invalid.stderr
+                        or f"EN: {english}" not in invalid.stderr or f"RU: {russian}" not in invalid.stderr
+                        or f"{real_range_error}:2:" not in invalid.stderr):
+                    raise RuntimeError(f"{name} RealRange boxing bilingual error failed: {invalid.stdout!r} {invalid.stderr!r}")
+            results[-1]["native_real_range_equality_boxing_and_bilingual_errors"] = "passed"
             results[-1]["native_generic_enumerators_boxing_resources_and_bilingual_errors"] = "passed"
             results[-1]["native_typed_dictionary_enumerators_and_bilingual_errors"] = "passed"
             results[-1]["native_dictionary_factories_views_callbacks_and_bilingual_errors"] = "passed"

@@ -15,7 +15,10 @@ bool value_equal(ValueHashWork& work,const Value& a,const Value& b){
     if(const auto* x=std::get_if<std::u16string>(&a)){const auto* y=std::get_if<std::u16string>(&b);if(!y || x->size()!=y->size())return false;for(std::size_t i=0;i<x->size();++i){work.step();if((*x)[i]!=(*y)[i])return false;}return true;}
     if(const auto* x=std::get_if<std::shared_ptr<Aggregate>>(&a)){
         const auto& left=record_box_value(*x);const auto& y=record_box_value(std::get<std::shared_ptr<Aggregate>>(b));const auto kind=type_info(work.values.program,left->type).kind;
-        if(kind==CompoundKind::record || kind==CompoundKind::tuple){if(left->nil || y->nil)return left->nil==y->nil;if(left->type!=y->type)return false;for(std::size_t i=0;i<left->items.size();++i)if(!value_equal(work,left->items[i]->value,y->items[i]->value))return false;return true;}
+        if(kind==CompoundKind::record || kind==CompoundKind::tuple){if(left->nil || y->nil)return left->nil==y->nil;if(left->type!=y->type)return false;
+            // RealRange overrides object equality using its IEEE comparison operator.
+            if(real_interval_type(type_info(work.values.program,left->type)))return std::get<double>(left->items[0]->value)==std::get<double>(y->items[0]->value)&&std::get<double>(left->items[1]->value)==std::get<double>(y->items[1]->value);
+            for(std::size_t i=0;i<left->items.size();++i)if(!value_equal(work,left->items[i]->value,y->items[i]->value))return false;return true;}
     }
     return work.values.equal(a,b);
 }

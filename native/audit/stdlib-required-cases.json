@@ -5,6 +5,7 @@
     {"id":"system-bigint","module":"PABCSystem","source_line":110,"source":"begin var value:BigInteger:=1; end."},
     {"id":"system-intrange-interfaces","module":"PABCSystem","source_line":803,"source":"type E=IEquatable<IntRange>; begin var r:=new IntRange(1,3); var c:ICollection<integer>:=r; var s:IEnumerable<integer>:=c; var e:=E(c); Writeln(e.Equals(IntRange(s))); end."},
     {"id":"system-charrange-interfaces","module":"PABCSystem","source_line":873,"source":"type E=IEquatable<CharRange>; begin var r:=new CharRange('a','c'); var c:ICollection<char>:=r; var s:IEnumerable<char>:=c; var e:=E(c); Writeln(e.Equals(CharRange(s))); end."},
+    {"id":"system-realrange-interface","module":"PABCSystem","source_line":939,"source":"type E=IEquatable<RealRange>; begin var r:=new RealRange(1,2); var e:E:=r; Writeln(e.Equals(RealRange(e))); end."},
     {"id":"system-object","module":"PABCSystem","source_line":91,"source":"begin var value:Object; end."},
     {"id":"system-decimal","module":"PABCSystem","source_line":107,"source":"begin var value:decimal; end."},
     {"id":"system-datetime","module":"PABCSystem","source_line":113,"source":"begin var value:DateTime; end."},

@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "runtime": "Windows .NET Framework 4.0.30319.42000",
+  "outcomes": 900,
+  "source_program_outcomes": 256,
+  "scope": "Native RealRange equality/boxing and selected consumers. Nonfinite bit patterns are tested directly in the C++ runtime; nonfinite source constants remain unsupported. Not full library coverage.",
+  "artifacts": [
+    {
+      "path": "reference/real-range-interface.cs",
+      "sha256_lf": "5b471f1c53e341eb0c9082c22d61a9b94daf8c733c5d7f417377608756da8249"
+    },
+    {
+      "path": "reference/generate-real-range-interface.ps1",
+      "sha256_lf": "3a7151e1e6b88679be614b181d4324cc25f3d7d45b7cf242e18f2d3190850500"
+    },
+    {
+      "path": "fixtures/real-range-interface-program.pas",
+      "sha256_lf": "b674be8af3c0cfed71fe6505538948b37504b95602a483b7cd66b6fbeec784b7"
+    },
+    {
+      "path": "fixtures/real-range-interface-reference.tsv",
+      "sha256_lf": "ae02a6f7238c26f3978639bf833c8bdc7e8b5023e7a34760e7849905b7249dd9"
+    }
+  ]
+}

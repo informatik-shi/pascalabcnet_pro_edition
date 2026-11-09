@@ -1,51 +1,31 @@
 {
   "schema": 1,
-  "runtime_source_base_revision": "d40d2682ca318f1d4f1aba2ca8ac22f8adfca892",
+  "runtime_source_base_revision": "cd4c6c71783515c3b26db27b04286082b8917f4d",
   "runtime_source_changes": [
     {
-      "path": "native/include/abc/core.hpp",
-      "sha256_lf": "9731edededdca51534947850ece1c2f56f6c6c411322a68cb85625b0b59f62d9"
-    },
-    {
-      "path": "native/src/collection_interface.cpp",
-      "sha256_lf": "b018f977ff8bb8b3801797ae9ebf482e5ee1ae8a372ae6ab5ab39147fc41276c"
-    },
-    {
       "path": "native/src/interfaces.cpp",
-      "sha256_lf": "ca245dc713962c3de0318d43d95f15787a4c57276b609c0aaa41cb74a4667344"
+      "sha256_lf": "607be03b1650888e1e61d6afa4100e342403b72cd4733a77bdf572058c4ea378"
     },
     {
       "path": "native/src/pascal.cpp",
-      "sha256_lf": "853aad8624d7c78202a0cff9c4632f33b90cad3766537a59a8f5b232caf4d6ec"
+      "sha256_lf": "89559b3786780cba9401688ded09967fb30191e8974b2663e2ca4e2038e02d08"
     },
     {
       "path": "native/src/record_interface.cpp",
-      "sha256_lf": "cde98dc10a9e0cd562db4e836d1980b24afd899e52e5a6b7cd7510917fb47559"
-    },
-    {
-      "path": "native/src/record_interface.hpp",
-      "sha256_lf": "91e000d7d4bbb4b38a9ebf9c53eb275f5c42293579c292e047a6afe57cda5f50"
-    },
-    {
-      "path": "native/src/runtime_values.hpp",
-      "sha256_lf": "e3758a0969c4a890e53aadd64a1f3673fc2ab0535091856290ec8a86fe29a5ef"
+      "sha256_lf": "7613ecd74e8431633be964198bb4c783f125e66f95cf15c678e5c6ce2a6668bd"
     },
     {
       "path": "native/src/value_hash.cpp",
-      "sha256_lf": "5525227369c331161ca93a5b23a6e1e020a3359eaf049e2ae8291049c385b895"
-    },
-    {
-      "path": "native/src/vm.cpp",
-      "sha256_lf": "ba58680c3c5bff78a78f359056c02c496bf2d3723471c88699c7cba92d9d3fa5"
+      "sha256_lf": "59eb5c63a1ae20ceacc015fdb919c8474c0f0ccc2d9c00f2c28fc860d6885fb2"
     }
   ],
-  "scope": "Selected positive compile requirements in two native builds. Not API coverage or runtime validation. Native range interface/boxing semantics are validated separately; whole standard-library units remain partial.",
+  "scope": "Selected positive compile requirements in two native builds. Not API coverage or runtime validation. Native range interface/boxing and RealRange equality semantics are validated separately; whole standard-library units remain partial.",
   "runs": [
     {
       "schema": 1,
       "scope": "Selected required positive compile cases derived from shipped interfaces. Every case must eventually compile. This is a growing gap list, not complete API coverage; accepting a case does not prove its runtime semantics. No expected failure is made a compatibility requirement.",
       "runner": "native/build/clang-incremental/abc.exe",
-      "runner_sha256": "90844c24a6f31d661a1b9a9000f9299988c8f93bc7c2bdacab06fa39781fba14",
+      "runner_sha256": "a0683fa76352f3cf6d56885d42744ca8a1a424389406846a03d1fb4e73abfd03",
       "version": "ABC Native 0.1.0-dev (Pascal prototype)",
       "cases": [
         {
@@ -69,6 +49,14 @@
           "module": "PABCSystem",
           "source_line": 873,
           "source_anchor": "CharRange = record(ICollection<char>{, IReadOnlyCollection<char>}, IEquatable<CharRange>)",
+          "accepted": true,
+          "diagnostic": ""
+        },
+        {
+          "id": "system-realrange-interface",
+          "module": "PABCSystem",
+          "source_line": 939,
+          "source_anchor": "RealRange = record(IEquatable<RealRange>)",
           "accepted": true,
           "diagnostic": ""
         },
@@ -290,15 +278,15 @@
         }
       ],
       "summary": {
-        "accepted": 14,
-        "required": 30
+        "accepted": 15,
+        "required": 31
       }
     },
     {
       "schema": 1,
       "scope": "Selected required positive compile cases derived from shipped interfaces. Every case must eventually compile. This is a growing gap list, not complete API coverage; accepting a case does not prove its runtime semantics. No expected failure is made a compatibility requirement.",
       "runner": "native/build/qt-editor/Release/abc.exe",
-      "runner_sha256": "d02442c1bc009f5ef9c9167e3289ace3eb6794295642eb2725a193ffac305cca",
+      "runner_sha256": "82af29d43d68a741a7e448b667035241ff50d6cb04ab1a160999dfaac0ad22ce",
       "version": "ABC Native 0.1.0-dev (Pascal prototype)",
       "cases": [
         {
@@ -322,6 +310,14 @@
           "module": "PABCSystem",
           "source_line": 873,
           "source_anchor": "CharRange = record(ICollection<char>{, IReadOnlyCollection<char>}, IEquatable<CharRange>)",
+          "accepted": true,
+          "diagnostic": ""
+        },
+        {
+          "id": "system-realrange-interface",
+          "module": "PABCSystem",
+          "source_line": 939,
+          "source_anchor": "RealRange = record(IEquatable<RealRange>)",
           "accepted": true,
           "diagnostic": ""
         },
@@ -543,8 +539,8 @@
         }
       ],
       "summary": {
-        "accepted": 14,
-        "required": 30
+        "accepted": 15,
+        "required": 31
       }
     }
   ]
