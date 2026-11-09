@@ -47,8 +47,8 @@ error code. The retained-array corpus prepends owner kind (record/class) and
 element kind (integer/record) to Count, failure index, operation, constructor
 route, stdout and error. Constructor route 0 uses ToList; route 1 uses new List.
 
-The application installs none of these managed development tools. Record field
-initializers, constructor overloads, static members/operators, inferred member signatures, general
+The application installs none of these managed development tools. General record
+constructor overloads, static members/operators, inferred member signatures, general
 source generics, Object boxing, source units, general inheritance and full record
 closure/const-receiver semantics remain unfinished. Custom ICollection bulk
 AddRange/InsertRange alias/version behavior still needs its own complete review.

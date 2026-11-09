@@ -1,61 +1,45 @@
 {
   "schema": 1,
-  "runtime_source_base_revision": "a80c6b50f3cb310a9a47b4d3379823084e72ef6b",
+  "runtime_source_base_revision": "f5498509f85cde54476474e09a66a8b767040d62",
   "runtime_source_changes": [
     {
       "path": "native/src/bytecode.cpp",
-      "sha256_lf": "7aa4dc2420b880ac6ce134f8f1fa821584ac9dc191b0b5730b3c6cee699e8b21"
-    },
-    {
-      "path": "native/src/cell_references.hpp",
-      "sha256_lf": "0914dd8a6e2c93d81bce7285a8d3327f757f47191319a6a380802e32e3f9905e"
-    },
-    {
-      "path": "native/src/enumerator.cpp",
-      "sha256_lf": "7da838cd132149e10e9ef4272c05dfae8adc1e8ae08c166c61695beac536fc8b"
-    },
-    {
-      "path": "native/src/interfaces.cpp",
-      "sha256_lf": "8634eeb99410d692d18614e551afd6891cc7580c82fd33564ffd03e27b42eb15"
-    },
-    {
-      "path": "native/src/list_storage.cpp",
-      "sha256_lf": "e32450fdf570e5cb5350722a6bba03c864564a8c83536eca63c497c13aa8a606"
-    },
-    {
-      "path": "native/src/new_set.cpp",
-      "sha256_lf": "f18ddcbd2eb5f5c9466ccdab267e90d05079b2c392db800cc7c577e82e34b35c"
+      "sha256_lf": "551a6d39737d6f32eb799d9b94a51009474a9de7c8966fb350e3fe100b9d8f1b"
     },
     {
       "path": "native/src/pascal.cpp",
-      "sha256_lf": "93d32041bfdc90d2546708e799d4d8505300b908ec1eb80be476782257accccd"
+      "sha256_lf": "5b79817540b4a7ddf0decbdd58ff388b3aa381e4b547aa73c7508765f6d65620"
     },
     {
-      "path": "native/src/record_interface.hpp",
-      "sha256_lf": "5d85d891a0539ac0fba4295118791f8ccb5c66dbb7beeb9a3d8da8d1b291f53e"
+      "path": "native/src/record_initialization.cpp",
+      "sha256_lf": "6dfabf9a57bb1403b0f0a1301232a1e04dcdd69255d1a52fe5bce335d9841c75"
     },
     {
-      "path": "native/src/runtime_values.hpp",
-      "sha256_lf": "dfb098d710f5857dbf800fa3fdde5483cb95f3a42769d983fc7a07b0dc87beec"
-    },
-    {
-      "path": "native/src/sequences.cpp",
-      "sha256_lf": "395889bf33801fc85462afc824876a8a5436763c72699d230358639785de77e7"
+      "path": "native/src/record_initialization.hpp",
+      "sha256_lf": "f8ef895c587812396b023d7038ceafb292966453381b07b6ac779c666e7f1c03"
     },
     {
       "path": "native/src/vm.cpp",
-      "sha256_lf": "90b04e74a5f5282a3b77c384db184d229da907fe76e66e58b1ed52a60aa7852a"
+      "sha256_lf": "3c4a01fa0e0810b74ca8b534a517e4df7adeb61889e6450865dcf076f81f0f5a"
     }
   ],
-  "scope": "Selected positive compile requirements in two native builds. Not API coverage or runtime validation. User-record methods/interfaces, retained List arrays, native range interface/boxing and RealRange equality semantics are validated separately; whole standard-library units remain partial.",
+  "scope": "Selected positive compile requirements in two native builds. Not API coverage or runtime validation. User-record field initialization, methods/interfaces, retained List arrays, native range boxing and RealRange equality semantics are validated separately. Field-initializer recipes are source-derived, not a Pascal compiler oracle. Whole standard-library units remain partial.",
   "runs": [
     {
       "schema": 1,
       "scope": "Selected required positive compile cases derived from shipped interfaces. Every case must eventually compile. This is a growing gap list, not complete API coverage; accepting a case does not prove its runtime semantics. No expected failure is made a compatibility requirement.",
       "runner": "native/build/clang-incremental/abc.exe",
-      "runner_sha256": "1320b63108152f0a43c5e86afa04c865c9871918b0008a26ad15db4bee4cc8a0",
+      "runner_sha256": "47e7c2d590075aa9c7561ce1b7211146eb8c9257042595d205c8d4afb63de16f",
       "version": "ABC Native 0.1.0-dev (Pascal prototype)",
       "cases": [
+        {
+          "id": "system-user-record-fields",
+          "module": "PABCSystem",
+          "source_line": 511,
+          "source_anchor": "_hs := new HashSet<T>;",
+          "accepted": true,
+          "diagnostic": ""
+        },
         {
           "id": "system-user-record-enumerator",
           "module": "PABCSystem",
@@ -322,17 +306,25 @@
         }
       ],
       "summary": {
-        "accepted": 17,
-        "required": 33
+        "accepted": 18,
+        "required": 34
       }
     },
     {
       "schema": 1,
       "scope": "Selected required positive compile cases derived from shipped interfaces. Every case must eventually compile. This is a growing gap list, not complete API coverage; accepting a case does not prove its runtime semantics. No expected failure is made a compatibility requirement.",
       "runner": "native/build/qt-editor/Release/abc.exe",
-      "runner_sha256": "b054f961f2e00767f5c25fc03b33e07116ee26caf18feb4081c1df34f0fd55bc",
+      "runner_sha256": "13d201d2aec587adb1856e17a2c691f35a73c54bd02bab1d9e45d5fd0f80f40c",
       "version": "ABC Native 0.1.0-dev (Pascal prototype)",
       "cases": [
+        {
+          "id": "system-user-record-fields",
+          "module": "PABCSystem",
+          "source_line": 511,
+          "source_anchor": "_hs := new HashSet<T>;",
+          "accepted": true,
+          "diagnostic": ""
+        },
         {
           "id": "system-user-record-enumerator",
           "module": "PABCSystem",
@@ -599,8 +591,8 @@
         }
       ],
       "summary": {
-        "accepted": 17,
-        "required": 33
+        "accepted": 18,
+        "required": 34
       }
     }
   ]

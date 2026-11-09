@@ -44,6 +44,7 @@ add_library(abc_core
     src/interfaces.cpp
     src/collection_interface.cpp
     src/record_interface.cpp
+    src/record_initialization.cpp
     src/ordinal_range.cpp
     src/real_interval.cpp
     src/new_set.cpp
@@ -310,6 +311,15 @@ if(BUILD_TESTING)
     endif()
     add_test(NAME record_methods COMMAND abc_record_method_tests)
     add_test(NAME record_methods_example COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/examples/record-methods.pas")
+    add_executable(abc_record_initialization_tests tests/record_initialization_tests.cpp)
+    target_link_libraries(abc_record_initialization_tests PRIVATE abc_core)
+    if(MSVC)
+        target_compile_options(abc_record_initialization_tests PRIVATE /utf-8)
+    endif()
+    add_test(NAME record_initialization COMMAND abc_record_initialization_tests)
+    add_test(NAME record_initialization_example COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/examples/record-initialization.pas")
+    add_test(NAME original_records13 COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/../TestSuite/records13.pas")
+    add_test(NAME original_records15 COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/../TestSuite/records15.pas")
     add_test(NAME property_interfaces_example COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/examples/property-interfaces.pas")
     add_test(NAME set_interfaces_example COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/examples/set-interfaces.pas")
     add_test(NAME explicit_interfaces_example COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/examples/explicit-interfaces.pas")

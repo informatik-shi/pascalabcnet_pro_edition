@@ -13,6 +13,7 @@
 #include "enumerator.hpp"
 #include "sequence_set.hpp"
 #include "interfaces.hpp"
+#include "record_initialization.hpp"
 #include "ordinal_range.hpp"
 #include "real_interval.hpp"
 #include "new_set.hpp"
@@ -67,6 +68,9 @@ public:
         code_ = &program_.code; statement(module.body); emit(Op::halt,Type::invalid,0,module.body.location);
         for (std::size_t i = 0; i < module.routines.size(); ++i) {
             routine_ = i; code_ = &program_.routines[i].code;
+            if(!program_.routines[i].name.starts_with('$')&&record_initializer_operand(program_,program_.routines[i].result)){
+                emit(Op::make_default,program_.routines[i].result,record_initializer_operand(program_,program_.routines[i].result)<<2U,{});local(Op::store,program_.routines[i].result_local,{});
+            }
             statement(module.routines[i].body); emit(Op::return_user,program_.routines[i].result,0,{});
         }
         return std::move(program_);
@@ -582,7 +586,7 @@ private:
             for (const auto& argument:node.arguments) expression(*argument);
             emit(node.kind==hir::ExprKind::random_array ? Op::random_array : Op::fill_random_array,
                 node.left ? node.left->type : node.type,node.local,node.location); break;
-        case hir::ExprKind::default_value: emit(Op::make_default,node.type,node.operation=="new" ? 1 : node.operation=="default" ? 2 : 0,node.location); break;
+        case hir::ExprKind::default_value: emit(Op::make_default,node.type,(node.operation=="default"?0:record_initializer_operand(program_,node.type)<<2U)|(node.operation=="new"?1U:node.operation=="default"?2U:0U),node.location); break;
         case hir::ExprKind::index:
             expression(*node.left); expression(*node.right);
             for (const auto& argument:node.arguments) expression(*argument);
@@ -593,7 +597,7 @@ private:
             expression(*node.left); emit(Op::length,node.left->type,node.local,node.location); break;
         case hir::ExprKind::array_new:
             for (const auto& argument:node.arguments) expression(*argument);
-            emit(Op::array_new,node.type,0,node.location); break;
+            emit(Op::array_new,node.type,record_initializer_operand(program_,type_info(program_,node.type).element),node.location); break;
         case hir::ExprKind::array_initialized: {
             expression(*node.left); local(Op::store,node.local,node.location);
             const auto rank=type_info(program_,node.type).rank;
@@ -723,7 +727,7 @@ private:
             if (type_info(program_,node.target->type).rank==2) expression(*node.target);
             expression(*node.expression);
             for (const auto& argument:node.arguments) expression(*argument);
-            emit(Op::resize_array,node.target->type,0,node.location); break;
+            emit(Op::resize_array,node.target->type,record_initializer_operand(program_,type_info(program_,node.target->type).element),node.location); break;
         case hir::StmtKind::call:
             expression(*node.expression);
             if (node.expression->type != Type::unit) emit(Op::drop,node.expression->type,0,node.location);
@@ -1341,11 +1345,14 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if (!compound(type) || !indexed_sequence(type_info(program,type).kind)) invalid(instruction,"Indexed sequence required");
             if (instruction.op==Op::sequence_sort && (!text_scalar(program,type_info(program,type).element) || type_info(program,type).rank!=1 || instruction.operand>1)) invalid(instruction,"Invalid sort"); break;
         case Op::make_default: case Op::store_ref: case Op::drop:
-            if (!valid_value_type(program,type) || (instruction.op==Op::make_default && instruction.operand>2)) invalid(instruction,"Invalid value type");
-            if (instruction.op==Op::make_default && instruction.operand==1 && compound(type) && type_info(program,type).kind==CompoundKind::object_class
+            if (!valid_value_type(program,type) || (instruction.op==Op::make_default && ((instruction.operand&3U)>2 || (instruction.operand>>2U)!=((instruction.operand&3U)==2?0:record_initializer_operand(program,type))))) invalid(instruction,"Invalid value type");
+            if (instruction.op==Op::make_default && (instruction.operand&3U)==1 && compound(type) && type_info(program,type).kind==CompoundKind::object_class
                 && std::any_of(program.routines.begin(),program.routines.end(),[type](const auto& candidate){return candidate.constructor && candidate.owner==type;}))
                 invalid(instruction,"Class constructor cannot be bypassed");
-            if (instruction.op==Op::make_default && instruction.operand==1 && compound(type) && (node_kind(type_info(program,type).kind) || type_info(program,type).kind==CompoundKind::tuple || type_info(program,type).kind==CompoundKind::sequence || type_info(program,type).kind==CompoundKind::enumerator || type_info(program,type).kind==CompoundKind::user_interface || type_info(program,type).kind==CompoundKind::collection_interface || type_info(program,type).kind==CompoundKind::list_interface || type_info(program,type).kind==CompoundKind::dictionary_interface || type_info(program,type).kind==CompoundKind::set_interface || type_info(program,type).kind==CompoundKind::equality_comparer || type_info(program,type).kind==CompoundKind::equatable_interface || type_info(program,type).kind==CompoundKind::equality_comparer_interface || type_info(program,type).kind==CompoundKind::comparer || type_info(program,type).kind==CompoundKind::comparable_interface || type_info(program,type).kind==CompoundKind::comparer_interface || type_info(program,type).kind==CompoundKind::callable || type_info(program,type).kind==CompoundKind::encoding || type_info(program,type).kind==CompoundKind::ini_file || type_info(program,type).kind==CompoundKind::hash_set || type_info(program,type).kind==CompoundKind::dictionary || type_info(program,type).kind==CompoundKind::dictionary_keys || type_info(program,type).kind==CompoundKind::dictionary_values || school_ip_kind(type_info(program,type).kind)))
+            if(instruction.op==Op::make_default&&(instruction.operand&3U)==1&&compound(type)&&type_info(program,type).kind==CompoundKind::record
+                &&std::any_of(program.routines.begin(),program.routines.end(),[type](const auto& r){return r.constructor&&r.owner==type&&r.parameters.size()==1;}))
+                invalid(instruction,"Record constructor cannot be bypassed");
+            if (instruction.op==Op::make_default && (instruction.operand&3U)==1 && compound(type) && (node_kind(type_info(program,type).kind) || type_info(program,type).kind==CompoundKind::tuple || type_info(program,type).kind==CompoundKind::sequence || type_info(program,type).kind==CompoundKind::enumerator || type_info(program,type).kind==CompoundKind::user_interface || type_info(program,type).kind==CompoundKind::collection_interface || type_info(program,type).kind==CompoundKind::list_interface || type_info(program,type).kind==CompoundKind::dictionary_interface || type_info(program,type).kind==CompoundKind::set_interface || type_info(program,type).kind==CompoundKind::equality_comparer || type_info(program,type).kind==CompoundKind::equatable_interface || type_info(program,type).kind==CompoundKind::equality_comparer_interface || type_info(program,type).kind==CompoundKind::comparer || type_info(program,type).kind==CompoundKind::comparable_interface || type_info(program,type).kind==CompoundKind::comparer_interface || type_info(program,type).kind==CompoundKind::callable || type_info(program,type).kind==CompoundKind::encoding || type_info(program,type).kind==CompoundKind::ini_file || type_info(program,type).kind==CompoundKind::hash_set || type_info(program,type).kind==CompoundKind::dictionary || type_info(program,type).kind==CompoundKind::dictionary_keys || type_info(program,type).kind==CompoundKind::dictionary_values || school_ip_kind(type_info(program,type).kind)))
                 invalid(instruction,"Nodes and tuples require the typed constructor");
             break;
         case Op::routine_value:
@@ -1372,7 +1379,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if (!routine || type != routine->result) invalid(instruction,"Invalid return"); break;
         case Op::array_new: case Op::array_literal: case Op::resize_array:
             if (!compound(type) || type_info(program,type).kind != CompoundKind::array
-                || (instruction.op==Op::array_literal ? instruction.operand>4096 || type_info(program,type).rank!=1 : instruction.operand!=0)) invalid(instruction,"Invalid array instruction");
+                || (instruction.op==Op::array_literal ? instruction.operand>4096 || type_info(program,type).rank!=1 : instruction.operand!=record_initializer_operand(program,type_info(program,type).element))) invalid(instruction,"Invalid array instruction");
             break;
         case Op::get_index: case Op::ref_index: case Op::length:
             if (compound(type) && type_info(program,type).kind==CompoundKind::sequence) {

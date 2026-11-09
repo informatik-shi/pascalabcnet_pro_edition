@@ -1,0 +1,36 @@
+{
+    "schema":  1,
+    "runtime":  "Windows .NET Framework 4.0.30319.42000",
+    "outcomes":  1215,
+    "variants":  [
+                     "typed",
+                     "inferred"
+                 ],
+    "scope":  "Source-derived Pascal record field-initialization recipes executed with genuine Framework struct/reference/array/generic behavior. Not a Pascal compiler oracle or full language/library coverage.",
+    "artifacts":  [
+                      {
+                          "path":  "reference/record-initialization.cs",
+                          "sha256_lf":  "6121aae80cab1ffc1f5f9b93bc5fb248c38fc2abaeb83640287b3fcbd2934d61"
+                      },
+                      {
+                          "path":  "reference/generate-record-initialization.ps1",
+                          "sha256_lf":  "2faab70d5f9487033381d1fbd6a3356e67389814ea688dac2b4932d4a6ef86a5"
+                      },
+                      {
+                          "path":  "fixtures/record-initialization-program.pas.in",
+                          "sha256_lf":  "830a4cb3d3dcf2d76ad8bce7c7fdb96731a8a9bbe2e4e567dfe07eb4688d269d"
+                      },
+                      {
+                          "path":  "fixtures/record-initialization-reference.tsv",
+                          "sha256_lf":  "747459195e81839286ce6d2e656a41ecfa0d21adac56b6c704284e7b49d0a1f2"
+                      },
+                      {
+                          "path":  "fixtures/record-initialization-typed.pas",
+                          "sha256_lf":  "f59e61f764f7d5df1729738fa6a0047fea3871dbf4a402e362f09c8a346033db"
+                      },
+                      {
+                          "path":  "fixtures/record-initialization-inferred.pas",
+                          "sha256_lf":  "1081819277c94e172a58422ab0e51b5dc87966b798bf31e5ed51f5a29b0692ce"
+                      }
+                  ]
+}

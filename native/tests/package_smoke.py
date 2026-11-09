@@ -350,6 +350,7 @@ def main():
                 ("range-interfaces.pas", "4 True\nTrue False\n[2,3,4,5]\n[2,3]\n2 5 True\nabc\n"),
                 ("real-range-interfaces.pas", "True False\nTrue\n-1.5 2.5\nTrue True\n"),
                 ("record-methods.pas", "5 3\n5 15 15\n7\n8 7\n"),
+                ("record-initialization.pas", "1 9 88 1\n2 3 4 4\n0 True 4\n"),
                 ("collection-property-writes.pas", "25 20 2\n[11,2] 2\n2 True 26\n"),
                 ("small-integers.pas", "Значения: 255 -128 -32768\nСумма с расширением: 256\nКвадрат: 65025\nГраница byte: 254|255|\nМассив smallint: 1 -2\n"),
                 ("unsigned-integers.pas", "Граница 32 бит: 4294967295\nС расширением: 4294967296\nГраница 64 бит: 18446744073709551615\nКвадрат word: 4294836225\nПредыдущее: 18446744073709551614\nПереключение: True False\n"),
@@ -1949,6 +1950,20 @@ def main():
             if (invalid.returncode != 1 or invalid.stdout or "EN:" not in invalid.stderr or "RU:" not in invalid.stderr):
                 raise RuntimeError(f"{name} Record argument type was not rejected before output")
             results[-1]["native_record_methods_interfaces_and_bilingual_errors"] = "passed"
+            record_initialization_error = folder / "Ошибки начальных значений записей.pas"
+            record_initialization_error.write_text("function Fail:integer;begin Write('I');Result:=1 div 0;end;\n"
+                                                   "type R=record x:=Fail;constructor(n:integer);begin Write('C');end;end;\n"
+                                                   "begin Write('before');var r:=new R(1);end.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(record_initialization_error)], text=True, encoding="utf-8", capture_output=True, cwd=folder, env=env, timeout=10)
+            if (invalid.returncode != 1 or invalid.stdout != "beforeI" or "E_DIV_ZERO" not in invalid.stderr
+                    or "EN: Division by zero" not in invalid.stderr or "RU: Деление на ноль" not in invalid.stderr
+                    or f"{record_initialization_error}:1:" not in invalid.stderr):
+                raise RuntimeError(f"{name} Record initialization bilingual error failed: {invalid.stdout!r} {invalid.stderr!r}")
+            record_initialization_error.write_text("type R=record x:integer:='bad';end;begin Write('bad');var r:R;end.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(record_initialization_error)], text=True, encoding="utf-8", capture_output=True, cwd=folder, env=env, timeout=10)
+            if invalid.returncode != 1 or invalid.stdout or "EN:" not in invalid.stderr or "RU:" not in invalid.stderr:
+                raise RuntimeError(f"{name} Record initializer type was not rejected before output")
+            results[-1]["native_record_initialization_and_bilingual_errors"] = "passed"
             results[-1]["native_generic_enumerators_boxing_resources_and_bilingual_errors"] = "passed"
             results[-1]["native_typed_dictionary_enumerators_and_bilingual_errors"] = "passed"
             results[-1]["native_dictionary_factories_views_callbacks_and_bilingual_errors"] = "passed"

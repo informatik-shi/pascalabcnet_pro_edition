@@ -367,7 +367,7 @@ void native_class_field_initializers_language() {
     compile_error("type C=class n,m:integer:=1;end;begin end.","E_TYPE");
     compile_error("type C=class n:integer:=missing;end;begin end.","E_NAME");
     compile_error("type C=class n:integer:=value;constructor(value:integer);begin end;end;begin end.","E_NAME");
-    compile_error("type R=record n:integer:=1;end;begin end.","E_UNSUPPORTED");
+    result("type R=record n:integer:=1;end;begin var r:R;Writeln(r.n);end.","1\n");
     runtime_error("function Bad:integer;begin Assert(False);Result:=1;end;type C=class n:integer:=Bad();constructor;begin Write('NEVER');end;end;begin var c:=new C;end.","E_ASSERT");
     abc::ExecutionOptions options;options.call_limit=4;error([&]{(void)run("type N=class next:N:=new N;end;begin var n:=new N;end.","",options);},"E_LIMIT");
     auto p=abc::compile("type C=class n:integer:=3;end;begin var c:=new C;end.");require(std::count_if(p.routines.begin(),p.routines.end(),[](const auto& r){return r.constructor;})==1,"Field initializers synthesize a verified constructor when none is declared");

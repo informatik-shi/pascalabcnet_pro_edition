@@ -1,0 +1,113 @@
+var counter,bias,failAt:integer;
+var watch,watchMatrix:boolean;
+
+function Step(label:char):integer;
+begin
+  Inc(counter);Write(label);
+  if watch then Write('(',saved.Length,')');
+  if watchMatrix then Write('(',savedMatrix.Length,')');
+  if counter=failAt then Result:=1 div 0 else Result:=bias+counter;
+end;
+
+type
+  Leaf=record
+    X%INTEGER%:=Step('L');
+    Data%ARRAY%:=Arr(Step('D'));
+    constructor(n:integer);
+    begin Write('C');X:=n;end;
+  end;
+  Outer=record
+    A%INTEGER%:=Step('A');
+    Child:Leaf;
+    B%INTEGER%:=Step('B');
+    constructor(n:integer);
+    begin Write('O');Child:=new Leaf(n);A:=n;end;
+  end;
+  Holder=class public R:Outer;end;
+  IFactory=interface function Make:Outer;end;
+  Factory=record(IFactory)
+    function IFactory.Make:Outer;
+    begin Write('E');Result:=new Outer;end;
+  end;
+  Special=record
+    X%INTEGER%:=Step('S');
+    constructor();begin Write('Z');X+=10;end;
+  end;
+
+var saved:array of Leaf;
+var savedMatrix:array[,] of Leaf;
+var globalRecord:Outer;
+var globalSpecial:Special;
+
+function Argument:integer;begin Write('N');Result:=bias;end;
+function Echo(value:Outer):Outer;
+begin Write('E');Result:=value;end;
+function MakeLeaf:Leaf;
+begin Write('E');Result:=new Leaf(bias);end;
+function MakeOuter:Outer;
+begin Write('E');Result:=new Outer;end;
+
+type ExplicitHolder=class public R:Outer:=MakeOuter;end;
+
+procedure Show(value:Leaf);
+begin
+  Write(value.X,' ');
+  if value.Data=nil then Write('-') else Write(value.Data[0]);
+  Writeln(' ',counter);
+end;
+procedure ShowOuter(value:Outer);
+begin Write(value.A,' ',value.B,' ');Show(value.Child);end;
+procedure Dump(values:array of Leaf);
+begin
+  Write(values.Length,':');
+  foreach var item in values do begin Write(item.X,',');end;
+  Writeln(' ',counter);
+end;
+
+begin
+  var length,operation:integer;
+  Read(bias,length,failAt,operation);counter:=0;Write('|');
+
+  if operation=0 then begin var value:Leaf;Show(value);end;
+  if operation=1 then begin var value:=new Leaf;Show(value);end;
+  if operation=2 then begin var value:=new Leaf(Argument());Show(value);end;
+  if operation=3 then begin var value:Leaf;var copy:=value;copy.X+=10;copy.Data[0]+=20;Show(value);Show(copy);end;
+  if operation=4 then begin var value:Outer;ShowOuter(value);end;
+  if operation=5 then begin var value:=new Outer(bias);ShowOuter(value);end;
+  if operation=6 then begin var value:=new Holder;ShowOuter(value.R);end;
+  if operation=7 then begin var values:=new Leaf[length];Dump(values);end;
+  if operation=8 then begin var values:=new Leaf[1];SetLength(values,length);Dump(values);end;
+  if operation=9 then begin
+      var values:=new Leaf[2,length];
+      Write(values.Length,':');
+      for var r:=0 to 1 do for var c:=0 to length-1 do Write(values[r,c].X,',');
+      Writeln(' ',counter);
+    end;
+  if operation=10 then begin SetLength(saved,length);Dump(saved);SetLength(saved,length+1);Dump(saved);end;
+  if operation=11 then begin var value:=default(Leaf);Show(value);end;
+  if operation=12 then begin var values:=new List<Leaf>(length);Writeln(values.Count,' ',values.Capacity,' ',counter);end;
+  if operation=13 then begin var value:=new Leaf[0].AsEnumerable.FirstOrDefault;Show(value);end;
+  if operation=14 then begin var value:Leaf;var values:=new Dictionary<integer,Leaf>;Writeln(values.TryGetValue(0,value));Show(value);end;
+  if operation=15 then begin var value:Outer;var copy:=Echo(value);ShowOuter(copy);ShowOuter(value);end;
+  if operation=16 then begin var value:=MakeLeaf;Show(value);end;
+  if operation=17 then begin var value:Leaf;var values:=Arr(value,value);values[0].X+=10;values[0].Data[0]+=20;Show(values[0]);Show(values[1]);Show(value);end;
+  if operation=18 then begin var value:=new ExplicitHolder;ShowOuter(value.R);end;
+  if operation=19 then begin for var i:=1 to length do begin var value:Leaf;Show(value);end;Writeln(counter);end;
+  if operation=20 then begin var value:Special;Writeln(value.X,' ',counter);end;
+  if operation=21 then begin var value:=default(Special);Writeln(value.X,' ',globalSpecial.X,' ',counter);end;
+  if operation=22 then begin watch:=True;SetLength(saved,length);Dump(saved);end;
+  if operation=23 then begin watch:=True;saved:=new Leaf[length];Dump(saved);end;
+  if operation=24 then begin
+      var values:=new Leaf[1,1];SetLength(values,2,length);
+      Write(values.Length,':');
+      for var r:=0 to 1 do for var c:=0 to length-1 do Write(values[r,c].X,',');
+      Writeln(' ',counter);
+    end;
+  if operation=25 then begin
+      savedMatrix:=new Leaf[1,1];watchMatrix:=True;SetLength(savedMatrix,2,length);
+      Write(savedMatrix.Length,':');
+      for var r:=0 to 1 do for var c:=0 to length-1 do Write(savedMatrix[r,c].X,',');
+      Writeln(' ',counter);
+    end;
+  if operation=26 then begin var factory:IFactory:=new Factory;ShowOuter(factory.Make);end;
+end.

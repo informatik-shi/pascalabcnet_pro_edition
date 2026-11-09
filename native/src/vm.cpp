@@ -5,6 +5,7 @@
 #include "diagnostics.hpp"
 #include "stdlib.hpp"
 #include "runtime_values.hpp"
+#include "record_initialization.hpp"
 #include "files.hpp"
 #include "linked.hpp"
 #include "text_file.hpp"
@@ -1297,7 +1298,7 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
             if (sequence->nil) trap(instruction,RuntimeError::nil_reference);
             for (const auto& item:sequence->items) values.write(item,value); break;
         }
-        case Op::make_default: stack.push_back(values.zero(instruction.type,instruction.operand==1,instruction.operand==2)); break;
+        case Op::make_default: stack.push_back(initialized_default(values,instruction.type,(instruction.operand&3U)==1,(instruction.operand&3U)==2,instruction.operand>>2U)); break;
         case Op::load_global: stack.push_back(typed_value_copy(values,instruction.type,globals[instruction.operand]->value)); break;
         case Op::store_global: values.write(globals[instruction.operand],pop()); break;
         case Op::ref_local: stack.emplace_back(locals[instruction.operand]); break;
@@ -1370,13 +1371,14 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
         case Op::array_new: case Op::array_literal: {
             if (type_info(program,instruction.type).rank==2) {
                 const auto columns=std::get<std::int32_t>(pop()), rows=std::get<std::int32_t>(pop());
-                stack.emplace_back(values.matrix(instruction.type,rows,columns)); break;
+                auto array=values.matrix(instruction.type,rows,columns);initialize_record_array(values,array,instruction.operand);stack.emplace_back(std::move(array)); break;
             }
             const auto count = instruction.op == Op::array_literal ? static_cast<std::int32_t>(instruction.operand) : std::get<std::int32_t>(pop());
             if (count < 0) trap(instruction,RuntimeError::array_length);
             auto array = values.array(instruction.type,static_cast<std::size_t>(count));
             if (instruction.op == Op::array_literal)
                 for (auto n = array->items.size(); n > 0; --n) values.write(array->items[n-1],pop());
+            else initialize_record_array(values,array,instruction.operand);
             stack.emplace_back(array); break;
         }
         case Op::resize_array: {
@@ -1385,6 +1387,9 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
                 const auto original=std::get<std::shared_ptr<Aggregate>>(pop());
                 const auto target=std::get<std::shared_ptr<Cell>>(pop());
                 auto result=values.matrix(instruction.type,rows,columns);
+                // Source SetLength on a matrix constructs/initializes the complete
+                // destination before CopyWithSize and assignment of the target.
+                initialize_record_array(values,result,instruction.operand);
                 std::size_t copied=0;
                 for (std::size_t r=0;r<std::min(result->rows,original->rows);++r)
                     for (std::size_t c=0;c<std::min(result->columns,original->columns);++c) {
@@ -1399,7 +1404,7 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
             if (static_cast<std::size_t>(count) == original->items.size() && !original->nil) break;
             auto result = values.array(instruction.type,static_cast<std::size_t>(count));
             for (std::size_t i = 0; i < std::min(result->items.size(),original->items.size()); ++i) values.write(result->items[i],original->items[i]->value);
-            values.write(target,result); break;
+            values.write(target,result);initialize_record_array(values,result,instruction.operand,original->items.size()); break;
         }
         case Op::list_add: {
             auto value = pop(); auto list = std::get<std::shared_ptr<Aggregate>>(pop());

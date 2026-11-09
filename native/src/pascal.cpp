@@ -208,7 +208,7 @@ private:
     SourceLocation position_;
 };
 
-enum class SyntaxExprKind { literal, literal_group, name, unary, binary, call, index, field, member_call, construction, formatted, tuple, typed_default, type_literal, value_call, lambda, conditional, set_literal, type_reference };
+enum class SyntaxExprKind { literal, literal_group, initialized_default, name, unary, binary, call, index, field, member_call, construction, formatted, tuple, typed_default, type_literal, value_call, lambda, conditional, set_literal, type_reference };
 struct SyntaxRoutine;
 struct SyntaxProperty;
 struct SyntaxExpr;
@@ -349,9 +349,9 @@ public:
                     }
                     const auto type_name = name(); expect("=");
                     auto type = type_syntax(); type->token = type_name;type->enum_flags=flags;
-                    if (type->kind=="class" && !type->named && type->initializer) {
+                    if ((type->kind=="class" || type->kind=="record") && !type->named && type->initializer) {
                         type->methods.push_back(type->initializer);
-                        if (std::none_of(type->methods.begin(),type->methods.end(),[](const auto& method){return method->constructor;})) {
+                        if (type->kind=="class" && std::none_of(type->methods.begin(),type->methods.end(),[](const auto& method){return method->constructor;})) {
                             auto constructor=std::make_shared<SyntaxRoutine>();constructor->name={TokenKind::name,"create",type_name.location};constructor->constructor=true;
                             type->methods.push_back(std::move(constructor));
                         }
@@ -508,18 +508,19 @@ private:
                 if (object && (is("destructor") || is("class") || is("var")))
                     throw Error("E_UNSUPPORTED",current_.location,"Class destructors, static members and var field sections are not ported yet");
                 std::vector<Token> fields{name()}; while (accept(",")) fields.push_back(name());
-                expect(":"); auto type = type_syntax();
-                if (accept(":=")) {
-                    if (!object) throw Error("E_UNSUPPORTED",fields.front().location,"Record field initializers are not ported yet");
+                std::shared_ptr<SyntaxType> type;if(accept(":"))type=type_syntax();
+                const bool initialized=accept(":=");
+                if (initialized) {
                     if (fields.size()!=1) throw Error("E_TYPE",fields.front().location,"Field initializer requires exactly one field name");
                     if (!result->initializer) {
                         result->initializer=std::make_shared<SyntaxRoutine>();result->initializer->name={TokenKind::name,"$initialize_fields",fields.front().location};
                         result->initializer->access=MemberAccess::private_member;
                     }
                     SyntaxStmt assignment;assignment.kind=SyntaxStmtKind::assignment;assignment.token=fields.front();
-                    assignment.target=make_expression(SyntaxExprKind::name,fields.front());assignment.expression=expression();
+                    assignment.target=make_expression(SyntaxExprKind::field,fields.front(),make_expression(SyntaxExprKind::name,Token{TokenKind::name,"self",fields.front().location}));assignment.expression=expression();
                     result->initializer->body.statements.push_back(std::move(assignment));
                 }
+                if(!type&&!initialized)fail("Field requires a type or initializer");
                 for (const auto& field : fields) { result->fields.emplace_back(field,type);result->field_access[field.text]=access; }
                 if (!accept(";") && !is("end")) fail("Expected ';' after record field");
             }
@@ -1130,7 +1131,7 @@ class Analyzer {
     struct ClassProperty;
 public:
     hir::Module analyze(SyntaxStmt source) {
-        module_.routines.reserve(256);
+        syntax_root_=&source;module_.routines.reserve(256);
         collections_imported_ = source.collections_imported;
         imported_units_=source.imported_units; imported_units_.insert("pabcsystem");
         scopes_.emplace_back();
@@ -1154,12 +1155,12 @@ public:
             for (const auto& [field,type]:syntax->fields) {
                 if (std::any_of(fields.begin(),fields.end(),[name=field.text](const auto& item){return item.name==name;}))
                     throw Error("E_DUPLICATE",field.location,"Duplicate class field");
-                fields.push_back({field.text,resolve_type(*type),false,syntax->field_access.at(field.text)});
+                fields.push_back({field.text,resolve_field_type(*syntax,field),false,syntax->field_access.at(field.text)});
             }
             if (fields.size()>256) throw Error("E_LIMIT",name.location,"Class field limit exceeded");
             module_.types[static_cast<unsigned>(aliases_.at(name.text))-64].fields=std::move(fields);
         }
-        bind_method_definitions(source);
+        prepare_type_initializers(source);bind_method_definitions(source);
         for (const auto& routine : source.routines) {
             const auto explicit_target=routine->explicit_interface?resolve_type(*routine->explicit_interface):Type::invalid;
             if(explicit_target!=Type::invalid&&(routine->owner.empty()||routine->constructor||!compound(explicit_target)||!interface_kind(info(explicit_target,routine->name.location))))throw Error("E_TYPE",routine->name.location,"Explicit method qualifier must be an interface","Явная реализация метода требует имени интерфейса");
@@ -1321,6 +1322,65 @@ private:
                 }
                 if(!id)throw Error("E_TYPE",name.location,"Interface member has no compatible public implementation");const auto& actual=module_.routines[*id].signature;if(actual.constructor || (member.kind==InterfaceMemberKind::method && actual.access!=MemberAccess::public_member&&actual.access!=MemberAccess::explicit_interface_member) || actual.result!=member.result || actual.parameters.size()!=member.parameters.size()+1)throw Error("E_TYPE",name.location,"Interface member has no compatible public implementation");for(std::size_t a=0;a<member.parameters.size();++a){const auto& wanted=member.parameters[a];const auto& have=actual.parameters[a+1];if(have.type!=wanted.type || have.by_reference!=wanted.by_reference || have.variadic!=wanted.variadic)throw Error("E_TYPE",name.location,"Interface member has no compatible public implementation");}entry.routines.push_back(*id);
             }implementations.push_back(std::move(entry));}module_.types[static_cast<unsigned>(owner)-64U ].interfaces.edit().implementations=std::move(implementations);
+        }
+    }
+    Type resolve_field_type(const SyntaxType& owner,const Token& name){
+        const auto field=std::find_if(owner.fields.begin(),owner.fields.end(),[&](const auto& f){return f.first.text==name.text;});
+        if(field==owner.fields.end())throw Error("E_NAME",name.location,"Unknown field");if(field->second)return resolve_type(*field->second);
+        const auto key=std::make_pair(&owner,name.text);if(const auto found=inferred_fields_.find(key);found!=inferred_fields_.end())return found->second;
+        if(!inferring_fields_.insert(key).second)throw Error("E_TYPE",name.location,"Cyclic field type inference","Циклический вывод типа поля");
+        if(!owner.initializer)throw Error("E_TYPE",name.location,"Field requires a type or initializer","Для поля нужен тип или начальное значение");
+        const auto assignment=std::find_if(owner.initializer->body.statements.begin(),owner.initializer->body.statements.end(),[&](const auto& s){return s.target&&s.target->token.text==name.text;});
+        if(assignment==owner.initializer->body.statements.end())throw Error("E_TYPE",name.location,"Field requires a type or initializer","Для поля нужен тип или начальное значение");
+        const auto result=infer_field_expression(owner,*assignment->expression);if(result==Type::invalid||result==Type::unit||result==Type::nil)throw Error("E_TYPE",name.location,"Field initializer must have a statically known value type","Начальное значение поля должно иметь известный тип значения");
+        inferring_fields_.erase(key);inferred_fields_[key]=result;return result;
+    }
+    ABC_PASCAL_NOINLINE Type infer_field_expression(const SyntaxType& owner,const SyntaxExpr& value){
+        DepthGuard depth(field_inference_depth_,value.token.location);
+        if(!inferring_expressions_.insert(&value).second)throw Error("E_TYPE",value.token.location,"Cyclic field type inference","Циклический вывод типа поля");
+        struct Leave{std::set<const SyntaxExpr*>& expressions;const SyntaxExpr* value;~Leave(){expressions.erase(value);}} leave{inferring_expressions_,&value};
+        const auto& name=value.token.text;
+        if(value.kind==SyntaxExprKind::literal||value.kind==SyntaxExprKind::literal_group)return expression(value)->type;
+        if(value.kind==SyntaxExprKind::typed_default)return resolve_type(*value.constructed);
+        if(value.kind==SyntaxExprKind::type_literal)return Type::type_descriptor;
+        if(value.kind==SyntaxExprKind::construction){const auto type=resolve_type(*value.constructed);return value.array_construction?sequence_type(CompoundKind::array,type,static_cast<unsigned>(value.arguments.size())):type;}
+        if(value.kind==SyntaxExprKind::unary){const auto type=infer_field_expression(owner,*value.left);return name=="-"&&small_integer(type)?Type::integer:name=="-"&&type==Type::longword?Type::int64:type;}
+        if(value.kind==SyntaxExprKind::binary){
+            auto binary=std::make_unique<hir::Expr>();binary->kind=hir::ExprKind::binary;binary->operation=name;binary->location=value.token.location;
+            const auto operand=[&](const SyntaxExpr& syntax){auto result=std::make_unique<hir::Expr>();result->kind=hir::ExprKind::default_value;result->type=infer_field_expression(owner,syntax);result->location=syntax.token.location;return result;};
+            binary->left=operand(*value.left);binary->right=operand(*value.right);return bind_binary(std::move(binary))->type;
+        }
+        if(value.kind==SyntaxExprKind::name){
+            if(std::any_of(owner.fields.begin(),owner.fields.end(),[&](const auto& f){return f.first.text==name;}))return resolve_field_type(owner,value.token);
+            if(const auto constant=stdlib::constant(name))return value_type(*constant);
+            if(syntax_root_)for(const auto& declaration:syntax_root_->statements)if(declaration.kind==SyntaxStmtKind::declaration&&std::any_of(declaration.names.begin(),declaration.names.end(),[&](const auto& token){return token.text==name;})){if(declaration.annotation)return resolve_type(*declaration.annotation);if(declaration.expression)return infer_field_expression(owner,*declaration.expression);}
+            for(const auto& property:owner.properties)if(property->name.text==name)return resolve_type(*property->type);
+        }
+        if(value.kind==SyntaxExprKind::field&&value.left&&value.left->kind==SyntaxExprKind::name&&value.left->token.text=="self")return resolve_field_type(owner,value.token);
+        if(value.kind==SyntaxExprKind::call||value.kind==SyntaxExprKind::member_call||value.kind==SyntaxExprKind::name){
+            std::set<Type> returns;
+            const auto header=[&](const std::shared_ptr<SyntaxRoutine>& routine){if(routine->name.text==name&&routine->result)returns.insert(resolve_type(*routine->result));};
+            if(!value.left||value.left->token.text=="self")for(const auto& method:owner.methods)header(method);
+            if(returns.empty()&&syntax_root_)for(const auto& method:syntax_root_->routines)if(method->owner.empty())header(method);
+            if(returns.size()==1)return *returns.begin();
+            if(name=="arr"&&!value.arguments.empty()){const auto element=infer_field_expression(owner,*value.arguments[0]);return sequence_type(CompoundKind::array,element);}
+            if(name=="ord"||name=="integer")return Type::integer;if(name=="real")return Type::real;if(name=="single")return Type::single;if(name=="chr")return Type::character;if(name=="string")return Type::string;if(name=="boolean")return Type::boolean;
+            returns.clear();for(const auto& candidate:stdlib::signatures())if(candidate.name==name&&candidate.parameters.size()==value.arguments.size()&&candidate.result!=Type::unit)returns.insert(candidate.result);if(returns.size()==1)return *returns.begin();
+        }
+        throw Error("E_UNSUPPORTED",value.token.location,"This field type inference is not ported yet; specify its type","Этот вывод типа поля ещё не перенесён; укажите тип явно");
+    }
+    ABC_PASCAL_NOINLINE void prepare_type_initializers(SyntaxStmt& source){
+        std::map<Type,SyntaxType*> declarations;std::map<Type,Token> names;
+        for(auto& [name,type]:source.type_declarations)if(!type->named&&(type->kind=="record"||type->kind=="class")){declarations[aliases_.at(name.text)]=type.get();names[aliases_.at(name.text)]=name;}
+        std::map<Type,bool> needed;std::set<Type> active;
+        std::function<bool(Type)> needs=[&](Type id){if(needed.contains(id))return needed.at(id);const auto found=declarations.find(id);if(found==declarations.end()||info(id,{}).kind!=CompoundKind::record)return false;if(!active.insert(id).second)throw Error("E_TYPE",names.at(id).location,"Cyclic record initialization","Циклическая инициализация записи");bool result=bool(found->second->initializer);for(const auto& field:info(id,{}).fields)if(compound(field.type)&&info(field.type,{}).kind==CompoundKind::record)result=needs(field.type)||result;active.erase(id);needed[id]=result;return result;};
+        for(std::size_t n=0;n<module_.types.size();++n){const auto id=static_cast<Type>(64+n);const auto& shape=module_.types[n];if(shape.kind==CompoundKind::record&&!declarations.contains(id)&&std::any_of(shape.fields.begin(),shape.fields.end(),[&](const auto& field){return needs(field.type);})){throw Error("E_UNSUPPORTED",{},"Nested field initialization requires named record declarations","Для инициализации вложенных полей нужны именованные записи");}}
+        for(const auto& [owner,type]:declarations){bool required=bool(type->initializer);for(const auto& field:info(owner,{}).fields)if(compound(field.type)&&info(field.type,{}).kind==CompoundKind::record)required=needs(field.type)||required;if(!required)continue;
+            const auto lift=[&](const std::shared_ptr<SyntaxRoutine>& method){method->owner=names.at(owner).text;auto self=std::make_shared<SyntaxType>();self->token=names.at(owner);self->kind=names.at(owner).text;self->named=true;const bool record=type->kind=="record";method->parameters.insert(method->parameters.begin(),SyntaxParameter{Token{TokenKind::name,"self",method->name.location},self,record,{},!record,false});type->methods.push_back(method);source.routines.push_back(method);};
+            if(!type->initializer){type->initializer=std::make_shared<SyntaxRoutine>();type->initializer->name={TokenKind::name,"$initialize_fields",names.at(owner).location};type->initializer->access=MemberAccess::private_member;lift(type->initializer);}
+            std::map<std::string,SyntaxStmt> explicit_fields;for(auto& step:type->initializer->body.statements)explicit_fields.emplace(step.target->token.text,std::move(step));type->initializer->body.statements.clear();
+            for(std::size_t n=0;n<type->fields.size();++n){const auto& field=type->fields[n].first;const auto value_type=info(owner,field.location).fields[n].type;if(explicit_fields.contains(field.text)){type->initializer->body.statements.push_back(std::move(explicit_fields.at(field.text)));continue;}if(!compound(value_type)||info(value_type,field.location).kind!=CompoundKind::record||!needs(value_type))continue;SyntaxStmt step;step.kind=SyntaxStmtKind::assignment;step.token=field;step.target=make_expression(SyntaxExprKind::field,field,make_expression(SyntaxExprKind::name,Token{TokenKind::name,"self",field.location}));step.expression=make_expression(SyntaxExprKind::initialized_default,field);type->initializer->body.statements.push_back(std::move(step));}
+            if(type->kind=="class"&&std::none_of(type->methods.begin(),type->methods.end(),[](const auto& method){return method->constructor;})){auto constructor=std::make_shared<SyntaxRoutine>();constructor->name={TokenKind::name,"create",names.at(owner).location};constructor->constructor=true;lift(constructor);}
         }
     }
     void bind_method_definitions(SyntaxStmt& source) {
@@ -2125,11 +2185,13 @@ private:
         }
         if (syntax.kind=="class") throw Error("E_UNSUPPORTED",syntax.token.location,"Classes require a named type declaration");
         if (syntax.kind == "record") {
+            if(syntax.initializer&&syntax_root_&&std::none_of(syntax_root_->type_declarations.begin(),syntax_root_->type_declarations.end(),[&](const auto& declaration){return declaration.second.get()==&syntax;}))
+                throw Error("E_UNSUPPORTED",syntax.token.location,"Field initialization requires a named record declaration","Для инициализации полей нужна именованная запись");
             TypeInfo record{syntax.token.text,CompoundKind::record,Type::invalid,{}};
             record.display_name=syntax.token.spelling.empty() ? syntax.token.text : syntax.token.spelling;
             for (const auto& [name,type] : syntax.fields) {
                 for (const auto& field : record.fields) if (field.name == name.text) throw Error("E_DUPLICATE",name.location,"Duplicate record field");
-                record.fields.push_back({name.text,resolve_type(*type),false,syntax.field_access.at(name.text)});
+                record.fields.push_back({name.text,resolve_field_type(syntax,name),false,syntax.field_access.at(name.text)});
             }
             if (record.fields.size() > 256 || module_.types.size() >= 1024) throw Error("E_LIMIT",syntax.token.location,"Record/type limit exceeded");
             module_.types.push_back(std::move(record));
@@ -3415,6 +3477,8 @@ private:
             result->kind=hir::ExprKind::literal;result->type=Type::type_descriptor;
             result->value=ReflectedType{source.constructed->kind=="void" && source.constructed->system_qualified ? Type::unit : resolve_type(*source.constructed)};break;
         case SyntaxExprKind::type_reference: throw Error("E_TYPE",source.token.location,"A type requires a static member");
+        case SyntaxExprKind::initialized_default:
+            if(expected==Type::invalid)throw Error("E_TYPE",result->location,"Field default requires a known type","Для значения поля по умолчанию нужен известный тип");result->kind=hir::ExprKind::default_value;result->type=expected;return result;
         case SyntaxExprKind::typed_default:
             result->kind=hir::ExprKind::default_value; result->type=resolve_type(*source.constructed); result->operation="default"; break;
         case SyntaxExprKind::tuple: {
@@ -6240,6 +6304,7 @@ private:
                 if (!in_routine_ && scopes_.size()>1) lexical_globals_.insert(local);
                 // Initialize when the declaration is executed, including inside loops.
                 if (initial) assignment.expression = std::move(initial);
+                else if((in_routine_||scopes_.size()>1)&&compound(type)&&info(type,token.location).kind==CompoundKind::record&&class_constructors_.contains(type)&&module_.routines[class_constructors_.at(type)].signature.parameters.size()==1){assignment.expression=std::make_unique<hir::Expr>();assignment.expression->kind=hir::ExprKind::class_construct;assignment.expression->type=type;assignment.expression->local=class_constructors_.at(type);assignment.expression->location=token.location;}
                 else {
                     assignment.expression = std::make_unique<hir::Expr>();
                     assignment.expression->kind = hir::ExprKind::default_value;
@@ -6503,6 +6568,11 @@ private:
     struct LambdaContext { std::size_t routine,first,scope; };
     std::vector<LambdaContext> lambdas_;
     std::set<std::size_t> lambda_locals_,lexical_globals_,reference_parameters_;
+    const SyntaxStmt* syntax_root_=nullptr;
+    unsigned field_inference_depth_=0;
+    std::set<const SyntaxExpr*> inferring_expressions_;
+    std::map<std::pair<const SyntaxType*,std::string>,Type> inferred_fields_;
+    std::set<std::pair<const SyntaxType*,std::string>> inferring_fields_;
     unsigned loop_depth_=0;
 };
 

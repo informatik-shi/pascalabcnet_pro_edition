@@ -2,6 +2,7 @@
   "schema": 1,
   "scope": "Selected required positive compile cases derived from shipped interfaces. Every case must eventually compile. This is a growing gap list, not complete API coverage; accepting a case does not prove its runtime semantics. No expected failure is made a compatibility requirement.",
   "cases": [
+    {"id":"system-user-record-fields","module":"PABCSystem","source_line":511,"source":"type R=record values:=new HashSet<integer>;end;begin var r:R;Writeln(r.values.Count);end."},
     {"id":"system-user-record-enumerator","module":"PABCSystem","source_line":168,"source":"type R=record(IEnumerator<integer>) public function MoveNext:boolean:=false; property Current:integer read 0; procedure Reset;begin end;procedure Dispose;begin end;end;begin var e:IEnumerator<integer>:=new R;Writeln(e.MoveNext);end."},
     {"id":"system-user-record-interface","module":"PABCSystem","source_line":803,"source":"type R=record(IEquatable<R>) public x:integer; function Equals(other:R):boolean:=Self=other; end; E=IEquatable<R>; begin var r:R; var e:E:=r; Writeln(e.Equals(R(e))); end."},
     {"id":"system-bigint","module":"PABCSystem","source_line":110,"source":"begin var value:BigInteger:=1; end."},
