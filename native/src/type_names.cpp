@@ -83,7 +83,8 @@ bool reflected_type_valid(const Program& program,const ReflectedType& type){
         && (type.source==Type::invalid || valid_value_type(program,type.source));
 }
 bool type_operation_valid(const Program& program,Type input,TypeOperation operation){
-    return static_cast<unsigned>(operation)<=static_cast<unsigned>(TypeOperation::runtime_type) && valid_value_type(program,input);
+    if(operation==TypeOperation::value_name || operation==TypeOperation::runtime_type)return valid_value_type(program,input);
+    return operation>=TypeOperation::name && operation<=TypeOperation::assembly_qualified_name && input==Type::type_descriptor;
 }
 ReflectedType reflected_value_type(const Program& program,const Value& value,Type input,SourceLocation location,const ExecutionOptions& options){
     Work work{location,options};work.step();

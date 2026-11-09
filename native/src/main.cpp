@@ -1,6 +1,7 @@
 #include "abc/core.hpp"
 #include "environment.hpp"
 #include "file_encoding.hpp"
+#include "type_names.hpp"
 
 #include <charconv>
 #include <filesystem>
@@ -23,14 +24,15 @@ int cli(const std::vector<std::string>& arguments,const std::vector<std::u16stri
         return 0;
     }
     if (arguments.size() < 3 || (arguments[1] != "check" && arguments[1] != "run")) {
-        std::cerr << "EN: Usage: abc check|run file.pas [--max-instructions=N] [-- program-arguments...]\n"
-            << "RU: Использование: abc check|run file.pas [--max-instructions=N] [-- параметры-программы...]\n";
+        std::cerr << "EN: Usage: abc check|run file.pas [--max-instructions=N] [--source-name=NAME] [-- program-arguments...]\n"
+            << "RU: Использование: abc check|run file.pas [--max-instructions=N] [--source-name=ИМЯ] [-- параметры-программы...]\n";
         return 2;
     }
     const auto& filename = arguments[2];
     try {
         abc::ExecutionOptions options;
         bool limit_present=false;
+        std::optional<std::string> source_name;
         for(std::size_t i=3;i<arguments.size();++i) {
             auto option=std::string_view(arguments[i]);
             if(option=="--"){
@@ -38,6 +40,11 @@ int cli(const std::vector<std::string>& arguments,const std::vector<std::u16stri
                 for(++i;i<arguments.size();++i)
                     options.arguments.push_back(raw.size()==arguments.size() ? raw[i] : abc::decode_text_bytes(arguments[i],{abc::TextEncodingKind::utf8,false,false},false,{}));
                 break;
+            }
+            if(option.starts_with("--source-name=") && !source_name){
+                option.remove_prefix(14);
+                if(!abc::module_name_valid(option))return command_error(filename,"E_OPTION","Invalid source module name","Недопустимое имя исходного модуля");
+                source_name=option;continue;
             }
             if (limit_present || !option.starts_with("--max-instructions="))
                 return command_error(filename,"E_OPTION","Unknown option","Неизвестный параметр командной строки");
@@ -49,7 +56,9 @@ int cli(const std::vector<std::string>& arguments,const std::vector<std::u16stri
         }
         if(arguments[1]=="run")options.executable_name=abc::process_executable_name();
         const std::u8string utf8_path(filename.begin(), filename.end());
-        std::ifstream stream(std::filesystem::path(utf8_path), std::ios::binary);
+        const std::filesystem::path path(utf8_path);
+        if(!source_name){const auto stem=path.stem().u8string();source_name=std::string(stem.begin(),stem.end());}
+        std::ifstream stream(path, std::ios::binary);
         if (!stream) return command_error(filename,"E_IO","Cannot open source file","Не удалось открыть исходный файл");
         std::string source;
         char buffer[8192];
@@ -58,7 +67,7 @@ int cli(const std::vector<std::string>& arguments,const std::vector<std::u16stri
             if (source.size() > 1'048'576) throw abc::Error("E_LIMIT", {}, "Source exceeds 1 MiB prototype limit");
         }
         if (stream.bad()) return command_error(filename,"E_IO","Cannot read source file","Не удалось прочитать исходный файл");
-        const auto program = abc::compile(source);
+        const auto program = abc::compile(source,*source_name);
         if (arguments[1] == "run") return abc::execute(program, std::cin, std::cout, options);
         else std::cout << "OK: " << filename << '\n';
         return 0;

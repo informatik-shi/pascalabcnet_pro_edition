@@ -1807,7 +1807,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             break;
         }
         case Op::type_operation:
-            require(instruction.type);stack.push_back(instruction.operand==static_cast<unsigned>(TypeOperation::value_name) ? Type::string : Type::type_descriptor);break;
+            require(instruction.type);stack.push_back(instruction.operand==static_cast<unsigned>(TypeOperation::runtime_type) ? Type::type_descriptor : Type::string);break;
         case Op::object_text:
             if (instruction.operand) require(Type::integer);
             require(instruction.type); stack.push_back(Type::string); break;
@@ -1922,6 +1922,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
 }
 
 void verify(const Program& program) {
+    if(!module_name_valid(program.module_name))throw Error("E_BYTECODE",{},"Invalid source module name","Недопустимое имя исходного модуля");
     if (program.print_delimiter && (*program.print_delimiter>=program.locals.size() || !program.locals[*program.print_delimiter].global
         || program.locals[*program.print_delimiter].type!=Type::string)) throw Error("E_BYTECODE",{},"Invalid PrintDelimDefault global");
     if(program.print_matrix_format && (*program.print_matrix_format>=program.locals.size() || !program.locals[*program.print_matrix_format].global || program.locals[*program.print_matrix_format].type!=Type::boolean))throw Error("E_BYTECODE",{},"Invalid PrintMatrixWithFormat global");

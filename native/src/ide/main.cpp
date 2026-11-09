@@ -97,8 +97,8 @@ protected:
 
 class Window final : public QMainWindow {
 public:
-    explicit Window(bool smoke, bool runtimeError, QString screenshot)
-        : smoke_(smoke || runtimeError), runtime_error_(runtimeError), screenshot_(std::move(screenshot)) {
+    explicit Window(bool smoke, bool runtimeError, QString screenshot,bool typeMetadata=false)
+        : smoke_(smoke || runtimeError || typeMetadata), runtime_error_(runtimeError), type_metadata_(typeMetadata), screenshot_(std::move(screenshot)) {
         setWindowTitle(QStringLiteral("ABC Native — Qt — прототип"));
         resize(1100, 760);
         auto* toolbar = addToolBar(QStringLiteral("Программа"));
@@ -135,6 +135,10 @@ public:
         editor_->setLineWrapMode(QPlainTextEdit::NoWrap);
         new Highlighter(editor_->document());
         editor_->setPlainText(runtime_error_ ? QStringLiteral("begin\n  var ноль := 0;\n  Writeln(10 div ноль);\nend.\n") : example);
+        if(type_metadata_){
+            filename_=QStringLiteral("Другой.Модуль.pas");
+            editor_->setPlainText(QStringLiteral("type MiXeDRecord=record end;begin Writeln(typeof(MiXeDRecord).FullName);Writeln(typeof(integer).Name);end."));
+        }
         editor_->document()->setModified(false);
         output_ = new QPlainTextEdit;
         output_->setReadOnly(true);
@@ -178,6 +182,7 @@ public:
                     ? code == 1 && output.contains("EN: Division by zero")
                         && output.contains(QStringLiteral("RU: Деление на ноль"))
                         && output.contains(QStringLiteral("Без имени.pas:3:"))
+                    : type_metadata_ ? code==0 && output.contains(QStringLiteral("Другой.Модуль.MiXeDRecord")) && output.contains(QStringLiteral("Int32"))
                     : code == 0 && output.contains(QStringLiteral("Результат: 42")));
                 QTimer::singleShot(100, this, [this, success] {
                     bool saved = screenshot_.isEmpty() || grab().save(screenshot_);
@@ -272,9 +277,10 @@ private:
             ;
         process_.setWorkingDirectory(filename_.isEmpty() ? QDir::homePath() : QFileInfo(filename_).absolutePath());
         running(true);
-        process_.start(runner, {command, source.fileName()});
+        const auto module=filename_.isEmpty() ? QStringLiteral("Program") : QFileInfo(filename_).completeBaseName();
+        process_.start(runner, {command, source.fileName(), QStringLiteral("--source-name=")+module});
     }
-    bool smoke_, runtime_error_;
+    bool smoke_, runtime_error_, type_metadata_;
     QString screenshot_, filename_, stderr_pending_;
     QPlainTextEdit *editor_ = nullptr, *output_ = nullptr;
     QLineEdit* input_ = nullptr;
@@ -293,7 +299,7 @@ int main(int argc, char** argv) {
     const auto arguments = app.arguments();
     const auto screenshot_index = arguments.indexOf("--screenshot");
     if (screenshot_index >= 0 && screenshot_index + 1 < arguments.size()) screenshot = arguments[screenshot_index + 1];
-    Window window(arguments.contains("--smoke-test"), arguments.contains("--smoke-runtime-error"), screenshot);
+    Window window(arguments.contains("--smoke-test"), arguments.contains("--smoke-runtime-error"), screenshot,arguments.contains("--smoke-type-properties"));
     window.show();
     return app.exec();
 }

@@ -83,6 +83,7 @@ add_library(abc_core
     src/timing.cpp
     src/single.cpp
     src/type_names.cpp
+    src/type_properties.cpp
     src/callable_identity.cpp
     src/environment.cpp
     src/disk_space.cpp
@@ -336,6 +337,14 @@ if(BUILD_TESTING)
     endif()
     add_test(NAME callable_families COMMAND abc_callable_family_tests)
     add_test(NAME callable_families_example COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/examples/callable-families.pas")
+    add_executable(abc_type_property_tests tests/type_property_tests.cpp)
+    target_link_libraries(abc_type_property_tests PRIVATE abc_core)
+    if(MSVC)
+        target_compile_options(abc_type_property_tests PRIVATE /utf-8)
+    endif()
+    add_test(NAME type_properties COMMAND abc_type_property_tests)
+    add_test(NAME type_properties_example COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/examples/type-properties.pas")
+    add_test(NAME type_properties_cli COMMAND ${CMAKE_COMMAND} -DABC=$<TARGET_FILE:abc> -DABC_TEST_DIR=${CMAKE_CURRENT_BINARY_DIR} -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/type-properties-cli.cmake")
     add_test(NAME property_interfaces_example COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/examples/property-interfaces.pas")
     add_test(NAME set_interfaces_example COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/examples/set-interfaces.pas")
     add_test(NAME explicit_interfaces_example COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/examples/explicit-interfaces.pas")
@@ -887,7 +896,8 @@ if(ABC_BUILD_IDE)
     if(BUILD_TESTING)
         add_test(NAME qt_editor COMMAND abc-ide --smoke-test -platform offscreen)
         add_test(NAME qt_runtime_error COMMAND abc-ide --smoke-runtime-error -platform offscreen)
-        set_tests_properties(qt_editor qt_runtime_error PROPERTIES TIMEOUT 20)
+        add_test(NAME qt_type_properties COMMAND abc-ide --smoke-type-properties -platform offscreen)
+        set_tests_properties(qt_editor qt_runtime_error qt_type_properties PROPERTIES TIMEOUT 20)
     endif()
     if(APPLE)
         set(abc_deploy_executable "$<TARGET_FILE_NAME:abc-ide>.app")

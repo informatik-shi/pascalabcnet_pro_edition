@@ -88,6 +88,10 @@ def main():
                                      cwd=folder, env=env, capture_output=True, timeout=20, **startup)
                 if gui.returncode:
                     raise RuntimeError(f"Qt bilingual error GUI failed: {gui.returncode}, {gui.stderr!r}")
+                gui = subprocess.run([str(folder / "bin" / editor), "--smoke-type-properties"],
+                                     cwd=folder, env=env, capture_output=True, timeout=20, **startup)
+                if gui.returncode:
+                    raise RuntimeError(f"Qt snapshot type identity failed: {gui.returncode}, {gui.stderr!r}")
             runner = str(folder / "bin" / "abc.exe")
             console = subprocess.run([runner, "run", str(folder / "examples" / "console-input.pas")],
                                      input="7 8 tail\n1 2 3 rest\n", text=True, encoding="utf-8",
@@ -353,6 +357,7 @@ def main():
                 ("record-initialization.pas", "1 9 88 1\n2 3 4 4\n0 True 4\n"),
                 ("list-user-bulk.pas", "Count\nCopyTo\n[1,7,8,2,3]\n[1,7,8,2,3]\n[99,8]\n"),
                 ("callable-families.pas", "False\nTrue True\nTrue False\n2\nTrue\n"),
+                ("type-properties.pas", "Int32\nSystem.Int32\nSystem\ntype-properties.Coordinate\nDictionary`2\nEnumerator\nSystem.Int32, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089\n"),
                 ("collection-property-writes.pas", "25 20 2\n[11,2] 2\n2 True 26\n"),
                 ("small-integers.pas", "Значения: 255 -128 -32768\nСумма с расширением: 256\nКвадрат: 65025\nГраница byte: 254|255|\nМассив smallint: 1 -2\n"),
                 ("unsigned-integers.pas", "Граница 32 бит: 4294967295\nС расширением: 4294967296\nГраница 64 бит: 18446744073709551615\nКвадрат word: 4294836225\nПредыдущее: 18446744073709551614\nПереключение: True False\n"),
@@ -1987,6 +1992,21 @@ def main():
                     or f"{delegate_error}:2:" not in invalid.stderr):
                 raise RuntimeError(f"{name} Delegate conversion bilingual error failed: {invalid.stdout!r} {invalid.stderr!r}")
             results[-1]["native_callable_families_and_bilingual_errors"] = "passed"
+            metadata_source = folder / "Другой.Модуль.pas"
+            metadata_source.write_text("type R=record end;begin Writeln(typeof(R).FullName);end.", encoding="utf-8")
+            for options, expected in [([], "Другой.Модуль.R\n"), (["--source-name=Program"], "Program.R\n")]:
+                observed = subprocess.run([runner, "run", str(metadata_source), *options], text=True, encoding="utf-8",
+                                          capture_output=True, cwd=folder, env=env, timeout=10)
+                if observed.returncode or observed.stdout != expected or observed.stderr:
+                    raise RuntimeError(f"{name} Logical source identity failed: {observed.stdout!r} {observed.stderr!r}")
+            metadata_source.write_text("begin Write('before');var t:System.Type;\nWriteln(t.FullName);end.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(metadata_source)], text=True, encoding="utf-8", capture_output=True, cwd=folder, env=env, timeout=10)
+            if (invalid.returncode != 1 or invalid.stdout != "before" or "E_NIL" not in invalid.stderr
+                    or "EN: Cannot access a nil reference" not in invalid.stderr
+                    or "RU: Нельзя обратиться к пустой ссылке nil" not in invalid.stderr
+                    or f"{metadata_source}:2:" not in invalid.stderr):
+                raise RuntimeError(f"{name} Type property bilingual error failed: {invalid.stdout!r} {invalid.stderr!r}")
+            results[-1]["native_type_properties_source_identity_and_bilingual_errors"] = "passed"
             results[-1]["native_generic_enumerators_boxing_resources_and_bilingual_errors"] = "passed"
             results[-1]["native_typed_dictionary_enumerators_and_bilingual_errors"] = "passed"
             results[-1]["native_dictionary_factories_views_callbacks_and_bilingual_errors"] = "passed"

@@ -1,47 +1,51 @@
 {
   "schema": 1,
-  "runtime_source_base_revision": "9520be3d00478215385ed7f2d8d08d3d074934d6",
+  "runtime_source_base_revision": "f4d2dd4a2937b63fb34bf16ca4fb583b0a7fb070",
   "runtime_source_changes": [
     {
       "path": "native/include/abc/core.hpp",
-      "sha256_lf": "e15beffd234cfaf291e7d588b9792f83af0d2efbbd322f330f7ca593709bfeb3"
+      "sha256_lf": "75d34eb97879452da1e244cdb1cc63528859d780ee8d6ee4e849b65f6ab30e91"
     },
     {
       "path": "native/src/bytecode.cpp",
-      "sha256_lf": "03e3bfb3c0d40d06d27d187250a9456d556086c25e496e0e9801cc42298cd07c"
+      "sha256_lf": "49bd0081d18a3119d08274c1d546563889642785c9cdbd24b22f064609736b2e"
     },
     {
-      "path": "native/src/callable_identity.cpp",
-      "sha256_lf": "8384e165e8f113f3b1a97157cb72e18c397a12365053530d3a542cf51df22d13"
+      "path": "native/src/ide/main.cpp",
+      "sha256_lf": "9fe56091f0948ddf3602726031ea9c937787cae7b4b95ecda12077242feb9d3d"
     },
     {
-      "path": "native/src/callable_identity.hpp",
-      "sha256_lf": "c1b3129d8a3ca1ecbb6341d8425263c0b48df1385c9af8f84891cc1ba83e1a29"
-    },
-    {
-      "path": "native/src/interfaces.cpp",
-      "sha256_lf": "37b1d97fc4f370714a4ba6403a22a0dfaeee3df04fd872770d66c9f756a161b7"
+      "path": "native/src/main.cpp",
+      "sha256_lf": "e5b3c99fe69d853ba84ce73a8ca11eb665ea0532d494c96fbce4a50615fec3dd"
     },
     {
       "path": "native/src/pascal.cpp",
-      "sha256_lf": "fb09617207d6d2f4e96c895e3bc86a8b63f4c0171efff2ea0ccbd652a573ad7d"
+      "sha256_lf": "6068145d83de12272e9fae34ed5a46701f3b08137e1ee00e198f1e23de9ce52c"
     },
     {
-      "path": "native/src/runtime_values.hpp",
-      "sha256_lf": "40e61d58aaf0350d9ea709a47a4ef6db90fe0e5c0b9afeb1d05a7a2480f6ee8f"
+      "path": "native/src/type_names.cpp",
+      "sha256_lf": "30de7e15251255da2debe9085d664e7c3f1274ca93b86db12fc2a3a659b41a19"
     },
     {
-      "path": "native/src/value_hash.cpp",
-      "sha256_lf": "3e53c86acb1790bd9316dc2b5d440fcf7121889ecd4d20f6a234d137ebecce85"
+      "path": "native/src/type_names.hpp",
+      "sha256_lf": "1d1132255db863b07d9cb2e7ec5b3bb179c8b3cf535ba9e0d6a2da2d131278b5"
+    },
+    {
+      "path": "native/src/type_properties.cpp",
+      "sha256_lf": "b5c718b80a3cbe43fa5d8418189c8e486cd6756308896473ad961e9eb9f3c5c0"
+    },
+    {
+      "path": "native/src/vm.cpp",
+      "sha256_lf": "e8393949cc93cac20afff40b01c2ff187bd462315824d3a96cd9691e844a05b5"
     }
   ],
-  "scope": "Selected positive compile requirements in two native builds. Not API coverage or runtime validation. Predicate/Func identities and conversions, user ICollection bulk insertion, user-record field initialization, methods/interfaces, retained List arrays, native range boxing and RealRange equality semantics are validated separately. Field-initializer recipes are source-derived, not a Pascal compiler oracle. Whole standard-library units remain partial.",
+  "scope": "Selected positive compile requirements in two native builds. Not API coverage or runtime validation. Raw Type property metadata and source-file identity, Predicate/Func identities and conversions, user ICollection bulk insertion, user-record field initialization, methods/interfaces, retained List arrays, native range boxing and RealRange equality semantics are validated separately. Field-initializer recipes are source-derived, not a Pascal compiler oracle. Whole standard-library units remain partial.",
   "runs": [
     {
       "schema": 1,
       "scope": "Selected required positive compile cases derived from shipped interfaces. Every case must eventually compile. This is a growing gap list, not complete API coverage; accepting a case does not prove its runtime semantics. No expected failure is made a compatibility requirement.",
       "runner": "native/build/clang-incremental/abc.exe",
-      "runner_sha256": "ea9c2b6330135d7a378c92d96635a07b0c07a4410cc7cdc071b65e441509d94f",
+      "runner_sha256": "cf81a3c2fe63bcd5dd4fd6ee746eecb67f465ac7725241f668b56a6f78a89ecd",
       "version": "ABC Native 0.1.0-dev (Pascal prototype)",
       "cases": [
         {
@@ -273,8 +277,8 @@
           "module": "IniFile",
           "source_line": 10,
           "source_anchor": "TIniFile = class",
-          "accepted": false,
-          "diagnostic": "ini-gettype.pas:1:55: E_TYPE\nEN: Compound type required\nRU: Требуется составной тип"
+          "accepted": true,
+          "diagnostic": ""
         },
         {
           "id": "ini-gettype-basic",
@@ -318,7 +322,7 @@
         }
       ],
       "summary": {
-        "accepted": 18,
+        "accepted": 19,
         "required": 34
       }
     },
@@ -326,7 +330,7 @@
       "schema": 1,
       "scope": "Selected required positive compile cases derived from shipped interfaces. Every case must eventually compile. This is a growing gap list, not complete API coverage; accepting a case does not prove its runtime semantics. No expected failure is made a compatibility requirement.",
       "runner": "native/build/qt-editor/Release/abc.exe",
-      "runner_sha256": "6a8940f237699ccd6d50f60412328f7c231d7f3be7a5b3d727b413d17a56b4a4",
+      "runner_sha256": "4d83457d6b646c346ff1aac8cf040dcca24ed9493cfe89cae60cfea252f7a0e6",
       "version": "ABC Native 0.1.0-dev (Pascal prototype)",
       "cases": [
         {
@@ -558,8 +562,8 @@
           "module": "IniFile",
           "source_line": 10,
           "source_anchor": "TIniFile = class",
-          "accepted": false,
-          "diagnostic": "ini-gettype.pas:1:55: E_TYPE\nEN: Compound type required\nRU: Требуется составной тип"
+          "accepted": true,
+          "diagnostic": ""
         },
         {
           "id": "ini-gettype-basic",
@@ -603,7 +607,7 @@
         }
       ],
       "summary": {
-        "accepted": 18,
+        "accepted": 19,
         "required": 34
       }
     }

@@ -2816,6 +2816,14 @@ private:
             }
             if(enum_static_member(*result,source))break;
             if(!result->left)result->left=expression(*source.left);adapt_enumerable_member(*result,source.token.text);const auto receiver=result->left->type;
+            if(receiver==Type::type_descriptor){
+                const auto operation=source.token.text=="name" ? TypeOperation::name : source.token.text=="fullname" ? TypeOperation::full_name
+                    : source.token.text=="namespace" ? TypeOperation::name_space : source.token.text=="assemblyqualifiedname" ? TypeOperation::assembly_qualified_name : TypeOperation::value_name;
+                if(operation!=TypeOperation::value_name){
+                    if(source.kind!=SyntaxExprKind::field)throw Error("E_TYPE",result->location,"Type property cannot be called","Свойство типа нельзя вызывать как метод");
+                    result->kind=hir::ExprKind::type_operation;result->operation_type=receiver;result->local=static_cast<unsigned>(operation);result->type=Type::string;break;
+                }
+            }
             if(source.token.text=="gettype"){
                 const bool own=compound(receiver) && info(receiver,result->location).kind==CompoundKind::object_class
                     && ((class_methods_.contains(receiver) && class_methods_.at(receiver).contains("gettype"))
@@ -6596,8 +6604,10 @@ hir::Module hir::analyze_pascal(std::string_view source) {
     return Analyzer().analyze(Parser(source).parse());
 }
 
-Program compile(std::string_view source) {
+Program compile(std::string_view source,std::string_view module_name) {
+    if(!module_name_valid(module_name))throw Error("E_TYPE",{},"Invalid source module name","Недопустимое имя исходного модуля");
     auto program = hir::generate(hir::analyze_pascal(source));
+    program.module_name=module_name;
     verify(program);
     return program;
 }

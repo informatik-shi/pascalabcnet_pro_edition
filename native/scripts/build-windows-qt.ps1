@@ -96,6 +96,7 @@ RealRange, Random2/Random3 и случайные массивы по диапа�
 Halt завершает программу с кодом 0; Halt(integer) задаёт код завершения: examples/halt.pas.
 Стандартные функции как типизированные значения: examples/builtin-callables.pas.
 Имена типов, typeof и GetType без .NET: examples/type-names.pas.
+Свойства Name/FullName/Namespace/AssemblyQualifiedName: examples/type-properties.pas. Полные имена пользовательских типов сохраняют имя исходного файла при запуске из редактора.
 Числа single с округлением до 32 бит, вводом и коллекциями: examples/single-numbers.pas.
 Словари Dictionary, Dict, Keys/Values, EachCount и ToDictionary: examples/dictionaries.pas.
 Перечислители словаря с независимым копированием: examples/dictionary-enumerators.pas.

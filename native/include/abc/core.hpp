@@ -532,10 +532,12 @@ struct Program {
     std::optional<std::size_t> print_delimiter;
     std::optional<std::size_t> print_matrix_format;
     std::optional<std::size_t> default_encoding;
+    // Logical source-file stem, preserved when the editor executes a snapshot.
+    std::string module_name = "Program";
 };
 
 // compile never executes user code; no module is returned on any diagnostic.
-Program compile(std::string_view source);
+Program compile(std::string_view source, std::string_view module_name = "Program");
 void verify(const Program& program);
 
 struct ExecutionOptions {

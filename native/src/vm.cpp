@@ -675,7 +675,11 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
             break;
         }
         case Op::type_operation: {
-            const auto value=pop();const auto descriptor=reflected_value_type(program,value,instruction.type,instruction.location,options);
+            const auto value=pop();
+            if(instruction.operand>=static_cast<unsigned>(TypeOperation::name)){
+                stack.push_back(reflected_type_property(program,std::get<ReflectedType>(value),static_cast<TypeOperation>(instruction.operand),instruction.location,options));break;
+            }
+            const auto descriptor=reflected_value_type(program,value,instruction.type,instruction.location,options);
             if(instruction.operand==static_cast<unsigned>(TypeOperation::value_name))stack.emplace_back(reflected_type_name(program,descriptor,instruction.location,options));
             else {if(descriptor.target==Type::invalid)trap(instruction,RuntimeError::nil_reference);stack.emplace_back(descriptor);}break;
         }

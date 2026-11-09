@@ -3,6 +3,15 @@ using System;using System.IO;using System.Text;using System.Collections.Generic;
 using System.Reflection;using System.Reflection.Emit;using System.Numerics;
 class TypePropertiesReference{
  static string Hex(string value){if(value==null)return "nil";if(value.Length==0)return "-";var b=new StringBuilder();foreach(char c in value)b.Append(((int)c).ToString("x4"));return b.ToString();}
+ static void Modules(string path){using(var output=new StreamWriter(path,false,new UTF8Encoding(false))){
+  output.WriteLine("# module_UTF16_hex\tPascal_expression\tproperty\tUTF16_hex\terror");
+  foreach(var unit in new[]{"Simple module","Space end ","Comma,Module","Equals=Module","Quote'Module","Quote\"Module","Both'\"Module","Bracket[Module]","Plus+Module"}){
+   var assembly=AppDomain.CurrentDomain.DefineDynamicAssembly(new AssemblyName{Name=unit,Version=new Version("1.0.0.0")},AssemblyBuilderAccess.Run);
+   var record=Shape(assembly.DefineDynamicModule(unit),unit+".MiXeDRecord",0,true);
+   foreach(var type in new[]{record,typeof(List<>).MakeGenericType(record)})foreach(var property in new[]{"Name","FullName","Namespace","AssemblyQualifiedName"})
+    output.WriteLine(Hex(unit)+"\t"+(type==record ? "typeof(MiXeDRecord)" : "typeof(List<MiXeDRecord>)")+"\t"+property+"\t"+Hex((string)typeof(Type).GetProperty(property).GetValue(type,null))+"\tok");
+  }
+ }}
  static Type Shape(ModuleBuilder module,string name,int arity,bool value=false,bool face=false){
   var attributes=TypeAttributes.Public|(face?TypeAttributes.Interface|TypeAttributes.Abstract:value?TypeAttributes.Sealed|TypeAttributes.SequentialLayout:0);
   var type=module.DefineType(name,attributes,face?null:value?typeof(ValueType):typeof(object));
@@ -12,7 +21,7 @@ class TypePropertiesReference{
  static void Main(string[] args){using(var output=new StreamWriter(args[0],false,new UTF8Encoding(false))){
   output.WriteLine("# module\tPascal_expression\tproperty\tUTF16_hex\terror");
   foreach(string unit in new[]{"Program","Другой.Модуль"}){
-   var assembly=AppDomain.CurrentDomain.DefineDynamicAssembly(new AssemblyName(unit){Version=new Version("1.0.0.0")},AssemblyBuilderAccess.Run);
+   var assembly=AppDomain.CurrentDomain.DefineDynamicAssembly(new AssemblyName{Name=unit,Version=new Version("1.0.0.0")},AssemblyBuilderAccess.Run);
    var module=assembly.DefineDynamicModule(unit);
    var record=Shape(module,unit+".MiXeDRecord",0,true);var box=Shape(module,unit+".MiXeDClass",0);var face=Shape(module,unit+".IFace",0,false,true);
    var colors=module.DefineEnum(unit+".Цвет",TypeAttributes.Public,typeof(int));colors.DefineLiteral("Красный",0);colors.DefineLiteral("Синий",1);var color=colors.CreateType();
@@ -45,5 +54,5 @@ class TypePropertiesReference{
     output.WriteLine(unit+"\t"+item.Key+"\t"+property+"\t"+Hex(value)+"\t"+error);
    }
   }
- }}
+ }Modules(args[1]);}
 }
