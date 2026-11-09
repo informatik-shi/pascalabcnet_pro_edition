@@ -9,6 +9,7 @@
 #include "stdlib.hpp"
 #include "encoding.hpp"
 #include "type_names.hpp"
+#include "callable_identity.hpp"
 #include "single.hpp"
 #include "enumeration.hpp"
 #include "comparable.hpp"
@@ -1611,17 +1612,17 @@ private:
         module_.types.push_back(std::move(tuple)); return static_cast<Type>(63+module_.types.size());
     }
     bool callable_type(Type type) const { return compound(type) && info(type,{}).kind==CompoundKind::callable; }
-    Type function_type(Type result,std::vector<CallableParameter> parameters,SourceLocation location) {
+    Type function_type(Type result,std::vector<CallableParameter> parameters,SourceLocation location,std::string_view family="callable") {
         for (std::size_t n=0;n<parameters.size();++n) if (parameters[n].variadic
             && (n+1!=parameters.size() || parameters[n].by_reference || !compound(parameters[n].type)
                 || info(parameters[n].type,location).kind!=CompoundKind::array || info(parameters[n].type,location).rank!=1))
             throw Error("E_TYPE",location,"params requires a final rank-one array parameter");
         for (std::size_t n=0;n<module_.types.size();++n) {
             const auto& type=module_.types[n];
-            if (type.kind==CompoundKind::callable && type.element==result && type.parameters==parameters) return static_cast<Type>(64+n);
+            if (type.kind==CompoundKind::callable && type.name==family && type.element==result && type.parameters==parameters) return static_cast<Type>(64+n);
         }
         if (module_.types.size()>=1024) throw Error("E_LIMIT",location,"Type limit exceeded");
-        TypeInfo type{"callable",CompoundKind::callable,result,{}}; type.parameters=std::move(parameters);
+        TypeInfo type{std::string(family),CompoundKind::callable,result,{}}; type.parameters=std::move(parameters);
         module_.types.push_back(std::move(type)); return static_cast<Type>(63+module_.types.size());
     }
     Type routine_type(std::size_t id,SourceLocation location) {
@@ -2127,7 +2128,7 @@ private:
             for (std::size_t n=0;n<syntax.fields.size()-(function ? 1U : 0U);++n) parameters.push_back({resolve_type(*syntax.fields[n].second)});
             if (parameters.size()>16) throw Error("E_TYPE",syntax.token.location,"Too many routine parameters");
             const auto result=function ? resolve_type(*syntax.fields.back().second) : predicate ? Type::boolean : Type::unit;
-            return function_type(result,std::move(parameters),syntax.token.location);
+            return function_type(result,std::move(parameters),syntax.token.location,name=="predicate"?"predicate":"callable");
         }
         if (syntax.kind=="addr32" || syntax.kind=="calcip") {
             if (auto found=aliases_.find(syntax.kind); found!=aliases_.end()) return found->second;
@@ -2258,7 +2259,18 @@ private:
     ABC_PASCAL_NOINLINE std::unique_ptr<hir::Expr> interface_conversion(std::unique_ptr<hir::Expr> value,Type target,bool checked){
         auto node=std::make_unique<hir::Expr>();node->kind=hir::ExprKind::interface_cast;node->type=target;node->location=value->location;node->local=checked ? 1U : 0U;node->left=std::move(value);return node;
     }
+    ABC_PASCAL_NOINLINE std::unique_ptr<hir::Expr> copy_expression(const hir::Expr& value){
+        if(++callable_copy_nodes_>65536)throw Error("E_LIMIT",value.location,"Delegate conversion expression limit exceeded","Превышен предел выражения преобразования делегата");
+        auto result=std::make_unique<hir::Expr>();result->kind=value.kind;result->type=value.type;result->location=value.location;result->value=value.value;result->local=value.local;result->operation=value.operation;result->operation_type=value.operation_type;result->temporaries=value.temporaries;result->getter=value.getter;result->setter=value.setter;
+        if(value.left)result->left=copy_expression(*value.left);if(value.right)result->right=copy_expression(*value.right);for(const auto& argument:value.arguments)result->arguments.push_back(copy_expression(*argument));return result;
+    }
     ABC_PASCAL_NOINLINE std::unique_ptr<hir::Expr> convert(std::unique_ptr<hir::Expr> expression, Type type) {
+        if(expression->type!=type&&callable_compatible(module_.types,expression->type,type)){
+            const auto location=expression->location;
+            const auto nil=[&](Type type){auto value=std::make_unique<hir::Expr>();value->kind=hir::ExprKind::default_value;value->type=type;value->location=location;value->operation="default";return value;};
+            auto test=std::make_unique<hir::Expr>();test->kind=hir::ExprKind::binary;test->type=Type::boolean;test->operation="<>";test->location=location;test->left=copy_expression(*expression);test->right=nil(expression->type);
+            auto result=std::make_unique<hir::Expr>();result->kind=hir::ExprKind::conditional;result->type=type;result->location=location;result->left=std::move(test);result->right=interface_conversion(std::move(expression),type,true);result->arguments.push_back(nil(type));return result;
+        }
         if(expression->type!=type && interface_compatible(module_.types,expression->type,type))return interface_conversion(std::move(expression),type,false);
         if(compound(type) && info(type,expression->location).kind==CompoundKind::enumerator && compound(expression->type) && (dictionary_enumerator_type(info(expression->type,expression->location)) || collection_enumerator_type(info(expression->type,expression->location)))){
             if(info(expression->type,expression->location).element!=info(type,expression->location).element)throw Error("E_TYPE",expression->location,"Enumerator element types must match exactly");
@@ -6570,6 +6582,7 @@ private:
     std::set<std::size_t> lambda_locals_,lexical_globals_,reference_parameters_;
     const SyntaxStmt* syntax_root_=nullptr;
     unsigned field_inference_depth_=0;
+    std::size_t callable_copy_nodes_=0;
     std::set<const SyntaxExpr*> inferring_expressions_;
     std::map<std::pair<const SyntaxType*,std::string>,Type> inferred_fields_;
     std::set<std::pair<const SyntaxType*,std::string>> inferring_fields_;

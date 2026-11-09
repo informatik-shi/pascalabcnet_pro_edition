@@ -38,7 +38,7 @@ std::size_t value_hash(ValueHashWork& work,const Value& value){
             if(ordinal_range_type(type_info(work.values.program,v->type)))return static_cast<std::uint32_t>(ordinal_range_hash(v));
             if(real_interval_type(type_info(work.values.program,v->type)))return static_cast<std::uint32_t>(real_interval_hash(v));
             if(kind==CompoundKind::record || kind==CompoundKind::tuple){std::size_t result=0;for(const auto& field:v->items)result=mix(result,value_hash(work,field->value));return result;}
-            if(kind==CompoundKind::callable){std::size_t result=v->routine.value_or(0);for(const auto& cell:v->captures)result=mix(result,std::hash<const void*>{}(cell.get()));return result;}
+            if(kind==CompoundKind::callable)return callable_hash(*v);
             if(kind==CompoundKind::sequence && v->sequence && (collection_sequence(v->sequence->provider) || v->sequence->provider==SequenceProvider::hash_set || dictionary_provider(v->sequence->provider)))return std::hash<const void*>{}(v->sequence->source.get());
             return std::hash<const void*>{}(v.get());
         }else if constexpr(std::is_same_v<T,std::shared_ptr<Cell>> || std::is_same_v<T,std::shared_ptr<TextFile>>)return std::hash<const void*>{}(v.get());

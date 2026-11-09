@@ -1,27 +1,47 @@
 {
   "schema": 1,
-  "runtime_source_base_revision": "5134980fab97a02833d6b631a4627f0297094041",
+  "runtime_source_base_revision": "9520be3d00478215385ed7f2d8d08d3d074934d6",
   "runtime_source_changes": [
     {
-      "path": "native/src/list_bulk_user.cpp",
-      "sha256_lf": "56a28a1a33554278aa33e64002cb77f5dc47c57426823cd41427c8fb2d9ff86a"
+      "path": "native/include/abc/core.hpp",
+      "sha256_lf": "e15beffd234cfaf291e7d588b9792f83af0d2efbbd322f330f7ca593709bfeb3"
     },
     {
-      "path": "native/src/list_bulk_user.hpp",
-      "sha256_lf": "c9227d33d5523408b99de25f2ce5d379445add421b3b46bda863212198a8cf06"
+      "path": "native/src/bytecode.cpp",
+      "sha256_lf": "03e3bfb3c0d40d06d27d187250a9456d556086c25e496e0e9801cc42298cd07c"
     },
     {
-      "path": "native/src/list_operations.cpp",
-      "sha256_lf": "fd930478c1f2b5e2c91afcf274cf05b48ba715108984cc28140898e0d30b48e6"
+      "path": "native/src/callable_identity.cpp",
+      "sha256_lf": "8384e165e8f113f3b1a97157cb72e18c397a12365053530d3a542cf51df22d13"
+    },
+    {
+      "path": "native/src/callable_identity.hpp",
+      "sha256_lf": "c1b3129d8a3ca1ecbb6341d8425263c0b48df1385c9af8f84891cc1ba83e1a29"
+    },
+    {
+      "path": "native/src/interfaces.cpp",
+      "sha256_lf": "37b1d97fc4f370714a4ba6403a22a0dfaeee3df04fd872770d66c9f756a161b7"
+    },
+    {
+      "path": "native/src/pascal.cpp",
+      "sha256_lf": "fb09617207d6d2f4e96c895e3bc86a8b63f4c0171efff2ea0ccbd652a573ad7d"
+    },
+    {
+      "path": "native/src/runtime_values.hpp",
+      "sha256_lf": "40e61d58aaf0350d9ea709a47a4ef6db90fe0e5c0b9afeb1d05a7a2480f6ee8f"
+    },
+    {
+      "path": "native/src/value_hash.cpp",
+      "sha256_lf": "3e53c86acb1790bd9316dc2b5d440fcf7121889ecd4d20f6a234d137ebecce85"
     }
   ],
-  "scope": "Selected positive compile requirements in two native builds. Not API coverage or runtime validation. User ICollection bulk insertion, user-record field initialization, methods/interfaces, retained List arrays, native range boxing and RealRange equality semantics are validated separately. Field-initializer recipes are source-derived, not a Pascal compiler oracle. Whole standard-library units remain partial.",
+  "scope": "Selected positive compile requirements in two native builds. Not API coverage or runtime validation. Predicate/Func identities and conversions, user ICollection bulk insertion, user-record field initialization, methods/interfaces, retained List arrays, native range boxing and RealRange equality semantics are validated separately. Field-initializer recipes are source-derived, not a Pascal compiler oracle. Whole standard-library units remain partial.",
   "runs": [
     {
       "schema": 1,
       "scope": "Selected required positive compile cases derived from shipped interfaces. Every case must eventually compile. This is a growing gap list, not complete API coverage; accepting a case does not prove its runtime semantics. No expected failure is made a compatibility requirement.",
       "runner": "native/build/clang-incremental/abc.exe",
-      "runner_sha256": "5fc56039a97a387b11016a43bfa4d7ed69e0a183138300b9b55ab10333e1fbc6",
+      "runner_sha256": "ea9c2b6330135d7a378c92d96635a07b0c07a4410cc7cdc071b65e441509d94f",
       "version": "ABC Native 0.1.0-dev (Pascal prototype)",
       "cases": [
         {
@@ -306,7 +326,7 @@
       "schema": 1,
       "scope": "Selected required positive compile cases derived from shipped interfaces. Every case must eventually compile. This is a growing gap list, not complete API coverage; accepting a case does not prove its runtime semantics. No expected failure is made a compatibility requirement.",
       "runner": "native/build/qt-editor/Release/abc.exe",
-      "runner_sha256": "ed6f4594195446436a48eb0c8d747695ec81fa4fb3942988a699ecd0f880632a",
+      "runner_sha256": "6a8940f237699ccd6d50f60412328f7c231d7f3be7a5b3d727b413d17a56b4a4",
       "version": "ABC Native 0.1.0-dev (Pascal prototype)",
       "cases": [
         {

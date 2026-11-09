@@ -5,6 +5,7 @@
 #include "text_file.hpp"
 #include "record_interface.hpp"
 #include "cell_references.hpp"
+#include "callable_identity.hpp"
 #include <span>
 #include <functional>
 #include <algorithm>
@@ -29,7 +30,7 @@ struct ReferenceObjects {
     void observe(const std::shared_ptr<Aggregate>& object) { entries.push_back({object,{}}); }
     ~ReferenceObjects() {
         for (auto& entry:entries) entry.retained=entry.object.lock();
-        for (auto& entry:entries) if (entry.retained) {entry.retained->enumerator.reset();entry.retained->list_storage.reset();entry.retained->hash_set.reset();entry.retained->items.clear();}
+        for (auto& entry:entries) if (entry.retained) {entry.retained->enumerator.reset();entry.retained->list_storage.reset();entry.retained->hash_set.reset();entry.retained->delegate_source.reset();entry.retained->captures.clear();entry.retained->items.clear();}
     }
 };
 struct Values {
@@ -152,7 +153,7 @@ struct Values {
             if (kind==CompoundKind::sequence && !(*a)->nil && !b->nil && (*a)->sequence && b->sequence
                 && (collection_sequence((*a)->sequence->provider) || (*a)->sequence->provider==SequenceProvider::hash_set || dictionary_provider((*a)->sequence->provider)) && (collection_sequence(b->sequence->provider) || b->sequence->provider==SequenceProvider::hash_set || dictionary_provider(b->sequence->provider)))
                 return (*a)->sequence->source==b->sequence->source;
-            if (kind==CompoundKind::callable) return (*a)->nil || b->nil ? (*a)->nil==b->nil : ((*a)->routine==b->routine && (*a)->captures==b->captures);
+            if (kind==CompoundKind::callable) return callable_equal(**a,*b);
             if (kind!=CompoundKind::record && kind!=CompoundKind::tuple) return ((*a)->nil && b->nil) || *a == b;
             if ((*a)->nil || b->nil) return (*a)->nil && b->nil;
             for (std::size_t i = 0; i < (*a)->items.size(); ++i)

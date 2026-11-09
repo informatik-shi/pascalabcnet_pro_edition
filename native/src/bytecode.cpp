@@ -1950,7 +1950,8 @@ void verify(const Program& program) {
             throw Error("E_BYTECODE",{},"Enumeration metadata on a non-enumeration type");
         if (type.kind!=CompoundKind::callable && !type.parameters.empty()) throw Error("E_BYTECODE",{},"Parameters on a non-callable type");
         if (type.kind==CompoundKind::callable) {
-            if (type.name!="callable" || type.key!=Type::invalid || !type.fields.empty() || type.parameters.size()>16) throw Error("E_BYTECODE",{},"Invalid callable type metadata");
+            if ((type.name!="callable"&&type.name!="predicate") || type.key!=Type::invalid || !type.fields.empty() || type.parameters.size()>16) throw Error("E_BYTECODE",{},"Invalid callable type metadata");
+            if(type.name=="predicate"&&(type.element!=Type::boolean||type.parameters.size()!=1||type.parameters[0].by_reference||type.parameters[0].variadic))throw Error("E_BYTECODE",{},"Invalid Predicate type metadata");
             if (type.element!=Type::unit) prior(type.element);
             for (std::size_t n=0;n<type.parameters.size();++n) {
                 const auto& parameter=type.parameters[n]; prior(parameter.type);

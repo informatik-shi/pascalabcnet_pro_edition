@@ -262,6 +262,7 @@ struct Aggregate {
     std::unique_ptr<EnumeratorState> enumerator;
     std::optional<std::size_t> routine; // Native routine identity, independent of host runtimes.
     std::vector<std::shared_ptr<Cell>> captures;
+    std::shared_ptr<Aggregate> delegate_source{}; // Target of a converted delegate's Invoke method.
     std::shared_ptr<const TextEncoding> encoding{};
     std::shared_ptr<IniState> ini{};
     std::shared_ptr<HashSetState> hash_set{};

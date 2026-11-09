@@ -83,6 +83,7 @@ add_library(abc_core
     src/timing.cpp
     src/single.cpp
     src/type_names.cpp
+    src/callable_identity.cpp
     src/environment.cpp
     src/disk_space.cpp
     src/diagnostics.cpp
@@ -328,6 +329,13 @@ if(BUILD_TESTING)
     endif()
     add_test(NAME list_user_bulk COMMAND abc_list_user_bulk_tests)
     add_test(NAME list_user_bulk_example COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/examples/list-user-bulk.pas")
+    add_executable(abc_callable_family_tests tests/callable_family_tests.cpp)
+    target_link_libraries(abc_callable_family_tests PRIVATE abc_core)
+    if(MSVC)
+        target_compile_options(abc_callable_family_tests PRIVATE /utf-8)
+    endif()
+    add_test(NAME callable_families COMMAND abc_callable_family_tests)
+    add_test(NAME callable_families_example COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/examples/callable-families.pas")
     add_test(NAME property_interfaces_example COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/examples/property-interfaces.pas")
     add_test(NAME set_interfaces_example COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/examples/set-interfaces.pas")
     add_test(NAME explicit_interfaces_example COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/examples/explicit-interfaces.pas")

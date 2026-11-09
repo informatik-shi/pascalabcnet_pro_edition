@@ -3,6 +3,7 @@
 #include "sequences.hpp"
 #include "collection_interface.hpp"
 #include "record_interface.hpp"
+#include "callable_identity.hpp"
 #include <array>
 #include <set>
 namespace abc {
@@ -75,6 +76,7 @@ bool interface_compatible(const std::vector<TypeInfo>& types,Type from,Type to){
  return false;
 }
 bool interface_cast_valid(const Program& p,Type from,Type to,bool checked){
+ if(callable_compatible(p.types,from,to))return true;
  if(interface_compatible(p.types,from,to))return true;
  if(!checked || !valid(p.types,from) || !valid(p.types,to) || !interface_kind(info(p.types,from)))return false;
  return interface_kind(info(p.types,to)) || ((info(p.types,to).kind==CompoundKind::object_class || info(p.types,to).kind==CompoundKind::record || info(p.types,to).kind==CompoundKind::array || info(p.types,to).kind==CompoundKind::list || info(p.types,to).kind==CompoundKind::hash_set || info(p.types,to).kind==CompoundKind::dictionary || info(p.types,to).kind==CompoundKind::dictionary_keys || info(p.types,to).kind==CompoundKind::dictionary_values) && interface_compatible(p.types,to,from));
@@ -113,6 +115,7 @@ void verify_interfaces(const Program& p){
 }
 Value interface_cast(Values& values,Type from,Type to,bool checked,const Value& value){
  if(!interface_cast_valid(values.program,from,to,checked))throw runtime_error(RuntimeError::invalid_bytecode,values.location);
+ if(callable_compatible(values.program.types,from,to))return callable_conversion(values,to,value,checked);
  auto object=std::get<std::shared_ptr<Aggregate>>(value);if(!object || object->nil){if(type_info(values.program,to).kind==CompoundKind::record)throw runtime_error(RuntimeError::nil_reference,values.location);return values.zero(to);}
  if(object->type==to&&type_info(values.program,to).kind!=CompoundKind::record)return object;
  if(record_box_identity(object.get())!=object.get())object=object->sequence->source;

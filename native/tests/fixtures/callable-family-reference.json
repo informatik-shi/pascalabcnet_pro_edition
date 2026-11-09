@@ -1,0 +1,28 @@
+{
+    "schema":  1,
+    "runtime":  "Windows .NET Framework 4.0.30319.42000",
+    "outcomes":  504,
+    "scope":  "Actual CLR Predicate/Func type identity, invocation, wrapper-target equality, collections, nil and source-derived conditional conversion guards. Not full delegates, reflection or library coverage.",
+    "artifacts":  [
+                      {
+                          "path":  "reference/callable-family.cs",
+                          "sha256_lf":  "b62ed551f267009791eeadbf3f194dd0806dc03396b87119c851d7b2a2913edc"
+                      },
+                      {
+                          "path":  "reference/generate-callable-family.ps1",
+                          "sha256_lf":  "2017ca705ee038bd251a8f0880b8e27ab36972c20e0020991072f7d906f06db8"
+                      },
+                      {
+                          "path":  "fixtures/callable-family-program.pas",
+                          "sha256_lf":  "b8e79fc66c844dd3c7dcf49c4fd08703a41abfc51c9c6d797046c899979e9314"
+                      },
+                      {
+                          "path":  "fixtures/callable-family-reference.tsv",
+                          "sha256_lf":  "cfd0fcd9381c75b13b97ee03dc944478e855249ebab2d5a9c6c1593fa78fda79"
+                      },
+                      {
+                          "path":  "fixtures/callable-family-reference.md",
+                          "sha256_lf":  "317529d02f4cedd8d4f742fdda9a28a3798bd711026cb1220f7797833981fa97"
+                      }
+                  ]
+}

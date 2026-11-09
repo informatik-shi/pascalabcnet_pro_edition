@@ -1,0 +1,24 @@
+{
+    "schema":  1,
+    "runtime":  "Windows .NET Framework 4.0.30319.42000",
+    "outcomes":  736,
+    "scope":  "Positive requirements for raw CLR type properties over 92 type expressions and two source modules. Actual Framework metadata and source-derived emitted type identities; not a claim of native property implementation or full library coverage.",
+    "artifacts":  [
+                      {
+                          "path":  "reference/type-properties.cs",
+                          "sha256_lf":  "c9322b57f34467e3a64a8038270125af3614bb922160d769e9d9c8f3399c59bf"
+                      },
+                      {
+                          "path":  "reference/generate-type-properties.ps1",
+                          "sha256_lf":  "528e0e8cc8dff14e21f1b99c0ad2917a3bdb44f7bfb16d8a4ae3880b66e7b8b6"
+                      },
+                      {
+                          "path":  "fixtures/type-properties-reference.tsv",
+                          "sha256_lf":  "f9c1d9f9b9f8fd8252c6a7e8215ab9c31b3eb8e56530aebae851c2ef327d2523"
+                      },
+                      {
+                          "path":  "fixtures/type-properties-reference.md",
+                          "sha256_lf":  "5eea391d6fbcff97c1576aeef4668e9c4b656b410c129e82d68f403b45fe75a7"
+                      }
+                  ]
+}
