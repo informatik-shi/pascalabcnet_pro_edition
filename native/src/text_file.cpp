@@ -6,6 +6,7 @@
 #include "diagnostics.hpp"
 #include "stdlib.hpp"
 #include "integer_values.hpp"
+#include "sbcs.hpp"
 #include <algorithm>
 #include <charconv>
 #include <limits>
@@ -37,7 +38,8 @@ void emit_pending(TextFile& file,bool final,SourceLocation location) {
     if(file.encoder_carry)text.push_back(file.encoder_carry);
     text+=file.pending;char16_t carry=0;
     const auto kind=file.encoding ? file.encoding->kind : TextEncodingKind::utf8;
-    if(!final && kind!=TextEncodingKind::windows1251 && kind!=TextEncodingKind::ascii && !text.empty() && text.back()>=0xd800 && text.back()<=0xdbff) {
+    const auto* codec=single_byte_codec(static_cast<std::uint16_t>(kind));
+    if(!final && (!codec || codec->hold_high_surrogate) && !text.empty() && text.back()>=0xd800 && text.back()<=0xdbff) {
         carry=text.back();text.pop_back();
     }
     const auto bytes=encoded(file,text,location);

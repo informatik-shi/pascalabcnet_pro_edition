@@ -360,6 +360,7 @@ def main():
                 ("type-properties.pas", "Int32\nSystem.Int32\nSystem\ntype-properties.Coordinate\nDictionary`2\nEnumerator\nSystem.Int32, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089\n"),
                 ("named-callables.pas", "Check False\nnamed-callables.Check\nTrue\nTrue True\nFalse\n5 RefSecond\n"),
                 ("predicate-generics.pas", "Predicate2`2 False\nPredicate3`3 False\nPABCSystem\nTrue True\nFalse\n4\n"),
+                ("single-byte-encodings.pas", "866 [143,224,168,162,165,226]\nПривет\n20866 Привет\n[128,233]\nLatin1Encoding [233,65]\n37 [193,194,195]\n"),
                 ("collection-property-writes.pas", "25 20 2\n[11,2] 2\n2 True 26\n"),
                 ("small-integers.pas", "Значения: 255 -128 -32768\nСумма с расширением: 256\nКвадрат: 65025\nГраница byte: 254|255|\nМассив smallint: 1 -2\n"),
                 ("unsigned-integers.pas", "Граница 32 бит: 4294967295\nС расширением: 4294967296\nГраница 64 бит: 18446744073709551615\nКвадрат word: 4294836225\nПредыдущее: 18446744073709551614\nПереключение: True False\n"),
@@ -404,7 +405,7 @@ def main():
                 raise RuntimeError(f"{name} raw Encoding preamble/fallback mismatch: {attempted.stdout!r}, {attempted.stderr!r}")
             for source, expected, code, line in [
                 ("uses System.Text;\nbegin\nWriteln('must not execute');\nEncoding.UTF8.GetString(Arr(1));\nend.", "", "E_TYPE", 4),
-                ("uses System.Text;\nbegin\nEncoding.GetEncoding(1252);\nend.", "", "E_ENCODING", 3),
+                ("uses System.Text;\nbegin\nEncoding.GetEncoding(-1);\nend.", "", "E_ENCODING", 3),
                 ("uses System.Text;\nfunction Argument:string; begin Writeln('argument'); Result:='x'; end;\n"
                  "begin\nvar e:Encoding;\ne.GetBytes(Argument);\nend.", "argument\n", "E_NIL", 5),
             ]:
@@ -2030,6 +2031,15 @@ def main():
                     or f"{generic_error}:2:" not in invalid.stderr):
                 raise RuntimeError(f"{name} Generic predicate bilingual error failed: {invalid.stdout!r} {invalid.stderr!r}")
             results[-1]["native_generic_predicates_and_bilingual_errors"] = "passed"
+            encoding_error = folder / "Ошибки названий кодировок.pas"
+            encoding_error.write_text("begin Write('before');\nEncoding.GetEncoding('cp1251');end.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(encoding_error)], text=True, encoding="utf-8", capture_output=True, cwd=folder, env=env, timeout=10)
+            if (invalid.returncode != 1 or invalid.stdout != "before" or "E_ENCODING" not in invalid.stderr
+                    or "EN: Unsupported text encoding" not in invalid.stderr
+                    or "RU: Неподдерживаемая кодировка текста" not in invalid.stderr
+                    or f"{encoding_error}:2:" not in invalid.stderr):
+                raise RuntimeError(f"{name} Encoding name bilingual error failed: {invalid.stdout!r} {invalid.stderr!r}")
+            results[-1]["native_single_byte_codecs_and_bilingual_errors"] = "passed"
             results[-1]["native_generic_enumerators_boxing_resources_and_bilingual_errors"] = "passed"
             results[-1]["native_typed_dictionary_enumerators_and_bilingual_errors"] = "passed"
             results[-1]["native_dictionary_factories_views_callbacks_and_bilingual_errors"] = "passed"

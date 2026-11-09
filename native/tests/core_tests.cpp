@@ -118,7 +118,7 @@ void typed_encoding_language() {
     for(const auto source:{"begin Writeln('NEVER');Encoding.UTF8.GetBytes(1);end.","begin Encoding.UTF8.GetString(Arr(1));end.","begin var n:integer:=Encoding.UTF8;end.","begin Encoding.UTF8.CodePage:=1;end.","begin Encoding.UTF8();end.","begin Encoding.UTF8.CodePage();end.","begin Encoding.GetEncoding(True);end.","begin Encoding.UTF8.GetBytes(nil);end.","begin var e:=new Encoding;end."})compile_error(source,"E_TYPE");
     result("type Box=class encoding:Encoding:=System.Text.Encoding.UTF8;function Text:string;begin Result:=encoding.GetString(encoding.GetBytes('abc'));end;end;begin Writeln(new Box.Text);end.","abc\n");
     result("function Encoding:System.Text.Encoding;begin Result:=System.Text.Encoding.UTF8;end;begin Writeln(Encoding.GetString(Encoding.GetBytes('abc')));end.","abc\n");
-    runtime_error("begin Encoding.GetEncoding(1252);end.","E_ENCODING");runtime_error("begin Encoding.GetEncoding('missing');end.","E_ENCODING");
+    result("begin Writeln(Encoding.GetEncoding(1252).CodePage);end.","1252\n");runtime_error("begin Encoding.GetEncoding('missing');end.","E_ENCODING");
     {
         const auto p=abc::compile("function Arg:string;begin Write('ARG');Result:='x';end;begin var e:Encoding;e.GetBytes(Arg());end.");std::istringstream in;std::ostringstream out;error([&]{abc::execute(p,in,out);},"E_NIL");require(out.str()=="ARG","Encoding receiver is checked for nil after argument effects");
     }

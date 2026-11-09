@@ -1,5 +1,5 @@
 #include "file_encoding.hpp"
-#include "cp1251.hpp"
+#include "sbcs.hpp"
 #include "diagnostics.hpp"
 
 namespace abc {
@@ -8,7 +8,7 @@ constexpr std::size_t data_limit=1'048'576;
 constexpr char16_t replacement=0xfffd;
 bool valid(TextEncodingKind kind) {
     return kind==TextEncodingKind::utf8 || kind==TextEncodingKind::utf16_le || kind==TextEncodingKind::utf16_be
-        || kind==TextEncodingKind::utf32_le || kind==TextEncodingKind::utf32_be || kind==TextEncodingKind::windows1251 || kind==TextEncodingKind::ascii;
+        || kind==TextEncodingKind::utf32_le || kind==TextEncodingKind::utf32_be || single_byte_codec(static_cast<std::uint16_t>(kind));
 }
 void validate(TextEncoding encoding,SourceLocation location) {
     if (!valid(encoding.kind)) throw runtime_error(RuntimeError::encoding_kind,location);
@@ -115,8 +115,11 @@ std::u16string decode_text_bytes(std::string_view bytes,TextEncoding encoding,bo
     if(encoding.kind==TextEncodingKind::utf16_le || encoding.kind==TextEncodingKind::utf16_be)return decode_utf16(bytes,encoding,encoding.kind==TextEncodingKind::utf16_be,location);
     if(encoding.kind==TextEncodingKind::utf32_le || encoding.kind==TextEncodingKind::utf32_be)return decode_utf32(bytes,encoding,encoding.kind==TextEncodingKind::utf32_be,location);
     std::u16string result;result.reserve(bytes.size());
-    for(unsigned char value:bytes)result.push_back(encoding.kind==TextEncodingKind::windows1251 ? windows1251_character(value)
-        : value<128 ? static_cast<char16_t>(value) : encoding.strict ? invalid(encoding,location) : char16_t{u'?'});
+    const auto& codec=*single_byte_codec(static_cast<std::uint16_t>(encoding.kind));
+    for(unsigned char value:bytes){
+        if(encoding.strict && !(codec.decode_strict[value>>3]&(1U<<(value&7))))throw runtime_error(RuntimeError::encoding_data,location);
+        result.push_back(codec.decode[value]);
+    }
     return result;
 }
 std::u16string TextDecoder::decode(std::string_view bytes,bool final,SourceLocation location) {
@@ -160,11 +163,11 @@ std::string encode_text_bytes(std::u16string_view text,TextEncoding encoding,Sou
     if(text.size()>data_limit)throw runtime_error(RuntimeError::encoding_limit,location);
     std::string result;result.reserve(text.size());
     auto append=[&](std::uint32_t value){if(result.size()>=data_limit)throw runtime_error(RuntimeError::encoding_limit,location);result.push_back(static_cast<char>(value));};
-    if(encoding.kind==TextEncodingKind::ascii || encoding.kind==TextEncodingKind::windows1251) {
+    if(const auto* codec=single_byte_codec(static_cast<std::uint16_t>(encoding.kind))) {
         for(char16_t value:text) {
-            const auto encoded=encoding.kind==TextEncodingKind::windows1251 ? windows1251_ordinal(value) : value<128 ? static_cast<std::uint8_t>(value) : std::uint8_t{63};
-            if(encoding.strict && (encoding.kind==TextEncodingKind::ascii ? value>=128 : windows1251_character(encoded)!=value))throw runtime_error(RuntimeError::encoding_data,location);
-            append(encoded);
+            const auto encoded=single_byte_encode(*codec,value);
+            if(encoding.strict && !(encoded&256U))throw runtime_error(RuntimeError::encoding_data,location);
+            append(encoded&255U);
         }
         return result;
     }

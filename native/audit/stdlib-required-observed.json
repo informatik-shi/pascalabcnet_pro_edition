@@ -1,27 +1,47 @@
 {
   "schema": 1,
-  "runtime_source_base_revision": "984f914222d26d915bafe093bde3a669f8866a7b",
+  "runtime_source_base_revision": "7dbbad0fab153b4223cf83861d88c8ae9b7d0ad0",
   "runtime_source_changes": [
     {
-      "path": "native/src/bytecode.cpp",
-      "sha256_lf": "2c7476fd0c7b020e43ca2430cdf546a430b03d852e78002d0396be7e991e5afe"
+      "path": "native/src/encoding.cpp",
+      "sha256_lf": "e3efe4ac3a6e0d0734e66b8dca34d81bb8175eed5228ac1aab5e40856dec20ff"
     },
     {
-      "path": "native/src/pascal.cpp",
-      "sha256_lf": "29c3acc61d4f8c1886d4e712de3f8379210732b9d3a6ff10e963bfaadf664175"
+      "path": "native/src/file_encoding.cpp",
+      "sha256_lf": "e42c40331d6e18c88eeabc5a8a4a160a38f455f8988ee2d51645d6c91c807a14"
+    },
+    {
+      "path": "native/src/sbcs.cpp",
+      "sha256_lf": "fb1ab79122f7592e12587668528cfaa3af15202aa9791268204139cf5092f1fe"
+    },
+    {
+      "path": "native/src/sbcs.hpp",
+      "sha256_lf": "01007a3b6fe2799ac21c75fd31e732a81c8bde7a8d6daa0033b5b799bb9fe17d"
+    },
+    {
+      "path": "native/src/sbcs_data.inc",
+      "sha256_lf": "473d98587126fec94cfbd5b2276a63843a0eaa2ef04828f3cd400cdde55f1405"
+    },
+    {
+      "path": "native/src/text_file.cpp",
+      "sha256_lf": "618f26ae4b7084f75bd3ff19e9495809b3849ed8c173ff3ebfc411a550db10eb"
+    },
+    {
+      "path": "native/src/type_names.cpp",
+      "sha256_lf": "e7767b184c26aa71de3b7f461726dc58ae6a851bde2354a6b147b71866bab2b1"
     },
     {
       "path": "native/src/type_properties.cpp",
-      "sha256_lf": "971a0ffc0c9d1a70734ca87f42b636cbc8cdd23a75627938b3281c79ea83b8e2"
+      "sha256_lf": "71cfbe3ade53e03f7a808e9852851113f12ed42ace193f8a2f853ebb13738b74"
     }
   ],
-  "scope": "Selected positive compile requirements in two native builds. Not API coverage or runtime validation. Standard generic Predicate2/Predicate3 families, named non-generic delegate families and arrow identities, raw Type property metadata and source-file identity, Predicate/Func identities and conversions, user ICollection bulk insertion, user-record field initialization, methods/interfaces, retained List arrays, native range boxing and RealRange equality semantics are validated separately. Field-initializer recipes are source-derived, not a Pascal compiler oracle. Whole standard-library units remain partial.",
+  "scope": "Selected positive compile requirements in two native builds. Not API coverage or runtime validation. All Framework single-byte encoding maps, aliases and file recipes, standard generic Predicate2/Predicate3 families, named non-generic delegate families and arrow identities, raw Type property metadata and source-file identity, Predicate/Func identities and conversions, user ICollection bulk insertion, user-record field initialization, methods/interfaces, retained List arrays, native range boxing and RealRange equality semantics are validated separately. Field-initializer recipes are source-derived, not a Pascal compiler oracle. Whole standard-library units remain partial.",
   "runs": [
     {
       "schema": 1,
       "scope": "Selected required positive compile cases derived from shipped interfaces. Every case must eventually compile. This is a growing gap list, not complete API coverage; accepting a case does not prove its runtime semantics. No expected failure is made a compatibility requirement.",
       "runner": "native/build/clang-incremental/abc.exe",
-      "runner_sha256": "85a0323721cef87dd1ece088b4f34d8ffc10238727bffe147fb33c8682766652",
+      "runner_sha256": "5eac5643bd8977426365f1bd953075584c271fedf0a2fe6a08705879c32f8e20",
       "version": "ABC Native 0.1.0-dev (Pascal prototype)",
       "cases": [
         {
@@ -306,7 +326,7 @@
       "schema": 1,
       "scope": "Selected required positive compile cases derived from shipped interfaces. Every case must eventually compile. This is a growing gap list, not complete API coverage; accepting a case does not prove its runtime semantics. No expected failure is made a compatibility requirement.",
       "runner": "native/build/qt-editor/Release/abc.exe",
-      "runner_sha256": "04894283ff1321cf9faa1f083032fa6baecf1fde02fcdf1c715666b4308e40f0",
+      "runner_sha256": "30b9ec9ccf7d6ebb2e8f8a226332a00ba853916d6d688e0cb7ead41821a463d3",
       "version": "ABC Native 0.1.0-dev (Pascal prototype)",
       "cases": [
         {

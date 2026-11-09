@@ -70,7 +70,7 @@ bool reflected_type_valid(const Program& program,const ReflectedType& type){
     if(!valid_target(program,type.target))return false;
     if(!type.implementation)return type.source==Type::invalid;
     if(type.implementation==runtime_type_implementation)return type.target==Type::type_descriptor && type.source==Type::invalid;
-    if(type.implementation>=2 && type.implementation<=6)return compound(type.target) && type_info(program,type.target).kind==CompoundKind::encoding && type.source==Type::invalid;
+    if(type.implementation>=2 && type.implementation<=7)return compound(type.target) && type_info(program,type.target).kind==CompoundKind::encoding && type.source==Type::invalid;
     if(type.implementation>=18 && type.implementation<=21)return compound(type.target) && type_info(program,type.target).kind==CompoundKind::equality_comparer && type.source==Type::invalid && type.implementation==equality_implementation(program,type_info(program,type.target).element);
     if(type.implementation==16 || type.implementation==17)return compound(type.target) && type_info(program,type.target).kind==CompoundKind::comparer && type.source==Type::invalid;
     if(type.implementation<sequence_implementation || type.implementation>=sequence_implementation+(static_cast<unsigned>(SequenceProvider::dictionary_values)+1U)*16U)return false;
@@ -114,7 +114,7 @@ ReflectedType reflected_value_type(const Program& program,const Value& value,Typ
         if(info.kind==CompoundKind::encoding){
             if(!current->encoding)throw runtime_error(RuntimeError::invalid_bytecode,location);
             const auto kind=current->encoding->kind;
-            return {current->type,kind==TextEncodingKind::utf8 ? 2U : kind==TextEncodingKind::utf16_le || kind==TextEncodingKind::utf16_be ? 3U : kind==TextEncodingKind::utf32_le || kind==TextEncodingKind::utf32_be ? 4U : kind==TextEncodingKind::ascii ? 5U : 6U};
+            return {current->type,kind==TextEncodingKind::utf8 ? 2U : kind==TextEncodingKind::utf16_le || kind==TextEncodingKind::utf16_be ? 3U : kind==TextEncodingKind::utf32_le || kind==TextEncodingKind::utf32_be ? 4U : kind==TextEncodingKind::ascii ? 5U : static_cast<std::uint16_t>(kind)==28591 ? 7U : 6U};
         }
         if(info.kind!=CompoundKind::sequence)return {current->type};
         if(!current->sequence)throw runtime_error(RuntimeError::invalid_bytecode,location);
@@ -143,8 +143,8 @@ std::u16string reflected_type_name(const Program& program,const ReflectedType& t
     const auto child=[&](Type value,bool reference=false){pending.push_back({value,{},false,reference});};
     if(type.target==Type::invalid)text(u"nil");
     else if(type.implementation==runtime_type_implementation)text(u"RuntimeType");
-    else if(type.implementation>=2 && type.implementation<=6){
-        constexpr std::u16string_view names[]={u"UTF8Encoding",u"UnicodeEncoding",u"UTF32Encoding",u"ASCIIEncoding",u"SBCSCodePageEncoding"};text(std::u16string(names[type.implementation-2]));
+    else if(type.implementation>=2 && type.implementation<=7){
+        constexpr std::u16string_view names[]={u"UTF8Encoding",u"UnicodeEncoding",u"UTF32Encoding",u"ASCIIEncoding",u"SBCSCodePageEncoding",u"Latin1Encoding"};text(std::u16string(names[type.implementation-2]));
     }
     else if(type.implementation==16 || type.implementation==17){text(u">");child(type_info(program,type.target).element);text(type.implementation==17 ? u"ComparisonComparer<" : default_comparable(program.types,type_info(program,type.target).element) && !enumeration(program,type_info(program,type.target).element) ? u"GenericComparer<" : u"ObjectComparer<");}
     else if(type.implementation>=18 && type.implementation<=21){if(type.implementation==20)text(u"ByteEqualityComparer");else{text(u">");child(type_info(program,type.target).element);text(type.implementation==18 ? u"GenericEqualityComparer<" : type.implementation==19 ? u"ObjectEqualityComparer<" : u"EnumEqualityComparer<");}}

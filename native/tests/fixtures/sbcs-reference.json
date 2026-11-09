@@ -1,0 +1,46 @@
+{
+  "schema": 2,
+  "runtime": "Windows .NET Framework 4.0.30319.42000",
+  "codecs": 95,
+  "utf16_encoding_inputs": 6225920,
+  "byte_decoding_inputs": 24320,
+  "framework_aliases": 405,
+  "native_supported_aliases": 318,
+  "file_recipes": 570,
+  "name_edge_cases": 13,
+  "scope": "All 95 single-byte encodings exposed by this Framework, exhaustive default BMP encoding/byte decoding and exact-map classification, actual throwing-fallback cross-checks, surrogate encoder state, raw framework aliases and source-derived file recipes. Native supports these plus five existing Unicode codecs; 40 remaining Framework variable-width/stateful encodings and full Encoding/class/module APIs remain unfinished. No Pascal compiler is invoked.",
+  "artifacts": [
+    {
+      "path": "reference/sbcs-encodings.cs",
+      "sha256_lf": "11c582a9c8187940d12525a2ce2aa800555fd98d060d4fd2c594a984d34d5bd8"
+    },
+    {
+      "path": "reference/generate-sbcs.ps1",
+      "sha256_lf": "bb37e4b3dfb33e077de7d635e013f416d86cac4483a5fe3d775cc1431e3bcd77"
+    },
+    {
+      "path": "fixtures/sbcs-reference.bin",
+      "sha256_bytes": "8457673dded0695560e60c2f65a46b32ec63a64eb15ae299671efbf4aca8a998"
+    },
+    {
+      "path": "fixtures/encoding-aliases-reference.tsv",
+      "sha256_lf": "b6f31da1cf7b9b39c653bfb3a2f6eefcf18fb1aec7a41e0545d5f24a6ff1cfec"
+    },
+    {
+      "path": "fixtures/sbcs-files-reference.tsv",
+      "sha256_lf": "5a6f904dc6128d84cd6095b6243f3ee70c7e5a8dc290c15b67470f3cd83223c8"
+    },
+    {
+      "path": "fixtures/encoding-name-reference.tsv",
+      "sha256_lf": "9a1d379b5fcd818f51d41dd8919c6cd7141fcac3e1886ea2e96ecea4d3c7c226"
+    },
+    {
+      "path": "fixtures/sbcs-reference.md",
+      "sha256_lf": "2dbc7e32a9c47fafb544dbad4f41019cd0fbc427b761380cc56d200b8eeb93bf"
+    },
+    {
+      "path": "../tools/generate-sbcs.mjs",
+      "sha256_lf": "b2a34b68058685fc85c97c2b1c5da64cbef556a03e1bad865d4d053cf08518fd"
+    }
+  ]
+}

@@ -143,6 +143,7 @@ AddRange/InsertRange с пользовательским ICollection: examples/l
 Разные типы Predicate/Func и сохранённые цели преобразований: examples/callable-families.pas.
 Именованные типы function/procedure, короткая запись со стрелкой и var-параметры: examples/named-callables.pas.
 Собственные типы Predicate2/Predicate3 и преобразования в Func: examples/predicate-generics.pas.
+Однобайтовые кодировки CP866, KOI8-R, Windows-1252, Latin-1 и EBCDIC: examples/single-byte-encodings.pas. Кодировки встроены, установка провайдеров не нужна.
 Порядок вычисления объекта и ключа при составной записи в коллекцию: examples/collection-property-writes.pas.
 Перегрузки конструкторов, статические операции записей и оставшиеся возможности коллекций ещё переносятся.
 Contains без сравнителя сохраняет правила исходной коллекции; явный nil выбирает стандартное сравнение элементов.
