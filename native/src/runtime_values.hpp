@@ -4,6 +4,7 @@
 #include "hash_set.hpp"
 #include "text_file.hpp"
 #include "record_interface.hpp"
+#include "cell_references.hpp"
 #include <span>
 #include <functional>
 #include <algorithm>
@@ -134,7 +135,7 @@ struct Values {
             for (const auto& field:std::get<std::shared_ptr<Aggregate>>(cell->value)->items) own_list_cell(field,list);
     }
     void write(const std::shared_ptr<Cell>& target, const Value& value,bool versioned=true) {
-        if(versioned)if (const auto owner=target->list_owner.lock()) ++owner->version;
+        if(versioned&&!array_cell_reference(target))if (const auto owner=target->list_owner.lock()) ++owner->version;
         if(const auto* set=std::get_if<NewSetValue>(&target->value)){const auto& source=std::get<NewSetValue>(value);write(set->storage,source.storage->value,false);return;}
         if (compound(target->type) && type_info(program,target->type).kind == CompoundKind::record) {
             const auto original = std::get<std::shared_ptr<Aggregate>>(target->value);
@@ -161,6 +162,7 @@ struct Values {
         return left == right;
     }
     std::shared_ptr<ListStorage> list_backing(const std::shared_ptr<Aggregate>&);
+    std::shared_ptr<Aggregate> list_adopt_array(Type,const std::shared_ptr<Aggregate>&);
     void set_list_capacity(const std::shared_ptr<Aggregate>&,std::size_t);
     void list_append_cell(const std::shared_ptr<Aggregate>&,std::shared_ptr<Cell>);
     void list_insert_values(const std::shared_ptr<Aggregate>&,std::size_t,std::span<const Value>);

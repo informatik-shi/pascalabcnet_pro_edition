@@ -365,15 +365,16 @@ Value sequence_at(Values& values,const std::shared_ptr<Aggregate>& sequence,std:
 }
 Value sequence_collect(Values& values,const std::shared_ptr<Aggregate>& sequence,Type collection,const ExecutionOptions& options) {
     const auto collection_owner=sequence_collection_owner(values.program,sequence);
-    if(collection_owner!=Type::invalid && (collection==Type::invalid || type_info(values.program,collection).kind==CompoundKind::array)){
+    if(collection_owner!=Type::invalid && (collection==Type::invalid || type_info(values.program,collection).kind==CompoundKind::array || type_info(values.program,collection).kind==CompoundKind::list)){
         const auto source=sequence->sequence->source;
         const auto count=std::get<std::int32_t>(interface_invoke(values,collection_owner,0,source,{},options));
         if(collection==Type::invalid)return count;
         // The legacy LINQ ToArray buffer rejects an invalid custom Count before CopyTo.
-        if(count<0)throw runtime_error(RuntimeError::nil_reference,values.location);
-        const auto result=values.array(collection,static_cast<std::size_t>(count),true);
+        const bool list=type_info(values.program,collection).kind==CompoundKind::list;
+        if(count<0)throw runtime_error(list?RuntimeError::integer_overflow:RuntimeError::nil_reference,values.location);
+        const auto result=values.array(list?type_info(values.program,collection_owner).key:collection,static_cast<std::size_t>(count),true);
         if(count){const std::array<Value,2> arguments{result,std::int32_t{0}};(void)interface_invoke(values,collection_owner,5,source,arguments,options);}
-        return result;
+        return list?Value{values.list_adopt_array(collection,result)}:Value{result};
     }
     if(sequence && !sequence->nil && sequence->sequence && sequence->sequence->provider==SequenceProvider::ordinal_range)return ordinal_range_collect(values,sequence->sequence->source,collection,options);
     const auto iterator=sequence_begin(values,sequence,options);

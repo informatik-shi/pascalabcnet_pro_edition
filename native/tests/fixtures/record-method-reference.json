@@ -1,0 +1,66 @@
+{
+  "schema": 1,
+  "runtime": "Windows .NET Framework 4.0.30319.42000",
+  "outcomes": 1320,
+  "collection_outcomes": 252,
+  "retained_array_outcomes": 1560,
+  "scope": "Selected user-record mutable methods/properties/constructors, value/reference parameters, boxing, checked casts, generic equality, collection/enumerator consumers and retained CopyTo arrays shared with List. Not full record language or library coverage.",
+  "artifacts": [
+    {
+      "path": "reference/record-method.cs",
+      "sha256_lf": "713b4e645ee4e937038850c651a6b135b1b75870b7e55b3db1eeaf7a9c80c7c8"
+    },
+    {
+      "path": "reference/record-collection.cs",
+      "sha256_lf": "4d284d8da919d7df1616edb466c2ab5d274fedc1d912c817c2e0f775186ed871"
+    },
+    {
+      "path": "reference/record-list-alias.cs",
+      "sha256_lf": "23a369db2c188690867cffac0341c4966322a115964450bd5156a53ff5c3f7c9"
+    },
+    {
+      "path": "reference/generate-record-method.ps1",
+      "sha256_lf": "f64675a63e88ab68c027419944841f4ea501a99c32b45ef71a3186fd9bd14211"
+    },
+    {
+      "path": "fixtures/record-method-program.pas",
+      "sha256_lf": "50d1f31da69c45cd955cdf1cf1fde8773e51df4811f0337708347676eb43df3e"
+    },
+    {
+      "path": "fixtures/record-method-reference.tsv",
+      "sha256_lf": "341ae725585ef185792cfbec0a2ca96271e68b9217f601d84a838d0a970fd0fe"
+    },
+    {
+      "path": "fixtures/record-collection-program.pas",
+      "sha256_lf": "5ceceb0415a47944840781e62e3fbabbdcba15bfbd810f731f3686e40ce2737a"
+    },
+    {
+      "path": "fixtures/record-collection-reference.tsv",
+      "sha256_lf": "9d7eee9397575c3b5df3e85c478fbeb0f9d6b8ac962bac6081fff3f4c2f6c71f"
+    },
+    {
+      "path": "fixtures/record-list-alias-program.pas.in",
+      "sha256_lf": "3eb70c328739bea29d90a5f85e51b804339864f611c8aafd7e4031738831339b"
+    },
+    {
+      "path": "fixtures/record-list-alias-reference.tsv",
+      "sha256_lf": "3117186b43a92dcb3f58a5e145a30f00b77d03df0d359f17de080fa7fecd9774"
+    },
+    {
+      "path": "fixtures/record-list-alias-0-0.pas",
+      "sha256_lf": "b47d176cb5c1b1f2b1540575cb37ba5a5060be942131ab64334a69ae0a07bf2a"
+    },
+    {
+      "path": "fixtures/record-list-alias-0-1.pas",
+      "sha256_lf": "1143a133e051c6badf4fac04a5a88b7fbe8c4dfc4c1a89bb7d374bc83fabd431"
+    },
+    {
+      "path": "fixtures/record-list-alias-1-0.pas",
+      "sha256_lf": "4ac1111b892289a658173c1e4deb6fa84c8edf81d93b4f69a666786fa5851a55"
+    },
+    {
+      "path": "fixtures/record-list-alias-1-1.pas",
+      "sha256_lf": "cb704c4448cbf9793722865fc5a851c64ee1a042fc5f8acc48b70ac912eb0ed5"
+    }
+  ]
+}

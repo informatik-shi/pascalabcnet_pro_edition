@@ -92,7 +92,10 @@ private:
         emit(op,program_.locals[index].type,index,location);
     }
     void reference(const hir::Expr& node) {
-        if (node.kind == hir::ExprKind::local) local(Op::ref_local,node.local,node.location);
+        if(node.kind==hir::ExprKind::cache_value && compound(node.type) && type_info(program_,node.type).kind==CompoundKind::record){
+            expression(*node.left);local(Op::store,node.local,node.location);local(Op::ref_local,node.local,node.location);
+        }
+        else if (node.kind == hir::ExprKind::local) local(Op::ref_local,node.local,node.location);
         else if (node.kind == hir::ExprKind::index) {
             expression(*node.left); expression(*node.right);
             for (const auto& argument:node.arguments) expression(*argument);
@@ -627,7 +630,7 @@ private:
         case hir::ExprKind::property_access:
             if (!node.getter) throw Error("E_TYPE",node.location,"Property is write-only");
             if(node.arguments.size()!=(node.operation=="interface"?interface_contract(program_.types,node.operation_type).at(*node.getter).parameters.size():program_.routines.at(*node.getter).parameters.size()-1))throw Error("E_TYPE",node.location,"Indexed property requires indices","Для индексируемого свойства нужны индексы");
-            expression(*node.left);for(const auto& index:node.arguments)expression(*index);emit(node.operation=="interface" ? Op::interface_call : Op::call_user,node.operation=="interface" ? node.operation_type : node.type,*node.getter,node.location);break;
+            if(node.operation!="interface"&&program_.routines.at(*node.getter).parameters.at(0).by_reference)reference(*node.left);else expression(*node.left);for(const auto& index:node.arguments)expression(*index);emit(node.operation=="interface" ? Op::interface_call : Op::call_user,node.operation=="interface" ? node.operation_type : node.type,*node.getter,node.location);break;
 
         default: throw Error("E_HIR",node.location,"Invalid expression dispatch");
         }
@@ -1356,7 +1359,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             break;
         case Op::construct_user:
             if (instruction.operand>=program.routines.size() || !compound(type) || !valid_value_type(program,type)
-                || type_info(program,type).kind!=CompoundKind::object_class || !program.routines[instruction.operand].constructor
+                || (type_info(program,type).kind!=CompoundKind::object_class && !(type_info(program,type).kind==CompoundKind::record&&type_info(program,type).native_record==NativeRecord::none)) || !program.routines[instruction.operand].constructor
                 || program.routines[instruction.operand].owner!=type || program.routines[instruction.operand].result!=Type::unit
                 || program.routines[instruction.operand].parameters.empty() || !program.routines[instruction.operand].captures.empty())
                 invalid(instruction,"Invalid class constructor target");
@@ -1928,7 +1931,7 @@ void verify(const Program& program) {
         const auto& type = program.types[i]; unsigned level = 1;
         if(type.native_record!=NativeRecord::none && ((type.native_record!=NativeRecord::ordinal_range && type.native_record!=NativeRecord::real_interval && type.native_record!=NativeRecord::key_value_pair && type.native_record!=NativeRecord::dictionary_enumerator && type.native_record!=NativeRecord::collection_enumerator) || type.kind!=CompoundKind::record))throw Error("E_BYTECODE",{},"Invalid native record metadata");
         for (const auto& field:type.fields) if (!valid_member_access(field.access)
-            || (type.kind!=CompoundKind::object_class && field.access!=MemberAccess::public_member))
+            || (type.kind!=CompoundKind::object_class && !(type.kind==CompoundKind::record&&type.native_record==NativeRecord::none) && field.access!=MemberAccess::public_member))
             throw Error("E_BYTECODE",{},"Invalid class member visibility metadata");
         if (type.rank<1 || type.rank>2 || (type.kind!=CompoundKind::array && type.rank!=1)) throw Error("E_BYTECODE",{},"Invalid array rank");
         auto prior_reference = [&](Type t){if(!valid_value_type(program,t) || (compound(t) && static_cast<unsigned>(t)-64>=i))throw Error("E_BYTECODE",{},"Invalid or cyclic type dependency");};
@@ -2093,8 +2096,8 @@ void verify(const Program& program) {
         if (routine.constructor && (routine.owner==Type::invalid || routine.result!=Type::unit || !routine.captures.empty()||routine.access==MemberAccess::explicit_interface_member))
             throw Error("E_BYTECODE",{},"Invalid class constructor signature");
         if (routine.owner!=Type::invalid && (!compound(routine.owner) || !valid_value_type(program,routine.owner)
-            || type_info(program,routine.owner).kind!=CompoundKind::object_class || routine.parameters.empty()
-            || routine.parameters.front().type!=routine.owner || routine.parameters.front().by_reference || routine.parameters.front().variadic))
+            || (type_info(program,routine.owner).kind!=CompoundKind::object_class && !(type_info(program,routine.owner).kind==CompoundKind::record&&type_info(program,routine.owner).native_record==NativeRecord::none)) || routine.parameters.empty()
+            || routine.parameters.front().type!=routine.owner || routine.parameters.front().by_reference!=(type_info(program,routine.owner).kind==CompoundKind::record) || routine.parameters.front().variadic))
             throw Error("E_BYTECODE",{},"Invalid class method receiver signature");
         std::set<std::size_t> owned;
         for (auto local : routine.locals) if (local >= program.locals.size() || program.locals[local].global || !owned.insert(local).second) throw Error("E_BYTECODE",{},"Invalid routine locals");

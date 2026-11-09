@@ -356,11 +356,11 @@ public:
                             type->methods.push_back(std::move(constructor));
                         }
                     }
-                    if (type->kind=="class" && !type->named) for (const auto& method:type->methods) {
+                    if ((type->kind=="class" || type->kind=="record") && !type->named) for (const auto& method:type->methods) {
                         if (method->parameters.size()>=16) throw Error("E_TYPE",method->name.location,"Class methods accept at most fifteen parameters");
                         auto self_type=std::make_shared<SyntaxType>();self_type->token=type_name;self_type->kind=type_name.text;self_type->named=true;
                         method->owner=type_name.text;
-                        method->parameters.insert(method->parameters.begin(),SyntaxParameter{Token{TokenKind::name,"self",method->name.location},self_type,false,{},true,false});
+                        method->parameters.insert(method->parameters.begin(),SyntaxParameter{Token{TokenKind::name,"self",method->name.location},self_type,type->kind=="record",{},type->kind!="record",false});
                         root.routines.push_back(method);
                     }
                     root.type_declarations.emplace_back(type_name, std::move(type)); expect(";");
@@ -482,19 +482,19 @@ private:
         else if (is("record") || is("class")) {
             const bool object=accept("class");if (!object) expect("record");
             result->kind=object ? "class" : "record";
-            if(object && accept("(")){do{if(result->parents.size()>=16)throw Error("E_LIMIT",current_.location,"Interface parent limit exceeded");result->parents.push_back(type_syntax());}while(accept(","));expect(")");}
+            if(accept("(")){do{if(result->parents.size()>=16)throw Error("E_LIMIT",current_.location,"Interface parent limit exceeded");result->parents.push_back(type_syntax());}while(accept(","));expect(")");}
             if (object && is(";")) throw Error("E_UNSUPPORTED",current_.location,"Forward class declarations are not ported yet");
             auto access=object ? MemberAccess::private_member : MemberAccess::public_member;
             while (!is("end")) {
-                if (object && (is("public") || is("private") || is("protected") || is("internal"))) {
+                if ((is("public") || is("private") || is("protected") || is("internal"))) {
                     access=is("public") ? MemberAccess::public_member : is("private") ? MemberAccess::private_member
                         : is("protected") ? MemberAccess::protected_member : MemberAccess::internal_member;
                     consume();continue;
                 }
-                if (object && (is("function") || is("procedure") || is("constructor"))) {
+                if ((is("function") || is("procedure") || is("constructor"))) {
                     auto method=routine(true);method->access=access;result->methods.push_back(std::move(method));continue;
                 }
-                if (object && accept("property")) {
+                if (accept("property")) {
                     auto property=std::make_shared<SyntaxProperty>();property->access=access;
                     if(!explicit_member_header(property->explicit_interface,property->name))property->name=name();
                     property_indices(*property);
@@ -1298,7 +1298,7 @@ private:
         }return inherited;
     }
     ABC_PASCAL_NOINLINE void register_interface_implementations(const SyntaxStmt& source){
-        for(const auto& [name,syntax]:source.type_declarations)if(syntax->kind=="class" && !syntax->named){const auto owner=aliases_.at(name.text);std::vector<Type> targets;
+        for(const auto& [name,syntax]:source.type_declarations)if((syntax->kind=="class" || syntax->kind=="record") && !syntax->named){const auto owner=aliases_.at(name.text);std::vector<Type> targets;
             std::function<void(Type)> add=[&](Type target){if(!compound(target))throw Error("E_TYPE",name.location,"Class parent must be an interface");const auto shape=info(target,name.location);if(shape.kind==CompoundKind::sequence)(void)enumerator_type(shape.element);if(!interface_kind(shape))throw Error("E_UNSUPPORTED",name.location,"Class inheritance is not ported yet");if(std::find(targets.begin(),targets.end(),target)!=targets.end())return;if(targets.size()>=64)throw Error("E_LIMIT",name.location,"Interface implementation limit exceeded");targets.push_back(target);for(auto parent:shape.interfaces.read().parents)add(parent);};for(const auto& parent:syntax->parents)add(resolve_type(*parent));
             if(const auto explicit_methods=class_explicit_methods_.find(owner);explicit_methods!=class_explicit_methods_.end())for(const auto& [qualifier,methods]:explicit_methods->second){
                 if(std::find(targets.begin(),targets.end(),qualifier)==targets.end())throw Error("E_TYPE",name.location,"Explicit method interface is not implemented by the class","Класс не реализует интерфейс явно указанного метода");
@@ -1326,7 +1326,7 @@ private:
     void bind_method_definitions(SyntaxStmt& source) {
         for (const auto& definition:source.method_definitions) {
             const auto owner=aliases_.find(definition->owner);
-            if (owner==aliases_.end() || !compound(owner->second) || info(owner->second,definition->name.location).kind!=CompoundKind::object_class)
+            if (owner==aliases_.end() || !compound(owner->second) || (info(owner->second,definition->name.location).kind!=CompoundKind::object_class && info(owner->second,definition->name.location).kind!=CompoundKind::record))
                 throw Error("E_NAME",definition->name.location,"Method definition requires a declared class");
             const auto matches=[&](const auto& routine){if(routine->owner.empty()||aliases_.at(routine->owner)!=owner->second||routine->name.text!=definition->name.text)return false;if(bool(routine->explicit_interface)!=bool(definition->explicit_interface)||(routine->explicit_interface&&resolve_type(*routine->explicit_interface)!=resolve_type(*definition->explicit_interface)))return false;if(!definition->explicit_parameters)return true;if(routine->parameters.size()!=definition->parameters.size()+1)return false;for(std::size_t i=0;i<definition->parameters.size();++i){const auto& a=routine->parameters[i+1];const auto& b=definition->parameters[i];if(resolve_type(*a.type)!=resolve_type(*b.type)||a.by_reference!=b.by_reference||a.variadic!=b.variadic)return false;}return true;};
             const auto found=std::find_if(source.routines.begin(),source.routines.end(),matches);
@@ -1368,7 +1368,7 @@ private:
         auto local=[&](std::string name,Type value_type) {
             const auto id=module_.locals.size();module_.locals.push_back({std::move(name),value_type,false});body.signature.locals.push_back(id);return id;
         };
-        const auto self=local("$self",owner);body.signature.parameters.push_back({self,owner});
+        const auto self=local("$self",owner);body.signature.parameters.push_back({self,owner,info(owner,location).kind==CompoundKind::record});
         auto value=[&](std::size_t id,Type value_type) {
             auto node=std::make_unique<hir::Expr>();node->kind=hir::ExprKind::local;node->type=value_type;node->local=id;node->location=location;return node;
         };
@@ -1406,7 +1406,7 @@ private:
         if(module_.routines.size()>=256)throw Error("E_LIMIT",property->name.location,"Routine limit exceeded");
         hir::RoutineBody helper;helper.signature.name="$property_expression_"+std::to_string(module_.routines.size());helper.signature.owner=owner;helper.signature.result=setter?Type::unit:result;helper.signature.access=MemberAccess::private_member;
         const auto local=[&](std::string name,Type type){const auto id=module_.locals.size();module_.locals.push_back({std::move(name),type,false});helper.signature.locals.push_back(id);return id;};
-        helper.signature.parameters.push_back({local("$self",owner),owner});
+        helper.signature.parameters.push_back({local("$self",owner),owner,info(owner,property->name.location).kind==CompoundKind::record});
         for(const auto& index:property->indices){if(setter&&index.first.text=="value")throw Error("E_DUPLICATE",index.first.location,"Property index conflicts with the setter value parameter","Индекс свойства совпадает с параметром value метода записи");const auto type=resolve_type(*index.second);helper.signature.parameters.push_back({local(index.first.text,type),type});}
         if(setter)helper.signature.parameters.push_back({local("value",result),result});else helper.signature.result_local=local("$result",result);
         const auto id=module_.routines.size();module_.routines.push_back(std::move(helper));property_expression_bindings_.push_back({id,property,std::move(expression),std::move(setter)});return id;
@@ -1415,16 +1415,16 @@ private:
         for(const auto& binding:property_expression_bindings_){
             auto& helper=module_.routines[binding.id];const auto first=module_.locals.size();
             in_routine_=true;current_result_=helper.signature.result;current_owner_=helper.signature.owner;current_name_=helper.signature.name;current_self_=helper.signature.parameters[0].local;scopes_.emplace_back();
-            scopes_.back()["self"]=current_self_;constant_parameters_.insert(current_self_);
+            scopes_.back()["self"]=current_self_;if(helper.signature.parameters[0].by_reference)reference_parameters_.insert(current_self_);else constant_parameters_.insert(current_self_);
             for(std::size_t n=0;n<binding.property->indices.size();++n)scopes_.back()[binding.property->indices[n].first.text]=helper.signature.parameters[n+1].local;
             if(binding.setter){scopes_.back()["value"]=helper.signature.parameters.back().local;helper.body=statement(*binding.setter);}
             else{helper.body.kind=hir::StmtKind::return_stmt;helper.body.location=binding.expression->token.location;helper.body.expression=convert(expression(*binding.expression,helper.signature.result),helper.signature.result);}
             for(auto n=first;n<module_.locals.size();++n)if(!module_.locals[n].global&&!lambda_locals_.contains(n))helper.signature.locals.push_back(n);
-            constant_parameters_.erase(current_self_);scopes_.pop_back();in_routine_=false;current_result_=Type::unit;current_owner_=Type::invalid;current_name_.clear();
+            constant_parameters_.erase(current_self_);reference_parameters_.erase(current_self_);scopes_.pop_back();in_routine_=false;current_result_=Type::unit;current_owner_=Type::invalid;current_name_.clear();
         }
     }
     ABC_PASCAL_NOINLINE void register_properties(const SyntaxStmt& source) {
-        for (const auto& [name,syntax]:source.type_declarations) if (syntax->kind=="class" && !syntax->named) {
+        for (const auto& [name,syntax]:source.type_declarations) if ((syntax->kind=="class" || syntax->kind=="record") && !syntax->named) {
             const auto owner=aliases_.at(name.text);
             for (const auto& property:syntax->properties) {
                 const auto qualifier=property->explicit_interface?resolve_type(*property->explicit_interface):Type::invalid;
@@ -2129,7 +2129,7 @@ private:
             record.display_name=syntax.token.spelling.empty() ? syntax.token.text : syntax.token.spelling;
             for (const auto& [name,type] : syntax.fields) {
                 for (const auto& field : record.fields) if (field.name == name.text) throw Error("E_DUPLICATE",name.location,"Duplicate record field");
-                record.fields.push_back({name.text,resolve_type(*type)});
+                record.fields.push_back({name.text,resolve_type(*type),false,syntax.field_access.at(name.text)});
             }
             if (record.fields.size() > 256 || module_.types.size() >= 1024) throw Error("E_LIMIT",syntax.token.location,"Record/type limit exceeded");
             module_.types.push_back(std::move(record));
@@ -2385,7 +2385,7 @@ private:
         }
         if (const auto properties=class_properties_.find(receiver);properties!=class_properties_.end() && properties->second.contains(source.token.text)) {
             const auto& property=properties->second.at(source.token.text);
-            result->kind=hir::ExprKind::property_access;result->type=property.type;result->getter=property.getter;result->setter=property.setter;
+            result->kind=hir::ExprKind::property_access;result->type=property.type;result->getter=property.getter;result->setter=property.setter;if(info(receiver,result->location).kind==CompoundKind::record&&!new_set_addressable(*result->left))result->left=cache_argument(std::move(result->left));
             if (source.kind==SyntaxExprKind::member_call || source.kind==SyntaxExprKind::call) {
                 auto call=std::make_unique<hir::Expr>();call->location=result->location;call->left=std::move(result);
                 bind_value_call(*call,source.arguments);return call;
@@ -2412,7 +2412,7 @@ private:
             if (!signature.parameters[i].variadic && (id>=parameter_defaults_.size() || !parameter_defaults_[id][i]))
                 throw Error("E_UNSUPPORTED",result->location,"Bound method values are not ported yet");
         result->kind=hir::ExprKind::user_call;result->local=id;result->type=signature.result;
-        result->arguments.push_back(std::move(result->left));
+        result->arguments.push_back(info(receiver,result->location).kind==CompoundKind::record&&!new_set_addressable(*result->left)?cache_argument(std::move(result->left)):std::move(result->left));
         for (std::size_t i=0;i<source.arguments.size();++i) {
             auto context=i+1<signature.parameters.size() ? signature.parameters[i+1].type : Type::invalid;
             if (!signature.parameters.empty() && signature.parameters.back().variadic && i+2>=signature.parameters.size())
@@ -2423,7 +2423,7 @@ private:
         for (std::size_t i=0;i<result->arguments.size();++i) {
             const auto& parameter=signature.parameters[i];
             if (parameter.by_reference) {
-                if (!lvalue(*result->arguments[i]) || result->arguments[i]->type!=parameter.type)
+                if ((!lvalue(*result->arguments[i]) && !(i==0 && info(receiver,result->location).kind==CompoundKind::record && result->arguments[i]->kind==hir::ExprKind::cache_value)) || result->arguments[i]->type!=parameter.type)
                     throw Error("E_TYPE",result->location,"var argument requires an assignable value of exactly the parameter type");
             } else result->arguments[i]=convert(std::move(result->arguments[i]),parameter.type);
         }
@@ -2560,7 +2560,7 @@ private:
                     for (std::size_t i=0;i<parameters.size();++i) result->arguments.push_back(convert(expression(*source.arguments[i],parameters[i]),parameters[i]));
                     break;
                 }
-                if (info(type,result->location).kind==CompoundKind::object_class && class_constructors_.contains(type)) { bind_class_constructor(*result,source,type);break; }
+                if ((info(type,result->location).kind==CompoundKind::object_class || (info(type,result->location).kind==CompoundKind::record && (!source.arguments.empty() || (class_constructors_.contains(type)&&module_.routines[class_constructors_.at(type)].signature.parameters.size()==1)))) && class_constructors_.contains(type)) { bind_class_constructor(*result,source,type);break; }
                 if (info(type,result->location).kind==CompoundKind::object_class && !source.arguments.empty())
                     throw Error("E_TYPE",result->location,"Class has no declared constructor with arguments");
                 if (info(type,result->location).kind==CompoundKind::list && !source.arguments.empty()) {
@@ -2644,6 +2644,7 @@ private:
             if(bind_inifile_static(*result,source))break;
             if(bind_comparison_static(*result,source))break;
             if(bind_system_array_search(*result,source))break;
+            if(bind_system_array_reverse(*result,source))break;
             if(bind_system_array_sort(*result,source))break;
             if(bind_encoding_static(*result,source))break;
             if (source.left->kind==SyntaxExprKind::name && !lookup(source.left->token) && source.left->token.text=="regex" && source.token.text=="ismatch") {
@@ -2778,7 +2779,7 @@ private:
                 result=enum_expression(receiver,method,std::move(arguments),result->location);break;
             }
 
-            if (compound(receiver) && info(receiver,result->location).kind==CompoundKind::object_class) return class_member(std::move(result),source,expected);
+            if (compound(receiver) && (info(receiver,result->location).kind==CompoundKind::object_class || (info(receiver,result->location).kind==CompoundKind::record && info(receiver,result->location).native_record==NativeRecord::none))) return class_member(std::move(result),source,expected);
             if(compound(receiver) && ordinal_range_type(info(receiver,result->location))){if(auto range=bind_ordinal_range_member(source,*result,receiver))return range;}
             if(compound(receiver) && real_interval_type(info(receiver,result->location))){if(auto range=bind_real_interval_member(source,*result,receiver))return range;}
             if(receiver==Type::string && source.token.text=="contains"){
@@ -3254,8 +3255,8 @@ private:
     }
     ABC_PASCAL_NOINLINE bool bind_callable_cast(hir::Expr& result,const SyntaxExpr& source){
         if(routine_names_.contains(source.token.text))return false;Type cast=Type::invalid;
-        if(const auto alias=aliases_.find(source.token.text);alias!=aliases_.end()){if(callable_type(alias->second) || (compound(alias->second) && (interface_kind(info(alias->second,result.location)) || info(alias->second,result.location).kind==CompoundKind::sequence || info(alias->second,result.location).kind==CompoundKind::object_class || (ordinal_range_type(info(alias->second,result.location))||real_interval_type(info(alias->second,result.location))))))cast=alias->second;}else if(source.token.text=="realrange")cast=real_interval_record();else if(source.token.text=="intrange"||source.token.text=="charrange")cast=ordinal_range_record(source.token.text=="intrange"?Type::integer:Type::character);else if(source.token.text=="action0")cast=function_type(Type::unit,{},result.location);
-        if(cast==Type::invalid)return false;if(source.arguments.size()!=1)throw Error("E_TYPE",result.location,callable_type(cast) ? "Callable constructor requires one matching routine value" : "Interface conversion requires one value");auto input=expression(*source.arguments[0],cast);if(compound(cast) && (interface_kind(info(cast,result.location)) || info(cast,result.location).kind==CompoundKind::object_class || (ordinal_range_type(info(cast,result.location))||real_interval_type(info(cast,result.location)))) && compound(input->type) && interface_kind(info(input->type,result.location)) && input->type!=cast){if((info(cast,result.location).kind==CompoundKind::object_class||(ordinal_range_type(info(cast,result.location))||real_interval_type(info(cast,result.location)))) && !interface_compatible(module_.types,cast,input->type))throw Error("E_TYPE",result.location,"The target type must implement the source interface for this conversion","Тип назначения должен реализовывать исходный интерфейс для этого преобразования");input=interface_conversion(std::move(input),cast,true);}else input=convert(std::move(input),cast);result=std::move(*input);return true;
+        if(const auto alias=aliases_.find(source.token.text);alias!=aliases_.end()){if(callable_type(alias->second) || (compound(alias->second) && (interface_kind(info(alias->second,result.location)) || info(alias->second,result.location).kind==CompoundKind::sequence || info(alias->second,result.location).kind==CompoundKind::object_class || info(alias->second,result.location).kind==CompoundKind::record)))cast=alias->second;}else if(source.token.text=="realrange")cast=real_interval_record();else if(source.token.text=="intrange"||source.token.text=="charrange")cast=ordinal_range_record(source.token.text=="intrange"?Type::integer:Type::character);else if(source.token.text=="action0")cast=function_type(Type::unit,{},result.location);
+        if(cast==Type::invalid)return false;if(source.arguments.size()!=1)throw Error("E_TYPE",result.location,callable_type(cast) ? "Callable constructor requires one matching routine value" : "Interface conversion requires one value");auto input=expression(*source.arguments[0],cast);if(compound(cast) && (interface_kind(info(cast,result.location)) || info(cast,result.location).kind==CompoundKind::object_class || info(cast,result.location).kind==CompoundKind::record) && compound(input->type) && interface_kind(info(input->type,result.location)) && input->type!=cast){if((info(cast,result.location).kind==CompoundKind::object_class||info(cast,result.location).kind==CompoundKind::record) && !interface_compatible(module_.types,cast,input->type))throw Error("E_TYPE",result.location,"The target type must implement the source interface for this conversion","Тип назначения должен реализовывать исходный интерфейс для этого преобразования");input=interface_conversion(std::move(input),cast,true);}else input=convert(std::move(input),cast);result=std::move(*input);return true;
     }
     ABC_PASCAL_NOINLINE std::unique_ptr<hir::Expr> bind_call_expression(const SyntaxExpr& source,Type expected,std::unique_ptr<hir::Expr> result) {
         (void)expected;
@@ -4140,7 +4141,7 @@ private:
         const bool pending=value->kind==hir::ExprKind::property_access&&value->arguments.empty()&&!parameters(*value).empty();
         if(!pending&&compound(value->type)){
             const auto owner=value->type;const auto shape=info(owner,value->location);std::optional<ClassProperty> property;
-            if(shape.kind==CompoundKind::object_class){const auto found=class_properties_.find(owner);if(found!=class_properties_.end())for(const auto& [name,item]:found->second){(void)name;if(item.default_indexer)property=item;}}
+            if(shape.kind==CompoundKind::object_class || (shape.kind==CompoundKind::record&&shape.native_record==NativeRecord::none)){const auto found=class_properties_.find(owner);if(found!=class_properties_.end())for(const auto& [name,item]:found->second){(void)name;if(item.default_indexer)property=item;}}
             if(property){auto node=std::make_unique<hir::Expr>();node->kind=hir::ExprKind::property_access;node->type=property->type;node->location=source.token.location;node->getter=property->getter;node->setter=property->setter;node->left=std::move(value);value=std::move(node);}
             else if(shape.kind==CompoundKind::user_interface||shape.kind==CompoundKind::list_interface||shape.kind==CompoundKind::dictionary_interface){
                 const auto contract=interface_contract(module_.types,owner);std::optional<std::size_t> get,set;for(std::size_t i=0;i<contract.size();++i)if(contract[i].default_indexer){if(contract[i].kind==InterfaceMemberKind::get)get=i;else set=i;}
@@ -4306,6 +4307,14 @@ private:
         const auto owner=receiver->type;if(!compound(owner) || info(owner,result.location).kind!=CompoundKind::array || info(owner,result.location).rank!=1)throw Error("E_TYPE",result.location,"Array search requires a rank-one array");const auto element=info(owner,result.location).element;if(!declared.empty() && declared[0]!=element)throw Error("E_TYPE",result.location,"Array search explicit type must match the element type");if(!item)item=expression(*source.arguments[1],element);
         const bool last=source.token.text=="lastindexof";const auto method=last ? (count==2 ? ArrayOperation::last : count==3 ? ArrayOperation::last_from : ArrayOperation::last_range) : (count==2 ? ArrayOperation::index : count==3 ? ArrayOperation::index_from : ArrayOperation::index_range);
         result.kind=hir::ExprKind::array_operation;result.type=Type::integer;result.operation_type=owner;result.local=static_cast<std::size_t>(method);result.arguments.push_back(std::move(receiver));result.arguments.push_back(convert(std::move(item),element));for(std::size_t i=2;i<count;++i)result.arguments.push_back(convert(expression(*source.arguments[i],Type::integer),Type::integer));return true;
+    }
+    ABC_PASCAL_NOINLINE bool bind_system_array_reverse(hir::Expr& result,const SyntaxExpr& source){
+        if(source.token.text!="reverse"||!source.left||!array_type_name(*source.left))return false;
+        if(source.arguments.size()!=1&&source.arguments.size()!=3)throw Error("E_TYPE",result.location,"System.Array.Reverse requires an array and optional index/count","System.Array.Reverse требует массив и необязательные индекс и длину");
+        for(const auto& argument:source.arguments)result.arguments.push_back(expression(*argument));
+        const auto owner=result.arguments[0]->type;
+        if(!compound(owner)||info(owner,result.location).kind!=CompoundKind::array||info(owner,result.location).rank!=1)throw Error("E_TYPE",result.location,"System.Array.Reverse requires a rank-one array","System.Array.Reverse требует одномерный массив");
+        return bind_sequence_mutation(result,"reverse");
     }
     ABC_PASCAL_NOINLINE bool bind_system_array_sort(hir::Expr& result,const SyntaxExpr& source,std::span<const Type> declared={}){
         if(!source.left || !array_type_name(*source.left) || source.token.text!="sort")return false;

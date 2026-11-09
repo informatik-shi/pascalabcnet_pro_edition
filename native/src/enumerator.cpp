@@ -79,7 +79,7 @@ Value enumerator_invoke(Values& values,Type owner,Type payload,EnumeratorMethod 
  const auto object=std::get<Object>(argument);
  if(!object || object->nil)throw runtime_error(RuntimeError::nil_reference,values.location);
  if(method==EnumeratorMethod::get_collection){auto result=std::get<Object>(values.zero(payload));values.write(result->items[0],argument);values.write(result->items[1],object->version);return result;}
- if(method>=EnumeratorMethod::move && method<=EnumeratorMethod::reset && type_info(values.program,object->type).kind==CompoundKind::object_class){const auto slot=method==EnumeratorMethod::move ? 0U : method==EnumeratorMethod::current ? 1U : method==EnumeratorMethod::dispose ? 2U : 3U;return interface_invoke(values,owner,slot,argument,{},options);}
+ if(method>=EnumeratorMethod::move && method<=EnumeratorMethod::reset && (type_info(values.program,object->type).kind==CompoundKind::object_class||(type_info(values.program,object->type).kind==CompoundKind::record&&type_info(values.program,object->type).native_record==NativeRecord::none))){const auto slot=method==EnumeratorMethod::move ? 0U : method==EnumeratorMethod::current ? 1U : method==EnumeratorMethod::dispose ? 2U : 3U;return interface_invoke(values,owner,slot,argument,{},options);}
  if(method==EnumeratorMethod::box_dictionary || method==EnumeratorMethod::box_collection){auto result=make(values,payload);result->enumerator->boxed=values.cell(owner,values.copy(argument));return result;}
  if(method==EnumeratorMethod::get){
   if(object->sequence && object->sequence->provider==SequenceProvider::user_source)return interface_invoke(values,owner,0,object->sequence->source,{},options);

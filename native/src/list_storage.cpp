@@ -1,6 +1,13 @@
 #include "runtime_values.hpp"
 #include <array>
 namespace abc {
+std::shared_ptr<Aggregate> Values::list_adopt_array(Type type,const std::shared_ptr<Aggregate>& array){
+ if(!array||array->nil||type_info(program,type).kind!=CompoundKind::list||type_info(program,array->type).kind!=CompoundKind::array||type_info(program,array->type).rank!=1||type_info(program,type).element!=type_info(program,array->type).element)throw runtime_error(RuntimeError::invalid_bytecode,location);
+ if(array->items.size()>INT32_MAX||array->items.size()>list_storage_remaining)throw runtime_error(RuntimeError::allocation_limit,location);
+ auto list=std::get<std::shared_ptr<Aggregate>>(zero(type,true));auto storage=std::make_shared<ListStorage>();storage->cells=array->items;list->items=storage->cells;list->list_capacity=storage->cells.size();list->list_storage=std::move(storage);list_storage_remaining-=list->list_capacity;
+ for(std::size_t n=0;n<list->items.size();++n){own_list_cell(list->items[n],list);array->items[n]=array_cell_reference_copy(list->items[n]);}
+ return list;
+}
 std::shared_ptr<ListStorage> Values::list_backing(const std::shared_ptr<Aggregate>& list){
  if(!list || list->nil || type_info(program,list->type).kind!=CompoundKind::list || list->items.size()>list->list_capacity)throw runtime_error(RuntimeError::invalid_bytecode,location);
  if(!list->list_storage){auto storage=std::make_shared<ListStorage>();storage->cells.resize(list->list_capacity);for(std::size_t i=0;i<list->items.size();++i)storage->cells[i]=list->items[i];list->list_storage=std::move(storage);}

@@ -119,9 +119,9 @@ Value new_set_invoke(Values& values,Type owner,NewSetMethod m,bool reference,std
         if(m==NewSetMethod::cast_hash){const auto source=std::get<std::shared_ptr<Aggregate>>(arguments[0]);auto result=std::get<NewSetValue>(values.zero(owner));update(new_set_hash(values,result),seq_hash(source),HashSetMethod::union_with);return result;}
         if(m==NewSetMethod::membership){const auto& set=std::get<NewSetValue>(arguments[1]);const std::array<Value,2> args{new_set_hash(values,set),arguments[0]};return call(HashSetMethod::contains,args);}
         const auto& self=reference ? std::get<NewSetValue>(std::get<std::shared_ptr<Cell>>(arguments[0])->value) : std::get<NewSetValue>(arguments[0]);
-        if(m==NewSetMethod::raw_reference)return self.storage;
+        if(m==NewSetMethod::raw_reference)return descendant_reference(arguments[0],self.storage);
         if(m==NewSetMethod::raw_hash)return self.storage->value;
-        if(m==NewSetMethod::assign){const auto& source=std::get<NewSetValue>(arguments[1]);const std::array<Value,1> args{new_set_hash(values,source)};auto result=call(HashSetMethod::construct_copy,args);values.write(self.storage,result);return false;}
+        if(m==NewSetMethod::assign){const auto& source=std::get<NewSetValue>(arguments[1]);const std::array<Value,1> args{new_set_hash(values,source)};auto result=call(HashSetMethod::construct_copy,args);values.write(descendant_reference(arguments[0],self.storage),result);return false;}
         const auto object=new_set_hash(values,self);
         if(m==NewSetMethod::copy_value){const std::array<Value,1> args{object};return wrap(call(HashSetMethod::construct_copy,args));}
         if(m==NewSetMethod::hash)return object;

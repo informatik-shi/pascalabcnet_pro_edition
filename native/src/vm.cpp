@@ -193,6 +193,28 @@ void append_collection_text(const Program& program,std::u16string& text, const V
 
 } // namespace
 
+namespace {
+Value typed_value_copy(Values& values,Type type,const Value& value){
+    if(compound(type)&&type_info(values.program,type).kind==CompoundKind::record){
+        const auto* object=std::get_if<std::shared_ptr<Aggregate>>(&value);
+        if(object&&*object&&(*object)->boxed)return record_interface_copy(values,*object,false);
+    }
+    return values.copy(value);
+}
+const Value& method_receiver_value(const Value& value){
+    if(const auto* cell=std::get_if<std::shared_ptr<Cell>>(&value))return (*cell)->value;
+    return value;
+}
+Value method_receiver_reference(Values& values,Type owner,const Value& value){
+    if(const auto* cell=std::get_if<std::shared_ptr<Cell>>(&value)){if(!*cell||(*cell)->type!=owner)throw runtime_error(RuntimeError::invalid_bytecode,values.location);return value;}
+    const auto* object=std::get_if<std::shared_ptr<Aggregate>>(&value);if(!object||!*object||(*object)->type!=owner)throw runtime_error(RuntimeError::invalid_bytecode,values.location);
+    return values.cell(owner,value);
+}
+Value callback_argument(Values& values,const Routine& routine,std::size_t index,const Value& value){
+    if(index==0&&routine.owner!=Type::invalid&&type_info(values.program,routine.owner).kind==CompoundKind::record&&std::holds_alternative<std::shared_ptr<Aggregate>>(value))return values.cell(routine.owner,values.copy(value));
+    return values.copy(value);
+}
+}
 static std::int32_t execute_impl(const Program& program, std::istream& input, std::ostream& output, const ExecutionOptions& requested_options, Value* constant_result) {
     auto options=requested_options;
     auto cleanup_deadline=std::chrono::steady_clock::time_point::max();bool cleanup_started=false;
@@ -265,7 +287,8 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
         const auto& routine=program.routines[id];
         if (captured.size()!=routine.captures.size()) throw runtime_error(RuntimeError::invalid_bytecode,location);
         if (routine.owner!=Type::invalid) {
-            const auto self=std::get<std::shared_ptr<Aggregate>>(stack[stack.size()-routine.parameters.size()]);
+            if(type_info(program,routine.owner).kind==CompoundKind::record)stack[stack.size()-routine.parameters.size()]=method_receiver_reference(values,routine.owner,stack[stack.size()-routine.parameters.size()]);
+            const auto self=std::get<std::shared_ptr<Aggregate>>(method_receiver_value(stack[stack.size()-routine.parameters.size()]));
             if (!self || self->nil) throw runtime_error(RuntimeError::nil_reference,location);
         }
         Frame next{&routine.code,&routine,std::vector<std::shared_ptr<Cell>>(program.locals.size()),0,stack.size()-routine.parameters.size()};
@@ -292,7 +315,7 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
             throw runtime_error(RuntimeError::invalid_bytecode,location);
         const auto procedure=program.routines[id].result==Type::unit;
         const auto depth=frames.size(),base=stack.size();
-        for (const auto& argument:arguments) stack.push_back(values.copy(argument));
+        for(std::size_t n=0;n<arguments.size();++n)stack.push_back(callback_argument(values,program.routines[id],n,arguments[n]));
         try{enter_routine(id,location,captured);run_to(depth);}catch(...){if(stack.size()>base)stack.resize(base);throw;}
         if (frames.size()!=depth || stack.size()!=base+(procedure ? 0U : 1U)) throw runtime_error(RuntimeError::invalid_bytecode,location);
         // Procedure callbacks return no operand; callers use only their side effects.
@@ -1183,7 +1206,7 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
         case Op::comparer_create: {auto callback=instruction.operand ? pop() : Value{std::int32_t{0}};stack.emplace_back(type_info(program,instruction.type).kind==CompoundKind::equality_comparer ? equality_create(values,instruction.type,options) : comparer_create(values,instruction.type,instruction.operand ? &callback : nullptr,options));break;}
         case Op::enumerator_call: {
             const auto method=static_cast<EnumeratorMethod>(instruction.operand&255U);const auto payload=static_cast<Type>(instruction.operand>>8U);
-            if(compound(instruction.type) && type_info(program,instruction.type).kind==CompoundKind::enumerator){const auto object=std::get<std::shared_ptr<Aggregate>>(stack.back());if(object && !object->nil && type_info(program,object->type).kind==CompoundKind::object_class){const auto slot=method==EnumeratorMethod::move ? 0U : method==EnumeratorMethod::current ? 1U : method==EnumeratorMethod::dispose ? 2U : 3U;enter_routine(interface_target(values,instruction.type,slot,stack.back(),options),instruction.location);break;}}
+            if(compound(instruction.type) && type_info(program,instruction.type).kind==CompoundKind::enumerator){const auto object=std::get<std::shared_ptr<Aggregate>>(stack.back());if(object && !object->nil && (type_info(program,object->type).kind==CompoundKind::object_class||(type_info(program,object->type).kind==CompoundKind::record&&type_info(program,object->type).native_record==NativeRecord::none))){const auto slot=method==EnumeratorMethod::move ? 0U : method==EnumeratorMethod::current ? 1U : method==EnumeratorMethod::dispose ? 2U : 3U;enter_routine(interface_target(values,instruction.type,slot,stack.back(),options),instruction.location);break;}}
             auto argument=pop();auto result=enumerator_invoke(values,instruction.type,payload,method,argument,options);if(enumerator_result(program,instruction.type,payload,method)!=Type::unit)stack.push_back(std::move(result));break;
         }
         case Op::dictionary_call: {
@@ -1275,7 +1298,7 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
             for (const auto& item:sequence->items) values.write(item,value); break;
         }
         case Op::make_default: stack.push_back(values.zero(instruction.type,instruction.operand==1,instruction.operand==2)); break;
-        case Op::load_global: stack.push_back(values.copy(globals[instruction.operand]->value)); break;
+        case Op::load_global: stack.push_back(typed_value_copy(values,instruction.type,globals[instruction.operand]->value)); break;
         case Op::store_global: values.write(globals[instruction.operand],pop()); break;
         case Op::ref_local: stack.emplace_back(locals[instruction.operand]); break;
         case Op::ref_global: stack.emplace_back(globals[instruction.operand]); break;
@@ -1332,7 +1355,7 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
             auto record=type_info(program,instruction.type).kind==CompoundKind::object_class
                 ? std::get<std::shared_ptr<Aggregate>>(receiver) : std::get<std::shared_ptr<Aggregate>>(std::get<std::shared_ptr<Cell>>(receiver)->value);
             if (!record || record->nil) trap(instruction,RuntimeError::nil_reference);
-            stack.emplace_back(record->items[instruction.operand]); break;
+            stack.emplace_back(descendant_reference(receiver,record->items[instruction.operand])); break;
         }
         case Op::length: {
             const auto value=pop();
@@ -1449,7 +1472,7 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
             break;
         }
         case Op::push: stack.push_back(values.copy(program.constants[instruction.operand])); break;
-        case Op::load: stack.push_back(values.copy(locals[instruction.operand]->value)); break;
+        case Op::load: stack.push_back(typed_value_copy(values,instruction.type,locals[instruction.operand]->value)); break;
         case Op::store: values.write(locals[instruction.operand],pop()); break;
         case Op::convert: {
             const auto value = pop();

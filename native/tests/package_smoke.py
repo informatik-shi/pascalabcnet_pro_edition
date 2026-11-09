@@ -349,6 +349,7 @@ def main():
                 ("property-interfaces.pas", "99 7 7 False\n12\n"),
                 ("range-interfaces.pas", "4 True\nTrue False\n[2,3,4,5]\n[2,3]\n2 5 True\nabc\n"),
                 ("real-range-interfaces.pas", "True False\nTrue\n-1.5 2.5\nTrue True\n"),
+                ("record-methods.pas", "5 3\n5 15 15\n7\n8 7\n"),
                 ("collection-property-writes.pas", "25 20 2\n[11,2] 2\n2 True 26\n"),
                 ("small-integers.pas", "Значения: 255 -128 -32768\nСумма с расширением: 256\nКвадрат: 65025\nГраница byte: 254|255|\nМассив smallint: 1 -2\n"),
                 ("unsigned-integers.pas", "Граница 32 бит: 4294967295\nС расширением: 4294967296\nГраница 64 бит: 18446744073709551615\nКвадрат word: 4294836225\nПредыдущее: 18446744073709551614\nПереключение: True False\n"),
@@ -1934,6 +1935,20 @@ def main():
                         or f"{real_range_error}:2:" not in invalid.stderr):
                     raise RuntimeError(f"{name} RealRange boxing bilingual error failed: {invalid.stdout!r} {invalid.stderr!r}")
             results[-1]["native_real_range_equality_boxing_and_bilingual_errors"] = "passed"
+            record_method_error = folder / "Ошибки методов записей.pas"
+            record_declaration = "type I=interface procedure Touch;end;R=record(I)private data:array of integer;public procedure Touch;begin Write('T');data[0]:=1;end;end;"
+            record_method_error.write_text(record_declaration + "\nbegin Write('before');var i:I:=new R;i.Touch;end.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(record_method_error)], text=True, encoding="utf-8", capture_output=True, cwd=folder, env=env, timeout=10)
+            if (invalid.returncode != 1 or invalid.stdout != "beforeT" or "E_NIL" not in invalid.stderr
+                    or "EN: Cannot access a nil reference" not in invalid.stderr
+                    or "RU: Нельзя обратиться к пустой ссылке nil" not in invalid.stderr
+                    or f"{record_method_error}:1:" not in invalid.stderr):
+                raise RuntimeError(f"{name} Record method bilingual error failed: {invalid.stdout!r} {invalid.stderr!r}")
+            record_method_error.write_text(record_declaration + "\nbegin Write('bad');var r:R;r.Touch(1);end.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(record_method_error)], text=True, encoding="utf-8", capture_output=True, cwd=folder, env=env, timeout=10)
+            if (invalid.returncode != 1 or invalid.stdout or "EN:" not in invalid.stderr or "RU:" not in invalid.stderr):
+                raise RuntimeError(f"{name} Record argument type was not rejected before output")
+            results[-1]["native_record_methods_interfaces_and_bilingual_errors"] = "passed"
             results[-1]["native_generic_enumerators_boxing_resources_and_bilingual_errors"] = "passed"
             results[-1]["native_typed_dictionary_enumerators_and_bilingual_errors"] = "passed"
             results[-1]["native_dictionary_factories_views_callbacks_and_bilingual_errors"] = "passed"

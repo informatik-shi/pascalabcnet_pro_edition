@@ -2,6 +2,8 @@
   "schema": 1,
   "scope": "Selected required positive compile cases derived from shipped interfaces. Every case must eventually compile. This is a growing gap list, not complete API coverage; accepting a case does not prove its runtime semantics. No expected failure is made a compatibility requirement.",
   "cases": [
+    {"id":"system-user-record-enumerator","module":"PABCSystem","source_line":168,"source":"type R=record(IEnumerator<integer>) public function MoveNext:boolean:=false; property Current:integer read 0; procedure Reset;begin end;procedure Dispose;begin end;end;begin var e:IEnumerator<integer>:=new R;Writeln(e.MoveNext);end."},
+    {"id":"system-user-record-interface","module":"PABCSystem","source_line":803,"source":"type R=record(IEquatable<R>) public x:integer; function Equals(other:R):boolean:=Self=other; end; E=IEquatable<R>; begin var r:R; var e:E:=r; Writeln(e.Equals(R(e))); end."},
     {"id":"system-bigint","module":"PABCSystem","source_line":110,"source":"begin var value:BigInteger:=1; end."},
     {"id":"system-intrange-interfaces","module":"PABCSystem","source_line":803,"source":"type E=IEquatable<IntRange>; begin var r:=new IntRange(1,3); var c:ICollection<integer>:=r; var s:IEnumerable<integer>:=c; var e:=E(c); Writeln(e.Equals(IntRange(s))); end."},
     {"id":"system-charrange-interfaces","module":"PABCSystem","source_line":873,"source":"type E=IEquatable<CharRange>; begin var r:=new CharRange('a','c'); var c:ICollection<char>:=r; var s:IEnumerable<char>:=c; var e:=E(c); Writeln(e.Equals(CharRange(s))); end."},
