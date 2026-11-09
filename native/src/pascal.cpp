@@ -2134,7 +2134,7 @@ private:
             for (std::size_t n=0;n<syntax.fields.size()-(function ? 1U : 0U);++n) parameters.push_back({resolve_type(*syntax.fields[n].second)});
             if (parameters.size()>16) throw Error("E_TYPE",syntax.token.location,"Too many routine parameters");
             const auto result=function ? resolve_type(*syntax.fields.back().second) : predicate ? Type::boolean : Type::unit;
-            return function_type(result,std::move(parameters),syntax.token.location,name=="predicate"?"predicate":"callable");
+            return function_type(result,std::move(parameters),syntax.token.location,predicate ? std::string_view(name) : "callable");
         }
         if (syntax.kind=="addr32" || syntax.kind=="calcip") {
             if (auto found=aliases_.find(syntax.kind); found!=aliases_.end()) return found->second;

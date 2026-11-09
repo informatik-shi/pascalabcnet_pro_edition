@@ -1,0 +1,32 @@
+{
+  "schema": 1,
+  "runtime": "Windows .NET Framework 4.0.30319.42000",
+  "outcomes": 2304,
+  "scope": "PABCSystem Predicate2/Predicate3 source-declared generic delegate identities and actual CLR conversions/invocation/metadata, with source-derived conditional conversion guards. Two arities, two source modules, varied scalar/string/boolean arguments and 16 operations. Not a Pascal compiler oracle or full generic-language/delegate/library coverage.",
+  "artifacts": [
+    {
+      "path": "reference/predicate-generics.cs",
+      "sha256_lf": "20a28f81a8e5551fe77c822e2cfd7679123be39872859e5314f04e07e8f773f6"
+    },
+    {
+      "path": "reference/generate-predicate-generics.ps1",
+      "sha256_lf": "dc15f776d60244e15ac247e96ed901e457075c30fcdb7ce3d8ca48447d2c5770"
+    },
+    {
+      "path": "fixtures/predicate2-program.pas",
+      "sha256_lf": "764a83565abbc747f8803e30d3276fd166aba6b8815fa24de3c5da352981c207"
+    },
+    {
+      "path": "fixtures/predicate3-program.pas",
+      "sha256_lf": "0012ef9644462d90d83cc109c97171100b35fda5ccfb572ba851998b3e9eceb4"
+    },
+    {
+      "path": "fixtures/predicate-generics-reference.tsv",
+      "sha256_lf": "cfe11f314f674008963d45c0d0c69af7b446fd6603e634a501fe0609075bfde2"
+    },
+    {
+      "path": "fixtures/predicate-generics-reference.md",
+      "sha256_lf": "bb178a17dd1b5e22c30af3bd8a092f92823ca36609564ddf9f9d9cac92cd11ce"
+    }
+  ]
+}

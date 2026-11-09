@@ -142,6 +142,7 @@ Dictionary со сравнителем ключей, Copy и равенство�
 AddRange/InsertRange с пользовательским ICollection: examples/list-user-bulk.pas.
 Разные типы Predicate/Func и сохранённые цели преобразований: examples/callable-families.pas.
 Именованные типы function/procedure, короткая запись со стрелкой и var-параметры: examples/named-callables.pas.
+Собственные типы Predicate2/Predicate3 и преобразования в Func: examples/predicate-generics.pas.
 Порядок вычисления объекта и ключа при составной записи в коллекцию: examples/collection-property-writes.pas.
 Перегрузки конструкторов, статические операции записей и оставшиеся возможности коллекций ещё переносятся.
 Contains без сравнителя сохраняет правила исходной коллекции; явный nil выбирает стандартное сравнение элементов.

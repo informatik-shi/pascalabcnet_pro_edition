@@ -359,6 +359,7 @@ def main():
                 ("callable-families.pas", "False\nTrue True\nTrue False\n2\nTrue\n"),
                 ("type-properties.pas", "Int32\nSystem.Int32\nSystem\ntype-properties.Coordinate\nDictionary`2\nEnumerator\nSystem.Int32, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089\n"),
                 ("named-callables.pas", "Check False\nnamed-callables.Check\nTrue\nTrue True\nFalse\n5 RefSecond\n"),
+                ("predicate-generics.pas", "Predicate2`2 False\nPredicate3`3 False\nPABCSystem\nTrue True\nFalse\n4\n"),
                 ("collection-property-writes.pas", "25 20 2\n[11,2] 2\n2 True 26\n"),
                 ("small-integers.pas", "Значения: 255 -128 -32768\nСумма с расширением: 256\nКвадрат: 65025\nГраница byte: 254|255|\nМассив smallint: 1 -2\n"),
                 ("unsigned-integers.pas", "Граница 32 бит: 4294967295\nС расширением: 4294967296\nГраница 64 бит: 18446744073709551615\nКвадрат word: 4294836225\nПредыдущее: 18446744073709551614\nПереключение: True False\n"),
@@ -2019,6 +2020,16 @@ def main():
                     or f"{named_error}:3:" not in invalid.stderr):
                 raise RuntimeError(f"{name} Named delegate bilingual error failed: {invalid.stdout!r} {invalid.stderr!r}")
             results[-1]["native_named_delegates_and_bilingual_errors"] = "passed"
+            generic_error = folder / "Ошибки обобщённых предикатов.pas"
+            generic_error.write_text("var calls:integer;function Next:Predicate2<integer,string>;begin Inc(calls);Write('N');if calls=2 then Result:=nil else Result:=(n,s)->true;end;\n"
+                                     "begin Write('before');var f:Func2<integer,string,boolean>:=Next();end.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(generic_error)], text=True, encoding="utf-8", capture_output=True, cwd=folder, env=env, timeout=10)
+            if (invalid.returncode != 1 or invalid.stdout != "beforeNN" or "E_ARGUMENT" not in invalid.stderr
+                    or "EN: Delegate target cannot be nil" not in invalid.stderr
+                    or "RU: Цель делегата не может быть nil" not in invalid.stderr
+                    or f"{generic_error}:2:" not in invalid.stderr):
+                raise RuntimeError(f"{name} Generic predicate bilingual error failed: {invalid.stdout!r} {invalid.stderr!r}")
+            results[-1]["native_generic_predicates_and_bilingual_errors"] = "passed"
             results[-1]["native_generic_enumerators_boxing_resources_and_bilingual_errors"] = "passed"
             results[-1]["native_typed_dictionary_enumerators_and_bilingual_errors"] = "passed"
             results[-1]["native_dictionary_factories_views_callbacks_and_bilingual_errors"] = "passed"

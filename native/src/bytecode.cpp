@@ -1952,12 +1952,13 @@ void verify(const Program& program) {
         if (type.kind!=CompoundKind::callable && !type.parameters.empty()) throw Error("E_BYTECODE",{},"Parameters on a non-callable type");
         if (type.kind==CompoundKind::callable) {
             const bool named=type.name.starts_with("$delegate:") && type.name.size()>10;
-            if ((type.name!="callable"&&type.name!="predicate"&&!named) || type.key!=Type::invalid || !type.fields.empty() || type.parameters.size()>16) throw Error("E_BYTECODE",{},"Invalid callable type metadata");
+            const auto predicate_arity=type.name=="predicate" ? 1U : type.name=="predicate2" ? 2U : type.name=="predicate3" ? 3U : 0U;
+            if ((type.name!="callable"&&!predicate_arity&&!named) || type.key!=Type::invalid || !type.fields.empty() || type.parameters.size()>16) throw Error("E_BYTECODE",{},"Invalid callable type metadata");
             if(named){
                 if(type.name.size()>4096 || type.display_name.empty() || type.display_name.size()>4096 || type.display_name.find('\0')!=type.display_name.npos)throw Error("E_BYTECODE",{},"Invalid named delegate metadata","Недопустимые метаданные именованного делегата");
                 try{(void)from_utf8(type.name);(void)from_utf8(type.display_name);}catch(const std::invalid_argument&){throw Error("E_BYTECODE",{},"Invalid named delegate metadata","Недопустимые метаданные именованного делегата");}
             }
-            if(type.name=="predicate"&&(type.element!=Type::boolean||type.parameters.size()!=1||type.parameters[0].by_reference||type.parameters[0].variadic))throw Error("E_BYTECODE",{},"Invalid Predicate type metadata");
+            if(predicate_arity && (type.element!=Type::boolean || type.parameters.size()!=predicate_arity || std::any_of(type.parameters.begin(),type.parameters.end(),[](const auto& parameter){return parameter.by_reference || parameter.variadic;})))throw Error("E_BYTECODE",{},"Invalid Predicate type metadata");
             if (type.element!=Type::unit) prior(type.element);
             for (std::size_t n=0;n<type.parameters.size();++n) {
                 const auto& parameter=type.parameters[n]; prior(parameter.type);
