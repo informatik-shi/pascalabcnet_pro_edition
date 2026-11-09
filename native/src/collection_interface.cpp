@@ -15,7 +15,7 @@ void checkpoint(Values& values,const ExecutionOptions& options,std::uint64_t& wo
 }
 bool native_collection_type(const std::vector<TypeInfo>& types,Type from,Type to){
  if(!compound(from)||!compound(to)||static_cast<unsigned>(from)-64U>=types.size()||static_cast<unsigned>(to)-64U>=types.size())return false;
- const auto& source=types[static_cast<unsigned>(from)-64U];const auto& target=types[static_cast<unsigned>(to)-64U];return target.kind==CompoundKind::collection_interface&&native_kind(source)&&source.element==target.element;
+ const auto& source=types[static_cast<unsigned>(from)-64U];const auto& target=types[static_cast<unsigned>(to)-64U];return source.element==target.element&&((target.kind==CompoundKind::collection_interface&&native_kind(source))||(target.kind==CompoundKind::list_interface&&((source.kind==CompoundKind::array&&source.rank==1)||source.kind==CompoundKind::list)));
 }
 bool native_enumerable_type(const std::vector<TypeInfo>& types,Type from,Type to){
  if(!compound(from)||!compound(to)||static_cast<unsigned>(from)-64U>=types.size()||static_cast<unsigned>(to)-64U>=types.size())return false;
@@ -35,13 +35,23 @@ std::shared_ptr<Aggregate> native_collection_sequence(Values& values,Type target
  return sequence_create(values,target,source,provider);
 }
 Value native_collection_invoke(Values& values,Type owner,std::size_t slot,const Value& receiver,std::span<const Value> arguments,const ExecutionOptions& options){
- if(!native_collection_target(values.program,owner,receiver)||slot>=8||arguments.size()!=interface_contract(values.program.types,owner)[slot].parameters.size())throw runtime_error(RuntimeError::invalid_bytecode,values.location);
+ const bool indexed=type_info(values.program,owner).kind==CompoundKind::list_interface;
+ if(!native_collection_target(values.program,owner,receiver)||slot>=(indexed?13U:8U)||arguments.size()!=interface_contract(values.program.types,owner)[slot].parameters.size())throw runtime_error(RuntimeError::invalid_bytecode,values.location);
  const auto object=std::get<Object>(receiver);if(object->nil)throw runtime_error(RuntimeError::nil_reference,values.location);std::uint64_t work=0;checkpoint(values,options,work);
  const auto shape=type_info(values.program,object->type);const auto kind=shape.kind;const bool view=kind==CompoundKind::dictionary_keys||kind==CompoundKind::dictionary_values;
  const bool fixed=kind==CompoundKind::array,readonly=fixed||view;
  if(slot==1)return readonly;
  if((slot==2||slot==3||slot==6)&&readonly)throw Error("E_READONLY",values.location,fixed?"Collection has a fixed size":"Collection is read-only",fixed?"Коллекция имеет фиксированный размер":"Коллекция доступна только для чтения");
- if(slot==7){const auto sequence=type_info(values.program,owner).interfaces.read().parents[0];const auto iterator=interface_contract(values.program.types,sequence)[0].result;return enumerator_invoke(values,sequence,iterator,EnumeratorMethod::get,native_collection_sequence(values,sequence,object),options);}
+ if(slot>=8){
+  if(fixed&&(slot==11||slot==12))throw Error("E_READONLY",values.location,"Collection has a fixed size","Коллекция имеет фиксированный размер");
+  if(slot==10)return kind==CompoundKind::list?list_operation(values,object,ListOperation::index,arguments,options):Value{equality_index(values,shape.element,object->items,arguments[0],0,static_cast<std::int32_t>(object->items.size()),false,options)};
+  if(slot==11)return list_operation(values,object,ListOperation::insert,arguments,options);
+  const auto index=std::get<std::int32_t>(arguments[0]);if(index<0||static_cast<std::size_t>(index)>=object->items.size())throw runtime_error(RuntimeError::list_index,values.location);
+  if(slot==8)return values.copy(object->items[static_cast<std::size_t>(index)]->value);
+  if(slot==9){values.write(object->items[static_cast<std::size_t>(index)],arguments[1]);return false;}
+  values.list_erase(object,static_cast<std::size_t>(index),1);++object->version;return false;
+ }
+ if(slot==7){auto sequence=type_info(values.program,owner).interfaces.read().parents[0];if(indexed)sequence=type_info(values.program,sequence).interfaces.read().parents[0];const auto iterator=interface_contract(values.program.types,sequence)[0].result;return enumerator_invoke(values,sequence,iterator,EnumeratorMethod::get,native_collection_sequence(values,sequence,object),options);}
  if(kind==CompoundKind::list){
   if(slot==0)return static_cast<std::int32_t>(object->items.size());
   if(slot==2){const std::array<Value,1> item{arguments[0]};values.list_insert_values(object,object->items.size(),item);++object->version;return false;}

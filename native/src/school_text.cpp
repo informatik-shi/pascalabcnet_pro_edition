@@ -1,7 +1,9 @@
 #include "school.hpp"
 #include "runtime_values.hpp"
 #include "regex.hpp"
+#include "interfaces.hpp"
 #include <array>
+#include <bit>
 
 namespace abc {
 namespace {
@@ -42,17 +44,21 @@ std::u16string replace(std::u16string_view text, std::u16string_view source, std
     work.append(result,text.substr(previous)); return result;
 }
 }
-Value school_replace_many(const Value& text, const std::shared_ptr<Aggregate>& source, const std::shared_ptr<Aggregate>& target,
-    SourceLocation location, const ExecutionOptions& options) {
+Value school_replace_many(Values& values,const Value& text, const std::shared_ptr<Aggregate>& source, const std::shared_ptr<Aggregate>& target,
+    Type source_type,Type target_type,const ExecutionOptions& options) {
+    const auto location=values.location;
     TextWork work{options,location};
     // StringBuilder accepts a nil initial value; target.Count precedes source.Count.
     auto result=string_text(text);
-    if (target->nil || source->nil) throw runtime_error(RuntimeError::nil_reference,location);
-    for (std::size_t i=0;i<source->items.size();++i) {
-        work.check(); const auto& pattern=source->items[i]->value;
+    const auto count=[&](Type type,const std::shared_ptr<Aggregate>& object){if(type_info(values.program,type).kind==CompoundKind::list_interface)return std::get<std::int32_t>(interface_invoke(values,type,0,object,{},options));if(!object||object->nil)throw runtime_error(RuntimeError::nil_reference,location);return static_cast<std::int32_t>(object->items.size());};
+    const auto last_target=std::bit_cast<std::int32_t>(static_cast<std::uint32_t>(count(target_type,target))-1U);
+    const auto last_source=std::bit_cast<std::int32_t>(static_cast<std::uint32_t>(count(source_type,source))-1U);
+    const auto item=[&](Type type,const std::shared_ptr<Aggregate>& object,std::int32_t index)->Value{if(type_info(values.program,type).kind==CompoundKind::list_interface){const std::array<Value,1> args{index};return interface_invoke(values,type,8,object,args,options);}if(index<0||static_cast<std::size_t>(index)>=object->items.size())throw runtime_error(type_info(values.program,type).kind==CompoundKind::list?RuntimeError::list_index:RuntimeError::index_bounds,location);return values.copy(object->items[static_cast<std::size_t>(index)]->value);};
+    for (std::int64_t i=0;i<=last_source;++i) {
+        work.check();const auto pattern=item(source_type,source,static_cast<std::int32_t>(i));
+        const auto replacement=i<=last_target?item(target_type,target,static_cast<std::int32_t>(i)):Value{std::u16string{}};
         if (std::holds_alternative<NilString>(pattern)) throw runtime_error(RuntimeError::nil_reference,location);
-        const auto replacement=i<target->items.size() ? std::u16string_view(string_text(target->items[i]->value)) : std::u16string_view{};
-        result=replace(result,string_text(pattern),replacement,work);
+        result=replace(result,string_text(pattern),string_text(replacement),work);
     }
     return result;
 }

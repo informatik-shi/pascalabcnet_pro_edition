@@ -6,8 +6,8 @@ struct Values;
 struct SchoolContext { std::shared_ptr<Aggregate> primes; std::int32_t initial_prime_count=0; };
 Value invoke_school_list(Values& values, SchoolContext& context, SchoolList method, Type list,
     std::span<const Value> arguments, const ExecutionOptions& options);
-Value school_replace_many(const Value& text, const std::shared_ptr<Aggregate>& source, const std::shared_ptr<Aggregate>& target,
-    SourceLocation location, const ExecutionOptions& options);
+Value school_replace_many(Values&,const Value& text, const std::shared_ptr<Aggregate>& source, const std::shared_ptr<Aggregate>& target,
+    Type source_type,Type target_type,const ExecutionOptions& options);
 void school_replace_last(Values& values, const std::shared_ptr<Cell>& receiver, const Value& source, const Value& target, const ExecutionOptions& options);
 void school_swap_substr(Values& values, const std::shared_ptr<Cell>& receiver, const Value& first, const Value& second, const ExecutionOptions& options);
 Value school_fold(Values& values,const std::shared_ptr<Aggregate>& array,SchoolFold method,const ExecutionOptions& options);

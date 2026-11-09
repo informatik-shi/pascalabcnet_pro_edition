@@ -515,7 +515,8 @@ void native_class_fields_language() {
     result("type A=class n:integer;end;B=A;begin var b:=new B;b.n:=4;Writeln(b.n);end.","4\n");
     result("type C=class end;begin var a:=new C;var b:=new C;Writeln(a=a,' ',a=b,' ',a<>nil);var f:=()->a=b;Writeln(f());end.","True False True\nFalse\n");
     for(const auto source:{"type C=class n:integer;end;begin var c:C;Writeln(c.n);end.","type C=class n:integer;end;begin var c:C;c.n:=1;end.","type C=class n:integer;end;procedure P(var n:integer);begin end;begin var c:C;P(c.n);end."})runtime_error(source,"E_NIL");
-    for(const auto source:{"type A=class end;B=class(A)end;begin end.","type C=class property X[i:integer]:integer read n;end;begin end.","type C=class;begin end."})compile_error(source,"E_UNSUPPORTED");
+    for(const auto source:{"type A=class end;B=class(A)end;begin end.","type C=class;begin end."})compile_error(source,"E_UNSUPPORTED");
+    compile_error("type C=class property X[i:integer]:integer read n;end;begin end.","E_NAME");
     compile_error("type C=class n:integer;n:integer;end;begin end.","E_DUPLICATE");
     compile_error("type A=class end;B=class end;begin var a:=new A;var b:=new B;a:=b;end.","E_TYPE");
     compile_error("type C=class n:integer;end;begin var c:=new C(1);end.","E_TYPE");

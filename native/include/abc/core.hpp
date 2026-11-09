@@ -377,7 +377,7 @@ struct Local {
     MemberAccess access=MemberAccess::public_member;
 };
 
-enum class CompoundKind { array, record, list, stack, queue, dynarray, simple_set, association, linked_node, linked_list, single_node, tuple, school_address, school_ip, sequence, callable, object_class, encoding, enumeration, ini_file, hash_set, new_set, empty_collection, dictionary, dictionary_keys, dictionary_values, enumerator, user_interface, comparable_interface, comparer_interface, comparer, equatable_interface, equality_comparer_interface, equality_comparer, collection_interface };
+enum class CompoundKind { array, record, list, stack, queue, dynarray, simple_set, association, linked_node, linked_list, single_node, tuple, school_address, school_ip, sequence, callable, object_class, encoding, enumeration, ini_file, hash_set, new_set, empty_collection, dictionary, dictionary_keys, dictionary_values, enumerator, user_interface, comparable_interface, comparer_interface, comparer, equatable_interface, equality_comparer_interface, equality_comparer, collection_interface, list_interface };
 enum class NativeRecord { none, ordinal_range, real_interval, key_value_pair, dictionary_enumerator, collection_enumerator };
 inline bool node_kind(CompoundKind kind) { return kind == CompoundKind::linked_node || kind == CompoundKind::single_node; }
 inline bool indexed_sequence(CompoundKind kind) { return kind == CompoundKind::array || kind == CompoundKind::list; }
@@ -428,7 +428,7 @@ enum class IniMethod {construct,save,file_name,write_string,read_string,write_in
 enum class ComparableMethod {in_range,between,clamp,ordinal_in_range,ordinal_between,clamp_top,clamp_bottom,compare_to};
 enum class EnumMethod {construct,ordinal,successor,predecessor,has_flag,to_string,bit_and,bit_or,bit_xor,low,high,low_value,high_value,format,has_flag_nil};
 enum class InterfaceMemberKind { method,get,set };
-struct InterfaceMember {std::string name;Type result=Type::unit;std::vector<CallableParameter> parameters{};InterfaceMemberKind kind=InterfaceMemberKind::method;bool operator==(const InterfaceMember&) const=default;};
+struct InterfaceMember {std::string name;Type result=Type::unit;std::vector<CallableParameter> parameters{};InterfaceMemberKind kind=InterfaceMemberKind::method;bool default_indexer=false;bool operator==(const InterfaceMember&) const=default;};
 struct InterfaceImplementation {Type target=Type::invalid;std::vector<std::size_t> routines{};};
 struct InterfaceData {std::vector<Type> parents{};std::vector<InterfaceMember> members{};std::vector<InterfaceImplementation> implementations{};};
 struct InterfaceStorage {

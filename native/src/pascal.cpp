@@ -232,7 +232,7 @@ struct SyntaxType {
     std::map<std::string,MemberAccess> field_access{};
     std::shared_ptr<SyntaxRoutine> initializer{};
 };
-struct SyntaxProperty { Token name;std::shared_ptr<SyntaxType> type;std::optional<Token> getter,setter;MemberAccess access=MemberAccess::public_member; };
+struct SyntaxProperty { Token name;std::shared_ptr<SyntaxType> type;std::optional<Token> getter,setter;MemberAccess access=MemberAccess::public_member;std::vector<std::pair<Token,std::shared_ptr<SyntaxType>>> indices{};bool default_indexer=false; };
 struct SyntaxRoutine;
 struct SyntaxExpr {
     SyntaxExprKind kind;
@@ -397,6 +397,14 @@ private:
         if (current_.kind != TokenKind::name || (!current_.escaped && reserved(current_.text))) fail("Expected an identifier");
         return consume();
     }
+    void property_indices(SyntaxProperty& property){
+        if(!accept("["))return;
+        std::set<std::string> names;
+        do{std::vector<Token> group{name()};while(accept(","))group.push_back(name());expect(":");auto type=type_syntax();for(auto& parameter:group){if(!names.insert(parameter.text).second)throw Error("E_DUPLICATE",parameter.location,"Duplicate property index parameter");if(property.indices.size()>=14)throw Error("E_LIMIT",parameter.location,"Property index parameter limit exceeded");property.indices.emplace_back(std::move(parameter),type);}}while(accept(";"));expect("]");
+    }
+    void property_default(SyntaxProperty& property){
+        if(accept("default")){if(property.indices.empty())throw Error("E_TYPE",property.name.location,"Default property requires index parameters");property.default_indexer=true;expect(";");}
+    }
     std::shared_ptr<SyntaxType> type_syntax(bool allow_empty_result=false,bool allow_arrow=true) {
         DepthGuard guard(depth_, current_.location);
         auto result = std::make_shared<SyntaxType>(); result->token = current_;
@@ -448,7 +456,7 @@ private:
             if(accept("(")){do{if(result->parents.size()>=16)throw Error("E_LIMIT",current_.location,"Interface parent limit exceeded");result->parents.push_back(type_syntax());}while(accept(","));expect(")");}
             while(!is("end")){
                 if(is("function") || is("procedure")){auto member=routine(true);if(!member->declaration_only)throw Error("E_TYPE",member->name.location,"Interface members cannot have bodies");result->methods.push_back(std::move(member));}
-                else if(accept("property")){auto property=std::make_shared<SyntaxProperty>();property->name=name();expect(":");property->type=type_syntax();while(is("read") || is("write")){const bool get=accept("read");if(!get)expect("write");auto& accessor=get ? property->getter : property->setter;if(accessor)throw Error("E_TYPE",property->name.location,"Duplicate interface property accessor");accessor=property->name;}if(!property->getter && !property->setter)throw Error("E_TYPE",property->name.location,"Property requires a getter or setter");expect(";");result->properties.push_back(std::move(property));}
+                else if(accept("property")){auto property=std::make_shared<SyntaxProperty>();property->name=name();property_indices(*property);expect(":");property->type=type_syntax();while(is("read") || is("write")){const bool get=accept("read");if(!get)expect("write");auto& accessor=get ? property->getter : property->setter;if(accessor)throw Error("E_TYPE",property->name.location,"Duplicate interface property accessor");accessor=property->name;}if(!property->getter && !property->setter)throw Error("E_TYPE",property->name.location,"Property requires a getter or setter");expect(";");property_default(*property);result->properties.push_back(std::move(property));}
                 else fail("Expected interface method or property");
                 if(result->methods.size()+result->properties.size()>256)throw Error("E_LIMIT",current_.location,"Interface member limit exceeded");
             }expect("end");
@@ -470,7 +478,7 @@ private:
                 }
                 if (object && accept("property")) {
                     auto property=std::make_shared<SyntaxProperty>();property->access=access;property->name=name();
-                    if (is("[")) throw Error("E_UNSUPPORTED",current_.location,"Indexed properties are not ported yet");
+                    property_indices(*property);
                     expect(":");property->type=type_syntax();
                     while (is("read") || is("write")) {
                         const bool get=accept("read");if (!get) expect("write");
@@ -480,6 +488,7 @@ private:
                     }
                     if (!property->getter && !property->setter) throw Error("E_TYPE",property->name.location,"Property requires a getter or setter");
                     if (!accept(";") && !is("end")) fail("Expected ';' after property");
+                    property_default(*property);
                     if (result->properties.size()>=256) throw Error("E_LIMIT",property->name.location,"Class property limit exceeded");
                     result->properties.push_back(std::move(property));continue;
                 }
@@ -511,7 +520,7 @@ private:
             if (result->kind=="system") {
                 result->system_qualified=true; expect("."); result->kind=is("type") ? consume().text : name().text;
                 if(result->kind=="text") {expect(".");result->kind=name().text;if(result->kind!="encoding")throw Error("E_UNSUPPORTED",result->token.location,"Unknown or unsupported Encoding type");}
-                else if(result->kind=="collections"){expect(".");const auto generic=name();if(generic.text!="generic")throw Error("E_UNSUPPORTED",generic.location,"Unknown System.Collections namespace");expect(".");result->kind=name().text;if(result->kind!="dictionary" && result->kind!="keyvaluepair" && result->kind!="ienumerable" && result->kind!="ienumerator" && result->kind!="list" && result->kind!="hashset" && result->kind!="icomparer" && result->kind!="comparer" && result->kind!="iequalitycomparer" && result->kind!="equalitycomparer" && result->kind!="icollection")throw Error("E_UNSUPPORTED",result->token.location,"Unknown generic collection type");}
+                else if(result->kind=="collections"){expect(".");const auto generic=name();if(generic.text!="generic")throw Error("E_UNSUPPORTED",generic.location,"Unknown System.Collections namespace");expect(".");result->kind=name().text;if(result->kind!="dictionary" && result->kind!="keyvaluepair" && result->kind!="ienumerable" && result->kind!="ienumerator" && result->kind!="list" && result->kind!="hashset" && result->kind!="icomparer" && result->kind!="comparer" && result->kind!="iequalitycomparer" && result->kind!="equalitycomparer" && result->kind!="icollection" && result->kind!="ilist")throw Error("E_UNSUPPORTED",result->token.location,"Unknown generic collection type");}
                 else if (result->kind!="func" && result->kind!="action" && result->kind!="predicate" && result->kind!="type" && result->kind!="void" && result->kind!="single" && result->kind!="icomparable" && result->kind!="iequatable")
                     throw Error("E_UNSUPPORTED",result->token.location,"Unknown or unsupported type 'System."+result->kind+"'");
             }
@@ -538,7 +547,7 @@ private:
                         if(is(".") && [&]{auto probe=lexer_;return probe.next().text=="enumerator";}()){expect(".");const auto member=name();if(member.text!="enumerator")throw Error("E_UNSUPPORTED",member.location,"Unknown Dictionary nested type");result->kind=nested.text=="keycollection" ? "dictionary_key_enumerator" : "dictionary_value_enumerator";}
                     }else throw Error("E_UNSUPPORTED",nested.location,"Unknown Dictionary nested type");
                 }
-            } else if ((result->kind=="icomparable" || result->kind=="icomparer" || result->kind=="comparer" || result->kind=="iequatable" || result->kind=="iequalitycomparer" || result->kind=="equalitycomparer" || result->kind=="icollection" || result->kind=="ienumerable" || result->kind=="ienumerator" || result->kind == "list" || result->kind == "hashset" || result->kind=="newset" || result->kind == "stack" || result->kind == "queue" || result->kind == "dynarray" || result->kind == "simpleset" || result->kind == "linkedlist" || result->kind == "linkedlistnode" || result->kind == "singlenode") && accept("<")) {
+            } else if ((result->kind=="icomparable" || result->kind=="icomparer" || result->kind=="comparer" || result->kind=="iequatable" || result->kind=="iequalitycomparer" || result->kind=="equalitycomparer" || result->kind=="icollection" || result->kind=="ilist" || result->kind=="ienumerable" || result->kind=="ienumerator" || result->kind == "list" || result->kind == "hashset" || result->kind=="newset" || result->kind == "stack" || result->kind == "queue" || result->kind == "dynarray" || result->kind == "simpleset" || result->kind == "linkedlist" || result->kind == "linkedlistnode" || result->kind == "singlenode") && accept("<")) {
                 result->named=false; result->element = type_syntax(); expect(">");
             }
         }
@@ -1007,7 +1016,7 @@ private:
                 const auto token = result->token;
                 result = make_expression(SyntaxExprKind::index, token, std::move(result), std::move(index));
                 while (accept(",")) {
-                    if (!result->arguments.empty()) throw Error("E_UNSUPPORTED",current_.location,"Array ranks above two are not implemented");
+                    if (result->arguments.size()>=13) throw Error("E_LIMIT",current_.location,"Property index argument limit exceeded");
                     result->arguments.push_back(expression());
                 }
                 expect("]");
@@ -1208,13 +1217,14 @@ private:
         std::set<Type> active,done;std::function<void(Type)> bind=[&](Type owner){
             if(done.contains(owner))return;if(!active.insert(owner).second)throw Error("E_TYPE",{},"Cyclic interface inheritance");
             const auto& syntax=*declarations.at(owner);std::vector<Type> parents;std::vector<InterfaceMember> members;
-            auto add=[&](InterfaceMember member){for(const auto& existing:members)if(existing.name==member.name){if(existing.kind==member.kind){if(existing!=member)throw Error("E_TYPE",syntax.token.location,"Conflicting inherited interface member");return;}if(existing.kind==InterfaceMemberKind::method || member.kind==InterfaceMemberKind::method || (existing.kind==InterfaceMemberKind::get ? existing.result : existing.parameters[0].type)!=(member.kind==InterfaceMemberKind::get ? member.result : member.parameters[0].type))throw Error("E_TYPE",syntax.token.location,"Conflicting inherited interface member");}if(members.size()>=256)throw Error("E_LIMIT",syntax.token.location,"Interface member limit exceeded");members.push_back(std::move(member));};
+            auto add=[&](InterfaceMember member){for(const auto& existing:members)if(existing.name==member.name){if(existing.kind==member.kind){if(existing!=member)throw Error("E_TYPE",syntax.token.location,"Conflicting inherited interface member");return;}if(!interface_property_match(existing,member))throw Error("E_TYPE",syntax.token.location,"Conflicting inherited interface member");}if(members.size()>=256)throw Error("E_LIMIT",syntax.token.location,"Interface member limit exceeded");members.push_back(std::move(member));};
             for(const auto& parent:syntax.parents){const auto type=resolve_type(*parent);if(!compound(type) || !interface_kind(info(type,syntax.token.location)))throw Error("E_TYPE",syntax.token.location,"Interface parent must be an interface");if(std::find(parents.begin(),parents.end(),type)!=parents.end())throw Error("E_TYPE",syntax.token.location,"Duplicate interface parent");if(declarations.contains(type))bind(type);if(info(type,syntax.token.location).kind==CompoundKind::sequence)(void)enumerator_type(info(type,syntax.token.location).element);parents.push_back(type);for(auto member:interface_contract(module_.types,type))add(std::move(member));}
             std::set<std::string> own_names;
             for(const auto& method:syntax.methods){if(!own_names.insert(method->name.text).second)throw Error("E_DUPLICATE",method->name.location,"Duplicate interface member");InterfaceMember member;member.name=method->name.text;member.result=method->result ? resolve_type(*method->result) : Type::unit;
                 std::set<std::string> parameter_names;for(const auto& argument:method->parameters){if(!parameter_names.insert(argument.name.text).second)throw Error("E_DUPLICATE",argument.name.location,"Duplicate parameter");if(argument.default_value)throw Error("E_UNSUPPORTED",argument.name.location,"Default interface arguments are not ported yet");member.parameters.push_back({resolve_type(*argument.type),argument.by_reference,argument.variadic});}if(member.parameters.size()>15)throw Error("E_TYPE",method->name.location,"Interface methods accept at most fifteen parameters");
                 for(std::size_t n=0;n<member.parameters.size();++n){const auto& p=member.parameters[n];if(p.variadic && (n+1!=member.parameters.size() || p.by_reference || !compound(p.type) || info(p.type,method->name.location).kind!=CompoundKind::array || info(p.type,method->name.location).rank!=1))throw Error("E_TYPE",method->name.location,"Invalid interface params parameter");}add(std::move(member));}
-            for(const auto& property:syntax.properties){if(!own_names.insert(property->name.text).second)throw Error("E_DUPLICATE",property->name.location,"Duplicate interface member");const auto type=resolve_type(*property->type);if(property->getter)add({property->name.text,type,{},InterfaceMemberKind::get});if(property->setter)add({property->name.text,Type::unit,{{type,false,false}},InterfaceMemberKind::set});}
+            for(const auto& property:syntax.properties){if(!own_names.insert(property->name.text).second)throw Error("E_DUPLICATE",property->name.location,"Duplicate interface member");const auto type=resolve_type(*property->type);std::vector<CallableParameter> indices;for(const auto& index:property->indices)indices.push_back({resolve_type(*index.second),false,false});if(property->getter)add({property->name.text,type,indices,InterfaceMemberKind::get,property->default_indexer});if(property->setter){indices.push_back({type,false,false});add({property->name.text,Type::unit,std::move(indices),InterfaceMemberKind::set,property->default_indexer});}}
+            std::string default_property;for(const auto& member:members)if(member.default_indexer){if(!default_property.empty()&&default_property!=member.name)throw Error("E_TYPE",syntax.token.location,"Ambiguous default interface property");default_property=member.name;}
             auto& metadata=module_.types[static_cast<unsigned>(owner)-64U];metadata.interfaces.edit().parents=std::move(parents);metadata.interfaces.edit().members=std::move(members);active.erase(owner);done.insert(owner);
         };for(const auto& [owner,syntax]:declarations){(void)syntax;bind(owner);}
     }
@@ -1288,19 +1298,20 @@ private:
         }
         const auto id=module_.routines.size();module_.routines.push_back(std::move(body));return id;
     }
-    std::size_t property_accessor(Type owner,Type type,const Token& accessor,bool write) {
+    std::size_t property_accessor(Type owner,Type type,const Token& accessor,bool write,const std::vector<Type>& indices) {
         const auto& fields=info(owner,accessor.location).fields;
         for (std::size_t i=0;i<fields.size();++i) if (fields[i].name==accessor.text) {
-            if (fields[i].type!=type) throw Error("E_TYPE",accessor.location,"Property accessor type must match exactly");
+            if (fields[i].type!=type || !indices.empty()) throw Error("E_TYPE",accessor.location,"Property accessor type must match exactly");
             return field_property_accessor(owner,type,i,write,accessor.location);
         }
         const auto methods=class_methods_.find(owner);
         if (methods==class_methods_.end() || !methods->second.contains(accessor.text))
             throw Error("E_NAME",accessor.location,"Unknown property accessor '"+accessor.text+"'");
         const auto id=methods->second.at(accessor.text);const auto& signature=module_.routines[id].signature;
-        if (signature.result!=(write ? Type::unit : type) || signature.parameters.size()!=(write ? 2U : 1U)
-            || (write && (signature.parameters[1].type!=type || signature.parameters[1].by_reference || signature.parameters[1].variadic)))
+        if (signature.result!=(write ? Type::unit : type) || signature.parameters.size()!=indices.size()+(write ? 2U : 1U)
+            || (write && (signature.parameters.back().type!=type || signature.parameters.back().by_reference || signature.parameters.back().variadic)))
             throw Error("E_TYPE",accessor.location,"Property method accessor has an incompatible signature");
+        for(std::size_t i=0;i<indices.size();++i)if(signature.parameters[i+1].type!=indices[i]||signature.parameters[i+1].by_reference||signature.parameters[i+1].variadic)throw Error("E_TYPE",accessor.location,"Property method accessor has an incompatible signature");
         return id;
     }
     void register_properties(const SyntaxStmt& source) {
@@ -1312,9 +1323,11 @@ private:
                     || (class_methods_.contains(owner) && class_methods_.at(owner).contains(property->name.text))
                     || std::any_of(fields.begin(),fields.end(),[wanted=property->name.text](const auto& field){return field.name==wanted;}))
                     throw Error("E_DUPLICATE",property->name.location,"Duplicate class property or member name");
-                ClassProperty bound{resolve_type(*property->type),{},{}};
-                if (property->getter) bound.getter=property_accessor(owner,bound.type,*property->getter,false);
-                if (property->setter) bound.setter=property_accessor(owner,bound.type,*property->setter,true);
+                ClassProperty bound{resolve_type(*property->type),{},{},{},property->default_indexer};
+                for(const auto& index:property->indices)bound.indices.push_back(resolve_type(*index.second));
+                if(bound.default_indexer)for(const auto& [key,existing]:class_properties_[owner]){(void)key;if(existing.default_indexer)throw Error("E_TYPE",property->name.location,"Ambiguous default class property");}
+                if (property->getter) bound.getter=property_accessor(owner,bound.type,*property->getter,false,bound.indices);
+                if (property->setter) bound.setter=property_accessor(owner,bound.type,*property->setter,true,bound.indices);
                 class_properties_[owner][property->name.text]=bound;
             }
         }
@@ -1668,6 +1681,10 @@ private:
         if(module_.types.size()>=1024)throw Error("E_LIMIT",{},"Type limit exceeded");
         TypeInfo type{"icollection",CompoundKind::collection_interface,element,{},array};type.interfaces.edit().parents.push_back(sequence);module_.types.push_back(std::move(type));return static_cast<Type>(63+module_.types.size());
     }
+    ABC_PASCAL_NOINLINE Type list_interface_type(Type element){
+        for(std::size_t i=0;i<module_.types.size();++i)if(module_.types[i].kind==CompoundKind::list_interface&&module_.types[i].element==element)return static_cast<Type>(64+i);
+        const auto parent=collection_interface_type(element),array=info(parent,{}).key;if(module_.types.size()>=1024)throw Error("E_LIMIT",{},"Type limit exceeded");TypeInfo type{"ilist",CompoundKind::list_interface,element,{},array};type.interfaces.edit().parents.push_back(parent);module_.types.push_back(std::move(type));return static_cast<Type>(63+module_.types.size());
+    }
     ABC_PASCAL_NOINLINE Type comparison_type(CompoundKind kind,Type element) {
         for(std::size_t i=0;i<module_.types.size();++i)if(module_.types[i].kind==kind && module_.types[i].element==element)return static_cast<Type>(64+i);
         const auto key=kind==CompoundKind::comparer ? function_type(Type::integer,{{element,false,false},{element,false,false}},{}) : Type::invalid;
@@ -1930,6 +1947,7 @@ private:
             return school_ip_type(syntax.kind=="addr32" ? CompoundKind::school_address : CompoundKind::school_ip);
         }
         if(syntax.kind=="icollection"&&syntax.element)return collection_interface_type(resolve_type(*syntax.element));
+        if(syntax.kind=="ilist"&&syntax.element)return list_interface_type(resolve_type(*syntax.element));
         if((syntax.kind=="icomparable" || syntax.kind=="icomparer" || syntax.kind=="comparer" || syntax.kind=="iequatable" || syntax.kind=="iequalitycomparer" || syntax.kind=="equalitycomparer") && syntax.element)return comparison_type(syntax.kind=="iequatable" ? CompoundKind::equatable_interface : syntax.kind=="iequalitycomparer" ? CompoundKind::equality_comparer_interface : syntax.kind=="equalitycomparer" ? CompoundKind::equality_comparer : syntax.kind=="icomparable" ? CompoundKind::comparable_interface : syntax.kind=="icomparer" ? CompoundKind::comparer_interface : CompoundKind::comparer,resolve_type(*syntax.element));
         if(syntax.kind=="ienumerator" && syntax.element)return enumerator_type(resolve_type(*syntax.element));
         if ((syntax.kind=="sequence" || syntax.kind=="ienumerable") && syntax.element) return sequence_type(CompoundKind::sequence,resolve_type(*syntax.element));
@@ -3269,7 +3287,9 @@ private:
                 }
             }
             if (!result->left) result->left = expression(*source.left);
+            if(bind_property_indices(result->left,source))return std::move(result->left);
             const auto receiver_type = result->left->type;
+            if(receiver_type!=Type::string&&!compound(receiver_type))throw Error("E_TYPE",result->location,"Value is not indexable","Значение не поддерживает индексацию");
             const auto rank=compound(receiver_type) && info(receiver_type,result->location).kind==CompoundKind::array ? info(receiver_type,result->location).rank : 1U;
             if (source.arguments.size()+1!=rank) throw Error("E_TYPE",result->location,"Wrong number of array indices");
             if (receiver_type==Type::string) {
@@ -3572,7 +3592,7 @@ private:
                 auto property=std::move(result.target);
                 if (!property->setter) throw Error("E_TYPE",property->location,"Property is read-only");
                 auto setter=std::make_unique<hir::Expr>();setter->kind=hir::ExprKind::user_call;setter->type=Type::unit;setter->location=property->location;setter->local=*property->setter;
-                if(property->operation=="interface"){setter->kind=hir::ExprKind::interface_call;setter->operation_type=property->operation_type;setter->left=std::move(property->left);}else setter->arguments.push_back(std::move(property->left));setter->arguments.push_back(convert(value(property->type),property->type));
+                if(property->operation=="interface"){setter->kind=hir::ExprKind::interface_call;setter->operation_type=property->operation_type;setter->left=std::move(property->left);}else setter->arguments.push_back(std::move(property->left));for(auto& index:property->arguments)setter->arguments.push_back(std::move(index));setter->arguments.push_back(convert(value(property->type),property->type));
                 result.kind=hir::StmtKind::call;result.expression=std::move(setter);return result;
             }
             if (result.target->kind==hir::ExprKind::list_capacity && result.target->local==static_cast<std::size_t>(ListCapacity::get)) {
@@ -3711,9 +3731,9 @@ private:
         result->left=std::move(argument);return result;
     }
     ABC_PASCAL_NOINLINE bool bind_user_interface_member(hir::Expr& result,const SyntaxExpr& source){
-        auto owner=result.left->type;if(!compound(owner))return false;auto kind=info(owner,result.location).kind;if(kind==CompoundKind::equality_comparer){if(source.token.text!="equals" && source.token.text!="gethashcode")return false;owner=comparison_type(CompoundKind::equality_comparer_interface,info(owner,result.location).element);result.left=convert(std::move(result.left),owner);kind=CompoundKind::equality_comparer_interface;}if(kind==CompoundKind::comparer){if(source.token.text!="compare")return false;owner=comparison_type(CompoundKind::comparer_interface,info(owner,result.location).element);result.left=convert(std::move(result.left),owner);kind=CompoundKind::comparer_interface;}if(kind!=CompoundKind::user_interface && kind!=CompoundKind::comparable_interface && kind!=CompoundKind::comparer_interface && kind!=CompoundKind::equatable_interface && kind!=CompoundKind::equality_comparer_interface && kind!=CompoundKind::collection_interface)return false;const auto contract=interface_contract(module_.types,owner);
+        auto owner=result.left->type;if(!compound(owner))return false;auto kind=info(owner,result.location).kind;if(kind==CompoundKind::equality_comparer){if(source.token.text!="equals" && source.token.text!="gethashcode")return false;owner=comparison_type(CompoundKind::equality_comparer_interface,info(owner,result.location).element);result.left=convert(std::move(result.left),owner);kind=CompoundKind::equality_comparer_interface;}if(kind==CompoundKind::comparer){if(source.token.text!="compare")return false;owner=comparison_type(CompoundKind::comparer_interface,info(owner,result.location).element);result.left=convert(std::move(result.left),owner);kind=CompoundKind::comparer_interface;}if(kind!=CompoundKind::user_interface && kind!=CompoundKind::comparable_interface && kind!=CompoundKind::comparer_interface && kind!=CompoundKind::equatable_interface && kind!=CompoundKind::equality_comparer_interface && kind!=CompoundKind::collection_interface && kind!=CompoundKind::list_interface)return false;const auto contract=interface_contract(module_.types,owner);
         std::optional<std::size_t> method,get,set;for(std::size_t i=0;i<contract.size();++i)if(contract[i].name==source.token.text){if(contract[i].kind==InterfaceMemberKind::method)method=i;else if(contract[i].kind==InterfaceMemberKind::get)get=i;else set=i;}
-        if(get || set){if(source.kind==SyntaxExprKind::member_call || !source.arguments.empty())throw Error("E_TYPE",result.location,"Interface property is not callable");result.kind=hir::ExprKind::property_access;result.type=get ? contract[*get].result : contract[*set].parameters[0].type;result.getter=get;result.setter=set;result.operation="interface";result.operation_type=owner;return true;}
+        if(get || set){if(source.kind==SyntaxExprKind::member_call || !source.arguments.empty())throw Error("E_TYPE",result.location,"Interface property is not callable");result.kind=hir::ExprKind::property_access;result.type=get ? contract[*get].result : contract[*set].parameters.back().type;result.getter=get;result.setter=set;result.operation="interface";result.operation_type=owner;return true;}
         if(!method)throw Error("E_NAME",result.location,"Unknown interface member");
         auto receiver=std::move(result.left);result.left=std::make_unique<hir::Expr>();result.left->kind=hir::ExprKind::default_value;result.left->type=function_type(contract[*method].result,contract[*method].parameters,result.location);bind_value_call(result,source.arguments);result.left=std::move(receiver);result.kind=hir::ExprKind::interface_call;result.local=*method;result.operation_type=owner;return true;
     }
@@ -3966,6 +3986,25 @@ private:
         if(!can_widen(input->type,target))throw Error("E_TYPE",location,"Numeric string operation requires integer or real");
         auto result=std::make_unique<hir::Expr>();result->kind=hir::ExprKind::call;result->location=location;
         result->arguments.push_back(convert(std::move(input),target));bind_builtin(*result,target==Type::integer ? "inttostr" : "floattostr","pabcsystem");return result;
+    }
+    ABC_PASCAL_NOINLINE bool bind_property_indices(std::unique_ptr<hir::Expr>& value,const SyntaxExpr& source){
+        const auto parameters=[&](const hir::Expr& property){std::vector<Type> indices;
+            if(property.operation=="interface"){const auto contract=interface_contract(module_.types,property.operation_type);const auto& member=contract[property.getter?*property.getter:*property.setter];const auto count=member.parameters.size()-(property.getter?0U:1U);for(std::size_t i=0;i<count;++i)indices.push_back(member.parameters[i].type);}
+            else{const auto& signature=module_.routines[property.getter?*property.getter:*property.setter].signature;const auto count=signature.parameters.size()-(property.getter?1U:2U);for(std::size_t i=0;i<count;++i)indices.push_back(signature.parameters[i+1].type);}return indices;};
+        const bool pending=value->kind==hir::ExprKind::property_access&&value->arguments.empty()&&!parameters(*value).empty();
+        if(!pending&&compound(value->type)){
+            const auto owner=value->type;const auto shape=info(owner,value->location);std::optional<ClassProperty> property;
+            if(shape.kind==CompoundKind::object_class){const auto found=class_properties_.find(owner);if(found!=class_properties_.end())for(const auto& [name,item]:found->second){(void)name;if(item.default_indexer)property=item;}}
+            if(property){auto node=std::make_unique<hir::Expr>();node->kind=hir::ExprKind::property_access;node->type=property->type;node->location=source.token.location;node->getter=property->getter;node->setter=property->setter;node->left=std::move(value);value=std::move(node);}
+            else if(shape.kind==CompoundKind::user_interface||shape.kind==CompoundKind::list_interface){
+                const auto contract=interface_contract(module_.types,owner);std::optional<std::size_t> get,set;for(std::size_t i=0;i<contract.size();++i)if(contract[i].default_indexer){if(contract[i].kind==InterfaceMemberKind::get)get=i;else set=i;}
+                if(get||set){auto node=std::make_unique<hir::Expr>();node->kind=hir::ExprKind::property_access;node->type=get?contract[*get].result:contract[*set].parameters.back().type;node->location=source.token.location;node->getter=get;node->setter=set;node->operation="interface";node->operation_type=owner;node->left=std::move(value);value=std::move(node);}
+            }
+        }
+        if(value->kind!=hir::ExprKind::property_access)return false;
+        const auto indices=parameters(*value);if(indices.empty()||!value->arguments.empty())return false;
+        if(source.arguments.size()+1!=indices.size())throw Error("E_TYPE",source.token.location,"Wrong number of property indices","Неверное число индексов свойства");
+        value->arguments.push_back(convert(expression(*source.right,indices[0]),indices[0]));for(std::size_t i=0;i<source.arguments.size();++i)value->arguments.push_back(convert(expression(*source.arguments[i],indices[i+1]),indices[i+1]));return true;
     }
     bool compound_property(const hir::Expr& target) const {
         if(target.kind==hir::ExprKind::property_access || target.kind==hir::ExprKind::list_capacity || target.kind==hir::ExprKind::school_ip
@@ -4428,8 +4467,8 @@ private:
             if(qualified && !unit_call)result->left=expression(*source.left);
             if(bind_sort(*result,source,unit_call ? std::string_view(source.left->token.text) : std::string_view{},qualified && !unit_call,declared))return result;
         }
-        if((name=="ienumerator" || name=="ienumerable" || name=="icollection") && standard_call){
-            if(source.type_arguments.size()!=1 || source.arguments.size()!=1)throw Error("E_TYPE",source.token.location,"Interface conversion requires one type and one value");const auto element=resolve_type(*source.type_arguments[0]),target=name=="ienumerator" ? enumerator_type(element) : name=="icollection" ? collection_interface_type(element) : sequence_type(CompoundKind::sequence,element);auto value=expression(*source.arguments[0],target);if(name=="icollection"&&compound(value->type)&&interface_kind(info(value->type,source.token.location))&&!interface_compatible(module_.types,value->type,target))return interface_conversion(std::move(value),target,true);return convert(std::move(value),target);
+        if((name=="ienumerator" || name=="ienumerable" || name=="icollection" || name=="ilist") && standard_call){
+            if(source.type_arguments.size()!=1 || source.arguments.size()!=1)throw Error("E_TYPE",source.token.location,"Interface conversion requires one type and one value");const auto element=resolve_type(*source.type_arguments[0]),target=name=="ienumerator" ? enumerator_type(element) : name=="icollection" ? collection_interface_type(element) : name=="ilist" ? list_interface_type(element) : sequence_type(CompoundKind::sequence,element);auto value=expression(*source.arguments[0],target);if((name=="icollection"||name=="ilist")&&compound(value->type)&&interface_kind(info(value->type,source.token.location))&&!interface_compatible(module_.types,value->type,target))return interface_conversion(std::move(value),target,true);return convert(std::move(value),target);
         }
         if((name=="eachcount" || name=="each" || name=="todictionary") && (standard_call || (qualified && !qualified_unit))){
             const auto extra=name=="eachcount" ? 1U : name=="each" ? 2U : (source.arguments.size()-(qualified && !qualified_unit ? 0U : 1U)==2 ? 3U : 2U);if(source.type_arguments.size()!=extra)throw Error("E_TYPE",source.token.location,"Wrong Dictionary query explicit type count");std::vector<Type> declared;for(const auto& type:source.type_arguments)declared.push_back(resolve_type(*type));auto result=std::make_unique<hir::Expr>();result->location=source.token.location;const bool member=qualified && !qualified_unit;if(member)result->left=expression(*source.left);(void)bind_dictionary_query(*result,source,{},member,declared);return result;
@@ -4618,7 +4657,7 @@ private:
         if(!compound(owner))return false;const auto& type=info(owner,{});if(std::any_of(type.fields.begin(),type.fields.end(),[&](const auto& f){return f.name==name;}))return true;
         if(class_methods_.contains(owner) && class_methods_.at(owner).contains(std::string(name)))return true;
         if(class_properties_.contains(owner) && class_properties_.at(owner).contains(std::string(name)))return true;
-        const auto members=type.kind==CompoundKind::collection_interface?interface_contract(module_.types,owner):type.interfaces.read().members;
+        const auto members=(type.kind==CompoundKind::collection_interface||type.kind==CompoundKind::list_interface)?interface_contract(module_.types,owner):type.interfaces.read().members;
         return std::any_of(members.begin(),members.end(),[&](const auto& member){return member.name==name;});
     }
     void adapt_enumerable_member(hir::Expr& result,std::string_view name){
@@ -5467,8 +5506,9 @@ private:
             for (std::size_t i=1;i<3;++i) {
                 auto& argument=result.arguments[i];
                 if (argument->type==Type::nil) argument=convert(std::move(argument),sequence_type(CompoundKind::list,Type::string));
+                if(compound(argument->type)&&!indexed_sequence(info(argument->type,result.location).kind))argument=convert(std::move(argument),list_interface_type(Type::string));
                 const auto& type=info(argument->type,result.location);
-                if (!indexed_sequence(type.kind) || type.rank!=1 || type.element!=Type::string) throw Error("E_TYPE",result.location,"ReplaceMany requires string arrays or lists");
+                if ((!indexed_sequence(type.kind)&&type.kind!=CompoundKind::list_interface) || type.rank!=1 || type.element!=Type::string) throw Error("E_TYPE",result.location,"ReplaceMany requires string arrays or lists");
             }
             result.kind=hir::ExprKind::replace_many; result.type=Type::string;
         }
@@ -6280,7 +6320,7 @@ private:
     std::map<Type,std::size_t> class_constructors_;
     std::map<std::size_t,std::size_t> builtin_routines_;
     std::map<std::pair<std::string,Type>,std::size_t> array_library_routines_;
-    struct ClassProperty { Type type;std::optional<std::size_t> getter,setter; };
+    struct ClassProperty { Type type;std::optional<std::size_t> getter,setter;std::vector<Type> indices{};bool default_indexer=false; };
     std::map<Type,std::map<std::string,ClassProperty>> class_properties_;
     Type current_owner_=Type::invalid;
     std::size_t current_self_=0;

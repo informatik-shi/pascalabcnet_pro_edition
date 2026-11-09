@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "runtime_source_base_revision": "33e4b1de0c9371a291f02f3e18f074ea9d0d055d",
-  "runtime_changes_in_this_review": ["native/src/pascal.cpp: closed ICollection type and member binding", "native/src/collection_interface.cpp: native container adapters", "native/src/interfaces.cpp: typed collection contracts and conversions", "native/src/sequences.cpp: custom ICollection Count/Contains/ToArray routing"],
+  "runtime_source_base_revision": "9efadf61bdbdb1ebc2ef2e8d37043f8f8e47e068",
+  "runtime_changes_in_this_review": ["native/src/pascal.cpp: closed IList and named/default indexed property binding", "native/src/collection_interface.cpp: native IList adapters", "native/src/interfaces.cpp: indexed property contracts and verification", "native/src/school_text.cpp: source-compatible IList ReplaceMany callbacks"],
   "scope": "Work planning from shipped interfaces and the current native implementation. Declaration inventory is not implementation coverage. Complete semantic review of all declarations, inherited/imported APIs, lifecycle effects and all supported platforms remains open. No module status is promoted by this audit.",
   "source_notice": "Extracted declarations retain PascalABC.NET source authorship: Ivan Bondarev, Stanislav Mikhalkovich; see ../../doc/copyright.txt and ../../doc/license.txt. These audit files and development tools are not installed with the application.",
   "baselines": {
@@ -90,11 +90,11 @@
       "reviewed_types": ["Addr32", "CalcIP"],
       "implementation_evidence": ["native/src/school.cpp", "native/src/school_text.cpp", "native/src/school_ip.cpp", "native/src/regex.cpp"],
       "remaining_gates": [
-        "ReplaceMany(s,source,target:IList<string>) requires a real typed IList interface; the selected required case currently fails before binding this overload.",
+        "ReplaceMany(s,source,target:IList<string>) now has typed interface and independent callback/error evidence. Remaining School overloads and imported APIs still require their complete semantic audit.",
         "Complete per-overload class/delegate/interface, culture and regex behavior; native regex profiles are not the entire original regex API/dialect.",
         "Source-unit interoperability and full platform/error compatibility remain unproven."
       ],
-      "next_action": "Review all 88 exposed declarations, prioritize shared IList/class foundations and record exact remaining runtime differences."
+      "next_action": "Review all 88 exposed declarations, continue remaining class/Object, culture and regex foundations and record exact remaining runtime differences."
     },
     {
       "name": "PABCSystem",
@@ -104,8 +104,9 @@
       "lifecycle_source": {"initialization_line":17496,"finalization_line":17498},
       "remaining_gates": [
         "Full individual semantic review of 1157 callable/property declarations, including compiler helpers and private members, plus all type aliases, fields, constants, variables and lifecycle effects.",
-        "Positive native checks demonstrate missing Object, decimal, DateTime, Complex, ShortString, sorted collections, IList/IDictionary/ISet, StringBuilder and NumberFormatInfo. ICollection now has typed class/native-container protocol evidence; record boxing and custom Count/CopyTo routing into List materialization/bulk operations remain open. This is a selected list, not the full remaining API.",
+        "Positive native checks demonstrate missing Object, decimal, DateTime, Complex, ShortString, sorted collections, IDictionary/ISet, StringBuilder and NumberFormatInfo. ICollection and IList now have typed class/native-container protocol evidence; record boxing and custom Count/CopyTo routing into List materialization/bulk operations remain open. This is a selected list, not the full remaining API.",
         "Aliased imported types expose APIs beyond the declaration baseline; full boxing, inheritance, overrides, exceptions, generic source routines and source-unit loading must be audited and implemented.",
+        "Audit the older direct List/Dictionary compound-index paths against the original property-assignment lowering. The new typed IList evidence does not prove those older operand-evaluation paths.",
         "Full Windows/Linux/macOS behavior and portable Qt GUI deployment are not established by passing native core checks."
       ],
       "next_action": "Create per-declaration evidence and implement shared language/type foundations needed by whole source units; retain the full bin/Lib scope."

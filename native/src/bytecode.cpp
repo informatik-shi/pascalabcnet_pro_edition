@@ -626,7 +626,8 @@ private:
         }
         case hir::ExprKind::property_access:
             if (!node.getter) throw Error("E_TYPE",node.location,"Property is write-only");
-            expression(*node.left);emit(node.operation=="interface" ? Op::interface_call : Op::call_user,node.operation=="interface" ? node.operation_type : node.type,*node.getter,node.location);break;
+            if(node.arguments.size()!=(node.operation=="interface"?interface_contract(program_.types,node.operation_type).at(*node.getter).parameters.size():program_.routines.at(*node.getter).parameters.size()-1))throw Error("E_TYPE",node.location,"Indexed property requires indices","Для индексируемого свойства нужны индексы");
+            expression(*node.left);for(const auto& index:node.arguments)expression(*index);emit(node.operation=="interface" ? Op::interface_call : Op::call_user,node.operation=="interface" ? node.operation_type : node.type,*node.getter,node.location);break;
 
         default: throw Error("E_HIR",node.location,"Invalid expression dispatch");
         }
@@ -1151,7 +1152,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             break;
         case Op::replace_many: {
             const auto valid=[&](Type container) {
-                return compound(container) && indexed_sequence(type_info(program,container).kind) && type_info(program,container).rank==1 && type_info(program,container).element==Type::string;
+                return compound(container) && (indexed_sequence(type_info(program,container).kind)||type_info(program,container).kind==CompoundKind::list_interface) && type_info(program,container).rank==1 && type_info(program,container).element==Type::string;
             };
             if (instruction.operand<64 || instruction.operand>=64+program.types.size() || !valid(type) || !valid(static_cast<Type>(instruction.operand))) invalid(instruction,"Invalid ReplaceMany string collections");
             break;
@@ -1341,7 +1342,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if (instruction.op==Op::make_default && instruction.operand==1 && compound(type) && type_info(program,type).kind==CompoundKind::object_class
                 && std::any_of(program.routines.begin(),program.routines.end(),[type](const auto& candidate){return candidate.constructor && candidate.owner==type;}))
                 invalid(instruction,"Class constructor cannot be bypassed");
-            if (instruction.op==Op::make_default && instruction.operand==1 && compound(type) && (node_kind(type_info(program,type).kind) || type_info(program,type).kind==CompoundKind::tuple || type_info(program,type).kind==CompoundKind::sequence || type_info(program,type).kind==CompoundKind::enumerator || type_info(program,type).kind==CompoundKind::user_interface || type_info(program,type).kind==CompoundKind::collection_interface || type_info(program,type).kind==CompoundKind::equality_comparer || type_info(program,type).kind==CompoundKind::equatable_interface || type_info(program,type).kind==CompoundKind::equality_comparer_interface || type_info(program,type).kind==CompoundKind::comparer || type_info(program,type).kind==CompoundKind::comparable_interface || type_info(program,type).kind==CompoundKind::comparer_interface || type_info(program,type).kind==CompoundKind::callable || type_info(program,type).kind==CompoundKind::encoding || type_info(program,type).kind==CompoundKind::ini_file || type_info(program,type).kind==CompoundKind::hash_set || type_info(program,type).kind==CompoundKind::dictionary || type_info(program,type).kind==CompoundKind::dictionary_keys || type_info(program,type).kind==CompoundKind::dictionary_values || school_ip_kind(type_info(program,type).kind)))
+            if (instruction.op==Op::make_default && instruction.operand==1 && compound(type) && (node_kind(type_info(program,type).kind) || type_info(program,type).kind==CompoundKind::tuple || type_info(program,type).kind==CompoundKind::sequence || type_info(program,type).kind==CompoundKind::enumerator || type_info(program,type).kind==CompoundKind::user_interface || type_info(program,type).kind==CompoundKind::collection_interface || type_info(program,type).kind==CompoundKind::list_interface || type_info(program,type).kind==CompoundKind::equality_comparer || type_info(program,type).kind==CompoundKind::equatable_interface || type_info(program,type).kind==CompoundKind::equality_comparer_interface || type_info(program,type).kind==CompoundKind::comparer || type_info(program,type).kind==CompoundKind::comparable_interface || type_info(program,type).kind==CompoundKind::comparer_interface || type_info(program,type).kind==CompoundKind::callable || type_info(program,type).kind==CompoundKind::encoding || type_info(program,type).kind==CompoundKind::ini_file || type_info(program,type).kind==CompoundKind::hash_set || type_info(program,type).kind==CompoundKind::dictionary || type_info(program,type).kind==CompoundKind::dictionary_keys || type_info(program,type).kind==CompoundKind::dictionary_values || school_ip_kind(type_info(program,type).kind)))
                 invalid(instruction,"Nodes and tuples require the typed constructor");
             break;
         case Op::routine_value:
@@ -1983,6 +1984,8 @@ void verify(const Program& program) {
             if(type.name!="icollection"||!type.fields.empty()||type.interfaces.read().parents.size()!=1||!type.interfaces.read().members.empty())throw Error("E_BYTECODE",{},"Invalid collection interface metadata");
             prior(type.element);prior(type.key);const auto& array=type_info(program,type.key);const auto parent=type.interfaces.read().parents[0];prior(parent);const auto& sequence=type_info(program,parent);
             if(array.kind!=CompoundKind::array||array.rank!=1||array.element!=type.element||sequence.kind!=CompoundKind::sequence||sequence.element!=type.element)throw Error("E_BYTECODE",{},"Invalid collection interface metadata");
+        } else if(type.kind==CompoundKind::list_interface){
+            if(type.name!="ilist"||!type.fields.empty()||type.interfaces.read().parents.size()!=1||!type.interfaces.read().members.empty())throw Error("E_BYTECODE",{},"Invalid list interface metadata");prior(type.element);prior(type.key);const auto parent=type.interfaces.read().parents[0];prior(parent);const auto& base=type_info(program,parent);if(base.kind!=CompoundKind::collection_interface||base.element!=type.element||base.key!=type.key)throw Error("E_BYTECODE",{},"Invalid list interface parent");
         } else if(type.kind==CompoundKind::equatable_interface || type.kind==CompoundKind::equality_comparer_interface || type.kind==CompoundKind::equality_comparer){
             if(type.name!=(type.kind==CompoundKind::equatable_interface ? "iequatable" : type.kind==CompoundKind::equality_comparer_interface ? "iequalitycomparer" : "equalitycomparer") || type.key!=Type::invalid || !type.fields.empty())throw Error("E_BYTECODE",{},"Invalid equality type metadata");prior(type.element);
             if(type.kind==CompoundKind::equality_comparer && std::none_of(program.types.begin(),program.types.end(),[&](const auto& t){return t.kind==CompoundKind::equality_comparer_interface && t.element==type.element;}))throw Error("E_BYTECODE",{},"Missing IEqualityComparer type");

@@ -1,0 +1,33 @@
+{
+    "schema":  1,
+    "runtime":  "Windows .NET Framework 4.0.30319.42000",
+    "list_outcomes":  456,
+    "school_outcomes":  1152,
+    "scope":  "IList protocol, custom indexer callbacks and the shipped School.ReplaceMany IList algorithm; not whole unit coverage",
+    "artifacts":  [
+                      {
+                          "path":  "reference/list-interface.cs",
+                          "sha256_lf":  "96233926c8a05744bb7b3f06c71dbf9108ef30a93ab881bc3bc6cbf3fbeab417"
+                      },
+                      {
+                          "path":  "reference/generate-list-interface.ps1",
+                          "sha256_lf":  "60fe38a753d73e94378c9cf129606a84277a72f74f07dd108d1a30707e399724"
+                      },
+                      {
+                          "path":  "fixtures/list-interface-program.pas",
+                          "sha256_lf":  "dd9f96d32d0d0863b5568e9eac3cfa831444518bad25c4ee06b46e0665b35616"
+                      },
+                      {
+                          "path":  "fixtures/list-interface-reference.tsv",
+                          "sha256_lf":  "5c815d456521839d9117094a3fc972197a6f1c4ce1ce1453b9a7a926002e3277"
+                      },
+                      {
+                          "path":  "fixtures/school-ilist-program.pas",
+                          "sha256_lf":  "dcb205a61ebe532b7fc800e9659c8b479e3af6b89d60df3e3eaaa176b49317f9"
+                      },
+                      {
+                          "path":  "fixtures/school-ilist-reference.tsv",
+                          "sha256_lf":  "383ae7d4709c1dff4eb4b3b788b76b070a744e15d2639710a94d5e6271ebfbeb"
+                      }
+                  ]
+}

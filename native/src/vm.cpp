@@ -575,7 +575,7 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
         }
         case Op::replace_many: {
             const auto target=std::get<std::shared_ptr<Aggregate>>(pop()),source=std::get<std::shared_ptr<Aggregate>>(pop());
-            const auto text=pop(); stack.push_back(school_replace_many(text,source,target,instruction.location,options)); break;
+            const auto text=pop(); stack.push_back(school_replace_many(values,text,source,target,instruction.type,static_cast<Type>(instruction.operand),options)); break;
         }
         case Op::school_list: {
             const auto method=static_cast<SchoolList>(instruction.operand);
