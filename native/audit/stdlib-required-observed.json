@@ -1,47 +1,59 @@
 {
   "schema": 1,
-  "runtime_source_base_revision": "03e419a7b374d31db9eefe0725a824f9c24e8385",
+  "runtime_source_base_revision": "1d8d089ece5a7adad5f5872541f3c61a5066da13",
   "runtime_source_changes": [
     {
       "path": "native/src/encoding.cpp",
-      "sha256_lf": "4fd4c9fbba1f8222a42679ef450188976f297be05ff13843dfb6aac65600a368"
+      "sha256_lf": "d7753423c0cea9df8c13b34a21f88c126bb71a06872a21374d87bfc643dc41ac"
     },
     {
       "path": "native/src/file_encoding.cpp",
-      "sha256_lf": "be8272795d47177b99bd14d0c9aa0b7fe6f2f8817523fe2801d5b2f8c6a0d20d"
+      "sha256_lf": "29bc7cdf765ac62e794b5207c5b3c5fae9176bec763ae0b0faf674495dddaf21"
     },
     {
       "path": "native/src/file_encoding.hpp",
-      "sha256_lf": "d1da066ea153aa679b2a072198f61be03c3c010f8e337a923d8dac80c54fbb00"
+      "sha256_lf": "b3061249a0ec31af476f9c852303d1eb8a9d9fc6e52f7e1082c85161fbb1aa43"
     },
     {
-      "path": "native/src/gb18030.cpp",
-      "sha256_lf": "a46152d2375ba13435a06270e6d6d9433b3075ec990ee03d20c0baf000c04cec"
+      "path": "native/src/iscii.cpp",
+      "sha256_lf": "4c36b2b381188e43dfb8957818f36ebad1eb37f546e8c336d3d5ba7c93e4cbde"
     },
     {
-      "path": "native/src/gb18030.hpp",
-      "sha256_lf": "207c5d6244a47f037cab90537b78c6210cda2311ab1a82cc38b48d71fe18b62b"
+      "path": "native/src/iscii.hpp",
+      "sha256_lf": "dd6a614672658c11a04651f5d38dfe602fa104991880d16a903cec7fb13c12a6"
     },
     {
-      "path": "native/src/gb18030_data.inc",
-      "sha256_lf": "13af066b301b0c4fe89fe7fdd34d41aa97ec9fa2eac9c4694619fe7c045297cf"
+      "path": "native/src/iscii_data.inc",
+      "sha256_lf": "8749df065b8c0c4dd239b3534d015f35dfd3234bdab9353fc592896a07b29972"
+    },
+    {
+      "path": "native/src/text_encoder.cpp",
+      "sha256_lf": "70af316d2be555c4109c888c32ed614f4fbe8556f174a975b84bbe3ef2bc6a41"
+    },
+    {
+      "path": "native/src/text_file.cpp",
+      "sha256_lf": "c7567cb458d5a4d76422b510db5513af953281be64d09d08de75054cf65c8592"
+    },
+    {
+      "path": "native/src/text_file.hpp",
+      "sha256_lf": "e23847f37c8f32cf851cd8f3de60713ad23ccd7e398716ee12760efe83fba533"
     },
     {
       "path": "native/src/type_names.cpp",
-      "sha256_lf": "0f6bb96e899dc8dffeb1e70c0b90d5d45ff9f22163880d8fe7b8df750572bf22"
+      "sha256_lf": "7a2bd43881d1109b9aec276977830a2d0d7299bd80598d8bfdebb8ee28c32d88"
     },
     {
       "path": "native/src/type_properties.cpp",
-      "sha256_lf": "52056bd9093c681fc033fb4ed185e6a94c8d071f37e1598e824046eaaf8aa91a"
+      "sha256_lf": "d45d79c0db5a124f75e3600e1d556bc2486598156e61d09d1032d73e6353f32a"
     }
   ],
-  "scope": "Selected positive compile requirements in two native builds. Not API coverage or runtime validation. GB18030 full BMP/scalar/four-byte/split/default/strict maps and modern files with preserved legacy EOF differences, all Framework DBCS encoding maps, byte pairs, splits, aliases and modern file recipes with explicit legacy EOF differences, all Framework single-byte encoding maps, aliases and file recipes, standard generic Predicate2/Predicate3 families, named non-generic delegate families and arrow identities, raw Type property metadata and source-file identity, Predicate/Func identities and conversions, user ICollection bulk insertion, user-record field initialization, methods/interfaces, retained List arrays, native range boxing and RealRange equality semantics are validated separately. Field-initializer recipes are source-derived, not a Pascal compiler oracle. Whole standard-library units remain partial.",
+  "scope": "Selected positive compile requirements in two native builds. Not API coverage or runtime validation. Persistent writer encoders and all ten ISCII pages with exhaustive BMP/context/default/strict/script selection/file evidence and preserved legacy EOF differences, GB18030 full BMP/scalar/four-byte/split/default/strict maps and modern files with preserved legacy EOF differences, all Framework DBCS encoding maps, byte pairs, splits, aliases and modern file recipes with explicit legacy EOF differences, all Framework single-byte encoding maps, aliases and file recipes, standard generic Predicate2/Predicate3 families, named non-generic delegate families and arrow identities, raw Type property metadata and source-file identity, Predicate/Func identities and conversions, user ICollection bulk insertion, user-record field initialization, methods/interfaces, retained List arrays, native range boxing and RealRange equality semantics are validated separately. Field-initializer recipes are source-derived, not a Pascal compiler oracle. Whole standard-library units remain partial.",
   "runs": [
     {
       "schema": 1,
       "scope": "Selected required positive compile cases derived from shipped interfaces. Every case must eventually compile. This is a growing gap list, not complete API coverage; accepting a case does not prove its runtime semantics. No expected failure is made a compatibility requirement.",
       "runner": "native/build/clang-incremental/abc.exe",
-      "runner_sha256": "9c3cb5cc273313f93d94e6140affee799b7c61867cb773243ab3378a5ab5d4a8",
+      "runner_sha256": "7f2cbbc5b466229223fcdaa1fb03cf9e9b9c1540d21ea2d86295860c8cdb9d65",
       "version": "ABC Native 0.1.0-dev (Pascal prototype)",
       "cases": [
         {
@@ -326,7 +338,7 @@
       "schema": 1,
       "scope": "Selected required positive compile cases derived from shipped interfaces. Every case must eventually compile. This is a growing gap list, not complete API coverage; accepting a case does not prove its runtime semantics. No expected failure is made a compatibility requirement.",
       "runner": "native/build/qt-editor/Release/abc.exe",
-      "runner_sha256": "1c38da8f3cb71695eb8706cfb70dcf01c9d6a5ee00d7c93b33ba246a74b4f439",
+      "runner_sha256": "306261f60cb82a8ab755b7efdde7df13b9d1d4d54916034ac3fc45fd3b25be53",
       "version": "ABC Native 0.1.0-dev (Pascal prototype)",
       "cases": [
         {

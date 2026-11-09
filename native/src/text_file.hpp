@@ -9,7 +9,7 @@ class FileContext;class LineReader;
 struct TextFile {
     std::filesystem::path filename;
     std::u16string pending;
-    char16_t encoder_carry=0;
+    std::optional<TextEncoder> encoder;
     bool preamble_pending=false;
     std::shared_ptr<LineReader> reader;
     const ExecutionOptions* execution_options=nullptr;

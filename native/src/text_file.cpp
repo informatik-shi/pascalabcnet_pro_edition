@@ -6,7 +6,6 @@
 #include "diagnostics.hpp"
 #include "stdlib.hpp"
 #include "integer_values.hpp"
-#include "sbcs.hpp"
 #include <algorithm>
 #include <charconv>
 #include <limits>
@@ -28,23 +27,17 @@ bool whitespace(char16_t c) {
     return c==u' ' || (c>=9 && c<=13) || c==0x85 || c==0xa0 || c==0x1680
         || (c>=0x2000 && c<=0x200a) || c==0x2028 || c==0x2029 || c==0x202f || c==0x205f || c==0x3000;
 }
-std::string encoded(const TextFile& file,std::u16string_view text,SourceLocation location) {
-    auto bytes=file.encoding ? encode_text_bytes(text,*file.encoding,location) : to_utf8(text,true);
+std::string encoded(const TextFile& file,TextEncoder& encoder,std::u16string_view text,bool final,SourceLocation location) {
+    auto bytes=encoder.encode(text,final,location);
     if(file.preamble_pending && file.encoding)bytes.insert(0,text_encoding_preamble(*file.encoding));
     return bytes;
 }
 void emit_pending(TextFile& file,bool final,SourceLocation location) {
-    std::u16string text;
-    if(file.encoder_carry)text.push_back(file.encoder_carry);
-    text+=file.pending;char16_t carry=0;
-    const auto kind=file.encoding ? file.encoding->kind : TextEncodingKind::utf8;
-    const auto* codec=single_byte_codec(static_cast<std::uint16_t>(kind));
-    if(!final && (!codec || codec->hold_high_surrogate) && !text.empty() && text.back()>=0xd800 && text.back()<=0xdbff) {
-        carry=text.back();text.pop_back();
-    }
-    const auto bytes=encoded(file,text,location);
+    if(!file.encoder)throw runtime_error(RuntimeError::invalid_bytecode,location);
+    auto next=*file.encoder;
+    const auto bytes=encoded(file,next,file.pending,final,location);
     file.writer->write(bytes,location);
-    file.pending.clear();file.encoder_carry=carry;file.preamble_pending=false;
+    file.pending.clear();file.encoder=next;file.preamble_pending=false;
 }
 void assigned(const TextFile& file, SourceLocation location) {
     if (file.filename.empty()) throw runtime_error(RuntimeError::file_unassigned,location);
@@ -127,7 +120,7 @@ void TextFile::close(SourceLocation location) {
         try{flush(location);}catch(...){writer->close();throw;}
         writer->close();writer.reset();
     }
-    pending.clear();encoder_carry=0;preamble_pending=false;
+    pending.clear();encoder.reset();preamble_pending=false;
 }
 void text_assign(FileContext& files, TextFile& file, const Value& name, SourceLocation location) {
     file.filename=files.resolve(string_text(name),location);
@@ -148,7 +141,7 @@ void text_open(FileContext& files,const std::shared_ptr<TextFile>& pointer,unsig
         const bool had_reader=static_cast<bool>(file.reader);file.reader=std::move(next);
         if(!had_reader && file.writer) {
             try{file.flush(location);}catch(...){file.writer->close();throw;}
-            file.writer->close();file.writer.reset();file.pending.clear();file.encoder_carry=0;
+            file.writer->close();file.writer.reset();file.pending.clear();file.encoder.reset();
         }
         return;
     }
@@ -158,7 +151,7 @@ void text_open(FileContext& files,const std::shared_ptr<TextFile>& pointer,unsig
     if(file.writer)file.writer->close();
     file.writer=std::move(next);file.encoding=snapshot;
     file.preamble_pending=file.writer->position()==0 && snapshot && !text_encoding_preamble(*snapshot).empty();
-    file.pending.clear();file.encoder_carry=0;
+    file.pending.clear();file.encoder.emplace(snapshot.value_or(TextEncoding{TextEncodingKind::utf8,false,false}));
 }
 void text_erase(const FileContext& files, const TextFile& file, SourceLocation location) {
     assigned(file,location);
@@ -180,10 +173,9 @@ void text_write(TextFile& file,std::u16string_view value,SourceLocation location
     if(!file.writer)throw runtime_error(RuntimeError::file_write_mode,location);
     if(!file.writer->is_open())throw runtime_error(RuntimeError::file_io,location);
     if(value.size()>file_limit || file.pending.size()>file_limit-value.size())throw runtime_error(RuntimeError::file_limit,location);
-    std::u16string check;
-    if(file.encoder_carry)check.push_back(file.encoder_carry);
-    check+=file.pending;check+=value;
-    const auto bytes=encoded(file,check,location);
+    if(!file.encoder)throw runtime_error(RuntimeError::invalid_bytecode,location);
+    std::u16string check=file.pending;check+=value;auto preview=*file.encoder;
+    const auto bytes=encoded(file,preview,check,true,location);
     if(file.writer->position()>file_limit || bytes.size()>file_limit-file.writer->position())throw runtime_error(RuntimeError::file_limit,location);
     while(!value.empty()) {
         if(file.pending.size()==1024)emit_pending(file,false,location);

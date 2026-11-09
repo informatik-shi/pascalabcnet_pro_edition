@@ -1,0 +1,57 @@
+{
+  "schema": 2,
+  "primitive_runtimes": [
+    "Windows .NET Framework 4.0.30319.42000",
+    "Windows .NET 10.0.12"
+  ],
+  "primitive_fixtures_identical": true,
+  "codecs": 10,
+  "bmp_encoding_inputs": 655360,
+  "single_byte_inputs": 2560,
+  "byte_pair_inputs": 655360,
+  "encoder_contexts_per_codec": 20,
+  "contextual_bmp_inputs": 13107200,
+  "selected_script_pairs": 6553600,
+  "default_restore_inputs": 51200,
+  "file_recipes_per_runtime": 9490,
+  "legacy_file_differences": 958,
+  "scope": "Exhaustive default/exact BMP encodings and every byte pair/split for all ten ISCII pages, actual strict cross-checks, all BMP suffixes in twenty encoder contexts per page, every selected-script pair and ATR default restoration. Context strict classification is verified by actual throwing encoders on every representable scalar, all surrogates, join controls and sampled remaining BMP blocks. Primitive fixtures are byte-identical across both runtimes. Native file behavior follows the selected modern StreamReader policy; 958 legacy file EOF differences remain explicit gaps. 134 of 140 Framework pages supported; six codecs, full Encoding/object APIs and full modules/library remain unfinished.",
+  "artifacts": [
+    {
+      "path": "reference/iscii-encoding.cs",
+      "sha256_lf": "2779a28bf38c6909eca9ce2e91b7052f726550ab3991ab5b0b6de3d21397a137"
+    },
+    {
+      "path": "reference/iscii-files.cs",
+      "sha256_lf": "b17de8e7c59e58f7bc2b30a06d1e412153445f5b9d7a6af75d0a5a99f0cf5f42"
+    },
+    {
+      "path": "reference/generate-iscii.ps1",
+      "sha256_lf": "62ca5a325e87e8a520af5284ed38d35fd81442b625cea6ac7b93071202f6dad7"
+    },
+    {
+      "path": "fixtures/iscii-reference.bin",
+      "sha256_bytes": "3e8bd5bd02611a4958381130500785061b2bcef1c34e26d601440920c0af9844"
+    },
+    {
+      "path": "fixtures/iscii-files-reference.tsv",
+      "sha256_lf": "5559509cd90116a4ea847440e0a9e9920676bed5829cc812e04dbac571e3a7ee"
+    },
+    {
+      "path": "fixtures/iscii-files-framework-reference.tsv",
+      "sha256_lf": "a6be65d98ad1a5783281805336b7431e625efc6fe6e462ae1f8d0bb101a2d262"
+    },
+    {
+      "path": "fixtures/iscii-reference.md",
+      "sha256_lf": "1bb972f8c63a60dd37042129115b707de4c9473e655ddbe583fbd287cc35c974"
+    },
+    {
+      "path": "fixtures/encoding-aliases-reference.tsv",
+      "sha256_lf": "b6f31da1cf7b9b39c653bfb3a2f6eefcf18fb1aec7a41e0545d5f24a6ff1cfec"
+    },
+    {
+      "path": "../tools/generate-iscii.mjs",
+      "sha256_lf": "9d3a45fb40dbbbb4eb6eabdad8f63915b68c15f433babd97e4a8de2c165e577a"
+    }
+  ]
+}

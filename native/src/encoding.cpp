@@ -19,7 +19,7 @@ TextEncoding descriptor(std::int32_t code,SourceLocation location) {
     case 20127:return {TextEncodingKind::ascii,false,false};
     case 54936:return {TextEncodingKind::gb18030,false,false};
     default:
-        if(code>0 && code<=65535 && (single_byte_codec(static_cast<std::uint16_t>(code)) || double_byte_codec(static_cast<std::uint16_t>(code))))return {static_cast<TextEncodingKind>(code),false,false};
+        if(code>0 && code<=65535 && (single_byte_codec(static_cast<std::uint16_t>(code)) || double_byte_codec(static_cast<std::uint16_t>(code)) || iscii_code_page(static_cast<std::uint16_t>(code))))return {static_cast<TextEncodingKind>(code),false,false};
         throw runtime_error(RuntimeError::encoding_kind,location,std::to_string(code));
     }
 }
@@ -29,6 +29,16 @@ std::int32_t named_code(const Value& name,SourceLocation location) {
     if(const auto code=encoding_alias_code(text))return code;
     if(const auto code=double_byte_alias_code(text))return code;
     if(text==u"gb18030")return 54936;
+    if(text==u"x-iscii-as")return 57006;
+    if(text==u"x-iscii-be")return 57003;
+    if(text==u"x-iscii-de")return 57002;
+    if(text==u"x-iscii-gu")return 57010;
+    if(text==u"x-iscii-ka")return 57008;
+    if(text==u"x-iscii-ma")return 57009;
+    if(text==u"x-iscii-or")return 57007;
+    if(text==u"x-iscii-pa")return 57011;
+    if(text==u"x-iscii-ta")return 57004;
+    if(text==u"x-iscii-te")return 57005;
     throw runtime_error(RuntimeError::encoding_kind,location,to_utf8(text,true));
 }
 } // namespace
