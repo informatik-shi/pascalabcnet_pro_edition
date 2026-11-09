@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "runtime_source_base_revision": "0b853e4ad7f44d66a4863b4c373f6027f46ed2df",
-  "runtime_changes_in_this_review": ["native/src/pascal.cpp: closed generic Arrays procedures and typed values", "native/src/bytecode.cpp: generic real matrix formatting contract"],
+  "runtime_source_base_revision": "33e4b1de0c9371a291f02f3e18f074ea9d0d055d",
+  "runtime_changes_in_this_review": ["native/src/pascal.cpp: closed ICollection type and member binding", "native/src/collection_interface.cpp: native container adapters", "native/src/interfaces.cpp: typed collection contracts and conversions", "native/src/sequences.cpp: custom ICollection Count/Contains/ToArray routing"],
   "scope": "Work planning from shipped interfaces and the current native implementation. Declaration inventory is not implementation coverage. Complete semantic review of all declarations, inherited/imported APIs, lifecycle effects and all supported platforms remains open. No module status is promoted by this audit.",
   "source_notice": "Extracted declarations retain PascalABC.NET source authorship: Ivan Bondarev, Stanislav Mikhalkovich; see ../../doc/copyright.txt and ../../doc/license.txt. These audit files and development tools are not installed with the application.",
   "baselines": {
@@ -104,7 +104,7 @@
       "lifecycle_source": {"initialization_line":17496,"finalization_line":17498},
       "remaining_gates": [
         "Full individual semantic review of 1157 callable/property declarations, including compiler helpers and private members, plus all type aliases, fields, constants, variables and lifecycle effects.",
-        "Positive native checks demonstrate missing Object, decimal, DateTime, Complex, ShortString, sorted collections, collection interfaces, StringBuilder and NumberFormatInfo. This is a selected list, not the full remaining API.",
+        "Positive native checks demonstrate missing Object, decimal, DateTime, Complex, ShortString, sorted collections, IList/IDictionary/ISet, StringBuilder and NumberFormatInfo. ICollection now has typed class/native-container protocol evidence; record boxing and custom Count/CopyTo routing into List materialization/bulk operations remain open. This is a selected list, not the full remaining API.",
         "Aliased imported types expose APIs beyond the declaration baseline; full boxing, inheritance, overrides, exceptions, generic source routines and source-unit loading must be audited and implemented.",
         "Full Windows/Linux/macOS behavior and portable Qt GUI deployment are not established by passing native core checks."
       ],

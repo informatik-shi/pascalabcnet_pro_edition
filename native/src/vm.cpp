@@ -45,6 +45,7 @@
 #include "enumerator.hpp"
 #include "sequence_set.hpp"
 #include "interfaces.hpp"
+#include "collection_interface.hpp"
 #include "ordinal_range.hpp"
 #include "real_interval.hpp"
 #include "new_set.hpp"
@@ -1171,6 +1172,9 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
         case Op::interface_cast: {auto value=pop();stack.push_back(interface_cast(values,instruction.type,static_cast<Type>(instruction.operand>>1U),(instruction.operand&1U)!=0,value));break;}
         case Op::interface_call: {
             const auto count=interface_contract(program.types,instruction.type).at(instruction.operand).parameters.size();
+            if(native_collection_target(program,instruction.type,stack[stack.size()-count-1])){
+                std::vector<Value> arguments(count);for(auto it=arguments.rbegin();it!=arguments.rend();++it)*it=pop();auto receiver=pop();auto result=native_collection_invoke(values,instruction.type,instruction.operand,receiver,arguments,options);if(interface_contract(program.types,instruction.type).at(instruction.operand).result!=Type::unit)stack.push_back(std::move(result));break;
+            }
             const auto& receiver=std::get<std::shared_ptr<Aggregate>>(stack[stack.size()-count-1]);
             if(receiver && !receiver->nil && (type_info(program,receiver->type).kind==CompoundKind::comparer || type_info(program,receiver->type).kind==CompoundKind::equality_comparer)){
                 std::vector<Value> arguments(count);for(auto it=arguments.rbegin();it!=arguments.rend();++it)*it=pop();auto object=pop();stack.emplace_back(type_info(program,std::get<std::shared_ptr<Aggregate>>(object)->type).kind==CompoundKind::equality_comparer ? equality_invoke(values,instruction.type,instruction.operand,object,arguments,options) : comparer_invoke(values,instruction.type,object,arguments,options));

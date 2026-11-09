@@ -9,7 +9,7 @@ enum class DictionaryMethod {
  get_default,get_or_add_value,get_or_add_factory,keys,values,copy_value,update,membership,
  merge,without_key,without_keys,remove_keys,pair_construct,pair_to_string,view_count,view_contains,view_copy_to,each_count,each,to_dictionary,to_dictionary_elements,
  get_enumerator,enumerator_move,enumerator_move_copy,enumerator_current,enumerator_dispose,enumerator_reset,
- construct_comparer,construct_capacity_comparer,construct_copy_comparer,comparer,pair_contains
+ construct_comparer,construct_capacity_comparer,construct_copy_comparer,comparer,pair_contains,pair_copy_to
 };
 std::shared_ptr<Aggregate> dictionary_sequence_source(const SequenceState& state,SourceLocation location);
 bool dictionary_sequence_resume(Values& values,const std::shared_ptr<Aggregate>& cursor,std::uint64_t index,const ExecutionOptions& options);

@@ -1,0 +1,24 @@
+{
+    "schema":  1,
+    "runtime":  "Windows .NET Framework 4.0.30319.42000",
+    "outcomes":  768,
+    "scope":  "Independent ICollection protocol and selected legacy Enumerable consumers; not complete unit coverage",
+    "artifacts":  [
+                      {
+                          "path":  "reference/collection-interface.cs",
+                          "sha256_lf":  "7a93e52feaa73fd7fbcf4394f55b54c4d8eeab3afe61bb33dc6e244179a8c639"
+                      },
+                      {
+                          "path":  "reference/generate-collection-interface.ps1",
+                          "sha256_lf":  "bc60bed2328891db557485f0f8bc878e6989e9498ce4ca19df0ace7a03a4d551"
+                      },
+                      {
+                          "path":  "fixtures/collection-interface-program.pas",
+                          "sha256_lf":  "a3a2efa6fdfe3c29417bcc54e80a6bfffe75ed9be4ec5e501267a61ca335397c"
+                      },
+                      {
+                          "path":  "fixtures/collection-interface-reference.tsv",
+                          "sha256_lf":  "cd74ec25fd74167dec1f1ce521040a3dd705d89b3e1c2e7b96ab3d2b4e839d26"
+                      }
+                  ]
+}

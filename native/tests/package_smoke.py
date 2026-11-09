@@ -341,6 +341,7 @@ def main():
                 ("file-operations.pas", "Прочитано:\nПервая строка\nВторая строка\nФайл удалён: True\n"),
                 ("file-streams.pas", "Код замены: 65533\nЧисло символов: 1\nText: 65533\nУдалён: True\n"),
                 ("array-generics.pas", "1/2/3\n3|2|1\n7,7,7\n1.5 1.5 \n1.50 1.50 \n"),
+                ("collection-interfaces.pas", "2 False True\n[0,7,8]\n7 8 \nTrue 1\nTrue\n1 True\n0\n"),
                 ("small-integers.pas", "Значения: 255 -128 -32768\nСумма с расширением: 256\nКвадрат: 65025\nГраница byte: 254|255|\nМассив smallint: 1 -2\n"),
                 ("unsigned-integers.pas", "Граница 32 бит: 4294967295\nС расширением: 4294967296\nГраница 64 бит: 18446744073709551615\nКвадрат word: 4294836225\nПредыдущее: 18446744073709551614\nПереключение: True False\n"),
                 ("random-arrays.pas", "Arrays, 0..99: 24|11|46|\nPABCSystem, 0..100: 25|11|47|\nПосле заполнения: 10|10|11|\nВещественное: 0.25\n"),
@@ -1812,6 +1813,18 @@ def main():
             disposed = subprocess.run([runner, "run", str(iterator_source)], text=True, encoding="utf-8", capture_output=True, cwd=folder, env=env, timeout=10)
             if disposed.returncode != 0 or disposed.stdout or disposed.stderr:
                 raise RuntimeError(f"{name} interface cursor resource disposal failed: {disposed.stderr!r}")
+            collection_interface_error = folder / "Ошибки интерфейса коллекций.pas"
+            for expression, english, russian in [
+                ("var c:ICollection<integer>:=Arr(1);c.Add(2)", "Collection has a fixed size", "Коллекция имеет фиксированный размер"),
+                ("var d:=new Dictionary<integer,integer>;var c:ICollection<integer>:=d.Keys;c.Clear", "Collection is read-only", "Коллекция доступна только для чтения"),
+            ]:
+                collection_interface_error.write_text(f"begin\n Write('before');{expression};\nend.", encoding="utf-8")
+                invalid = subprocess.run([runner, "run", str(collection_interface_error)], text=True, encoding="utf-8", capture_output=True, cwd=folder, env=env, timeout=10)
+                if (invalid.returncode != 1 or invalid.stdout != "before" or "E_READONLY" not in invalid.stderr
+                        or f"EN: {english}" not in invalid.stderr or f"RU: {russian}" not in invalid.stderr
+                        or f"{collection_interface_error}:2:" not in invalid.stderr):
+                    raise RuntimeError(f"{name} ICollection runtime bilingual error failed: {invalid.stdout!r} {invalid.stderr!r}")
+            results[-1]["native_collection_interfaces_and_bilingual_errors"] = "passed"
             results[-1]["native_generic_enumerators_boxing_resources_and_bilingual_errors"] = "passed"
             results[-1]["native_typed_dictionary_enumerators_and_bilingual_errors"] = "passed"
             results[-1]["native_dictionary_factories_views_callbacks_and_bilingual_errors"] = "passed"

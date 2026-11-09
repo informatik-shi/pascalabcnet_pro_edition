@@ -42,6 +42,7 @@ add_library(abc_core
     src/dictionary.cpp
     src/enumerator.cpp
     src/interfaces.cpp
+    src/collection_interface.cpp
     src/ordinal_range.cpp
     src/real_interval.cpp
     src/new_set.cpp
@@ -244,6 +245,13 @@ if(BUILD_TESTING)
         target_compile_options(abc_array_generics_tests PRIVATE /utf-8)
     endif()
     add_test(NAME array_generics COMMAND abc_array_generics_tests)
+    add_executable(abc_collection_interface_tests tests/collection_interface_tests.cpp)
+    target_link_libraries(abc_collection_interface_tests PRIVATE abc_core)
+    if(MSVC)
+        target_compile_options(abc_collection_interface_tests PRIVATE /utf-8)
+    endif()
+    add_test(NAME collection_interfaces COMMAND abc_collection_interface_tests)
+    add_test(NAME collection_interfaces_example COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/examples/collection-interfaces.pas")
     add_test(NAME array_generics_example COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/examples/array-generics.pas")
     add_test(NAME sequence_sets_example COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/examples/sequence-sets.pas")
     add_test(NAME sequence_equality COMMAND abc_sequence_equality_tests)

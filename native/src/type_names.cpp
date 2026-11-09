@@ -51,7 +51,7 @@ std::u16string byref_name(const Program& program,Type type,Work& work){
         case CompoundKind::association:name=u"AssocArray";arity=2;break;case CompoundKind::linked_list:name=u"LinkedList";break;
         case CompoundKind::linked_node:name=u"LinkedListNode";break;case CompoundKind::single_node:name=u"SingleNode";break;
         case CompoundKind::sequence:name=u"IEnumerable";break;case CompoundKind::enumerator:name=u"IEnumerator";break;
-        case CompoundKind::equatable_interface:name=u"IEquatable";break;case CompoundKind::equality_comparer_interface:name=u"IEqualityComparer";break;case CompoundKind::equality_comparer:name=u"EqualityComparer";break;
+        case CompoundKind::collection_interface:name=u"ICollection";break;case CompoundKind::equatable_interface:name=u"IEquatable";break;case CompoundKind::equality_comparer_interface:name=u"IEqualityComparer";break;case CompoundKind::equality_comparer:name=u"EqualityComparer";break;
         case CompoundKind::comparable_interface:name=u"IComparable";break;case CompoundKind::comparer_interface:name=u"IComparer";break;case CompoundKind::comparer:name=u"Comparer";break;
         case CompoundKind::tuple:name=u"Tuple";arity=info.fields.size();break;
         case CompoundKind::callable:name=info.element==Type::unit ? u"Action" : u"Func";arity=info.parameters.size()+(info.element==Type::unit ? 0U : 1U);break;
@@ -166,7 +166,7 @@ std::u16string reflected_type_name(const Program& program,const ReflectedType& t
                 case CompoundKind::dynarray:name=u"DynArray";break;case CompoundKind::simple_set:name=u"SimpleSet";break;case CompoundKind::hash_set:name=u"HashSet";break;
                 case CompoundKind::new_set:name=u"NewSet";break;case CompoundKind::linked_list:name=u"LinkedList";break;case CompoundKind::linked_node:name=u"LinkedListNode";break;
                 case CompoundKind::single_node:name=u"SingleNode";break;case CompoundKind::sequence:name=u"IEnumerable";break;case CompoundKind::enumerator:name=u"IEnumerator";break;
-        case CompoundKind::equatable_interface:name=u"IEquatable";break;case CompoundKind::equality_comparer_interface:name=u"IEqualityComparer";break;case CompoundKind::equality_comparer:name=u"EqualityComparer";break;
+        case CompoundKind::collection_interface:name=u"ICollection";break;case CompoundKind::equatable_interface:name=u"IEquatable";break;case CompoundKind::equality_comparer_interface:name=u"IEqualityComparer";break;case CompoundKind::equality_comparer:name=u"EqualityComparer";break;
         case CompoundKind::comparable_interface:name=u"IComparable";break;case CompoundKind::comparer_interface:name=u"IComparer";break;case CompoundKind::comparer:name=u"Comparer";break;
                 case CompoundKind::record:if(key_value_pair_type(info)){name=u"KeyValuePair";for(const auto& field:info.fields)arguments.push_back(field.type);}else if(dictionary_enumerator_type(info)){name=u"Enumerator";for(const auto& field:enumerator_pair(program,info).fields)arguments.push_back(field.type);}else if(collection_enumerator_type(info)){name=u"Enumerator";arguments.push_back(info.element);}break;
                 case CompoundKind::dictionary:name=u"Dictionary";arguments.push_back(info.key);arguments.push_back(type_info(program,info.element).fields[1].type);break;
@@ -224,7 +224,7 @@ std::u16string reflected_type_name(const Program& program,const ReflectedType& t
         case CompoundKind::linked_node:name=u"LinkedListNode";break;case CompoundKind::linked_list:name=u"LinkedList";break;
         case CompoundKind::single_node:name=u"SingleNode";break;case CompoundKind::hash_set:name=u"HashSet";break;
         case CompoundKind::sequence:name=u"IEnumerable";break;case CompoundKind::enumerator:name=u"IEnumerator";break;
-        case CompoundKind::equatable_interface:name=u"IEquatable";break;case CompoundKind::equality_comparer_interface:name=u"IEqualityComparer";break;case CompoundKind::equality_comparer:name=u"EqualityComparer";break;
+        case CompoundKind::collection_interface:name=u"ICollection";break;case CompoundKind::equatable_interface:name=u"IEquatable";break;case CompoundKind::equality_comparer_interface:name=u"IEqualityComparer";break;case CompoundKind::equality_comparer:name=u"EqualityComparer";break;
         case CompoundKind::comparable_interface:name=u"IComparable";break;case CompoundKind::comparer_interface:name=u"IComparer";break;case CompoundKind::comparer:name=u"Comparer";break;
         default:throw runtime_error(RuntimeError::invalid_bytecode,location);
         }

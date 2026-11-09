@@ -21,6 +21,8 @@
 #include "dictionary.hpp"
 #include "ordinal_range.hpp"
 #include "new_set.hpp"
+#include "collection_interface.hpp"
+#include "interfaces.hpp"
 #include <cmath>
 
 namespace abc {
@@ -362,6 +364,17 @@ Value sequence_at(Values& values,const std::shared_ptr<Aggregate>& sequence,std:
     return school_ip_sequence_value(values,type_info(values.program,sequence->type).element,state,index);
 }
 Value sequence_collect(Values& values,const std::shared_ptr<Aggregate>& sequence,Type collection,const ExecutionOptions& options) {
+    const auto collection_owner=sequence_collection_owner(values.program,sequence);
+    if(collection_owner!=Type::invalid && (collection==Type::invalid || type_info(values.program,collection).kind==CompoundKind::array)){
+        const auto source=sequence->sequence->source;
+        const auto count=std::get<std::int32_t>(interface_invoke(values,collection_owner,0,source,{},options));
+        if(collection==Type::invalid)return count;
+        // The legacy LINQ ToArray buffer rejects an invalid custom Count before CopyTo.
+        if(count<0)throw runtime_error(RuntimeError::nil_reference,values.location);
+        const auto result=values.array(collection,static_cast<std::size_t>(count),true);
+        if(count){const std::array<Value,2> arguments{result,std::int32_t{0}};(void)interface_invoke(values,collection_owner,5,source,arguments,options);}
+        return result;
+    }
     if(sequence && !sequence->nil && sequence->sequence && sequence->sequence->provider==SequenceProvider::ordinal_range)return ordinal_range_collect(values,sequence->sequence->source,collection,options);
     const auto iterator=sequence_begin(values,sequence,options);
     return sequence_finally(values,iterator,options,[&]() -> Value {
@@ -410,6 +423,8 @@ Value sequence_query(Values& values,const std::shared_ptr<Aggregate>& sequence,S
     const auto element=type_info(values.program,sequence->type).element;
     if(method==SequenceQuery::contains && sequence->sequence){
         const auto& state=*sequence->sequence;const auto source=state.source;
+        const auto collection_owner=sequence_collection_owner(values.program,sequence);
+        if(collection_owner!=Type::invalid){const std::array<Value,1> args{argument};return interface_invoke(values,collection_owner,4,source,args,options);}
         if(state.provider==SequenceProvider::array && source && type_info(values.program,source->type).kind==CompoundKind::array){require(source,values.location);ValueHashWork work{values,options};for(const auto& cell:source->items){if(value_equal(work,cell->value,argument))return true;}return false;}
         if(state.provider==SequenceProvider::list && source && type_info(values.program,source->type).element==element)return list_contains(values,source,argument,options);
         if(state.provider==SequenceProvider::hash_set && source && type_info(values.program,source->type).element==element){require(source,values.location);const std::array<Value,2> args{source,argument};return hash_set_invoke(values,source->type,Type::invalid,HashSetMethod::contains,args,options);}

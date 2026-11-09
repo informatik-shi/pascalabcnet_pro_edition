@@ -511,7 +511,7 @@ private:
             if (result->kind=="system") {
                 result->system_qualified=true; expect("."); result->kind=is("type") ? consume().text : name().text;
                 if(result->kind=="text") {expect(".");result->kind=name().text;if(result->kind!="encoding")throw Error("E_UNSUPPORTED",result->token.location,"Unknown or unsupported Encoding type");}
-                else if(result->kind=="collections"){expect(".");const auto generic=name();if(generic.text!="generic")throw Error("E_UNSUPPORTED",generic.location,"Unknown System.Collections namespace");expect(".");result->kind=name().text;if(result->kind!="dictionary" && result->kind!="keyvaluepair" && result->kind!="ienumerable" && result->kind!="ienumerator" && result->kind!="list" && result->kind!="hashset" && result->kind!="icomparer" && result->kind!="comparer" && result->kind!="iequalitycomparer" && result->kind!="equalitycomparer")throw Error("E_UNSUPPORTED",result->token.location,"Unknown generic collection type");}
+                else if(result->kind=="collections"){expect(".");const auto generic=name();if(generic.text!="generic")throw Error("E_UNSUPPORTED",generic.location,"Unknown System.Collections namespace");expect(".");result->kind=name().text;if(result->kind!="dictionary" && result->kind!="keyvaluepair" && result->kind!="ienumerable" && result->kind!="ienumerator" && result->kind!="list" && result->kind!="hashset" && result->kind!="icomparer" && result->kind!="comparer" && result->kind!="iequalitycomparer" && result->kind!="equalitycomparer" && result->kind!="icollection")throw Error("E_UNSUPPORTED",result->token.location,"Unknown generic collection type");}
                 else if (result->kind!="func" && result->kind!="action" && result->kind!="predicate" && result->kind!="type" && result->kind!="void" && result->kind!="single" && result->kind!="icomparable" && result->kind!="iequatable")
                     throw Error("E_UNSUPPORTED",result->token.location,"Unknown or unsupported type 'System."+result->kind+"'");
             }
@@ -538,7 +538,7 @@ private:
                         if(is(".") && [&]{auto probe=lexer_;return probe.next().text=="enumerator";}()){expect(".");const auto member=name();if(member.text!="enumerator")throw Error("E_UNSUPPORTED",member.location,"Unknown Dictionary nested type");result->kind=nested.text=="keycollection" ? "dictionary_key_enumerator" : "dictionary_value_enumerator";}
                     }else throw Error("E_UNSUPPORTED",nested.location,"Unknown Dictionary nested type");
                 }
-            } else if ((result->kind=="icomparable" || result->kind=="icomparer" || result->kind=="comparer" || result->kind=="iequatable" || result->kind=="iequalitycomparer" || result->kind=="equalitycomparer" || result->kind=="ienumerable" || result->kind=="ienumerator" || result->kind == "list" || result->kind == "hashset" || result->kind=="newset" || result->kind == "stack" || result->kind == "queue" || result->kind == "dynarray" || result->kind == "simpleset" || result->kind == "linkedlist" || result->kind == "linkedlistnode" || result->kind == "singlenode") && accept("<")) {
+            } else if ((result->kind=="icomparable" || result->kind=="icomparer" || result->kind=="comparer" || result->kind=="iequatable" || result->kind=="iequalitycomparer" || result->kind=="equalitycomparer" || result->kind=="icollection" || result->kind=="ienumerable" || result->kind=="ienumerator" || result->kind == "list" || result->kind == "hashset" || result->kind=="newset" || result->kind == "stack" || result->kind == "queue" || result->kind == "dynarray" || result->kind == "simpleset" || result->kind == "linkedlist" || result->kind == "linkedlistnode" || result->kind == "singlenode") && accept("<")) {
                 result->named=false; result->element = type_syntax(); expect(">");
             }
         }
@@ -1662,6 +1662,12 @@ private:
         }
         return false;
     }
+    ABC_PASCAL_NOINLINE Type collection_interface_type(Type element) {
+        for(std::size_t i=0;i<module_.types.size();++i)if(module_.types[i].kind==CompoundKind::collection_interface&&module_.types[i].element==element)return static_cast<Type>(64+i);
+        const auto array=sequence_type(CompoundKind::array,element),sequence=sequence_type(CompoundKind::sequence,element);(void)enumerator_type(element);
+        if(module_.types.size()>=1024)throw Error("E_LIMIT",{},"Type limit exceeded");
+        TypeInfo type{"icollection",CompoundKind::collection_interface,element,{},array};type.interfaces.edit().parents.push_back(sequence);module_.types.push_back(std::move(type));return static_cast<Type>(63+module_.types.size());
+    }
     ABC_PASCAL_NOINLINE Type comparison_type(CompoundKind kind,Type element) {
         for(std::size_t i=0;i<module_.types.size();++i)if(module_.types[i].kind==kind && module_.types[i].element==element)return static_cast<Type>(64+i);
         const auto key=kind==CompoundKind::comparer ? function_type(Type::integer,{{element,false,false},{element,false,false}},{}) : Type::invalid;
@@ -1923,6 +1929,7 @@ private:
             if (!imported_units_.contains("school")) throw Error("E_UNSUPPORTED",syntax.token.location,"IPv4 classes require uses School");
             return school_ip_type(syntax.kind=="addr32" ? CompoundKind::school_address : CompoundKind::school_ip);
         }
+        if(syntax.kind=="icollection"&&syntax.element)return collection_interface_type(resolve_type(*syntax.element));
         if((syntax.kind=="icomparable" || syntax.kind=="icomparer" || syntax.kind=="comparer" || syntax.kind=="iequatable" || syntax.kind=="iequalitycomparer" || syntax.kind=="equalitycomparer") && syntax.element)return comparison_type(syntax.kind=="iequatable" ? CompoundKind::equatable_interface : syntax.kind=="iequalitycomparer" ? CompoundKind::equality_comparer_interface : syntax.kind=="equalitycomparer" ? CompoundKind::equality_comparer : syntax.kind=="icomparable" ? CompoundKind::comparable_interface : syntax.kind=="icomparer" ? CompoundKind::comparer_interface : CompoundKind::comparer,resolve_type(*syntax.element));
         if(syntax.kind=="ienumerator" && syntax.element)return enumerator_type(resolve_type(*syntax.element));
         if ((syntax.kind=="sequence" || syntax.kind=="ienumerable") && syntax.element) return sequence_type(CompoundKind::sequence,resolve_type(*syntax.element));
@@ -3704,7 +3711,7 @@ private:
         result->left=std::move(argument);return result;
     }
     ABC_PASCAL_NOINLINE bool bind_user_interface_member(hir::Expr& result,const SyntaxExpr& source){
-        auto owner=result.left->type;if(!compound(owner))return false;auto kind=info(owner,result.location).kind;if(kind==CompoundKind::equality_comparer){if(source.token.text!="equals" && source.token.text!="gethashcode")return false;owner=comparison_type(CompoundKind::equality_comparer_interface,info(owner,result.location).element);result.left=convert(std::move(result.left),owner);kind=CompoundKind::equality_comparer_interface;}if(kind==CompoundKind::comparer){if(source.token.text!="compare")return false;owner=comparison_type(CompoundKind::comparer_interface,info(owner,result.location).element);result.left=convert(std::move(result.left),owner);kind=CompoundKind::comparer_interface;}if(kind!=CompoundKind::user_interface && kind!=CompoundKind::comparable_interface && kind!=CompoundKind::comparer_interface && kind!=CompoundKind::equatable_interface && kind!=CompoundKind::equality_comparer_interface)return false;const auto contract=interface_contract(module_.types,owner);
+        auto owner=result.left->type;if(!compound(owner))return false;auto kind=info(owner,result.location).kind;if(kind==CompoundKind::equality_comparer){if(source.token.text!="equals" && source.token.text!="gethashcode")return false;owner=comparison_type(CompoundKind::equality_comparer_interface,info(owner,result.location).element);result.left=convert(std::move(result.left),owner);kind=CompoundKind::equality_comparer_interface;}if(kind==CompoundKind::comparer){if(source.token.text!="compare")return false;owner=comparison_type(CompoundKind::comparer_interface,info(owner,result.location).element);result.left=convert(std::move(result.left),owner);kind=CompoundKind::comparer_interface;}if(kind!=CompoundKind::user_interface && kind!=CompoundKind::comparable_interface && kind!=CompoundKind::comparer_interface && kind!=CompoundKind::equatable_interface && kind!=CompoundKind::equality_comparer_interface && kind!=CompoundKind::collection_interface)return false;const auto contract=interface_contract(module_.types,owner);
         std::optional<std::size_t> method,get,set;for(std::size_t i=0;i<contract.size();++i)if(contract[i].name==source.token.text){if(contract[i].kind==InterfaceMemberKind::method)method=i;else if(contract[i].kind==InterfaceMemberKind::get)get=i;else set=i;}
         if(get || set){if(source.kind==SyntaxExprKind::member_call || !source.arguments.empty())throw Error("E_TYPE",result.location,"Interface property is not callable");result.kind=hir::ExprKind::property_access;result.type=get ? contract[*get].result : contract[*set].parameters[0].type;result.getter=get;result.setter=set;result.operation="interface";result.operation_type=owner;return true;}
         if(!method)throw Error("E_NAME",result.location,"Unknown interface member");
@@ -4421,8 +4428,8 @@ private:
             if(qualified && !unit_call)result->left=expression(*source.left);
             if(bind_sort(*result,source,unit_call ? std::string_view(source.left->token.text) : std::string_view{},qualified && !unit_call,declared))return result;
         }
-        if((name=="ienumerator" || name=="ienumerable") && standard_call){
-            if(source.type_arguments.size()!=1 || source.arguments.size()!=1)throw Error("E_TYPE",source.token.location,"Interface conversion requires one type and one value");const auto element=resolve_type(*source.type_arguments[0]),target=name=="ienumerator" ? enumerator_type(element) : sequence_type(CompoundKind::sequence,element);return convert(expression(*source.arguments[0],target),target);
+        if((name=="ienumerator" || name=="ienumerable" || name=="icollection") && standard_call){
+            if(source.type_arguments.size()!=1 || source.arguments.size()!=1)throw Error("E_TYPE",source.token.location,"Interface conversion requires one type and one value");const auto element=resolve_type(*source.type_arguments[0]),target=name=="ienumerator" ? enumerator_type(element) : name=="icollection" ? collection_interface_type(element) : sequence_type(CompoundKind::sequence,element);auto value=expression(*source.arguments[0],target);if(name=="icollection"&&compound(value->type)&&interface_kind(info(value->type,source.token.location))&&!interface_compatible(module_.types,value->type,target))return interface_conversion(std::move(value),target,true);return convert(std::move(value),target);
         }
         if((name=="eachcount" || name=="each" || name=="todictionary") && (standard_call || (qualified && !qualified_unit))){
             const auto extra=name=="eachcount" ? 1U : name=="each" ? 2U : (source.arguments.size()-(qualified && !qualified_unit ? 0U : 1U)==2 ? 3U : 2U);if(source.type_arguments.size()!=extra)throw Error("E_TYPE",source.token.location,"Wrong Dictionary query explicit type count");std::vector<Type> declared;for(const auto& type:source.type_arguments)declared.push_back(resolve_type(*type));auto result=std::make_unique<hir::Expr>();result->location=source.token.location;const bool member=qualified && !qualified_unit;if(member)result->left=expression(*source.left);(void)bind_dictionary_query(*result,source,{},member,declared);return result;
@@ -4611,7 +4618,8 @@ private:
         if(!compound(owner))return false;const auto& type=info(owner,{});if(std::any_of(type.fields.begin(),type.fields.end(),[&](const auto& f){return f.name==name;}))return true;
         if(class_methods_.contains(owner) && class_methods_.at(owner).contains(std::string(name)))return true;
         if(class_properties_.contains(owner) && class_properties_.at(owner).contains(std::string(name)))return true;
-        return std::any_of(type.interfaces.read().members.begin(),type.interfaces.read().members.end(),[&](const auto& member){return member.name==name;});
+        const auto members=type.kind==CompoundKind::collection_interface?interface_contract(module_.types,owner):type.interfaces.read().members;
+        return std::any_of(members.begin(),members.end(),[&](const auto& member){return member.name==name;});
     }
     void adapt_enumerable_member(hir::Expr& result,std::string_view name){
         if(name=="gettype" || name=="tostring" || declared_member(result.left->type,name))return;const auto target=enumerable_contract(result.left->type,result.location);

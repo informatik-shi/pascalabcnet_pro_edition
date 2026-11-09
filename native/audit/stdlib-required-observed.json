@@ -1,23 +1,59 @@
 {
   "schema": 1,
-  "runtime_source_base_revision": "0b853e4ad7f44d66a4863b4c373f6027f46ed2df",
+  "runtime_source_base_revision": "33e4b1de0c9371a291f02f3e18f074ea9d0d055d",
   "runtime_source_changes": [
     {
+      "path": "native/include/abc/core.hpp",
+      "sha256_lf": "3a120a515098a281d39baea2110aca81f92c773f5e5f9e16fb7353ec8fac8e36"
+    },
+    {
+      "path": "native/src/collection_interface.cpp",
+      "sha256_lf": "f767a42f4a2d14f5f507c702307ddcb62393f37d1137b043b756a918369a0768"
+    },
+    {
+      "path": "native/src/collection_interface.hpp",
+      "sha256_lf": "bb3cbf610a3571847492da243b933c322eccb7c92b16f0552a4e670733b8070e"
+    },
+    {
+      "path": "native/src/interfaces.cpp",
+      "sha256_lf": "39f53d8016d3fcc72e14b12a0ce81f4f99c4d2457869043b77c4efe346b00c8b"
+    },
+    {
       "path": "native/src/pascal.cpp",
-      "sha256_lf": "2fd07769c263d279b5ba83f33293799114f5836771a6c33da00fbcf56196b170"
+      "sha256_lf": "ba7130b50785396107bf81faf274567231e508f795d78f93c745a38917159f01"
     },
     {
       "path": "native/src/bytecode.cpp",
-      "sha256_lf": "bb8ee04a69c817ee460fc5ab6f07bbc2cb2bd4cf7d1d73d159ce66757fae7b9f"
+      "sha256_lf": "66cfa55a3a33ee71f115931c1de24a241b15c7278f9cff6ce11aaa5e80d7f658"
+    },
+    {
+      "path": "native/src/dictionary.cpp",
+      "sha256_lf": "86f7cea0427202da072606a1bbbc48505eaa41773fd13dd127da9b29e1e100a7"
+    },
+    {
+      "path": "native/src/dictionary.hpp",
+      "sha256_lf": "a47193559c5e752452f6e0b6c21a2d3257d4dbbd16adec75ff38e9d10565605e"
+    },
+    {
+      "path": "native/src/sequences.cpp",
+      "sha256_lf": "29bd91335e1138c5e4828b7dbd71a0752f88b889d3e8e2e9a222c3ce040eb9b6"
+    },
+    {
+      "path": "native/src/type_names.cpp",
+      "sha256_lf": "c6d8dddedbb99e5e5c5ad394b136492beade93a712d096fdee58aaddc559312d"
+    },
+    {
+      "path": "native/src/vm.cpp",
+      "sha256_lf": "fceb4c5b58183ca273d666274a6da6d0d6cc0a55ccea053c0e9c267e026c9d49"
     }
   ],
-  "scope": "Selected positive compile requirements in two native builds. Not API coverage or runtime validation. Unsupported cases remain open requirements. Arrays.FillByValue with original explicit ampersand syntax now compiles.",
+  "scope": "Selected positive compile requirements in two native builds. Not API coverage or runtime validation. Unsupported cases remain open requirements. ICollection declaration now compiles; full interface/runtime and unit completion are not implied.",
   "runs": [
     {
       "schema": 1,
       "scope": "Selected required positive compile cases derived from shipped interfaces. Every case must eventually compile. This is a growing gap list, not complete API coverage; accepting a case does not prove its runtime semantics. No expected failure is made a compatibility requirement.",
       "runner": "native/build/clang-incremental/abc.exe",
-      "runner_sha256": "0a8d478591991762851521ffdbe1b75aae49b2d34e86e141f601415b67902f13",
+      "runner_sha256": "5f542de025d5f5cd4002880d0fe891db6579c933b659261bb0c821d491d0950a",
       "version": "ABC Native 0.1.0-dev (Pascal prototype)",
       "cases": [
         {
@@ -97,8 +133,8 @@
           "module": "PABCSystem",
           "source_line": 168,
           "source_anchor": "ICollection<T> = System.Collections.Generic.ICollection<T>;",
-          "accepted": false,
-          "diagnostic": "system-icollection.pas:1:28: E_SYNTAX\nEN: Expected ';' between statements\nRU: Между операторами ожидается ';'"
+          "accepted": true,
+          "diagnostic": ""
         },
         {
           "id": "system-idictionary",
@@ -246,7 +282,7 @@
         }
       ],
       "summary": {
-        "accepted": 7,
+        "accepted": 8,
         "required": 28
       }
     },
@@ -254,7 +290,7 @@
       "schema": 1,
       "scope": "Selected required positive compile cases derived from shipped interfaces. Every case must eventually compile. This is a growing gap list, not complete API coverage; accepting a case does not prove its runtime semantics. No expected failure is made a compatibility requirement.",
       "runner": "native/build/qt-editor/Release/abc.exe",
-      "runner_sha256": "74716cde6818a6868ab6d2b168221aaf3ec943fcb6e9106eb9f4e39b83edc0bf",
+      "runner_sha256": "7c71654062441a5373e427a4a95567e4bfdaabf15c4b79463f9377577e0229f8",
       "version": "ABC Native 0.1.0-dev (Pascal prototype)",
       "cases": [
         {
@@ -334,8 +370,8 @@
           "module": "PABCSystem",
           "source_line": 168,
           "source_anchor": "ICollection<T> = System.Collections.Generic.ICollection<T>;",
-          "accepted": false,
-          "diagnostic": "system-icollection.pas:1:28: E_SYNTAX\nEN: Expected ';' between statements\nRU: Между операторами ожидается ';'"
+          "accepted": true,
+          "diagnostic": ""
         },
         {
           "id": "system-idictionary",
@@ -483,7 +519,7 @@
         }
       ],
       "summary": {
-        "accepted": 7,
+        "accepted": 8,
         "required": 28
       }
     }
