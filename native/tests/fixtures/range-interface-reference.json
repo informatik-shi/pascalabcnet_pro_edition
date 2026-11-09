@@ -1,0 +1,32 @@
+{
+  "schema": 1,
+  "runtime": "Windows .NET Framework 4.0.30319.42000",
+  "outcomes": 2688,
+  "scope": "Native source range collection/equality interfaces, boxed identity, unboxing and selected consumers; not full user-record language or library coverage",
+  "artifacts": [
+    {
+      "path": "reference/range-interface.cs",
+      "sha256_lf": "2dc3afaaccf464a55ebe4223594fde98ee0840517d3072525af77f9f5033da99"
+    },
+    {
+      "path": "reference/generate-range-interface.ps1",
+      "sha256_lf": "984b58f8a3444ffe4daa4655e0b721506a2d9fee3e23a399ac1d328d19501736"
+    },
+    {
+      "path": "fixtures/range-interface-program.pas.in",
+      "sha256_lf": "d5f6de8d3a0936798ab7177f553d474d73e0b6b564c9d335e5414a57f8249eb4"
+    },
+    {
+      "path": "fixtures/range-interface-0.pas",
+      "sha256_lf": "6f7439152c83f1d4d0a421654749165bd8354ae9ba01776b3079d6c7ab355528"
+    },
+    {
+      "path": "fixtures/range-interface-1.pas",
+      "sha256_lf": "f5482223649e2af37f9c96e68764d333b99b6468a44dfb241fa51d3d3ebadad4"
+    },
+    {
+      "path": "fixtures/range-interface-reference.tsv",
+      "sha256_lf": "64573c1b7046a270acb006c2ba5091cd54e402af906c0a92732e4f658d43d0b8"
+    }
+  ]
+}

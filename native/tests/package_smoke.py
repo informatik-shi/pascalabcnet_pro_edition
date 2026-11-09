@@ -347,6 +347,7 @@ def main():
                 ("set-interfaces.pas", "False True\n4 True\nTrue True\n2 6 \nTrue\n"),
                 ("explicit-interfaces.pas", "class interface\n[4,5]\n"),
                 ("property-interfaces.pas", "99 7 7 False\n12\n"),
+                ("range-interfaces.pas", "4 True\nTrue False\n[2,3,4,5]\n[2,3]\n2 5 True\nabc\n"),
                 ("collection-property-writes.pas", "25 20 2\n[11,2] 2\n2 True 26\n"),
                 ("small-integers.pas", "Значения: 255 -128 -32768\nСумма с расширением: 256\nКвадрат: 65025\nГраница byte: 254|255|\nМассив smallint: 1 -2\n"),
                 ("unsigned-integers.pas", "Граница 32 бит: 4294967295\nС расширением: 4294967296\nГраница 64 бит: 18446744073709551615\nКвадрат word: 4294836225\nПредыдущее: 18446744073709551614\nПереключение: True False\n"),
@@ -1906,6 +1907,20 @@ def main():
                         or f"{property_interface_error}:1:" not in invalid.stderr):
                     raise RuntimeError(f"{name} Property expression/write statement bilingual error failed: {invalid.stdout!r} {invalid.stderr!r}")
             results[-1]["native_explicit_properties_expressions_and_bilingual_errors"] = "passed"
+            range_interface_error = folder / "Ошибки упаковки диапазонов.pas"
+            for operation, code, english, russian in [
+                ("var c:ICollection<integer>:=new IntRange(1,3);c.Add(4)", "E_READONLY", "Collection is read-only", "Коллекция доступна только для чтения"),
+                ("var c:ICollection<integer>:=nil;var r:=IntRange(c)", "E_NIL", "Cannot access a nil reference", "Нельзя обратиться к пустой ссылке nil"),
+                ("var c:ICollection<integer>:=new List<integer>;var r:=IntRange(c)", "E_CAST", "Value cannot be unboxed to the requested record", "Нельзя распаковать значение в заданный тип записи"),
+                ("var c:ICollection<char>:=new CharRange('a','c');var a:array of char;c.CopyTo(a,0)", "E_NIL", "Cannot access a nil reference", "Нельзя обратиться к пустой ссылке nil"),
+            ]:
+                range_interface_error.write_text(f"begin\nWrite('before');{operation};end.", encoding="utf-8")
+                invalid = subprocess.run([runner, "run", str(range_interface_error)], text=True, encoding="utf-8", capture_output=True, cwd=folder, env=env, timeout=10)
+                if (invalid.returncode != 1 or invalid.stdout != "before" or code not in invalid.stderr
+                        or f"EN: {english}" not in invalid.stderr or f"RU: {russian}" not in invalid.stderr
+                        or f"{range_interface_error}:2:" not in invalid.stderr):
+                    raise RuntimeError(f"{name} Range boxing bilingual error failed: {invalid.stdout!r} {invalid.stderr!r}")
+            results[-1]["native_range_interfaces_boxing_and_bilingual_errors"] = "passed"
             results[-1]["native_generic_enumerators_boxing_resources_and_bilingual_errors"] = "passed"
             results[-1]["native_typed_dictionary_enumerators_and_bilingual_errors"] = "passed"
             results[-1]["native_dictionary_factories_views_callbacks_and_bilingual_errors"] = "passed"

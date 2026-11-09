@@ -3,6 +3,7 @@
 #include "diagnostics.hpp"
 #include "hash_set.hpp"
 #include "text_file.hpp"
+#include "record_interface.hpp"
 #include <span>
 #include <functional>
 #include <algorithm>
@@ -119,7 +120,7 @@ struct Values {
     Value copy(const Value& value) {
         if(const auto* set=std::get_if<NewSetValue>(&value)){if(!set->storage)throw runtime_error(RuntimeError::invalid_bytecode,location);return NewSetValue{set->type,cell(set->storage->type,set->storage->value)};}
         if (const auto* aggregate = std::get_if<std::shared_ptr<Aggregate>>(&value);
-            aggregate && type_info(program, (*aggregate)->type).kind == CompoundKind::record) {
+            aggregate && !(*aggregate)->boxed && type_info(program, (*aggregate)->type).kind == CompoundKind::record) {
             auto result = std::make_shared<Aggregate>(); result->type = (*aggregate)->type;
             for (const auto& field : (*aggregate)->items) result->items.push_back(cell(field->type, copy(field->value)));
             return result;
@@ -145,6 +146,7 @@ struct Values {
     bool equal(const Value& left, const Value& right) const {
         if (const auto* a = std::get_if<std::shared_ptr<Aggregate>>(&left)) {
             const auto& b = std::get<std::shared_ptr<Aggregate>>(right);
+            if(record_box_reference(a->get())||record_box_reference(b.get()))return record_box_identity(a->get())==record_box_identity(b.get());
             const auto kind=type_info(program,(*a)->type).kind;
             if (kind==CompoundKind::sequence && !(*a)->nil && !b->nil && (*a)->sequence && b->sequence
                 && (collection_sequence((*a)->sequence->provider) || (*a)->sequence->provider==SequenceProvider::hash_set || dictionary_provider((*a)->sequence->provider)) && (collection_sequence(b->sequence->provider) || b->sequence->provider==SequenceProvider::hash_set || dictionary_provider(b->sequence->provider)))

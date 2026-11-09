@@ -6,6 +6,7 @@
 #include "equality.hpp"
 #include "list_operations.hpp"
 #include "dictionary.hpp"
+#include "ordinal_range.hpp"
 #include <array>
 namespace abc {
 namespace {
@@ -30,6 +31,7 @@ Type sequence_collection_owner(const Program& program,const Object& sequence){
 }
 bool native_collection_target(const Program& program,Type owner,const Value& value){const auto* object=std::get_if<Object>(&value);return object&&*object&&native_collection_type(program.types,(*object)->type,owner);}
 std::shared_ptr<Aggregate> native_collection_sequence(Values& values,Type target,const Object& source){
+ if(ordinal_range_type(type_info(values.program,source->type)))return sequence_create(values,target,source,SequenceProvider::ordinal_range);
  const auto kind=type_info(values.program,source->type).kind;
  const auto provider=kind==CompoundKind::array?SequenceProvider::array:kind==CompoundKind::list?SequenceProvider::list:kind==CompoundKind::hash_set?SequenceProvider::hash_set:kind==CompoundKind::dictionary?SequenceProvider::dictionary_entries:kind==CompoundKind::dictionary_keys?SequenceProvider::dictionary_keys:SequenceProvider::dictionary_values;
  return sequence_create(values,target,source,provider);

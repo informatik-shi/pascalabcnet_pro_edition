@@ -14,8 +14,8 @@ bool value_equal(ValueHashWork& work,const Value& a,const Value& b){
     if(const auto* x=std::get_if<double>(&a)){const auto y=std::get<double>(b);return *x==y || (std::isnan(*x) && std::isnan(y));}
     if(const auto* x=std::get_if<std::u16string>(&a)){const auto* y=std::get_if<std::u16string>(&b);if(!y || x->size()!=y->size())return false;for(std::size_t i=0;i<x->size();++i){work.step();if((*x)[i]!=(*y)[i])return false;}return true;}
     if(const auto* x=std::get_if<std::shared_ptr<Aggregate>>(&a)){
-        const auto& y=std::get<std::shared_ptr<Aggregate>>(b);const auto kind=type_info(work.values.program,(*x)->type).kind;
-        if(kind==CompoundKind::record || kind==CompoundKind::tuple){if((*x)->nil || y->nil)return (*x)->nil==y->nil;for(std::size_t i=0;i<(*x)->items.size();++i)if(!value_equal(work,(*x)->items[i]->value,y->items[i]->value))return false;return true;}
+        const auto& left=record_box_value(*x);const auto& y=record_box_value(std::get<std::shared_ptr<Aggregate>>(b));const auto kind=type_info(work.values.program,left->type).kind;
+        if(kind==CompoundKind::record || kind==CompoundKind::tuple){if(left->nil || y->nil)return left->nil==y->nil;if(left->type!=y->type)return false;for(std::size_t i=0;i<left->items.size();++i)if(!value_equal(work,left->items[i]->value,y->items[i]->value))return false;return true;}
     }
     return work.values.equal(a,b);
 }
@@ -30,6 +30,7 @@ std::size_t value_hash(ValueHashWork& work,const Value& value){
         else if constexpr(std::is_same_v<T,ReflectedType>)return mix(mix(static_cast<unsigned>(v.target),v.implementation),static_cast<unsigned>(v.source));
         else if constexpr(std::is_same_v<T,BigInteger>){big_work(v.bits()/16+1,work.values.location,work.options);std::size_t result=0;for(const auto c:v.text(16)){work.step();result=mix(result,static_cast<unsigned char>(c));}return result;}
         else if constexpr(std::is_same_v<T,std::shared_ptr<Aggregate>>){
+            if(record_box_identity(v.get())!=v.get())return value_hash(work,Value{v->sequence->source});
             if(!v || v->nil)return 0;const auto kind=type_info(work.values.program,v->type).kind;
             if(ordinal_range_type(type_info(work.values.program,v->type)))return static_cast<std::uint32_t>(ordinal_range_hash(v));
             if(real_interval_type(type_info(work.values.program,v->type)))return static_cast<std::uint32_t>(real_interval_hash(v));

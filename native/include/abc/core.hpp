@@ -249,6 +249,7 @@ struct Aggregate {
     Type type;
     std::vector<std::shared_ptr<Cell>> items;
     bool nil = false;
+    bool boxed = false; // A record stored through an interface has reference identity.
     std::size_t count = 0; // Logical size of DynArray and SimpleSet; items holds capacity.
     std::size_t list_capacity = 0; // Logical capacity of the current physical List backing array.
     std::shared_ptr<ListStorage> list_storage{};

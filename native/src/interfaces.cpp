@@ -2,6 +2,7 @@
 #include "runtime_values.hpp"
 #include "sequences.hpp"
 #include "collection_interface.hpp"
+#include "record_interface.hpp"
 #include <array>
 #include <set>
 namespace abc {
@@ -64,7 +65,7 @@ std::vector<InterfaceMember> interface_contract(const std::vector<TypeInfo>& typ
 bool interface_compatible(const std::vector<TypeInfo>& types,Type from,Type to){
  if(!valid(types,from) || !valid(types,to) || !interface_kind(info(types,to)))return false;
  if(from==to)return true;const auto& source=info(types,from);
- if(native_collection_type(types,from,to))return true;
+ if(native_collection_type(types,from,to)||native_record_interface_type(types,from,to))return true;
  if(source.kind==CompoundKind::object_class)return implementation(source,to)!=nullptr;
  if(source.kind==CompoundKind::equality_comparer)return info(types,to).kind==CompoundKind::equality_comparer_interface && source.element==info(types,to).element;
  if(source.kind==CompoundKind::comparer)return info(types,to).kind==CompoundKind::comparer_interface && source.element==info(types,to).element;
@@ -76,7 +77,7 @@ bool interface_compatible(const std::vector<TypeInfo>& types,Type from,Type to){
 bool interface_cast_valid(const Program& p,Type from,Type to,bool checked){
  if(interface_compatible(p.types,from,to))return true;
  if(!checked || !valid(p.types,from) || !valid(p.types,to) || !interface_kind(info(p.types,from)))return false;
- return interface_kind(info(p.types,to)) || ((info(p.types,to).kind==CompoundKind::object_class || info(p.types,to).kind==CompoundKind::array || info(p.types,to).kind==CompoundKind::list || info(p.types,to).kind==CompoundKind::hash_set || info(p.types,to).kind==CompoundKind::dictionary || info(p.types,to).kind==CompoundKind::dictionary_keys || info(p.types,to).kind==CompoundKind::dictionary_values) && interface_compatible(p.types,to,from));
+ return interface_kind(info(p.types,to)) || ((info(p.types,to).kind==CompoundKind::object_class || ordinal_range_type(info(p.types,to)) || info(p.types,to).kind==CompoundKind::array || info(p.types,to).kind==CompoundKind::list || info(p.types,to).kind==CompoundKind::hash_set || info(p.types,to).kind==CompoundKind::dictionary || info(p.types,to).kind==CompoundKind::dictionary_keys || info(p.types,to).kind==CompoundKind::dictionary_values) && interface_compatible(p.types,to,from));
 }
 void verify_interfaces(const Program& p){
  std::size_t names=0;
@@ -112,10 +113,13 @@ void verify_interfaces(const Program& p){
 }
 Value interface_cast(Values& values,Type from,Type to,bool checked,const Value& value){
  if(!interface_cast_valid(values.program,from,to,checked))throw runtime_error(RuntimeError::invalid_bytecode,values.location);
- auto object=std::get<std::shared_ptr<Aggregate>>(value);if(!object || object->nil)return values.zero(to);
- if(object->type==to)return object;
+ auto object=std::get<std::shared_ptr<Aggregate>>(value);if(!object || object->nil){if(type_info(values.program,to).kind==CompoundKind::record)throw runtime_error(RuntimeError::nil_reference,values.location);return values.zero(to);}
+ if(object->type==to&&type_info(values.program,to).kind!=CompoundKind::record)return object;
+ if(record_box_identity(object.get())!=object.get())object=object->sequence->source;
  if(object->sequence && object->sequence->source && (object->sequence->provider==SequenceProvider::user_source||object->sequence->provider==SequenceProvider::array||object->sequence->provider==SequenceProvider::list||object->sequence->provider==SequenceProvider::hash_set||dictionary_provider(object->sequence->provider)))object=object->sequence->source;
+ if(type_info(values.program,to).kind==CompoundKind::record){if(object->boxed&&object->type==to)return record_interface_copy(values,object,false);throw Error("E_CAST",values.location,"Value cannot be unboxed to the requested record","Нельзя распаковать значение в заданный тип записи");}
  if(object && !object->nil && (object->type==to || interface_compatible(values.program.types,object->type,to) || native_enumerable_type(values.program.types,object->type,to))){
+  if(!object->boxed&&native_record_interface_type(values.program.types,object->type,to))object=record_interface_copy(values,object,true);
   if(type_info(values.program,to).kind==CompoundKind::sequence){const auto key=std::make_pair(reinterpret_cast<std::uintptr_t>(object.get()),to);auto found=values.user_enumerables.find(key);if(found!=values.user_enumerables.end())if(auto cached=found->second.lock())return cached;
    auto result=type_info(values.program,object->type).kind==CompoundKind::object_class?sequence_create(values,to,object,SequenceProvider::user_source):native_collection_sequence(values,to,object);values.user_enumerables[key]=result;return result;}return object;
  }
@@ -129,6 +133,7 @@ std::size_t interface_target(Values& values,Type owner,std::size_t slot,const Va
  return table->routines[slot];
 }
 Value interface_invoke(Values& values,Type owner,std::size_t slot,const Value& receiver,std::span<const Value> arguments,const ExecutionOptions& options){
+ if(native_record_interface_target(values.program,owner,receiver))return native_record_interface_invoke(values,owner,slot,receiver,arguments,options);
  if(native_collection_target(values.program,owner,receiver))return native_collection_invoke(values,owner,slot,receiver,arguments,options);
  const auto id=interface_target(values,owner,slot,receiver,options);if(!values.invoke || arguments.size()+1!=values.program.routines[id].parameters.size())throw runtime_error(RuntimeError::invalid_bytecode,values.location);
  std::vector<Value> input;input.reserve(arguments.size()+1);input.push_back(receiver);input.insert(input.end(),arguments.begin(),arguments.end());return values.invoke(id,input);

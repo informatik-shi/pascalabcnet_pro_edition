@@ -43,6 +43,7 @@ add_library(abc_core
     src/enumerator.cpp
     src/interfaces.cpp
     src/collection_interface.cpp
+    src/record_interface.cpp
     src/ordinal_range.cpp
     src/real_interval.cpp
     src/new_set.cpp
@@ -288,6 +289,13 @@ if(BUILD_TESTING)
         target_compile_options(abc_explicit_property_tests PRIVATE /utf-8)
     endif()
     add_test(NAME explicit_properties COMMAND abc_explicit_property_tests)
+    add_executable(abc_range_interface_tests tests/range_interface_tests.cpp)
+    target_link_libraries(abc_range_interface_tests PRIVATE abc_core)
+    if(MSVC)
+        target_compile_options(abc_range_interface_tests PRIVATE /utf-8)
+    endif()
+    add_test(NAME range_interfaces COMMAND abc_range_interface_tests)
+    add_test(NAME range_interfaces_example COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/examples/range-interfaces.pas")
     add_test(NAME property_interfaces_example COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/examples/property-interfaces.pas")
     add_test(NAME set_interfaces_example COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/examples/set-interfaces.pas")
     add_test(NAME explicit_interfaces_example COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/examples/explicit-interfaces.pas")
