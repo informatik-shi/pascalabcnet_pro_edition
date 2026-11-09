@@ -5,6 +5,8 @@
 #include "real_interval.hpp"
 #include "runtime_values.hpp"
 #include "sequences.hpp"
+#include "collection_interface.hpp"
+#include "interfaces.hpp"
 #include "sequence_scope.hpp"
 #include "big_integer_runtime.hpp"
 #include <cmath>
@@ -134,6 +136,12 @@ std::optional<std::size_t> collection_count(const std::shared_ptr<Aggregate>& se
     if(collection_sequence(s.provider))return s.source->items.size();
     return {};
 }
+std::optional<std::int64_t> collection_count(Work& work,const std::shared_ptr<Aggregate>& sequence){
+    if(const auto count=collection_count(sequence))return static_cast<std::int64_t>(*count);
+    const auto owner=sequence_collection_owner(work.values.program,sequence);
+    if(owner==Type::invalid)return {};
+    return std::get<std::int32_t>(interface_invoke(work.values,owner,0,sequence->sequence->source,{},work.options));
+}
 template<class F> bool each(Work& work,const std::shared_ptr<Aggregate>& source,F action){
     const auto cursor=sequence_begin(work.values,source,work.options);
     return sequence_finally(work.values,cursor,work.options,[&]() -> bool {
@@ -149,13 +157,13 @@ std::pair<std::size_t,std::size_t> unique(Work& work,const std::shared_ptr<Aggre
 }
 bool relation(Work& work,const std::shared_ptr<Aggregate>& set,const std::shared_ptr<Aggregate>& other,HashSetMethod method){
     if(!other || other->nil)throw runtime_error(RuntimeError::nil_reference,work.values.location);
-    auto direct=direct_set(other);if(direct && !same_policy(work,set,direct))direct.reset();const auto count=collection_count(other);
+    auto direct=direct_set(other);if(direct && !same_policy(work,set,direct))direct.reset();
     if(method==HashSetMethod::subset && !set->count)return true;
     if(method==HashSetMethod::proper_superset && !set->count)return false;
     if(method==HashSetMethod::overlaps){if(!set->count)return false;bool found=false;each(work,other,[&](const Value& item){found=find(work,set,item)!=absent;return !found;});return found;}
-    if(method==HashSetMethod::proper_subset && !set->count && count)return *count>0;
-    if((method==HashSetMethod::superset || method==HashSetMethod::proper_superset) && count && !*count)return method==HashSetMethod::superset || set->count>0;
-    if(method==HashSetMethod::set_equals && !set->count && count && *count>0)return false;
+    if(method==HashSetMethod::proper_subset && !set->count){if(const auto count=collection_count(work,other))return *count>0;}
+    if(method==HashSetMethod::superset || method==HashSetMethod::proper_superset){if(const auto count=collection_count(work,other);count&&!*count)return true;}
+    if(method==HashSetMethod::set_equals && !direct && !set->count){if(const auto count=collection_count(work,other);count&&*count>0)return false;}
     if(direct){
         if((method==HashSetMethod::set_equals && set->count!=direct->count) || (method==HashSetMethod::subset && set->count>direct->count) || (method==HashSetMethod::proper_subset && set->count>=direct->count) || (method==HashSetMethod::superset && set->count<direct->count) || (method==HashSetMethod::proper_superset && set->count<=direct->count))return false;
         if(method==HashSetMethod::subset || method==HashSetMethod::proper_subset){auto source=sequence_create(work.values,type_info(work.values.program,set->type).key,set,SequenceProvider::hash_set);return each(work,source,[&](const Value& item){return find(work,direct,item)!=absent;});}
@@ -172,7 +180,7 @@ void update(Work& work,const std::shared_ptr<Aggregate>& set,const std::shared_p
     if(!set->count){if(method==HashSetMethod::symmetric_with)update(work,set,other,HashSetMethod::union_with);return;}
     if(method==HashSetMethod::except_with){if(direct==set){clear(work,set);return;}each(work,other,[&](const Value& item){(void)remove(work,set,item);return true;});return;}
     if(method==HashSetMethod::intersect_with){
-        if(const auto count=collection_count(other);count && !*count){clear(work,set);return;}
+        if(const auto count=collection_count(work,other);count && !*count){clear(work,set);return;}
         if(direct && same_policy(work,set,direct)){for(std::size_t i=0;i<set->items.size();++i){work.step();if(i<set->items.size() && set->items[i]){const auto item=work.values.copy(set->items[i]->value);if(find(work,direct,item)==absent)(void)remove(work,set,item);}}return;}
         const auto size=set->items.size();std::vector<bool> marked((size+31)/32*32);
         each(work,other,[&](const Value& item){const auto at=find(work,set,item);if(at<marked.size())marked[at]=true;return true;});
@@ -196,7 +204,7 @@ Value hash_set_invoke(Values& values,Type owner,Type sequence,HashSetMethod meth
             const auto source=std::get<std::shared_ptr<Aggregate>>(arguments[0]);if(!source || source->nil)throw runtime_error(RuntimeError::nil_reference,values.location);
             auto policy=method==HashSetMethod::construct_sequence_comparer ? std::get<std::shared_ptr<Aggregate>>(arguments[1]) : std::shared_ptr<Aggregate>{};if(policy && policy->nil)policy.reset();
             if(const auto direct=direct_set(source))return copy(work,owner,direct,policy);
-            auto result=std::get<std::shared_ptr<Aggregate>>(values.zero(owner,true));result->hash_set->comparer=std::move(policy);reserve(work,result,prime(collection_count(source).value_or(0)));update(work,result,source,HashSetMethod::union_with);
+            auto result=std::get<std::shared_ptr<Aggregate>>(values.zero(owner,true));result->hash_set->comparer=std::move(policy);const auto count=collection_count(work,source).value_or(0);reserve(work,result,prime(count>0?static_cast<std::size_t>(count):0));update(work,result,source,HashSetMethod::union_with);
             if(result->count && result->hash_set->capacity/result->count>3)trim_storage(work,result);return result;
         }
         if(method==HashSetMethod::membership){const auto set=std::get<std::shared_ptr<Aggregate>>(arguments[1]);require(set,values.location);return find(work,set,arguments[0])!=absent;}

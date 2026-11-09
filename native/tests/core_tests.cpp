@@ -414,7 +414,7 @@ void native_external_class_methods_language() {
         "type C=class procedure Create;end;constructor C.Create;begin end;begin end.",
         "constructor Create;begin end;begin end."
     })compile_error(source,"E_TYPE");
-    compile_error("type C=class procedure C.F;begin end;end;begin end.","E_SYNTAX");
+    compile_error("type C=class procedure C.F;begin end;end;begin end.","E_TYPE");
     auto p=abc::compile("type C=class a:integer;private b:integer;protected c:integer;internal d:integer;public e:integer;procedure F;end;procedure C.F;begin a:=7;end;begin var c:=new C;c.F;end.");
     const auto& fields=p.types.front().fields;require(fields[0].access==abc::MemberAccess::private_member && fields[1].access==abc::MemberAccess::private_member && fields[2].access==abc::MemberAccess::protected_member && fields[3].access==abc::MemberAccess::internal_member && fields[4].access==abc::MemberAccess::public_member,"Class fields retain declared visibility and default private access; all are accessible in this module");
     const auto method=std::find_if(p.routines.begin(),p.routines.end(),[](const auto& r){return r.name=="c.f";});require(method!=p.routines.end() && method->access==abc::MemberAccess::public_member,"External bodies retain declaration visibility");

@@ -289,6 +289,7 @@ struct SyntaxStmt {
 struct SyntaxParameter { Token name; std::shared_ptr<SyntaxType> type; bool by_reference; std::shared_ptr<SyntaxExpr> default_value; bool read_only=false,variadic=false; };
 struct SyntaxRoutine {
     Token name;
+    std::shared_ptr<SyntaxType> explicit_interface{};
     std::shared_ptr<SyntaxType> result;
     std::vector<SyntaxParameter> parameters;
     SyntaxStmt body;
@@ -520,7 +521,7 @@ private:
             if (result->kind=="system") {
                 result->system_qualified=true; expect("."); result->kind=is("type") ? consume().text : name().text;
                 if(result->kind=="text") {expect(".");result->kind=name().text;if(result->kind!="encoding")throw Error("E_UNSUPPORTED",result->token.location,"Unknown or unsupported Encoding type");}
-                else if(result->kind=="collections"){expect(".");const auto generic=name();if(generic.text!="generic")throw Error("E_UNSUPPORTED",generic.location,"Unknown System.Collections namespace");expect(".");result->kind=name().text;if(result->kind!="dictionary" && result->kind!="keyvaluepair" && result->kind!="ienumerable" && result->kind!="ienumerator" && result->kind!="list" && result->kind!="hashset" && result->kind!="icomparer" && result->kind!="comparer" && result->kind!="iequalitycomparer" && result->kind!="equalitycomparer" && result->kind!="icollection" && result->kind!="ilist" && result->kind!="idictionary")throw Error("E_UNSUPPORTED",result->token.location,"Unknown generic collection type");}
+                else if(result->kind=="collections"){expect(".");const auto generic=name();if(generic.text!="generic")throw Error("E_UNSUPPORTED",generic.location,"Unknown System.Collections namespace");expect(".");result->kind=name().text;if(result->kind!="dictionary" && result->kind!="keyvaluepair" && result->kind!="ienumerable" && result->kind!="ienumerator" && result->kind!="list" && result->kind!="hashset" && result->kind!="icomparer" && result->kind!="comparer" && result->kind!="iequalitycomparer" && result->kind!="equalitycomparer" && result->kind!="icollection" && result->kind!="ilist" && result->kind!="iset" && result->kind!="idictionary")throw Error("E_UNSUPPORTED",result->token.location,"Unknown generic collection type");}
                 else if (result->kind!="func" && result->kind!="action" && result->kind!="predicate" && result->kind!="type" && result->kind!="void" && result->kind!="single" && result->kind!="icomparable" && result->kind!="iequatable")
                     throw Error("E_UNSUPPORTED",result->token.location,"Unknown or unsupported type 'System."+result->kind+"'");
             }
@@ -547,7 +548,7 @@ private:
                         if(is(".") && [&]{auto probe=lexer_;return probe.next().text=="enumerator";}()){expect(".");const auto member=name();if(member.text!="enumerator")throw Error("E_UNSUPPORTED",member.location,"Unknown Dictionary nested type");result->kind=nested.text=="keycollection" ? "dictionary_key_enumerator" : "dictionary_value_enumerator";}
                     }else throw Error("E_UNSUPPORTED",nested.location,"Unknown Dictionary nested type");
                 }
-            } else if ((result->kind=="icomparable" || result->kind=="icomparer" || result->kind=="comparer" || result->kind=="iequatable" || result->kind=="iequalitycomparer" || result->kind=="equalitycomparer" || result->kind=="icollection" || result->kind=="ilist" || result->kind=="ienumerable" || result->kind=="ienumerator" || result->kind == "list" || result->kind == "hashset" || result->kind=="newset" || result->kind == "stack" || result->kind == "queue" || result->kind == "dynarray" || result->kind == "simpleset" || result->kind == "linkedlist" || result->kind == "linkedlistnode" || result->kind == "singlenode") && accept("<")) {
+            } else if ((result->kind=="icomparable" || result->kind=="icomparer" || result->kind=="comparer" || result->kind=="iequatable" || result->kind=="iequalitycomparer" || result->kind=="equalitycomparer" || result->kind=="icollection" || result->kind=="ilist" || result->kind=="iset" || result->kind=="ienumerable" || result->kind=="ienumerator" || result->kind == "list" || result->kind == "hashset" || result->kind=="newset" || result->kind == "stack" || result->kind == "queue" || result->kind == "dynarray" || result->kind == "simpleset" || result->kind == "linkedlist" || result->kind == "linkedlistnode" || result->kind == "singlenode") && accept("<")) {
                 result->named=false; result->element = type_syntax(); expect(">");
             }
         }
@@ -578,14 +579,27 @@ private:
         }
         return result;
     }
+    ABC_PASCAL_NOINLINE bool explicit_method_header(SyntaxRoutine& routine) {
+        Parser trial=*this;
+        try {
+            auto qualifier=trial.type_syntax(false);
+            if(!trial.accept("."))return false;
+            const auto member=trial.name();
+            routine.explicit_interface=std::move(qualifier);routine.name=member;
+            lexer_=std::move(trial.lexer_);current_=std::move(trial.current_);return true;
+        }catch(const Error& error){if(error.code=="E_LIMIT")throw;return false;}
+    }
     std::shared_ptr<SyntaxRoutine> routine(bool in_class=false) {
         const auto token=current_;const bool constructor=accept("constructor");
         const bool function=!constructor && accept("function");if (!constructor && !function) expect("procedure");
         auto result=std::make_shared<SyntaxRoutine>();result->constructor=constructor;result->function_header=function;
-        result->name=constructor && (is("(") || is(";") || is(":=")) ? Token{TokenKind::name,"create",token.location} : name();
-        if (accept(".")) {
-            if (in_class) throw Error("E_SYNTAX",result->name.location,"Qualified method headers are only allowed outside classes");
-            result->owner=result->name.text;result->name=name();
+        if(!(in_class&&!constructor&&explicit_method_header(*result))){
+            result->name=constructor && (is("(") || is(";") || is(":=")) ? Token{TokenKind::name,"create",token.location} : name();
+            if(accept(".")){
+                if(in_class)throw Error("E_SYNTAX",result->name.location,"Invalid explicit interface method header","Неверный заголовок явной реализации метода интерфейса");
+                result->owner=result->name.text;
+                if(constructor||!explicit_method_header(*result))result->name=name();
+            }
         }
         if (constructor && result->name.text!="create") throw Error("E_TYPE",result->name.location,"Class constructor must be named Create");
         if (accept("(")) {
@@ -1134,17 +1148,19 @@ public:
         }
         bind_method_definitions(source);
         for (const auto& routine : source.routines) {
-            const auto qualified=routine->owner.empty() ? routine->name.text : routine->owner+"."+routine->name.text;
+            const auto explicit_target=routine->explicit_interface?resolve_type(*routine->explicit_interface):Type::invalid;
+            if(explicit_target!=Type::invalid&&(routine->owner.empty()||routine->constructor||!compound(explicit_target)||!interface_kind(info(explicit_target,routine->name.location))))throw Error("E_TYPE",routine->name.location,"Explicit method qualifier must be an interface","Явная реализация метода требует имени интерфейса");
+            const auto qualified=routine->owner.empty() ? routine->name.text : routine->owner+"."+(explicit_target==Type::invalid?std::string{}:"$interface"+std::to_string(static_cast<unsigned>(explicit_target))+".")+routine->name.text;
             if ((routine_names_.contains(qualified)&&(routine->owner.empty()||routine->constructor)) || (routine->owner.empty() && lookup(routine->name))) throw Error("E_DUPLICATE",routine->name.location,"Duplicate routine");
             if (module_.routines.size()>=256) throw Error("E_LIMIT",routine->name.location,"Routine limit exceeded");
             hir::RoutineBody body;
-            body.signature.name=qualified;body.signature.constructor=routine->constructor;body.signature.access=routine->access;
+            body.signature.name=qualified;body.signature.constructor=routine->constructor;body.signature.access=explicit_target==Type::invalid?routine->access:MemberAccess::explicit_interface_member;
             if (!routine->owner.empty()) {
                 body.signature.owner=aliases_.at(routine->owner);
-                for (const auto& field:info(body.signature.owner,routine->name.location).fields) if (field.name==routine->name.text)
+                for (const auto& field:info(body.signature.owner,routine->name.location).fields) if (explicit_target==Type::invalid&&field.name==routine->name.text)
                     throw Error("E_DUPLICATE",routine->name.location,"Class method conflicts with a field");
                 if (routine->constructor) class_constructors_[body.signature.owner]=module_.routines.size();
-                else class_methods_[body.signature.owner].try_emplace(routine->name.text,module_.routines.size());
+                else if(explicit_target==Type::invalid)class_methods_[body.signature.owner].try_emplace(routine->name.text,module_.routines.size());
             }
             body.signature.result = routine->result ? resolve_type(*routine->result) : Type::unit;
             for (std::size_t n=0;n<routine->parameters.size();++n) {
@@ -1154,7 +1170,7 @@ public:
                     throw Error("E_TYPE",parameter.name.location,"params requires a final rank-one array parameter");
                 body.signature.parameters.push_back({0,type,parameter.by_reference,parameter.variadic});
             }
-            if(body.signature.owner!=Type::invalid&&!body.signature.constructor){auto& overloads=class_method_overloads_[body.signature.owner][routine->name.text];for(auto previous:overloads){const auto& signature=module_.routines[previous].signature;if(signature.parameters.size()==body.signature.parameters.size()&&std::equal(signature.parameters.begin(),signature.parameters.end(),body.signature.parameters.begin(),[](const auto& a,const auto& b){return a.type==b.type&&a.by_reference==b.by_reference;}))throw Error("E_DUPLICATE",routine->name.location,"Duplicate method signature");}overloads.push_back(module_.routines.size());}
+            if(body.signature.owner!=Type::invalid&&!body.signature.constructor){auto& overloads=explicit_target==Type::invalid?class_method_overloads_[body.signature.owner][routine->name.text]:class_explicit_methods_[body.signature.owner][explicit_target][routine->name.text];for(auto previous:overloads){const auto& signature=module_.routines[previous].signature;if(signature.parameters.size()==body.signature.parameters.size()&&std::equal(signature.parameters.begin(),signature.parameters.end(),body.signature.parameters.begin(),[](const auto& a,const auto& b){return a.type==b.type&&a.by_reference==b.by_reference;}))throw Error("E_DUPLICATE",routine->name.location,"Duplicate method signature");}overloads.push_back(module_.routines.size());}
             routine_names_.try_emplace(qualified,module_.routines.size());module_.routines.push_back(std::move(body));
         }
         register_properties(source);
@@ -1182,8 +1198,10 @@ public:
                 if (scopes_.back().contains("result")) throw Error("E_DUPLICATE",syntax.name.location,"Result is reserved inside functions");
                 routine.signature.result_local = module_.locals.size(); scopes_.back()["result"] = module_.locals.size();
                 module_.locals.push_back({"result",current_result_,false});
-                if (scopes_.back().contains(current_name_)) throw Error("E_DUPLICATE",syntax.name.location,"Parameter conflicts with function name");
-                scopes_.back()[current_name_] = routine.signature.result_local;
+                if(!syntax.explicit_interface){
+                    if (scopes_.back().contains(current_name_)) throw Error("E_DUPLICATE",syntax.name.location,"Parameter conflicts with function name");
+                    scopes_.back()[current_name_] = routine.signature.result_local;
+                }
             }
             if (current_owner_!=Type::invalid) current_self_=routine.signature.parameters.front().local;
             routine.body = statement(syntax.body);
@@ -1222,7 +1240,7 @@ private:
             auto add=[&](InterfaceMember member){for(const auto& existing:members)if(existing.name==member.name){if(existing.kind==member.kind){if(!interface_member_key_equal(existing,member))continue;if(existing!=member)throw Error("E_TYPE",syntax.token.location,"Conflicting inherited interface member");return;}if(!interface_property_match(existing,member))throw Error("E_TYPE",syntax.token.location,"Conflicting inherited interface member");}if(members.size()>=256)throw Error("E_LIMIT",syntax.token.location,"Interface member limit exceeded");members.push_back(std::move(member));};
             for(const auto& parent:syntax.parents){const auto type=resolve_type(*parent);if(!compound(type) || !interface_kind(info(type,syntax.token.location)))throw Error("E_TYPE",syntax.token.location,"Interface parent must be an interface");if(std::find(parents.begin(),parents.end(),type)!=parents.end())throw Error("E_TYPE",syntax.token.location,"Duplicate interface parent");if(declarations.contains(type))bind(type);if(info(type,syntax.token.location).kind==CompoundKind::sequence)(void)enumerator_type(info(type,syntax.token.location).element);parents.push_back(type);for(auto member:interface_contract(module_.types,type))add(std::move(member));}
             std::set<std::string> own_names;std::vector<InterfaceMember> own_methods;
-            for(const auto& method:syntax.methods){own_names.insert(method->name.text);InterfaceMember member;member.name=method->name.text;member.result=method->result ? resolve_type(*method->result) : Type::unit;
+            for(const auto& method:syntax.methods){if(method->explicit_interface)throw Error("E_TYPE",method->name.location,"Explicit implementations belong in classes","Явная реализация метода должна находиться в классе");own_names.insert(method->name.text);InterfaceMember member;member.name=method->name.text;member.result=method->result ? resolve_type(*method->result) : Type::unit;
                 std::set<std::string> parameter_names;for(const auto& argument:method->parameters){if(!parameter_names.insert(argument.name.text).second)throw Error("E_DUPLICATE",argument.name.location,"Duplicate parameter");if(argument.default_value)throw Error("E_UNSUPPORTED",argument.name.location,"Default interface arguments are not ported yet");member.parameters.push_back({resolve_type(*argument.type),argument.by_reference,argument.variadic});}if(member.parameters.size()>15)throw Error("E_TYPE",method->name.location,"Interface methods accept at most fifteen parameters");
                 for(std::size_t n=0;n<member.parameters.size();++n){const auto& p=member.parameters[n];if(p.variadic && (n+1!=member.parameters.size() || p.by_reference || !compound(p.type) || info(p.type,method->name.location).kind!=CompoundKind::array || info(p.type,method->name.location).rank!=1))throw Error("E_TYPE",method->name.location,"Invalid interface params parameter");}if(std::any_of(own_methods.begin(),own_methods.end(),[&](const auto& previous){return interface_member_key_equal(previous,member);}))throw Error("E_DUPLICATE",method->name.location,"Duplicate interface member");own_methods.push_back(member);add(std::move(member));}
             for(const auto& property:syntax.properties){if(!own_names.insert(property->name.text).second)throw Error("E_DUPLICATE",property->name.location,"Duplicate interface member");const auto type=resolve_type(*property->type);std::vector<CallableParameter> indices;for(const auto& index:property->indices)indices.push_back({resolve_type(*index.second),false,false});if(property->getter)add({property->name.text,type,indices,InterfaceMemberKind::get,property->default_indexer});if(property->setter){indices.push_back({type,false,false});add({property->name.text,Type::unit,std::move(indices),InterfaceMemberKind::set,property->default_indexer});}}
@@ -1230,13 +1248,39 @@ private:
             auto& metadata=module_.types[static_cast<unsigned>(owner)-64U];metadata.interfaces.edit().parents=std::move(parents);metadata.interfaces.edit().members=std::move(members);active.erase(owner);done.insert(owner);
         };for(const auto& [owner,syntax]:declarations){(void)syntax;bind(owner);}
     }
-    void register_interface_implementations(const SyntaxStmt& source){
+    bool interface_method_matches(std::size_t id,const InterfaceMember& member)const{
+        const auto& signature=module_.routines[id].signature;
+        return member.kind==InterfaceMemberKind::method&&signature.result==member.result&&signature.parameters.size()==member.parameters.size()+1&&std::equal(member.parameters.begin(),member.parameters.end(),signature.parameters.begin()+1,[](const auto& a,const auto& b){return a.type==b.type&&a.by_reference==b.by_reference&&a.variadic==b.variadic;});
+    }
+    ABC_PASCAL_NOINLINE std::optional<std::size_t> explicit_implementation(Type owner,Type target,const InterfaceMember& member,SourceLocation location)const{
+        const auto found=class_explicit_methods_.find(owner);if(found==class_explicit_methods_.end()||member.kind!=InterfaceMemberKind::method)return {};
+        if(const auto exact=found->second.find(target);exact!=found->second.end()){
+            const auto method=exact->second.find(member.name);
+            if(method!=exact->second.end())for(auto id:method->second)if(interface_method_matches(id,member))return id;
+        }
+        std::optional<std::size_t> inherited;
+        for(const auto& [qualifier,methods]:found->second){
+            if(!interface_compatible(module_.types,target,qualifier))continue;
+            const auto method=methods.find(member.name);if(method==methods.end())continue;
+            for(auto id:method->second)if(interface_method_matches(id,member)){
+                if(inherited&&*inherited!=id)throw Error("E_TYPE",location,"Ambiguous inherited explicit implementation","Неоднозначная унаследованная явная реализация метода");
+                inherited=id;
+            }
+        }
+        return inherited;
+    }
+    ABC_PASCAL_NOINLINE void register_interface_implementations(const SyntaxStmt& source){
         for(const auto& [name,syntax]:source.type_declarations)if(syntax->kind=="class" && !syntax->named){const auto owner=aliases_.at(name.text);std::vector<Type> targets;
             std::function<void(Type)> add=[&](Type target){if(!compound(target))throw Error("E_TYPE",name.location,"Class parent must be an interface");const auto shape=info(target,name.location);if(shape.kind==CompoundKind::sequence)(void)enumerator_type(shape.element);if(!interface_kind(shape))throw Error("E_UNSUPPORTED",name.location,"Class inheritance is not ported yet");if(std::find(targets.begin(),targets.end(),target)!=targets.end())return;if(targets.size()>=64)throw Error("E_LIMIT",name.location,"Interface implementation limit exceeded");targets.push_back(target);for(auto parent:shape.interfaces.read().parents)add(parent);};for(const auto& parent:syntax->parents)add(resolve_type(*parent));
-            std::vector<InterfaceImplementation> implementations;for(auto target:targets){InterfaceImplementation entry;entry.target=target;for(const auto& member:interface_contract(module_.types,target)){std::optional<std::size_t> id;
-                if(member.kind==InterfaceMemberKind::method){const auto methods=class_method_overloads_.find(owner);if(methods!=class_method_overloads_.end()){const auto method=methods->second.find(member.name);if(method!=methods->second.end())for(auto candidate:method->second){const auto& signature=module_.routines[candidate].signature;if(signature.result==member.result&&signature.parameters.size()==member.parameters.size()+1&&std::equal(member.parameters.begin(),member.parameters.end(),signature.parameters.begin()+1,[](const auto& a,const auto& b){return a.type==b.type&&a.by_reference==b.by_reference&&a.variadic==b.variadic;}))id=candidate;}}}
-                else {const auto properties=class_properties_.find(owner);if(properties!=class_properties_.end()){const auto property=properties->second.find(member.name);if(property!=properties->second.end())id=member.kind==InterfaceMemberKind::get ? property->second.getter : property->second.setter;}const auto declaration=std::find_if(syntax->properties.begin(),syntax->properties.end(),[&](const auto& p){return p->name.text==member.name;});if(declaration==syntax->properties.end() || (*declaration)->access!=MemberAccess::public_member)id.reset();}
-                if(!id)throw Error("E_TYPE",name.location,"Interface member has no compatible public implementation");const auto& actual=module_.routines[*id].signature;if(actual.constructor || (member.kind==InterfaceMemberKind::method && actual.access!=MemberAccess::public_member) || actual.result!=member.result || actual.parameters.size()!=member.parameters.size()+1)throw Error("E_TYPE",name.location,"Interface member has no compatible public implementation");for(std::size_t a=0;a<member.parameters.size();++a){const auto& wanted=member.parameters[a];const auto& have=actual.parameters[a+1];if(have.type!=wanted.type || have.by_reference!=wanted.by_reference || have.variadic!=wanted.variadic)throw Error("E_TYPE",name.location,"Interface member has no compatible public implementation");}entry.routines.push_back(*id);
+            if(const auto explicit_methods=class_explicit_methods_.find(owner);explicit_methods!=class_explicit_methods_.end())for(const auto& [qualifier,methods]:explicit_methods->second){
+                if(std::find(targets.begin(),targets.end(),qualifier)==targets.end())throw Error("E_TYPE",name.location,"Explicit method interface is not implemented by the class","Класс не реализует интерфейс явно указанного метода");
+                const auto contract=interface_contract(module_.types,qualifier);
+                for(const auto& [method,overloads]:methods)for(auto id:overloads)if(std::none_of(contract.begin(),contract.end(),[&](const auto& member){return member.name==method&&interface_method_matches(id,member);}))throw Error("E_TYPE",name.location,"Explicit method does not match an interface signature","Явная реализация метода не соответствует сигнатуре интерфейса");
+            }
+            std::vector<InterfaceImplementation> implementations;for(auto target:targets){InterfaceImplementation entry;entry.target=target;for(const auto& member:interface_contract(module_.types,target)){auto id=explicit_implementation(owner,target,member,name.location);
+                if(member.kind==InterfaceMemberKind::method&&!id){const auto methods=class_method_overloads_.find(owner);if(methods!=class_method_overloads_.end()){const auto method=methods->second.find(member.name);if(method!=methods->second.end())for(auto candidate:method->second)if(interface_method_matches(candidate,member))id=candidate;}}
+                else if(member.kind!=InterfaceMemberKind::method){const auto properties=class_properties_.find(owner);if(properties!=class_properties_.end()){const auto property=properties->second.find(member.name);if(property!=properties->second.end())id=member.kind==InterfaceMemberKind::get ? property->second.getter : property->second.setter;}const auto declaration=std::find_if(syntax->properties.begin(),syntax->properties.end(),[&](const auto& p){return p->name.text==member.name;});if(declaration==syntax->properties.end() || (*declaration)->access!=MemberAccess::public_member)id.reset();}
+                if(!id)throw Error("E_TYPE",name.location,"Interface member has no compatible public implementation");const auto& actual=module_.routines[*id].signature;if(actual.constructor || (member.kind==InterfaceMemberKind::method && actual.access!=MemberAccess::public_member&&actual.access!=MemberAccess::explicit_interface_member) || actual.result!=member.result || actual.parameters.size()!=member.parameters.size()+1)throw Error("E_TYPE",name.location,"Interface member has no compatible public implementation");for(std::size_t a=0;a<member.parameters.size();++a){const auto& wanted=member.parameters[a];const auto& have=actual.parameters[a+1];if(have.type!=wanted.type || have.by_reference!=wanted.by_reference || have.variadic!=wanted.variadic)throw Error("E_TYPE",name.location,"Interface member has no compatible public implementation");}entry.routines.push_back(*id);
             }implementations.push_back(std::move(entry));}module_.types[static_cast<unsigned>(owner)-64U ].interfaces.edit().implementations=std::move(implementations);
         }
     }
@@ -1245,7 +1289,7 @@ private:
             const auto owner=aliases_.find(definition->owner);
             if (owner==aliases_.end() || !compound(owner->second) || info(owner->second,definition->name.location).kind!=CompoundKind::object_class)
                 throw Error("E_NAME",definition->name.location,"Method definition requires a declared class");
-            const auto matches=[&](const auto& routine){if(routine->owner.empty()||aliases_.at(routine->owner)!=owner->second||routine->name.text!=definition->name.text)return false;if(!definition->explicit_parameters)return true;if(routine->parameters.size()!=definition->parameters.size()+1)return false;for(std::size_t i=0;i<definition->parameters.size();++i){const auto& a=routine->parameters[i+1];const auto& b=definition->parameters[i];if(resolve_type(*a.type)!=resolve_type(*b.type)||a.by_reference!=b.by_reference||a.variadic!=b.variadic)return false;}return true;};
+            const auto matches=[&](const auto& routine){if(routine->owner.empty()||aliases_.at(routine->owner)!=owner->second||routine->name.text!=definition->name.text)return false;if(bool(routine->explicit_interface)!=bool(definition->explicit_interface)||(routine->explicit_interface&&resolve_type(*routine->explicit_interface)!=resolve_type(*definition->explicit_interface)))return false;if(!definition->explicit_parameters)return true;if(routine->parameters.size()!=definition->parameters.size()+1)return false;for(std::size_t i=0;i<definition->parameters.size();++i){const auto& a=routine->parameters[i+1];const auto& b=definition->parameters[i];if(resolve_type(*a.type)!=resolve_type(*b.type)||a.by_reference!=b.by_reference||a.variadic!=b.variadic)return false;}return true;};
             const auto found=std::find_if(source.routines.begin(),source.routines.end(),matches);
             if(found==source.routines.end()){const bool named=std::any_of(source.routines.begin(),source.routines.end(),[&](const auto& routine){return !routine->owner.empty()&&aliases_.at(routine->owner)==owner->second&&routine->name.text==definition->name.text;});throw Error(named?"E_TYPE":"E_NAME",definition->name.location,named?"Method definition does not match its declared signature":"Method definition has no matching declaration");}
             if(std::find_if(found+1,source.routines.end(),matches)!=source.routines.end())throw Error("E_TYPE",definition->name.location,"Ambiguous method definition");
@@ -1690,6 +1734,13 @@ private:
         for(std::size_t i=0;i<module_.types.size();++i)if(module_.types[i].kind==CompoundKind::list_interface&&module_.types[i].element==element)return static_cast<Type>(64+i);
         const auto parent=collection_interface_type(element),array=info(parent,{}).key;if(module_.types.size()>=1024)throw Error("E_LIMIT",{},"Type limit exceeded");TypeInfo type{"ilist",CompoundKind::list_interface,element,{},array};type.interfaces.edit().parents.push_back(parent);module_.types.push_back(std::move(type));return static_cast<Type>(63+module_.types.size());
     }
+    ABC_PASCAL_NOINLINE Type set_interface_type(Type element){
+        for(std::size_t i=0;i<module_.types.size();++i)if(module_.types[i].kind==CompoundKind::set_interface&&module_.types[i].element==element)return static_cast<Type>(64+i);
+        const auto parent=collection_interface_type(element),array=info(parent,{}).key;
+        (void)sequence_type(CompoundKind::hash_set,element);
+        if(module_.types.size()>=1024)throw Error("E_LIMIT",{},"Type limit exceeded");
+        TypeInfo type{"iset",CompoundKind::set_interface,element,{},array};type.interfaces.edit().parents.push_back(parent);module_.types.push_back(std::move(type));return static_cast<Type>(63+module_.types.size());
+    }
     ABC_PASCAL_NOINLINE Type comparison_type(CompoundKind kind,Type element) {
         for(std::size_t i=0;i<module_.types.size();++i)if(module_.types[i].kind==kind && module_.types[i].element==element)return static_cast<Type>(64+i);
         const auto key=kind==CompoundKind::comparer ? function_type(Type::integer,{{element,false,false},{element,false,false}},{}) : Type::invalid;
@@ -1959,6 +2010,7 @@ private:
         }
         if(syntax.kind=="icollection"&&syntax.element)return collection_interface_type(resolve_type(*syntax.element));
         if(syntax.kind=="ilist"&&syntax.element)return list_interface_type(resolve_type(*syntax.element));
+        if(syntax.kind=="iset"&&syntax.element)return set_interface_type(resolve_type(*syntax.element));
         if((syntax.kind=="icomparable" || syntax.kind=="icomparer" || syntax.kind=="comparer" || syntax.kind=="iequatable" || syntax.kind=="iequalitycomparer" || syntax.kind=="equalitycomparer") && syntax.element)return comparison_type(syntax.kind=="iequatable" ? CompoundKind::equatable_interface : syntax.kind=="iequalitycomparer" ? CompoundKind::equality_comparer_interface : syntax.kind=="equalitycomparer" ? CompoundKind::equality_comparer : syntax.kind=="icomparable" ? CompoundKind::comparable_interface : syntax.kind=="icomparer" ? CompoundKind::comparer_interface : CompoundKind::comparer,resolve_type(*syntax.element));
         if(syntax.kind=="ienumerator" && syntax.element)return enumerator_type(resolve_type(*syntax.element));
         if ((syntax.kind=="sequence" || syntax.kind=="ienumerable") && syntax.element) return sequence_type(CompoundKind::sequence,resolve_type(*syntax.element));
@@ -3757,7 +3809,7 @@ private:
         result->left=std::move(argument);return result;
     }
     ABC_PASCAL_NOINLINE bool bind_user_interface_member(hir::Expr& result,const SyntaxExpr& source){
-        auto owner=result.left->type;if(!compound(owner))return false;auto kind=info(owner,result.location).kind;if(kind==CompoundKind::equality_comparer){if(source.token.text!="equals" && source.token.text!="gethashcode")return false;owner=comparison_type(CompoundKind::equality_comparer_interface,info(owner,result.location).element);result.left=convert(std::move(result.left),owner);kind=CompoundKind::equality_comparer_interface;}if(kind==CompoundKind::comparer){if(source.token.text!="compare")return false;owner=comparison_type(CompoundKind::comparer_interface,info(owner,result.location).element);result.left=convert(std::move(result.left),owner);kind=CompoundKind::comparer_interface;}if(kind!=CompoundKind::user_interface && kind!=CompoundKind::comparable_interface && kind!=CompoundKind::comparer_interface && kind!=CompoundKind::equatable_interface && kind!=CompoundKind::equality_comparer_interface && kind!=CompoundKind::collection_interface && kind!=CompoundKind::list_interface && kind!=CompoundKind::dictionary_interface)return false;const auto contract=interface_contract(module_.types,owner);
+        auto owner=result.left->type;if(!compound(owner))return false;auto kind=info(owner,result.location).kind;if(kind==CompoundKind::equality_comparer){if(source.token.text!="equals" && source.token.text!="gethashcode")return false;owner=comparison_type(CompoundKind::equality_comparer_interface,info(owner,result.location).element);result.left=convert(std::move(result.left),owner);kind=CompoundKind::equality_comparer_interface;}if(kind==CompoundKind::comparer){if(source.token.text!="compare")return false;owner=comparison_type(CompoundKind::comparer_interface,info(owner,result.location).element);result.left=convert(std::move(result.left),owner);kind=CompoundKind::comparer_interface;}if(kind!=CompoundKind::user_interface && kind!=CompoundKind::comparable_interface && kind!=CompoundKind::comparer_interface && kind!=CompoundKind::equatable_interface && kind!=CompoundKind::equality_comparer_interface && kind!=CompoundKind::collection_interface && kind!=CompoundKind::list_interface && kind!=CompoundKind::set_interface && kind!=CompoundKind::dictionary_interface)return false;const auto contract=interface_contract(module_.types,owner);
         std::vector<std::size_t> methods;std::optional<std::size_t> get,set;for(std::size_t i=0;i<contract.size();++i)if(contract[i].name==source.token.text){if(contract[i].kind==InterfaceMemberKind::method)methods.push_back(i);else if(contract[i].kind==InterfaceMemberKind::get)get=i;else set=i;}
         if(get || set){if(source.kind==SyntaxExprKind::member_call || !source.arguments.empty())throw Error("E_TYPE",result.location,"Interface property is not callable");result.kind=hir::ExprKind::property_access;result.type=get ? contract[*get].result : contract[*set].parameters.back().type;result.getter=get;result.setter=set;result.operation="interface";result.operation_type=owner;return true;}
         if(methods.empty())throw Error("E_NAME",result.location,"Unknown interface member");
@@ -4497,8 +4549,8 @@ private:
             if(bind_sort(*result,source,unit_call ? std::string_view(source.left->token.text) : std::string_view{},qualified && !unit_call,declared))return result;
         }
         if(name=="idictionary"&&standard_call){if(source.type_arguments.size()!=2||source.arguments.size()!=1)throw Error("E_TYPE",source.token.location,"Dictionary interface conversion requires two types and one value");const auto key=resolve_type(*source.type_arguments[0]),value=resolve_type(*source.type_arguments[1]),target=dictionary_interface_type(key,value);auto input=expression(*source.arguments[0],target);if(compound(input->type)&&interface_kind(info(input->type,source.token.location))&&!interface_compatible(module_.types,input->type,target))return interface_conversion(std::move(input),target,true);return convert(std::move(input),target);}
-        if((name=="ienumerator" || name=="ienumerable" || name=="icollection" || name=="ilist") && standard_call){
-            if(source.type_arguments.size()!=1 || source.arguments.size()!=1)throw Error("E_TYPE",source.token.location,"Interface conversion requires one type and one value");const auto element=resolve_type(*source.type_arguments[0]),target=name=="ienumerator" ? enumerator_type(element) : name=="icollection" ? collection_interface_type(element) : name=="ilist" ? list_interface_type(element) : sequence_type(CompoundKind::sequence,element);auto value=expression(*source.arguments[0],target);if((name=="icollection"||name=="ilist")&&compound(value->type)&&interface_kind(info(value->type,source.token.location))&&!interface_compatible(module_.types,value->type,target))return interface_conversion(std::move(value),target,true);return convert(std::move(value),target);
+        if((name=="ienumerator" || name=="ienumerable" || name=="icollection" || name=="ilist" || name=="iset") && standard_call){
+            if(source.type_arguments.size()!=1 || source.arguments.size()!=1)throw Error("E_TYPE",source.token.location,"Interface conversion requires one type and one value");const auto element=resolve_type(*source.type_arguments[0]),target=name=="ienumerator" ? enumerator_type(element) : name=="icollection" ? collection_interface_type(element) : name=="ilist" ? list_interface_type(element) : name=="iset" ? set_interface_type(element) : sequence_type(CompoundKind::sequence,element);auto value=expression(*source.arguments[0],target);if((name=="icollection"||name=="ilist"||name=="iset")&&compound(value->type)&&interface_kind(info(value->type,source.token.location))&&!interface_compatible(module_.types,value->type,target))return interface_conversion(std::move(value),target,true);return convert(std::move(value),target);
         }
         if((name=="eachcount" || name=="each" || name=="todictionary") && (standard_call || (qualified && !qualified_unit))){
             const auto extra=name=="eachcount" ? 1U : name=="each" ? 2U : (source.arguments.size()-(qualified && !qualified_unit ? 0U : 1U)==2 ? 3U : 2U);if(source.type_arguments.size()!=extra)throw Error("E_TYPE",source.token.location,"Wrong Dictionary query explicit type count");std::vector<Type> declared;for(const auto& type:source.type_arguments)declared.push_back(resolve_type(*type));auto result=std::make_unique<hir::Expr>();result->location=source.token.location;const bool member=qualified && !qualified_unit;if(member)result->left=expression(*source.left);(void)bind_dictionary_query(*result,source,{},member,declared);return result;
@@ -4687,7 +4739,7 @@ private:
         if(!compound(owner))return false;const auto& type=info(owner,{});if(std::any_of(type.fields.begin(),type.fields.end(),[&](const auto& f){return f.name==name;}))return true;
         if(class_methods_.contains(owner) && class_methods_.at(owner).contains(std::string(name)))return true;
         if(class_properties_.contains(owner) && class_properties_.at(owner).contains(std::string(name)))return true;
-        const auto members=(type.kind==CompoundKind::collection_interface||type.kind==CompoundKind::list_interface||type.kind==CompoundKind::dictionary_interface)?interface_contract(module_.types,owner):type.interfaces.read().members;
+        const auto members=(type.kind==CompoundKind::collection_interface||type.kind==CompoundKind::list_interface||type.kind==CompoundKind::set_interface||type.kind==CompoundKind::dictionary_interface)?interface_contract(module_.types,owner):type.interfaces.read().members;
         return std::any_of(members.begin(),members.end(),[&](const auto& member){return member.name==name;});
     }
     void adapt_enumerable_member(hir::Expr& result,std::string_view name){
@@ -6348,6 +6400,7 @@ private:
     std::map<std::string,std::size_t> routine_names_;
     std::map<Type,std::map<std::string,std::size_t>> class_methods_;
     std::map<Type,std::map<std::string,std::vector<std::size_t>>> class_method_overloads_;
+    std::map<Type,std::map<Type,std::map<std::string,std::vector<std::size_t>>>> class_explicit_methods_;
     std::map<Type,std::size_t> class_constructors_;
     std::map<std::size_t,std::size_t> builtin_routines_;
     std::map<std::pair<std::string,Type>,std::size_t> array_library_routines_;

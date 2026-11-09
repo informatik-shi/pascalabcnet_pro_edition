@@ -1,43 +1,43 @@
 {
   "schema": 1,
-  "runtime_source_base_revision": "d1d6e3112d0bdf6822218f7cacc7d633676deef3",
+  "runtime_source_base_revision": "d5bbd219c53a36d6402c2bd0049d85f6c6ebd535",
   "runtime_source_changes": [
     {
       "path": "native/include/abc/core.hpp",
-      "sha256_lf": "0552ffba9a5037447cf3a934c9090d5f067f00826a12fa73989a2b2856b14a27"
+      "sha256_lf": "62efdeb91100fd21a5751f749ee6010abc969fae3420dd21af799f6ba128b422"
     },
     {
       "path": "native/src/bytecode.cpp",
-      "sha256_lf": "ef17cf68a9ae9fa60924b2b5ea595ecce515259c7151cd971677ebe29a6dff85"
+      "sha256_lf": "682fc0a08c52729b4a85ea52199d5d28e1c6cd8cbe4fb9d8dadeab63feebf830"
     },
     {
       "path": "native/src/collection_interface.cpp",
-      "sha256_lf": "a204a37b31bb5c19305f7fbe18cb9ee7729bfe6a0ca3723c0d3d7efbdd1b0493"
+      "sha256_lf": "5074a19c976d04ec599cbe1787e52f33f048261f62122f7a6f6fbf77a4a0ea5d"
+    },
+    {
+      "path": "native/src/hash_set.cpp",
+      "sha256_lf": "70dd31f47b56fd5afbe4b286f4f36e59bd9ecb181affb299569d925fbdb8afa4"
     },
     {
       "path": "native/src/interfaces.cpp",
-      "sha256_lf": "31529c8d3b257ab56c674ae59190f3b7e234745740b4edf2b758b4eb995692d6"
-    },
-    {
-      "path": "native/src/interfaces.hpp",
-      "sha256_lf": "dbc9133063ddc2f0abb644bca21c6e0644fd7bbf07e626791cbdbf1993cadea4"
+      "sha256_lf": "bbef6afef283df3d002b689db56f530f12bf12a56bc0e2765e9234646c189eb6"
     },
     {
       "path": "native/src/pascal.cpp",
-      "sha256_lf": "401360891244d82fb51280dff2b9b0cb8276534182d1a11ecb7c090c39ae851e"
+      "sha256_lf": "67b539bb79dad3d48d3ca99a38236d462bf42f5e6e675f08773b519366504ca8"
     },
     {
       "path": "native/src/type_names.cpp",
-      "sha256_lf": "709736a377b594e640873342b52a3c0287a877aece17f1a6d9936d0a7e5996c5"
+      "sha256_lf": "8331d2f99254f8524ff6710942f52d49132b1d227e202b3845237acfe2ef076a"
     }
   ],
-  "scope": "Selected positive compile requirements in two native builds. Not API coverage or runtime validation. IDictionary and typed method overload behavior are validated separately; whole standard-library units remain partial.",
+  "scope": "Selected positive compile requirements in two native builds. Not API coverage or runtime validation. ISet, explicit interface dispatch and HashSet collection callbacks are checked separately; whole standard-library units remain partial.",
   "runs": [
     {
       "schema": 1,
       "scope": "Selected required positive compile cases derived from shipped interfaces. Every case must eventually compile. This is a growing gap list, not complete API coverage; accepting a case does not prove its runtime semantics. No expected failure is made a compatibility requirement.",
       "runner": "native/build/clang-incremental/abc.exe",
-      "runner_sha256": "5cc9073fea341ca4d9ef1a5c4d234d3276fff9345e0ce6ca4d784c969af27418",
+      "runner_sha256": "4a8e1a4674710a0420dcaa72c424a2cad828d9ad1c351ac617b92945df3469bd",
       "version": "ABC Native 0.1.0-dev (Pascal prototype)",
       "cases": [
         {
@@ -141,8 +141,8 @@
           "module": "PABCSystem",
           "source_line": 189,
           "source_anchor": "ISet<T> = System.Collections.Generic.ISet<T>;",
-          "accepted": false,
-          "diagnostic": "system-iset.pas:1:21: E_SYNTAX\nEN: Expected ';' between statements\nRU: Между операторами ожидается ';'"
+          "accepted": true,
+          "diagnostic": ""
         },
         {
           "id": "system-stringbuilder",
@@ -266,7 +266,7 @@
         }
       ],
       "summary": {
-        "accepted": 11,
+        "accepted": 12,
         "required": 28
       }
     },
@@ -274,7 +274,7 @@
       "schema": 1,
       "scope": "Selected required positive compile cases derived from shipped interfaces. Every case must eventually compile. This is a growing gap list, not complete API coverage; accepting a case does not prove its runtime semantics. No expected failure is made a compatibility requirement.",
       "runner": "native/build/qt-editor/Release/abc.exe",
-      "runner_sha256": "8ef51a7759bf214b8742ab1210fc75e6a4456c3f675ce3bb93f9f4da28ea4d07",
+      "runner_sha256": "dc515c2119a5c9a4950f12899a669e8e5a4d9e2f1aa5e5d93009d368510890e8",
       "version": "ABC Native 0.1.0-dev (Pascal prototype)",
       "cases": [
         {
@@ -378,8 +378,8 @@
           "module": "PABCSystem",
           "source_line": 189,
           "source_anchor": "ISet<T> = System.Collections.Generic.ISet<T>;",
-          "accepted": false,
-          "diagnostic": "system-iset.pas:1:21: E_SYNTAX\nEN: Expected ';' between statements\nRU: Между операторами ожидается ';'"
+          "accepted": true,
+          "diagnostic": ""
         },
         {
           "id": "system-stringbuilder",
@@ -503,7 +503,7 @@
         }
       ],
       "summary": {
-        "accepted": 11,
+        "accepted": 12,
         "required": 28
       }
     }

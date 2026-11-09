@@ -13,7 +13,7 @@ bool valid(const std::vector<TypeInfo>& types,Type type){return compound(type) &
 const TypeInfo& info(const std::vector<TypeInfo>& types,Type type){return types.at(static_cast<unsigned>(type)-64U);}
 const InterfaceImplementation* implementation(const TypeInfo& type,Type target){for(const auto& item:type.interfaces.read().implementations)if(item.target==target)return &item;return nullptr;}
 }
-bool interface_kind(const TypeInfo& type){return type.kind==CompoundKind::user_interface || type.kind==CompoundKind::enumerator || type.kind==CompoundKind::sequence || type.kind==CompoundKind::comparable_interface || type.kind==CompoundKind::comparer_interface || type.kind==CompoundKind::equatable_interface || type.kind==CompoundKind::equality_comparer_interface || type.kind==CompoundKind::collection_interface || type.kind==CompoundKind::list_interface || type.kind==CompoundKind::dictionary_interface;}
+bool interface_kind(const TypeInfo& type){return type.kind==CompoundKind::user_interface || type.kind==CompoundKind::enumerator || type.kind==CompoundKind::sequence || type.kind==CompoundKind::comparable_interface || type.kind==CompoundKind::comparer_interface || type.kind==CompoundKind::equatable_interface || type.kind==CompoundKind::equality_comparer_interface || type.kind==CompoundKind::collection_interface || type.kind==CompoundKind::list_interface || type.kind==CompoundKind::dictionary_interface || type.kind==CompoundKind::set_interface;}
 bool interface_property_match(const InterfaceMember& a,const InterfaceMember& b){
  if(a.kind==InterfaceMemberKind::method||b.kind==InterfaceMemberKind::method||a.kind==b.kind)return false;
  const auto& get=a.kind==InterfaceMemberKind::get?a:b;const auto& set=a.kind==InterfaceMemberKind::set?a:b;
@@ -33,6 +33,18 @@ std::vector<InterfaceMember> interface_contract(const std::vector<TypeInfo>& typ
   const auto value=info(types,t.element).fields.at(1).type;
   const auto collection=[&](Type element){for(std::size_t i=0;i<types.size();++i)if(types[i].kind==CompoundKind::collection_interface&&types[i].element==element)return static_cast<Type>(64+i);throw Error("E_BYTECODE",{},"Missing dictionary collection interface");};
   auto members=interface_contract(types,t.interfaces.read().parents[0]);members.push_back({"keys",collection(t.key),{},InterfaceMemberKind::get});members.push_back({"values",collection(value),{},InterfaceMemberKind::get});members.push_back({"item",value,{{t.key,false,false}},InterfaceMemberKind::get,true});members.push_back({"item",Type::unit,{{t.key,false,false},{value,false,false}},InterfaceMemberKind::set,true});members.push_back({"containskey",Type::boolean,{{t.key,false,false}},InterfaceMemberKind::method});members.push_back({"add",Type::unit,{{t.key,false,false},{value,false,false}},InterfaceMemberKind::method});members.push_back({"remove",Type::boolean,{{t.key,false,false}},InterfaceMemberKind::method});members.push_back({"trygetvalue",Type::boolean,{{t.key,false,false},{value,true,false}},InterfaceMemberKind::method});return members;
+ }
+ if(t.kind==CompoundKind::set_interface){
+  if(t.interfaces.read().parents.size()!=1)throw Error("E_BYTECODE",{},"Invalid set interface metadata");
+  const auto parent=t.interfaces.read().parents[0];const auto sequence=info(types,parent).interfaces.read().parents.at(0);
+  auto members=interface_contract(types,parent);
+  // ISet.Add returns bool and hides the inherited procedure. An ICollection
+  // upcast retains its separate eight-slot contract and implementation map.
+  members.erase(members.begin()+2);members.push_back({"add",Type::boolean,{{t.element,false,false}},InterfaceMemberKind::method});
+  for(const auto* name:{"exceptwith","intersectwith","ispropersubsetof","ispropersupersetof","issubsetof","issupersetof","overlaps","setequals","symmetricexceptwith","unionwith"}){
+   const bool query=std::string_view(name).starts_with("is")||std::string_view(name)=="overlaps"||std::string_view(name)=="setequals";
+   members.push_back({name,query?Type::boolean:Type::unit,{{sequence,false,false}},InterfaceMemberKind::method});
+  }return members;
  }
  if(t.kind==CompoundKind::list_interface){
   if(t.interfaces.read().parents.size()!=1)throw Error("E_BYTECODE",{},"Invalid list interface metadata");
@@ -76,7 +88,7 @@ void verify_interfaces(const Program& p){
   if(member.default_indexer&&(member.kind==InterfaceMemberKind::method||member.parameters.size()<(member.kind==InterfaceMemberKind::get?1U:2U)))throw Error("E_BYTECODE",{},"Invalid default interface property");
  };
  for(std::size_t i=0;i<p.types.size();++i){const auto& t=p.types[i];
-  if(t.kind!=CompoundKind::user_interface && t.kind!=CompoundKind::collection_interface && t.kind!=CompoundKind::list_interface && t.kind!=CompoundKind::dictionary_interface && (!t.interfaces.read().parents.empty() || !t.interfaces.read().members.empty()))throw Error("E_BYTECODE",{},"Interface contract on a non-interface type");
+  if(t.kind!=CompoundKind::user_interface && t.kind!=CompoundKind::collection_interface && t.kind!=CompoundKind::list_interface && t.kind!=CompoundKind::dictionary_interface && t.kind!=CompoundKind::set_interface && (!t.interfaces.read().parents.empty() || !t.interfaces.read().members.empty()))throw Error("E_BYTECODE",{},"Interface contract on a non-interface type");
   if(t.kind!=CompoundKind::object_class && !t.interfaces.read().implementations.empty())throw Error("E_BYTECODE",{},"Interface implementation on a non-class type");
   if(t.kind==CompoundKind::user_interface){
    if(t.name.empty() || t.element!=Type::invalid || t.key!=Type::invalid || !t.fields.empty() || t.interfaces.read().parents.size()>16 || t.interfaces.read().members.size()>256 || !t.parameters.empty() || !t.enum_members.empty() || t.enum_flags || t.rank!=1)throw Error("E_BYTECODE",{},"Invalid interface metadata");
@@ -92,9 +104,10 @@ void verify_interfaces(const Program& p){
   if(t.interfaces.read().implementations.size()>64)throw Error("E_BYTECODE",{},"Interface implementation limit exceeded");std::set<Type> targets;
   for(const auto& item:t.interfaces.read().implementations){
    if(!valid(p.types,item.target) || !interface_kind(info(p.types,item.target)) || !targets.insert(item.target).second)throw Error("E_BYTECODE",{},"Invalid interface implementation target");const auto members=interface_contract(p.types,item.target);if(item.routines.size()!=members.size())throw Error("E_BYTECODE",{},"Incomplete interface implementation");
-   for(std::size_t n=0;n<members.size();++n){const auto id=item.routines[n];if(id>=p.routines.size())throw Error("E_BYTECODE",{},"Invalid interface implementation routine");const auto& routine=p.routines[id];const auto& contract=members[n];if(routine.owner!=static_cast<Type>(64+i) || routine.constructor || (contract.kind==InterfaceMemberKind::method && routine.access!=MemberAccess::public_member) || routine.result!=contract.result || routine.parameters.size()!=contract.parameters.size()+1 || routine.parameters[0].type!=routine.owner || routine.parameters[0].by_reference || routine.parameters[0].variadic || !routine.captures.empty())throw Error("E_BYTECODE",{},"Incompatible interface implementation routine");for(std::size_t a=0;a<contract.parameters.size();++a){const auto& actual=routine.parameters[a+1];const auto& wanted=contract.parameters[a];if(actual.type!=wanted.type || actual.by_reference!=wanted.by_reference || actual.variadic!=wanted.variadic)throw Error("E_BYTECODE",{},"Incompatible interface implementation routine");}}
+   for(std::size_t n=0;n<members.size();++n){const auto id=item.routines[n];if(id>=p.routines.size())throw Error("E_BYTECODE",{},"Invalid interface implementation routine");const auto& routine=p.routines[id];const auto& contract=members[n];if(routine.owner!=static_cast<Type>(64+i) || routine.constructor || (routine.access==MemberAccess::explicit_interface_member&&contract.kind!=InterfaceMemberKind::method) || (contract.kind==InterfaceMemberKind::method && routine.access!=MemberAccess::public_member&&routine.access!=MemberAccess::explicit_interface_member) || routine.result!=contract.result || routine.parameters.size()!=contract.parameters.size()+1 || routine.parameters[0].type!=routine.owner || routine.parameters[0].by_reference || routine.parameters[0].variadic || !routine.captures.empty())throw Error("E_BYTECODE",{},"Incompatible interface implementation routine");for(std::size_t a=0;a<contract.parameters.size();++a){const auto& actual=routine.parameters[a+1];const auto& wanted=contract.parameters[a];if(actual.type!=wanted.type || actual.by_reference!=wanted.by_reference || actual.variadic!=wanted.variadic)throw Error("E_BYTECODE",{},"Incompatible interface implementation routine");}}
    for(auto parent:info(p.types,item.target).interfaces.read().parents)if(!implementation(t,parent))throw Error("E_BYTECODE",{},"Missing inherited interface implementation");
   }
+  if(t.kind==CompoundKind::object_class)for(std::size_t id=0;id<p.routines.size();++id)if(p.routines[id].owner==static_cast<Type>(64+i)&&p.routines[id].access==MemberAccess::explicit_interface_member){bool used=false;for(const auto& target:t.interfaces.read().implementations)used|=std::find(target.routines.begin(),target.routines.end(),id)!=target.routines.end();if(!used)throw Error("E_BYTECODE",{},"Unused explicit interface implementation");}
  }
 }
 Value interface_cast(Values& values,Type from,Type to,bool checked,const Value& value){

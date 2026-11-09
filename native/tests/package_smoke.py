@@ -344,6 +344,8 @@ def main():
                 ("collection-interfaces.pas", "2 False True\n[0,7,8]\n7 8 \nTrue 1\nTrue\n1 True\n0\n"),
                 ("list-interfaces.pas", "кот пёс кот\n5 1\n5 7 \nTrue [1,9]\n"),
                 ("dictionary-interfaces.pas", "3 6 True\n3 True True\ncat=6\ndog=3\nowl=1\nFalse True\n2 2\nTrue\n"),
+                ("set-interfaces.pas", "False True\n4 True\nTrue True\n2 6 \nTrue\n"),
+                ("explicit-interfaces.pas", "class interface\n[4,5]\n"),
                 ("collection-property-writes.pas", "25 20 2\n[11,2] 2\n2 True 26\n"),
                 ("small-integers.pas", "Значения: 255 -128 -32768\nСумма с расширением: 256\nКвадрат: 65025\nГраница byte: 254|255|\nМассив smallint: 1 -2\n"),
                 ("unsigned-integers.pas", "Граница 32 бит: 4294967295\nС расширением: 4294967296\nГраница 64 бит: 18446744073709551615\nКвадрат word: 4294836225\nПредыдущее: 18446744073709551614\nПереключение: True False\n"),
@@ -1866,6 +1868,30 @@ def main():
                         or f"{dictionary_interface_error}:2:" not in invalid.stderr):
                     raise RuntimeError(f"{name} IDictionary runtime bilingual error failed: {invalid.stdout!r} {invalid.stderr!r}")
             results[-1]["native_dictionary_interfaces_and_bilingual_errors"] = "passed"
+            set_interface_error = folder / "Ошибки интерфейса множества.pas"
+            for expression, code, english, russian in [
+                ("var s:ISet<integer>:=new HashSet<integer>;var other:IEnumerable<integer>;s.UnionWith(other)", "E_NIL", "Cannot access a nil reference", "Нельзя обратиться к пустой ссылке nil"),
+                ("var c:ICollection<integer>:=new List<integer>;var s:=ISet&<integer>(c)", "E_CAST", "Value does not implement the requested interface", "Значение не реализует требуемый интерфейс"),
+            ]:
+                set_interface_error.write_text(f"begin\n Write('before');{expression};\nend.", encoding="utf-8")
+                invalid = subprocess.run([runner, "run", str(set_interface_error)], text=True, encoding="utf-8", capture_output=True, cwd=folder, env=env, timeout=10)
+                if (invalid.returncode != 1 or invalid.stdout != "before" or code not in invalid.stderr
+                        or f"EN: {english}" not in invalid.stderr or f"RU: {russian}" not in invalid.stderr
+                        or f"{set_interface_error}:2:" not in invalid.stderr):
+                    raise RuntimeError(f"{name} ISet runtime bilingual error failed: {invalid.stdout!r} {invalid.stderr!r}")
+            results[-1]["native_set_interfaces_and_bilingual_errors"] = "passed"
+            explicit_interface_error = folder / "Ошибки явной реализации интерфейса.pas"
+            explicit_interface_error.write_text(
+                "type I=interface function F(n:integer):integer;end;C=class(I)function I.F(n:integer):integer:=n;end;\n"
+                "function Arg:integer;begin Write('X');Result:=1;end;\n"
+                "begin Write('before');var i:I;Writeln(i.F(Arg()));end.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(explicit_interface_error)], text=True, encoding="utf-8", capture_output=True, cwd=folder, env=env, timeout=10)
+            if (invalid.returncode != 1 or invalid.stdout != "beforeX" or "E_NIL" not in invalid.stderr
+                    or "EN: Cannot access a nil reference" not in invalid.stderr
+                    or "RU: Нельзя обратиться к пустой ссылке nil" not in invalid.stderr
+                    or f"{explicit_interface_error}:3:" not in invalid.stderr):
+                raise RuntimeError(f"{name} Explicit interface argument order/bilingual error failed: {invalid.stdout!r} {invalid.stderr!r}")
+            results[-1]["native_explicit_interface_methods_and_bilingual_errors"] = "passed"
             results[-1]["native_generic_enumerators_boxing_resources_and_bilingual_errors"] = "passed"
             results[-1]["native_typed_dictionary_enumerators_and_bilingual_errors"] = "passed"
             results[-1]["native_dictionary_factories_views_callbacks_and_bilingual_errors"] = "passed"

@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "runtime": "Windows .NET Framework 4.0.30319.42000",
+  "outcomes": 3168,
+  "scope": "Selected full ISet protocol native/user implementations and comparer behavior; not whole library coverage",
+  "artifacts": [
+    {
+      "path": "reference/set-interface.cs",
+      "sha256_lf": "0b863acd8d8f3cd9424b3c31f7fbc760e1a32949603b0de9393b888c2817bcce"
+    },
+    {
+      "path": "reference/generate-set-interface.ps1",
+      "sha256_lf": "0b913d4f08b60ace29d649c1078cb434232a68ba13e353ddb5a5f645d5414b92"
+    },
+    {
+      "path": "fixtures/set-interface-program.pas",
+      "sha256_lf": "8ad3b48eae80b64a2cd2c16c8deb6be005453e2d6d8ab6ac1a3400f0df666950"
+    },
+    {
+      "path": "fixtures/set-interface-reference.tsv",
+      "sha256_lf": "e68ae76dd281b28ab1879b2af133b8a328ce233a495ddb290aca35f5441f94af"
+    }
+  ]
+}

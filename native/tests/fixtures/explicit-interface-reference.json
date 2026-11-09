@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "runtime": "Windows .NET Framework 4.0.30319.42000",
+  "outcomes": 24,
+  "scope": "Selected explicit interface dispatch, external method definitions and captured Self; not whole library coverage",
+  "artifacts": [
+    {
+      "path": "reference/explicit-interface.cs",
+      "sha256_lf": "99cabdbc82dd56586c3c66f2824f6e7347df1e9ab8e9e773f8b858055f97a6d3"
+    },
+    {
+      "path": "reference/generate-explicit-interface.ps1",
+      "sha256_lf": "fcfe1230c1cb70141650cc18a1c63e59d974ecf1d0f0d5a5ad709c268fa360ea"
+    },
+    {
+      "path": "fixtures/explicit-interface-program.pas",
+      "sha256_lf": "d35c0fba8f6d37e9ffea4832b2d31e3bb1ec77ae3f361736a21c8bd05e14d953"
+    },
+    {
+      "path": "fixtures/explicit-interface-reference.tsv",
+      "sha256_lf": "4d1ad02b55edb835f3f7ce49785d25dcf26863b4e3c0b40acca0ed9dd1df98c8"
+    }
+  ]
+}
