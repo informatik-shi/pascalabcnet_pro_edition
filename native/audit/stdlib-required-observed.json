@@ -1,35 +1,27 @@
 {
   "schema": 1,
-  "runtime_source_base_revision": "f5498509f85cde54476474e09a66a8b767040d62",
+  "runtime_source_base_revision": "5134980fab97a02833d6b631a4627f0297094041",
   "runtime_source_changes": [
     {
-      "path": "native/src/bytecode.cpp",
-      "sha256_lf": "551a6d39737d6f32eb799d9b94a51009474a9de7c8966fb350e3fe100b9d8f1b"
+      "path": "native/src/list_bulk_user.cpp",
+      "sha256_lf": "56a28a1a33554278aa33e64002cb77f5dc47c57426823cd41427c8fb2d9ff86a"
     },
     {
-      "path": "native/src/pascal.cpp",
-      "sha256_lf": "5b79817540b4a7ddf0decbdd58ff388b3aa381e4b547aa73c7508765f6d65620"
+      "path": "native/src/list_bulk_user.hpp",
+      "sha256_lf": "c9227d33d5523408b99de25f2ce5d379445add421b3b46bda863212198a8cf06"
     },
     {
-      "path": "native/src/record_initialization.cpp",
-      "sha256_lf": "6dfabf9a57bb1403b0f0a1301232a1e04dcdd69255d1a52fe5bce335d9841c75"
-    },
-    {
-      "path": "native/src/record_initialization.hpp",
-      "sha256_lf": "f8ef895c587812396b023d7038ceafb292966453381b07b6ac779c666e7f1c03"
-    },
-    {
-      "path": "native/src/vm.cpp",
-      "sha256_lf": "3c4a01fa0e0810b74ca8b534a517e4df7adeb61889e6450865dcf076f81f0f5a"
+      "path": "native/src/list_operations.cpp",
+      "sha256_lf": "fd930478c1f2b5e2c91afcf274cf05b48ba715108984cc28140898e0d30b48e6"
     }
   ],
-  "scope": "Selected positive compile requirements in two native builds. Not API coverage or runtime validation. User-record field initialization, methods/interfaces, retained List arrays, native range boxing and RealRange equality semantics are validated separately. Field-initializer recipes are source-derived, not a Pascal compiler oracle. Whole standard-library units remain partial.",
+  "scope": "Selected positive compile requirements in two native builds. Not API coverage or runtime validation. User ICollection bulk insertion, user-record field initialization, methods/interfaces, retained List arrays, native range boxing and RealRange equality semantics are validated separately. Field-initializer recipes are source-derived, not a Pascal compiler oracle. Whole standard-library units remain partial.",
   "runs": [
     {
       "schema": 1,
       "scope": "Selected required positive compile cases derived from shipped interfaces. Every case must eventually compile. This is a growing gap list, not complete API coverage; accepting a case does not prove its runtime semantics. No expected failure is made a compatibility requirement.",
       "runner": "native/build/clang-incremental/abc.exe",
-      "runner_sha256": "47e7c2d590075aa9c7561ce1b7211146eb8c9257042595d205c8d4afb63de16f",
+      "runner_sha256": "5fc56039a97a387b11016a43bfa4d7ed69e0a183138300b9b55ab10333e1fbc6",
       "version": "ABC Native 0.1.0-dev (Pascal prototype)",
       "cases": [
         {
@@ -314,7 +306,7 @@
       "schema": 1,
       "scope": "Selected required positive compile cases derived from shipped interfaces. Every case must eventually compile. This is a growing gap list, not complete API coverage; accepting a case does not prove its runtime semantics. No expected failure is made a compatibility requirement.",
       "runner": "native/build/qt-editor/Release/abc.exe",
-      "runner_sha256": "13d201d2aec587adb1856e17a2c691f35a73c54bd02bab1d9e45d5fd0f80f40c",
+      "runner_sha256": "ed6f4594195446436a48eb0c8d747695ec81fa4fb3942988a699ecd0f880632a",
       "version": "ABC Native 0.1.0-dev (Pascal prototype)",
       "cases": [
         {

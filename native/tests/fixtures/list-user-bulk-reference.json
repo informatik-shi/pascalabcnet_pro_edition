@@ -1,0 +1,53 @@
+{
+    "schema":  1,
+    "runtime":  "Windows .NET Framework 4.0.30319.42000",
+    "outcomes":  4200,
+    "record_outcomes":  336,
+    "scope":  "Actual Framework List AddRange/InsertRange with class/record ICollection, integer/record elements, Count/CopyTo ordering, partial shifts, temporary arrays, capacity, retained backing arrays, reentrant Count/CopyTo callbacks, failures and enumerator versions. Not full List or standard-library coverage.",
+    "artifacts":  [
+                      {
+                          "path":  "reference/list-user-bulk.cs",
+                          "sha256_lf":  "cc220fe6d6d588586c76ab2cd7035fdf69b8ccf3ae3b32c08b5e912a5f60b5c6"
+                      },
+                      {
+                          "path":  "reference/generate-list-user-bulk.ps1",
+                          "sha256_lf":  "6a67fe4ff1d1819670d02197530a1fb19228469c9ed4d5dabcfbc49fa9063251"
+                      },
+                      {
+                          "path":  "fixtures/list-user-bulk-program.pas.in",
+                          "sha256_lf":  "7f17b4e9a25bf778abf62950460ebbe5db596d9e762dac26e0bcf3e0398e5fe7"
+                      },
+                      {
+                          "path":  "fixtures/list-user-bulk-reference.tsv",
+                          "sha256_lf":  "8e4b4312038570e2c1299f071a1713b89309ea0d6de8ce63cb61fcaa26c156b6"
+                      },
+                      {
+                          "path":  "fixtures/list-user-bulk-0.pas",
+                          "sha256_lf":  "7649821bd1973a810804d5592f5349d3b31746bf2c6c737ec37ccdc882908a06"
+                      },
+                      {
+                          "path":  "fixtures/list-user-bulk-1.pas",
+                          "sha256_lf":  "6b00024e34f897779b8c66eb2292e5e20cf81ac232a7d776d22756f33d8b9a20"
+                      },
+                      {
+                          "path":  "reference/list-user-record-bulk.cs",
+                          "sha256_lf":  "98706dad6deed0a3a10657555112a027c3586ce4503208c992ccab093a490628"
+                      },
+                      {
+                          "path":  "fixtures/list-user-record-bulk-program.pas.in",
+                          "sha256_lf":  "7662ea716e7770f3181f385ee86b74ee7b0319e1c7b5e7429cf30cc5677df97b"
+                      },
+                      {
+                          "path":  "fixtures/list-user-record-bulk-reference.tsv",
+                          "sha256_lf":  "2b97f31ae39fb3f4e7b7e1af72eaf3a6c75bed1c0e71705c30fec2f8081d66c6"
+                      },
+                      {
+                          "path":  "fixtures/list-user-record-bulk-0.pas",
+                          "sha256_lf":  "572dafa405003ebc8d8459ab047827bf36bcf0de7ff093b2d872b1c8269df0e7"
+                      },
+                      {
+                          "path":  "fixtures/list-user-record-bulk-1.pas",
+                          "sha256_lf":  "06dfbdd299fb99f79d4b7c8bb49110c0e486fd1a9f708f17c96e64f41b65171c"
+                      }
+                  ]
+}

@@ -50,6 +50,7 @@ route, stdout and error. Constructor route 0 uses ToList; route 1 uses new List.
 The application installs none of these managed development tools. General record
 constructor overloads, static members/operators, inferred member signatures, general
 source generics, Object boxing, source units, general inheritance and full record
-closure/const-receiver semantics remain unfinished. Custom ICollection bulk
-AddRange/InsertRange alias/version behavior still needs its own complete review.
+closure/const-receiver semantics remain unfinished. Other reentrant/malformed ICollection bulk
+insertion contracts remain unfinished; Count/CopyTo and retained-array behavior
+are covered separately in list-user-bulk-reference.md.
 This evidence does not complete PABCSystem, Collections or the standard library.

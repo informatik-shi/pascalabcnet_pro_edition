@@ -1,0 +1,68 @@
+type Item=record
+ X:integer;Data:array of integer;
+ procedure Bump(n:integer);begin X+=n;end;
+end;
+var target:List<Item>;
+var saved,original:array of Item;
+var probe:IEnumerator<Item>;
+var suppliedCount,capacity,position,operation,callback:integer;
+function Make(n:integer):Item;begin Result.X:=n;Result.Data:=Arr(n);end;
+function Number(value:Item):integer:=value.X;
+function Meta(value:Item):integer:=(if value.Data=nil then -1 else value.Data[0]);
+function Text(values:array of Item):string:='['+values.Select(Number).JoinToString(',')+']';
+type Seed=class(ICollection<Item>)
+ public
+ function CountValue:integer:=capacity;
+ property Count:integer read CountValue;
+ property IsReadOnly:boolean read boolean(False);
+ procedure Add(n:Item);begin end;
+ procedure Clear;begin end;
+ function Contains(n:Item):boolean:=False;
+ function Remove(n:Item):boolean:=False;
+ procedure CopyTo(a:array of Item;index:integer);
+ begin original:=a;for var i:=0 to capacity-1 do a[index+i]:=Make(i+1);end;
+ function GetEnumerator:IEnumerator<Item>:=new List<Item>().GetEnumerator;
+end;
+Bag=%OWNER%(ICollection<Item>)
+ public
+ function CountValue:integer;
+ begin
+  Writeln('C');
+  if callback=1 then begin target.Add(Make(90));target.RemoveAt(target.Count-1);end;
+  if callback=2 then target.Clear;
+  if callback=3 then target.Capacity+=7;
+  Result:=suppliedCount;
+ end;
+ property Count:integer read CountValue;
+ property IsReadOnly:boolean read boolean(False);
+ procedure Add(n:Item);begin end;
+ procedure Clear;begin end;
+ function Contains(n:Item):boolean:=False;
+ function Remove(n:Item):boolean:=False;
+ procedure CopyTo(a:array of Item;index:integer);
+ begin
+  saved:=a;
+  if callback=4 then begin target.Add(Make(90));target.RemoveAt(target.Count-1);end;
+  if callback=5 then target.Capacity+=7;
+  if callback=6 then original[0].Bump(1);
+  Writeln('P ',a.Length,' ',index,' ',Text(target.ToArray),' ',target.Capacity);
+  Writeln('A ',Text(original));
+  if (callback<>1) and (callback<>2) and (callback<>4) then Writeln(probe.MoveNext,' ',probe.Current.X);
+  for var i:=0 to 1 do begin
+   a[index+i]:=Make(7+i);Writeln('W ',i,' ',Text(target.ToArray));Writeln('A ',Text(original));
+  end;
+ end;
+ function GetEnumerator:IEnumerator<Item>;
+ begin Writeln('E');Result:=new List<Item>(Arr(Make(9))).GetEnumerator;end;
+end;
+begin
+ Read(suppliedCount,capacity,position,operation,callback);
+ target:=new List<Item>(new Seed);target.RemoveRange(3,capacity-3);
+ probe:=target.GetEnumerator;probe.MoveNext;
+ var source:ICollection<Item>:=new Bag;
+ if operation=0 then target.AddRange(source) else target.InsertRange(position,source);
+ Writeln(Text(target.ToArray),' ',target.Count,' ',target.Capacity);Writeln('A ',Text(original));
+ Writeln(Text(saved));saved[0].Bump(90);Writeln(Text(target.ToArray));
+ saved[0].Data[0]:=77;Writeln(target.Select(Meta).ToArray);
+ Writeln(probe.MoveNext);
+end.

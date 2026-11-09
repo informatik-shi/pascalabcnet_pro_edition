@@ -78,6 +78,7 @@ add_library(abc_core
     src/collection_operations.cpp
     src/matrix_construction.cpp
     src/list_operations.cpp
+    src/list_bulk_user.cpp
     src/list_storage.cpp
     src/timing.cpp
     src/single.cpp
@@ -320,6 +321,13 @@ if(BUILD_TESTING)
     add_test(NAME record_initialization_example COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/examples/record-initialization.pas")
     add_test(NAME original_records13 COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/../TestSuite/records13.pas")
     add_test(NAME original_records15 COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/../TestSuite/records15.pas")
+    add_executable(abc_list_user_bulk_tests tests/list_user_bulk_tests.cpp)
+    target_link_libraries(abc_list_user_bulk_tests PRIVATE abc_core)
+    if(MSVC)
+        target_compile_options(abc_list_user_bulk_tests PRIVATE /utf-8)
+    endif()
+    add_test(NAME list_user_bulk COMMAND abc_list_user_bulk_tests)
+    add_test(NAME list_user_bulk_example COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/examples/list-user-bulk.pas")
     add_test(NAME property_interfaces_example COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/examples/property-interfaces.pas")
     add_test(NAME set_interfaces_example COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/examples/set-interfaces.pas")
     add_test(NAME explicit_interfaces_example COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/examples/explicit-interfaces.pas")

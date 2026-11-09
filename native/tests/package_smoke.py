@@ -351,6 +351,7 @@ def main():
                 ("real-range-interfaces.pas", "True False\nTrue\n-1.5 2.5\nTrue True\n"),
                 ("record-methods.pas", "5 3\n5 15 15\n7\n8 7\n"),
                 ("record-initialization.pas", "1 9 88 1\n2 3 4 4\n0 True 4\n"),
+                ("list-user-bulk.pas", "Count\nCopyTo\n[1,7,8,2,3]\n[1,7,8,2,3]\n[99,8]\n"),
                 ("collection-property-writes.pas", "25 20 2\n[11,2] 2\n2 True 26\n"),
                 ("small-integers.pas", "Значения: 255 -128 -32768\nСумма с расширением: 256\nКвадрат: 65025\nГраница byte: 254|255|\nМассив smallint: 1 -2\n"),
                 ("unsigned-integers.pas", "Граница 32 бит: 4294967295\nС расширением: 4294967296\nГраница 64 бит: 18446744073709551615\nКвадрат word: 4294836225\nПредыдущее: 18446744073709551614\nПереключение: True False\n"),
@@ -1964,6 +1965,17 @@ def main():
             if invalid.returncode != 1 or invalid.stdout or "EN:" not in invalid.stderr or "RU:" not in invalid.stderr:
                 raise RuntimeError(f"{name} Record initializer type was not rejected before output")
             results[-1]["native_record_initialization_and_bilingual_errors"] = "passed"
+            bulk_error = folder / "Ошибки массовой вставки коллекции.pas"
+            bulk_source = (folder / "examples" / "list-user-bulk.pas").read_text(encoding="utf-8-sig")
+            bulk_source = bulk_source.replace("a[index+1]:=8;", "Write(1 div 0);")
+            bulk_error.write_text(bulk_source, encoding="utf-8")
+            bulk_line = next(i for i, line in enumerate(bulk_source.splitlines(), 1) if "Write(1 div 0)" in line)
+            invalid = subprocess.run([runner, "run", str(bulk_error)], text=True, encoding="utf-8", capture_output=True, cwd=folder, env=env, timeout=10)
+            if (invalid.returncode != 1 or invalid.stdout != "Count\nCopyTo\n" or "E_DIV_ZERO" not in invalid.stderr
+                    or "EN: Division by zero" not in invalid.stderr or "RU: Деление на ноль" not in invalid.stderr
+                    or f"{bulk_error}:{bulk_line}:" not in invalid.stderr):
+                raise RuntimeError(f"{name} User collection CopyTo bilingual error failed: {invalid.stdout!r} {invalid.stderr!r}")
+            results[-1]["native_user_collection_bulk_and_bilingual_errors"] = "passed"
             results[-1]["native_generic_enumerators_boxing_resources_and_bilingual_errors"] = "passed"
             results[-1]["native_typed_dictionary_enumerators_and_bilingual_errors"] = "passed"
             results[-1]["native_dictionary_factories_views_callbacks_and_bilingual_errors"] = "passed"

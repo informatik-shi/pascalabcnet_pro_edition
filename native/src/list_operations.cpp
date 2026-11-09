@@ -1,4 +1,5 @@
 #include "list_operations.hpp"
+#include "list_bulk_user.hpp"
 #include "equality.hpp"
 #include "sequences.hpp"
 #include "sequence_scope.hpp"
@@ -81,6 +82,7 @@ bool list_bulk_signature_valid(const Program& program,Type target,Type input) {
 void list_bulk(Values& values,const std::shared_ptr<Aggregate>& target,const std::shared_ptr<Aggregate>& input,bool insert,std::int32_t index,const ExecutionOptions& options) {
     if (!target || target->nil || !input || input->nil) throw runtime_error(RuntimeError::nil_reference,values.location);
     if (insert && (index<0 || static_cast<std::size_t>(index)>target->items.size())) throw runtime_error(RuntimeError::list_index,values.location);
+    if(list_user_bulk(values,target,input,insert?static_cast<std::size_t>(index):target->items.size(),options))return;
     std::uint64_t used=0;const auto element=type_info(values.program,target->type).element;
     std::shared_ptr<Aggregate> collection;
     const auto kind=type_info(values.program,input->type).kind;
