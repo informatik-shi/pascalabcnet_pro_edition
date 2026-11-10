@@ -1,0 +1,36 @@
+{
+  "schema": 1,
+  "reference_runtimes": [
+    "Windows .NET Framework 4.0.30319.42000",
+    "Windows .NET 10.0.12"
+  ],
+  "reference_executions": 160,
+  "fixtures_identical": true,
+  "scope": "Actual strict CLR static initialization on fresh closed classes, checking reads, stores, object constructor arguments, references, instance use, unevaluated Low/High, owned fixed copies reentrant initialization and field publication before element evaluation. Source-derived native Pascal recipes and original arrays12 run only through the native interpreter. No original Pascal compiler oracle is invoked or claimed. Static routines/properties, record statics, generic class declarations, full reflection and complete modules remain unfinished. No development runtime is shipped.",
+  "artifacts": [
+    {
+      "path": "reference/static-fields.cs",
+      "sha256_lf": "e0fa3127d9e4c8aa7bc49291ebc929adb173b4ed6e0aa3f434c4f64b4796dbdc"
+    },
+    {
+      "path": "reference/generate-static-fields.ps1",
+      "sha256_lf": "db0878b9398b2b2c28243e53a4d168df264c4880efa14339c2fa10d23792ae07"
+    },
+    {
+      "path": "fixtures/static-fields-reference.tsv",
+      "sha256_lf": "af55766b3e67c603a76290d1032e7d221b8c56693b1e6f07bbc859d5993a9b3a"
+    },
+    {
+      "path": "fixtures/static-fields-template.pas",
+      "sha256_lf": "28e7236970db397988c17d5f8936a8ed4ee29b689312b07d89a9b58b0a978f9a"
+    },
+    {
+      "path": "fixtures/static-fields-reference.md",
+      "sha256_lf": "1a71a1adbd6426dd66e9c2dcc8ef10f27923ad0c1895369bc22fe6149f3dcaed"
+    },
+    {
+      "path": "../../TestSuite/arrays12.pas",
+      "sha256_lf": "160e37db71251c0256423a472efdbff72356172aa905f1af73127486cf6d4c16"
+    }
+  ]
+}

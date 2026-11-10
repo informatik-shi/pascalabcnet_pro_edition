@@ -1,27 +1,39 @@
 {
   "schema": 1,
-  "runtime_source_base_revision": "6b29e96035753ab734283a7544abec29b75e0452",
+  "runtime_source_base_revision": "e426e759f7b1fe6a579e768c938c3a5e08f6f04f",
   "runtime_source_changes": [
     {
-      "path": "native/src/constant.cpp",
-      "sha256_lf": "53d056babbbb99f98868ad552e47b8ed1e7663ace54b33159ee262b4b64c7a9c"
+      "path": "native/include/abc/core.hpp",
+      "sha256_lf": "101ae58cd77bb79f0f2fd5fdab64c0d8d0cab4dfed00307ac99a31c1b635d624"
     },
     {
-      "path": "native/src/constant.hpp",
-      "sha256_lf": "a8460fa511af091216e44202305a852794c927449916fef5f0ace4eaf6bfa9e4"
+      "path": "native/src/bytecode.cpp",
+      "sha256_lf": "ffb1231ee9025d7dfcdc023390362cf049ea5d8dbf4fb1e53e04d82958e5385b"
+    },
+    {
+      "path": "native/src/hir.hpp",
+      "sha256_lf": "3875aec6702b3620c9752865b33ae5ebd8b396c985ce30430d271c7a370b68fa"
     },
     {
       "path": "native/src/pascal.cpp",
-      "sha256_lf": "fb8ee34502c7c11d29d626104047a7b20369550755e12cc92555622445a94cb2"
+      "sha256_lf": "7ee59e97cd3f6e197e91c3b651e182bec54f8c2c863e3a4219ae72769640ece2"
+    },
+    {
+      "path": "native/src/record_initialization.cpp",
+      "sha256_lf": "9562518e903c6bdb5baeb235bcf295bf66f193f7d2fe995eaf05c82feffff52e"
+    },
+    {
+      "path": "native/src/vm.cpp",
+      "sha256_lf": "d3bd7058dd5f590e94f6bdda925a336ba699d26d4b148199608c622397956d66"
     }
   ],
-  "scope": "Typed scalar/enum array constants and static pools with standard runtime factories/input and nested element callbacks, preserved CLR default numeric fields before explicit global initializers; no I/O or user code at compile time: 81 independent CLR pool/copy traces, 228 native checks including 18 copy/file traces, original arrays2/arrays3, compile-time pure scalar element reads for known type bounds with full shape metadata, ordinary runtime alias reads and error timing retained, nested dynamic/fixed/matrix comma indices. Full aggregate constants, rectangular syntax, generated reflection and whole units remain unfinished. Dynamic array declaration literals, singleton/nested/record initializers, up to 4096 values, raw storage allocated before value evaluation without record initializer side effects, verified rank-one raw marker, mixed/small ordinal range promotion, original arrayinitializer1/arrays7 plus five file/fixed originals are permanent native tests. Typed aggregate constants and full compatibility remain unfinished. Statically typed fixed-bound arrays: 18 independent constructor/copy/typed-file traces and 228 native checks; four unmodified original fixed/file tests through the native interpreter. Fixed array structural conversions, subrange declarations, short strings, sets and full reflection remain positive gaps. Named statically typed local routines use existing closures: 1071 independent CLR traces and 1106 native checks, five original fileof1/nested1/nested3/nested4/fResult3 tests through the native interpreter. Local defaults/overloads/forward, local type sections and complete metadata remain unfinished. Native binary streams/file of scalar, enum and packed nested records: 4320 actual stream traces, 410752 actual Framework codec steps (489444 checks), all 140 encoding rows and 317 native Pascal file checks, with 311 modern runtime differences retained; remaining fixed-array conversions/subranges/short strings/sets, mutable ElementType, object coercions/reflection/classes/serialization and whole modules remain unfinished. Selected positive compile requirements in two native builds. Not API coverage or runtime validation. Ten invariant Encoding properties across all 140 default read-only factory codecs and both max-size methods with 18350080 actual exhaustive outcomes, independent FNV fingerprints and 6980 boundary outcomes (7696 native checks); UI-culture EncodingName and a 197-declaration API inventory remain positive requirements, not native coverage. UTF-7 raw UTF16 with all encoder/decoder residual values, actual strict/split/scalar evidence and 1421 identical raw-UTF16 file recipes, completing all 140 numbered Framework codecs but not full APIs or modules; all five ISO-2022/HZ pages with exhaustive encoder-mode and decoder-pending byte-pair suffixes, split and default/strict evidence, 9725 modern file recipes and 4062 retained legacy EOF differences, persistent writer encoders and all ten ISCII pages with exhaustive BMP/context/default/strict/script selection/file evidence and preserved legacy EOF differences, GB18030 full BMP/scalar/four-byte/split/default/strict maps and modern files with preserved legacy EOF differences, all Framework DBCS encoding maps, byte pairs, splits, aliases and modern file recipes with explicit legacy EOF differences, all Framework single-byte encoding maps, aliases and file recipes, standard generic Predicate2/Predicate3 families, named non-generic delegate families and arrow identities, raw Type property metadata and source-file identity, Predicate/Func identities and conversions, user ICollection bulk insertion, user-record field initialization, methods/interfaces, retained List arrays, native range boxing and RealRange equality semantics are validated separately. Field-initializer recipes are source-derived, not a Pascal compiler oracle. Whole standard-library units remain partial.",
+  "scope": "Typed class static fields with verified storage and strict one-time initialization, RHS/reference/new argument order and reentry; source array declaration publication before elements with fresh captured cells. 160 actual CLR traces, 193 native static checks, original arrays12 and portable example. Static routines/properties/explicit constructors, record statics, inheritance/generics and full visibility/reflection remain unfinished. Typed scalar/enum array constants and static pools with standard runtime factories/input and nested element callbacks, preserved CLR default numeric fields before explicit global initializers; no I/O or user code at compile time: 81 independent CLR pool/copy traces, 228 native checks including 18 copy/file traces, original arrays2/arrays3, compile-time pure scalar element reads for known type bounds with full shape metadata, ordinary runtime alias reads and error timing retained, nested dynamic/fixed/matrix comma indices. Full aggregate constants, rectangular syntax, generated reflection and whole units remain unfinished. Dynamic array declaration literals, singleton/nested/record initializers, up to 4096 values, raw storage allocated before value evaluation without record initializer side effects, verified rank-one raw marker, mixed/small ordinal range promotion, original arrayinitializer1/arrays7 plus five file/fixed originals are permanent native tests. Typed aggregate constants and full compatibility remain unfinished. Statically typed fixed-bound arrays: 18 independent constructor/copy/typed-file traces and 228 native checks; four unmodified original fixed/file tests through the native interpreter. Fixed array structural conversions, subrange declarations, short strings, sets and full reflection remain positive gaps. Named statically typed local routines use existing closures: 1071 independent CLR traces and 1106 native checks, five original fileof1/nested1/nested3/nested4/fResult3 tests through the native interpreter. Local defaults/overloads/forward, local type sections and complete metadata remain unfinished. Native binary streams/file of scalar, enum and packed nested records: 4320 actual stream traces, 410752 actual Framework codec steps (489444 checks), all 140 encoding rows and 317 native Pascal file checks, with 311 modern runtime differences retained; remaining fixed-array conversions/subranges/short strings/sets, mutable ElementType, object coercions/reflection/classes/serialization and whole modules remain unfinished. Selected positive compile requirements in two native builds. Not API coverage or runtime validation. Ten invariant Encoding properties across all 140 default read-only factory codecs and both max-size methods with 18350080 actual exhaustive outcomes, independent FNV fingerprints and 6980 boundary outcomes (7696 native checks); UI-culture EncodingName and a 197-declaration API inventory remain positive requirements, not native coverage. UTF-7 raw UTF16 with all encoder/decoder residual values, actual strict/split/scalar evidence and 1421 identical raw-UTF16 file recipes, completing all 140 numbered Framework codecs but not full APIs or modules; all five ISO-2022/HZ pages with exhaustive encoder-mode and decoder-pending byte-pair suffixes, split and default/strict evidence, 9725 modern file recipes and 4062 retained legacy EOF differences, persistent writer encoders and all ten ISCII pages with exhaustive BMP/context/default/strict/script selection/file evidence and preserved legacy EOF differences, GB18030 full BMP/scalar/four-byte/split/default/strict maps and modern files with preserved legacy EOF differences, all Framework DBCS encoding maps, byte pairs, splits, aliases and modern file recipes with explicit legacy EOF differences, all Framework single-byte encoding maps, aliases and file recipes, standard generic Predicate2/Predicate3 families, named non-generic delegate families and arrow identities, raw Type property metadata and source-file identity, Predicate/Func identities and conversions, user ICollection bulk insertion, user-record field initialization, methods/interfaces, retained List arrays, native range boxing and RealRange equality semantics are validated separately. Field-initializer recipes are source-derived, not a Pascal compiler oracle. Whole standard-library units remain partial.",
   "runs": [
     {
       "schema": 1,
       "scope": "Selected required positive compile cases derived from shipped interfaces. Every case must eventually compile. This is a growing gap list, not complete API coverage; accepting a case does not prove its runtime semantics. No expected failure is made a compatibility requirement.",
       "runner": "native/build/clang-incremental/abc.exe",
-      "runner_sha256": "37520ed19df950be98e910d7e0954002e4c3fa569b0dadbfcfeb9f8b567fac87",
+      "runner_sha256": "6a368468c5d102dfa0fcba4a3637f67f062dd4da7d48631a3ed1e391bc768ec6",
       "version": "ABC Native 0.1.0-dev (Pascal prototype)",
       "cases": [
         {
@@ -394,7 +406,7 @@
       "schema": 1,
       "scope": "Selected required positive compile cases derived from shipped interfaces. Every case must eventually compile. This is a growing gap list, not complete API coverage; accepting a case does not prove its runtime semantics. No expected failure is made a compatibility requirement.",
       "runner": "native/build/qt-editor/Release/abc.exe",
-      "runner_sha256": "afc758705640deeff909a1ff7d32a3814b5e3354b0d54b76f8f3523ed2f5831b",
+      "runner_sha256": "d7ec8ac4fd3800e5833ac2ad5c489248fb1b3637f215aa0e3da12c583a10513c",
       "version": "ABC Native 0.1.0-dev (Pascal prototype)",
       "cases": [
         {

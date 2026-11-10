@@ -234,6 +234,8 @@ struct SyntaxRoutine;
 struct SyntaxProperty;
 struct SyntaxExpr;
 struct SyntaxStmt;
+struct SyntaxType;
+struct SyntaxStaticField {Token name;std::shared_ptr<SyntaxType> type;std::unique_ptr<SyntaxExpr> initializer;MemberAccess access=MemberAccess::public_member;};
 struct SyntaxType {
     Token token;
     std::string kind;
@@ -254,6 +256,7 @@ struct SyntaxType {
     std::vector<std::shared_ptr<SyntaxProperty>> properties{};
     std::map<std::string,MemberAccess> field_access{};
     std::shared_ptr<SyntaxRoutine> initializer{};
+    std::vector<SyntaxStaticField> static_fields{};
 };
 struct SyntaxProperty { Token name;std::shared_ptr<SyntaxType> type;std::optional<Token> getter,setter;MemberAccess access=MemberAccess::public_member;std::vector<std::pair<Token,std::shared_ptr<SyntaxType>>> indices{};bool default_indexer=false;std::shared_ptr<SyntaxType> explicit_interface{};std::shared_ptr<SyntaxExpr> getter_expression{};std::shared_ptr<SyntaxStmt> setter_statement{}; };
 struct SyntaxRoutine;
@@ -308,6 +311,7 @@ struct SyntaxStmt {
     bool collections_imported = false;
     bool declares_control = false, descending = false;
     Token assignment_operator{};
+    bool field_initialization=false;
 };
 
 struct SyntaxParameter { Token name; std::shared_ptr<SyntaxType> type; bool by_reference; std::shared_ptr<SyntaxExpr> default_value; bool read_only=false,variadic=false; };
@@ -530,16 +534,24 @@ private:
                 }
                 if (object && (is("destructor") || is("class") || is("var")))
                     throw Error("E_UNSUPPORTED",current_.location,"Class destructors, static members and var field sections are not ported yet");
+                const bool static_field=object&&accept("static");
+                if(static_field&&(is("function")||is("procedure")||is("constructor")))throw Error("E_UNSUPPORTED",current_.location,"Static routine declarations are not ported yet","Объявления статических подпрограмм ещё не перенесены");
                 std::vector<Token> fields{name()}; while (accept(",")) fields.push_back(name());
                 std::shared_ptr<SyntaxType> type;if(accept(":"))type=type_syntax();
                 const bool initialized=accept(":=");
+                if(static_field){
+                    if(fields.size()>1&&initialized)throw Error("E_TYPE",fields.front().location,"Field initializer requires exactly one field name");
+                    std::unique_ptr<SyntaxExpr> value;if(initialized)value=expression();if(!type&&!value)fail("Field requires a type or initializer");
+                    for(const auto& field:fields)result->static_fields.push_back({field,type,std::move(value),access});
+                    if(!accept(";")&&!is("end"))fail("Expected ';' after static field");continue;
+                }
                 if (initialized) {
                     if (fields.size()!=1) throw Error("E_TYPE",fields.front().location,"Field initializer requires exactly one field name");
                     if (!result->initializer) {
                         result->initializer=std::make_shared<SyntaxRoutine>();result->initializer->name={TokenKind::name,"$initialize_fields",fields.front().location};
                         result->initializer->access=MemberAccess::private_member;
                     }
-                    SyntaxStmt assignment;assignment.kind=SyntaxStmtKind::assignment;assignment.token=fields.front();
+                    SyntaxStmt assignment;assignment.kind=SyntaxStmtKind::assignment;assignment.token=fields.front();assignment.field_initialization=true;
                     assignment.target=make_expression(SyntaxExprKind::field,fields.front(),make_expression(SyntaxExprKind::name,Token{TokenKind::name,"self",fields.front().location}));assignment.expression=expression();
                     result->initializer->body.statements.push_back(std::move(assignment));
                 }
@@ -1191,7 +1203,7 @@ public:
             if (fields.size()>256) throw Error("E_LIMIT",name.location,"Class field limit exceeded");
             module_.types[static_cast<unsigned>(aliases_.at(name.text))-64].fields=std::move(fields);
         }
-        prepare_type_initializers(source);bind_method_definitions(source);
+        prepare_type_initializers(source);prepare_static_fields(source);bind_method_definitions(source);
         for (const auto& routine : source.routines) {
             const auto explicit_target=routine->explicit_interface?resolve_type(*routine->explicit_interface):Type::invalid;
             if(explicit_target!=Type::invalid&&(routine->owner.empty()||routine->constructor||!compound(explicit_target)||!interface_kind(info(explicit_target,routine->name.location))))throw Error("E_TYPE",routine->name.location,"Explicit method qualifier must be an interface","Явная реализация метода требует имени интерфейса");
@@ -1218,6 +1230,7 @@ public:
             if(body.signature.owner!=Type::invalid&&!body.signature.constructor){auto& overloads=explicit_target==Type::invalid?class_method_overloads_[body.signature.owner][routine->name.text]:class_explicit_methods_[body.signature.owner][explicit_target][routine->name.text];for(auto previous:overloads){const auto& signature=module_.routines[previous].signature;if(signature.parameters.size()==body.signature.parameters.size()&&std::equal(signature.parameters.begin(),signature.parameters.end(),body.signature.parameters.begin(),[](const auto& a,const auto& b){return a.type==b.type&&a.by_reference==b.by_reference;}))throw Error("E_DUPLICATE",routine->name.location,"Duplicate method signature");}overloads.push_back(module_.routines.size());}
             routine_names_.try_emplace(qualified,module_.routines.size());module_.routines.push_back(std::move(body));
         }
+        for(auto& type:module_.static_classes)type.initializer=routine_names_.at("$initialize_static_"+std::to_string(static_cast<unsigned>(type.owner)));
         register_properties(source);
         register_interface_implementations(source);
         register_defaults(source);
@@ -1229,7 +1242,8 @@ public:
         bind_defaults(source);
         for (std::size_t i = 0; i < source.routines.size(); ++i) {
             const auto& syntax = *source.routines[i]; auto& routine = module_.routines[i];
-            in_routine_ = true; current_result_ = routine.signature.result; current_name_ = syntax.name.text; current_owner_=routine.signature.owner;scopes_.emplace_back();
+            in_routine_ = true; current_result_ = routine.signature.result; current_name_ = syntax.name.text; current_owner_=routine.signature.owner;
+            current_static_initializer_=static_initializer_owners_.contains(&syntax);if(current_static_initializer_)current_owner_=static_initializer_owners_.at(&syntax);scopes_.emplace_back();
             const auto first = module_.locals.size();
             for (std::size_t n = 0; n < syntax.parameters.size(); ++n) {
                 const auto& name = syntax.parameters[n].name;
@@ -1248,11 +1262,11 @@ public:
                     scopes_.back()[current_name_] = routine.signature.result_local;
                 }
             }
-            if (current_owner_!=Type::invalid) current_self_=routine.signature.parameters.front().local;
+            if (current_owner_!=Type::invalid&&!current_static_initializer_) current_self_=routine.signature.parameters.front().local;
             routine.body = statement(syntax.body);
             for (const auto& parameter:routine.signature.parameters) constant_parameters_.erase(parameter.local);
             for (auto n = first; n < module_.locals.size(); ++n) if (!module_.locals[n].global && !lambda_locals_.contains(n)) routine.signature.locals.push_back(n);
-            scopes_.pop_back(); in_routine_ = false; current_name_.clear();current_owner_=Type::invalid;
+            scopes_.pop_back(); in_routine_ = false; current_name_.clear();current_owner_=Type::invalid;current_static_initializer_=false;
         }
         bind_property_expressions();
         module_.body.statements.push_back(statement(source.statements.back()));
@@ -1382,6 +1396,7 @@ private:
             binary->left=operand(*value.left);binary->right=operand(*value.right);return bind_binary(std::move(binary))->type;
         }
         if(value.kind==SyntaxExprKind::name){
+            for(const auto& field:owner.static_fields)if(field.name.text==name)return resolve_static_field_type(owner,field);
             if(std::any_of(owner.fields.begin(),owner.fields.end(),[&](const auto& f){return f.first.text==name;}))return resolve_field_type(owner,value.token);
             if(const auto constant=stdlib::constant(name))return value_type(*constant);
             if(syntax_root_)for(const auto& declaration:syntax_root_->statements)if(declaration.kind==SyntaxStmtKind::declaration&&std::any_of(declaration.names.begin(),declaration.names.end(),[&](const auto& token){return token.text==name;})){if(declaration.annotation)return resolve_type(*declaration.annotation);if(declaration.expression)return infer_field_expression(owner,*declaration.expression);}
@@ -1399,6 +1414,29 @@ private:
             returns.clear();for(const auto& candidate:stdlib::signatures())if(candidate.name==name&&candidate.parameters.size()==value.arguments.size()&&candidate.result!=Type::unit)returns.insert(candidate.result);if(returns.size()==1)return *returns.begin();
         }
         throw Error("E_UNSUPPORTED",value.token.location,"This field type inference is not ported yet; specify its type","Этот вывод типа поля ещё не перенесён; укажите тип явно");
+    }
+    Type resolve_static_field_type(const SyntaxType& owner,const SyntaxStaticField& field){
+        if(field.type)return resolve_type(*field.type);const auto key=std::pair{&owner,field.name.text};
+        if(!static_field_inference_.insert(key).second)throw Error("E_TYPE",field.name.location,"Cyclic static field type inference","Циклический вывод типа статического поля");
+        const auto result=infer_field_expression(owner,*field.initializer);static_field_inference_.erase(key);
+        if(result==Type::invalid||result==Type::unit||result==Type::nil)throw Error("E_TYPE",field.name.location,"Static field requires a known value type");return result;
+    }
+    void prepare_static_fields(SyntaxStmt& source){
+        for(auto& [name,syntax]:source.type_declarations){if(syntax->kind!="class"||syntax->named||syntax->static_fields.empty())continue;const auto owner=aliases_.at(name.text);StaticClass metadata;metadata.owner=owner;
+            const auto state="$static_state_"+std::to_string(static_cast<unsigned>(owner));metadata.state=module_.locals.size();module_.locals.push_back({state,Type::boolean,true});scopes_.front()[state]=metadata.state;
+            for(const auto& field:syntax->static_fields){if(metadata.fields.size()>=256||module_.locals.size()>=4096)throw Error("E_LIMIT",field.name.location,"Static field limit exceeded");if(std::any_of(syntax->fields.begin(),syntax->fields.end(),[&](const auto& f){return f.first.text==field.name.text;})||std::any_of(metadata.fields.begin(),metadata.fields.end(),[&](const auto& f){return f.name==field.name.text;})||std::any_of(syntax->methods.begin(),syntax->methods.end(),[&](const auto& m){return m->name.text==field.name.text;})||std::any_of(syntax->properties.begin(),syntax->properties.end(),[&](const auto& p){return p->name.text==field.name.text;}))throw Error("E_DUPLICATE",field.name.location,"Duplicate class member");const auto type=resolve_static_field_type(*syntax,field);const auto slot=module_.locals.size();module_.locals.push_back({"$static_field_"+name.text+"_"+field.name.text,type,true});metadata.fields.push_back({field.name.text,slot,field.access});}
+            static_class_indices_[owner]=module_.static_classes.size();module_.static_classes.push_back(std::move(metadata));
+            auto routine=std::make_shared<SyntaxRoutine>();routine->name={TokenKind::name,"$initialize_static_"+std::to_string(static_cast<unsigned>(owner)),name.location};static_initializer_owners_[routine.get()]=owner;
+            SyntaxStmt guard;guard.kind=SyntaxStmtKind::conditional;guard.token=name;guard.expression=make_expression(SyntaxExprKind::unary,Token{TokenKind::name,"not",name.location},make_expression(SyntaxExprKind::name,Token{TokenKind::name,state,name.location}));guard.body=std::make_unique<SyntaxStmt>();guard.body->kind=SyntaxStmtKind::block;
+            SyntaxStmt mark;mark.kind=SyntaxStmtKind::assignment;mark.token=name;mark.target=make_expression(SyntaxExprKind::name,Token{TokenKind::name,state,name.location});mark.expression=make_expression(SyntaxExprKind::literal,Token{TokenKind::name,"true",name.location});guard.body->statements.push_back(std::move(mark));
+            for(auto& field:syntax->static_fields){const auto& descriptor=module_.static_classes[static_class_indices_.at(owner)];const auto member=std::find_if(descriptor.fields.begin(),descriptor.fields.end(),[&](const auto& f){return f.name==field.name.text;});const auto value_type=module_.locals[member->local].type;if(!field.initializer&&((scalar(value_type)&&value_type!=Type::string)||enumeration(value_type)))continue;SyntaxStmt set;set.kind=SyntaxStmtKind::assignment;set.token=field.name;set.field_initialization=true;set.target=make_expression(SyntaxExprKind::field,field.name,make_expression(SyntaxExprKind::name,name));set.expression=field.initializer?std::move(field.initializer):make_expression(SyntaxExprKind::initialized_default,field.name);guard.body->statements.push_back(std::move(set));}
+            routine->body.statements.push_back(std::move(guard));source.routines.push_back(std::move(routine));
+        }
+    }
+    std::unique_ptr<hir::Expr> static_field_expression(Type owner,const Token& token){
+        const auto found=static_class_indices_.find(owner);if(found==static_class_indices_.end())return {};const auto& metadata=module_.static_classes[found->second];const auto field=std::find_if(metadata.fields.begin(),metadata.fields.end(),[&](const auto& f){return f.name==token.text;});if(field==metadata.fields.end())return {};
+        auto result=std::make_unique<hir::Expr>();result->kind=hir::ExprKind::local;result->type=module_.locals[field->local].type;result->local=field->local;result->location=token.location;
+        result->left=std::make_unique<hir::Expr>();result->left->kind=hir::ExprKind::user_call;result->left->type=Type::unit;result->left->location=token.location;result->left->operation="$static_init";result->left->local=found->second;return result;
     }
     ABC_PASCAL_NOINLINE void prepare_type_initializers(SyntaxStmt& source){
         std::map<Type,SyntaxType*> declarations;std::map<Type,Token> names;
@@ -2646,6 +2684,7 @@ private:
     }
     std::unique_ptr<hir::Expr> implicit_class_member(const SyntaxExpr& source,Type expected) {
         if (current_owner_==Type::invalid || (source.kind!=SyntaxExprKind::name && source.kind!=SyntaxExprKind::call)) return {};
+        if(auto field=static_field_expression(current_owner_,source.token)){if(const auto local=lookup(source.token);local&&!module_.locals[*local].global)return {};if(source.kind==SyntaxExprKind::call){auto call=std::make_unique<hir::Expr>();call->location=source.token.location;call->left=std::move(field);bind_value_call(*call,source.arguments);return call;}return field;}
         const auto methods=class_methods_.find(current_owner_);
         const bool method=methods!=class_methods_.end() && methods->second.contains(source.token.text);
         const auto& fields=info(current_owner_,source.token.location).fields;
@@ -2654,6 +2693,7 @@ private:
         const bool property=properties!=class_properties_.end() && properties->second.contains(source.token.text);
         const bool constructor=source.token.text=="create" && class_constructors_.contains(current_owner_);
         if (!method && !field && !property && !constructor) return {};
+        if(current_static_initializer_)throw Error("E_TYPE",source.token.location,"An instance member requires an object","Для нестатического члена нужен объект");
         if (const auto local=lookup(source.token);local && !module_.locals[*local].global
             && !(method && source.kind==SyntaxExprKind::call && module_.locals[*local].name=="result")) return {};
         auto result=std::make_unique<hir::Expr>();result->location=source.token.location;
@@ -2854,6 +2894,7 @@ private:
     }
     ABC_PASCAL_NOINLINE std::unique_ptr<hir::Expr> bind_member_expression(const SyntaxExpr& source,Type expected,std::unique_ptr<hir::Expr> result) {
         (void)expected;
+        if(!result->left&&source.left&&source.left->kind==SyntaxExprKind::name&&!lookup(source.left->token)){const auto owner=aliases_.find(source.left->token.text);if(owner!=aliases_.end())if(auto field=static_field_expression(owner->second,source.token)){if(source.kind==SyntaxExprKind::member_call){auto call=std::make_unique<hir::Expr>();call->location=source.token.location;call->left=std::move(field);bind_value_call(*call,source.arguments);return call;}return field;}}
         do {
  {
             if(bind_inifile_static(*result,source))break;
@@ -3992,8 +4033,8 @@ private:
             return result;
         return result;
     }
-    template<class F> hir::Stmt bind_assignment(std::unique_ptr<hir::Expr> target,F value,SourceLocation location,bool deferred=false) {
-        hir::Stmt result;result.kind=hir::StmtKind::assign;result.location=location;result.target=std::move(target);result.deferred_write=deferred;
+    template<class F> hir::Stmt bind_assignment(std::unique_ptr<hir::Expr> target,F value,SourceLocation location,bool deferred=false,bool field_initialization=false) {
+        hir::Stmt result;result.kind=hir::StmtKind::assign;result.location=location;result.target=std::move(target);result.deferred_write=deferred||(result.target->kind==hir::ExprKind::local&&result.target->left&&result.target->left->operation=="$static_init");
             if (result.target->kind==hir::ExprKind::property_access) {
                 auto property=std::move(result.target);
                 if (!property->setter) throw Error("E_TYPE",property->location,"Property is read-only");
@@ -4052,6 +4093,7 @@ private:
                 const auto owner=result.target->type;std::vector<std::unique_ptr<hir::Expr>> arguments;arguments.push_back(std::move(result.target));arguments.push_back(value(owner));result.kind=hir::StmtKind::call;result.expression=new_set_expression(owner,NewSetMethod::assign,std::move(arguments),location,true);return result;
             }
             result.expression = convert(value(result.target->type), result.target->type,true);
+            if(field_initialization&&result.expression->kind==hir::ExprKind::array_initialized&&result.expression->operation=="initialize")result.expression->right=copy_expression(*result.target);
             return result;
     }
     std::unique_ptr<hir::Expr> empty_expression(Type target,EmptyMethod method,std::vector<std::unique_ptr<hir::Expr>> arguments,SourceLocation location){
@@ -6555,6 +6597,7 @@ private:
             else {
                 hir::Stmt initialize; initialize.kind=hir::StmtKind::assign; initialize.local=local;
                 initialize.location=name.location; initialize.expression=std::move(initial);
+                if(array&&initialize.expression->kind==hir::ExprKind::array_initialized&&initialize.expression->operation=="initialize"){initialize.expression->right=std::make_unique<hir::Expr>();initialize.expression->right->kind=hir::ExprKind::local;initialize.expression->right->type=type;initialize.expression->right->location=name.location;initialize.expression->right->local=local;}
                 constant_initializers_.push_back(std::move(initialize));
             }
             break;
@@ -6582,7 +6625,7 @@ private:
                 assignment.local = local; assignment.declaration=true;
                 if (!in_routine_ && scopes_.size()>1) lexical_globals_.insert(local);
                 // Initialize when the declaration is executed, including inside loops.
-                if (initial) assignment.expression = std::move(initial);
+                if (initial) {assignment.expression = std::move(initial);if(assignment.expression->kind==hir::ExprKind::array_initialized&&assignment.expression->operation=="initialize"){assignment.expression->right=std::make_unique<hir::Expr>();assignment.expression->right->kind=hir::ExprKind::local;assignment.expression->right->type=type;assignment.expression->right->location=token.location;assignment.expression->right->local=local;}}
                 else if((in_routine_||scopes_.size()>1)&&compound(type)&&info(type,token.location).kind==CompoundKind::record&&class_constructors_.contains(type)&&module_.routines[class_constructors_.at(type)].signature.parameters.size()==1){assignment.expression=std::make_unique<hir::Expr>();assignment.expression->kind=hir::ExprKind::class_construct;assignment.expression->type=type;assignment.expression->local=class_constructors_.at(type);assignment.expression->location=token.location;}
                 else {
                     assignment.expression = std::make_unique<hir::Expr>();
@@ -6665,7 +6708,7 @@ private:
                 result.target=expression(*source.target); result.expression=std::move(initial); break;
             }
             result.target = expression(*source.target);
-            return bind_assignment(std::move(result.target),[&](Type context){return expression(*source.expression,context);},result.location);
+            return bind_assignment(std::move(result.target),[&](Type context){return expression(*source.expression,context);},result.location,false,source.field_initialization);
         case SyntaxStmtKind::call:
             result.kind = hir::StmtKind::call; result.expression = expression(*source.expression);
             if (callable_type(result.expression->type) && result.expression->kind!=hir::ExprKind::user_call && result.expression->kind!=hir::ExprKind::value_call) {
@@ -6863,6 +6906,10 @@ private:
     std::map<std::size_t,Value> constant_values_;
     std::map<std::size_t,Value> constant_aggregate_values_;
     bool binding_constant_=false;
+    std::map<Type,std::size_t> static_class_indices_;
+    std::map<const SyntaxRoutine*,Type> static_initializer_owners_;
+    std::set<std::pair<const SyntaxType*,std::string>> static_field_inference_;
+    bool current_static_initializer_=false;
     std::vector<hir::Stmt> constant_initializers_;
     struct LambdaContext { std::size_t routine,first,scope; };
     std::vector<LambdaContext> lambdas_;

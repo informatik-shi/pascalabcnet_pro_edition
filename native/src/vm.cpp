@@ -247,7 +247,7 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
     ConsoleInput console(input,options);
     std::vector<std::shared_ptr<Cell>> globals(program.locals.size());
     for (std::size_t i = 0; i < program.locals.size(); ++i) if (program.locals[i].global)
-        globals[i] = values.cell(program.locals[i].type,values.zero(program.locals[i].type));
+        globals[i] = values.cell(program.locals[i].type,values.zero(program.locals[i].type,false,static_field_storage(program,i)));
     struct Frame {
         const std::vector<Instruction>* code;
         const Routine* routine;

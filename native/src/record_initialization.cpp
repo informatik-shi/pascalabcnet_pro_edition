@@ -3,6 +3,7 @@
 #include "runtime_values.hpp"
 #include <array>
 namespace abc {
+bool static_field_storage(const Program& p,std::size_t local){for(const auto& type:p.static_classes)for(const auto& field:type.fields)if(field.local==local)return true;return false;}
 std::size_t record_initializer_operand(const Program& p,Type type){
  if(!compound(type)||static_cast<unsigned>(type)-64U>=p.types.size())return 0;
  const auto& info=type_info(p,type);if(info.kind!=CompoundKind::record||info.native_record!=NativeRecord::none)return 0;

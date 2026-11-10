@@ -50,6 +50,7 @@ struct Module {
     std::optional<std::size_t> print_matrix_format;
     std::optional<std::size_t> default_encoding;
     std::vector<FixedArrayShape> fixed_arrays;
+    std::vector<StaticClass> static_classes;
 };
 
 Module analyze_pascal(std::string_view source);

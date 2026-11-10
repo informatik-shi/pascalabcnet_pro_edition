@@ -526,6 +526,8 @@ inline bool callable_matches(const TypeInfo& type, const Routine& routine) {
 }
 
 struct FixedArrayShape { Type type=Type::invalid,index=Type::integer;std::int32_t lower=0,upper=0; };
+struct StaticField {std::string name;std::size_t local=0;MemberAccess access=MemberAccess::public_member;};
+struct StaticClass {Type owner=Type::invalid;std::size_t state=0,initializer=0;std::vector<StaticField> fields;};
 struct Program {
     std::vector<Value> constants;
     std::vector<Local> locals;
@@ -538,7 +540,9 @@ struct Program {
     // Logical source-file stem, preserved when the editor executes a snapshot.
     std::string module_name = "Program";
     std::vector<FixedArrayShape> fixed_arrays;
+    std::vector<StaticClass> static_classes;
 };
+bool static_field_storage(const Program&,std::size_t);
 
 // compile never executes user code; no module is returned on any diagnostic.
 Program compile(std::string_view source, std::string_view module_name = "Program");

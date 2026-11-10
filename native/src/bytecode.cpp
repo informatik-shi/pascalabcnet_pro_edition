@@ -64,6 +64,7 @@ public:
     Program generate(hir::Module module) {
         program_.locals = std::move(module.locals); program_.types = std::move(module.types);
         program_.fixed_arrays=std::move(module.fixed_arrays);
+        program_.static_classes=std::move(module.static_classes);
         program_.print_delimiter=module.print_delimiter;program_.print_matrix_format=module.print_matrix_format;program_.default_encoding=module.default_encoding;
         for (auto& routine : module.routines) {
             for (auto local:routine.signature.captures) captured_.insert(local);
@@ -103,7 +104,7 @@ private:
         if(node.kind==hir::ExprKind::cache_value && compound(node.type) && type_info(program_,node.type).kind==CompoundKind::record){
             expression(*node.left);local(Op::store,node.local,node.location);local(Op::ref_local,node.local,node.location);
         }
-        else if (node.kind == hir::ExprKind::local) local(Op::ref_local,node.local,node.location);
+        else if (node.kind == hir::ExprKind::local) {if(node.left)expression(*node.left);local(Op::ref_local,node.local,node.location);}
         else if (node.kind == hir::ExprKind::index) {
             expression(*node.left); expression(*node.right);
             for (const auto& argument:node.arguments) expression(*argument);
@@ -475,7 +476,7 @@ private:
             for (const auto& argument:node.arguments) expression(*argument);
             emit(Op::sequence_mutate,node.left->type,node.local,node.location); break;
         case hir::ExprKind::literal: constant(node.value, node.location); break;
-        case hir::ExprKind::local: local(Op::load,node.local,node.location); break;
+        case hir::ExprKind::local: if(node.left)expression(*node.left);local(Op::load,node.local,node.location); break;
         case hir::ExprKind::file_output:
             if (node.left) expression(*node.left);
             for (const auto& argument:node.arguments) expression(*argument);
@@ -590,7 +591,7 @@ private:
             for (const auto& argument:node.arguments) expression(*argument);
             emit(node.kind==hir::ExprKind::random_array ? Op::random_array : Op::fill_random_array,
                 node.left ? node.left->type : node.type,node.local,node.location); break;
-        case hir::ExprKind::default_value: emit(Op::make_default,node.type,(node.operation=="default"?0:record_initializer_operand(program_,node.type)<<2U)|(node.operation=="new"?1U:node.operation=="default"?2U:0U),node.location); break;
+        case hir::ExprKind::default_value: if(node.operation=="new")for(const auto& type:program_.static_classes)if(type.owner==node.type)emit(Op::call_user,Type::unit,type.initializer,node.location);emit(Op::make_default,node.type,(node.operation=="default"?0:record_initializer_operand(program_,node.type)<<2U)|(node.operation=="new"?1U:node.operation=="default"?2U:0U),node.location); break;
         case hir::ExprKind::index:
             expression(*node.left); expression(*node.right);
             for (const auto& argument:node.arguments) expression(*argument);
@@ -604,6 +605,7 @@ private:
             emit(Op::array_new,node.type,node.operation=="raw_literal"?raw_array_initializer:record_initializer_operand(program_,type_info(program_,node.type).element),node.location); break;
         case hir::ExprKind::array_initialized: {
             expression(*node.left); local(Op::store,node.local,node.location);
+            if(node.right){reference(*node.right);local(Op::load,node.local,node.location);emit(Op::store_ref,node.type,0,node.location);}
             const auto rank=type_info(program_,node.type).rank;
             const auto storage=type_info(program_,node.type).kind==CompoundKind::fixed_array?type_info(program_,node.type).key:node.type;
             const auto columns=rank==2 ? static_cast<std::size_t>(std::get<std::int32_t>(node.value)) : 0;
@@ -635,6 +637,7 @@ private:
             for (std::size_t i=0;i<node.arguments.size();++i) {
                 if (signature.parameters[i+1].by_reference) reference(*node.arguments[i]);else expression(*node.arguments[i]);
             }
+            for(const auto& type:program_.static_classes)if(type.owner==node.type)emit(Op::call_user,Type::unit,type.initializer,node.location);
             emit(Op::construct_user,node.type,node.local,node.location);break;
         }
         case hir::ExprKind::property_access:
@@ -648,6 +651,7 @@ private:
     ABC_BYTECODE_NOINLINE void expression_part_8(const hir::Expr& node) {
         switch(node.kind) {
         case hir::ExprKind::user_call: {
+            if(node.operation=="$static_init"){emit(Op::call_user,Type::unit,program_.static_classes.at(node.local).initializer,node.location);break;}
             const auto& signature = program_.routines[node.local];
             for (std::size_t n = 0; n < node.arguments.size(); ++n) {
                 if (signature.parameters[n].by_reference) reference(*node.arguments[n]); else expression(*node.arguments[n]);
@@ -703,6 +707,7 @@ private:
             jumps.push_back(emit(Op::jump,Type::invalid,0,node.location)); break;
         }
         case hir::StmtKind::assign:
+            if(node.deferred_write&&node.target&&node.target->kind==hir::ExprKind::local&&node.target->left){expression(*node.expression);expression(*node.target->left);local(Op::store,node.target->local,node.location);break;}
             if(node.deferred_write && node.target && node.target->kind==hir::ExprKind::index && node.target->left->type!=Type::string) {
                 expression(*node.target->left);expression(*node.target->right);
                 for(const auto& argument:node.target->arguments)expression(*argument);
@@ -715,6 +720,7 @@ private:
             }
             else if (node.target) { reference(*node.target); expression(*node.expression); emit(Op::store_ref,node.target->type,0,node.location); }
             else {
+                if(node.declaration&&captured_.contains(node.local)&&node.expression->kind==hir::ExprKind::array_initialized&&node.expression->right&&node.expression->right->kind==hir::ExprKind::local&&node.expression->right->local==node.local){emit(Op::make_default,program_.locals[node.local].type,2,node.location);emit(Op::fresh_local,program_.locals[node.local].type,node.local,node.location);expression(*node.expression);local(Op::store,node.local,node.location);break;}
                 expression(*node.expression);
                 if (node.declaration && captured_.contains(node.local)) emit(Op::fresh_local,program_.locals[node.local].type,node.local,node.location);
                 else local(Op::store,node.local,node.location);
@@ -1928,6 +1934,14 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
 }
 
 void verify(const Program& program) {
+    std::set<Type> static_owners;std::set<std::size_t> static_slots,static_initializers;
+    for(const auto& type:program.static_classes){
+        if(!compound(type.owner)||!valid_value_type(program,type.owner)||type_info(program,type.owner).kind!=CompoundKind::object_class||!static_owners.insert(type.owner).second||type.fields.empty()||type.fields.size()>256||type.state>=program.locals.size()||!program.locals[type.state].global||program.locals[type.state].type!=Type::boolean||program.locals[type.state].name!="$static_state_"+std::to_string(static_cast<unsigned>(type.owner))||!static_slots.insert(type.state).second||type.initializer>=program.routines.size()||!static_initializers.insert(type.initializer).second)throw Error("E_BYTECODE",{},"Invalid static class storage");
+        const auto& init=program.routines[type.initializer];if(init.name!="$initialize_static_"+std::to_string(static_cast<unsigned>(type.owner))||init.owner!=Type::invalid||init.constructor||init.result!=Type::unit||!init.parameters.empty()||!init.captures.empty()||init.access!=MemberAccess::public_member)throw Error("E_BYTECODE",{},"Invalid static initializer signature");
+        std::set<std::string> names;for(const auto& field:type.fields){if(field.name.empty()||!names.insert(field.name).second||!valid_member_access(field.access)||field.local>=program.locals.size()||!program.locals[field.local].global||!valid_value_type(program,program.locals[field.local].type)||program.locals[field.local].name!="$static_field_"+type_info(program,type.owner).name+"_"+field.name||!static_slots.insert(field.local).second)throw Error("E_BYTECODE",{},"Invalid static field metadata");}
+    }
+    for(std::size_t n=0;n<program.locals.size();++n)if((program.locals[n].name.starts_with("$static_field_")||program.locals[n].name.starts_with("$static_state_"))&&!static_slots.contains(n))throw Error("E_BYTECODE",{},"Missing static field storage metadata");
+    for(std::size_t n=0;n<program.routines.size();++n)if(program.routines[n].name.starts_with("$initialize_static_")&&!static_initializers.contains(n))throw Error("E_BYTECODE",{},"Missing static initializer metadata");
     if(!module_name_valid(program.module_name))throw Error("E_BYTECODE",{},"Invalid source module name","Недопустимое имя исходного модуля");
     if (program.print_delimiter && (*program.print_delimiter>=program.locals.size() || !program.locals[*program.print_delimiter].global
         || program.locals[*program.print_delimiter].type!=Type::string)) throw Error("E_BYTECODE",{},"Invalid PrintDelimDefault global");
