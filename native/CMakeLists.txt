@@ -30,6 +30,7 @@ add_library(abc_core
     src/binary_codec.cpp
     src/binary_file.cpp
     src/native_resource.cpp
+    src/fixed_array.cpp
     src/file_lines.cpp
     src/directory_sequence.cpp
     src/file_encoding.cpp
@@ -438,6 +439,13 @@ if(BUILD_TESTING)
     endif()
     add_test(NAME nested_routines COMMAND abc_nested_routine_tests)
     add_test(NAME nested_routines_example COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/examples/nested-routines.pas")
+    add_executable(abc_fixed_array_tests tests/fixed_array_tests.cpp)
+    target_link_libraries(abc_fixed_array_tests PRIVATE abc_core)
+    if(MSVC)
+        target_compile_options(abc_fixed_array_tests PRIVATE /utf-8)
+    endif()
+    add_test(NAME fixed_arrays COMMAND abc_fixed_array_tests)
+    add_test(NAME fixed_arrays_example COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/examples/fixed-arrays.pas")
     add_test(NAME original_scalar_typed_files COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/../TestSuite/fileof1.pas")
     add_test(NAME original_nested_methods COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/../TestSuite/nested1.pas")
     add_test(NAME original_nested_record_reference COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/../TestSuite/nested3.pas")

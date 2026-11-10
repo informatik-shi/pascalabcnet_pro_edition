@@ -49,6 +49,7 @@ struct Module {
     std::optional<std::size_t> print_delimiter;
     std::optional<std::size_t> print_matrix_format;
     std::optional<std::size_t> default_encoding;
+    std::vector<FixedArrayShape> fixed_arrays;
 };
 
 Module analyze_pascal(std::string_view source);

@@ -97,6 +97,7 @@ struct Values {
         case Type::text_file: return generic ? Value{std::shared_ptr<TextFile>{}} : Value{std::make_shared<TextFile>()};
         default: {
             const auto& info = type_info(program, type);
+            if(info.kind==CompoundKind::fixed_array){auto value=std::make_shared<Aggregate>();value->type=type;value->nil=true;return value;}
             if(info.kind==CompoundKind::binary_file){auto file=std::make_shared<Aggregate>();file->type=type;file->nil=generic&&!constructed;if(!file->nil){if(!remaining)throw runtime_error(RuntimeError::allocation_limit,location);--remaining;file->binary=std::make_shared<BinaryFile>();file->binary->element=info.element;file->binary->element_size=info.element==Type::invalid?1:binary_element_size(program,info.element,location);}return file;}
             if(info.kind==CompoundKind::new_set)return NewSetValue{type,cell(info.key,zero(info.key,!generic,generic))};
             if(info.kind==CompoundKind::enumeration)return EnumValue{type,0};

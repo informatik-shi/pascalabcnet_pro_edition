@@ -381,7 +381,7 @@ struct Local {
     MemberAccess access=MemberAccess::public_member;
 };
 
-enum class CompoundKind { array, record, list, stack, queue, dynarray, simple_set, association, linked_node, linked_list, single_node, tuple, school_address, school_ip, sequence, callable, object_class, encoding, enumeration, ini_file, hash_set, new_set, empty_collection, dictionary, dictionary_keys, dictionary_values, enumerator, user_interface, comparable_interface, comparer_interface, comparer, equatable_interface, equality_comparer_interface, equality_comparer, collection_interface, list_interface, dictionary_interface, set_interface, binary_file };
+enum class CompoundKind { array, record, list, stack, queue, dynarray, simple_set, association, linked_node, linked_list, single_node, tuple, school_address, school_ip, sequence, callable, object_class, encoding, enumeration, ini_file, hash_set, new_set, empty_collection, dictionary, dictionary_keys, dictionary_values, enumerator, user_interface, comparable_interface, comparer_interface, comparer, equatable_interface, equality_comparer_interface, equality_comparer, collection_interface, list_interface, dictionary_interface, set_interface, binary_file, fixed_array };
 enum class NativeRecord { none, ordinal_range, real_interval, key_value_pair, dictionary_enumerator, collection_enumerator };
 inline bool node_kind(CompoundKind kind) { return kind == CompoundKind::linked_node || kind == CompoundKind::single_node; }
 inline bool indexed_sequence(CompoundKind kind) { return kind == CompoundKind::array || kind == CompoundKind::list; }
@@ -504,7 +504,7 @@ inline Type linked_result(Type receiver, const TypeInfo& info, LinkedMethod meth
     if (method == LinkedMethod::to_string) return Type::string;
     return Type::unit;
 }
-struct Parameter { std::size_t local; Type type; bool by_reference = false; bool variadic = false; };
+struct Parameter { std::size_t local; Type type; bool by_reference = false; bool variadic = false; bool read_only = false; };
 struct Routine {
     std::string name;
     Type result = Type::unit;
@@ -525,6 +525,7 @@ inline bool callable_matches(const TypeInfo& type, const Routine& routine) {
     return true;
 }
 
+struct FixedArrayShape { Type type=Type::invalid,index=Type::integer;std::int32_t lower=0,upper=0; };
 struct Program {
     std::vector<Value> constants;
     std::vector<Local> locals;
@@ -536,6 +537,7 @@ struct Program {
     std::optional<std::size_t> default_encoding;
     // Logical source-file stem, preserved when the editor executes a snapshot.
     std::string module_name = "Program";
+    std::vector<FixedArrayShape> fixed_arrays;
 };
 
 // compile never executes user code; no module is returned on any diagnostic.

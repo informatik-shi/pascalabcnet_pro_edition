@@ -3,6 +3,7 @@
 #include "encoding.hpp"
 #include "native_resource.hpp"
 #include "binary_file.hpp"
+#include "fixed_array.hpp"
 #include "type_names.hpp"
 #include "single.hpp"
 #include "enumeration.hpp"
@@ -62,6 +63,7 @@ class Generator {
 public:
     Program generate(hir::Module module) {
         program_.locals = std::move(module.locals); program_.types = std::move(module.types);
+        program_.fixed_arrays=std::move(module.fixed_arrays);
         program_.print_delimiter=module.print_delimiter;program_.print_matrix_format=module.print_matrix_format;program_.default_encoding=module.default_encoding;
         for (auto& routine : module.routines) {
             for (auto local:routine.signature.captures) captured_.insert(local);
@@ -70,7 +72,7 @@ public:
         code_ = &program_.code; statement(module.body); emit(Op::halt,Type::invalid,0,module.body.location);
         for (std::size_t i = 0; i < module.routines.size(); ++i) {
             routine_ = i; code_ = &program_.routines[i].code;
-            if(!program_.routines[i].name.starts_with('$')&&record_initializer_operand(program_,program_.routines[i].result)){
+            if((compound(program_.routines[i].result)&&type_info(program_,program_.routines[i].result).kind==CompoundKind::fixed_array)||(!program_.routines[i].name.starts_with('$')&&record_initializer_operand(program_,program_.routines[i].result))){
                 emit(Op::make_default,program_.routines[i].result,record_initializer_operand(program_,program_.routines[i].result)<<2U,{});local(Op::store,program_.routines[i].result_local,{});
             }
             statement(module.routines[i].body); emit(Op::return_user,program_.routines[i].result,0,{});
@@ -603,12 +605,14 @@ private:
         case hir::ExprKind::array_initialized: {
             expression(*node.left); local(Op::store,node.local,node.location);
             const auto rank=type_info(program_,node.type).rank;
+            const auto storage=type_info(program_,node.type).kind==CompoundKind::fixed_array?type_info(program_,node.type).key:node.type;
             const auto columns=rank==2 ? static_cast<std::size_t>(std::get<std::int32_t>(node.value)) : 0;
             for (std::size_t i=0;i<node.arguments.size();++i) {
                 local(Op::load,node.local,node.location);
+                if(storage!=node.type)emit(Op::encoding_call,node.type,static_cast<unsigned>(FixedMethod::view),node.location);
                 constant(static_cast<std::int32_t>(rank==2 ? i/columns : i),node.location);
                 if (rank==2) constant(static_cast<std::int32_t>(i%columns),node.location);
-                emit(Op::ref_index,node.type,0,node.location); expression(*node.arguments[i]);
+                emit(Op::ref_index,storage,0,node.location); expression(*node.arguments[i]);
                 emit(Op::store_ref,type_info(program_,node.type).element,0,node.arguments[i]->location);
             }
             local(Op::load,node.local,node.location); break;
@@ -1937,6 +1941,8 @@ void verify(const Program& program) {
     if (program.types.size() > 1024 || program.locals.size() > 4096 || program.routines.size() > 256)
         throw Error("E_BYTECODE",{},"Module metadata limit exceeded");
     std::vector<unsigned> depth(program.types.size());std::size_t enum_text_bytes=0;
+    std::set<Type> fixed_owners;for(const auto& shape:program.fixed_arrays){if(!compound(shape.type)||static_cast<unsigned>(shape.type)-64U>=program.types.size()||type_info(program,shape.type).kind!=CompoundKind::fixed_array||!fixed_owners.insert(shape.type).second)throw Error("E_BYTECODE",{},"Invalid fixed array shape owner");if(!valid_value_type(program,shape.index)||!(ordinal(shape.index)||enumeration(program,shape.index))||(shape.index==Type::boolean&&(shape.lower<0||shape.upper>1))||(shape.index==Type::character&&(shape.lower<0||shape.upper>65535)))throw Error("E_BYTECODE",{},"Invalid fixed array index type");}
+    if(fixed_owners.size()!=static_cast<std::size_t>(std::count_if(program.types.begin(),program.types.end(),[](const auto& t){return t.kind==CompoundKind::fixed_array;})))throw Error("E_BYTECODE",{},"Missing fixed array shape");
     for (std::size_t i = 0; i < program.types.size(); ++i) {
         const auto& type = program.types[i]; unsigned level = 1;
         if(type.native_record!=NativeRecord::none && ((type.native_record!=NativeRecord::ordinal_range && type.native_record!=NativeRecord::real_interval && type.native_record!=NativeRecord::key_value_pair && type.native_record!=NativeRecord::dictionary_enumerator && type.native_record!=NativeRecord::collection_enumerator) || type.kind!=CompoundKind::record))throw Error("E_BYTECODE",{},"Invalid native record metadata");
@@ -1997,6 +2003,9 @@ void verify(const Program& program) {
             if(owner.kind!=CompoundKind::dictionary || (type.kind==CompoundKind::dictionary_keys ? owner.key : type_info(program,owner.element).fields.at(1).type)!=type.element)throw Error("E_BYTECODE",{},"Invalid Dictionary view owner");
         } else if(type.kind==CompoundKind::ini_file) {
             if(type.name!="tinifile" || type.element!=Type::invalid || type.key!=Type::invalid || !type.fields.empty())throw Error("E_BYTECODE",{},"Invalid TIniFile type metadata");
+        } else if(type.kind==CompoundKind::fixed_array) {
+            if(type.name!="fixed_array"||type.rank!=1||!type.fields.empty())throw Error("E_BYTECODE",{},"Invalid fixed array metadata");prior(type.element);prior(type.key);const auto& shape=fixed_array_shape(program,static_cast<Type>(64+i));prior(shape.index);
+            if(shape.upper<shape.lower||static_cast<std::int64_t>(shape.upper)-shape.lower>=1'048'576)throw Error("E_BYTECODE",{},"Invalid fixed array bounds");const auto& view=type_info(program,type.key);if(view.kind!=CompoundKind::array||view.rank!=1||view.element!=type.element)throw Error("E_BYTECODE",{},"Invalid fixed array storage");
         } else if(type.kind==CompoundKind::binary_file) {
             if(type.name!="binaryfile"||!type.fields.empty()||type.rank!=1)throw Error("E_BYTECODE",{},"Invalid binary file metadata");
             prior(type.key);const auto& bytes=type_info(program,type.key);if(bytes.kind!=CompoundKind::array||bytes.rank!=1||bytes.element!=Type::byte)throw Error("E_BYTECODE",{},"Invalid binary file byte-array metadata");

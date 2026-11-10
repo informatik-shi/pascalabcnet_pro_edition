@@ -15,6 +15,7 @@ struct BinaryFile {
 };
 bool binary_value_supported(const std::vector<TypeInfo>&,Type,bool strings,bool arrays=false);
 std::int64_t binary_element_size(const Program&,Type,SourceLocation);
+void binary_element_probe(Values&,Type);
 std::vector<Type> binary_parameters(const std::vector<TypeInfo>&,Type,std::size_t);
 Type binary_result(const std::vector<TypeInfo>&,Type,std::size_t);
 bool binary_signature_valid(const Program&,Type,std::size_t);

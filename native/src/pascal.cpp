@@ -9,6 +9,7 @@
 #include "stdlib.hpp"
 #include "encoding.hpp"
 #include "binary_file.hpp"
+#include "fixed_array.hpp"
 #include "type_names.hpp"
 #include "callable_identity.hpp"
 #include "single.hpp"
@@ -269,6 +270,7 @@ struct SyntaxExpr {
     std::shared_ptr<SyntaxRoutine> lambda{};
     std::vector<std::shared_ptr<SyntaxType>> type_arguments{};
     bool invocation_parentheses=false;
+    unsigned parentheses=0;
 };
 
 std::unique_ptr<SyntaxExpr> make_expression(SyntaxExprKind kind, Token token,
@@ -481,10 +483,8 @@ private:
         } else if (accept("array")) {
             result->kind = "array";
             if (accept("[")) {
-                if (!accept(",")) throw Error("E_UNSUPPORTED",current_.location,"Fixed-bound arrays are not implemented");
-                result->rank=2;
-                if (is(",")) throw Error("E_UNSUPPORTED",current_.location,"Array ranks above two are not implemented");
-                expect("]");
+                if(accept(",")){result->rank=2;if(is(","))throw Error("E_UNSUPPORTED",current_.location,"Array ranks above two are not implemented");expect("]");}
+                else {result->kind="fixed_array";do{if(result->enum_values.size()>=64)throw Error("E_LIMIT",current_.location,"Fixed array dimension limit exceeded");result->enum_values.push_back(expression(3));result->enum_values.push_back(accept("..")?expression(3):nullptr);}while(accept(","));expect("]");}
             }
             expect("of"); result->element = type_syntax(false,allow_arrow);
         }
@@ -936,7 +936,7 @@ private:
             } while (accept(","));
             result=std::move(tuple);
         }
-        expect(")"); return postfix(std::move(result));
+        expect(")"); ++result->parentheses; return postfix(std::move(result));
     }
     ABC_PASCAL_NOINLINE std::unique_ptr<SyntaxExpr> construction_expression() {
         const auto token = current_; auto type = type_syntax();
@@ -1212,7 +1212,7 @@ public:
                 if (parameter.variadic && (n+1!=routine->parameters.size() || !compound(type)
                     || info(type,parameter.name.location).kind!=CompoundKind::array || info(type,parameter.name.location).rank!=1))
                     throw Error("E_TYPE",parameter.name.location,"params requires a final rank-one array parameter");
-                body.signature.parameters.push_back({0,type,parameter.by_reference,parameter.variadic});
+                body.signature.parameters.push_back({0,type,parameter.by_reference,parameter.variadic,parameter.read_only});
             }
             if(body.signature.owner!=Type::invalid&&!body.signature.constructor){auto& overloads=explicit_target==Type::invalid?class_method_overloads_[body.signature.owner][routine->name.text]:class_explicit_methods_[body.signature.owner][explicit_target][routine->name.text];for(auto previous:overloads){const auto& signature=module_.routines[previous].signature;if(signature.parameters.size()==body.signature.parameters.size()&&std::equal(signature.parameters.begin(),signature.parameters.end(),body.signature.parameters.begin(),[](const auto& a,const auto& b){return a.type==b.type&&a.by_reference==b.by_reference;}))throw Error("E_DUPLICATE",routine->name.location,"Duplicate method signature");}overloads.push_back(module_.routines.size());}
             routine_names_.try_emplace(qualified,module_.routines.size());module_.routines.push_back(std::move(body));
@@ -1403,13 +1403,13 @@ private:
         std::map<Type,SyntaxType*> declarations;std::map<Type,Token> names;
         for(auto& [name,type]:source.type_declarations)if(!type->named&&(type->kind=="record"||type->kind=="class")){declarations[aliases_.at(name.text)]=type.get();names[aliases_.at(name.text)]=name;}
         std::map<Type,bool> needed;std::set<Type> active;
-        std::function<bool(Type)> needs=[&](Type id){if(needed.contains(id))return needed.at(id);const auto found=declarations.find(id);if(found==declarations.end()||info(id,{}).kind!=CompoundKind::record)return false;if(!active.insert(id).second)throw Error("E_TYPE",names.at(id).location,"Cyclic record initialization","Циклическая инициализация записи");bool result=bool(found->second->initializer);for(const auto& field:info(id,{}).fields)if(compound(field.type)&&info(field.type,{}).kind==CompoundKind::record)result=needs(field.type)||result;active.erase(id);needed[id]=result;return result;};
+        std::function<bool(Type)> needs=[&](Type id){if(fixed(id)||(compound(id)&&info(id,{}).kind==CompoundKind::binary_file&&pascal_copy_type(module_.types,info(id,{}).element)))return true;if(needed.contains(id))return needed.at(id);const auto found=declarations.find(id);if(found==declarations.end()||info(id,{}).kind!=CompoundKind::record)return false;if(!active.insert(id).second)throw Error("E_TYPE",names.at(id).location,"Cyclic record initialization","Циклическая инициализация записи");bool result=bool(found->second->initializer);for(const auto& field:info(id,{}).fields)if(compound(field.type))result=needs(field.type)||result;active.erase(id);needed[id]=result;return result;};
         for(std::size_t n=0;n<module_.types.size();++n){const auto id=static_cast<Type>(64+n);const auto& shape=module_.types[n];if(shape.kind==CompoundKind::record&&!declarations.contains(id)&&std::any_of(shape.fields.begin(),shape.fields.end(),[&](const auto& field){return needs(field.type);})){throw Error("E_UNSUPPORTED",{},"Nested field initialization requires named record declarations","Для инициализации вложенных полей нужны именованные записи");}}
-        for(const auto& [owner,type]:declarations){bool required=bool(type->initializer);for(const auto& field:info(owner,{}).fields)if(compound(field.type)&&info(field.type,{}).kind==CompoundKind::record)required=needs(field.type)||required;if(!required)continue;
+        for(const auto& [owner,type]:declarations){bool required=bool(type->initializer);for(const auto& field:info(owner,{}).fields)if(compound(field.type))required=needs(field.type)||required;if(!required)continue;
             const auto lift=[&](const std::shared_ptr<SyntaxRoutine>& method){method->owner=names.at(owner).text;auto self=std::make_shared<SyntaxType>();self->token=names.at(owner);self->kind=names.at(owner).text;self->named=true;const bool record=type->kind=="record";method->parameters.insert(method->parameters.begin(),SyntaxParameter{Token{TokenKind::name,"self",method->name.location},self,record,{},!record,false});type->methods.push_back(method);source.routines.push_back(method);};
             if(!type->initializer){type->initializer=std::make_shared<SyntaxRoutine>();type->initializer->name={TokenKind::name,"$initialize_fields",names.at(owner).location};type->initializer->access=MemberAccess::private_member;lift(type->initializer);}
             std::map<std::string,SyntaxStmt> explicit_fields;for(auto& step:type->initializer->body.statements)explicit_fields.emplace(step.target->token.text,std::move(step));type->initializer->body.statements.clear();
-            for(std::size_t n=0;n<type->fields.size();++n){const auto& field=type->fields[n].first;const auto value_type=info(owner,field.location).fields[n].type;if(explicit_fields.contains(field.text)){type->initializer->body.statements.push_back(std::move(explicit_fields.at(field.text)));continue;}if(!compound(value_type)||info(value_type,field.location).kind!=CompoundKind::record||!needs(value_type))continue;SyntaxStmt step;step.kind=SyntaxStmtKind::assignment;step.token=field;step.target=make_expression(SyntaxExprKind::field,field,make_expression(SyntaxExprKind::name,Token{TokenKind::name,"self",field.location}));step.expression=make_expression(SyntaxExprKind::initialized_default,field);type->initializer->body.statements.push_back(std::move(step));}
+            for(std::size_t n=0;n<type->fields.size();++n){const auto& field=type->fields[n].first;const auto value_type=info(owner,field.location).fields[n].type;if(explicit_fields.contains(field.text)){type->initializer->body.statements.push_back(std::move(explicit_fields.at(field.text)));continue;}if(!compound(value_type)||!needs(value_type))continue;SyntaxStmt step;step.kind=SyntaxStmtKind::assignment;step.token=field;step.target=make_expression(SyntaxExprKind::field,field,make_expression(SyntaxExprKind::name,Token{TokenKind::name,"self",field.location}));step.expression=make_expression(SyntaxExprKind::initialized_default,field);type->initializer->body.statements.push_back(std::move(step));}
             if(type->kind=="class"&&std::none_of(type->methods.begin(),type->methods.end(),[](const auto& method){return method->constructor;})){auto constructor=std::make_shared<SyntaxRoutine>();constructor->name={TokenKind::name,"create",names.at(owner).location};constructor->constructor=true;lift(constructor);}
         }
     }
@@ -1786,9 +1786,28 @@ private:
         if(module_.types.size()>=1024)throw Error("E_LIMIT",location,"Type limit exceeded");module_.types.push_back({"binaryfile",CompoundKind::binary_file,element,{},bytes});return static_cast<Type>(63+module_.types.size());
     }
     bool binary(Type type) const{return compound(type)&&info(type,{}).kind==CompoundKind::binary_file;}
+    bool fixed(Type type) const{return compound(type)&&info(type,{}).kind==CompoundKind::fixed_array;}
+    const FixedArrayShape& fixed_shape(Type type) const {const auto found=std::find_if(module_.fixed_arrays.begin(),module_.fixed_arrays.end(),[&](const auto& s){return s.type==type;});if(found==module_.fixed_arrays.end())throw Error("E_HIR",{},"Missing fixed array shape");return *found;}
+    std::unique_ptr<hir::Expr> fixed_expression(Type owner,FixedMethod method,std::vector<std::unique_ptr<hir::Expr>> args,SourceLocation location){auto result=std::make_unique<hir::Expr>();result->kind=hir::ExprKind::encoding_call;result->operation_type=owner;result->local=static_cast<unsigned>(method);result->location=location;result->type=fixed_result(module_.types,owner,result->local);result->arguments=std::move(args);return result;}
+    std::unique_ptr<hir::Expr> fixed_view(std::unique_ptr<hir::Expr> value,bool indexing=false){const auto owner=value->type;const auto location=value->location;std::vector<std::unique_ptr<hir::Expr>> args;args.push_back(std::move(value));return fixed_expression(owner,indexing?FixedMethod::index_view:FixedMethod::view,std::move(args),location);}
+    Type resolve_fixed_array(const SyntaxType& syntax){
+        for(const auto* constant:enum_prior_constants_)if(constant->token.location.offset<syntax.token.location.offset&&!enum_bound_constants_.contains(constant)){(void)statement(*constant);enum_bound_constants_.insert(constant);}
+        const auto bound=[&](const SyntaxExpr& source){auto value=expression(source);if(!ordinal(value->type)&&!enumeration(value->type))throw Error("E_TYPE",source.token.location,"Fixed array bounds must have ordinal types","Границы фиксированного массива должны иметь порядковые типы");const auto constant=hir::constant_value(*value,module_.types);if(!constant)throw Error("E_TYPE",source.token.location,"Fixed array bounds must be known constants","Границы фиксированного массива должны быть известными константами");const auto number=enumeration(value->type)?std::get<EnumValue>(*constant).value:value->type==Type::character?std::int64_t(std::get<char16_t>(*constant)):value->type==Type::boolean?std::int64_t(std::get<bool>(*constant)):integral_number(*constant,source.token.location,"bound");if(number<INT32_MIN||number>INT32_MAX)throw Error("E_RANGE",source.token.location,"Fixed array bound exceeds Int32 range");return std::pair{value->type,static_cast<std::int32_t>(number)};};
+        auto element=resolve_type(*syntax.element);
+        for(std::size_t dimension=syntax.enum_values.size()/2;dimension>0;--dimension){Type index;std::int32_t lower,upper;const auto& lo=*syntax.enum_values[2*(dimension-1)];const auto& hi=syntax.enum_values[2*(dimension-1)+1];
+            if(!hi&&lo.kind==SyntaxExprKind::name&&aliases_.contains(lo.token.text)&&enumeration(aliases_.at(lo.token.text))){index=aliases_.at(lo.token.text);const auto& members=info(index,lo.token.location).enum_members;lower=members.front().value;upper=members.back().value;}
+            else if(!hi&&lo.kind==SyntaxExprKind::name&&(lo.token.text=="byte"||lo.token.text=="shortint"||lo.token.text=="smallint"||lo.token.text=="word"||lo.token.text=="char"||lo.token.text=="boolean")){
+                const auto name=lo.token.text;index=name=="byte"?Type::byte:name=="shortint"?Type::shortint:name=="smallint"?Type::smallint:name=="word"?Type::word:name=="char"?Type::character:Type::boolean;
+                lower=index==Type::shortint?-128:index==Type::smallint?-32768:0;upper=index==Type::byte?255:index==Type::shortint?127:index==Type::smallint?32767:index==Type::boolean?1:65535;
+            }
+            else {const auto first=bound(lo);if(!hi)throw Error("E_TYPE",lo.token.location,"Fixed array index requires a range or ordinal type");const auto last=bound(*hi);index=first.first;if(index!=last.first)throw Error("E_TYPE",lo.token.location,"Fixed array bound types must match");lower=first.second;upper=last.second;}
+            if(upper<lower)throw Error("E_RANGE",lo.token.location,"Fixed array upper bound is smaller than its lower bound","Верхняя граница фиксированного массива меньше нижней");if(static_cast<std::int64_t>(upper)-lower>=1'048'576)throw Error("E_LIMIT",lo.token.location,"Fixed array length limit exceeded");
+            const auto storage=sequence_type(CompoundKind::array,element);if(module_.types.size()>=1024)throw Error("E_LIMIT",lo.token.location,"Type limit exceeded");module_.types.push_back({"fixed_array",CompoundKind::fixed_array,element,{},storage});element=static_cast<Type>(63+module_.types.size());module_.fixed_arrays.push_back({element,index,lower,upper});
+        }return element;
+    }
     std::unique_ptr<hir::Expr> binary_expression(Type owner,BinaryMethod method,std::vector<std::unique_ptr<hir::Expr>> args,SourceLocation location,Type data=Type::integer){
         const auto operand=static_cast<std::size_t>(method)|(static_cast<std::size_t>(data)<<8U);const auto parameters=binary_parameters(module_.types,owner,operand);
-        if(args.size()!=parameters.size())throw Error("E_TYPE",location,"Wrong binary file argument count","Неверное число аргументов двоичного файла");for(std::size_t n=0;n<args.size();++n)args[n]=convert(std::move(args[n]),parameters[n]);
+        if(args.size()!=parameters.size())throw Error("E_TYPE",location,"Wrong binary file argument count","Неверное число аргументов двоичного файла");for(std::size_t n=0;n<args.size();++n)args[n]=convert(std::move(args[n]),parameters[n],false,false);
         auto result=std::make_unique<hir::Expr>();result->kind=hir::ExprKind::encoding_call;result->operation_type=owner;result->local=operand;result->location=location;result->type=binary_result(module_.types,owner,operand);result->arguments=std::move(args);return result;
     }
     std::unique_ptr<hir::Expr> binary_pack(std::vector<std::unique_ptr<hir::Expr>> args,SourceLocation location){
@@ -1799,7 +1818,7 @@ private:
     std::unique_ptr<hir::Expr> binary_write(std::unique_ptr<hir::Expr> file,std::vector<std::unique_ptr<hir::Expr>> items,bool newline,SourceLocation location){
         const auto owner=file->type,element=info(owner,location).element;std::vector<std::unique_ptr<hir::Expr>> args;args.push_back(std::move(file));
         if(items.empty())return binary_expression(owner,newline?BinaryMethod::writeln:BinaryMethod::write_empty,std::move(args),location);
-        for(auto& item:items){if(item->type==Type::nil)item=convert(std::move(item),Type::string);if(!newline&&!binary_value_supported(module_.types,item->type,true,true))throw Error("E_UNSUPPORTED",location,"Binary serialization for this static type is not ported yet","Сериализация этого известного типа в двоичный файл ещё не перенесена");if(!newline&&element!=Type::invalid&&!(compound(item->type)&&info(item->type,location).kind==CompoundKind::array))item=convert(std::move(item),element);}
+        for(auto& item:items){if(item->type==Type::nil)item=convert(std::move(item),Type::string);if(!newline&&!binary_value_supported(module_.types,item->type,true,true))throw Error("E_UNSUPPORTED",location,"Binary serialization for this static type is not ported yet","Сериализация этого известного типа в двоичный файл ещё не перенесена");if(!newline&&element!=Type::invalid&&item->type!=element&&!(compound(item->type)&&(info(item->type,location).kind==CompoundKind::array||fixed(item->type))))item=convert(std::move(item),element);}
         const bool many=items.size()>1;auto data=binary_pack(std::move(items),location);const auto type=data->type;args.push_back(std::move(data));return binary_expression(owner,newline?BinaryMethod::writeln_data:many?BinaryMethod::write_many:BinaryMethod::write_one,std::move(args),location,type);
     }
     bool bind_binary_function(hir::Expr& result,std::string_view name,std::string_view unit={}){
@@ -2177,6 +2196,7 @@ private:
                 return found->second;
             }
         if(syntax.kind=="binaryfile")return binary_type(syntax.element?resolve_type(*syntax.element):Type::invalid,syntax.token.location);
+        if(syntax.kind=="fixed_array"){const auto type=resolve_fixed_array(syntax);resolved_types_[&syntax]=type;return type;}
         if (syntax.named && (syntax.kind=="array" || syntax.kind=="record" || syntax.kind=="class" || syntax.kind=="sequence" || syntax.kind=="tuple" || syntax.kind=="callable" || syntax.kind=="empty_result"))
             throw Error("E_UNSUPPORTED",syntax.token.location,"Unknown or unsupported type '"+syntax.kind+"'");
         if(syntax.kind=="enum_or_tuple") {
@@ -2351,7 +2371,8 @@ private:
         auto result=std::make_unique<hir::Expr>();result->kind=value.kind;result->type=value.type;result->location=value.location;result->value=value.value;result->local=value.local;result->operation=value.operation;result->operation_type=value.operation_type;result->temporaries=value.temporaries;result->getter=value.getter;result->setter=value.setter;
         if(value.left)result->left=copy_expression(*value.left);if(value.right)result->right=copy_expression(*value.right);for(const auto& argument:value.arguments)result->arguments.push_back(copy_expression(*argument));return result;
     }
-    ABC_PASCAL_NOINLINE std::unique_ptr<hir::Expr> convert(std::unique_ptr<hir::Expr> expression, Type type) {
+    ABC_PASCAL_NOINLINE std::unique_ptr<hir::Expr> convert(std::unique_ptr<hir::Expr> expression, Type type,bool assignment=false,bool copy=true) {
+        if(fixed(expression->type)&&expression->type!=type&&compound(type)&&(info(type,expression->location).kind==CompoundKind::array||info(type,expression->location).kind==CompoundKind::sequence||interface_kind(info(type,expression->location))))expression=fixed_view(std::move(expression));
         if(expression->type!=type&&callable_compatible(module_.types,expression->type,type)){
             const auto location=expression->location;
             const auto nil=[&](Type type){auto value=std::make_unique<hir::Expr>();value->kind=hir::ExprKind::default_value;value->type=type;value->location=location;value->operation="default";return value;};
@@ -2421,9 +2442,11 @@ private:
             expression->type=type; expression->kind=hir::ExprKind::default_value; expression->operation="default"; return expression;
         }
         if (expression->type == Type::nil && compound(type) && info(type,expression->location).kind!=CompoundKind::record && !enumeration(type)) {
-            expression->type=type; expression->kind=hir::ExprKind::default_value; return expression;
+            if(fixed(type))throw Error("E_TYPE",expression->location,"A fixed array cannot be assigned nil","Фиксированному массиву нельзя присвоить nil");expression->type=type; expression->kind=hir::ExprKind::default_value;return expression;
         }
-        if (expression->type == type) return expression;
+        if (expression->type == type) {
+            if(copy&&pascal_copy_type(module_.types,type)&&!(assignment&&expression->operation=="initialize")){const auto location=expression->location;std::vector<std::unique_ptr<hir::Expr>> args;args.push_back(std::move(expression));return fixed_expression(type,assignment?FixedMethod::copy_assign:FixedMethod::copy_value,std::move(args),location);}return expression;
+        }
         if (callable_type(expression->type) && info(expression->type,expression->location).parameters.empty()
             && info(expression->type,expression->location).element!=Type::unit) {
             auto call=std::make_unique<hir::Expr>(); call->kind=hir::ExprKind::value_call; call->type=info(expression->type,expression->location).element;
@@ -2440,7 +2463,9 @@ private:
         const auto count=signature.parameters.size();const bool variadic=count&&signature.parameters.back().variadic;const auto fixed=count-(variadic?1U:0U);
         if(result.arguments.size()<fixed||(!variadic&&result.arguments.size()!=count))throw Error("E_TYPE",result.location,"Wrong callable argument count");
         if(variadic&&!(result.arguments.size()==count&&(result.arguments.back()->type==signature.parameters.back().type||result.arguments.back()->type==Type::nil))){auto packed=std::make_unique<hir::Expr>();packed->kind=hir::ExprKind::array_literal;packed->type=signature.parameters.back().type;packed->location=result.location;const auto element=info(packed->type,result.location).element;for(auto n=fixed;n<result.arguments.size();++n)packed->arguments.push_back(convert(std::move(result.arguments[n]),element));result.arguments.resize(fixed);result.arguments.push_back(std::move(packed));}
-        for(std::size_t n=0;n<count;++n){const auto& parameter=signature.parameters[n];if(parameter.by_reference){if(!lvalue(*result.arguments[n])||result.arguments[n]->type!=parameter.type)throw Error("E_TYPE",result.location,"var argument requires an assignable value of exactly the parameter type");}else result.arguments[n]=convert(std::move(result.arguments[n]),parameter.type);}
+        const SyntaxRoutine* named=nullptr;
+        if(result.left&&result.left->kind==hir::ExprKind::local)for(const auto& [syntax,slot]:nested_routine_slots_)if(slot==result.left->local){named=syntax;break;}
+        for(std::size_t n=0;n<count;++n){const auto& parameter=signature.parameters[n];if(parameter.by_reference){if(!lvalue(*result.arguments[n])||result.arguments[n]->type!=parameter.type)throw Error("E_TYPE",result.location,"var argument requires an assignable value of exactly the parameter type");}else result.arguments[n]=convert(std::move(result.arguments[n]),parameter.type,false,!(named&&n<named->parameters.size()&&named->parameters[n].read_only));}
     }
     struct MethodOverload {std::size_t id;std::vector<CallableParameter> parameters;std::size_t required;};
     bool overload_conversion(Type from,Type to)const{
@@ -2507,7 +2532,7 @@ private:
             if (context && (type!=context->parameters[n].type || parameter.by_reference!=context->parameters[n].by_reference))
                 throw Error("E_TYPE",name.location,"Lambda parameter type does not match context");
             const auto local=module_.locals.size(); module_.locals.push_back({name.text,type,false}); scopes_.back()[name.text]=local;
-            routine.signature.parameters.push_back({local,type,parameter.by_reference,parameter.variadic});
+            routine.signature.parameters.push_back({local,type,parameter.by_reference,parameter.variadic,parameter.read_only});
             if (parameter.read_only) constant_parameters_.insert(local);
             if (parameter.by_reference) reference_parameters_.insert(local);
         }
@@ -2524,7 +2549,7 @@ private:
             if (current_result_==Type::unit) {
                 if (value->type!=Type::unit) throw Error("E_TYPE",value->location,"Procedure lambda expression must return no value");
                 routine.body.kind=hir::StmtKind::call; routine.body.expression=std::move(value);
-            } else { routine.body.kind=hir::StmtKind::return_stmt; routine.body.expression=convert(std::move(value),current_result_); }
+            } else { routine.body.kind=hir::StmtKind::return_stmt; routine.body.expression=convert(std::move(value),current_result_,true); }
         } else routine.body=statement(syntax.body);
         if (current_result_==Type::invalid) lambda_result(Type::unit,source.token.location);
         if (syntax.function_lambda && current_result_==Type::unit) throw Error("E_TYPE",source.token.location,"Function lambda must return a value");
@@ -2592,7 +2617,7 @@ private:
             if (parameter.by_reference) {
                 if ((!lvalue(*result->arguments[i]) && !(i==0 && info(receiver,result->location).kind==CompoundKind::record && result->arguments[i]->kind==hir::ExprKind::cache_value)) || result->arguments[i]->type!=parameter.type)
                     throw Error("E_TYPE",result->location,"var argument requires an assignable value of exactly the parameter type");
-            } else result->arguments[i]=convert(std::move(result->arguments[i]),parameter.type);
+            } else result->arguments[i]=convert(std::move(result->arguments[i]),parameter.type,false,!parameter.read_only);
         }
         return result;
     }
@@ -2908,7 +2933,10 @@ private:
                 bind_builtin(*result,source.token.text,source.left->token.text); break;
             }
             if(enum_static_member(*result,source))break;
-            if(!result->left)result->left=expression(*source.left);adapt_enumerable_member(*result,source.token.text);const auto receiver=result->left->type;
+            if(!result->left)result->left=expression(*source.left);
+            if(fixed(result->left->type)&&source.token.text=="clone"){if(!source.arguments.empty())throw Error("E_TYPE",result->location,"Fixed array Clone takes no arguments");const auto owner=result->left->type;std::vector<std::unique_ptr<hir::Expr>> args;args.push_back(std::move(result->left));return fixed_expression(owner,FixedMethod::copy_value,std::move(args),result->location);}
+            if(fixed(result->left->type)&&source.token.text!="gettype"&&source.token.text!="tostring"&&source.token.text!="equals"&&source.token.text!="gethashcode")result->left=fixed_view(std::move(result->left));
+            adapt_enumerable_member(*result,source.token.text);const auto receiver=result->left->type;
             if(receiver==Type::type_descriptor){
                 const auto operation=source.token.text=="name" ? TypeOperation::name : source.token.text=="fullname" ? TypeOperation::full_name
                     : source.token.text=="namespace" ? TypeOperation::name_space : source.token.text=="assemblyqualifiedname" ? TypeOperation::assembly_qualified_name : TypeOperation::value_name;
@@ -3440,6 +3468,7 @@ private:
         if(cast==Type::invalid)return false;if(source.arguments.size()!=1)throw Error("E_TYPE",result.location,callable_type(cast) ? "Callable constructor requires one matching routine value" : "Interface conversion requires one value");auto input=expression(*source.arguments[0],cast);if(compound(cast) && (interface_kind(info(cast,result.location)) || info(cast,result.location).kind==CompoundKind::object_class || info(cast,result.location).kind==CompoundKind::record) && compound(input->type) && interface_kind(info(input->type,result.location)) && input->type!=cast){if((info(cast,result.location).kind==CompoundKind::object_class||info(cast,result.location).kind==CompoundKind::record) && !interface_compatible(module_.types,cast,input->type))throw Error("E_TYPE",result.location,"The target type must implement the source interface for this conversion","Тип назначения должен реализовывать исходный интерфейс для этого преобразования");input=interface_conversion(std::move(input),cast,true);}else input=convert(std::move(input),cast);result=std::move(*input);return true;
     }
     ABC_PASCAL_NOINLINE std::unique_ptr<hir::Expr> bind_call_expression(const SyntaxExpr& source,Type expected,std::unique_ptr<hir::Expr> result) {
+        if((source.token.text=="low"||source.token.text=="high")&&source.arguments.size()==1&&source.arguments[0]->kind==SyntaxExprKind::name&&!lookup(source.arguments[0]->token)){const auto found=aliases_.find(source.arguments[0]->token.text);if(found!=aliases_.end()&&fixed(found->second)){const auto& shape=fixed_shape(found->second);result->kind=hir::ExprKind::literal;result->type=Type::integer;result->value=source.token.text=="low"?shape.lower:shape.upper;return result;}}
         (void)expected;
         do {
  {
@@ -3479,7 +3508,7 @@ private:
                     if (parameter.by_reference) {
                         if (!lvalue(*result->arguments[n]) || result->arguments[n]->type != parameter.type)
                             throw Error("E_TYPE",result->location,"var argument requires an assignable value of exactly the parameter type");
-                    } else result->arguments[n] = convert(std::move(result->arguments[n]),parameter.type);
+                    } else result->arguments[n] = convert(std::move(result->arguments[n]),parameter.type,false,!parameter.read_only);
                 }
                 break;
             }
@@ -3519,6 +3548,7 @@ private:
                 bind_array_literal(*result); break;
             }
             if (source.token.text == "length" && result->arguments.size() == 1 && compound(result->arguments[0]->type)) {
+                if(fixed(result->arguments[0]->type))result->arguments[0]=fixed_view(std::move(result->arguments[0]));
                 if (!indexed_sequence(info(result->arguments[0]->type,result->location).kind)) throw Error("E_TYPE",result->location,"Length requires an array or list");
                 result->kind = hir::ExprKind::length; result->left = std::move(result->arguments[0]); result->arguments.clear(); result->type = Type::integer; break;
             }
@@ -3530,7 +3560,16 @@ private:
         } while(false);
         return result;
     }
-    std::unique_ptr<hir::Expr> expression(const SyntaxExpr& source,Type expected=Type::invalid) {
+    std::unique_ptr<hir::Expr> expression(const SyntaxExpr& source,Type expected=Type::invalid,unsigned parentheses_used=0) {
+        if(fixed(expected)&&source.kind!=SyntaxExprKind::tuple&&source.parentheses>parentheses_used){
+            auto value=expression(source,Type::invalid,source.parentheses);if(value->type==expected)return value;
+            const auto& shape=fixed_shape(expected);if(shape.lower!=shape.upper)throw Error("E_TYPE",source.token.location,"Fixed array initializer length must match its bounds");
+            const auto element=info(expected,source.token.location).element;
+            auto result=std::make_unique<hir::Expr>();result->kind=hir::ExprKind::array_initialized;result->type=expected;result->location=source.token.location;result->operation="initialize";
+            result->local=module_.locals.size();module_.locals.push_back({"$fixed_literal",expected,!in_routine_});
+            result->left=std::make_unique<hir::Expr>();result->left->kind=hir::ExprKind::default_value;result->left->type=expected;result->left->location=result->location;
+            result->arguments.push_back(convert(fixed(element)?expression(source,element,parentheses_used+1):std::move(value),element,true));return result;
+        }
         if (!source.type_arguments.empty()) {
             if(auto result=explicit_array_library(source,expected))return result;
             return explicit_factory(source);
@@ -3599,10 +3638,16 @@ private:
             result->value=ReflectedType{source.constructed->kind=="void" && source.constructed->system_qualified ? Type::unit : resolve_type(*source.constructed)};break;
         case SyntaxExprKind::type_reference: throw Error("E_TYPE",source.token.location,"A type requires a static member");
         case SyntaxExprKind::initialized_default:
-            if(expected==Type::invalid)throw Error("E_TYPE",result->location,"Field default requires a known type","Для значения поля по умолчанию нужен известный тип");result->kind=hir::ExprKind::default_value;result->type=expected;return result;
+            if(expected==Type::invalid)throw Error("E_TYPE",result->location,"Field default requires a known type","Для значения поля по умолчанию нужен известный тип");result->kind=hir::ExprKind::default_value;result->type=expected;result->operation="initialize";return result;
         case SyntaxExprKind::typed_default:
             result->kind=hir::ExprKind::default_value; result->type=resolve_type(*source.constructed); result->operation="default"; break;
         case SyntaxExprKind::tuple: {
+            if(fixed(expected)){
+                const auto owner=expected,element=info(owner,result->location).element;const auto& shape=fixed_shape(owner);
+                if(source.arguments.size()!=static_cast<std::size_t>(static_cast<std::int64_t>(shape.upper)-shape.lower+1))throw Error("E_TYPE",result->location,"Fixed array initializer length must match its bounds","Число элементов инициализатора должно совпадать с длиной фиксированного массива");
+                result->kind=hir::ExprKind::array_initialized;result->type=owner;result->operation="initialize";result->local=module_.locals.size();module_.locals.push_back({"$fixed_literal",owner,!in_routine_});result->left=std::make_unique<hir::Expr>();result->left->kind=hir::ExprKind::default_value;result->left->type=owner;result->left->location=result->location;
+                for(const auto& argument:source.arguments)result->arguments.push_back(convert(expression(*argument,element),element,true));break;
+            }
             result->kind=hir::ExprKind::tuple_literal; std::vector<Type> elements;
             for (const auto& argument:source.arguments) { auto element=expression(*argument); elements.push_back(element->type); result->arguments.push_back(std::move(element)); }
             result->type=tuple_type(elements,result->location); break;
@@ -3617,6 +3662,10 @@ private:
                 }
             }
             if (!result->left) result->left = expression(*source.left);
+            if(fixed(result->left->type)){
+                std::vector<const SyntaxExpr*> indices{source.right.get()};for(const auto& item:source.arguments)indices.push_back(item.get());auto value=std::move(result->left);
+                for(const auto* index:indices){if(!fixed(value->type))throw Error("E_TYPE",result->location,"Too many fixed array indices");const auto owner=value->type;const auto index_type=fixed_shape(owner).index;std::vector<std::unique_ptr<hir::Expr>> args;args.push_back(convert(expression(*index,index_type),index_type));auto offset=fixed_expression(owner,FixedMethod::index,std::move(args),index->token.location);auto next=std::make_unique<hir::Expr>();next->kind=hir::ExprKind::index;next->location=result->location;next->type=info(owner,result->location).element;next->left=fixed_view(std::move(value),true);next->right=std::move(offset);value=std::move(next);}return value;
+            }
             if(bind_property_indices(result->left,source))return std::move(result->left);
             const auto receiver_type = result->left->type;
             if(receiver_type!=Type::string&&!compound(receiver_type))throw Error("E_TYPE",result->location,"Value is not indexable","Значение не поддерживает индексацию");
@@ -3896,6 +3945,7 @@ private:
                 if (left!=right && sequence_view(right,left,result->location)) { result->right=convert(std::move(result->right),left); right=left; }
                 if (left!=right && sequence_view(left,right,result->location)) { result->left=convert(std::move(result->left),right); left=right; }
                 if (left!=right) throw Error("E_TYPE",result->location,"Incompatible aggregate comparison");
+                if(fixed(left)){std::vector<std::unique_ptr<hir::Expr>> args;args.push_back(convert(std::move(result->left),left));args.push_back(convert(std::move(result->right),left));return fixed_expression(left,op=="="?FixedMethod::equal:FixedMethod::not_equal,std::move(args),result->location);}
                 result->type=Type::boolean;
             } else if (numeric(left) && numeric(right)) {
                 if ((op == "div" || op == "mod") && (left == Type::real || right == Type::real || left==Type::single || right==Type::single))
@@ -3976,7 +4026,7 @@ private:
             if(compound(result.target->type) && info(result.target->type,location).kind==CompoundKind::new_set && !(result.target->kind==hir::ExprKind::index && info(result.target->left->type,location).kind==CompoundKind::list)){
                 const auto owner=result.target->type;std::vector<std::unique_ptr<hir::Expr>> arguments;arguments.push_back(std::move(result.target));arguments.push_back(value(owner));result.kind=hir::StmtKind::call;result.expression=new_set_expression(owner,NewSetMethod::assign,std::move(arguments),location,true);return result;
             }
-            result.expression = convert(value(result.target->type), result.target->type);
+            result.expression = convert(value(result.target->type), result.target->type,true);
             return result;
     }
     std::unique_ptr<hir::Expr> empty_expression(Type target,EmptyMethod method,std::vector<std::unique_ptr<hir::Expr>> arguments,SourceLocation location){
@@ -4575,6 +4625,7 @@ private:
         result.kind=hir::ExprKind::sort_call;result.left=std::move(receiver);result.operation_type=owner;result.local=code;result.type=Type::unit;return true;
     }
     bool bind_sequence_library(hir::Expr& result, std::string_view name, std::string_view unit = {}) {
+        if(name=="high"&&result.arguments.size()==1&&fixed(result.arguments[0]->type)&&(unit.empty()||unit=="pabcsystem")){const auto bound=fixed_shape(result.arguments[0]->type).upper;result.arguments.clear();result.kind=hir::ExprKind::literal;result.type=Type::integer;result.value=bound;return true;}
         const bool sort=name=="sort" || name=="sortdescending", fill=name=="fillbyvalue";
         if ((!sort && !fill && name!="copy" && name!="high") || result.arguments.empty() || !compound(result.arguments[0]->type) || enumeration(result.arguments[0]->type)) return false;
         if (!unit.empty() && !(unit=="pabcsystem" && !fill) && !(unit=="arrays" && (sort || fill))) return false;
@@ -4597,6 +4648,7 @@ private:
         result.arguments.clear(); return true;
     }
     bool bind_array_length(hir::Expr& result, std::string_view name, std::string_view unit = {}) {
+        if(name=="length"&&!result.arguments.empty()&&fixed(result.arguments[0]->type))result.arguments[0]=fixed_view(std::move(result.arguments[0]));
         const bool rows=name=="rowcount" || name=="colcount";
         if ((name!="length" && !rows) || (!unit.empty() && unit!="pabcsystem") || result.arguments.empty() || !compound(result.arguments[0]->type)) return false;
         const auto& type=info(result.arguments[0]->type,result.location);
@@ -6192,6 +6244,7 @@ private:
         return true;
     }
     void bind_builtin(hir::Expr& result, std::string_view name, std::string_view unit = {}) {
+        if((name=="low"||name=="high")&&result.arguments.size()==1&&fixed(result.arguments[0]->type)&&(unit.empty()||unit=="pabcsystem")){const auto& shape=fixed_shape(result.arguments[0]->type);const auto bound=name=="low"?shape.lower:shape.upper;result.arguments.clear();result.kind=hir::ExprKind::literal;result.type=Type::integer;result.value=bound;return;}
         if(bind_binary_function(result,name,unit))return;
         if(name=="boolean"&&(unit.empty()||unit=="pabcsystem")){
             if(result.arguments.size()!=1||result.arguments[0]->type!=Type::boolean)throw Error("E_TYPE",result.location,"Boolean conversion requires one boolean value","Преобразование в boolean требует одного логического значения");
@@ -6424,7 +6477,7 @@ private:
             auto initial=source.expression ? expression(*source.expression,type) : nullptr;
             if (type==Type::invalid && initial) type=initial->type;
             if (type == Type::unit || type == Type::nil) throw Error("E_TYPE",source.token.location,"Procedure has no value");
-            if (initial) initial = convert(std::move(initial), type);
+            if (initial) initial = convert(std::move(initial), type,true);
             if(initial && compound(type) && info(type,result.location).kind==CompoundKind::new_set)initial=new_set_copy(std::move(initial),result.location);
             for (const auto& token : source.names) {
                 if (scopes_.back().contains(token.text))
@@ -6535,6 +6588,7 @@ private:
             break;
         case SyntaxStmtKind::foreach_loop: {
             result.kind=hir::StmtKind::foreach_loop; result.expression=expression(*source.expression);
+            if(fixed(result.expression->type))result.expression=fixed_view(std::move(result.expression));
             if(const auto protocol=enumerable_contract(result.expression->type,result.location);protocol!=Type::invalid && protocol!=result.expression->type)result.expression=convert(std::move(result.expression),protocol);
             if(compound(result.expression->type)){const auto shape=info(result.expression->type,result.location);if(shape.kind==CompoundKind::hash_set || shape.kind==CompoundKind::new_set || ordinal_range_type(shape) || shape.kind==CompoundKind::dictionary || shape.kind==CompoundKind::dictionary_keys || shape.kind==CompoundKind::dictionary_values){const auto target=shape.kind==CompoundKind::dictionary || shape.kind==CompoundKind::dictionary_keys || shape.kind==CompoundKind::dictionary_values ? sequence_type(CompoundKind::sequence,shape.element) : shape.kind==CompoundKind::new_set ? info(shape.key,result.location).key : shape.key;result.expression=convert(std::move(result.expression),target);}}
             const auto sequence=result.expression->type;
@@ -6620,7 +6674,7 @@ private:
                     auto initial=expression(*source.expression); lambda_result(initial->type,initial->location); result.expression=std::move(initial); break;
                 }
                 if (!in_routine_ || current_result_ == Type::unit) throw Error("E_TYPE",result.location,"Procedure Exit takes no value");
-                result.expression = convert(expression(*source.expression,current_result_),current_result_);
+                result.expression = convert(expression(*source.expression,current_result_),current_result_,true);
             }
             break;
         case SyntaxStmtKind::print: {
@@ -6649,7 +6703,7 @@ private:
                 if(result.newline||source.arguments.size()<2)throw Error("E_TYPE",result.location,"Binary Read requires writable variables and has no Readln form");
                 const auto owner=first->type,element=info(owner,result.location).element;const auto cached=cache_argument(std::move(first));const auto slot=cached->local;
                 result.kind=hir::StmtKind::block;hir::Stmt evaluate;evaluate.kind=hir::StmtKind::call;evaluate.location=result.location;evaluate.expression=copy_expression(*cached);result.statements.push_back(std::move(evaluate));
-                for(std::size_t n=1;n<source.arguments.size();++n){auto target=expression(*source.arguments[n]);const auto t=element==Type::invalid?target->type:element;if(!lvalue(*target)||!binary_value_supported(module_.types,t,element==Type::invalid))throw Error("E_TYPE",target->location,"Binary Read requires a supported statically typed variable");std::vector<std::unique_ptr<hir::Expr>> args;args.push_back(cached_read(slot,result.location));hir::Stmt read;read.kind=hir::StmtKind::assign;read.location=target->location;read.expression=convert(binary_expression(owner,BinaryMethod::read_data,std::move(args),read.location,t),target->type);read.target=std::move(target);result.statements.push_back(std::move(read));}break;
+                for(std::size_t n=1;n<source.arguments.size();++n){auto target=expression(*source.arguments[n]);const auto t=element==Type::invalid?target->type:element;if(!lvalue(*target)||!binary_value_supported(module_.types,t,element==Type::invalid))throw Error("E_TYPE",target->location,"Binary Read requires a supported statically typed variable");std::vector<std::unique_ptr<hir::Expr>> args;args.push_back(cached_read(slot,result.location));hir::Stmt read;read.kind=hir::StmtKind::assign;read.location=target->location;read.expression=convert(binary_expression(owner,BinaryMethod::read_data,std::move(args),read.location,t),target->type,true);read.target=std::move(target);result.statements.push_back(std::move(read));}break;
             }
             if (first->type==Type::text_file) {
                 result.target=std::move(first);

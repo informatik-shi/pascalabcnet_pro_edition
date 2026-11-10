@@ -6,6 +6,7 @@
 #include "encoding.hpp"
 #include "encoding_metadata.hpp"
 #include "type_names.hpp"
+#include "fixed_array.hpp"
 #include <algorithm>
 #include <bit>
 #include <limits>
@@ -32,6 +33,7 @@ Value read_value(Values& values,BinaryFile& file,Type type,const ExecutionOption
     if(!compound(type))return file.codec->read(type,values.location,options);
     const auto& shape=type_info(values.program,type);
     if(shape.kind==CompoundKind::enumeration)return EnumValue{type,std::get<std::int32_t>(file.codec->read(Type::integer,values.location,options))};
+    if(shape.kind==CompoundKind::fixed_array){auto result=fixed_array_construct(values,type);const auto wrapper=std::get<std::shared_ptr<Aggregate>>(result),data=std::get<std::shared_ptr<Aggregate>>(wrapper->items[0]->value);for(const auto& item:data->items)values.write(item,read_value(values,file,shape.element,options,depth+1));return result;}
     auto result=std::get<std::shared_ptr<Aggregate>>(values.zero(type,false,true));
     for(std::size_t n=0;n<shape.fields.size();++n)values.write(result->items[n],read_value(values,file,shape.fields[n].type,options,depth+1));return result;
 }
@@ -41,6 +43,7 @@ void write_value(Values& values,BinaryFile& file,Type type,const Value& value,co
     const auto& shape=type_info(values.program,type);
     if(shape.kind==CompoundKind::enumeration){file.codec->write(Type::integer,std::get<EnumValue>(value).value,values.location,options);return;}
     const auto data=std::get<std::shared_ptr<Aggregate>>(value);if(!data||data->nil)throw runtime_error(RuntimeError::nil_reference,values.location);
+    if(shape.kind==CompoundKind::fixed_array){const auto storage=std::get<std::shared_ptr<Aggregate>>(data->items[0]->value);for(const auto& item:storage->items)write_value(values,file,shape.element,item->value,options,depth+1);return;}
     std::uint64_t work=0;for(std::size_t n=0;n<data->items.size();++n){if(work++>=options.instruction_limit)throw runtime_error(RuntimeError::instruction_limit,values.location);if((n&255U)==0&&options.cancelled&&options.cancelled())throw runtime_error(RuntimeError::cancelled,values.location);
         const auto element=shape.kind==CompoundKind::array?shape.element:shape.fields.at(n).type;write_value(values,file,element,data->items[n]->value,options,depth+1);}
 }
@@ -50,6 +53,7 @@ bool binary_value_supported(const std::vector<TypeInfo>& types,Type type,bool st
         if(t==Type::string)return strings;if(t==Type::big_integer)return false;if(scalar(t))return true;
         if(!compound(t)||static_cast<unsigned>(t)-64U>=types.size())return false;const auto& shape=info(types,t);
         if(shape.kind==CompoundKind::enumeration)return true;
+        if(shape.kind==CompoundKind::fixed_array)return self(self,shape.element,depth+1);
         if(shape.kind==CompoundKind::array)return arrays&&self(self,shape.element,depth+1);
         if(shape.kind!=CompoundKind::record)return false;
         return std::all_of(shape.fields.begin(),shape.fields.end(),[&](const auto& f){return self(self,f.type,depth+1);});};
@@ -61,9 +65,15 @@ std::int64_t binary_element_size(const Program& program,Type type,SourceLocation
         if(t==Type::word||t==Type::smallint)return 2;
         if(t==Type::integer||t==Type::longword||t==Type::single)return 4;
         if(t==Type::int64||t==Type::uint64||t==Type::real)return 8;
-        const auto& shape=type_info(program,t);if(shape.kind==CompoundKind::enumeration)return 4;std::int64_t size=0;
+        const auto& shape=type_info(program,t);if(shape.kind==CompoundKind::enumeration)return 4;
+        if(shape.kind==CompoundKind::fixed_array){const auto& s=fixed_array_shape(program,t);const auto count=static_cast<std::int64_t>(s.upper)-s.lower+1;const auto bytes=self(self,shape.element,depth+1);if(bytes&&count>INT64_MAX/bytes)throw runtime_error(RuntimeError::allocation_limit,location);return count*bytes;}std::int64_t size=0;
         for(const auto& field:shape.fields){const auto n=self(self,field.type,depth+1);if(n>std::numeric_limits<std::int64_t>::max()-size)throw runtime_error(RuntimeError::allocation_limit,location);size+=n;}return size;};
     return walk(walk,type,0);
+}
+void binary_element_probe(Values& values,Type type){
+    if(!compound(type))return;const auto& shape=type_info(values.program,type);
+    if(shape.kind==CompoundKind::fixed_array){(void)fixed_array_construct(values,type);binary_element_probe(values,shape.element);}
+    else if(shape.kind==CompoundKind::record)for(const auto& field:shape.fields)binary_element_probe(values,field.type);
 }
 std::vector<Type> binary_parameters(const std::vector<TypeInfo>& types,Type owner,std::size_t operand){
     const auto code=method(operand);const auto& shape=info(types,owner);const auto encoding=encoding_type(types);

@@ -363,6 +363,7 @@ def main():
                 ("encoding-metadata.pas", "iso-2022-jp iso-2022-jp 932\nFalse True\n24 6\n3\n1\n"),
                 ("binary-files.pas", "1 1\n-123456 Ж True 1\nTrue\n42 Привет True 1.25\n"),
                 ("nested-routines.pas", "12 14 16\nВложенная рекурсия: 40\nИзменено: 14\n"),
+                ("fixed-arrays.pas", "5 10 4 -2 1\n99\n17\n7 9\n42 31\n7 9 1\n"),
                 ("utf7-encoding.pas", "65000 UTF7Encoding\n0\n65,43,45,43,90,101,85,45\nПривет + 日本 🌍\n1 55357\n"),
                 ("iso2022-encodings.pas", "50220 [27,36,66,70,124,37,43,27,40,66,65]\n50221 [27,36,66,70,124,27,40,73,54,27,40,66,65]\n50222 [27,36,66,70,124,14,54,15,27,40,66,65]\n50225 한국어\n[126,123,86,80,78,68,126,125,126,126]\n52936 中文~\nISO2022Encoding\n"),
                 ("iscii-encodings.pas", "57002 ISCIIEncoding\nकকகకಕകકକਕ\n[179,239,67,179,239,68,179,239,66]\n57011 ਕ\n"),
@@ -2120,6 +2121,16 @@ def main():
                     or f"{nested_error}:3:" not in invalid.stderr):
                 raise RuntimeError(f"{name} nested routine error mismatch: {invalid.stdout!r}, {invalid.stderr!r}")
             results[-1]["native_nested_routines_and_bilingual_errors"] = "passed"
+            fixed_error = folder / "Ошибка границы массива.pas"
+            fixed_error.write_text("type A=array[-2..1] of integer;\nbegin Write('before');\n"
+                                   "var a:A;Writeln(a[2]);end.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(fixed_error)], text=True, encoding="utf-8",
+                                     capture_output=True, cwd=folder, env=env, timeout=10)
+            if (invalid.returncode != 1 or invalid.stdout != "before" or "E_BOUNDS" not in invalid.stderr
+                    or "EN:" not in invalid.stderr or "RU:" not in invalid.stderr
+                    or f"{fixed_error}:3:" not in invalid.stderr):
+                raise RuntimeError(f"{name} fixed-array error mismatch: {invalid.stdout!r}, {invalid.stderr!r}")
+            results[-1]["native_fixed_arrays_and_bilingual_errors"] = "passed"
             nested_deep = folder / "Предел вложенности подпрограмм.pas"
             nested_deep.write_text("".join(f"procedure P{i};" for i in range(400))
                                    + "begin end;" * 400 + "begin end.", encoding="utf-8")

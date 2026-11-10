@@ -1,0 +1,48 @@
+{
+  "schema": 1,
+  "reference_runtimes": [
+    "Windows .NET Framework 4.0.30319.42000",
+    "Windows .NET 10.0.12"
+  ],
+  "reference_executions": 18,
+  "fixtures_identical": true,
+  "scope": "Independent source-derived wrapper/record constructor and Clone methods plus public binary APIs. Every native Pascal trace, packed file byte and outcome is checked. Four original Pascal tests run through the native interpreter only. No original Pascal compiler oracle is invoked or claimed. Full fixed-array conversions, subranges, short strings, sets, reflection and whole library modules remain incomplete. No Python/.NET is shipped.",
+  "artifacts": [
+    {
+      "path": "reference/fixed-array-copy.cs",
+      "sha256_lf": "62875769e51194811dd8d664b8b935ed65cc4b1620a1305f9b729357d5797a9c"
+    },
+    {
+      "path": "reference/generate-fixed-arrays.ps1",
+      "sha256_lf": "6cdf07e38cf8300dcff3f004a4db8cd31c48bb0e2565ee2481c085872c8e41e3"
+    },
+    {
+      "path": "fixtures/fixed-array-copy-reference.tsv",
+      "sha256_lf": "e07f21f520fefcb4c04d6f87ba8da9e678e7f9243767793bfd7d59186d5f2feb"
+    },
+    {
+      "path": "fixtures/fixed-array-copy-template.pas",
+      "sha256_lf": "62fef3acab2b69b0879302732d63f7de86810459234f6057964797591bedcfbc"
+    },
+    {
+      "path": "fixtures/fixed-arrays-reference.md",
+      "sha256_lf": "51b5419a612d36afe31dfee32a22df199765c24c65cf6ba83ab38cda69fd7f57"
+    },
+    {
+      "path": "../../TestSuite/fileof2.pas",
+      "sha256_lf": "90aff7433a3a30e35dbb4bf6c6060d85ac5177c910328c5cae947e9681cf6172"
+    },
+    {
+      "path": "../../TestSuite/fileofenum1.pas",
+      "sha256_lf": "5d28924aa596c0890a70e2ef9353e541b413f4d5aadfa143314c8cb4c101ff2e"
+    },
+    {
+      "path": "../../TestSuite/arrayoffile1.pas",
+      "sha256_lf": "f2ba7641870d963741b6f7a3728507f4d9d7ea76dd2763decba4315f666a570f"
+    },
+    {
+      "path": "../../TestSuite/binfile1.pas",
+      "sha256_lf": "8bcc17dfce1d27d611a6dbcf1de9180dcf9ca097463ab87ee87486236f833d32"
+    }
+  ]
+}
