@@ -165,6 +165,7 @@ DefaultEncoding изначально CP1251. Его смена и явные Enc
 Двоичные file и file of T, числа, строки, перечисления и вложенные записи: examples/binary-files.pas.
 Вложенные процедуры/функции, рекурсия и сохранение локального состояния: examples/nested-routines.pas.
 Статические массивы, независимые копии, двумерные индексы и file of массив: examples/fixed-arrays.pas.
+Инициализаторы динамических массивов, записи и более семи элементов: examples/array-literals.pas.
 Типизированные файлы открываются только в однобайтовых кодировках; фиксированные массивы, короткие строки и сериализация объектов ещё переносятся.
 Для сохранения всех Unicode-символов выберите Encoding.UTF8/Unicode; полный API Encoding ещё переносится.
 ReadAllLines/WriteAllLines с Encoding и WriteLines для последовательностей: examples/file-lines.pas.

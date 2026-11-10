@@ -28,7 +28,20 @@ Additional native tests cover signed/character/boolean/enum bounds, small
 ordinal index types, tuple initializers, independent nested copies, var and
 const calls, function results, foreach, bounds and nil evaluation order, and
 forged shape metadata. The unmodified original tests fileof2, fileofenum1,
-arrayoffile1 and binfile1 run through the native interpreter only.
+arrayoffile1, binfile1, arrayoftext1, arrayinitializer1 and arrays7 run through
+the native interpreter only and are registered as permanent tests.
+
+Declaration literals also construct dynamic arrays from parenthesized values,
+including nested arrays, singleton values, records and more than seven items.
+Unlike a wrapper constructor, raw declaration-literal storage does not run
+record initializers before values are assigned. Allocation happens before
+evaluating the first value; a limited-memory test checks that no value factory
+runs when storage allocation fails. The existing array-new instruction has a
+verified raw-storage operand, accepted only for rank-one creation. No new opcode
+or VM field is added. Actual tuples retain their existing seven-item bound.
+Explicit ranges of small integers promote their index to integer; mixed
+numeric bound types use a common widening type, following get_need_ordinal_type.
+Built-in array[byte] keeps its source byte index type.
 
 Remaining positive requirements include subrange type declarations, short
 strings and sets in typed files, structurally compatible distinct fixed-array

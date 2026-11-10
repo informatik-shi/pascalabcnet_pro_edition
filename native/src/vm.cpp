@@ -1380,10 +1380,10 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
             }
             const auto count = instruction.op == Op::array_literal ? static_cast<std::int32_t>(instruction.operand) : std::get<std::int32_t>(pop());
             if (count < 0) trap(instruction,RuntimeError::array_length);
-            auto array = values.array(instruction.type,static_cast<std::size_t>(count));
+            auto array = values.array(instruction.type,static_cast<std::size_t>(count),instruction.op==Op::array_new&&instruction.operand==raw_array_initializer);
             if (instruction.op == Op::array_literal)
                 for (auto n = array->items.size(); n > 0; --n) values.write(array->items[n-1],pop());
-            else initialize_record_array(values,array,instruction.operand);
+            else if(instruction.operand!=raw_array_initializer)initialize_record_array(values,array,instruction.operand);
             stack.emplace_back(array); break;
         }
         case Op::resize_array: {

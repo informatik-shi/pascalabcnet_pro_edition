@@ -929,7 +929,7 @@ private:
             if (tuple->depth>256) fail("Tuple nesting limit exceeded");
             tuple->arguments.push_back(std::move(result));
             do {
-                if (tuple->arguments.size()>=7) throw Error("E_UNSUPPORTED",token.location,"Tuple arities above seven require nested Rest tuples");
+                if (tuple->arguments.size()>=4096) throw Error("E_LIMIT",token.location,"Array initializer limit exceeded");
                 auto element=expression(); tuple->depth=std::max(tuple->depth,element->depth+1);
                 if (tuple->depth>256) fail("Tuple nesting limit exceeded");
                 tuple->arguments.push_back(std::move(element));
@@ -1787,6 +1787,16 @@ private:
     }
     bool binary(Type type) const{return compound(type)&&info(type,{}).kind==CompoundKind::binary_file;}
     bool fixed(Type type) const{return compound(type)&&info(type,{}).kind==CompoundKind::fixed_array;}
+    bool initializer_array(Type type)const{return fixed(type)||(compound(type)&&info(type,{}).kind==CompoundKind::array&&info(type,{}).rank==1);}
+    std::unique_ptr<hir::Expr> array_initializer(Type type,SourceLocation location,std::vector<std::unique_ptr<hir::Expr>> arguments){
+        if(fixed(type)){const auto& shape=fixed_shape(type);if(arguments.size()!=static_cast<std::size_t>(static_cast<std::int64_t>(shape.upper)-shape.lower+1))throw Error("E_TYPE",location,"Fixed array initializer length must match its bounds","Число элементов инициализатора должно совпадать с длиной фиксированного массива");}
+        if(module_.locals.size()>=4096)throw Error("E_LIMIT",location,"Local limit exceeded");
+        auto result=std::make_unique<hir::Expr>();result->kind=hir::ExprKind::array_initialized;result->type=type;result->location=location;result->operation="initialize";result->local=module_.locals.size();module_.locals.push_back({"$array_literal",type,!in_routine_});
+        result->left=std::make_unique<hir::Expr>();result->left->type=type;result->left->location=location;
+        if(fixed(type))result->left->kind=hir::ExprKind::default_value;
+        else {result->left->kind=hir::ExprKind::array_new;result->left->operation="raw_literal";auto count=std::make_unique<hir::Expr>();count->kind=hir::ExprKind::literal;count->type=Type::integer;count->location=location;count->value=static_cast<std::int32_t>(arguments.size());result->left->arguments.push_back(std::move(count));}
+        result->arguments=std::move(arguments);return result;
+    }
     const FixedArrayShape& fixed_shape(Type type) const {const auto found=std::find_if(module_.fixed_arrays.begin(),module_.fixed_arrays.end(),[&](const auto& s){return s.type==type;});if(found==module_.fixed_arrays.end())throw Error("E_HIR",{},"Missing fixed array shape");return *found;}
     std::unique_ptr<hir::Expr> fixed_expression(Type owner,FixedMethod method,std::vector<std::unique_ptr<hir::Expr>> args,SourceLocation location){auto result=std::make_unique<hir::Expr>();result->kind=hir::ExprKind::encoding_call;result->operation_type=owner;result->local=static_cast<unsigned>(method);result->location=location;result->type=fixed_result(module_.types,owner,result->local);result->arguments=std::move(args);return result;}
     std::unique_ptr<hir::Expr> fixed_view(std::unique_ptr<hir::Expr> value,bool indexing=false){const auto owner=value->type;const auto location=value->location;std::vector<std::unique_ptr<hir::Expr>> args;args.push_back(std::move(value));return fixed_expression(owner,indexing?FixedMethod::index_view:FixedMethod::view,std::move(args),location);}
@@ -1800,7 +1810,9 @@ private:
                 const auto name=lo.token.text;index=name=="byte"?Type::byte:name=="shortint"?Type::shortint:name=="smallint"?Type::smallint:name=="word"?Type::word:name=="char"?Type::character:Type::boolean;
                 lower=index==Type::shortint?-128:index==Type::smallint?-32768:0;upper=index==Type::byte?255:index==Type::shortint?127:index==Type::smallint?32767:index==Type::boolean?1:65535;
             }
-            else {const auto first=bound(lo);if(!hi)throw Error("E_TYPE",lo.token.location,"Fixed array index requires a range or ordinal type");const auto last=bound(*hi);index=first.first;if(index!=last.first)throw Error("E_TYPE",lo.token.location,"Fixed array bound types must match");lower=first.second;upper=last.second;}
+            else {const auto first=bound(lo);if(!hi)throw Error("E_TYPE",lo.token.location,"Fixed array index requires a range or ordinal type");const auto last=bound(*hi);index=first.first;
+                if(index!=last.first){index=Type::invalid;if(integer_type(first.first)&&integer_type(last.first))for(const auto candidate:{Type::integer,Type::int64,Type::longword,Type::uint64})if(can_widen(first.first,candidate)&&can_widen(last.first,candidate)){index=candidate;break;}if(index==Type::invalid)throw Error("E_TYPE",lo.token.location,"Fixed array bound types must be compatible");}
+                if(small_integer(index))index=Type::integer;lower=first.second;upper=last.second;}
             if(upper<lower)throw Error("E_RANGE",lo.token.location,"Fixed array upper bound is smaller than its lower bound","Верхняя граница фиксированного массива меньше нижней");if(static_cast<std::int64_t>(upper)-lower>=1'048'576)throw Error("E_LIMIT",lo.token.location,"Fixed array length limit exceeded");
             const auto storage=sequence_type(CompoundKind::array,element);if(module_.types.size()>=1024)throw Error("E_LIMIT",lo.token.location,"Type limit exceeded");module_.types.push_back({"fixed_array",CompoundKind::fixed_array,element,{},storage});element=static_cast<Type>(63+module_.types.size());module_.fixed_arrays.push_back({element,index,lower,upper});
         }return element;
@@ -3561,14 +3573,10 @@ private:
         return result;
     }
     std::unique_ptr<hir::Expr> expression(const SyntaxExpr& source,Type expected=Type::invalid,unsigned parentheses_used=0) {
-        if(fixed(expected)&&source.kind!=SyntaxExprKind::tuple&&source.parentheses>parentheses_used){
+        if(initializer_array(expected)&&source.kind!=SyntaxExprKind::tuple&&source.parentheses>parentheses_used){
             auto value=expression(source,Type::invalid,source.parentheses);if(value->type==expected)return value;
-            const auto& shape=fixed_shape(expected);if(shape.lower!=shape.upper)throw Error("E_TYPE",source.token.location,"Fixed array initializer length must match its bounds");
             const auto element=info(expected,source.token.location).element;
-            auto result=std::make_unique<hir::Expr>();result->kind=hir::ExprKind::array_initialized;result->type=expected;result->location=source.token.location;result->operation="initialize";
-            result->local=module_.locals.size();module_.locals.push_back({"$fixed_literal",expected,!in_routine_});
-            result->left=std::make_unique<hir::Expr>();result->left->kind=hir::ExprKind::default_value;result->left->type=expected;result->left->location=result->location;
-            result->arguments.push_back(convert(fixed(element)?expression(source,element,parentheses_used+1):std::move(value),element,true));return result;
+            std::vector<std::unique_ptr<hir::Expr>> arguments;arguments.push_back(convert(initializer_array(element)?expression(source,element,parentheses_used+1):std::move(value),element,true));return array_initializer(expected,source.token.location,std::move(arguments));
         }
         if (!source.type_arguments.empty()) {
             if(auto result=explicit_array_library(source,expected))return result;
@@ -3642,12 +3650,11 @@ private:
         case SyntaxExprKind::typed_default:
             result->kind=hir::ExprKind::default_value; result->type=resolve_type(*source.constructed); result->operation="default"; break;
         case SyntaxExprKind::tuple: {
-            if(fixed(expected)){
-                const auto owner=expected,element=info(owner,result->location).element;const auto& shape=fixed_shape(owner);
-                if(source.arguments.size()!=static_cast<std::size_t>(static_cast<std::int64_t>(shape.upper)-shape.lower+1))throw Error("E_TYPE",result->location,"Fixed array initializer length must match its bounds","Число элементов инициализатора должно совпадать с длиной фиксированного массива");
-                result->kind=hir::ExprKind::array_initialized;result->type=owner;result->operation="initialize";result->local=module_.locals.size();module_.locals.push_back({"$fixed_literal",owner,!in_routine_});result->left=std::make_unique<hir::Expr>();result->left->kind=hir::ExprKind::default_value;result->left->type=owner;result->left->location=result->location;
-                for(const auto& argument:source.arguments)result->arguments.push_back(convert(expression(*argument,element),element,true));break;
+            if(initializer_array(expected)){
+                const auto element=info(expected,result->location).element;std::vector<std::unique_ptr<hir::Expr>> arguments;
+                for(const auto& argument:source.arguments)arguments.push_back(convert(expression(*argument,element),element,true));return array_initializer(expected,result->location,std::move(arguments));
             }
+            if(source.arguments.size()>7)throw Error("E_UNSUPPORTED",result->location,"Tuple arities above seven require nested Rest tuples");
             result->kind=hir::ExprKind::tuple_literal; std::vector<Type> elements;
             for (const auto& argument:source.arguments) { auto element=expression(*argument); elements.push_back(element->type); result->arguments.push_back(std::move(element)); }
             result->type=tuple_type(elements,result->location); break;

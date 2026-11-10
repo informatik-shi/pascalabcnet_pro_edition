@@ -601,7 +601,7 @@ private:
             expression(*node.left); emit(Op::length,node.left->type,node.local,node.location); break;
         case hir::ExprKind::array_new:
             for (const auto& argument:node.arguments) expression(*argument);
-            emit(Op::array_new,node.type,record_initializer_operand(program_,type_info(program_,node.type).element),node.location); break;
+            emit(Op::array_new,node.type,node.operation=="raw_literal"?raw_array_initializer:record_initializer_operand(program_,type_info(program_,node.type).element),node.location); break;
         case hir::ExprKind::array_initialized: {
             expression(*node.left); local(Op::store,node.local,node.location);
             const auto rank=type_info(program_,node.type).rank;
@@ -1385,7 +1385,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if (!routine || type != routine->result) invalid(instruction,"Invalid return"); break;
         case Op::array_new: case Op::array_literal: case Op::resize_array:
             if (!compound(type) || type_info(program,type).kind != CompoundKind::array
-                || (instruction.op==Op::array_literal ? instruction.operand>4096 || type_info(program,type).rank!=1 : instruction.operand!=record_initializer_operand(program,type_info(program,type).element))) invalid(instruction,"Invalid array instruction");
+                || (instruction.op==Op::array_literal ? instruction.operand>4096 || type_info(program,type).rank!=1 : instruction.operand!=record_initializer_operand(program,type_info(program,type).element)&&!(instruction.op==Op::array_new&&type_info(program,type).rank==1&&instruction.operand==raw_array_initializer))) invalid(instruction,"Invalid array instruction");
             break;
         case Op::get_index: case Op::ref_index: case Op::length:
             if (compound(type) && type_info(program,type).kind==CompoundKind::sequence) {

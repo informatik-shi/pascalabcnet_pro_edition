@@ -15,7 +15,7 @@ std::string unhex(std::string_view text){std::string out;for(std::size_t n=0;n<t
 std::string decoded(std::string_view text){std::u16string out;for(std::size_t n=0;n<text.size();n+=4)out+=static_cast<char16_t>(std::stoul(std::string(text.substr(n,4)),nullptr,16));return abc::to_utf8(out);}
 std::string run(std::string_view source){std::istringstream in;std::ostringstream out;abc::execute(abc::compile(source),in,out);return out.str();}
 void result(std::string_view source,std::string_view expected){try{auto actual=run(source);check(actual==expected,std::string(source)+" actual="+actual);}catch(const std::exception& e){check(false,std::string(source)+" "+e.what());}}
-void error(std::string_view source,std::string_view code,std::string_view prefix={}){std::istringstream in;std::ostringstream out;try{abc::execute(abc::compile(source),in,out);check(false,"Expected "+std::string(code));}catch(const abc::Error& e){check(e.code==code&&out.str()==prefix&&*e.what()&&!e.russian.empty()&&e.location.line>0,std::string(source)+" actual="+e.code+" "+out.str());}}
+void error(std::string_view source,std::string_view code,std::string_view prefix={},abc::ExecutionOptions options={}){std::istringstream in;std::ostringstream out;try{abc::execute(abc::compile(source),in,out,options);check(false,"Expected "+std::string(code));}catch(const abc::Error& e){check(e.code==code&&out.str()==prefix&&*e.what()&&!e.russian.empty()&&e.location.line>0,std::string(source)+" actual="+e.code+" "+out.str());}}
 void reference(){
  const auto path=std::filesystem::path(abc::from_utf8(__FILE__)).parent_path()/"fixtures";
  auto source=contents(path/"fixed-array-copy-template.pas");check(!source.empty(),"Pascal fixed copy reference exists");
@@ -53,6 +53,18 @@ void semantics(){
  result("type A=array[1..2] of integer;procedure P(var a:A);begin a[1]:=7;end;begin var a:A;P(a);Writeln(a[1]);end.","7\n");
  result("type A=array[-1..1] of integer;function F:A;begin Result[-1]:=42;end;begin var a:=F;Writeln(a[-1]);end.","42\n");
  result("type A=array[1..2] of integer;function Index:integer;begin Write('i');Result:=1;end;begin var a:A;a[Index]+=3;Writeln(a[1]);end.","i3\n");
+ result("begin var a:array of integer:=(1,2,3,4,5,6,7,8,9,10);Writeln(a.Length,' ',a[9]);end.","10 10\n");
+ result("begin var a:array of integer:=(42);Writeln(a.Length,' ',a[0]);end.","1 42\n");
+ result("type A=array[-4..5] of integer;begin var a:A:=(1,2,3,4,5,6,7,8,9,10);Writeln(a[-4],' ',a[5]);end.","1 10\n");
+ result("begin var a:array of array of integer:=((1,2),(3,4));Writeln(a[0][1],' ',a[1][0]);end.","2 3\n");
+ result("type A=array[byte(1)..byte(2)] of integer;begin var a:A;var i:=1;a[i]:=42;Writeln(a[i]);end.","42\n");
+ result("type A=array[byte(1)..int64(2)] of integer;begin var a:A;var i:int64:=2;a[i]:=42;Writeln(a[i]);end.","42\n");
+ result("type A=array[longword(1)..2] of integer;begin var a:A;var i:int64:=2;a[i]:=42;Writeln(a[i]);end.","42\n");
+ result("var calls:integer;function Bump:integer;begin Inc(calls);Result:=calls;end;type A=array[1..2] of integer;R=record n:integer:=Bump;a:A;end;begin var r,s:R;r.a[1]:=7;var a:array of R:=(r,s);a[0].a[1]:=99;Writeln(calls,' ',r.a[1],' ',a[0].a[1]);end.","2 7 99\n");
+ result("function F(n:integer):integer;begin Write(n);Result:=n;end;begin var a:array of integer:=(F(1),F(2),F(3));Writeln(' ',a.Length);end.","123 3\n");
+ error("begin var t:=(1,2,3,4,5,6,7,8);end.","E_UNSUPPORTED");
+ abc::ExecutionOptions limited;limited.allocation_limit=8;error("function F:integer;begin Write('bad');Result:=1;end;begin Write('before');var a:array of integer:=(F,F,F,F,F,F,F,F,F,F);end.","E_LIMIT","before",limited);
+ for(auto source:{"begin var a:=new integer[1];SetLength(a,2);end.","begin var a:=new integer[1,1];end."}){auto p=abc::compile(source);for(auto& instruction:p.code)if(instruction.op==abc::Op::resize_array||(instruction.op==abc::Op::array_new&&p.types[static_cast<unsigned>(instruction.type)-64U].rank==2)){instruction.operand=~std::size_t{0};break;}try{abc::verify(p);check(false,"Raw storage marker rejected outside rank-one creation");}catch(const abc::Error& e){check(e.code=="E_BYTECODE","Raw storage operand is verified");}}
  auto original=abc::compile("type A=array[1..2] of integer;begin var a:A;a[1]:=3;end.");
  for(unsigned change=0;change<5;++change){auto p=original;if(change==0)p.fixed_arrays.clear();if(change==1)p.fixed_arrays[0].index=static_cast<abc::Type>(999999);if(change==2)p.fixed_arrays[0].upper=0;if(change==3)p.fixed_arrays.push_back(p.fixed_arrays[0]);if(change==4)p.types[static_cast<unsigned>(p.fixed_arrays[0].type)-64U].key=abc::Type::integer;try{abc::verify(p);check(false,"Forged fixed metadata rejected");}catch(const abc::Error& e){check(e.code=="E_BYTECODE","Invalid fixed shape fails verification");}}
  if(sizeof(void*)==8)check(sizeof(abc::Parameter)==16,"const marker fits existing parameter padding");

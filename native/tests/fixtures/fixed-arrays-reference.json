@@ -6,7 +6,7 @@
   ],
   "reference_executions": 18,
   "fixtures_identical": true,
-  "scope": "Independent source-derived wrapper/record constructor and Clone methods plus public binary APIs. Every native Pascal trace, packed file byte and outcome is checked. Four original Pascal tests run through the native interpreter only. No original Pascal compiler oracle is invoked or claimed. Full fixed-array conversions, subranges, short strings, sets, reflection and whole library modules remain incomplete. No Python/.NET is shipped.",
+  "scope": "Independent source-derived wrapper/record constructor and Clone methods plus public binary APIs. Every native Pascal trace, packed file byte and outcome is checked. Seven original Pascal tests run through the native interpreter only. No original Pascal compiler oracle is invoked or claimed. Full fixed-array conversions, subranges, short strings, sets, reflection and whole library modules remain incomplete. No Python/.NET is shipped.",
   "artifacts": [
     {
       "path": "reference/fixed-array-copy.cs",
@@ -14,7 +14,7 @@
     },
     {
       "path": "reference/generate-fixed-arrays.ps1",
-      "sha256_lf": "6cdf07e38cf8300dcff3f004a4db8cd31c48bb0e2565ee2481c085872c8e41e3"
+      "sha256_lf": "b29bae7599a1d1e844c1e38c3211eb6232079a2aa8578ae475ad7c1ae46ee7b8"
     },
     {
       "path": "fixtures/fixed-array-copy-reference.tsv",
@@ -26,7 +26,7 @@
     },
     {
       "path": "fixtures/fixed-arrays-reference.md",
-      "sha256_lf": "51b5419a612d36afe31dfee32a22df199765c24c65cf6ba83ab38cda69fd7f57"
+      "sha256_lf": "31368904801f555745d4cd7ce4d07435f90349d6f67f5ac3676b0ad6330a4ec5"
     },
     {
       "path": "../../TestSuite/fileof2.pas",
@@ -43,6 +43,18 @@
     {
       "path": "../../TestSuite/binfile1.pas",
       "sha256_lf": "8bcc17dfce1d27d611a6dbcf1de9180dcf9ca097463ab87ee87486236f833d32"
+    },
+    {
+      "path": "../../TestSuite/arrayoftext1.pas",
+      "sha256_lf": "9ccc35399fde922dabe17c77b6d184e1e6d3b742f8b80e7f528586365c72608d"
+    },
+    {
+      "path": "../../TestSuite/arrayinitializer1.pas",
+      "sha256_lf": "d0d1c62db880d6afbeddb0f40cd5421dec89e3ea2e7e56fc22b83aef1fa016d1"
+    },
+    {
+      "path": "../../TestSuite/arrays7.pas",
+      "sha256_lf": "3e01ebfbf3f00ab448b26ae1e5aad9719ccdc13ff0a7062143cb4b117c200a2f"
     }
   ]
 }
