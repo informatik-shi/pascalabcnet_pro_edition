@@ -10,7 +10,7 @@ constexpr std::size_t data_limit=1'048'576;
 constexpr char16_t replacement=0xfffd;
 bool valid(TextEncodingKind kind) {
     return kind==TextEncodingKind::utf8 || kind==TextEncodingKind::gb18030 || kind==TextEncodingKind::utf16_le || kind==TextEncodingKind::utf16_be
-        || kind==TextEncodingKind::utf32_le || kind==TextEncodingKind::utf32_be || single_byte_codec(static_cast<std::uint16_t>(kind)) || double_byte_codec(static_cast<std::uint16_t>(kind)) || iscii_code_page(static_cast<std::uint16_t>(kind));
+        || kind==TextEncodingKind::utf32_le || kind==TextEncodingKind::utf32_be || single_byte_codec(static_cast<std::uint16_t>(kind)) || double_byte_codec(static_cast<std::uint16_t>(kind)) || iscii_code_page(static_cast<std::uint16_t>(kind)) || iso2022_code_page(static_cast<std::uint16_t>(kind));
 }
 void validate(TextEncoding encoding,SourceLocation location) {
     if (!valid(encoding.kind)) throw runtime_error(RuntimeError::encoding_kind,location);
@@ -113,6 +113,7 @@ std::u16string decode_text_bytes(std::string_view bytes,TextEncoding encoding,bo
     validate(encoding,location);
     if(bytes.size()>data_limit)throw runtime_error(RuntimeError::encoding_limit,location);
     if(detect_preamble)detect_encoding(bytes,encoding);
+    if(iso2022_code_page(static_cast<std::uint16_t>(encoding.kind))){IsoDecoderState state;return iso2022_decode(bytes,static_cast<std::uint16_t>(encoding.kind),state,true,encoding.strict,location);}
     if(iscii_code_page(static_cast<std::uint16_t>(encoding.kind))){IsciiDecoderState state;return iscii_decode(bytes,static_cast<std::uint16_t>(encoding.kind),state,true,encoding.strict,location);}
     if(encoding.kind==TextEncodingKind::gb18030){std::string retained;return gb18030_decode(bytes,0,true,encoding.strict,retained,location);}
     if(encoding.kind==TextEncodingKind::utf8)return decode_utf8(bytes,encoding,location);
@@ -154,6 +155,7 @@ std::u16string TextDecoder::decode(std::string_view bytes,bool final,SourceLocat
     }
     std::string_view view=data;
     if(detect_){detect_encoding(view,encoding_);detect_=false;}
+    if(iso2022_code_page(static_cast<std::uint16_t>(encoding_.kind))){auto state=iso_;auto result=iso2022_decode(view,static_cast<std::uint16_t>(encoding_.kind),state,final,encoding_.strict,location);if(result.size()>data_limit-produced_)throw runtime_error(RuntimeError::encoding_limit,location);produced_+=result.size();iso_=state;finished_=final;return result;}
     if(iscii_code_page(static_cast<std::uint16_t>(encoding_.kind))){
         auto state=iscii_;auto result=iscii_decode(view,static_cast<std::uint16_t>(encoding_.kind),state,final,encoding_.strict,location);
         if(result.size()>data_limit-produced_)throw runtime_error(RuntimeError::encoding_limit,location);
@@ -198,6 +200,7 @@ std::u16string TextDecoder::decode(std::string_view bytes,bool final,SourceLocat
 std::string encode_text_bytes(std::u16string_view text,TextEncoding encoding,SourceLocation location) {
     validate(encoding,location);
     if(text.size()>data_limit)throw runtime_error(RuntimeError::encoding_limit,location);
+    if(iso2022_code_page(static_cast<std::uint16_t>(encoding.kind))){IsoEncoderState state;return iso2022_encode(text,static_cast<std::uint16_t>(encoding.kind),state,true,encoding.strict,location);}
     if(iscii_code_page(static_cast<std::uint16_t>(encoding.kind))){IsciiEncoderState state;return iscii_encode(text,static_cast<std::uint16_t>(encoding.kind),state,true,encoding.strict,location);}
     if(encoding.kind==TextEncodingKind::gb18030)return gb18030_encode(text,encoding.strict,location);
     std::string result;result.reserve(text.size());

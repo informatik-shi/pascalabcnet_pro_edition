@@ -33,6 +33,7 @@ add_library(abc_core
     src/dbcs.cpp
     src/gb18030.cpp
     src/iscii.cpp
+    src/iso2022.cpp
     src/text_encoder.cpp
     src/encoding.cpp
     src/enumeration.cpp
@@ -384,6 +385,13 @@ if(BUILD_TESTING)
         target_compile_options(abc_iscii_tests PRIVATE /utf-8)
     endif()
     add_test(NAME iscii_encodings COMMAND abc_iscii_tests)
+    add_executable(abc_iso2022_tests tests/iso2022_tests.cpp)
+    target_link_libraries(abc_iso2022_tests PRIVATE abc_core)
+    if(MSVC)
+        target_compile_options(abc_iso2022_tests PRIVATE /utf-8)
+    endif()
+    add_test(NAME iso2022_encodings COMMAND ${CMAKE_COMMAND} -DABC_RUNNER=$<TARGET_FILE:abc_iso2022_tests> "-DABC_ARCHIVE=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/iso2022-reference.zip" "-DABC_TEST_DIR=${CMAKE_CURRENT_BINARY_DIR}" -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/iso2022-reference.cmake")
+    add_test(NAME iso2022_encodings_example COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/examples/iso2022-encodings.pas")
     add_test(NAME iscii_encodings_example COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/examples/iscii-encodings.pas")
     add_test(NAME gb18030_encoding_example COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/examples/gb18030-encoding.pas")
     add_test(NAME double_byte_encodings_example COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/examples/double-byte-encodings.pas")

@@ -19,7 +19,7 @@ TextEncoding descriptor(std::int32_t code,SourceLocation location) {
     case 20127:return {TextEncodingKind::ascii,false,false};
     case 54936:return {TextEncodingKind::gb18030,false,false};
     default:
-        if(code>0 && code<=65535 && (single_byte_codec(static_cast<std::uint16_t>(code)) || double_byte_codec(static_cast<std::uint16_t>(code)) || iscii_code_page(static_cast<std::uint16_t>(code))))return {static_cast<TextEncodingKind>(code),false,false};
+        if(code>0 && code<=65535 && (single_byte_codec(static_cast<std::uint16_t>(code)) || double_byte_codec(static_cast<std::uint16_t>(code)) || iscii_code_page(static_cast<std::uint16_t>(code)) || iso2022_code_page(static_cast<std::uint16_t>(code))))return {static_cast<TextEncodingKind>(code),false,false};
         throw runtime_error(RuntimeError::encoding_kind,location,std::to_string(code));
     }
 }
@@ -29,6 +29,13 @@ std::int32_t named_code(const Value& name,SourceLocation location) {
     if(const auto code=encoding_alias_code(text))return code;
     if(const auto code=double_byte_alias_code(text))return code;
     if(text==u"gb18030")return 54936;
+    if(text==u"csiso2022jp")return 50221;
+    if(text==u"csiso2022kr")return 50225;
+    if(text==u"hz-gb-2312")return 52936;
+    if(text==u"iso-2022-jp")return 50220;
+    if(text==u"iso-2022-kr")return 50225;
+    if(text==u"iso-2022-kr-7")return 50225;
+    if(text==u"iso-2022-kr-7bit")return 50225;
     if(text==u"x-iscii-as")return 57006;
     if(text==u"x-iscii-be")return 57003;
     if(text==u"x-iscii-de")return 57002;

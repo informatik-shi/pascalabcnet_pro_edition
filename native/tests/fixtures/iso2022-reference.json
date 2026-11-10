@@ -1,0 +1,61 @@
+{
+    "schema":  2,
+    "primitive_runtimes":  [
+                               "Windows .NET Framework 4.0.30319.42000",
+                               "Windows .NET 10.0.12"
+                           ],
+    "primitive_fixtures_identical":  true,
+    "uncompressed_fixture_bytes":  95408601,
+    "sha256_uncompressed_fixture_bytes":  "6636b6976e356635c34f58e9d1ea00a82362393e1e19ada2befc195ae41e4d02",
+    "codecs":  5,
+    "bmp_inputs":  327680,
+    "contextual_bmp_inputs":  3735552,
+    "contextual_byte_pairs":  11206656,
+    "splits_per_suffix":  3,
+    "aliases":  7,
+    "file_recipes_per_runtime":  9725,
+    "legacy_file_differences":  4062,
+    "scope":  "Actual complete default/strict ISO-2022-JP/KR/HZ primitive fixtures are byte-identical between both runtimes. Every UTF-16 BMP input, all suffixes in retained/finalized encoder states and every byte pair after complete/incomplete mode prefixes are checked, including all splits. Native file behavior follows the selected modern reader flush policy; 4062 legacy file rows remain explicit compatibility gaps. 139 of 140 Framework code pages supported; UTF-7, full Encoding/object APIs and whole library modules remain unfinished. No Pascal compiler is invoked.",
+    "artifacts":  [
+                      {
+                          "path":  "reference/iso2022-encoding.cs",
+                          "sha256_lf":  "e41273b87f41ee10f366b4cca4e5bf7b3e597e6b07ed0c117ae570d563faf5ba"
+                      },
+                      {
+                          "path":  "reference/iso2022-files.cs",
+                          "sha256_lf":  "7eb08cdea7fa0dffa3213656103a23a1c795aefe99b969c77a6cf083495b77d9"
+                      },
+                      {
+                          "path":  "reference/generate-iso2022.ps1",
+                          "sha256_lf":  "026784365dfc677252fb4dce1dde3f5e9c482daa4beaf1e8ab8b2ac8cc7c7fbc"
+                      },
+                      {
+                          "path":  "fixtures/iso2022-reference.zip",
+                          "sha256_bytes":  "6264e9f3b99699f3537b18df4819ede351c28dff338c2b985f43c1385e0352e0"
+                      },
+                      {
+                          "path":  "fixtures/iso2022-files-reference.tsv",
+                          "sha256_lf":  "05025543bc1ff89bf2755b751b29f613469019897e266e775ba272ff0ccad3e3"
+                      },
+                      {
+                          "path":  "fixtures/iso2022-files-framework-reference.tsv",
+                          "sha256_lf":  "235754ec4952495bcac4a37df19e52c3ef6f8c253e2ba7f3c26902bcbe392560"
+                      },
+                      {
+                          "path":  "fixtures/iso2022-reference.md",
+                          "sha256_lf":  "9289c02c1e4c2bae3819ffecc39c6f773667467e54238988e9d572b6fb71af35"
+                      },
+                      {
+                          "path":  "fixtures/encoding-aliases-reference.tsv",
+                          "sha256_lf":  "b6f31da1cf7b9b39c653bfb3a2f6eefcf18fb1aec7a41e0545d5f24a6ff1cfec"
+                      },
+                      {
+                          "path":  "../tools/generate-iso2022.mjs",
+                          "sha256_lf":  "f39a3c83eaead1a862912eddb31d01c22ffd7cae80c0807c128d0987cf0ce3ca"
+                      },
+                      {
+                          "path":  "iso2022-reference.cmake",
+                          "sha256_lf":  "f8cd4f5e61d8ccec72cdbdafba87d58abc89d8151a2030ac7537b38c20047a9c"
+                      }
+                  ]
+}

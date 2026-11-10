@@ -360,6 +360,7 @@ def main():
                 ("type-properties.pas", "Int32\nSystem.Int32\nSystem\ntype-properties.Coordinate\nDictionary`2\nEnumerator\nSystem.Int32, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089\n"),
                 ("named-callables.pas", "Check False\nnamed-callables.Check\nTrue\nTrue True\nFalse\n5 RefSecond\n"),
                 ("predicate-generics.pas", "Predicate2`2 False\nPredicate3`3 False\nPABCSystem\nTrue True\nFalse\n4\n"),
+                ("iso2022-encodings.pas", "50220 [27,36,66,70,124,37,43,27,40,66,65]\n50221 [27,36,66,70,124,27,40,73,54,27,40,66,65]\n50222 [27,36,66,70,124,14,54,15,27,40,66,65]\n50225 한국어\n[126,123,86,80,78,68,126,125,126,126]\n52936 中文~\nISO2022Encoding\n"),
                 ("iscii-encodings.pas", "57002 ISCIIEncoding\nकকகకಕകકକਕ\n[179,239,67,179,239,68,179,239,66]\n57011 ਕ\n"),
                 ("gb18030-encoding.pas", "54936 GB18030Encoding\n中文 日本語 한국어 🌍\n[148,57,177,49]\n[129,48,129,48]\n"),
                 ("double-byte-encodings.pas", "932 [147,250,150,123,140,234]\n日本語\n936 中文\n950 中文\n949 한국어\nDBCSCodePageEncoding\n51932 日本語 EUCJPEncoding\n"),
@@ -2061,6 +2062,15 @@ def main():
                     or f"{iscii_error}:2:" not in invalid.stderr):
                 raise RuntimeError(f"{name} ISCII final-font bound failed: {invalid.stdout!r} {invalid.stderr!r}")
             results[-1]["native_iscii_and_bilingual_final_font_bound"] = "passed"
+            iso_error = folder / "Предел возврата ASCII.pas"
+            iso_error.write_text("begin Write('before');\nEncoding.GetEncoding(50220).GetBytes(StringOfChar('日',524286));end.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(iso_error)], text=True, encoding="utf-8", capture_output=True, cwd=folder, env=env, timeout=10)
+            if (invalid.returncode != 1 or invalid.stdout != "before" or "E_LIMIT" not in invalid.stderr
+                    or "EN: Encoding conversion exceeds the native size limit" not in invalid.stderr
+                    or "RU: Превышен допустимый размер преобразования кодировки" not in invalid.stderr
+                    or f"{iso_error}:2:" not in invalid.stderr):
+                raise RuntimeError(f"{name} ISO final ASCII bound failed: {invalid.stdout!r} {invalid.stderr!r}")
+            results[-1]["native_iso2022_hz_and_bilingual_ascii_bound"] = "passed"
             results[-1]["native_generic_enumerators_boxing_resources_and_bilingual_errors"] = "passed"
             results[-1]["native_typed_dictionary_enumerators_and_bilingual_errors"] = "passed"
             results[-1]["native_dictionary_factories_views_callbacks_and_bilingual_errors"] = "passed"

@@ -1,6 +1,7 @@
 #pragma once
 #include "abc/core.hpp"
 #include "iscii.hpp"
+#include "iso2022.hpp"
 #include <string_view>
 
 namespace abc {
@@ -17,6 +18,7 @@ class TextEncoder {
     TextEncoding encoding_;
     char16_t carry_=0;
     IsciiEncoderState iscii_;
+    IsoEncoderState iso_;
 public:
     explicit TextEncoder(TextEncoding encoding):encoding_(encoding){}
     std::string encode(std::u16string_view text,bool final,SourceLocation location);
@@ -27,6 +29,7 @@ class TextDecoder {
     std::string carry_;
     std::size_t received_=0,produced_=0;
     IsciiDecoderState iscii_;
+    IsoDecoderState iso_;
 public:
     explicit TextDecoder(TextEncoding encoding,bool detect_preamble=true):encoding_(encoding),detect_(detect_preamble){}
     std::u16string decode(std::string_view bytes,bool final,SourceLocation location);
