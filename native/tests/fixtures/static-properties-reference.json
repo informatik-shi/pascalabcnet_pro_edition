@@ -1,0 +1,48 @@
+{
+  "schema": 1,
+  "reference_runtimes": [
+    "Windows .NET Framework 4.0.30319.42000",
+    "Windows .NET 10.0.12"
+  ],
+  "reference_executions": 64,
+  "fixtures_identical": true,
+  "scope": "Actual strict CLR static property reads/writes, callable getters and accessors, compound/index argument order, initialization/reentry and default arguments. Static indexed/default-property recipes lower to actual typed CLR accessor methods; C# has no static indexer syntax. Fresh closed reference types isolate state and do not claim Pascal generic declarations. No original Pascal compiler invoked and no development runtime shipped. Record static storage, explicit constructors, complete inference/visibility/reflection and complete standard units remain unfinished.",
+  "artifacts": [
+    {
+      "path": "reference/static-properties.cs",
+      "sha256_lf": "f0ee162af13bd6164de260ee6944dcde2fb45da5b3ef2700f15eeca07264f42a"
+    },
+    {
+      "path": "reference/generate-static-properties.ps1",
+      "sha256_lf": "c3db6d8b5222b5484a1bd2b0e52d109eaa2da9bd57c019274fdb67cf76600a79"
+    },
+    {
+      "path": "fixtures/static-properties-reference.tsv",
+      "sha256_lf": "84e0e9a89de0c719c7f156da65b7afab4d91ab6d08ad761cd49de9d6d434aca4"
+    },
+    {
+      "path": "fixtures/static-properties-template.pas",
+      "sha256_lf": "43fcf723d67eb69a10a5ac8aa69d59520ca6403dfac96d26d1a3b73400b4d69e"
+    },
+    {
+      "path": "fixtures/static-properties-reference.md",
+      "sha256_lf": "86aa6f319f6612642ac7c1892886aff0fa6ff53893e4cd27b291bc78b10d2a5f"
+    },
+    {
+      "path": "../../TestSuite/defaultparams4.pas",
+      "sha256_lf": "6c3578c5b8f014c6fc9e1c8b36075787b677428083105da8c99c45f6410f4da0"
+    },
+    {
+      "path": "../../TestSuite/lambda_static_1.pas",
+      "sha256_lf": "3aaccf0f12579f06814799b890e6db049f731c90490348bb6edaaa213b2df649"
+    },
+    {
+      "path": "../../Parsers/PascalABCParserNewSaushkin/ABCPascal.y",
+      "sha256_lf": "3206f4cab3eebd2cf292ef1b3ae911535c6f3fa03057269f09e10f7519d91225"
+    },
+    {
+      "path": "../../TestSuite/intellisense_tests/property5.pas",
+      "sha256_lf": "822bddc062e85e54f8f6163f614352a8fec3b4a2f8a134bd229ec916ee22fcd7"
+    }
+  ]
+}

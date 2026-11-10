@@ -52,6 +52,7 @@ struct Module {
     std::vector<FixedArrayShape> fixed_arrays;
     std::vector<StaticClass> static_classes;
     std::vector<StaticMethod> static_methods;
+    std::vector<StaticProperty> static_properties;
 };
 
 Module analyze_pascal(std::string_view source);

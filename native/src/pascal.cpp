@@ -258,7 +258,7 @@ struct SyntaxType {
     std::shared_ptr<SyntaxRoutine> initializer{};
     std::vector<SyntaxStaticField> static_fields{};
 };
-struct SyntaxProperty { Token name;std::shared_ptr<SyntaxType> type;std::optional<Token> getter,setter;MemberAccess access=MemberAccess::public_member;std::vector<std::pair<Token,std::shared_ptr<SyntaxType>>> indices{};bool default_indexer=false;std::shared_ptr<SyntaxType> explicit_interface{};std::shared_ptr<SyntaxExpr> getter_expression{};std::shared_ptr<SyntaxStmt> setter_statement{}; };
+struct SyntaxProperty { Token name;std::shared_ptr<SyntaxType> type;std::optional<Token> getter,setter;MemberAccess access=MemberAccess::public_member;std::vector<std::pair<Token,std::shared_ptr<SyntaxType>>> indices{};bool default_indexer=false;std::shared_ptr<SyntaxType> explicit_interface{};std::shared_ptr<SyntaxExpr> getter_expression{};std::shared_ptr<SyntaxStmt> setter_statement{};bool static_member=false; };
 struct SyntaxRoutine;
 struct SyntaxExpr {
     SyntaxExprKind kind;
@@ -522,30 +522,31 @@ private:
                         : is("protected") ? MemberAccess::protected_member : MemberAccess::internal_member;
                     consume();continue;
                 }
-                const bool static_member=object&&accept("static");
+                const bool static_member=accept("static");
                 if ((is("function") || is("procedure") || is("constructor"))) {
                     auto method=routine(true);method->access=access;method->static_member=static_member;
                     if(static_member&&(method->constructor||method->explicit_interface))throw Error("E_UNSUPPORTED",method->name.location,"Static constructors and interface methods are not ported yet","Статические конструкторы и методы интерфейсов ещё не перенесены");
                     result->methods.push_back(std::move(method));continue;
                 }
-                if(static_member&&is("property"))throw Error("E_UNSUPPORTED",current_.location,"Static properties are not ported yet","Статические свойства ещё не перенесены");
                 if (accept("property")) {
-                    auto property=std::make_shared<SyntaxProperty>();property->access=access;
+                    auto property=std::make_shared<SyntaxProperty>();property->access=access;property->static_member=static_member;
                     if(!explicit_member_header(property->explicit_interface,property->name))property->name=name();
                     property_indices(*property);
                     expect(":");property->type=type_syntax();
                     property_accessors(*property);
                     if (!accept(";") && !is("end")) fail("Expected ';' after property");
                     property_default(*property);
+                    if(static_member&&property->explicit_interface)throw Error("E_TYPE",property->name.location,"A static property cannot implement an instance interface property","Статическое свойство не реализует нестатическое свойство интерфейса");
                     if (result->properties.size()>=256) throw Error("E_LIMIT",property->name.location,"Class property limit exceeded");
                     result->properties.push_back(std::move(property));continue;
                 }
                 if (object && (is("destructor") || is("class") || is("var")))
                     throw Error("E_UNSUPPORTED",current_.location,"Class destructors, static members and var field sections are not ported yet");
                 const bool static_field=static_member;
+                if(static_field&&!object)throw Error("E_UNSUPPORTED",current_.location,"Record static fields are not ported yet","Статические поля записей ещё не перенесены");
                 std::vector<Token> fields{name()}; while (accept(",")) fields.push_back(name());
                 std::shared_ptr<SyntaxType> type;if(accept(":"))type=type_syntax();
-                const bool initialized=accept(":=");
+                const bool initialized=accept(":=")||(type&&accept("="));
                 if(static_field){
                     if(fields.size()>1&&initialized)throw Error("E_TYPE",fields.front().location,"Field initializer requires exactly one field name");
                     std::unique_ptr<SyntaxExpr> value;if(initialized)value=expression();if(!type&&!value)fail("Field requires a type or initializer");
@@ -716,7 +717,7 @@ private:
         result.names.push_back(name());
         while (accept(",")) result.names.push_back(name());
         if (accept(":")) result.annotation = type_syntax();
-        if (accept(":=")) result.expression = expression();
+        if (accept(":=")||(result.annotation&&accept("="))) result.expression = expression();
         if (!result.annotation && !result.expression) fail("Variable needs a type or an initializer");
         if (result.names.size() > 1 && result.expression) fail("Multiple initialized names are not supported yet");
         return result;
@@ -1547,23 +1548,34 @@ private:
     }
     ABC_PASCAL_NOINLINE std::size_t property_expression_accessor(Type owner,Type result,const std::shared_ptr<SyntaxProperty>& property,std::shared_ptr<SyntaxExpr> expression,std::shared_ptr<SyntaxStmt> setter={}){
         if(module_.routines.size()>=256)throw Error("E_LIMIT",property->name.location,"Routine limit exceeded");
-        hir::RoutineBody helper;helper.signature.name="$property_expression_"+std::to_string(module_.routines.size());helper.signature.owner=owner;helper.signature.result=setter?Type::unit:result;helper.signature.access=MemberAccess::private_member;
+        hir::RoutineBody helper;helper.signature.name="$property_expression_"+std::to_string(module_.routines.size());helper.signature.owner=property->static_member?Type::invalid:owner;helper.signature.result=setter?Type::unit:result;helper.signature.access=property->static_member?MemberAccess::public_member:MemberAccess::private_member;
+        if(property->static_member){const auto member=helper.signature.name;helper.signature.name=info(owner,property->name.location).name+".$static."+member;module_.static_methods.push_back({owner,member,module_.routines.size(),MemberAccess::private_member});}
         const auto local=[&](std::string name,Type type){const auto id=module_.locals.size();module_.locals.push_back({std::move(name),type,false});helper.signature.locals.push_back(id);return id;};
-        helper.signature.parameters.push_back({local("$self",owner),owner,info(owner,property->name.location).kind==CompoundKind::record});
+        if(!property->static_member)helper.signature.parameters.push_back({local("$self",owner),owner,info(owner,property->name.location).kind==CompoundKind::record});
         for(const auto& index:property->indices){if(setter&&index.first.text=="value")throw Error("E_DUPLICATE",index.first.location,"Property index conflicts with the setter value parameter","Индекс свойства совпадает с параметром value метода записи");const auto type=resolve_type(*index.second);helper.signature.parameters.push_back({local(index.first.text,type),type});}
         if(setter)helper.signature.parameters.push_back({local("value",result),result});else helper.signature.result_local=local("$result",result);
-        const auto id=module_.routines.size();module_.routines.push_back(std::move(helper));property_expression_bindings_.push_back({id,property,std::move(expression),std::move(setter)});return id;
+        const auto id=module_.routines.size();module_.routines.push_back(std::move(helper));property_expression_bindings_.push_back({id,property,std::move(expression),std::move(setter),owner});return id;
+    }
+    ABC_PASCAL_NOINLINE std::size_t static_property_accessor(Type owner,Type type,const std::shared_ptr<SyntaxProperty>& property,const Token& accessor,bool write,const std::vector<Type>& indices){
+        if(const auto methods=static_methods_.find(owner);methods!=static_methods_.end()&&methods->second.contains(accessor.text)){
+            std::optional<std::size_t> selected;for(auto candidate:methods->second.at(accessor.text)){const auto& signature=module_.routines[candidate].signature;if(signature.result!=(write?Type::unit:type)||signature.parameters.size()!=indices.size()+(write?1U:0U))continue;bool matches=true;for(std::size_t n=0;n<signature.parameters.size();++n){const auto expected=n<indices.size()?indices[n]:type;if(signature.parameters[n].type!=expected||signature.parameters[n].by_reference||signature.parameters[n].variadic)matches=false;}if(matches){if(selected)throw Error("E_TYPE",accessor.location,"Ambiguous static property accessor");selected=candidate;}}
+            if(!selected)throw Error("E_TYPE",accessor.location,"Static property method accessor has an incompatible signature");return *selected;
+        }
+        if(auto field=static_field_expression(owner,accessor);field&&field->type!=type)throw Error("E_TYPE",accessor.location,"Property accessor type must match exactly");
+        if(!write)return property_expression_accessor(owner,type,property,make_expression(SyntaxExprKind::name,accessor));
+        auto body=std::make_shared<SyntaxStmt>();body->kind=SyntaxStmtKind::assignment;body->token=accessor;body->target=make_expression(SyntaxExprKind::name,accessor);body->expression=make_expression(SyntaxExprKind::name,Token{TokenKind::name,"value",accessor.location});return property_expression_accessor(owner,type,property,{},std::move(body));
     }
     ABC_PASCAL_NOINLINE void bind_property_expressions(){
         for(const auto& binding:property_expression_bindings_){
             auto& helper=module_.routines[binding.id];const auto first=module_.locals.size();
-            in_routine_=true;current_result_=helper.signature.result;current_owner_=helper.signature.owner;current_name_=helper.signature.name;current_self_=helper.signature.parameters[0].local;scopes_.emplace_back();
-            scopes_.back()["self"]=current_self_;if(helper.signature.parameters[0].by_reference)reference_parameters_.insert(current_self_);else constant_parameters_.insert(current_self_);
-            for(std::size_t n=0;n<binding.property->indices.size();++n)scopes_.back()[binding.property->indices[n].first.text]=helper.signature.parameters[n+1].local;
+            in_routine_=true;current_result_=helper.signature.result;current_owner_=binding.owner;current_name_=helper.signature.name;current_static_initializer_=binding.property->static_member;scopes_.emplace_back();
+            if(!binding.property->static_member){current_self_=helper.signature.parameters[0].local;scopes_.back()["self"]=current_self_;if(helper.signature.parameters[0].by_reference)reference_parameters_.insert(current_self_);else constant_parameters_.insert(current_self_);}
+            const auto offset=binding.property->static_member?0U:1U;for(std::size_t n=0;n<binding.property->indices.size();++n)scopes_.back()[binding.property->indices[n].first.text]=helper.signature.parameters[n+offset].local;
             if(binding.setter){scopes_.back()["value"]=helper.signature.parameters.back().local;helper.body=statement(*binding.setter);}
             else{helper.body.kind=hir::StmtKind::return_stmt;helper.body.location=binding.expression->token.location;helper.body.expression=convert(expression(*binding.expression,helper.signature.result),helper.signature.result);}
+            if(binding.property->static_member&&static_class_indices_.contains(current_owner_)){hir::Stmt body;body.location=binding.property->name.location;hir::Stmt initialize;initialize.kind=hir::StmtKind::call;initialize.location=body.location;initialize.expression=static_initializer_expression(current_owner_,body.location);body.statements.push_back(std::move(initialize));body.statements.push_back(std::move(helper.body));helper.body=std::move(body);}
             for(auto n=first;n<module_.locals.size();++n)if(!module_.locals[n].global&&!lambda_locals_.contains(n))helper.signature.locals.push_back(n);
-            constant_parameters_.erase(current_self_);reference_parameters_.erase(current_self_);scopes_.pop_back();in_routine_=false;current_result_=Type::unit;current_owner_=Type::invalid;current_name_.clear();
+            if(!binding.property->static_member){constant_parameters_.erase(current_self_);reference_parameters_.erase(current_self_);}scopes_.pop_back();in_routine_=false;current_result_=Type::unit;current_owner_=Type::invalid;current_static_initializer_=false;current_name_.clear();
         }
     }
     ABC_PASCAL_NOINLINE void register_properties(const SyntaxStmt& source) {
@@ -1572,9 +1584,9 @@ private:
             for (const auto& property:syntax->properties) {
                 const auto qualifier=property->explicit_interface?resolve_type(*property->explicit_interface):Type::invalid;
                 if(qualifier!=Type::invalid&&(!compound(qualifier)||!interface_kind(info(qualifier,property->name.location))))throw Error("E_TYPE",property->name.location,"Explicit property qualifier must be an interface","Явная реализация свойства требует имени интерфейса");
-                auto& properties=qualifier==Type::invalid?class_properties_[owner]:class_explicit_properties_[owner][qualifier];
+                auto& properties=property->static_member?static_properties_[owner]:qualifier==Type::invalid?class_properties_[owner]:class_explicit_properties_[owner][qualifier];
                 const auto& fields=info(owner,property->name.location).fields;
-                if(properties.contains(property->name.text)||(qualifier==Type::invalid&&((property->name.text=="create" && class_constructors_.contains(owner))
+                if(properties.contains(property->name.text)||(qualifier==Type::invalid&&((class_properties_.contains(owner)&&class_properties_.at(owner).contains(property->name.text))||(static_properties_.contains(owner)&&static_properties_.at(owner).contains(property->name.text))||(property->name.text=="create" && class_constructors_.contains(owner))
                     || (class_methods_.contains(owner) && class_methods_.at(owner).contains(property->name.text))
                     || (static_methods_.contains(owner) && static_methods_.at(owner).contains(property->name.text))
                     || std::any_of(fields.begin(),fields.end(),[wanted=property->name.text](const auto& field){return field.name==wanted;}))))
@@ -1582,11 +1594,12 @@ private:
                 ClassProperty bound{resolve_type(*property->type),{},{},{},property->default_indexer};
                 for(const auto& index:property->indices)bound.indices.push_back(resolve_type(*index.second));
                 if(bound.default_indexer&&qualifier==Type::invalid)for(const auto& [key,existing]:properties){(void)key;if(existing.default_indexer)throw Error("E_TYPE",property->name.location,"Ambiguous default class property");}
-                if(property->getter)bound.getter=property_accessor(owner,bound.type,*property->getter,false,bound.indices);
+                if(property->getter)bound.getter=property->static_member?static_property_accessor(owner,bound.type,property,*property->getter,false,bound.indices):property_accessor(owner,bound.type,*property->getter,false,bound.indices);
                 else if(property->getter_expression)bound.getter=property_expression_accessor(owner,bound.type,property,property->getter_expression);
-                if (property->setter) bound.setter=property_accessor(owner,bound.type,*property->setter,true,bound.indices);
+                if (property->setter) bound.setter=property->static_member?static_property_accessor(owner,bound.type,property,*property->setter,true,bound.indices):property_accessor(owner,bound.type,*property->setter,true,bound.indices);
                 else if(property->setter_statement)bound.setter=property_expression_accessor(owner,bound.type,property,{},property->setter_statement);
                 properties[property->name.text]=bound;
+                if(property->static_member)module_.static_properties.push_back({owner,property->name.text,bound.type,bound.getter,bound.setter,bound.indices,property->access,bound.default_indexer});
             }
         }
     }
@@ -2713,8 +2726,17 @@ private:
         for(std::size_t n=0;n<result->arguments.size();++n){const auto& parameter=signature.parameters[n];if(parameter.by_reference){if(!lvalue(*result->arguments[n])||result->arguments[n]->type!=parameter.type)throw Error("E_TYPE",result->location,"var argument requires an assignable value of exactly the parameter type");}else result->arguments[n]=convert(std::move(result->arguments[n]),parameter.type,false,!parameter.read_only);}
         return result;
     }
+    std::unique_ptr<hir::Expr> static_property_expression(Type owner,const Token& token){
+        const auto properties=static_properties_.find(owner);if(properties==static_properties_.end()||!properties->second.contains(token.text))return {};const auto property=properties->second.at(token.text);
+        auto result=std::make_unique<hir::Expr>();result->kind=hir::ExprKind::property_access;result->type=property.type;result->location=token.location;result->getter=property.getter;result->setter=property.setter;result->operation="static";result->operation_type=owner;return result;
+    }
+    std::unique_ptr<hir::Expr> static_property_member(Type owner,const SyntaxExpr& source){
+        auto property=static_property_expression(owner,source.token);if(!property)return {};
+        if(source.kind==SyntaxExprKind::member_call||source.kind==SyntaxExprKind::call){auto call=std::make_unique<hir::Expr>();call->location=source.token.location;call->left=std::move(property);bind_value_call(*call,source.arguments);return call;}return property;
+    }
     std::unique_ptr<hir::Expr> implicit_class_member(const SyntaxExpr& source,Type expected) {
         if (current_owner_==Type::invalid || (source.kind!=SyntaxExprKind::name && source.kind!=SyntaxExprKind::call)) return {};
+        if(static_properties_.contains(current_owner_)&&static_properties_.at(current_owner_).contains(source.token.text)){if(const auto local=lookup(source.token);local&&!module_.locals[*local].global)return {};return static_property_member(current_owner_,source);}
         if(static_methods_.contains(current_owner_)&&static_methods_.at(current_owner_).contains(source.token.text)){if(const auto local=lookup(source.token);local&&!module_.locals[*local].global&&!(source.kind==SyntaxExprKind::call&&module_.locals[*local].name=="result"))return {};return static_method_expression(current_owner_,source,expected);}
         if(auto field=static_field_expression(current_owner_,source.token)){if(const auto local=lookup(source.token);local&&!module_.locals[*local].global)return {};if(source.kind==SyntaxExprKind::call){auto call=std::make_unique<hir::Expr>();call->location=source.token.location;call->left=std::move(field);bind_value_call(*call,source.arguments);return call;}return field;}
         const auto methods=class_methods_.find(current_owner_);
@@ -2926,7 +2948,7 @@ private:
     }
     ABC_PASCAL_NOINLINE std::unique_ptr<hir::Expr> bind_member_expression(const SyntaxExpr& source,Type expected,std::unique_ptr<hir::Expr> result) {
         (void)expected;
-        if(!result->left&&source.left&&source.left->kind==SyntaxExprKind::name&&!lookup(source.left->token)){const auto owner=aliases_.find(source.left->token.text);if(owner!=aliases_.end()){if(auto method=static_method_expression(owner->second,source,expected))return method;if(auto field=static_field_expression(owner->second,source.token)){if(source.kind==SyntaxExprKind::member_call){auto call=std::make_unique<hir::Expr>();call->location=source.token.location;call->left=std::move(field);bind_value_call(*call,source.arguments);return call;}return field;}}}
+        if(!result->left&&source.left&&source.left->kind==SyntaxExprKind::name&&!lookup(source.left->token)){const auto owner=aliases_.find(source.left->token.text);if(owner!=aliases_.end()){if(auto property=static_property_member(owner->second,source))return property;if(auto method=static_method_expression(owner->second,source,expected))return method;if(auto field=static_field_expression(owner->second,source.token)){if(source.kind==SyntaxExprKind::member_call){auto call=std::make_unique<hir::Expr>();call->location=source.token.location;call->left=std::move(field);bind_value_call(*call,source.arguments);return call;}return field;}}}
         do {
  {
             if(bind_inifile_static(*result,source))break;
@@ -3745,6 +3767,7 @@ private:
         }
         case SyntaxExprKind::construction: return bind_construction_expression(source,expected,std::move(result));
         case SyntaxExprKind::index: {
+            if(source.left->kind==SyntaxExprKind::name&&!lookup(source.left->token)&&aliases_.contains(source.left->token.text)){const auto owner=aliases_.at(source.left->token.text);if(static_properties_.contains(owner))for(const auto& [name,property]:static_properties_.at(owner))if(property.default_indexer){auto value=static_property_expression(owner,Token{TokenKind::name,name,source.token.location});if(!bind_property_indices(value,source))throw Error("E_TYPE",source.token.location,"Static default property requires indices");return value;}}
             if (source.left->kind == SyntaxExprKind::field && source.left->token.text == "elem") {
                 auto receiver = expression(*source.left->left);
                 if (compound(receiver->type)) {
@@ -4070,8 +4093,9 @@ private:
             if (result.target->kind==hir::ExprKind::property_access) {
                 auto property=std::move(result.target);
                 if (!property->setter) throw Error("E_TYPE",property->location,"Property is read-only");
+                const auto indices=property->operation=="interface"?interface_contract(module_.types,property->operation_type).at(*property->setter).parameters.size()-1:module_.routines.at(*property->setter).signature.parameters.size()-(property->operation=="static"?1U:2U);if(property->arguments.size()!=indices)throw Error("E_TYPE",property->location,"Indexed property requires indices","Для индексируемого свойства нужны индексы");
                 auto setter=std::make_unique<hir::Expr>();setter->kind=hir::ExprKind::user_call;setter->type=Type::unit;setter->location=property->location;setter->local=*property->setter;
-                if(property->operation=="interface"){setter->kind=hir::ExprKind::interface_call;setter->operation_type=property->operation_type;setter->left=std::move(property->left);}else setter->arguments.push_back(std::move(property->left));for(auto& index:property->arguments)setter->arguments.push_back(std::move(index));setter->arguments.push_back(convert(value(property->type),property->type));
+                if(property->operation=="interface"){setter->kind=hir::ExprKind::interface_call;setter->operation_type=property->operation_type;setter->left=std::move(property->left);}else if(property->operation!="static")setter->arguments.push_back(std::move(property->left));for(auto& index:property->arguments)setter->arguments.push_back(std::move(index));setter->arguments.push_back(convert(value(property->type),property->type));
                 result.kind=hir::StmtKind::call;result.expression=std::move(setter);return result;
             }
             if (result.target->kind==hir::ExprKind::list_capacity && result.target->local==static_cast<std::size_t>(ListCapacity::get)) {
@@ -4472,7 +4496,7 @@ private:
     ABC_PASCAL_NOINLINE bool bind_property_indices(std::unique_ptr<hir::Expr>& value,const SyntaxExpr& source){
         const auto parameters=[&](const hir::Expr& property){std::vector<Type> indices;
             if(property.operation=="interface"){const auto contract=interface_contract(module_.types,property.operation_type);const auto& member=contract[property.getter?*property.getter:*property.setter];const auto count=member.parameters.size()-(property.getter?0U:1U);for(std::size_t i=0;i<count;++i)indices.push_back(member.parameters[i].type);}
-            else{const auto& signature=module_.routines[property.getter?*property.getter:*property.setter].signature;const auto count=signature.parameters.size()-(property.getter?1U:2U);for(std::size_t i=0;i<count;++i)indices.push_back(signature.parameters[i+1].type);}return indices;};
+            else{const auto& signature=module_.routines[property.getter?*property.getter:*property.setter].signature;const auto offset=property.operation=="static"?0U:1U;const auto count=signature.parameters.size()-offset-(property.getter?0U:1U);for(std::size_t i=0;i<count;++i)indices.push_back(signature.parameters[i+offset].type);}return indices;};
         const bool pending=value->kind==hir::ExprKind::property_access&&value->arguments.empty()&&!parameters(*value).empty();
         if(!pending&&compound(value->type)){
             const auto owner=value->type;const auto shape=info(owner,value->location);std::optional<ClassProperty> property;
@@ -4507,8 +4531,9 @@ private:
         }
         return convert(std::move(value),target);
     }
-    hir::Stmt compound_assignment(const SyntaxStmt& source,std::unique_ptr<hir::Expr> target,std::unique_ptr<hir::Expr> initial={}) {
+    hir::Stmt compound_assignment(const SyntaxStmt& source,std::unique_ptr<hir::Expr> target,std::unique_ptr<hir::Expr> initial={},bool stabilized=false) {
         const auto location=source.assignment_operator.location;const auto type=target->type;
+        if(!stabilized&&target->kind==hir::ExprKind::property_access&&target->operation=="static"&&!target->arguments.empty()){hir::Stmt block;block.location=location;for(auto& index:target->arguments){const auto slot=module_.locals.size();module_.locals.push_back({"$property_index_"+std::to_string(slot),index->type,!in_routine_});hir::Stmt save;save.kind=hir::StmtKind::assign;save.location=location;save.local=slot;save.expression=std::move(index);block.statements.push_back(std::move(save));index=cached_read(slot,location);}block.statements.push_back(compound_assignment(source,std::move(target),std::move(initial),true));return block;}
         const auto op=source.assignment_operator.text.substr(0,1);
         if(constant_parameter_target(*target) || (target->kind==hir::ExprKind::local && for_controls_.contains(target->local)))throw Error("E_TYPE",location,"Assignment target must be assignable");
         if(callable_type(type))throw Error("E_UNSUPPORTED",location,"Multicast compound operators are not ported yet");
@@ -6923,8 +6948,9 @@ private:
     std::map<std::pair<std::string,Type>,std::size_t> array_library_routines_;
     struct ClassProperty { Type type;std::optional<std::size_t> getter,setter;std::vector<Type> indices{};bool default_indexer=false; };
     std::map<Type,std::map<std::string,ClassProperty>> class_properties_;
+    std::map<Type,std::map<std::string,ClassProperty>> static_properties_;
     std::map<Type,std::map<Type,std::map<std::string,ClassProperty>>> class_explicit_properties_;
-    struct PropertyExpressionBinding{std::size_t id;std::shared_ptr<SyntaxProperty> property;std::shared_ptr<SyntaxExpr> expression;std::shared_ptr<SyntaxStmt> setter;};
+    struct PropertyExpressionBinding{std::size_t id;std::shared_ptr<SyntaxProperty> property;std::shared_ptr<SyntaxExpr> expression;std::shared_ptr<SyntaxStmt> setter;Type owner=Type::invalid;};
     std::vector<PropertyExpressionBinding> property_expression_bindings_;
     Type current_owner_=Type::invalid;
     std::size_t current_self_=0;

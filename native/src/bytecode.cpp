@@ -66,6 +66,7 @@ public:
         program_.fixed_arrays=std::move(module.fixed_arrays);
         program_.static_classes=std::move(module.static_classes);
         program_.static_methods=std::move(module.static_methods);
+        program_.static_properties=std::move(module.static_properties);
         program_.print_delimiter=module.print_delimiter;program_.print_matrix_format=module.print_matrix_format;program_.default_encoding=module.default_encoding;
         for (auto& routine : module.routines) {
             for (auto local:routine.signature.captures) captured_.insert(local);
@@ -643,6 +644,7 @@ private:
         }
         case hir::ExprKind::property_access:
             if (!node.getter) throw Error("E_TYPE",node.location,"Property is write-only");
+            if(node.operation=="static"){const auto& signature=program_.routines.at(*node.getter);if(node.arguments.size()!=signature.parameters.size())throw Error("E_TYPE",node.location,"Indexed property requires indices","Для индексируемого свойства нужны индексы");for(const auto& index:node.arguments)expression(*index);emit(Op::call_user,node.type,*node.getter,node.location);break;}
             if(node.arguments.size()!=(node.operation=="interface"?interface_contract(program_.types,node.operation_type).at(*node.getter).parameters.size():program_.routines.at(*node.getter).parameters.size()-1))throw Error("E_TYPE",node.location,"Indexed property requires indices","Для индексируемого свойства нужны индексы");
             if(node.operation!="interface"&&program_.routines.at(*node.getter).parameters.at(0).by_reference)reference(*node.left);else expression(*node.left);for(const auto& index:node.arguments)expression(*index);emit(node.operation=="interface" ? Op::interface_call : Op::call_user,node.operation=="interface" ? node.operation_type : node.type,*node.getter,node.location);break;
 
@@ -1945,10 +1947,18 @@ void verify(const Program& program) {
     for(std::size_t n=0;n<program.routines.size();++n)if(program.routines[n].name.starts_with("$initialize_static_")&&!static_initializers.contains(n))throw Error("E_BYTECODE",{},"Missing static initializer metadata");
     std::set<std::size_t> static_methods;
     for(const auto& method:program.static_methods){
-        if(!valid_value_type(program,method.owner)||!compound(method.owner)||type_info(program,method.owner).kind!=CompoundKind::object_class||method.name.empty()||!valid_member_access(method.access)||method.routine>=program.routines.size()||!static_methods.insert(method.routine).second)throw Error("E_BYTECODE",{},"Invalid static method metadata");
+        if(!valid_value_type(program,method.owner)||!compound(method.owner)||(type_info(program,method.owner).kind!=CompoundKind::object_class&&!(type_info(program,method.owner).kind==CompoundKind::record&&type_info(program,method.owner).native_record==NativeRecord::none))||method.name.empty()||!valid_member_access(method.access)||method.routine>=program.routines.size()||!static_methods.insert(method.routine).second)throw Error("E_BYTECODE",{},"Invalid static method metadata");
         const auto& routine=program.routines[method.routine];if(routine.name!=type_info(program,method.owner).name+".$static."+method.name||routine.owner!=Type::invalid||routine.constructor||!routine.captures.empty()||routine.access!=MemberAccess::public_member)throw Error("E_BYTECODE",{},"Invalid static method signature");
     }
     for(std::size_t n=0;n<program.routines.size();++n)if(program.routines[n].name.find(".$static.")!=std::string::npos&&!static_methods.contains(n))throw Error("E_BYTECODE",{},"Missing static method metadata");
+    std::set<std::pair<Type,std::string>> static_properties;std::set<Type> static_defaults;std::set<std::size_t> static_property_accessors;
+    for(const auto& property:program.static_properties){
+        if(!valid_value_type(program,property.owner)||!compound(property.owner)||(type_info(program,property.owner).kind!=CompoundKind::object_class&&!(type_info(program,property.owner).kind==CompoundKind::record&&type_info(program,property.owner).native_record==NativeRecord::none))||property.name.empty()||!valid_value_type(program,property.type)||!valid_member_access(property.access)||(!property.getter&&!property.setter)||property.indices.size()>14||!static_properties.emplace(property.owner,property.name).second||(property.default_indexer&&(property.indices.empty()||!static_defaults.insert(property.owner).second)))throw Error("E_BYTECODE",{},"Invalid static property metadata");
+        for(auto index:property.indices)if(!valid_value_type(program,index))throw Error("E_BYTECODE",{},"Invalid static property index type");
+        const auto check=[&](std::size_t id,bool write){const auto member=std::find_if(program.static_methods.begin(),program.static_methods.end(),[&](const auto& method){return method.routine==id&&method.owner==property.owner;});if(id>=program.routines.size()||member==program.static_methods.end())throw Error("E_BYTECODE",{},"Invalid static property accessor");const auto& routine=program.routines[id];if(routine.result!=(write?Type::unit:property.type)||routine.parameters.size()!=property.indices.size()+(write?1U:0U))throw Error("E_BYTECODE",{},"Invalid static property accessor signature");for(std::size_t n=0;n<routine.parameters.size();++n)if(routine.parameters[n].type!=(n<property.indices.size()?property.indices[n]:property.type)||routine.parameters[n].by_reference||routine.parameters[n].variadic)throw Error("E_BYTECODE",{},"Invalid static property accessor parameter");static_property_accessors.insert(id);};
+        if(property.getter)check(*property.getter,false);if(property.setter)check(*property.setter,true);
+    }
+    for(std::size_t n=0;n<program.routines.size();++n)if(program.routines[n].name.find(".$static.$property_expression_")!=std::string::npos&&!static_property_accessors.contains(n))throw Error("E_BYTECODE",{},"Missing static property metadata");
     if(!module_name_valid(program.module_name))throw Error("E_BYTECODE",{},"Invalid source module name","Недопустимое имя исходного модуля");
     if (program.print_delimiter && (*program.print_delimiter>=program.locals.size() || !program.locals[*program.print_delimiter].global
         || program.locals[*program.print_delimiter].type!=Type::string)) throw Error("E_BYTECODE",{},"Invalid PrintDelimDefault global");
