@@ -362,6 +362,7 @@ def main():
                 ("predicate-generics.pas", "Predicate2`2 False\nPredicate3`3 False\nPABCSystem\nTrue True\nFalse\n4\n"),
                 ("encoding-metadata.pas", "iso-2022-jp iso-2022-jp 932\nFalse True\n24 6\n3\n1\n"),
                 ("binary-files.pas", "1 1\n-123456 Ж True 1\nTrue\n42 Привет True 1.25\n"),
+                ("nested-routines.pas", "12 14 16\nВложенная рекурсия: 40\nИзменено: 14\n"),
                 ("utf7-encoding.pas", "65000 UTF7Encoding\n0\n65,43,45,43,90,101,85,45\nПривет + 日本 🌍\n1 55357\n"),
                 ("iso2022-encodings.pas", "50220 [27,36,66,70,124,37,43,27,40,66,65]\n50221 [27,36,66,70,124,27,40,73,54,27,40,66,65]\n50222 [27,36,66,70,124,14,54,15,27,40,66,65]\n50225 한국어\n[126,123,86,80,78,68,126,125,126,126]\n52936 中文~\nISO2022Encoding\n"),
                 ("iscii-encodings.pas", "57002 ISCIIEncoding\nकকகకಕകકକਕ\n[179,239,67,179,239,68,179,239,66]\n57011 ਕ\n"),
@@ -2108,6 +2109,27 @@ def main():
                         or f"{binary_error}:2:" not in invalid.stderr):
                     raise RuntimeError(f"{name} binary file error mismatch: {invalid.stdout!r}, {invalid.stderr!r}")
             results[-1]["native_binary_files_records_and_bilingual_errors"] = "passed"
+            nested_error = folder / "Ошибка вложенной функции.pas"
+            nested_error.write_text("procedure P;\nfunction Next(n:integer):integer;\n"
+                                    "begin Result:=n+1;end;\nbegin Next(MaxInt);end;\n"
+                                    "begin Write('before');P;end.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(nested_error)], text=True, encoding="utf-8",
+                                     capture_output=True, cwd=folder, env=env, timeout=10)
+            if (invalid.returncode != 1 or invalid.stdout != "before" or "E_OVERFLOW" not in invalid.stderr
+                    or "EN:" not in invalid.stderr or "RU:" not in invalid.stderr
+                    or f"{nested_error}:3:" not in invalid.stderr):
+                raise RuntimeError(f"{name} nested routine error mismatch: {invalid.stdout!r}, {invalid.stderr!r}")
+            results[-1]["native_nested_routines_and_bilingual_errors"] = "passed"
+            nested_deep = folder / "Предел вложенности подпрограмм.pas"
+            nested_deep.write_text("".join(f"procedure P{i};" for i in range(400))
+                                   + "begin end;" * 400 + "begin end.", encoding="utf-8")
+            invalid = subprocess.run([runner, "check", str(nested_deep)], text=True, encoding="utf-8",
+                                     capture_output=True, cwd=folder, env=env, timeout=10)
+            if (invalid.returncode != 1 or invalid.stdout or "E_LIMIT" not in invalid.stderr
+                    or "EN:" not in invalid.stderr or "RU:" not in invalid.stderr
+                    or f"{nested_deep}:1:" not in invalid.stderr):
+                raise RuntimeError(f"{name} native compilation stack guard mismatch: {invalid.stdout!r}, {invalid.stderr!r}")
+            results[-1]["native_compilation_stack_guard"] = "passed"
             results[-1]["native_generic_enumerators_boxing_resources_and_bilingual_errors"] = "passed"
             results[-1]["native_typed_dictionary_enumerators_and_bilingual_errors"] = "passed"
             results[-1]["native_dictionary_factories_views_callbacks_and_bilingual_errors"] = "passed"

@@ -1,97 +1,45 @@
 {
   "schema": 1,
-  "runtime_source_base_revision": "c8b4bbbb541ccdbcf8b358fd044f9d90a02d8b35",
+  "runtime_source_base_revision": "c70702aa2847edafef24e70f407f5015fc9f2d55",
   "runtime_source_changes": [
     {
-      "path": "native/include/abc/core.hpp",
-      "sha256_lf": "067c343636d0d756df76d0ce9974880a6bf86d87db88e55fee694fabb31d40e4"
-    },
-    {
-      "path": "native/src/binary_codec.cpp",
-      "sha256_lf": "1df28e630c5faa8afecd5aa490f008f777619c5d9dbea888b0094046362b8fbb"
-    },
-    {
-      "path": "native/src/binary_codec.hpp",
-      "sha256_lf": "7116edfc16dafb51c993a30b21404c86716cdebaf6f232866bbac6a9142aa1a5"
-    },
-    {
-      "path": "native/src/binary_file.cpp",
-      "sha256_lf": "6bedef23e1ff8ca285b9f50fc65dd385c7b4f89a6e296f63cb9178cfcff3ab98"
-    },
-    {
-      "path": "native/src/binary_file.hpp",
-      "sha256_lf": "50d5786d49035ebbd9637b2b6b78c703c7ef3e496492582fd376bbbb226b0d1e"
-    },
-    {
-      "path": "native/src/binary_stream.cpp",
-      "sha256_lf": "fc574db3bee4a4dc00803fe700c85d784ca423f6fa15f064dcf2247033b40aec"
-    },
-    {
-      "path": "native/src/binary_stream.hpp",
-      "sha256_lf": "be8c136be6ebdc4a8860786a09a8d744c496518459361b7512dd1a8b65cd8b1c"
-    },
-    {
-      "path": "native/src/bytecode.cpp",
-      "sha256_lf": "90087a3766ce077179453bdfc4003e48d7d1da99a8f20b74f37ee549a0602b58"
-    },
-    {
-      "path": "native/src/diagnostics.cpp",
-      "sha256_lf": "f4397e1c55c1dd3dbf85c94e6dcee720f09139b9072941e191d785a4b9c434e0"
-    },
-    {
-      "path": "native/src/diagnostics.hpp",
-      "sha256_lf": "7b71435963756c2902fe89b3988e70ec0c1a7b579e3f9681f4bc5520253c1192"
-    },
-    {
-      "path": "native/src/file_encoding.hpp",
-      "sha256_lf": "c4a0d8fc305039c8a636b037949c8bcdebb4e9c5dc7a06ac7ec4aa67e0b4e2cf"
-    },
-    {
-      "path": "native/src/file_reader.cpp",
-      "sha256_lf": "0cc41571a5453b973a217f4852e563060cfaba6aaeebdcfef7e83e720d0beb6c"
-    },
-    {
-      "path": "native/src/files.cpp",
-      "sha256_lf": "a9965da1a979fddd46fcd11a9ca8a0afc68f277ceb4680b539bd34845b2ccff4"
-    },
-    {
-      "path": "native/src/files.hpp",
-      "sha256_lf": "70a8379d46f09617f94bc5338df54ef57501fa8c6d4e2f89abe44c3a715fa035"
-    },
-    {
-      "path": "native/src/native_resource.cpp",
-      "sha256_lf": "86e80c179221ff992b9d1d629b64dcc197352a46546eef278c6f13f728865b75"
-    },
-    {
-      "path": "native/src/native_resource.hpp",
-      "sha256_lf": "b729b87f0e537c95c15c62de6f7e10fd0a56886994715406b452b37895d5347d"
-    },
-    {
       "path": "native/src/pascal.cpp",
-      "sha256_lf": "ad446eb72e0a5689beb6a6b252f3741c08722e5225703eb5a88e29feaef6fd08"
-    },
-    {
-      "path": "native/src/runtime_values.hpp",
-      "sha256_lf": "9429985164db7a293d9720ec5e404296fb64fa9580da2813c655cdac54f1703d"
-    },
-    {
-      "path": "native/src/text_file.cpp",
-      "sha256_lf": "a6d38684f6f5b797071ae6c990f0f0d604159acb7e17d69bd88c7c188234a136"
-    },
-    {
-      "path": "native/src/vm.cpp",
-      "sha256_lf": "0f6a1c73ce9677042158a613582645a4fd76dba575d6668f88a4f5eee2f08be6"
+      "sha256_lf": "a8355dd1458758399e768c9ac869c5ab968c945b4ce8e59c07423347039456ff"
     }
   ],
-  "scope": "Native binary streams/file of scalar, enum and packed nested records: 4320 actual stream traces, 410752 actual Framework codec steps (489444 checks), all 140 encoding rows and 317 native Pascal file checks, with 311 modern runtime differences retained; fixed arrays/subranges/short strings/sets, mutable ElementType, object coercions/reflection/classes/serialization and whole modules remain unfinished. Selected positive compile requirements in two native builds. Not API coverage or runtime validation. Ten invariant Encoding properties across all 140 default read-only factory codecs and both max-size methods with 18350080 actual exhaustive outcomes, independent FNV fingerprints and 6980 boundary outcomes (7696 native checks); UI-culture EncodingName and a 197-declaration API inventory remain positive requirements, not native coverage. UTF-7 raw UTF16 with all encoder/decoder residual values, actual strict/split/scalar evidence and 1421 identical raw-UTF16 file recipes, completing all 140 numbered Framework codecs but not full APIs or modules; all five ISO-2022/HZ pages with exhaustive encoder-mode and decoder-pending byte-pair suffixes, split and default/strict evidence, 9725 modern file recipes and 4062 retained legacy EOF differences, persistent writer encoders and all ten ISCII pages with exhaustive BMP/context/default/strict/script selection/file evidence and preserved legacy EOF differences, GB18030 full BMP/scalar/four-byte/split/default/strict maps and modern files with preserved legacy EOF differences, all Framework DBCS encoding maps, byte pairs, splits, aliases and modern file recipes with explicit legacy EOF differences, all Framework single-byte encoding maps, aliases and file recipes, standard generic Predicate2/Predicate3 families, named non-generic delegate families and arrow identities, raw Type property metadata and source-file identity, Predicate/Func identities and conversions, user ICollection bulk insertion, user-record field initialization, methods/interfaces, retained List arrays, native range boxing and RealRange equality semantics are validated separately. Field-initializer recipes are source-derived, not a Pascal compiler oracle. Whole standard-library units remain partial.",
+  "scope": "Named statically typed local routines use existing closures: 1071 independent CLR traces and 1106 native checks, five original fileof1/nested1/nested3/nested4/fResult3 tests through the native interpreter. Local defaults/overloads/forward, local type sections and complete metadata remain unfinished. Native binary streams/file of scalar, enum and packed nested records: 4320 actual stream traces, 410752 actual Framework codec steps (489444 checks), all 140 encoding rows and 317 native Pascal file checks, with 311 modern runtime differences retained; fixed arrays/subranges/short strings/sets, mutable ElementType, object coercions/reflection/classes/serialization and whole modules remain unfinished. Selected positive compile requirements in two native builds. Not API coverage or runtime validation. Ten invariant Encoding properties across all 140 default read-only factory codecs and both max-size methods with 18350080 actual exhaustive outcomes, independent FNV fingerprints and 6980 boundary outcomes (7696 native checks); UI-culture EncodingName and a 197-declaration API inventory remain positive requirements, not native coverage. UTF-7 raw UTF16 with all encoder/decoder residual values, actual strict/split/scalar evidence and 1421 identical raw-UTF16 file recipes, completing all 140 numbered Framework codecs but not full APIs or modules; all five ISO-2022/HZ pages with exhaustive encoder-mode and decoder-pending byte-pair suffixes, split and default/strict evidence, 9725 modern file recipes and 4062 retained legacy EOF differences, persistent writer encoders and all ten ISCII pages with exhaustive BMP/context/default/strict/script selection/file evidence and preserved legacy EOF differences, GB18030 full BMP/scalar/four-byte/split/default/strict maps and modern files with preserved legacy EOF differences, all Framework DBCS encoding maps, byte pairs, splits, aliases and modern file recipes with explicit legacy EOF differences, all Framework single-byte encoding maps, aliases and file recipes, standard generic Predicate2/Predicate3 families, named non-generic delegate families and arrow identities, raw Type property metadata and source-file identity, Predicate/Func identities and conversions, user ICollection bulk insertion, user-record field initialization, methods/interfaces, retained List arrays, native range boxing and RealRange equality semantics are validated separately. Field-initializer recipes are source-derived, not a Pascal compiler oracle. Whole standard-library units remain partial.",
   "runs": [
     {
       "schema": 1,
       "scope": "Selected required positive compile cases derived from shipped interfaces. Every case must eventually compile. This is a growing gap list, not complete API coverage; accepting a case does not prove its runtime semantics. No expected failure is made a compatibility requirement.",
       "runner": "native/build/clang-incremental/abc.exe",
-      "runner_sha256": "de81a721c3a62ffe1a40186c521a7d749f152d6e734776596730686a666d2b87",
+      "runner_sha256": "f56ad7a0a21adec117812b42950a20a7667a84990681a12b37ad99ad7042f5bb",
       "version": "ABC Native 0.1.0-dev (Pascal prototype)",
       "cases": [
+        {
+          "id": "system-nested-typed-file-procedure",
+          "module": "PABCSystem",
+          "source_line": 741,
+          "source_anchor": "TypedFile = sealed class(AbstractBinaryFile)",
+          "accepted": true,
+          "diagnostic": ""
+        },
+        {
+          "id": "system-nested-routine-default",
+          "module": "PABCSystem",
+          "source_line": 741,
+          "source_anchor": "TypedFile = sealed class(AbstractBinaryFile)",
+          "accepted": false,
+          "diagnostic": "system-nested-routine-default.pas:1:28: E_UNSUPPORTED\nEN: Local routine default arguments are not ported yet\nRU: Аргументы по умолчанию локальных подпрограмм ещё не перенесены"
+        },
+        {
+          "id": "system-nested-routine-var-capture",
+          "module": "PABCSystem",
+          "source_line": 741,
+          "source_anchor": "TypedFile = sealed class(AbstractBinaryFile)",
+          "accepted": true,
+          "diagnostic": ""
+        },
         {
           "id": "system-binary-file-io",
           "module": "PABCSystem",
@@ -430,17 +378,41 @@
         }
       ],
       "summary": {
-        "accepted": 23,
-        "required": 42
+        "accepted": 25,
+        "required": 45
       }
     },
     {
       "schema": 1,
       "scope": "Selected required positive compile cases derived from shipped interfaces. Every case must eventually compile. This is a growing gap list, not complete API coverage; accepting a case does not prove its runtime semantics. No expected failure is made a compatibility requirement.",
       "runner": "native/build/qt-editor/Release/abc.exe",
-      "runner_sha256": "cf41075a86286e1db6b66548ebe34334f74cb900ef7d69ddcb8be8dba85b8a3a",
+      "runner_sha256": "63671421d617e11430f7ef595875876a428ff72fd2ca43a4d340cffc5146fcf7",
       "version": "ABC Native 0.1.0-dev (Pascal prototype)",
       "cases": [
+        {
+          "id": "system-nested-typed-file-procedure",
+          "module": "PABCSystem",
+          "source_line": 741,
+          "source_anchor": "TypedFile = sealed class(AbstractBinaryFile)",
+          "accepted": true,
+          "diagnostic": ""
+        },
+        {
+          "id": "system-nested-routine-default",
+          "module": "PABCSystem",
+          "source_line": 741,
+          "source_anchor": "TypedFile = sealed class(AbstractBinaryFile)",
+          "accepted": false,
+          "diagnostic": "system-nested-routine-default.pas:1:28: E_UNSUPPORTED\nEN: Local routine default arguments are not ported yet\nRU: Аргументы по умолчанию локальных подпрограмм ещё не перенесены"
+        },
+        {
+          "id": "system-nested-routine-var-capture",
+          "module": "PABCSystem",
+          "source_line": 741,
+          "source_anchor": "TypedFile = sealed class(AbstractBinaryFile)",
+          "accepted": true,
+          "diagnostic": ""
+        },
         {
           "id": "system-binary-file-io",
           "module": "PABCSystem",
@@ -779,8 +751,8 @@
         }
       ],
       "summary": {
-        "accepted": 23,
-        "required": 42
+        "accepted": 25,
+        "required": 45
       }
     }
   ]

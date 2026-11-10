@@ -2,6 +2,9 @@
   "schema": 1,
   "scope": "Selected required positive compile cases derived from shipped interfaces. Every case must eventually compile. This is a growing gap list, not complete API coverage; accepting a case does not prove its runtime semantics. No expected failure is made a compatibility requirement.",
   "cases": [
+    {"id":"system-nested-typed-file-procedure","module":"PABCSystem","source_line":741,"source":"procedure P;var f:file of integer;procedure Save(n:integer);begin Write(f,n);end;begin Rewrite(f,'unused');Save(42);Close(f);end;begin P;end."},
+    {"id":"system-nested-routine-default","module":"PABCSystem","source_line":741,"source":"procedure P;procedure Save(n:integer:=42);begin Writeln(n);end;begin Save;end;begin P;end."},
+    {"id":"system-nested-routine-var-capture","module":"PABCSystem","source_line":741,"source":"procedure P(var n:integer);procedure Add;begin Inc(n);end;begin Add;end;begin var n:=0;P(n);end."},
     {"id":"system-binary-file-io","module":"PABCSystem","source_line":762,"source":"begin var f:file;Rewrite(f,'unused',Encoding.UTF8);Write(f,42,'value');Reset(f);var n:integer;var s:string;Read(f,n,s);Close(f);end."},
     {"id":"system-typed-file-record","module":"PABCSystem","source_line":741,"source":"type R=record n:integer;c:char;end;begin var f:file of R;var r:R;Rewrite(f,'unused',Encoding.ASCII);Write(f,r);Reset(f);Read(f,r);Close(f);end."},
     {"id":"system-binary-byte-buffer","module":"PABCSystem","source_line":762,"source":"begin var f:file;Rewrite(f,'unused');f.WriteBytes(Arr(byte(1)));f.Position:=0;var bytes:=f.ReadBytes(1);Close(f);end."},

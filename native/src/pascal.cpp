@@ -42,6 +42,7 @@
 #include <set>
 
 #if defined(_MSC_VER)
+#include <intrin.h>
 #define ABC_PASCAL_NOINLINE __declspec(noinline)
 #else
 #define ABC_PASCAL_NOINLINE __attribute__((noinline))
@@ -49,6 +50,22 @@
 
 namespace abc {
 namespace {
+
+// ASan may move local variables to a fake stack; measure native frames instead.
+ABC_PASCAL_NOINLINE std::uintptr_t compilation_stack_address(){
+#if defined(_MSC_VER)
+    return reinterpret_cast<std::uintptr_t>(_AddressOfReturnAddress());
+#else
+    return reinterpret_cast<std::uintptr_t>(__builtin_frame_address(0));
+#endif
+}
+struct CompilationStack {
+    std::uintptr_t origin=compilation_stack_address();
+    void check(SourceLocation location) const {
+        const auto current=compilation_stack_address(),used=current>origin?current-origin:origin-current;
+        if(used>256*1024)throw Error("E_LIMIT",location,"Compilation stack limit exceeded","Превышен предел стека компиляции");
+    }
+};
 
 enum class TokenKind { name, number, text, character_code, symbol, eof };
 struct Token {
@@ -269,7 +286,7 @@ std::unique_ptr<SyntaxExpr> make_conditional(Token token,std::unique_ptr<SyntaxE
 }
 
 enum class SyntaxStmtKind { block, declaration, constant_declaration, assignment, print, read, conditional, loop, increment, string_mutation, call, return_stmt,
-    for_loop, repeat_loop, break_stmt, continue_stmt, foreach_loop };
+    for_loop, repeat_loop, break_stmt, continue_stmt, foreach_loop, local_routines };
 struct SyntaxRoutine;
 struct SyntaxStmt {
     SyntaxStmtKind kind = SyntaxStmtKind::block;
@@ -608,6 +625,8 @@ private:
         }catch(const Error& error){if(error.code=="E_LIMIT")throw;return false;}
     }
     std::shared_ptr<SyntaxRoutine> routine(bool in_class=false) {
+        compilation_stack_.check(current_.location);
+        DepthGuard guard(depth_,current_.location);
         const auto token=current_;const bool constructor=accept("constructor");
         const bool function=!constructor && accept("function");if (!constructor && !function) expect("procedure");
         auto result=std::make_shared<SyntaxRoutine>();result->constructor=constructor;result->function_header=function;
@@ -651,7 +670,12 @@ private:
         expect(";");
         while(accept("overload"))expect(";");
         if (in_class && !is("begin") && !is("var") && !is("const")) { result->declaration_only=true;return result; }
-        while (is("var") || is("const")) {
+        while (is("var") || is("const") || is("function") || is("procedure")) {
+            if(is("function")||is("procedure")){
+                SyntaxStmt declarations;declarations.kind=SyntaxStmtKind::local_routines;declarations.token=current_;
+                while(is("function")||is("procedure"))declarations.routines.push_back(routine());
+                result->body.statements.push_back(std::move(declarations));continue;
+            }
             const bool constants=accept("const"); if (!constants) expect("var");
             do { result->body.statements.push_back(constants ? constant_declaration() : declaration()); expect(";"); }
             while (current_.kind == TokenKind::name && (current_.escaped || !reserved(current_.text)));
@@ -1084,6 +1108,7 @@ private:
     Lexer lexer_;
     Token current_;
     unsigned depth_ = 0;
+    CompilationStack compilation_stack_;
 };
 
 Value literal(const Token& token) {
@@ -2303,7 +2328,7 @@ private:
     void capture_local(std::size_t local,SourceLocation location) {
         if (module_.locals[local].global && !lexical_globals_.contains(local)) return;
         for (const auto& lambda:lambdas_) if (local<lambda.first) {
-            if (reference_parameters_.contains(local)) throw Error("E_TYPE",location,"Lambda cannot capture a var or out parameter");
+            if (reference_parameters_.contains(local)&&!named_nested_routines_.contains(lambda.routine)) throw Error("E_TYPE",location,"Lambda cannot capture a var or out parameter");
             if (for_controls_.contains(local)) throw Error("E_UNSUPPORTED",location,"Capturing loop control variables is not ported yet");
             auto& captures=module_.routines[lambda.routine].signature.captures;
             if (std::find(captures.begin(),captures.end(),local)==captures.end()) captures.push_back(local);
@@ -2460,6 +2485,7 @@ private:
         module_.locals.push_back({"result",type,false});
     }
     std::unique_ptr<hir::Expr> bind_lambda(const SyntaxExpr& source,Type expected=Type::invalid,std::vector<Type> hints={}) {
+        if(nested_routine_slots_.contains(source.lambda.get())||std::any_of(lambdas_.begin(),lambdas_.end(),[&](const auto& context){return named_nested_routines_.contains(context.routine);}))compilation_stack_.check(source.token.location);
         const auto& syntax=*source.lambda;
         const auto context=callable_type(expected) ? std::optional<TypeInfo>{info(expected,source.token.location)} : std::nullopt;
         if (context) {
@@ -2468,13 +2494,14 @@ private:
         }
         if (module_.routines.size()>=256) throw Error("E_LIMIT",source.token.location,"Lambda routine limit exceeded");
         const auto id=module_.routines.size(); module_.routines.emplace_back();
+        if(nested_routine_slots_.contains(&syntax))named_nested_routines_.insert(id);
         auto& routine=module_.routines[id]; routine.signature.name="$lambda_"+std::to_string(id);
         const auto saved_routine=in_routine_; const auto saved_result=current_result_; const auto saved_name=current_name_; const auto saved_loop=loop_depth_;
         in_routine_=true; current_result_=Type::invalid; current_name_=routine.signature.name; loop_depth_=0;
         scopes_.emplace_back(); const auto first=module_.locals.size(); lambdas_.push_back({id,first,scopes_.size()-1});
         for (std::size_t n=0;n<syntax.parameters.size();++n) {
             const auto& parameter=syntax.parameters[n]; const auto name=parameter.name;
-            if (name.text=="result" || scopes_.back().contains(name.text)) throw Error("E_DUPLICATE",name.location,"Duplicate or reserved lambda parameter");
+            if ((name.text=="result"&&(!named_nested_routines_.contains(id)||!syntax.procedure_lambda)) || scopes_.back().contains(name.text)) throw Error("E_DUPLICATE",name.location,"Duplicate or reserved lambda parameter");
             const auto type=parameter.type ? resolve_type(*parameter.type) : n<hints.size() ? hints[n] : Type::invalid;
             if (type==Type::invalid) throw Error("E_TYPE",name.location,"Lambda parameter type cannot be inferred");
             if (context && (type!=context->parameters[n].type || parameter.by_reference!=context->parameters[n].by_reference))
@@ -2486,6 +2513,10 @@ private:
         }
         auto result=syntax.result ? resolve_type(*syntax.result) : syntax.procedure_lambda ? Type::unit : context ? context->element : Type::invalid;
         if (result!=Type::invalid) lambda_result(result,source.token.location);
+        if(const auto named=nested_routine_slots_.find(&syntax);named!=nested_routine_slots_.end()&&current_result_!=Type::unit){
+            if(scopes_.back().contains(syntax.name.text))throw Error("E_DUPLICATE",syntax.name.location,"Parameter conflicts with function name");
+            const auto returned=module_.routines[id].signature.result_local;scopes_.back()[syntax.name.text]=returned;nested_result_slots_[returned]=named->second;
+        }
         if (syntax.expression_body) {
             auto value=expression(*syntax.body.expression,current_result_);
             if (current_result_==Type::invalid) lambda_result(value->type,value->location);
@@ -3412,11 +3443,12 @@ private:
         (void)expected;
         do {
  {
-            if (const auto local=lookup(source.token); local && source.token.text!=current_name_) {
-                if(!callable_type(module_.locals[*local].type) && bind_callable_cast(*result,source))break;
-                capture_local(*local,result->location);
+            if (const auto local=lookup(source.token); local && (source.token.text!=current_name_||nested_result_slots_.contains(*local))) {
+                const auto callable=nested_result_slots_.contains(*local)?nested_result_slots_.at(*local):*local;
+                if(!callable_type(module_.locals[callable].type) && bind_callable_cast(*result,source))break;
+                capture_local(callable,result->location);
                 result->left=std::make_unique<hir::Expr>(); result->left->kind=hir::ExprKind::local;
-                result->left->local=*local; result->left->type=module_.locals[*local].type; result->left->location=result->location;
+                result->left->local=callable; result->left->type=module_.locals[callable].type; result->left->location=result->location;
                 bind_value_call(*result,source.arguments); break;
             }
             result->kind = hir::ExprKind::call;
@@ -3515,7 +3547,8 @@ private:
 
         if (auto member=implicit_class_member(source,expected)) return member;
         if (source.kind==SyntaxExprKind::lambda) return bind_lambda(source,expected);
-        if (source.kind==SyntaxExprKind::name && source.token.text=="result" && !lambdas_.empty() && (current_result_==Type::invalid || current_result_==Type::unit))
+        if (source.kind==SyntaxExprKind::name && source.token.text=="result" && !lambdas_.empty() && (current_result_==Type::invalid || current_result_==Type::unit)
+            && !(current_result_==Type::unit&&named_nested_routines_.contains(lambdas_.back().routine)&&lookup(source.token)))
             throw Error("E_TYPE",source.token.location,"Lambda Result requires a known value type");
         if (source.kind==SyntaxExprKind::name && callable_type(expected)) {
             const auto local=lookup(source.token);
@@ -6345,6 +6378,18 @@ private:
         hir::Stmt result;
         result.location = source.token.location;
         switch (source.kind) {
+        case SyntaxStmtKind::local_routines: {
+            for(const auto& routine:source.routines){
+                if(!routine->owner.empty()||routine->constructor||routine->declaration_only)throw Error("E_UNSUPPORTED",routine->name.location,"This local routine declaration is not ported yet","Это объявление локальной подпрограммы ещё не перенесено");
+                if(scopes_.back().contains(routine->name.text))throw Error("E_DUPLICATE",routine->name.location,"Duplicate local routine name");
+                std::vector<CallableParameter> parameters;for(const auto& parameter:routine->parameters){if(parameter.default_value)throw Error("E_UNSUPPORTED",parameter.name.location,"Local routine default arguments are not ported yet","Аргументы по умолчанию локальных подпрограмм ещё не перенесены");parameters.push_back({resolve_type(*parameter.type),parameter.by_reference,parameter.variadic});}
+                const auto type=function_type(routine->result?resolve_type(*routine->result):Type::unit,std::move(parameters),routine->name.location);
+                if(module_.locals.size()>=4096)throw Error("E_LIMIT",routine->name.location,"Local limit exceeded");const auto slot=module_.locals.size();module_.locals.push_back({routine->name.text,type,false});scopes_.back()[routine->name.text]=slot;nested_routine_slots_[routine.get()]=slot;constant_parameters_.insert(slot);
+                hir::Stmt declare;declare.kind=hir::StmtKind::assign;declare.location=routine->name.location;declare.local=slot;declare.declaration=true;declare.expression=std::make_unique<hir::Expr>();declare.expression->kind=hir::ExprKind::default_value;declare.expression->type=type;declare.expression->location=declare.location;declare.expression->operation="default";result.statements.push_back(std::move(declare));
+            }
+            for(const auto& routine:source.routines){routine->procedure_lambda=!routine->function_header;routine->function_lambda=routine->function_header;auto lambda=make_expression(SyntaxExprKind::lambda,routine->name);lambda->lambda=routine;const auto slot=nested_routine_slots_.at(routine.get());hir::Stmt initialize;initialize.kind=hir::StmtKind::assign;initialize.location=routine->name.location;initialize.local=slot;initialize.expression=bind_lambda(*lambda,module_.locals[slot].type);result.statements.push_back(std::move(initialize));}
+            break;
+        }
         case SyntaxStmtKind::block:
             scopes_.emplace_back();
             for (const auto& child : source.statements) result.statements.push_back(statement(child));
@@ -6666,6 +6711,10 @@ private:
     std::string current_name_;
     std::vector<std::map<std::string, std::size_t>> scopes_;
     std::set<std::size_t> for_controls_,constant_parameters_,constant_locals_;
+    std::map<const SyntaxRoutine*,std::size_t> nested_routine_slots_;
+    std::map<std::size_t,std::size_t> nested_result_slots_;
+    std::set<std::size_t> named_nested_routines_;
+    CompilationStack compilation_stack_;
     std::map<std::size_t,Value> constant_values_;
     std::vector<hir::Stmt> constant_initializers_;
     struct LambdaContext { std::size_t routine,first,scope; };

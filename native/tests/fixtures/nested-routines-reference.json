@@ -1,0 +1,52 @@
+{
+  "schema": 1,
+  "reference_runtimes": [
+    "Windows .NET Framework 4.0.30319.42000",
+    "Windows .NET 10.0.12"
+  ],
+  "reference_executions": 1071,
+  "fixtures_identical": true,
+  "scope": "Independent CLR delegate/closure execution and source-derived typed native Pascal recipes: escaped local state, shared aliases versus independent activations, recursive function-name result assignment, nested access to outer parameters and locals. Named routines also capture outer var/out cells and record Self, and can access an enclosing function Result. Five original source tests fileof1/nested1/nested3/nested4/fResult3 run through the native interpreter only. No original Pascal compiler oracle is claimed or invoked. Local default arguments, forward declarations/overloads, local type sections and complete source-generated metadata remain positive requirements. No Python/.NET is shipped.",
+  "artifacts": [
+    {
+      "path": "reference/nested-routines.cs",
+      "sha256_lf": "241521176e3f3f64598c56775a8da7fa8855a0c4ba05ad21f7d49d42dcb526b7"
+    },
+    {
+      "path": "reference/generate-nested-routines.ps1",
+      "sha256_lf": "9b5a93a32f8a1f9aa1377749b218d56522608670b25f672e27934e967ba6139c"
+    },
+    {
+      "path": "fixtures/nested-routines-reference.tsv",
+      "sha256_lf": "3e4ace40da76b20ac2bf549e92c98a1d7903049a41178946eb8450cf21d34acf"
+    },
+    {
+      "path": "fixtures/nested-routines-reference.pas",
+      "sha256_lf": "8ba005e1e8d00ce64571fa812c4f6f0e1004674fb47a17b889761bbb8d95a051"
+    },
+    {
+      "path": "fixtures/nested-routines-reference.md",
+      "sha256_lf": "3e1ab6011226c69927f46525ab4387ddc2fc5843d6ef0eadcde0079fb3415d5d"
+    },
+    {
+      "path": "../../TestSuite/fileof1.pas",
+      "sha256_lf": "1f9df1f078632e31456711cda1814ffdd8102912d98d8f8b8f09897232437f89"
+    },
+    {
+      "path": "../../TestSuite/nested1.pas",
+      "sha256_lf": "04f73c29fec251e8de81fc2e8d01e8501dd78c4a5ba47afd473839cef1280dd3"
+    },
+    {
+      "path": "../../TestSuite/nested3.pas",
+      "sha256_lf": "2d1dc1aa1e38cfddb86d2a75787991272a3291bf5831dcd12ac62729a206acc5"
+    },
+    {
+      "path": "../../TestSuite/nested4.pas",
+      "sha256_lf": "1f0dff6faa599f9a238901e3238d379b8c389d18c9e5e81e50f50240abf3b29a"
+    },
+    {
+      "path": "../../TestSuite/fResult3.pas",
+      "sha256_lf": "1bb2fcdb21f3ef9f62f2659549481231b3e1b473da9ede82139a635359a8aa10"
+    }
+  ]
+}
