@@ -361,6 +361,7 @@ def main():
                 ("named-callables.pas", "Check False\nnamed-callables.Check\nTrue\nTrue True\nFalse\n5 RefSecond\n"),
                 ("predicate-generics.pas", "Predicate2`2 False\nPredicate3`3 False\nPABCSystem\nTrue True\nFalse\n4\n"),
                 ("encoding-metadata.pas", "iso-2022-jp iso-2022-jp 932\nFalse True\n24 6\n3\n1\n"),
+                ("binary-files.pas", "1 1\n-123456 Ж True 1\nTrue\n42 Привет True 1.25\n"),
                 ("utf7-encoding.pas", "65000 UTF7Encoding\n0\n65,43,45,43,90,101,85,45\nПривет + 日本 🌍\n1 55357\n"),
                 ("iso2022-encodings.pas", "50220 [27,36,66,70,124,37,43,27,40,66,65]\n50221 [27,36,66,70,124,27,40,73,54,27,40,66,65]\n50222 [27,36,66,70,124,14,54,15,27,40,66,65]\n50225 한국어\n[126,123,86,80,78,68,126,125,126,126]\n52936 中文~\nISO2022Encoding\n"),
                 ("iscii-encodings.pas", "57002 ISCIIEncoding\nकকகకಕകકକਕ\n[179,239,67,179,239,68,179,239,66]\n57011 ਕ\n"),
@@ -2092,6 +2093,21 @@ def main():
                         or f"{encoding_count_error}:2:" not in invalid.stderr):
                     raise RuntimeError(f"{name} encoding count boundary failed: {invalid.stdout!r} {invalid.stderr!r}")
             results[-1]["native_encoding_metadata_and_bilingual_count_bounds"] = "passed"
+            binary_error = folder / "Ошибка двоичного файла.pas"
+            for binary_source, code, english, russian in [
+                ("begin Write('before');var f:file;Rewrite(f,'native-binary-error.tmp');\nf.ReadInteger;end.",
+                 "E_EOF", "Cannot read a value past the end of the binary file", "Нельзя прочитать значение после конца двоичного файла"),
+                ("begin Write('before');var f:file of integer;\nRewrite(f,'native-binary-error.tmp',Encoding.UTF8);end.",
+                 "E_IO", "Typed files can only be opened with a single-byte encoding", "Типизированные файлы можно открывать только в однобайтовой кодировке"),
+            ]:
+                binary_error.write_text(binary_source, encoding="utf-8")
+                invalid = subprocess.run([runner, "run", str(binary_error)], text=True, encoding="utf-8",
+                                         capture_output=True, cwd=folder, env=env, timeout=10)
+                if (invalid.returncode != 1 or invalid.stdout != "before" or code not in invalid.stderr
+                        or f"EN: {english}" not in invalid.stderr or f"RU: {russian}" not in invalid.stderr
+                        or f"{binary_error}:2:" not in invalid.stderr):
+                    raise RuntimeError(f"{name} binary file error mismatch: {invalid.stdout!r}, {invalid.stderr!r}")
+            results[-1]["native_binary_files_records_and_bilingual_errors"] = "passed"
             results[-1]["native_generic_enumerators_boxing_resources_and_bilingual_errors"] = "passed"
             results[-1]["native_typed_dictionary_enumerators_and_bilingual_errors"] = "passed"
             results[-1]["native_dictionary_factories_views_callbacks_and_bilingual_errors"] = "passed"

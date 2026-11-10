@@ -8,6 +8,7 @@
 #include "number.hpp"
 #include "stdlib.hpp"
 #include "encoding.hpp"
+#include "binary_file.hpp"
 #include "type_names.hpp"
 #include "callable_identity.hpp"
 #include "single.hpp"
@@ -458,6 +459,8 @@ private:
             } while (accept(","));
             expect(")");
         } else if(accept("set")){result->kind="newset";expect("of");result->element=type_syntax();
+        } else if(accept("file")){
+            result->kind="binaryfile";if(accept("of"))result->element=type_syntax(false,allow_arrow);
         } else if (accept("array")) {
             result->kind = "array";
             if (accept("[")) {
@@ -1751,6 +1754,47 @@ private:
         if(module_.types.size()>=1024)throw Error("E_LIMIT",{},"Type limit exceeded");
         module_.types.push_back({"encoding",CompoundKind::encoding,bytes,{},characters});return static_cast<Type>(63+module_.types.size());
     }
+    Type binary_type(Type element,SourceLocation location){
+        (void)encoding_type();const auto bytes=sequence_type(CompoundKind::array,Type::byte);
+        for(std::size_t n=0;n<module_.types.size();++n)if(module_.types[n].kind==CompoundKind::binary_file&&module_.types[n].element==element)return static_cast<Type>(64+n);
+        if(element!=Type::invalid&&!binary_value_supported(module_.types,element,false))throw Error("E_TYPE",location,"Typed file element must have a statically known serializable value type","Элемент типизированного файла должен иметь известный сериализуемый тип значения");
+        if(module_.types.size()>=1024)throw Error("E_LIMIT",location,"Type limit exceeded");module_.types.push_back({"binaryfile",CompoundKind::binary_file,element,{},bytes});return static_cast<Type>(63+module_.types.size());
+    }
+    bool binary(Type type) const{return compound(type)&&info(type,{}).kind==CompoundKind::binary_file;}
+    std::unique_ptr<hir::Expr> binary_expression(Type owner,BinaryMethod method,std::vector<std::unique_ptr<hir::Expr>> args,SourceLocation location,Type data=Type::integer){
+        const auto operand=static_cast<std::size_t>(method)|(static_cast<std::size_t>(data)<<8U);const auto parameters=binary_parameters(module_.types,owner,operand);
+        if(args.size()!=parameters.size())throw Error("E_TYPE",location,"Wrong binary file argument count","Неверное число аргументов двоичного файла");for(std::size_t n=0;n<args.size();++n)args[n]=convert(std::move(args[n]),parameters[n]);
+        auto result=std::make_unique<hir::Expr>();result->kind=hir::ExprKind::encoding_call;result->operation_type=owner;result->local=operand;result->location=location;result->type=binary_result(module_.types,owner,operand);result->arguments=std::move(args);return result;
+    }
+    std::unique_ptr<hir::Expr> binary_pack(std::vector<std::unique_ptr<hir::Expr>> args,SourceLocation location){
+        if(args.size()==1)return std::move(args[0]);
+        if(args.size()>7){std::vector<std::unique_ptr<hir::Expr>> tail;for(std::size_t n=6;n<args.size();++n)tail.push_back(std::move(args[n]));args.resize(6);args.push_back(binary_pack(std::move(tail),location));}
+        std::vector<Type> types;for(const auto& arg:args)types.push_back(arg->type);auto result=std::make_unique<hir::Expr>();result->kind=hir::ExprKind::tuple_literal;result->type=tuple_type(types,location);result->location=location;result->arguments=std::move(args);return result;
+    }
+    std::unique_ptr<hir::Expr> binary_write(std::unique_ptr<hir::Expr> file,std::vector<std::unique_ptr<hir::Expr>> items,bool newline,SourceLocation location){
+        const auto owner=file->type,element=info(owner,location).element;std::vector<std::unique_ptr<hir::Expr>> args;args.push_back(std::move(file));
+        if(items.empty())return binary_expression(owner,newline?BinaryMethod::writeln:BinaryMethod::write_empty,std::move(args),location);
+        for(auto& item:items){if(item->type==Type::nil)item=convert(std::move(item),Type::string);if(!newline&&!binary_value_supported(module_.types,item->type,true,true))throw Error("E_UNSUPPORTED",location,"Binary serialization for this static type is not ported yet","Сериализация этого известного типа в двоичный файл ещё не перенесена");if(!newline&&element!=Type::invalid&&!(compound(item->type)&&info(item->type,location).kind==CompoundKind::array))item=convert(std::move(item),element);}
+        const bool many=items.size()>1;auto data=binary_pack(std::move(items),location);const auto type=data->type;args.push_back(std::move(data));return binary_expression(owner,newline?BinaryMethod::writeln_data:many?BinaryMethod::write_many:BinaryMethod::write_one,std::move(args),location,type);
+    }
+    bool bind_binary_function(hir::Expr& result,std::string_view name,std::string_view unit={}){
+        if((!unit.empty()&&unit!="pabcsystem")||result.arguments.empty()||!binary(result.arguments[0]->type))return false;
+        BinaryMethod method;const auto owner=result.arguments[0]->type;const auto count=result.arguments.size();
+        if(name=="assign"||name=="assignfile")method=BinaryMethod::assign;
+        else if(name=="reset"||name=="rewrite"){(void)default_encoding();const bool create=name=="rewrite";if(count==1)method=create?BinaryMethod::rewrite:BinaryMethod::reset;else if(count==2){const bool text=result.arguments[1]->type==Type::string||result.arguments[1]->type==Type::character||result.arguments[1]->type==Type::nil;method=text?(create?BinaryMethod::rewrite_named:BinaryMethod::reset_named):(create?BinaryMethod::rewrite_encoding:BinaryMethod::reset_encoding);}else method=create?BinaryMethod::rewrite_named_encoding:BinaryMethod::reset_named_encoding;}
+        else if(name=="close"||name=="closefile")method=BinaryMethod::close;else if(name=="truncate")method=BinaryMethod::truncate;
+        else if(name=="eof")method=BinaryMethod::eof;else if(name=="filepos"||name=="position")method=BinaryMethod::position;
+        else if(name=="filesize"||name=="size")method=BinaryMethod::size;else if(name=="seek")method=BinaryMethod::seek;
+        else if(name=="erase")method=BinaryMethod::erase;else if(name=="rename")method=BinaryMethod::rename;
+        else if(name=="name")method=BinaryMethod::name;else if(name=="fullname")method=BinaryMethod::full_name;else if(name=="tostring")method=BinaryMethod::to_string;
+        else if(name=="readbytes")method=BinaryMethod::read_bytes;else if(name=="writebytes")method=BinaryMethod::write_bytes;
+        else if(name=="readinteger"||name=="readboolean"||name=="readbyte"||name=="readchar"||name=="readreal"||name=="readstring"){
+            const auto type=name=="readinteger"?Type::integer:name=="readboolean"?Type::boolean:name=="readbyte"?Type::byte:name=="readchar"?Type::character:name=="readreal"?Type::real:Type::string;
+            if(info(owner,result.location).element!=Type::invalid)throw Error("E_TYPE",result.location,"Typed file reads require the declared element type");result=std::move(*binary_expression(owner,BinaryMethod::read_data,std::move(result.arguments),result.location,type));return true;
+        }else return false;
+        if((method==BinaryMethod::read_bytes||method==BinaryMethod::write_bytes)&&info(owner,result.location).element!=Type::invalid)throw Error("E_TYPE",result.location,"Byte buffer methods require an untyped binary file","Методы буфера байтов требуют нетипизированный двоичный файл");
+        result=std::move(*binary_expression(owner,method,std::move(result.arguments),result.location));return true;
+    }
     bool encoding_type_name(const SyntaxExpr& source) const {
         const auto hidden=[&](const Token& token) {
             if(lookup(token) || routine_names_.contains(token.text))return true;
@@ -2107,6 +2151,7 @@ private:
                 if(syntax.enum_flags){if(!enumeration(found->second))throw Error("E_TYPE",syntax.token.location,"FlagsAttribute requires an enumeration");module_.types[static_cast<unsigned>(found->second)-64U].enum_flags=true;}
                 return found->second;
             }
+        if(syntax.kind=="binaryfile")return binary_type(syntax.element?resolve_type(*syntax.element):Type::invalid,syntax.token.location);
         if (syntax.named && (syntax.kind=="array" || syntax.kind=="record" || syntax.kind=="class" || syntax.kind=="sequence" || syntax.kind=="tuple" || syntax.kind=="callable" || syntax.kind=="empty_result"))
             throw Error("E_UNSUPPORTED",syntax.token.location,"Unknown or unsupported type '"+syntax.kind+"'");
         if(syntax.kind=="enum_or_tuple") {
@@ -2862,6 +2907,12 @@ private:
             if(bind_dictionary_member(*result,source))break;
             if(bind_inifile_member(*result,source))break;
             if(bind_encoding_member(*result,source))break;
+            if(binary(receiver)){
+                std::vector<std::unique_ptr<hir::Expr>> args;args.push_back(std::move(result->left));for(const auto& a:source.arguments)args.push_back(expression(*a));
+                if(source.token.text=="write"||source.token.text=="writeln"){auto file=std::move(args[0]);args.erase(args.begin());return binary_write(std::move(file),std::move(args),source.token.text=="writeln",result->location);}
+                if(source.token.text=="position"&&source.kind!=SyntaxExprKind::field)throw Error("E_TYPE",result->location,"File position is a property");
+                result->arguments=std::move(args);if(!bind_binary_function(*result,source.token.text))throw Error("E_UNSUPPORTED",result->location,"Binary file member is not ported yet","Член двоичного файла ещё не перенесён");break;
+            }
             if((receiver==Type::string || receiver==Type::character || (numeric(receiver) && receiver!=Type::big_integer))
                 && (source.token.text=="inrange" || source.token.text=="between" || ((source.token.text=="clamp" || source.token.text=="clamptop" || source.token.text=="clampbottom") && receiver!=Type::character && receiver!=Type::string))) {
                 result->arguments.push_back(std::move(result->left));
@@ -6108,6 +6159,7 @@ private:
         return true;
     }
     void bind_builtin(hir::Expr& result, std::string_view name, std::string_view unit = {}) {
+        if(bind_binary_function(result,name,unit))return;
         if(name=="boolean"&&(unit.empty()||unit=="pabcsystem")){
             if(result.arguments.size()!=1||result.arguments[0]->type!=Type::boolean)throw Error("E_TYPE",result.location,"Boolean conversion requires one boolean value","Преобразование в boolean требует одного логического значения");
             auto argument=std::move(result.arguments[0]);result=std::move(*argument);return;
@@ -6410,6 +6462,9 @@ private:
             break;
         }
         case SyntaxStmtKind::assignment:
+            if(source.target->kind==SyntaxExprKind::field&&source.target->token.text=="position"&&source.assignment_operator.text==":="){
+                auto file=expression(*source.target->left);if(binary(file->type)){const auto owner=file->type;std::vector<std::unique_ptr<hir::Expr>> args;args.push_back(std::move(file));args.push_back(expression(*source.expression));result.kind=hir::StmtKind::call;result.expression=binary_expression(owner,BinaryMethod::seek,std::move(args),result.location);break;}
+            }
             if(!source.assignment_operator.text.empty() && source.assignment_operator.text!=":=") {
                 std::unique_ptr<hir::Expr> initial;
                 if(!lambdas_.empty() && current_result_==Type::invalid && source.target->kind==SyntaxExprKind::name && source.target->token.text=="result"){initial=expression(*source.expression);lambda_result(initial->type,initial->location);}
@@ -6523,17 +6578,21 @@ private:
                 result.expression = convert(expression(*source.expression,current_result_),current_result_);
             }
             break;
-        case SyntaxStmtKind::print:
+        case SyntaxStmtKind::print: {
             result.kind = hir::StmtKind::print;
             result.newline = source.token.text == "writeln";
+            std::unique_ptr<hir::Expr> first;if(!source.arguments.empty())first=expression(*source.arguments[0]);
+            if(first&&binary(first->type)){std::vector<std::unique_ptr<hir::Expr>> items;for(std::size_t n=1;n<source.arguments.size();++n)items.push_back(expression(*source.arguments[n]));result.kind=hir::StmtKind::call;result.expression=binary_write(std::move(first),std::move(items),result.newline,result.location);break;}
+            std::size_t index=0;
             for (const auto& argument : source.arguments) {
-                auto value = expression(*argument);
+                auto value = index++==0?std::move(first):expression(*argument);
                 if (argument==source.arguments.front() && value->type==Type::text_file) { result.target=std::move(value); continue; }
                 if (value->type==Type::nil) value=convert(std::move(value),Type::string);
                 if (!object_text_supported(module_.types,value->type)) throw Error("E_TYPE",value->location,"Write for this static type is not implemented");
                 result.arguments.push_back(std::move(value));
             }
             break;
+        }
         case SyntaxStmtKind::read: {
             result.kind = hir::StmtKind::read;
             result.newline=source.token.text=="readln";
@@ -6541,6 +6600,12 @@ private:
                 break;
             }
             auto first=expression(*source.arguments[0]);
+            if(binary(first->type)){
+                if(result.newline||source.arguments.size()<2)throw Error("E_TYPE",result.location,"Binary Read requires writable variables and has no Readln form");
+                const auto owner=first->type,element=info(owner,result.location).element;const auto cached=cache_argument(std::move(first));const auto slot=cached->local;
+                result.kind=hir::StmtKind::block;hir::Stmt evaluate;evaluate.kind=hir::StmtKind::call;evaluate.location=result.location;evaluate.expression=copy_expression(*cached);result.statements.push_back(std::move(evaluate));
+                for(std::size_t n=1;n<source.arguments.size();++n){auto target=expression(*source.arguments[n]);const auto t=element==Type::invalid?target->type:element;if(!lvalue(*target)||!binary_value_supported(module_.types,t,element==Type::invalid))throw Error("E_TYPE",target->location,"Binary Read requires a supported statically typed variable");std::vector<std::unique_ptr<hir::Expr>> args;args.push_back(cached_read(slot,result.location));hir::Stmt read;read.kind=hir::StmtKind::assign;read.location=target->location;read.expression=convert(binary_expression(owner,BinaryMethod::read_data,std::move(args),read.location,t),target->type);read.target=std::move(target);result.statements.push_back(std::move(read));}break;
+            }
             if (first->type==Type::text_file) {
                 result.target=std::move(first);
                 for (std::size_t i=1;i<source.arguments.size();++i) {

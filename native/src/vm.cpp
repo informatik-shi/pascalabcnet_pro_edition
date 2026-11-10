@@ -32,6 +32,7 @@
 #include "environment.hpp"
 #include "termination.hpp"
 #include "encoding.hpp"
+#include "native_resource.hpp"
 #include "type_names.hpp"
 #include "single.hpp"
 #include "enumeration.hpp"
@@ -548,10 +549,10 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
             stack.push_back(sequence_collect(values,sequence,instruction.op==Op::sequence_count ? Type::invalid : static_cast<Type>(instruction.operand),options)); break;
         }
         case Op::encoding_call: {
-            const auto method=static_cast<EncodingMethod>(instruction.operand);const auto count=encoding_parameters(program,instruction.type,method).size();
+            const auto count=native_resource_parameters(program,instruction.type,instruction.operand).size();
             std::vector<Value> arguments(count);for(auto i=count;i>0;--i){arguments[i-1]=std::move(stack.back());stack.pop_back();}
-            auto result=encodings.invoke(values,files,instruction.type,method,arguments);
-            if(encoding_result(program,instruction.type,method)!=Type::unit)stack.push_back(std::move(result));break;
+            auto result=native_resource_invoke(encodings,values,files,instruction.type,instruction.operand,arguments);
+            if(native_resource_result(program,instruction.type,instruction.operand)!=Type::unit)stack.push_back(std::move(result));break;
         }
         case Op::school_ip: {
             const auto method=static_cast<SchoolIPMethod>(instruction.operand&255U);

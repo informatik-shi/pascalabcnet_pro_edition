@@ -2,6 +2,7 @@
 #include "files.hpp"
 #include "text_file.hpp"
 #include "diagnostics.hpp"
+#include "binary_file.hpp"
 #include <algorithm>
 #ifdef _WIN32
 #ifndef NOMINMAX
@@ -111,9 +112,11 @@ std::optional<std::u16string> LineReader::read_line(SourceLocation location,cons
     return std::nullopt;
 }
 void FileContext::prepare_line_open(const std::shared_ptr<LineReader>& reader,SourceLocation location) {
-    std::erase_if(open_readers_,[](const auto& weak){const auto reader=weak.lock();return !reader || !reader->is_open();});
-    std::erase_if(open_texts_,[](const auto& weak){const auto text=weak.lock();return !text || !text->is_open();});
-    if(open_readers_.size()+open_texts_.size()>=64)throw runtime_error(RuntimeError::file_open_limit,location);
-    open_readers_.push_back(reader);
+    check_binary_conflict(reader->path(),location);
+    std::erase_if(opened_->readers,[](const auto& weak){const auto reader=weak.lock();return !reader || !reader->is_open();});
+    std::erase_if(opened_->texts,[](const auto& weak){const auto text=weak.lock();return !text || !text->is_open();});
+    std::erase_if(opened_->binaries,[](const auto& p){const auto f=p.lock();return !f||!f->is_open();});
+    if(opened_->readers.size()+opened_->texts.size()+opened_->binaries.size()>=64)throw runtime_error(RuntimeError::file_open_limit,location);
+    opened_->readers.push_back(reader);
 }
 }

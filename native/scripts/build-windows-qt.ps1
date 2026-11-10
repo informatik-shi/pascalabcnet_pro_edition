@@ -162,6 +162,8 @@ WriteString/WriteInteger/WriteBoolean меняют память, Save запис
 Символы CP1251 и ANSI-алиасы: examples/windows-characters.pas.
 Encoding, CP1251/ASCII/Unicode и выбор кодировки ReadAllText/WriteAllText: examples/text-encodings.pas.
 DefaultEncoding изначально CP1251. Его смена и явные Encoding-перегрузки Text: examples/default-encoding.pas.
+Двоичные file и file of T, числа, строки, перечисления и вложенные записи: examples/binary-files.pas.
+Типизированные файлы открываются только в однобайтовых кодировках; фиксированные массивы, короткие строки и сериализация объектов ещё переносятся.
 Для сохранения всех Unicode-символов выберите Encoding.UTF8/Unicode; полный API Encoding ещё переносится.
 ReadAllLines/WriteAllLines с Encoding и WriteLines для последовательностей: examples/file-lines.pas.
 Перед ReadAllText/ReadAllLines закройте писатель того же файла.

@@ -4,6 +4,7 @@
 #include "encoding.hpp"
 #include "file_reader.hpp"
 #include "diagnostics.hpp"
+#include "binary_file.hpp"
 #include "stdlib.hpp"
 #include "integer_values.hpp"
 #include <algorithm>
@@ -82,10 +83,12 @@ TextFile& text_file(const Value& value, SourceLocation location) {
 }
 void FileContext::prepare_text_open(const std::shared_ptr<TextFile>& file, SourceLocation location) {
     if (file->is_open()) return;
-    std::erase_if(open_texts_,[](const auto& weak) { const auto file=weak.lock(); return !file || !file->is_open(); });
-    std::erase_if(open_readers_,[](const auto& weak){const auto reader=weak.lock();return !reader || !reader->is_open();});
-    if (open_texts_.size()+open_readers_.size()>=64) throw runtime_error(RuntimeError::file_open_limit,location);
-    open_texts_.push_back(file);
+    check_binary_conflict(file->filename,location);
+    std::erase_if(opened_->texts,[](const auto& weak) { const auto file=weak.lock(); return !file || !file->is_open(); });
+    std::erase_if(opened_->readers,[](const auto& weak){const auto reader=weak.lock();return !reader || !reader->is_open();});
+    std::erase_if(opened_->binaries,[](const auto& p){const auto f=p.lock();return !f||!f->is_open();});
+    if (opened_->texts.size()+opened_->readers.size()+opened_->binaries.size()>=64) throw runtime_error(RuntimeError::file_open_limit,location);
+    opened_->texts.push_back(file);
 }
 bool FileContext::text_file_locked(const std::filesystem::path& path, bool subtree) const {
 #ifdef _WIN32
@@ -98,8 +101,9 @@ bool FileContext::text_file_locked(const std::filesystem::path& path, bool subtr
         }
         return false;
     };
-    for(const auto& weak:open_texts_)if(const auto file=weak.lock();file && ((file->reader && file->reader->is_open() && locked(file->reader->path())) || (file->writer && file->writer->is_open() && locked(file->writer->path()))))return true;
-    for(const auto& weak:open_readers_)if(const auto reader=weak.lock();reader && reader->is_open() && locked(reader->path()))return true;
+    for(const auto& weak:opened_->texts)if(const auto file=weak.lock();file && ((file->reader && file->reader->is_open() && locked(file->reader->path())) || (file->writer && file->writer->is_open() && locked(file->writer->path()))))return true;
+    for(const auto& weak:opened_->readers)if(const auto reader=weak.lock();reader && reader->is_open() && locked(reader->path()))return true;
+    for(const auto& weak:opened_->binaries)if(const auto file=weak.lock();file&&file->is_open()&&locked(file->stream->path()))return true;
 #else
     (void)path;(void)subtree;
 #endif

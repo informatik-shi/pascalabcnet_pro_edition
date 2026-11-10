@@ -54,6 +54,32 @@ Error runtime_error(RuntimeError id, SourceLocation location, std::string_view c
         code="E_ENCODING";english="Unsupported text encoding";russian="Неподдерживаемая кодировка текста";break;
     case RuntimeError::encoding_count:
         code="E_ARGUMENT";english="Encoding size argument is outside the supported range";russian="Размер в аргументе кодировки выходит за допустимый диапазон";break;
+    case RuntimeError::binary_position:
+        code="E_ARGUMENT";english="Binary file position cannot be negative";russian="Позиция в двоичном файле не может быть отрицательной";break;
+    case RuntimeError::binary_closed:
+        code="E_IO";english="Binary file is not open";russian="Двоичный файл не открыт";break;
+    case RuntimeError::binary_end:
+        code="E_EOF";english="Cannot read a value past the end of the binary file";russian="Нельзя прочитать значение после конца двоичного файла";break;
+    case RuntimeError::binary_character:
+        code="E_ARGUMENT";english="A surrogate cannot be written as a single binary character";russian="Нельзя записать суррогат как отдельный символ двоичного файла";break;
+    case RuntimeError::binary_character_buffer:
+        code="E_ARGUMENT";english="Decoded data does not fit in the binary character buffer";russian="Декодированные данные не помещаются в буфер символов двоичного файла";break;
+    case RuntimeError::binary_prefix:
+        code="E_FORMAT";english="Invalid binary string length prefix";russian="Некорректный префикс длины строки в двоичном файле";break;
+    case RuntimeError::binary_string_length:
+        code="E_IO";english="Binary string length cannot be negative";russian="Длина строки в двоичном файле не может быть отрицательной";break;
+    case RuntimeError::binary_unassigned:
+        code="E_IO";english="Binary file has not been assigned a filename";russian="Двоичному файлу не назначено имя";break;
+    case RuntimeError::typed_file_encoding:
+        code="E_IO";english="Typed files can only be opened with a single-byte encoding";russian="Типизированные файлы можно открывать только в однобайтовой кодировке";break;
+    case RuntimeError::typed_file_size:
+        code="E_IO";english="Invalid typed file size";russian="Некорректный размер типизированного файла";break;
+    case RuntimeError::binary_open_limit:
+        code="E_LIMIT";english="Too many open files (limit 64)";russian="Превышен предел числа открытых файлов (64)";break;
+    case RuntimeError::binary_buffer_count:
+        code="E_ARGUMENT";english="Binary byte count cannot be negative";russian="Число байтов двоичного файла не может быть отрицательным";break;
+    case RuntimeError::binary_writeln:
+        code="E_IO";english="Writeln cannot be used with a binary file";russian="Writeln нельзя использовать с двоичным файлом";break;
     case RuntimeError::sleep_duration:
         code="E_RANGE";english="Sleep duration must be -1 or nonnegative";russian="Длительность Sleep должна быть равна -1 или быть неотрицательной";break;
     case RuntimeError::list_capacity:

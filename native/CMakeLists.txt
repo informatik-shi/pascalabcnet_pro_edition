@@ -26,6 +26,10 @@ add_library(abc_core
     src/file_names.cpp
     src/file_reader.cpp
     src/file_writer.cpp
+    src/binary_stream.cpp
+    src/binary_codec.cpp
+    src/binary_file.cpp
+    src/native_resource.cpp
     src/file_lines.cpp
     src/directory_sequence.cpp
     src/file_encoding.cpp
@@ -408,6 +412,25 @@ if(BUILD_TESTING)
     endif()
     add_test(NAME encoding_metadata COMMAND abc_encoding_metadata_tests)
     add_test(NAME encoding_metadata_example COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/examples/encoding-metadata.pas")
+    add_executable(abc_binary_stream_tests tests/binary_stream_tests.cpp)
+    target_link_libraries(abc_binary_stream_tests PRIVATE abc_core)
+    if(MSVC)
+        target_compile_options(abc_binary_stream_tests PRIVATE /utf-8)
+    endif()
+    add_test(NAME binary_stream COMMAND abc_binary_stream_tests)
+    add_executable(abc_binary_codec_tests tests/binary_codec_tests.cpp)
+    target_link_libraries(abc_binary_codec_tests PRIVATE abc_core)
+    if(MSVC)
+        target_compile_options(abc_binary_codec_tests PRIVATE /utf-8)
+    endif()
+    add_test(NAME binary_codec COMMAND ${CMAKE_COMMAND} -DABC_RUNNER=$<TARGET_FILE:abc_binary_codec_tests> "-DABC_ARCHIVE=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/binary-codec-reference.zip" "-DABC_TEST_DIR=${CMAKE_CURRENT_BINARY_DIR}" -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/binary-codec-reference.cmake")
+    add_executable(abc_binary_file_tests tests/binary_file_tests.cpp)
+    target_link_libraries(abc_binary_file_tests PRIVATE abc_core)
+    if(MSVC)
+        target_compile_options(abc_binary_file_tests PRIVATE /utf-8)
+    endif()
+    add_test(NAME binary_files COMMAND abc_binary_file_tests)
+    add_test(NAME binary_files_example COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/examples/binary-files.pas")
     add_test(NAME iscii_encodings_example COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/examples/iscii-encodings.pas")
     add_test(NAME gb18030_encoding_example COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/examples/gb18030-encoding.pas")
     add_test(NAME double_byte_encodings_example COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/examples/double-byte-encodings.pas")

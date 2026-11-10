@@ -10,7 +10,7 @@
 #endif
 
 namespace abc {
-FileContext::FileContext() {
+FileContext::FileContext():opened_(std::make_unique<OpenFiles>()) {
     std::error_code error;
     current_ = std::filesystem::current_path(error);
     if (error) current_.clear();
@@ -49,12 +49,14 @@ void FileContext::change_directory(std::u16string_view path, SourceLocation loca
 }
 std::u16string read_text_file(const FileContext& files,std::u16string_view path,SourceLocation location,const TextEncoding* encoding) {
     const auto target=files.resolve(path,location);if(!encoding)encoding=files.encoding(location);
+    files.check_binary_conflict(target,location);
     LineReader input(target,encoding ? *encoding : TextEncoding{TextEncodingKind::utf8,false,true},location);
     static const ExecutionOptions defaults;
     return input.read_to_end(location,files.execution_options ? *files.execution_options : defaults);
 }
 void write_text_file(const FileContext& files, std::u16string_view path, std::u16string_view text, SourceLocation location,const TextEncoding* encoding) {
     const auto target=files.resolve(path,location);if(!encoding)encoding=files.encoding(location);
+    files.check_binary_conflict(target,location);
     auto data = encoding ? encode_text_bytes(text,*encoding,location) : to_utf8(text,true);
     if(encoding){const auto mark=text_encoding_preamble(*encoding);if(!mark.empty())data.insert(0,mark);}
     if (data.size() > 1'048'576) throw runtime_error(RuntimeError::file_limit,location);

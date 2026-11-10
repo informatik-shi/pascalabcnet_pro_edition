@@ -1,0 +1,1563 @@
+{
+  "schema": 1,
+  "rows": 410752,
+  "differences": 311,
+  "scope": "Actual public BinaryReader/BinaryWriter traces. Native compatibility target is Framework. Modern malformed-prefix and decoder differences remain explicit; neither runtime is shipped.",
+  "outcomes": [
+    {
+      "row": 140091,
+      "framework": "418\t37\tread\tstring\t-\tok\t-\t5",
+      "modern": "418\t37\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 142038,
+      "framework": "691\t437\tread\tstring\t-\tok\t-\t5",
+      "modern": "691\t437\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 143985,
+      "framework": "964\t500\tread\tstring\t-\tok\t-\t5",
+      "modern": "964\t500\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 145932,
+      "framework": "1237\t708\tread\tstring\t-\tok\t-\t5",
+      "modern": "1237\t708\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 147879,
+      "framework": "1510\t720\tread\tstring\t-\tok\t-\t5",
+      "modern": "1510\t720\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 149826,
+      "framework": "1783\t737\tread\tstring\t-\tok\t-\t5",
+      "modern": "1783\t737\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 151773,
+      "framework": "2056\t775\tread\tstring\t-\tok\t-\t5",
+      "modern": "2056\t775\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 153720,
+      "framework": "2329\t850\tread\tstring\t-\tok\t-\t5",
+      "modern": "2329\t850\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 155667,
+      "framework": "2602\t852\tread\tstring\t-\tok\t-\t5",
+      "modern": "2602\t852\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 157614,
+      "framework": "2875\t855\tread\tstring\t-\tok\t-\t5",
+      "modern": "2875\t855\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 159561,
+      "framework": "3148\t857\tread\tstring\t-\tok\t-\t5",
+      "modern": "3148\t857\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 161508,
+      "framework": "3421\t858\tread\tstring\t-\tok\t-\t5",
+      "modern": "3421\t858\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 163455,
+      "framework": "3694\t860\tread\tstring\t-\tok\t-\t5",
+      "modern": "3694\t860\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 165402,
+      "framework": "3967\t861\tread\tstring\t-\tok\t-\t5",
+      "modern": "3967\t861\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 167349,
+      "framework": "4240\t862\tread\tstring\t-\tok\t-\t5",
+      "modern": "4240\t862\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 169296,
+      "framework": "4513\t863\tread\tstring\t-\tok\t-\t5",
+      "modern": "4513\t863\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 171243,
+      "framework": "4786\t864\tread\tstring\t-\tok\t-\t5",
+      "modern": "4786\t864\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 173190,
+      "framework": "5059\t865\tread\tstring\t-\tok\t-\t5",
+      "modern": "5059\t865\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 175137,
+      "framework": "5332\t866\tread\tstring\t-\tok\t-\t5",
+      "modern": "5332\t866\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 177084,
+      "framework": "5605\t869\tread\tstring\t-\tok\t-\t5",
+      "modern": "5605\t869\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 179031,
+      "framework": "5878\t870\tread\tstring\t-\tok\t-\t5",
+      "modern": "5878\t870\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 180978,
+      "framework": "6151\t874\tread\tstring\t-\tok\t-\t5",
+      "modern": "6151\t874\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 182925,
+      "framework": "6424\t875\tread\tstring\t-\tok\t-\t5",
+      "modern": "6424\t875\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 184872,
+      "framework": "6697\t932\tread\tstring\t-\tok\t-\t5",
+      "modern": "6697\t932\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 184898,
+      "framework": "6702\t932\tread\tstring\t-\tok\t-\t6",
+      "modern": "6702\t932\tread\tstring\t-\tok\t30fb\t6"
+    },
+    {
+      "row": 184900,
+      "framework": "6702\t932\tread\tchar\t-\tok\t30fb\t1",
+      "modern": "6702\t932\tread\tchar\t-\tok\t0003\t1"
+    },
+    {
+      "row": 186819,
+      "framework": "6970\t936\tread\tstring\t-\tok\t-\t5",
+      "modern": "6970\t936\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 186829,
+      "framework": "6972\t936\tread\tstring\t-\tok\t-\t2",
+      "modern": "6972\t936\tread\tstring\t-\tok\t003f\t2"
+    },
+    {
+      "row": 186830,
+      "framework": "6972\t936\tread\tstring\t-\tok\t807d\t4",
+      "modern": "6972\t936\tread\tstring\t-\tok\t003f\t4"
+    },
+    {
+      "row": 186844,
+      "framework": "6975\t936\tread\tstring\t-\tok\t9871\t4",
+      "modern": "6975\t936\tread\tstring\t-\tok\t9871003f\t4"
+    },
+    {
+      "row": 186845,
+      "framework": "6975\t936\tread\tstring\t-\tok\t5ba0\t6",
+      "modern": "6975\t936\tread\tstring\t-\tok\t003f\t6"
+    },
+    {
+      "row": 188766,
+      "framework": "7243\t949\tread\tstring\t-\tok\t-\t5",
+      "modern": "7243\t949\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 188776,
+      "framework": "7245\t949\tread\tstring\t-\tok\t-\t2",
+      "modern": "7245\t949\tread\tstring\t-\tok\t003f\t2"
+    },
+    {
+      "row": 188777,
+      "framework": "7245\t949\tread\tstring\t-\tok\td63b\t4",
+      "modern": "7245\t949\tread\tstring\t-\tok\t003f\t4"
+    },
+    {
+      "row": 188791,
+      "framework": "7248\t949\tread\tstring\t-\tok\t003f\t4",
+      "modern": "7248\t949\tread\tstring\t-\tok\t003f003f\t4"
+    },
+    {
+      "row": 188792,
+      "framework": "7248\t949\tread\tstring\t-\tok\tb158\t6",
+      "modern": "7248\t949\tread\tstring\t-\tok\t003f\t6"
+    },
+    {
+      "row": 190713,
+      "framework": "7516\t950\tread\tstring\t-\tok\t-\t5",
+      "modern": "7516\t950\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 190723,
+      "framework": "7518\t950\tread\tstring\t-\tok\t-\t2",
+      "modern": "7518\t950\tread\tstring\t-\tok\t003f\t2"
+    },
+    {
+      "row": 190738,
+      "framework": "7521\t950\tread\tstring\t-\tok\t97d5\t4",
+      "modern": "7521\t950\tread\tstring\t-\tok\t97d5003f\t4"
+    },
+    {
+      "row": 190739,
+      "framework": "7521\t950\tread\tstring\t-\tok\t553e\t6",
+      "modern": "7521\t950\tread\tstring\t-\tok\t003f\t6"
+    },
+    {
+      "row": 192660,
+      "framework": "7789\t1026\tread\tstring\t-\tok\t-\t5",
+      "modern": "7789\t1026\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 194607,
+      "framework": "8062\t1047\tread\tstring\t-\tok\t-\t5",
+      "modern": "8062\t1047\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 196554,
+      "framework": "8335\t1140\tread\tstring\t-\tok\t-\t5",
+      "modern": "8335\t1140\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 198501,
+      "framework": "8608\t1141\tread\tstring\t-\tok\t-\t5",
+      "modern": "8608\t1141\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 200448,
+      "framework": "8881\t1142\tread\tstring\t-\tok\t-\t5",
+      "modern": "8881\t1142\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 202395,
+      "framework": "9154\t1143\tread\tstring\t-\tok\t-\t5",
+      "modern": "9154\t1143\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 204342,
+      "framework": "9427\t1144\tread\tstring\t-\tok\t-\t5",
+      "modern": "9427\t1144\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 206289,
+      "framework": "9700\t1145\tread\tstring\t-\tok\t-\t5",
+      "modern": "9700\t1145\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 208236,
+      "framework": "9973\t1146\tread\tstring\t-\tok\t-\t5",
+      "modern": "9973\t1146\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 210183,
+      "framework": "10246\t1147\tread\tstring\t-\tok\t-\t5",
+      "modern": "10246\t1147\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 212130,
+      "framework": "10519\t1148\tread\tstring\t-\tok\t-\t5",
+      "modern": "10519\t1148\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 214077,
+      "framework": "10792\t1149\tread\tstring\t-\tok\t-\t5",
+      "modern": "10792\t1149\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 216024,
+      "framework": "11065\t1200\tread\tstring\t-\tok\t-\t5",
+      "modern": "11065\t1200\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 216034,
+      "framework": "11067\t1200\tread\tstring\t-\tok\t-\t2",
+      "modern": "11067\t1200\tread\tstring\t-\tok\tfffd\t2"
+    },
+    {
+      "row": 216035,
+      "framework": "11067\t1200\tread\tstring\t-\tok\ta0c2\t4",
+      "modern": "11067\t1200\tread\tstring\t-\tok\tfffd\t4"
+    },
+    {
+      "row": 216039,
+      "framework": "11068\t1200\tread\tstring\t-\tok\t5a2b\t4",
+      "modern": "11068\t1200\tread\tstring\t-\tok\t5a2bfffd\t4"
+    },
+    {
+      "row": 216040,
+      "framework": "11068\t1200\tread\tstring\t-\tok\t5565\t6",
+      "modern": "11068\t1200\tread\tstring\t-\tok\tfffd\t6"
+    },
+    {
+      "row": 216044,
+      "framework": "11069\t1200\tread\tstring\t-\tok\t-\t2",
+      "modern": "11069\t1200\tread\tstring\t-\tok\tfffd\t2"
+    },
+    {
+      "row": 216045,
+      "framework": "11069\t1200\tread\tstring\t-\tok\t241b\t5",
+      "modern": "11069\t1200\tread\tstring\t-\tok\t4224\t5"
+    },
+    {
+      "row": 216047,
+      "framework": "11069\t1200\tread\tchar\t-\tok\t0142\t2",
+      "modern": "11069\t1200\tread\tchar\t-\tok\t1b01\t2"
+    },
+    {
+      "row": 216049,
+      "framework": "11070\t1200\tread\tstring\t-\tok\t42ef\t4",
+      "modern": "11070\t1200\tread\tstring\t-\tok\t42effffd\t4"
+    },
+    {
+      "row": 216050,
+      "framework": "11070\t1200\tread\tstring\t-\tok\te8b3\t6",
+      "modern": "11070\t1200\tread\tstring\t-\tok\tfffd\t6"
+    },
+    {
+      "row": 217971,
+      "framework": "11338\t1201\tread\tstring\t-\tok\t-\t5",
+      "modern": "11338\t1201\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 217981,
+      "framework": "11340\t1201\tread\tstring\t-\tok\t-\t2",
+      "modern": "11340\t1201\tread\tstring\t-\tok\tfffd\t2"
+    },
+    {
+      "row": 217982,
+      "framework": "11340\t1201\tread\tstring\t-\tok\tc2a0\t4",
+      "modern": "11340\t1201\tread\tstring\t-\tok\tfffd\t4"
+    },
+    {
+      "row": 217986,
+      "framework": "11341\t1201\tread\tstring\t-\tok\t2b5a\t4",
+      "modern": "11341\t1201\tread\tstring\t-\tok\t2b5afffd\t4"
+    },
+    {
+      "row": 217987,
+      "framework": "11341\t1201\tread\tstring\t-\tok\t6555\t6",
+      "modern": "11341\t1201\tread\tstring\t-\tok\tfffd\t6"
+    },
+    {
+      "row": 217991,
+      "framework": "11342\t1201\tread\tstring\t-\tok\t-\t2",
+      "modern": "11342\t1201\tread\tstring\t-\tok\tfffd\t2"
+    },
+    {
+      "row": 217992,
+      "framework": "11342\t1201\tread\tstring\t-\tok\t1b24\t5",
+      "modern": "11342\t1201\tread\tstring\t-\tok\t2442\t5"
+    },
+    {
+      "row": 217994,
+      "framework": "11342\t1201\tread\tchar\t-\tok\t4201\t2",
+      "modern": "11342\t1201\tread\tchar\t-\tok\t011b\t2"
+    },
+    {
+      "row": 217996,
+      "framework": "11343\t1201\tread\tstring\t-\tok\tef42\t4",
+      "modern": "11343\t1201\tread\tstring\t-\tok\tef42fffd\t4"
+    },
+    {
+      "row": 217997,
+      "framework": "11343\t1201\tread\tstring\t-\tok\tb3e8\t6",
+      "modern": "11343\t1201\tread\tstring\t-\tok\tfffd\t6"
+    },
+    {
+      "row": 219918,
+      "framework": "11611\t1250\tread\tstring\t-\tok\t-\t5",
+      "modern": "11611\t1250\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 221865,
+      "framework": "11884\t1251\tread\tstring\t-\tok\t-\t5",
+      "modern": "11884\t1251\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 223812,
+      "framework": "12157\t1252\tread\tstring\t-\tok\t-\t5",
+      "modern": "12157\t1252\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 225759,
+      "framework": "12430\t1253\tread\tstring\t-\tok\t-\t5",
+      "modern": "12430\t1253\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 227706,
+      "framework": "12703\t1254\tread\tstring\t-\tok\t-\t5",
+      "modern": "12703\t1254\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 229653,
+      "framework": "12976\t1255\tread\tstring\t-\tok\t-\t5",
+      "modern": "12976\t1255\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 231600,
+      "framework": "13249\t1256\tread\tstring\t-\tok\t-\t5",
+      "modern": "13249\t1256\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 233547,
+      "framework": "13522\t1257\tread\tstring\t-\tok\t-\t5",
+      "modern": "13522\t1257\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 235494,
+      "framework": "13795\t1258\tread\tstring\t-\tok\t-\t5",
+      "modern": "13795\t1258\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 237441,
+      "framework": "14068\t1361\tread\tstring\t-\tok\t-\t5",
+      "modern": "14068\t1361\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 237451,
+      "framework": "14070\t1361\tread\tstring\t-\tok\t-\t2",
+      "modern": "14070\t1361\tread\tstring\t-\tok\t003f\t2"
+    },
+    {
+      "row": 237466,
+      "framework": "14073\t1361\tread\tstring\t-\tok\t7e15\t4",
+      "modern": "14073\t1361\tread\tstring\t-\tok\t7e15003f\t4"
+    },
+    {
+      "row": 239388,
+      "framework": "14341\t10000\tread\tstring\t-\tok\t-\t5",
+      "modern": "14341\t10000\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 241335,
+      "framework": "14614\t10001\tread\tstring\t-\tok\t-\t5",
+      "modern": "14614\t10001\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 241361,
+      "framework": "14619\t10001\tread\tstring\t-\tok\t-\t6",
+      "modern": "14619\t10001\tread\tstring\t-\tok\t30fb\t6"
+    },
+    {
+      "row": 241363,
+      "framework": "14619\t10001\tread\tchar\t-\tok\t30fb\t1",
+      "modern": "14619\t10001\tread\tchar\t-\tok\t0003\t1"
+    },
+    {
+      "row": 243282,
+      "framework": "14887\t10002\tread\tstring\t-\tok\t-\t5",
+      "modern": "14887\t10002\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 243292,
+      "framework": "14889\t10002\tread\tstring\t-\tok\t-\t2",
+      "modern": "14889\t10002\tread\tstring\t-\tok\t003f\t2"
+    },
+    {
+      "row": 243307,
+      "framework": "14892\t10002\tread\tstring\t-\tok\t97d5\t4",
+      "modern": "14892\t10002\tread\tstring\t-\tok\t97d5003f\t4"
+    },
+    {
+      "row": 243308,
+      "framework": "14892\t10002\tread\tstring\t-\tok\t553e\t6",
+      "modern": "14892\t10002\tread\tstring\t-\tok\t003f\t6"
+    },
+    {
+      "row": 245229,
+      "framework": "15160\t10003\tread\tstring\t-\tok\t-\t5",
+      "modern": "15160\t10003\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 245239,
+      "framework": "15162\t10003\tread\tstring\t-\tok\t-\t2",
+      "modern": "15162\t10003\tread\tstring\t-\tok\t003f\t2"
+    },
+    {
+      "row": 245240,
+      "framework": "15162\t10003\tread\tstring\t-\tok\t003f\t4",
+      "modern": "15162\t10003\tread\tstring\t-\tok\tf8e6\t4"
+    },
+    {
+      "row": 245254,
+      "framework": "15165\t10003\tread\tstring\t-\tok\t003f\t4",
+      "modern": "15165\t10003\tread\tstring\t-\tok\t003f003f\t4"
+    },
+    {
+      "row": 245255,
+      "framework": "15165\t10003\tread\tstring\t-\tok\tb158\t6",
+      "modern": "15165\t10003\tread\tstring\t-\tok\t003f\t6"
+    },
+    {
+      "row": 247176,
+      "framework": "15433\t10004\tread\tstring\t-\tok\t-\t5",
+      "modern": "15433\t10004\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 249123,
+      "framework": "15706\t10005\tread\tstring\t-\tok\t-\t5",
+      "modern": "15706\t10005\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 251070,
+      "framework": "15979\t10006\tread\tstring\t-\tok\t-\t5",
+      "modern": "15979\t10006\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 253017,
+      "framework": "16252\t10007\tread\tstring\t-\tok\t-\t5",
+      "modern": "16252\t10007\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 254964,
+      "framework": "16525\t10008\tread\tstring\t-\tok\t-\t5",
+      "modern": "16525\t10008\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 254974,
+      "framework": "16527\t10008\tread\tstring\t-\tok\t-\t2",
+      "modern": "16527\t10008\tread\tstring\t-\tok\t003f\t2"
+    },
+    {
+      "row": 254975,
+      "framework": "16527\t10008\tread\tstring\t-\tok\t003f\t4",
+      "modern": "16527\t10008\tread\tstring\t-\tok\tf8f7\t4"
+    },
+    {
+      "row": 254989,
+      "framework": "16530\t10008\tread\tstring\t-\tok\t003f\t4",
+      "modern": "16530\t10008\tread\tstring\t-\tok\t003f003f\t4"
+    },
+    {
+      "row": 254990,
+      "framework": "16530\t10008\tread\tstring\t-\tok\t5ba0\t6",
+      "modern": "16530\t10008\tread\tstring\t-\tok\t003f\t6"
+    },
+    {
+      "row": 256911,
+      "framework": "16798\t10010\tread\tstring\t-\tok\t-\t5",
+      "modern": "16798\t10010\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 258858,
+      "framework": "17071\t10017\tread\tstring\t-\tok\t-\t5",
+      "modern": "17071\t10017\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 260805,
+      "framework": "17344\t10021\tread\tstring\t-\tok\t-\t5",
+      "modern": "17344\t10021\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 262752,
+      "framework": "17617\t10029\tread\tstring\t-\tok\t-\t5",
+      "modern": "17617\t10029\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 264699,
+      "framework": "17890\t10079\tread\tstring\t-\tok\t-\t5",
+      "modern": "17890\t10079\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 266646,
+      "framework": "18163\t10081\tread\tstring\t-\tok\t-\t5",
+      "modern": "18163\t10081\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 268593,
+      "framework": "18436\t10082\tread\tstring\t-\tok\t-\t5",
+      "modern": "18436\t10082\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 270540,
+      "framework": "18709\t12000\tread\tstring\t-\tok\t-\t5",
+      "modern": "18709\t12000\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 270550,
+      "framework": "18711\t12000\tread\tstring\t-\tok\t-\t2",
+      "modern": "18711\t12000\tread\tstring\t-\tok\tfffd\t2"
+    },
+    {
+      "row": 270551,
+      "framework": "18711\t12000\tread\tstring\t-\tok\t-\t4",
+      "modern": "18711\t12000\tread\tstring\t-\tok\tfffd\t4"
+    },
+    {
+      "row": 270553,
+      "framework": "18711\t12000\tread\tchar\t-\tok\tfffd\t2",
+      "modern": "18711\t12000\tread\tchar\t-\tok\tfffd\t4"
+    },
+    {
+      "row": 270555,
+      "framework": "18712\t12000\tread\tstring\t-\tok\t-\t4",
+      "modern": "18712\t12000\tread\tstring\t-\tok\tfffd\t4"
+    },
+    {
+      "row": 270560,
+      "framework": "18713\t12000\tread\tstring\t-\tok\t-\t2",
+      "modern": "18713\t12000\tread\tstring\t-\tok\tfffd\t2"
+    },
+    {
+      "row": 270561,
+      "framework": "18713\t12000\tread\tstring\t-\tok\t-\t5",
+      "modern": "18713\t12000\tread\tstring\t-\tok\tfffd\t5"
+    },
+    {
+      "row": 270563,
+      "framework": "18713\t12000\tread\tchar\t-\tok\tfffd\t1",
+      "modern": "18713\t12000\tread\tchar\t-\tok\tfffd\t4"
+    },
+    {
+      "row": 270565,
+      "framework": "18714\t12000\tread\tstring\t-\tok\t-\t4",
+      "modern": "18714\t12000\tread\tstring\t-\tok\tfffd\t4"
+    },
+    {
+      "row": 272487,
+      "framework": "18982\t12001\tread\tstring\t-\tok\t-\t5",
+      "modern": "18982\t12001\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 272497,
+      "framework": "18984\t12001\tread\tstring\t-\tok\t-\t2",
+      "modern": "18984\t12001\tread\tstring\t-\tok\tfffd\t2"
+    },
+    {
+      "row": 272498,
+      "framework": "18984\t12001\tread\tstring\t-\tok\t-\t4",
+      "modern": "18984\t12001\tread\tstring\t-\tok\tfffd\t4"
+    },
+    {
+      "row": 272500,
+      "framework": "18984\t12001\tread\tchar\t-\tok\tfffd\t2",
+      "modern": "18984\t12001\tread\tchar\t-\tok\tfffd\t4"
+    },
+    {
+      "row": 272502,
+      "framework": "18985\t12001\tread\tstring\t-\tok\t-\t4",
+      "modern": "18985\t12001\tread\tstring\t-\tok\tfffd\t4"
+    },
+    {
+      "row": 272507,
+      "framework": "18986\t12001\tread\tstring\t-\tok\t-\t2",
+      "modern": "18986\t12001\tread\tstring\t-\tok\tfffd\t2"
+    },
+    {
+      "row": 272508,
+      "framework": "18986\t12001\tread\tstring\t-\tok\t-\t5",
+      "modern": "18986\t12001\tread\tstring\t-\tok\tfffd\t5"
+    },
+    {
+      "row": 272510,
+      "framework": "18986\t12001\tread\tchar\t-\tok\tfffd\t1",
+      "modern": "18986\t12001\tread\tchar\t-\tok\tfffd\t4"
+    },
+    {
+      "row": 272512,
+      "framework": "18987\t12001\tread\tstring\t-\tok\t-\t4",
+      "modern": "18987\t12001\tread\tstring\t-\tok\tfffd\t4"
+    },
+    {
+      "row": 274434,
+      "framework": "19255\t20000\tread\tstring\t-\tok\t-\t5",
+      "modern": "19255\t20000\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 274444,
+      "framework": "19257\t20000\tread\tstring\t-\tok\t-\t2",
+      "modern": "19257\t20000\tread\tstring\t-\tok\t003f\t2"
+    },
+    {
+      "row": 274445,
+      "framework": "19257\t20000\tread\tstring\t-\tok\t003f\t4",
+      "modern": "19257\t20000\tread\tstring\t-\tok\tf8f0\t4"
+    },
+    {
+      "row": 274459,
+      "framework": "19260\t20000\tread\tstring\t-\tok\t863c\t4",
+      "modern": "19260\t20000\tread\tstring\t-\tok\t863c003f\t4"
+    },
+    {
+      "row": 274460,
+      "framework": "19260\t20000\tread\tstring\t-\tok\te7fd\t6",
+      "modern": "19260\t20000\tread\tstring\t-\tok\t003f\t6"
+    },
+    {
+      "row": 276381,
+      "framework": "19528\t20001\tread\tstring\t-\tok\t-\t5",
+      "modern": "19528\t20001\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 276391,
+      "framework": "19530\t20001\tread\tstring\t-\tok\t-\t2",
+      "modern": "19530\t20001\tread\tstring\t-\tok\t003f\t2"
+    },
+    {
+      "row": 276392,
+      "framework": "19530\t20001\tread\tstring\t-\tok\t7d8d\t4",
+      "modern": "19530\t20001\tread\tstring\t-\tok\t003f\t4"
+    },
+    {
+      "row": 276406,
+      "framework": "19533\t20001\tread\tstring\t-\tok\tebcb\t4",
+      "modern": "19533\t20001\tread\tstring\t-\tok\tebcb003f\t4"
+    },
+    {
+      "row": 276407,
+      "framework": "19533\t20001\tread\tstring\t-\tok\t866d\t6",
+      "modern": "19533\t20001\tread\tstring\t-\tok\t003f\t6"
+    },
+    {
+      "row": 278328,
+      "framework": "19801\t20002\tread\tstring\t-\tok\t-\t5",
+      "modern": "19801\t20002\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 278339,
+      "framework": "19803\t20002\tread\tstring\t-\tok\t-\t4",
+      "modern": "19803\t20002\tread\tstring\t-\tok\t003f\t4"
+    },
+    {
+      "row": 278341,
+      "framework": "19803\t20002\tread\tchar\t-\tok\t003f\t1",
+      "modern": "19803\t20002\tread\tchar\t-\tok\t0001\t1"
+    },
+    {
+      "row": 278354,
+      "framework": "19806\t20002\tread\tstring\t-\tok\t-\t6",
+      "modern": "19806\t20002\tread\tstring\t-\tok\t003f\t6"
+    },
+    {
+      "row": 278356,
+      "framework": "19806\t20002\tread\tchar\t-\tok\t003f\t1",
+      "modern": "19806\t20002\tread\tchar\t-\tok\t0003\t1"
+    },
+    {
+      "row": 280275,
+      "framework": "20074\t20003\tread\tstring\t-\tok\t-\t5",
+      "modern": "20074\t20003\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 280285,
+      "framework": "20076\t20003\tread\tstring\t-\tok\t-\t2",
+      "modern": "20076\t20003\tread\tstring\t-\tok\t003f\t2"
+    },
+    {
+      "row": 280286,
+      "framework": "20076\t20003\tread\tstring\t-\tok\t877a\t4",
+      "modern": "20076\t20003\tread\tstring\t-\tok\t003f\t4"
+    },
+    {
+      "row": 280300,
+      "framework": "20079\t20003\tread\tstring\t-\tok\tf8ac0042\t4",
+      "modern": "20079\t20003\tread\tstring\t-\tok\tf8ac0042003f\t4"
+    },
+    {
+      "row": 280301,
+      "framework": "20079\t20003\tread\tstring\t-\tok\t6de3\t6",
+      "modern": "20079\t20003\tread\tstring\t-\tok\t003f\t6"
+    },
+    {
+      "row": 282222,
+      "framework": "20347\t20004\tread\tstring\t-\tok\t-\t5",
+      "modern": "20347\t20004\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 282232,
+      "framework": "20349\t20004\tread\tstring\t-\tok\t-\t2",
+      "modern": "20349\t20004\tread\tstring\t-\tok\t003f\t2"
+    },
+    {
+      "row": 282233,
+      "framework": "20349\t20004\tread\tstring\t-\tok\t003f\t4",
+      "modern": "20349\t20004\tread\tstring\t-\tok\tf8a1\t4"
+    },
+    {
+      "row": 282247,
+      "framework": "20352\t20004\tread\tstring\t-\tok\t003f\t4",
+      "modern": "20352\t20004\tread\tstring\t-\tok\t003f003f\t4"
+    },
+    {
+      "row": 282248,
+      "framework": "20352\t20004\tread\tstring\t-\tok\t5f79\t6",
+      "modern": "20352\t20004\tread\tstring\t-\tok\t003f\t6"
+    },
+    {
+      "row": 284169,
+      "framework": "20620\t20005\tread\tstring\t-\tok\t-\t5",
+      "modern": "20620\t20005\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 284179,
+      "framework": "20622\t20005\tread\tstring\t-\tok\t-\t2",
+      "modern": "20622\t20005\tread\tstring\t-\tok\t003f\t2"
+    },
+    {
+      "row": 284180,
+      "framework": "20622\t20005\tread\tstring\t-\tok\t744b\t4",
+      "modern": "20622\t20005\tread\tstring\t-\tok\t003f\t4"
+    },
+    {
+      "row": 284194,
+      "framework": "20625\t20005\tread\tstring\t-\tok\ted71\t4",
+      "modern": "20625\t20005\tread\tstring\t-\tok\ted71003f\t4"
+    },
+    {
+      "row": 284195,
+      "framework": "20625\t20005\tread\tstring\t-\tok\t5cd4\t6",
+      "modern": "20625\t20005\tread\tstring\t-\tok\t003f\t6"
+    },
+    {
+      "row": 286116,
+      "framework": "20893\t20105\tread\tstring\t-\tok\t-\t5",
+      "modern": "20893\t20105\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 288063,
+      "framework": "21166\t20106\tread\tstring\t-\tok\t-\t5",
+      "modern": "21166\t20106\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 290010,
+      "framework": "21439\t20107\tread\tstring\t-\tok\t-\t5",
+      "modern": "21439\t20107\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 291957,
+      "framework": "21712\t20108\tread\tstring\t-\tok\t-\t5",
+      "modern": "21712\t20108\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 293904,
+      "framework": "21985\t20127\tread\tstring\t-\tok\t-\t5",
+      "modern": "21985\t20127\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 295851,
+      "framework": "22258\t20261\tread\tstring\t-\tok\t-\t5",
+      "modern": "22258\t20261\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 295861,
+      "framework": "22260\t20261\tread\tstring\t-\tok\t-\t2",
+      "modern": "22260\t20261\tread\tstring\t-\tok\t003f\t2"
+    },
+    {
+      "row": 295862,
+      "framework": "22260\t20261\tread\tstring\t-\tok\t003f\t4",
+      "modern": "22260\t20261\tread\tstring\t-\tok\tf8e1\t4"
+    },
+    {
+      "row": 297798,
+      "framework": "22531\t20269\tread\tstring\t-\tok\t-\t5",
+      "modern": "22531\t20269\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 299745,
+      "framework": "22804\t20273\tread\tstring\t-\tok\t-\t5",
+      "modern": "22804\t20273\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 301692,
+      "framework": "23077\t20277\tread\tstring\t-\tok\t-\t5",
+      "modern": "23077\t20277\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 303639,
+      "framework": "23350\t20278\tread\tstring\t-\tok\t-\t5",
+      "modern": "23350\t20278\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 305586,
+      "framework": "23623\t20280\tread\tstring\t-\tok\t-\t5",
+      "modern": "23623\t20280\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 307533,
+      "framework": "23896\t20284\tread\tstring\t-\tok\t-\t5",
+      "modern": "23896\t20284\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 309480,
+      "framework": "24169\t20285\tread\tstring\t-\tok\t-\t5",
+      "modern": "24169\t20285\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 311427,
+      "framework": "24442\t20290\tread\tstring\t-\tok\t-\t5",
+      "modern": "24442\t20290\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 313374,
+      "framework": "24715\t20297\tread\tstring\t-\tok\t-\t5",
+      "modern": "24715\t20297\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 315321,
+      "framework": "24988\t20420\tread\tstring\t-\tok\t-\t5",
+      "modern": "24988\t20420\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 317268,
+      "framework": "25261\t20423\tread\tstring\t-\tok\t-\t5",
+      "modern": "25261\t20423\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 319215,
+      "framework": "25534\t20424\tread\tstring\t-\tok\t-\t5",
+      "modern": "25534\t20424\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 321162,
+      "framework": "25807\t20833\tread\tstring\t-\tok\t-\t5",
+      "modern": "25807\t20833\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 323109,
+      "framework": "26080\t20838\tread\tstring\t-\tok\t-\t5",
+      "modern": "26080\t20838\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 325056,
+      "framework": "26353\t20866\tread\tstring\t-\tok\t-\t5",
+      "modern": "26353\t20866\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 327003,
+      "framework": "26626\t20871\tread\tstring\t-\tok\t-\t5",
+      "modern": "26626\t20871\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 328950,
+      "framework": "26899\t20880\tread\tstring\t-\tok\t-\t5",
+      "modern": "26899\t20880\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 330897,
+      "framework": "27172\t20905\tread\tstring\t-\tok\t-\t5",
+      "modern": "27172\t20905\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 332844,
+      "framework": "27445\t20924\tread\tstring\t-\tok\t-\t5",
+      "modern": "27445\t20924\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 334791,
+      "framework": "27718\t20932\tread\tstring\t-\tok\t-\t5",
+      "modern": "27718\t20932\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 334801,
+      "framework": "27720\t20932\tread\tstring\t-\tok\t-\t2",
+      "modern": "27720\t20932\tread\tstring\t-\tok\t30fb\t2"
+    },
+    {
+      "row": 334802,
+      "framework": "27720\t20932\tread\tstring\t-\tok\t30fb\t4",
+      "modern": "27720\t20932\tread\tstring\t-\tok\tf8f0\t4"
+    },
+    {
+      "row": 334816,
+      "framework": "27723\t20932\tread\tstring\t-\tok\t30fb\t4",
+      "modern": "27723\t20932\tread\tstring\t-\tok\t30fb30fb\t4"
+    },
+    {
+      "row": 334817,
+      "framework": "27723\t20932\tread\tstring\t-\tok\t6d3b\t6",
+      "modern": "27723\t20932\tread\tstring\t-\tok\t30fb\t6"
+    },
+    {
+      "row": 336738,
+      "framework": "27991\t20936\tread\tstring\t-\tok\t-\t5",
+      "modern": "27991\t20936\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 336748,
+      "framework": "27993\t20936\tread\tstring\t-\tok\t-\t2",
+      "modern": "27993\t20936\tread\tstring\t-\tok\t003f\t2"
+    },
+    {
+      "row": 336749,
+      "framework": "27993\t20936\tread\tstring\t-\tok\t003f\t4",
+      "modern": "27993\t20936\tread\tstring\t-\tok\tf8f7\t4"
+    },
+    {
+      "row": 336763,
+      "framework": "27996\t20936\tread\tstring\t-\tok\t003f\t4",
+      "modern": "27996\t20936\tread\tstring\t-\tok\t003f003f\t4"
+    },
+    {
+      "row": 336764,
+      "framework": "27996\t20936\tread\tstring\t-\tok\t5ba0\t6",
+      "modern": "27996\t20936\tread\tstring\t-\tok\t003f\t6"
+    },
+    {
+      "row": 338685,
+      "framework": "28264\t20949\tread\tstring\t-\tok\t-\t5",
+      "modern": "28264\t20949\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 338695,
+      "framework": "28266\t20949\tread\tstring\t-\tok\t-\t2",
+      "modern": "28266\t20949\tread\tstring\t-\tok\t003f\t2"
+    },
+    {
+      "row": 338696,
+      "framework": "28266\t20949\tread\tstring\t-\tok\t003f\t4",
+      "modern": "28266\t20949\tread\tstring\t-\tok\tf8e6\t4"
+    },
+    {
+      "row": 338710,
+      "framework": "28269\t20949\tread\tstring\t-\tok\t003f\t4",
+      "modern": "28269\t20949\tread\tstring\t-\tok\t003f003f\t4"
+    },
+    {
+      "row": 338711,
+      "framework": "28269\t20949\tread\tstring\t-\tok\tb158\t6",
+      "modern": "28269\t20949\tread\tstring\t-\tok\t003f\t6"
+    },
+    {
+      "row": 340632,
+      "framework": "28537\t21025\tread\tstring\t-\tok\t-\t5",
+      "modern": "28537\t21025\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 342579,
+      "framework": "28810\t21866\tread\tstring\t-\tok\t-\t5",
+      "modern": "28810\t21866\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 344526,
+      "framework": "29083\t28591\tread\tstring\t-\tok\t-\t5",
+      "modern": "29083\t28591\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 346473,
+      "framework": "29356\t28592\tread\tstring\t-\tok\t-\t5",
+      "modern": "29356\t28592\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 348420,
+      "framework": "29629\t28593\tread\tstring\t-\tok\t-\t5",
+      "modern": "29629\t28593\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 350367,
+      "framework": "29902\t28594\tread\tstring\t-\tok\t-\t5",
+      "modern": "29902\t28594\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 352314,
+      "framework": "30175\t28595\tread\tstring\t-\tok\t-\t5",
+      "modern": "30175\t28595\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 354261,
+      "framework": "30448\t28596\tread\tstring\t-\tok\t-\t5",
+      "modern": "30448\t28596\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 356208,
+      "framework": "30721\t28597\tread\tstring\t-\tok\t-\t5",
+      "modern": "30721\t28597\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 358155,
+      "framework": "30994\t28598\tread\tstring\t-\tok\t-\t5",
+      "modern": "30994\t28598\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 360102,
+      "framework": "31267\t28599\tread\tstring\t-\tok\t-\t5",
+      "modern": "31267\t28599\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 362049,
+      "framework": "31540\t28603\tread\tstring\t-\tok\t-\t5",
+      "modern": "31540\t28603\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 363996,
+      "framework": "31813\t28605\tread\tstring\t-\tok\t-\t5",
+      "modern": "31813\t28605\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 365943,
+      "framework": "32086\t29001\tread\tstring\t-\tok\t-\t5",
+      "modern": "32086\t29001\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 367890,
+      "framework": "32359\t38598\tread\tstring\t-\tok\t-\t5",
+      "modern": "32359\t38598\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 369837,
+      "framework": "32632\t50220\tread\tstring\t-\tok\t-\t5",
+      "modern": "32632\t50220\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 369857,
+      "framework": "32636\t50220\tread\tstring\t-\tok\t-\t2",
+      "modern": "32636\t50220\tread\tstring\t-\tok\t001b\t2"
+    },
+    {
+      "row": 369858,
+      "framework": "32636\t50220\tread\tstring\t-\tok\t-\t5",
+      "modern": "32636\t50220\tread\tstring\t-\tok\t00240042\t5"
+    },
+    {
+      "row": 369860,
+      "framework": "32636\t50220\tread\tchar\t-\tok\t30fb\t2",
+      "modern": "32636\t50220\tread\tchar\t-\tok\t0001\t1"
+    },
+    {
+      "row": 371784,
+      "framework": "32905\t50221\tread\tstring\t-\tok\t-\t5",
+      "modern": "32905\t50221\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 371804,
+      "framework": "32909\t50221\tread\tstring\t-\tok\t-\t2",
+      "modern": "32909\t50221\tread\tstring\t-\tok\t001b\t2"
+    },
+    {
+      "row": 371805,
+      "framework": "32909\t50221\tread\tstring\t-\tok\t-\t5",
+      "modern": "32909\t50221\tread\tstring\t-\tok\t00240042\t5"
+    },
+    {
+      "row": 371807,
+      "framework": "32909\t50221\tread\tchar\t-\tok\t30fb\t2",
+      "modern": "32909\t50221\tread\tchar\t-\tok\t0001\t1"
+    },
+    {
+      "row": 373731,
+      "framework": "33178\t50222\tread\tstring\t-\tok\t-\t5",
+      "modern": "33178\t50222\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 373751,
+      "framework": "33182\t50222\tread\tstring\t-\tok\t-\t2",
+      "modern": "33182\t50222\tread\tstring\t-\tok\t001b\t2"
+    },
+    {
+      "row": 373752,
+      "framework": "33182\t50222\tread\tstring\t-\tok\t-\t5",
+      "modern": "33182\t50222\tread\tstring\t-\tok\t00240042\t5"
+    },
+    {
+      "row": 373754,
+      "framework": "33182\t50222\tread\tchar\t-\tok\t30fb\t2",
+      "modern": "33182\t50222\tread\tchar\t-\tok\t0001\t1"
+    },
+    {
+      "row": 375678,
+      "framework": "33451\t50225\tread\tstring\t-\tok\t-\t5",
+      "modern": "33451\t50225\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 375698,
+      "framework": "33455\t50225\tread\tstring\t-\tok\t-\t2",
+      "modern": "33455\t50225\tread\tstring\t-\tok\t001b\t2"
+    },
+    {
+      "row": 375699,
+      "framework": "33455\t50225\tread\tstring\t-\tok\t-\t5",
+      "modern": "33455\t50225\tread\tstring\t-\tok\t00240042\t5"
+    },
+    {
+      "row": 375701,
+      "framework": "33455\t50225\tread\tchar\t-\tArgumentException\t-\t0",
+      "modern": "33455\t50225\tread\tchar\t-\tok\t0001\t1"
+    },
+    {
+      "row": 377625,
+      "framework": "33724\t50227\tread\tstring\t-\tok\t-\t5",
+      "modern": "33724\t50227\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 377635,
+      "framework": "33726\t50227\tread\tstring\t-\tok\t-\t2",
+      "modern": "33726\t50227\tread\tstring\t-\tok\t003f\t2"
+    },
+    {
+      "row": 377636,
+      "framework": "33726\t50227\tread\tstring\t-\tok\t807d\t4",
+      "modern": "33726\t50227\tread\tstring\t-\tok\t003f\t4"
+    },
+    {
+      "row": 377650,
+      "framework": "33729\t50227\tread\tstring\t-\tok\t9871\t4",
+      "modern": "33729\t50227\tread\tstring\t-\tok\t9871003f\t4"
+    },
+    {
+      "row": 377651,
+      "framework": "33729\t50227\tread\tstring\t-\tok\t5ba0\t6",
+      "modern": "33729\t50227\tread\tstring\t-\tok\t003f\t6"
+    },
+    {
+      "row": 379572,
+      "framework": "33997\t51932\tread\tstring\t-\tok\t-\t5",
+      "modern": "33997\t51932\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 379582,
+      "framework": "33999\t51932\tread\tstring\t-\tok\t-\t2",
+      "modern": "33999\t51932\tread\tstring\t-\tok\t30fb\t2"
+    },
+    {
+      "row": 379583,
+      "framework": "33999\t51932\tread\tstring\t-\tok\t30fb\t4",
+      "modern": "33999\t51932\tread\tstring\t-\tok\tf8f0\t4"
+    },
+    {
+      "row": 379597,
+      "framework": "34002\t51932\tread\tstring\t-\tok\t30fb\t4",
+      "modern": "34002\t51932\tread\tstring\t-\tok\t30fb30fb\t4"
+    },
+    {
+      "row": 379598,
+      "framework": "34002\t51932\tread\tstring\t-\tok\t6d3b\t6",
+      "modern": "34002\t51932\tread\tstring\t-\tok\t30fb\t6"
+    },
+    {
+      "row": 381519,
+      "framework": "34270\t51936\tread\tstring\t-\tok\t-\t5",
+      "modern": "34270\t51936\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 381529,
+      "framework": "34272\t51936\tread\tstring\t-\tok\t-\t2",
+      "modern": "34272\t51936\tread\tstring\t-\tok\t003f\t2"
+    },
+    {
+      "row": 381530,
+      "framework": "34272\t51936\tread\tstring\t-\tok\t807d\t4",
+      "modern": "34272\t51936\tread\tstring\t-\tok\t003f\t4"
+    },
+    {
+      "row": 381544,
+      "framework": "34275\t51936\tread\tstring\t-\tok\t9871\t4",
+      "modern": "34275\t51936\tread\tstring\t-\tok\t9871003f\t4"
+    },
+    {
+      "row": 381545,
+      "framework": "34275\t51936\tread\tstring\t-\tok\t5ba0\t6",
+      "modern": "34275\t51936\tread\tstring\t-\tok\t003f\t6"
+    },
+    {
+      "row": 383466,
+      "framework": "34543\t51949\tread\tstring\t-\tok\t-\t5",
+      "modern": "34543\t51949\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 383476,
+      "framework": "34545\t51949\tread\tstring\t-\tok\t-\t2",
+      "modern": "34545\t51949\tread\tstring\t-\tok\t003f\t2"
+    },
+    {
+      "row": 383477,
+      "framework": "34545\t51949\tread\tstring\t-\tok\t003f\t4",
+      "modern": "34545\t51949\tread\tstring\t-\tok\tf8e6\t4"
+    },
+    {
+      "row": 383491,
+      "framework": "34548\t51949\tread\tstring\t-\tok\t003f\t4",
+      "modern": "34548\t51949\tread\tstring\t-\tok\t003f003f\t4"
+    },
+    {
+      "row": 383492,
+      "framework": "34548\t51949\tread\tstring\t-\tok\tb158\t6",
+      "modern": "34548\t51949\tread\tstring\t-\tok\t003f\t6"
+    },
+    {
+      "row": 385413,
+      "framework": "34816\t52936\tread\tstring\t-\tok\t-\t5",
+      "modern": "34816\t52936\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 387360,
+      "framework": "35089\t54936\tread\tstring\t-\tok\t-\t5",
+      "modern": "35089\t54936\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 387370,
+      "framework": "35091\t54936\tread\tstring\t-\tok\t-\t2",
+      "modern": "35091\t54936\tread\tstring\t-\tok\t003f\t2"
+    },
+    {
+      "row": 387371,
+      "framework": "35091\t54936\tread\tstring\t-\tok\t807d\t4",
+      "modern": "35091\t54936\tread\tstring\t-\tok\t003f\t4"
+    },
+    {
+      "row": 387385,
+      "framework": "35094\t54936\tread\tstring\t-\tok\t9871\t4",
+      "modern": "35094\t54936\tread\tstring\t-\tok\t9871003f\t4"
+    },
+    {
+      "row": 387386,
+      "framework": "35094\t54936\tread\tstring\t-\tok\t5ba0\t6",
+      "modern": "35094\t54936\tread\tstring\t-\tok\t003f\t6"
+    },
+    {
+      "row": 387395,
+      "framework": "35095\t57002\twrite\tchar\t200c\tok\te8\t1",
+      "modern": "35095\t57002\twrite\tchar\t200c\tok\t3f\t1"
+    },
+    {
+      "row": 387411,
+      "framework": "35095\t57002\twrite\tchar\t200c\tok\te8\t1",
+      "modern": "35095\t57002\twrite\tchar\t200c\tok\t3f\t1"
+    },
+    {
+      "row": 387414,
+      "framework": "35095\t57002\twrite\tchar\t200c\tok\te8\t1",
+      "modern": "35095\t57002\twrite\tchar\t200c\tok\t3f\t1"
+    },
+    {
+      "row": 387417,
+      "framework": "35095\t57002\twrite\tchar\t200c\tok\te8\t1",
+      "modern": "35095\t57002\twrite\tchar\t200c\tok\t3f\t1"
+    },
+    {
+      "row": 387420,
+      "framework": "35095\t57002\twrite\tchar\t200c\tok\te8\t1",
+      "modern": "35095\t57002\twrite\tchar\t200c\tok\t3f\t1"
+    },
+    {
+      "row": 387423,
+      "framework": "35095\t57002\twrite\tchar\t200c\tok\te8\t1",
+      "modern": "35095\t57002\twrite\tchar\t200c\tok\t3f\t1"
+    },
+    {
+      "row": 387426,
+      "framework": "35095\t57002\twrite\tchar\t200c\tok\te8\t1",
+      "modern": "35095\t57002\twrite\tchar\t200c\tok\t3f\t1"
+    },
+    {
+      "row": 387429,
+      "framework": "35095\t57002\twrite\tchar\t200c\tok\te8\t1",
+      "modern": "35095\t57002\twrite\tchar\t200c\tok\t3f\t1"
+    },
+    {
+      "row": 387432,
+      "framework": "35095\t57002\twrite\tchar\t200c\tok\te8\t1",
+      "modern": "35095\t57002\twrite\tchar\t200c\tok\t3f\t1"
+    },
+    {
+      "row": 387434,
+      "framework": "35095\t57002\twrite\tstring\t200c00410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004165e5d83cdf0dd83d\tok\t8402e84141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141413f3f3f3f\t262",
+      "modern": "35095\t57002\twrite\tstring\t200c00410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004165e5d83cdf0dd83d\tok\t84023f4141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141413f3f3f3f\t262"
+    },
+    {
+      "row": 387437,
+      "framework": "35095\t57002\twrite\tstring\t200c004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004165e5d83cdf0dd83d\tok\t8502e8414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141413f3f3f3f\t263",
+      "modern": "35095\t57002\twrite\tstring\t200c004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004165e5d83cdf0dd83d\tok\t85023f414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141413f3f3f3f\t263"
+    },
+    {
+      "row": 387440,
+      "framework": "35095\t57002\twrite\tstring\t200c0041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004165e5d83cdf0dd83d\tok\t8602e841414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141413f3f3f3f\t264",
+      "modern": "35095\t57002\twrite\tstring\t200c0041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004165e5d83cdf0dd83d\tok\t86023f41414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141413f3f3f3f\t264"
+    },
+    {
+      "row": 387443,
+      "framework": "35095\t57002\twrite\tstring\t200c00410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004165e5d83cdf0dd83d\tok\t8408e84141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141413f3f3f3f\t1030",
+      "modern": "35095\t57002\twrite\tstring\t200c00410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004165e5d83cdf0dd83d\tok\t84083f4141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141413f3f3f3f\t1030"
+    },
+    {
+      "row": 387446,
+      "framework": "35095\t57002\twrite\tstring\t200c004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004165e5d83cdf0dd83d\tok\t8508e8414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141413f3f3f3f\t1031",
+      "modern": "35095\t57002\twrite\tstring\t200c004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004100410041004165e5d83cdf0dd83d\tok\t85083f414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141414141413f3f3f3f\t1031"
+    },
+    {
+      "row": 389307,
+      "framework": "35362\t57002\tread\tstring\t-\tok\t-\t5",
+      "modern": "35362\t57002\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 389332,
+      "framework": "35367\t57002\tread\tstring\t-\tok\t-\t4",
+      "modern": "35367\t57002\tread\tstring\t-\tok\t0915\t4"
+    },
+    {
+      "row": 389333,
+      "framework": "35367\t57002\tread\tstring\t-\tok\t0915094d\t6",
+      "modern": "35367\t57002\tread\tstring\t-\tok\t094d\t6"
+    },
+    {
+      "row": 391254,
+      "framework": "35635\t57003\tread\tstring\t-\tok\t-\t5",
+      "modern": "35635\t57003\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 391279,
+      "framework": "35640\t57003\tread\tstring\t-\tok\t-\t4",
+      "modern": "35640\t57003\tread\tstring\t-\tok\t0915\t4"
+    },
+    {
+      "row": 391280,
+      "framework": "35640\t57003\tread\tstring\t-\tok\t0915094d\t6",
+      "modern": "35640\t57003\tread\tstring\t-\tok\t09cd\t6"
+    },
+    {
+      "row": 393201,
+      "framework": "35908\t57004\tread\tstring\t-\tok\t-\t5",
+      "modern": "35908\t57004\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 393226,
+      "framework": "35913\t57004\tread\tstring\t-\tok\t-\t4",
+      "modern": "35913\t57004\tread\tstring\t-\tok\t0915\t4"
+    },
+    {
+      "row": 393227,
+      "framework": "35913\t57004\tread\tstring\t-\tok\t0915094d\t6",
+      "modern": "35913\t57004\tread\tstring\t-\tok\t0bcd\t6"
+    },
+    {
+      "row": 395148,
+      "framework": "36181\t57005\tread\tstring\t-\tok\t-\t5",
+      "modern": "36181\t57005\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 395173,
+      "framework": "36186\t57005\tread\tstring\t-\tok\t-\t4",
+      "modern": "36186\t57005\tread\tstring\t-\tok\t0915\t4"
+    },
+    {
+      "row": 395174,
+      "framework": "36186\t57005\tread\tstring\t-\tok\t0915094d\t6",
+      "modern": "36186\t57005\tread\tstring\t-\tok\t0c4d\t6"
+    },
+    {
+      "row": 397095,
+      "framework": "36454\t57006\tread\tstring\t-\tok\t-\t5",
+      "modern": "36454\t57006\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 397120,
+      "framework": "36459\t57006\tread\tstring\t-\tok\t-\t4",
+      "modern": "36459\t57006\tread\tstring\t-\tok\t0915\t4"
+    },
+    {
+      "row": 397121,
+      "framework": "36459\t57006\tread\tstring\t-\tok\t0915094d\t6",
+      "modern": "36459\t57006\tread\tstring\t-\tok\t09cd\t6"
+    },
+    {
+      "row": 399042,
+      "framework": "36727\t57007\tread\tstring\t-\tok\t-\t5",
+      "modern": "36727\t57007\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 399067,
+      "framework": "36732\t57007\tread\tstring\t-\tok\t-\t4",
+      "modern": "36732\t57007\tread\tstring\t-\tok\t0915\t4"
+    },
+    {
+      "row": 399068,
+      "framework": "36732\t57007\tread\tstring\t-\tok\t0915094d\t6",
+      "modern": "36732\t57007\tread\tstring\t-\tok\t0b4d\t6"
+    },
+    {
+      "row": 400989,
+      "framework": "37000\t57008\tread\tstring\t-\tok\t-\t5",
+      "modern": "37000\t57008\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 401014,
+      "framework": "37005\t57008\tread\tstring\t-\tok\t-\t4",
+      "modern": "37005\t57008\tread\tstring\t-\tok\t0915\t4"
+    },
+    {
+      "row": 401015,
+      "framework": "37005\t57008\tread\tstring\t-\tok\t0915094d\t6",
+      "modern": "37005\t57008\tread\tstring\t-\tok\t0ccd\t6"
+    },
+    {
+      "row": 402936,
+      "framework": "37273\t57009\tread\tstring\t-\tok\t-\t5",
+      "modern": "37273\t57009\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 402961,
+      "framework": "37278\t57009\tread\tstring\t-\tok\t-\t4",
+      "modern": "37278\t57009\tread\tstring\t-\tok\t0915\t4"
+    },
+    {
+      "row": 402962,
+      "framework": "37278\t57009\tread\tstring\t-\tok\t0915094d\t6",
+      "modern": "37278\t57009\tread\tstring\t-\tok\t0d4d\t6"
+    },
+    {
+      "row": 404883,
+      "framework": "37546\t57010\tread\tstring\t-\tok\t-\t5",
+      "modern": "37546\t57010\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 404908,
+      "framework": "37551\t57010\tread\tstring\t-\tok\t-\t4",
+      "modern": "37551\t57010\tread\tstring\t-\tok\t0915\t4"
+    },
+    {
+      "row": 404909,
+      "framework": "37551\t57010\tread\tstring\t-\tok\t0915094d\t6",
+      "modern": "37551\t57010\tread\tstring\t-\tok\t0acd\t6"
+    },
+    {
+      "row": 406830,
+      "framework": "37819\t57011\tread\tstring\t-\tok\t-\t5",
+      "modern": "37819\t57011\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 406855,
+      "framework": "37824\t57011\tread\tstring\t-\tok\t-\t4",
+      "modern": "37824\t57011\tread\tstring\t-\tok\t0915\t4"
+    },
+    {
+      "row": 406856,
+      "framework": "37824\t57011\tread\tstring\t-\tok\t0915094d\t6",
+      "modern": "37824\t57011\tread\tstring\t-\tok\t0a4d\t6"
+    },
+    {
+      "row": 408777,
+      "framework": "38092\t65000\tread\tstring\t-\tok\t-\t5",
+      "modern": "38092\t65000\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 408793,
+      "framework": "38095\t65000\tread\tstring\t-\tok\t65e5\t6",
+      "modern": "38095\t65000\tread\tstring\t-\tok\t0055\t6"
+    },
+    {
+      "row": 410724,
+      "framework": "38365\t65001\tread\tstring\t-\tok\t-\t5",
+      "modern": "38365\t65001\tread\tstring\t-\tFormatException\t-\t5"
+    },
+    {
+      "row": 410734,
+      "framework": "38367\t65001\tread\tstring\t-\tok\t-\t2",
+      "modern": "38367\t65001\tread\tstring\t-\tok\tfffd\t2"
+    },
+    {
+      "row": 410735,
+      "framework": "38367\t65001\tread\tstring\t-\tok\t00a0\t4",
+      "modern": "38367\t65001\tread\tstring\t-\tok\tfffd\t4"
+    },
+    {
+      "row": 410750,
+      "framework": "38370\t65001\tread\tstring\t-\tok\t-\t6",
+      "modern": "38370\t65001\tread\tstring\t-\tok\tfffd\t6"
+    },
+    {
+      "row": 410752,
+      "framework": "38370\t65001\tread\tchar\t-\tArgumentException\t-\t0",
+      "modern": "38370\t65001\tread\tchar\t-\tok\t0003\t1"
+    }
+  ]
+}

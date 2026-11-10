@@ -1,0 +1,68 @@
+{
+  "schema": 1,
+  "compatibility_runtime": "Windows .NET Framework 4.0.30319.42000",
+  "comparison_runtime": "Windows .NET 10.0.12",
+  "stream_traces": 4320,
+  "stream_fixtures_identical": true,
+  "codec_traces": 410752,
+  "codec_runtime_differences": 311,
+  "packed_encoding_rows": 140,
+  "packed_fixtures_identical": true,
+  "uncompressed_codec_bytes": 17995078,
+  "sha256_uncompressed_codec_bytes": "310ebf6ea82b80a970129d02f2d0f2010005e9d2be1197d5364aa2e1b06ab6a9",
+  "scope": "Native binary streams, Framework scalar/character/string codec, statically typed primitive/enum/packed recursive value records, raw byte arrays and file positioning. Public API traces, plus source-derived PABCSystem guards and packed layout; not an original Pascal compiler oracle. Fixed arrays/subranges/short strings/sets, System.Convert object coercions, mutable TypedFile.ElementType, reflection identity, named file classes/inheritance, object serialization and full modules remain positive gaps. No Python/.NET is shipped.",
+  "artifacts": [
+    {
+      "path": "reference/binary-stream.cs",
+      "sha256_lf": "c8bf001665d63469c80d0177aed79be918f9b86d6dc4c5f33accd1d2df026f6d"
+    },
+    {
+      "path": "reference/binary-codec.cs",
+      "sha256_lf": "75bad54470ba6b66f50fd646544a7e827f5d1d7dbd9c5f9966a005399de4e5ae"
+    },
+    {
+      "path": "reference/binary-file.cs",
+      "sha256_lf": "f8e82698643579075e86a24f5c9a6dc55657ce67c511ce13ed63ee3df8344d33"
+    },
+    {
+      "path": "reference/binary-oracle-support.cs",
+      "sha256_lf": "5f3da3b2c4bbc6fd6c3f625d822b6ce2ae0c24e751fc97183449fba075f55545"
+    },
+    {
+      "path": "reference/compare-binary-codecs.mjs",
+      "sha256_lf": "7df43501a6fcb6c30cfdaeafb65943c35ecdd156578dc4ea1a6bb39b782d55bc"
+    },
+    {
+      "path": "reference/generate-binary-files.ps1",
+      "sha256_lf": "26225f31366b8a9e41f2e77869ee4545aa56227b33fd4da46a4af44befd73ee2"
+    },
+    {
+      "path": "fixtures/binary-stream-reference.tsv",
+      "sha256_lf": "ad4533c4533842b73da2f2c52ecfb62b25fae14d3215b9a57276fd4ae01eb4d1"
+    },
+    {
+      "path": "fixtures/binary-codec-reference.zip",
+      "sha256_bytes": "e6ec38e070b62dcbe0e6b0100c925e6703c3f424fbc4f57d3ef82dd4af3a77eb"
+    },
+    {
+      "path": "fixtures/binary-codec-runtime-differences.json",
+      "sha256_lf": "c4454fe0b43cf6bf3b5e0179eac70e9f0c7a4408342ed94826d21f5f48298ffe"
+    },
+    {
+      "path": "fixtures/binary-file-reference.tsv",
+      "sha256_lf": "1e5e90433637580295a830addd32fcca82e95866c89e2fdbdd1ddf349f86cffd"
+    },
+    {
+      "path": "fixtures/binary-file-reference.pas",
+      "sha256_lf": "a31169f9c48607c5b8d591c964047d264f08838de52613ca7571546be424d54f"
+    },
+    {
+      "path": "fixtures/binary-files-reference.md",
+      "sha256_lf": "bf6d43cdd09c21282d6ad267c7fee152ec649b6d11a11b130e1c845c41b58892"
+    },
+    {
+      "path": "binary-codec-reference.cmake",
+      "sha256_lf": "c4970f4a0a742834f21eb7f7d805d1b6a03223d69bb0a174e07a557c0c964722"
+    }
+  ]
+}

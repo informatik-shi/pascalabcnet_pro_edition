@@ -1,6 +1,8 @@
 #include "hir.hpp"
 #include "stdlib.hpp"
 #include "encoding.hpp"
+#include "native_resource.hpp"
+#include "binary_file.hpp"
 #include "type_names.hpp"
 #include "single.hpp"
 #include "enumeration.hpp"
@@ -1280,7 +1282,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             }
             break;
         case Op::encoding_call:
-            if(instruction.operand>static_cast<std::size_t>(EncodingMethod::max_char_count) || !encoding_signature_valid(program,type,static_cast<EncodingMethod>(instruction.operand)))invalid(instruction,"Invalid Encoding call metadata");break;
+            if(!native_resource_signature_valid(program,type,instruction.operand))invalid(instruction,"Invalid native resource call metadata");break;
         case Op::print_call: {
             const auto method=static_cast<PrintMethod>(instruction.operand&255U);const auto callback=method==PrintMethod::sequence_map_lines ? static_cast<Type>(instruction.operand>>8U) : Type::invalid;
             if((instruction.operand>>8U)>65535U || (method!=PrintMethod::sequence_map_lines && (instruction.operand>>8U)) || !print_signature(program,type,method,callback))invalid(instruction,"Invalid Print call metadata");break;
@@ -1732,9 +1734,9 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             break;
         }
         case Op::encoding_call: {
-            const auto method=static_cast<EncodingMethod>(instruction.operand);const auto parameters=encoding_parameters(program,instruction.type,method);
+            const auto parameters=native_resource_parameters(program,instruction.type,instruction.operand);
             for(auto parameter=parameters.rbegin();parameter!=parameters.rend();++parameter)require(*parameter);
-            const auto result=encoding_result(program,instruction.type,method);if(result!=Type::unit)stack.push_back(result);break;
+            const auto result=native_resource_result(program,instruction.type,instruction.operand);if(result!=Type::unit)stack.push_back(result);break;
         }
         case Op::enum_call: {
             const auto method=static_cast<EnumMethod>(instruction.operand&255U);const auto other=method==EnumMethod::has_flag ? static_cast<Type>(instruction.operand>>8U) : Type::invalid;
@@ -1995,6 +1997,10 @@ void verify(const Program& program) {
             if(owner.kind!=CompoundKind::dictionary || (type.kind==CompoundKind::dictionary_keys ? owner.key : type_info(program,owner.element).fields.at(1).type)!=type.element)throw Error("E_BYTECODE",{},"Invalid Dictionary view owner");
         } else if(type.kind==CompoundKind::ini_file) {
             if(type.name!="tinifile" || type.element!=Type::invalid || type.key!=Type::invalid || !type.fields.empty())throw Error("E_BYTECODE",{},"Invalid TIniFile type metadata");
+        } else if(type.kind==CompoundKind::binary_file) {
+            if(type.name!="binaryfile"||!type.fields.empty()||type.rank!=1)throw Error("E_BYTECODE",{},"Invalid binary file metadata");
+            prior(type.key);const auto& bytes=type_info(program,type.key);if(bytes.kind!=CompoundKind::array||bytes.rank!=1||bytes.element!=Type::byte)throw Error("E_BYTECODE",{},"Invalid binary file byte-array metadata");
+            if(type.element!=Type::invalid){prior(type.element);if(!binary_value_supported(program.types,type.element,false))throw Error("E_BYTECODE",{},"Invalid typed file element metadata");}
         } else if(type.kind==CompoundKind::encoding) {
             if(type.name!="encoding" || !type.fields.empty() || !encoding_signature_valid(program,static_cast<Type>(64+i),EncodingMethod::utf8))throw Error("E_BYTECODE",{},"Invalid Encoding type metadata");
             prior(type.element);prior(type.key);

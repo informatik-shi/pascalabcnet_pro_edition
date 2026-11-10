@@ -3,7 +3,12 @@
 #include <filesystem>
 #include <functional>
 namespace abc {
-struct TextEncoding;class LineReader;
+struct TextEncoding;class LineReader;struct BinaryFile;
+struct OpenFiles {
+    std::vector<std::weak_ptr<TextFile>> texts;
+    std::vector<std::weak_ptr<LineReader>> readers;
+    std::vector<std::weak_ptr<BinaryFile>> binaries;
+};
 // Each execution owns its current directory; the editor/host cwd never changes.
 class FileContext {
 public:
@@ -18,6 +23,8 @@ public:
     bool rename(std::u16string_view source, std::u16string_view destination, bool directory);
     void prepare_text_open(const std::shared_ptr<TextFile>& file, SourceLocation location);
     void prepare_line_open(const std::shared_ptr<LineReader>& reader,SourceLocation location);
+    void prepare_binary_open(const std::shared_ptr<BinaryFile>&,SourceLocation);
+    void check_binary_conflict(const std::filesystem::path&,SourceLocation) const;
     bool text_file_locked(const std::filesystem::path& path, bool subtree=false) const;
 private:
     std::filesystem::path current_;
@@ -26,8 +33,7 @@ private:
 #ifdef _WIN32
     std::array<std::filesystem::path,26> drive_directories_;
 #endif
-    std::vector<std::weak_ptr<TextFile>> open_texts_;
-    std::vector<std::weak_ptr<LineReader>> open_readers_;
+    std::unique_ptr<OpenFiles> opened_;
 };
 std::u16string read_text_file(const FileContext& files, std::u16string_view path, SourceLocation location,const TextEncoding* encoding=nullptr);
 void write_text_file(const FileContext& files, std::u16string_view path, std::u16string_view text, SourceLocation location,const TextEncoding* encoding=nullptr);
