@@ -1,0 +1,52 @@
+{
+  "schema": 1,
+  "runtime": "Windows .NET Framework 4.0.30319.42000",
+  "codecs": 140,
+  "native_properties": 10,
+  "native_count_methods": 2,
+  "actual_max_count_outcomes": 18350080,
+  "actual_max_boundary_outcomes": 6980,
+  "actual_total_count_checks": 18357060,
+  "positive_public_declarations": 197,
+  "scope": "Actual Framework public API metadata for all 140 numbered default read-only codec objects. Native covers ten invariant properties and GetMaxByteCount/GetMaxCharCount. For each codec both count functions are called at every input 0..65535; little-endian Int32 result sequences have independent FNV64 fingerprints. Models are also checked against actual negative, large and Int32 overflow boundary calls. EncodingName en-US/ru-RU columns and the 197 public-declaration inventory are positive requirements, not implemented API coverage. Constructors, EncodingName/current UI culture, default/code-page zero, fallback/offset and whole module/library behavior remain unfinished. No Pascal compiler is invoked.",
+  "artifacts": [
+    {
+      "path": "reference/encoding-metadata.cs",
+      "sha256_lf": "9a37c00335f7a3f6bbb3fea5df7c637364f24f44475f76fc7db9d47fab81288a"
+    },
+    {
+      "path": "reference/encoding-max.cs",
+      "sha256_lf": "f0d3a494a24fc2c014814a6f984c4a60e8fe212efaa567cdffa5d8ead851c83c"
+    },
+    {
+      "path": "reference/generate-encoding-metadata.ps1",
+      "sha256_lf": "ef3afbc0da8310e2d868bf8836ef26bae6f6148dd0effd6e57f469345441d74d"
+    },
+    {
+      "path": "fixtures/encoding-metadata-reference.tsv",
+      "sha256_lf": "651429dbcc4283702c5a849160abbd54eb65b2abd281500a99f23f2c9a799e93"
+    },
+    {
+      "path": "fixtures/encoding-max-models.tsv",
+      "sha256_lf": "5084ef0509b629d75e33b09a39998785263b2a4ddd907b4da7202e291a6e12a7"
+    },
+    {
+      "path": "fixtures/encoding-max-boundaries.tsv",
+      "sha256_lf": "8a84be738aaa941d5f820dcde8701a42cab19e2c3e84b717a776e8905088bd39"
+    },
+    {
+      "path": "fixtures/encoding-metadata-reference.md",
+      "sha256_lf": "fdd5ebcad06c93ba0db675866f50ef0cdd3e8397f25a32bfbee376c289f9ffeb"
+    },
+    {
+      "path": "../tools/generate-encoding-metadata.mjs",
+      "sha256_lf": "590be81dae6f6c31c38b356e14d3259979bdcfc73e28c249227bfe964150062e"
+    }
+  ],
+  "positive_requirements": [
+    {
+      "path": "fixtures/encoding-positive-public-surface.tsv",
+      "sha256_lf": "fa4ce9ffec487a0d3debeea679c5bc98cfc4418d8017394c9a064cdcc2daa8fc"
+    }
+  ]
+}

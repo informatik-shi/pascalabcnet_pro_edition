@@ -37,6 +37,7 @@ add_library(abc_core
     src/utf7.cpp
     src/text_encoder.cpp
     src/encoding.cpp
+    src/encoding_metadata.cpp
     src/enumeration.cpp
     src/comparable.cpp
     src/comparison.cpp
@@ -400,6 +401,13 @@ if(BUILD_TESTING)
     endif()
     add_test(NAME utf7_encoding COMMAND ${CMAKE_COMMAND} -DABC_RUNNER=$<TARGET_FILE:abc_utf7_tests> "-DABC_ARCHIVE=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/utf7-reference.zip" "-DABC_TEST_DIR=${CMAKE_CURRENT_BINARY_DIR}" -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/utf7-reference.cmake")
     add_test(NAME utf7_encoding_example COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/examples/utf7-encoding.pas")
+    add_executable(abc_encoding_metadata_tests tests/encoding_metadata_tests.cpp)
+    target_link_libraries(abc_encoding_metadata_tests PRIVATE abc_core)
+    if(MSVC)
+        target_compile_options(abc_encoding_metadata_tests PRIVATE /utf-8)
+    endif()
+    add_test(NAME encoding_metadata COMMAND abc_encoding_metadata_tests)
+    add_test(NAME encoding_metadata_example COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/examples/encoding-metadata.pas")
     add_test(NAME iscii_encodings_example COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/examples/iscii-encodings.pas")
     add_test(NAME gb18030_encoding_example COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/examples/gb18030-encoding.pas")
     add_test(NAME double_byte_encodings_example COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/examples/double-byte-encodings.pas")

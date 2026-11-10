@@ -360,6 +360,7 @@ def main():
                 ("type-properties.pas", "Int32\nSystem.Int32\nSystem\ntype-properties.Coordinate\nDictionary`2\nEnumerator\nSystem.Int32, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089\n"),
                 ("named-callables.pas", "Check False\nnamed-callables.Check\nTrue\nTrue True\nFalse\n5 RefSecond\n"),
                 ("predicate-generics.pas", "Predicate2`2 False\nPredicate3`3 False\nPABCSystem\nTrue True\nFalse\n4\n"),
+                ("encoding-metadata.pas", "iso-2022-jp iso-2022-jp 932\nFalse True\n24 6\n3\n1\n"),
                 ("utf7-encoding.pas", "65000 UTF7Encoding\n0\n65,43,45,43,90,101,85,45\nПривет + 日本 🌍\n1 55357\n"),
                 ("iso2022-encodings.pas", "50220 [27,36,66,70,124,37,43,27,40,66,65]\n50221 [27,36,66,70,124,27,40,73,54,27,40,66,65]\n50222 [27,36,66,70,124,14,54,15,27,40,66,65]\n50225 한국어\n[126,123,86,80,78,68,126,125,126,126]\n52936 中文~\nISO2022Encoding\n"),
                 ("iscii-encodings.pas", "57002 ISCIIEncoding\nकকகకಕകકକਕ\n[179,239,67,179,239,68,179,239,66]\n57011 ਕ\n"),
@@ -2081,6 +2082,16 @@ def main():
                     or f"{utf7_error}:2:" not in invalid.stderr):
                 raise RuntimeError(f"{name} UTF7 final-minus bound failed: {invalid.stdout!r} {invalid.stderr!r}")
             results[-1]["native_utf7_and_bilingual_final_minus_bound"] = "passed"
+            for encoding_count in (-1, 2147483647):
+                encoding_count_error = folder / "Аргумент расчёта размера.pas"
+                encoding_count_error.write_text(f"begin Write('before');\nEncoding.UTF8.GetMaxByteCount({encoding_count});end.", encoding="utf-8")
+                invalid = subprocess.run([runner, "run", str(encoding_count_error)], text=True, encoding="utf-8", capture_output=True, cwd=folder, env=env, timeout=10)
+                if (invalid.returncode != 1 or invalid.stdout != "before" or "E_ARGUMENT" not in invalid.stderr
+                        or "EN: Encoding size argument is outside the supported range" not in invalid.stderr
+                        or "RU: Размер в аргументе кодировки выходит за допустимый диапазон" not in invalid.stderr
+                        or f"{encoding_count_error}:2:" not in invalid.stderr):
+                    raise RuntimeError(f"{name} encoding count boundary failed: {invalid.stdout!r} {invalid.stderr!r}")
+            results[-1]["native_encoding_metadata_and_bilingual_count_bounds"] = "passed"
             results[-1]["native_generic_enumerators_boxing_resources_and_bilingual_errors"] = "passed"
             results[-1]["native_typed_dictionary_enumerators_and_bilingual_errors"] = "passed"
             results[-1]["native_dictionary_factories_views_callbacks_and_bilingual_errors"] = "passed"

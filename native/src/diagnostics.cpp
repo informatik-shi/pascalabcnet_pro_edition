@@ -52,6 +52,8 @@ Error runtime_error(RuntimeError id, SourceLocation location, std::string_view c
         code="E_LIMIT";english="Encoding conversion exceeds the native size limit";russian="Превышен допустимый размер преобразования кодировки";break;
     case RuntimeError::encoding_kind:
         code="E_ENCODING";english="Unsupported text encoding";russian="Неподдерживаемая кодировка текста";break;
+    case RuntimeError::encoding_count:
+        code="E_ARGUMENT";english="Encoding size argument is outside the supported range";russian="Размер в аргументе кодировки выходит за допустимый диапазон";break;
     case RuntimeError::sleep_duration:
         code="E_RANGE";english="Sleep duration must be -1 or nonnegative";russian="Длительность Sleep должна быть равна -1 или быть неотрицательной";break;
     case RuntimeError::list_capacity:

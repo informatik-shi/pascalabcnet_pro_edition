@@ -1,0 +1,141 @@
+# code_page	WebName	BodyName	HeaderName	WindowsCodePage	IsSingleByte	BrowserDisplay	BrowserSave	MailDisplay	MailSave	IsReadOnly	EnglishName	RussianName
+37	IBM037	IBM037	IBM037	1252	True	False	False	False	False	True	IBM EBCDIC (US-Canada)	IBM EBCDIC (США и Канада)
+437	IBM437	IBM437	IBM437	1252	True	False	False	False	False	True	OEM United States	OEM - США
+500	IBM500	IBM500	IBM500	1252	True	False	False	False	False	True	IBM EBCDIC (International)	IBM EBCDIC (международная)
+708	ASMO-708	ASMO-708	ASMO-708	1256	True	True	True	False	False	True	Arabic (ASMO 708)	Арабская (ASMO 708)
+720	DOS-720	DOS-720	DOS-720	1256	True	True	True	False	False	True	Arabic (DOS)	Арабская (DOS)
+737	ibm737	ibm737	ibm737	1253	True	False	False	False	False	True	Greek (DOS)	Греческая (DOS)
+775	ibm775	ibm775	ibm775	1257	True	False	False	False	False	True	Baltic (DOS)	Балтийская (DOS)
+850	ibm850	ibm850	ibm850	1252	True	False	False	False	False	True	Western European (DOS)	Западноевропейская (DOS)
+852	ibm852	ibm852	ibm852	1250	True	True	True	False	False	True	Central European (DOS)	Центральноевропейская (DOS)
+855	IBM855	IBM855	IBM855	1252	True	False	False	False	False	True	OEM Cyrillic	OEM Кириллица
+857	ibm857	ibm857	ibm857	1254	True	False	False	False	False	True	Turkish (DOS)	Турецкая (DOS)
+858	IBM00858	IBM00858	IBM00858	1252	True	False	False	False	False	True	OEM Multilingual Latin I	OEM Многоязычная латиница I
+860	IBM860	IBM860	IBM860	1252	True	False	False	False	False	True	Portuguese (DOS)	Португальская (DOS)
+861	ibm861	ibm861	ibm861	1252	True	False	False	False	False	True	Icelandic (DOS)	Исландская (DOS)
+862	DOS-862	DOS-862	DOS-862	1255	True	True	True	False	False	True	Hebrew (DOS)	Иврит (DOS)
+863	IBM863	IBM863	IBM863	1252	True	False	False	False	False	True	French Canadian (DOS)	Французская канадская (DOS)
+864	IBM864	IBM864	IBM864	1256	True	False	False	False	False	True	Arabic (864)	Арабская (864)
+865	IBM865	IBM865	IBM865	1252	True	False	False	False	False	True	Nordic (DOS)	Скандинавская (DOS)
+866	cp866	cp866	cp866	1251	True	True	True	False	False	True	Cyrillic (DOS)	Кириллица (DOS)
+869	ibm869	ibm869	ibm869	1253	True	False	False	False	False	True	Greek, Modern (DOS)	Греческая, современная (DOS)
+870	IBM870	IBM870	IBM870	1250	True	False	False	False	False	True	IBM EBCDIC (Multilingual Latin-2)	IBM EBCDIC (Многоязычная латиница-2)
+874	windows-874	windows-874	windows-874	874	True	True	True	True	True	True	Thai (Windows)	Тайская (Windows)
+875	cp875	cp875	cp875	1253	True	False	False	False	False	True	IBM EBCDIC (Greek Modern)	IBM EBCDIC (Греческая современная)
+932	shift_jis	iso-2022-jp	iso-2022-jp	932	False	True	True	True	True	True	Japanese (Shift-JIS)	Японская (Shift-JIS)
+936	gb2312	gb2312	gb2312	936	False	True	True	True	True	True	Chinese Simplified (GB2312)	Китайская упрощенная (GB2312)
+949	ks_c_5601-1987	ks_c_5601-1987	ks_c_5601-1987	949	False	True	True	True	True	True	Korean	Корейская
+950	big5	big5	big5	950	False	True	True	True	True	True	Chinese Traditional (Big5)	Китайская традиционная (Big5)
+1026	IBM1026	IBM1026	IBM1026	1254	True	False	False	False	False	True	IBM EBCDIC (Turkish Latin-5)	IBM EBCDIC (Турецкая латиница-5)
+1047	IBM01047	IBM01047	IBM01047	1252	True	False	False	False	False	True	IBM Latin-1	IBM Латиница-1
+1140	IBM01140	IBM01140	IBM01140	1252	True	False	False	False	False	True	IBM EBCDIC (US-Canada-Euro)	IBM EBCDIC (США-Канада-евро)
+1141	IBM01141	IBM01141	IBM01141	1252	True	False	False	False	False	True	IBM EBCDIC (Germany-Euro)	IBM EBCDIC (Германия-евро)
+1142	IBM01142	IBM01142	IBM01142	1252	True	False	False	False	False	True	IBM EBCDIC (Denmark-Norway-Euro)	IBM EBCDIC (Дания-Норвегия-евро)
+1143	IBM01143	IBM01143	IBM01143	1252	True	False	False	False	False	True	IBM EBCDIC (Finland-Sweden-Euro)	IBM EBCDIC (Финляндия-Швеция-евро)
+1144	IBM01144	IBM01144	IBM01144	1252	True	False	False	False	False	True	IBM EBCDIC (Italy-Euro)	IBM EBCDIC (Италия-евро)
+1145	IBM01145	IBM01145	IBM01145	1252	True	False	False	False	False	True	IBM EBCDIC (Spain-Euro)	IBM EBCDIC (Испания-евро)
+1146	IBM01146	IBM01146	IBM01146	1252	True	False	False	False	False	True	IBM EBCDIC (UK-Euro)	IBM EBCDIC (Соединенное Королевство-евро)
+1147	IBM01147	IBM01147	IBM01147	1252	True	False	False	False	False	True	IBM EBCDIC (France-Euro)	IBM EBCDIC (Франция-евро)
+1148	IBM01148	IBM01148	IBM01148	1252	True	False	False	False	False	True	IBM EBCDIC (International-Euro)	IBM EBCDIC (Международная-евро)
+1149	IBM01149	IBM01149	IBM01149	1252	True	False	False	False	False	True	IBM EBCDIC (Icelandic-Euro)	IBM EBCDIC (Исландия-евро)
+1200	utf-16	utf-16	utf-16	1200	False	False	True	False	False	True	Unicode	Unicode
+1201	utf-16BE	utf-16BE	utf-16BE	1200	False	False	False	False	False	True	Unicode (Big-Endian)	Юникод (Big-Endian)
+1250	windows-1250	iso-8859-2	windows-1250	1250	True	True	True	True	True	True	Central European (Windows)	Центральноевропейская (Windows)
+1251	windows-1251	koi8-r	windows-1251	1251	True	True	True	True	True	True	Cyrillic (Windows)	Кириллица (Windows)
+1252	Windows-1252	iso-8859-1	Windows-1252	1252	True	True	True	True	True	True	Western European (Windows)	Западноевропейская (Windows)
+1253	windows-1253	iso-8859-7	windows-1253	1253	True	True	True	True	True	True	Greek (Windows)	Греческая (Windows)
+1254	windows-1254	iso-8859-9	windows-1254	1254	True	True	True	True	True	True	Turkish (Windows)	Турецкая (Windows)
+1255	windows-1255	windows-1255	windows-1255	1255	True	True	True	True	True	True	Hebrew (Windows)	Иврит (Windows)
+1256	windows-1256	windows-1256	windows-1256	1256	True	True	True	True	True	True	Arabic (Windows)	Арабская (Windows)
+1257	windows-1257	windows-1257	windows-1257	1257	True	True	True	True	True	True	Baltic (Windows)	Балтийская (Windows)
+1258	windows-1258	windows-1258	windows-1258	1258	True	True	True	True	True	True	Vietnamese (Windows)	Вьетнамская (Windows)
+1361	Johab	Johab	Johab	949	False	False	False	False	False	True	Korean (Johab)	Корейская (Johab)
+10000	macintosh	macintosh	macintosh	1252	True	False	False	False	False	True	Western European (Mac)	Западноевропейская (Макинтош)
+10001	x-mac-japanese	x-mac-japanese	x-mac-japanese	932	False	False	False	False	False	True	Japanese (Mac)	Японская (Mac)
+10002	x-mac-chinesetrad	x-mac-chinesetrad	x-mac-chinesetrad	950	False	False	False	False	False	True	Chinese Traditional (Mac)	Китайская традиционная (Макинтош)
+10003	x-mac-korean	x-mac-korean	x-mac-korean	949	False	False	False	False	False	True	Korean (Mac)	Корейская (Mac)
+10004	x-mac-arabic	x-mac-arabic	x-mac-arabic	1256	True	False	False	False	False	True	Arabic (Mac)	Арабская (Mac)
+10005	x-mac-hebrew	x-mac-hebrew	x-mac-hebrew	1255	True	False	False	False	False	True	Hebrew (Mac)	Иврит (Mac)
+10006	x-mac-greek	x-mac-greek	x-mac-greek	1253	True	False	False	False	False	True	Greek (Mac)	Греческая (Mac)
+10007	x-mac-cyrillic	x-mac-cyrillic	x-mac-cyrillic	1251	True	False	False	False	False	True	Cyrillic (Mac)	Кириллица (Mac)
+10008	x-mac-chinesesimp	x-mac-chinesesimp	x-mac-chinesesimp	936	False	False	False	False	False	True	Chinese Simplified (Mac)	Китайская упрощенная (Макинтош)
+10010	x-mac-romanian	x-mac-romanian	x-mac-romanian	1250	True	False	False	False	False	True	Romanian (Mac)	Румынская (Mac)
+10017	x-mac-ukrainian	x-mac-ukrainian	x-mac-ukrainian	1251	True	False	False	False	False	True	Ukrainian (Mac)	Украинская (Mac)
+10021	x-mac-thai	x-mac-thai	x-mac-thai	874	True	False	False	False	False	True	Thai (Mac)	Тайская (Mac)
+10029	x-mac-ce	x-mac-ce	x-mac-ce	1250	True	False	False	False	False	True	Central European (Mac)	Центральноевропейская (Макинтош)
+10079	x-mac-icelandic	x-mac-icelandic	x-mac-icelandic	1252	True	False	False	False	False	True	Icelandic (Mac)	Исландская (Mac)
+10081	x-mac-turkish	x-mac-turkish	x-mac-turkish	1254	True	False	False	False	False	True	Turkish (Mac)	Турецкая (Mac)
+10082	x-mac-croatian	x-mac-croatian	x-mac-croatian	1250	True	False	False	False	False	True	Croatian (Mac)	Хорватская (Mac)
+12000	utf-32	utf-32	utf-32	1200	False	False	False	False	False	True	Unicode (UTF-32)	Юникод (UTF-32)
+12001	utf-32BE	utf-32BE	utf-32BE	1200	False	False	False	False	False	True	Unicode (UTF-32 Big-Endian)	Юникод (UTF-32 Big-Endian)
+20000	x-Chinese-CNS	x-Chinese-CNS	x-Chinese-CNS	950	False	False	False	False	False	True	Chinese Traditional (CNS)	Китайская традиционная (CNS)
+20001	x-cp20001	x-cp20001	x-cp20001	950	False	False	False	False	False	True	TCA Taiwan	TCA Тайваньская
+20002	x-Chinese-Eten	x-Chinese-Eten	x-Chinese-Eten	950	False	False	False	False	False	True	Chinese Traditional (Eten)	Китайская традиционная (Eten)
+20003	x-cp20003	x-cp20003	x-cp20003	950	False	False	False	False	False	True	IBM5550 Taiwan	IBM5550 Тайваньская
+20004	x-cp20004	x-cp20004	x-cp20004	950	False	False	False	False	False	True	TeleText Taiwan	TeleText Тайваньская
+20005	x-cp20005	x-cp20005	x-cp20005	950	False	False	False	False	False	True	Wang Taiwan	Wang Тайваньская
+20105	x-IA5	x-IA5	x-IA5	1252	True	False	False	False	False	True	Western European (IA5)	Западноевропейская (IA5)
+20106	x-IA5-German	x-IA5-German	x-IA5-German	1252	True	False	False	False	False	True	German (IA5)	Немецкая (IA5)
+20107	x-IA5-Swedish	x-IA5-Swedish	x-IA5-Swedish	1252	True	False	False	False	False	True	Swedish (IA5)	Шведская (IA5)
+20108	x-IA5-Norwegian	x-IA5-Norwegian	x-IA5-Norwegian	1252	True	False	False	False	False	True	Norwegian (IA5)	Норвежская (IA5)
+20127	us-ascii	us-ascii	us-ascii	1252	True	False	False	True	True	True	US-ASCII	US-ASCII
+20261	x-cp20261	x-cp20261	x-cp20261	1252	False	False	False	False	False	True	T.61	T.61
+20269	x-cp20269	x-cp20269	x-cp20269	1252	True	False	False	False	False	True	ISO-6937	ISO-6937
+20273	IBM273	IBM273	IBM273	1252	True	False	False	False	False	True	IBM EBCDIC (Germany)	IBM EBCDIC (Германия)
+20277	IBM277	IBM277	IBM277	1252	True	False	False	False	False	True	IBM EBCDIC (Denmark-Norway)	IBM EBCDIC (Дания и Норвегия)
+20278	IBM278	IBM278	IBM278	1252	True	False	False	False	False	True	IBM EBCDIC (Finland-Sweden)	IBM EBCDIC (Финляндия и Швеция)
+20280	IBM280	IBM280	IBM280	1252	True	False	False	False	False	True	IBM EBCDIC (Italy)	IBM EBCDIC (Италия)
+20284	IBM284	IBM284	IBM284	1252	True	False	False	False	False	True	IBM EBCDIC (Spain)	IBM EBCDIC (Испания)
+20285	IBM285	IBM285	IBM285	1252	True	False	False	False	False	True	IBM EBCDIC (UK)	IBM EBCDIC (UK)
+20290	IBM290	IBM290	IBM290	932	True	False	False	False	False	True	IBM EBCDIC (Japanese katakana)	IBM EBCDIC (Японская катакана)
+20297	IBM297	IBM297	IBM297	1252	True	False	False	False	False	True	IBM EBCDIC (France)	IBM EBCDIC (Франция)
+20420	IBM420	IBM420	IBM420	1256	True	False	False	False	False	True	IBM EBCDIC (Arabic)	IBM EBCDIC (Арабская)
+20423	IBM423	IBM423	IBM423	1253	True	False	False	False	False	True	IBM EBCDIC (Greek)	IBM EBCDIC (Греческая)
+20424	IBM424	IBM424	IBM424	1255	True	False	False	False	False	True	IBM EBCDIC (Hebrew)	IBM EBCDIC (Иврит)
+20833	x-EBCDIC-KoreanExtended	x-EBCDIC-KoreanExtended	x-EBCDIC-KoreanExtended	949	True	False	False	False	False	True	IBM EBCDIC (Korean Extended)	IBM EBCDIC (Корейская расширенная)
+20838	IBM-Thai	IBM-Thai	IBM-Thai	874	True	False	False	False	False	True	IBM EBCDIC (Thai)	IBM EBCDIC (Тайская)
+20866	koi8-r	koi8-r	koi8-r	1251	True	True	True	True	True	True	Cyrillic (KOI8-R)	Кириллица (KOI8-R)
+20871	IBM871	IBM871	IBM871	1252	True	False	False	False	False	True	IBM EBCDIC (Icelandic)	IBM EBCDIC (Исландская)
+20880	IBM880	IBM880	IBM880	1251	True	False	False	False	False	True	IBM EBCDIC (Cyrillic Russian)	IBM EBCDIC (Кириллица русская)
+20905	IBM905	IBM905	IBM905	1254	True	False	False	False	False	True	IBM EBCDIC (Turkish)	IBM EBCDIC (Турецкая)
+20924	IBM00924	IBM00924	IBM00924	1252	True	False	False	False	False	True	IBM Latin-1	IBM Латиница-1
+20932	EUC-JP	EUC-JP	EUC-JP	932	False	False	False	False	False	True	Japanese (JIS 0208-1990 and 0212-1990)	Японская (JIS 0208-1990 и 0212-1990)
+20936	x-cp20936	x-cp20936	x-cp20936	936	False	False	False	False	False	True	Chinese Simplified (GB2312-80)	Китайская упрощенная (GB2312-80)
+20949	x-cp20949	x-cp20949	x-cp20949	949	False	False	False	False	False	True	Korean Wansung	Корейская Wansung
+21025	cp1025	cp1025	cp1025	1251	True	False	False	False	False	True	IBM EBCDIC (Cyrillic Serbian-Bulgarian)	IBM EBCDIC (Кириллица сербско-болгарская)
+21866	koi8-u	koi8-u	koi8-u	1251	True	True	True	True	True	True	Cyrillic (KOI8-U)	Кириллица (KOI8-U)
+28591	iso-8859-1	iso-8859-1	iso-8859-1	1252	True	True	True	True	True	True	Western European (ISO)	Западноевропейская (ISO)
+28592	iso-8859-2	iso-8859-2	iso-8859-2	1250	True	True	True	True	True	True	Central European (ISO)	Центральноевропейская (ISO)
+28593	iso-8859-3	iso-8859-3	iso-8859-3	1254	True	False	False	True	True	True	Latin 3 (ISO)	Латиница 3 (ISO)
+28594	iso-8859-4	iso-8859-4	iso-8859-4	1257	True	True	True	True	True	True	Baltic (ISO)	Балтийская (ISO)
+28595	iso-8859-5	iso-8859-5	iso-8859-5	1251	True	True	True	True	True	True	Cyrillic (ISO)	Кириллица (ISO)
+28596	iso-8859-6	iso-8859-6	iso-8859-6	1256	True	True	True	True	True	True	Arabic (ISO)	Арабская (ISO)
+28597	iso-8859-7	iso-8859-7	iso-8859-7	1253	True	True	True	True	True	True	Greek (ISO)	Греческая (ISO)
+28598	iso-8859-8	iso-8859-8	iso-8859-8	1255	True	True	True	False	False	True	Hebrew (ISO-Visual)	Иврит (ISO-Visual)
+28599	iso-8859-9	iso-8859-9	iso-8859-9	1254	True	True	True	True	True	True	Turkish (ISO)	Турецкая (ISO)
+28603	iso-8859-13	iso-8859-13	iso-8859-13	1257	True	False	False	True	True	True	Estonian (ISO)	Эстонская (ISO)
+28605	iso-8859-15	iso-8859-15	iso-8859-15	1252	True	False	True	True	True	True	Latin 9 (ISO)	Латиница 9 (ISO)
+29001	x-Europa	x-Europa	x-Europa	1252	True	False	False	False	False	True	Europa	Европа
+38598	iso-8859-8-i	iso-8859-8-i	iso-8859-8-i	1255	True	True	True	True	True	True	Hebrew (ISO-Logical)	Иврит (ISO-Logical)
+50220	iso-2022-jp	iso-2022-jp	iso-2022-jp	932	False	False	False	True	True	True	Japanese (JIS)	Японская (JIS)
+50221	csISO2022JP	iso-2022-jp	iso-2022-jp	932	False	False	True	True	True	True	Japanese (JIS-Allow 1 byte Kana)	Японская (однобайтная кана с JIS)
+50222	iso-2022-jp	iso-2022-jp	iso-2022-jp	932	False	False	False	False	False	True	Japanese (JIS-Allow 1 byte Kana - SO/SI)	Японская (однобайтная кана с JIS - SO/SI)
+50225	iso-2022-kr	iso-2022-kr	euc-kr	949	False	False	False	True	False	True	Korean (ISO)	Корейская (ISO)
+50227	x-cp50227	x-cp50227	x-cp50227	936	False	False	False	False	False	True	Chinese Simplified (ISO-2022)	Китайская упрощенная (ISO-2022)
+51932	euc-jp	euc-jp	euc-jp	932	False	True	True	True	True	True	Japanese (EUC)	Японская (EUC)
+51936	EUC-CN	EUC-CN	EUC-CN	936	False	False	False	False	False	True	Chinese Simplified (EUC)	Китайская упрощенная (EUC)
+51949	euc-kr	euc-kr	euc-kr	949	False	False	False	True	True	True	Korean (EUC)	Корейская (EUC)
+52936	hz-gb-2312	hz-gb-2312	hz-gb-2312	936	False	True	True	True	True	True	Chinese Simplified (HZ)	Китайская упрощенная (HZ)
+54936	GB18030	GB18030	GB18030	936	False	True	True	True	True	True	Chinese Simplified (GB18030)	Китайская упрощенная (GB18030)
+57002	x-iscii-de	x-iscii-de	x-iscii-de	57002	False	False	False	False	False	True	ISCII Devanagari	ISCII - Деванагари
+57003	x-iscii-be	x-iscii-be	x-iscii-be	57003	False	False	False	False	False	True	ISCII Bengali	ISCII - Бенгальская
+57004	x-iscii-ta	x-iscii-ta	x-iscii-ta	57004	False	False	False	False	False	True	ISCII Tamil	ISCII - Тамильская
+57005	x-iscii-te	x-iscii-te	x-iscii-te	57005	False	False	False	False	False	True	ISCII Telugu	ISCII - Телугу
+57006	x-iscii-as	x-iscii-as	x-iscii-as	57006	False	False	False	False	False	True	ISCII Assamese	ISCII - Ассамская
+57007	x-iscii-or	x-iscii-or	x-iscii-or	57007	False	False	False	False	False	True	ISCII Oriya	ISCII - Ория
+57008	x-iscii-ka	x-iscii-ka	x-iscii-ka	57008	False	False	False	False	False	True	ISCII Kannada	ISCII - Каннада
+57009	x-iscii-ma	x-iscii-ma	x-iscii-ma	57009	False	False	False	False	False	True	ISCII Malayalam	ISCII - Малаялам
+57010	x-iscii-gu	x-iscii-gu	x-iscii-gu	57010	False	False	False	False	False	True	ISCII Gujarati	ISCII - Гуджарати
+57011	x-iscii-pa	x-iscii-pa	x-iscii-pa	57011	False	False	False	False	False	True	ISCII Punjabi	ISCII - Панджаби
+65000	utf-7	utf-7	utf-7	1200	False	False	False	True	True	True	Unicode (UTF-7)	Unicode (UTF-7)
+65001	utf-8	utf-8	utf-8	1200	False	True	True	True	True	True	Unicode (UTF-8)	Unicode (UTF-8)

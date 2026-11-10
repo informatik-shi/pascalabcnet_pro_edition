@@ -1,4 +1,5 @@
 #include "encoding.hpp"
+#include "encoding_metadata.hpp"
 #include "file_encoding.hpp"
 #include "files.hpp"
 #include "text_file.hpp"
@@ -66,6 +67,8 @@ std::shared_ptr<Aggregate> byte_array(Values& values,Type type,std::string_view 
 }
 std::vector<Type> encoding_parameters(const Program& program,Type encoding,EncodingMethod method) { return encoding_parameters(type_info(program,encoding),encoding,method); }
 std::vector<Type> encoding_parameters(const TypeInfo& type,Type encoding,EncodingMethod method) {
+    if(method>=EncodingMethod::web_name&&method<=EncodingMethod::is_read_only)return {encoding};
+    if(method==EncodingMethod::max_byte_count||method==EncodingMethod::max_char_count)return {encoding,Type::integer};
     switch(method) {
     case EncodingMethod::from_code_page:return {Type::integer};
     case EncodingMethod::from_name:return {Type::string};
@@ -79,11 +82,15 @@ std::vector<Type> encoding_parameters(const TypeInfo& type,Type encoding,Encodin
     case EncodingMethod::text_open_read:case EncodingMethod::text_open_write:case EncodingMethod::text_open_append:return {Type::string,encoding};
     case EncodingMethod::text_reset:case EncodingMethod::text_rewrite:case EncodingMethod::text_append:return {Type::text_file,encoding};
     case EncodingMethod::text_reset_named:case EncodingMethod::text_rewrite_named:case EncodingMethod::text_append_named:return {Type::text_file,Type::string,encoding};
+    default:break;
     }
     throw runtime_error(RuntimeError::invalid_bytecode,{});
 }
 Type encoding_result(const Program& program,Type encoding,EncodingMethod method) { return encoding_result(type_info(program,encoding),encoding,method); }
 Type encoding_result(const TypeInfo& type,Type encoding,EncodingMethod method) {
+    if(method>=EncodingMethod::web_name&&method<=EncodingMethod::header_name)return Type::string;
+    if(method>=EncodingMethod::is_single_byte&&method<=EncodingMethod::is_read_only)return Type::boolean;
+    if(method==EncodingMethod::windows_code_page||method==EncodingMethod::max_byte_count||method==EncodingMethod::max_char_count)return Type::integer;
     switch(method) {
     case EncodingMethod::from_code_page:case EncodingMethod::from_name:case EncodingMethod::utf8:case EncodingMethod::utf16_le:case EncodingMethod::utf16_be:case EncodingMethod::utf32_le:case EncodingMethod::ascii:return encoding;
     case EncodingMethod::code_page:return Type::integer;
@@ -93,11 +100,12 @@ Type encoding_result(const TypeInfo& type,Type encoding,EncodingMethod method) {
     case EncodingMethod::file_write:case EncodingMethod::text_reset:case EncodingMethod::text_rewrite:case EncodingMethod::text_append:
     case EncodingMethod::text_reset_named:case EncodingMethod::text_rewrite_named:case EncodingMethod::text_append_named:return Type::unit;
     case EncodingMethod::text_open_read:case EncodingMethod::text_open_write:case EncodingMethod::text_open_append:return Type::text_file;
+    default:break;
     }
     throw runtime_error(RuntimeError::invalid_bytecode,{});
 }
 bool encoding_signature_valid(const Program& program,Type encoding,EncodingMethod method) {
-    if(static_cast<unsigned>(method)>static_cast<unsigned>(EncodingMethod::text_append_named) || !compound(encoding) || !valid_value_type(program,encoding))return false;
+    if(static_cast<unsigned>(method)>static_cast<unsigned>(EncodingMethod::max_char_count) || !compound(encoding) || !valid_value_type(program,encoding))return false;
     const auto& type=type_info(program,encoding);
     if(type.kind!=CompoundKind::encoding)return false;
     const auto array=[&](Type value,Type element) {
@@ -123,7 +131,7 @@ Value EncodingContext::invoke(Values& values,FileContext& files,Type encoding,En
         if(method==EncodingMethod::file_read)return read_text_file(files,path,location,&data);
         write_text_file(files,path,string_text(arguments[1]),location,&data);return false;
     }
-    if(method>=EncodingMethod::text_open_read) {
+    if(method>=EncodingMethod::text_open_read&&method<=EncodingMethod::text_append_named) {
         const auto method_number=static_cast<unsigned>(method)-static_cast<unsigned>(EncodingMethod::text_open_read);
         const auto mode=method_number%3;const bool create=method_number<3,named=method_number>=6;
         auto file=create ? std::make_shared<TextFile>() : std::get<std::shared_ptr<TextFile>>(arguments[0]);
@@ -133,6 +141,7 @@ Value EncodingContext::invoke(Values& values,FileContext& files,Type encoding,En
         if(create)return file;return false;
     }
     const auto& data=encoding_value(arguments[0],location);
+    if(method>=EncodingMethod::web_name)return encoding_metadata_value(static_cast<std::uint16_t>(data.kind),method,arguments.size()>1?std::get<std::int32_t>(arguments[1]):0,location);
     if(method==EncodingMethod::code_page)return static_cast<std::int32_t>(data.kind);
     if(method==EncodingMethod::preamble)return byte_array(values,type.element,text_encoding_preamble(data));
     if(method==EncodingMethod::bytes_string || method==EncodingMethod::bytes_characters) {

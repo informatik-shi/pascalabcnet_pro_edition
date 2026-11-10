@@ -1795,12 +1795,23 @@ private:
         result.arguments.push_back(std::move(result.left));for(const auto& argument:source.arguments)result.arguments.push_back(expression(*argument));
         if(name=="codepage") {if(source.kind!=SyntaxExprKind::field)throw Error("E_TYPE",result.location,"Encoding property is not callable");method=EncodingMethod::code_page;}
         else if(name=="getpreamble")method=EncodingMethod::preamble;
+        else if(name=="getmaxbytecount")method=EncodingMethod::max_byte_count;
+        else if(name=="getmaxcharcount")method=EncodingMethod::max_char_count;
         else if(name=="getstring")method=EncodingMethod::string_bytes;
         else if(name=="getchars")method=EncodingMethod::characters_bytes;
         else if(name=="getbytes") {
             if(result.arguments.size()!=2 || result.arguments[1]->type==Type::nil)throw Error("E_TYPE",result.location,"Encoding overload requires a known argument type");
             method=result.arguments[1]->type==metadata.key ? EncodingMethod::bytes_characters : EncodingMethod::bytes_string;
-        } else throw Error("E_UNSUPPORTED",result.location,"Encoding member is not ported yet");
+        } else {
+            static constexpr std::pair<std::string_view,EncodingMethod> properties[]={
+                {"webname",EncodingMethod::web_name},{"bodyname",EncodingMethod::body_name},{"headername",EncodingMethod::header_name},
+                {"windowscodepage",EncodingMethod::windows_code_page},{"issinglebyte",EncodingMethod::is_single_byte},
+                {"isbrowserdisplay",EncodingMethod::is_browser_display},{"isbrowsersave",EncodingMethod::is_browser_save},
+                {"ismailnewsdisplay",EncodingMethod::is_mail_display},{"ismailnewssave",EncodingMethod::is_mail_save},{"isreadonly",EncodingMethod::is_read_only}};
+            const auto found=std::find_if(std::begin(properties),std::end(properties),[&](const auto& property){return property.first==name;});
+            if(found==std::end(properties))throw Error("E_UNSUPPORTED",result.location,"Encoding member is not ported yet");
+            if(source.kind!=SyntaxExprKind::field)throw Error("E_TYPE",result.location,"Encoding property is not callable");method=found->second;
+        }
         encoding_expression(result,method);return true;
     }
     bool bind_file_lines(hir::Expr& result,std::string_view name,std::string_view unit={}) {

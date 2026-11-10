@@ -1280,7 +1280,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             }
             break;
         case Op::encoding_call:
-            if(instruction.operand>static_cast<std::size_t>(EncodingMethod::text_append_named) || !encoding_signature_valid(program,type,static_cast<EncodingMethod>(instruction.operand)))invalid(instruction,"Invalid Encoding call metadata");break;
+            if(instruction.operand>static_cast<std::size_t>(EncodingMethod::max_char_count) || !encoding_signature_valid(program,type,static_cast<EncodingMethod>(instruction.operand)))invalid(instruction,"Invalid Encoding call metadata");break;
         case Op::print_call: {
             const auto method=static_cast<PrintMethod>(instruction.operand&255U);const auto callback=method==PrintMethod::sequence_map_lines ? static_cast<Type>(instruction.operand>>8U) : Type::invalid;
             if((instruction.operand>>8U)>65535U || (method!=PrintMethod::sequence_map_lines && (instruction.operand>>8U)) || !print_signature(program,type,method,callback))invalid(instruction,"Invalid Print call metadata");break;

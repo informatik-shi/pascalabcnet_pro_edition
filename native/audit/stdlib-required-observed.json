@@ -1,47 +1,51 @@
 {
   "schema": 1,
-  "runtime_source_base_revision": "631480703807b63b128cab519d60d449b4d61d00",
+  "runtime_source_base_revision": "067d31054884dc7dead8067793a4dc175ac65599",
   "runtime_source_changes": [
     {
+      "path": "native/src/bytecode.cpp",
+      "sha256_lf": "051a2acefc75d90f0f568b2bb512183d81e4ebca539caf3517660025804ff0d6"
+    },
+    {
+      "path": "native/src/diagnostics.cpp",
+      "sha256_lf": "1c6d3a2f76ec5909b5044049769b7fd69a235abd319a0ff8ef36546920e4abcb"
+    },
+    {
+      "path": "native/src/diagnostics.hpp",
+      "sha256_lf": "43f4dbcb710b6d6553846d25a507592488e4760b7e681bdc03ebc9f02ac0ee83"
+    },
+    {
       "path": "native/src/encoding.cpp",
-      "sha256_lf": "0e96bca68bf03bb3f00c69dd7e64d5f16fe4f5cbc05656183380749676ae44a2"
+      "sha256_lf": "2d2ba22fe0a33371f5e2115684de62878eb78848816c4bcc7a1f09178d47ce52"
     },
     {
-      "path": "native/src/file_encoding.cpp",
-      "sha256_lf": "95f9eb03619b6c93d6344d528d6f3c3ade5ed930956f53e59963a12def252cef"
+      "path": "native/src/encoding.hpp",
+      "sha256_lf": "e8396cea9acde1a853148308bfea316f70bb3fb6a79a9bb5ffeacafafe7ea9f3"
     },
     {
-      "path": "native/src/file_encoding.hpp",
-      "sha256_lf": "4ea7a2787e967ce011957420820ca87bbf79b74abdb4376a01b6bfdb2acedd37"
+      "path": "native/src/encoding_metadata.cpp",
+      "sha256_lf": "80957749c93cf003e3543bd1d94704aa39fe1a78c1b1871d0f4c39cbf8a77c60"
     },
     {
-      "path": "native/src/text_encoder.cpp",
-      "sha256_lf": "6aa7058da38b99167e3542404d76f43c9a572a138685722e8ea1f1bd6dc2ef44"
+      "path": "native/src/encoding_metadata.hpp",
+      "sha256_lf": "5ae0603322ff09c5454d6eaffde31a9e371a14222cc8784bca4827503d3fa0f1"
     },
     {
-      "path": "native/src/type_names.cpp",
-      "sha256_lf": "7396015934412fc2f70c52a378b813cea7762d2bd51f99ea825ebaf2768a1431"
+      "path": "native/src/encoding_metadata_data.inc",
+      "sha256_lf": "0f5fe0fbabf66535c26eca11d392051426ce6c0fd274af96f57a7b68327bc4ee"
     },
     {
-      "path": "native/src/type_properties.cpp",
-      "sha256_lf": "4f3d0ac8c945eb63f4b7ce92fcfd7de4659d58bd37387d9622589497ffdbe174"
-    },
-    {
-      "path": "native/src/utf7.cpp",
-      "sha256_lf": "58bb28dbb196c8ea4e3a3e4a1bedd744f925955b2dac31e9ff6c6d4ea7a3d196"
-    },
-    {
-      "path": "native/src/utf7.hpp",
-      "sha256_lf": "790a1d8052f8c7d371da9bfd205af25bb10f4770aac4937b2b8dec83495268cb"
+      "path": "native/src/pascal.cpp",
+      "sha256_lf": "0b5981990b2d9d20204dfd4b7cc12d4d7efb30be613c0fa14d3b1f5fe732c7da"
     }
   ],
-  "scope": "Selected positive compile requirements in two native builds. Not API coverage or runtime validation. UTF-7 raw UTF16 with all encoder/decoder residual values, actual strict/split/scalar evidence and 1421 identical raw-UTF16 file recipes, completing all 140 numbered Framework codecs but not full APIs or modules; all five ISO-2022/HZ pages with exhaustive encoder-mode and decoder-pending byte-pair suffixes, split and default/strict evidence, 9725 modern file recipes and 4062 retained legacy EOF differences, persistent writer encoders and all ten ISCII pages with exhaustive BMP/context/default/strict/script selection/file evidence and preserved legacy EOF differences, GB18030 full BMP/scalar/four-byte/split/default/strict maps and modern files with preserved legacy EOF differences, all Framework DBCS encoding maps, byte pairs, splits, aliases and modern file recipes with explicit legacy EOF differences, all Framework single-byte encoding maps, aliases and file recipes, standard generic Predicate2/Predicate3 families, named non-generic delegate families and arrow identities, raw Type property metadata and source-file identity, Predicate/Func identities and conversions, user ICollection bulk insertion, user-record field initialization, methods/interfaces, retained List arrays, native range boxing and RealRange equality semantics are validated separately. Field-initializer recipes are source-derived, not a Pascal compiler oracle. Whole standard-library units remain partial.",
+  "scope": "Selected positive compile requirements in two native builds. Not API coverage or runtime validation. Ten invariant Encoding properties across all 140 default read-only factory codecs and both max-size methods with 18350080 actual exhaustive outcomes, independent FNV fingerprints and 6980 boundary outcomes (7696 native checks); UI-culture EncodingName and a 197-declaration API inventory remain positive requirements, not native coverage. UTF-7 raw UTF16 with all encoder/decoder residual values, actual strict/split/scalar evidence and 1421 identical raw-UTF16 file recipes, completing all 140 numbered Framework codecs but not full APIs or modules; all five ISO-2022/HZ pages with exhaustive encoder-mode and decoder-pending byte-pair suffixes, split and default/strict evidence, 9725 modern file recipes and 4062 retained legacy EOF differences, persistent writer encoders and all ten ISCII pages with exhaustive BMP/context/default/strict/script selection/file evidence and preserved legacy EOF differences, GB18030 full BMP/scalar/four-byte/split/default/strict maps and modern files with preserved legacy EOF differences, all Framework DBCS encoding maps, byte pairs, splits, aliases and modern file recipes with explicit legacy EOF differences, all Framework single-byte encoding maps, aliases and file recipes, standard generic Predicate2/Predicate3 families, named non-generic delegate families and arrow identities, raw Type property metadata and source-file identity, Predicate/Func identities and conversions, user ICollection bulk insertion, user-record field initialization, methods/interfaces, retained List arrays, native range boxing and RealRange equality semantics are validated separately. Field-initializer recipes are source-derived, not a Pascal compiler oracle. Whole standard-library units remain partial.",
   "runs": [
     {
       "schema": 1,
       "scope": "Selected required positive compile cases derived from shipped interfaces. Every case must eventually compile. This is a growing gap list, not complete API coverage; accepting a case does not prove its runtime semantics. No expected failure is made a compatibility requirement.",
       "runner": "native/build/clang-incremental/abc.exe",
-      "runner_sha256": "2379f29903d47d77b96ca6626a731e6926f7f7d9aa8fef0ad05ce7a6ad35b6ef",
+      "runner_sha256": "14b7922c986530674ef0c4dc90ffd35ea2ee6770f08db76f9bc268cf0f91e711",
       "version": "ABC Native 0.1.0-dev (Pascal prototype)",
       "cases": [
         {
@@ -326,7 +330,7 @@
       "schema": 1,
       "scope": "Selected required positive compile cases derived from shipped interfaces. Every case must eventually compile. This is a growing gap list, not complete API coverage; accepting a case does not prove its runtime semantics. No expected failure is made a compatibility requirement.",
       "runner": "native/build/qt-editor/Release/abc.exe",
-      "runner_sha256": "0f350c47aba521594784cffc5a06fd4c1ff6c911004ec939f2cbc7ed4d13f86c",
+      "runner_sha256": "0a762411fbacbaac8e11946367cb697a8263057fe3cf5539ee38a4a139a281d6",
       "version": "ABC Native 0.1.0-dev (Pascal prototype)",
       "cases": [
         {
