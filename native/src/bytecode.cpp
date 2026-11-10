@@ -65,6 +65,7 @@ public:
         program_.locals = std::move(module.locals); program_.types = std::move(module.types);
         program_.fixed_arrays=std::move(module.fixed_arrays);
         program_.static_classes=std::move(module.static_classes);
+        program_.static_methods=std::move(module.static_methods);
         program_.print_delimiter=module.print_delimiter;program_.print_matrix_format=module.print_matrix_format;program_.default_encoding=module.default_encoding;
         for (auto& routine : module.routines) {
             for (auto local:routine.signature.captures) captured_.insert(local);
@@ -1942,6 +1943,12 @@ void verify(const Program& program) {
     }
     for(std::size_t n=0;n<program.locals.size();++n)if((program.locals[n].name.starts_with("$static_field_")||program.locals[n].name.starts_with("$static_state_"))&&!static_slots.contains(n))throw Error("E_BYTECODE",{},"Missing static field storage metadata");
     for(std::size_t n=0;n<program.routines.size();++n)if(program.routines[n].name.starts_with("$initialize_static_")&&!static_initializers.contains(n))throw Error("E_BYTECODE",{},"Missing static initializer metadata");
+    std::set<std::size_t> static_methods;
+    for(const auto& method:program.static_methods){
+        if(!valid_value_type(program,method.owner)||!compound(method.owner)||type_info(program,method.owner).kind!=CompoundKind::object_class||method.name.empty()||!valid_member_access(method.access)||method.routine>=program.routines.size()||!static_methods.insert(method.routine).second)throw Error("E_BYTECODE",{},"Invalid static method metadata");
+        const auto& routine=program.routines[method.routine];if(routine.name!=type_info(program,method.owner).name+".$static."+method.name||routine.owner!=Type::invalid||routine.constructor||!routine.captures.empty()||routine.access!=MemberAccess::public_member)throw Error("E_BYTECODE",{},"Invalid static method signature");
+    }
+    for(std::size_t n=0;n<program.routines.size();++n)if(program.routines[n].name.find(".$static.")!=std::string::npos&&!static_methods.contains(n))throw Error("E_BYTECODE",{},"Missing static method metadata");
     if(!module_name_valid(program.module_name))throw Error("E_BYTECODE",{},"Invalid source module name","Недопустимое имя исходного модуля");
     if (program.print_delimiter && (*program.print_delimiter>=program.locals.size() || !program.locals[*program.print_delimiter].global
         || program.locals[*program.print_delimiter].type!=Type::string)) throw Error("E_BYTECODE",{},"Invalid PrintDelimDefault global");

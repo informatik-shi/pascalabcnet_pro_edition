@@ -1,0 +1,40 @@
+{
+  "schema": 1,
+  "reference_runtimes": [
+    "Windows .NET Framework 4.0.30319.42000",
+    "Windows .NET 10.0.12"
+  ],
+  "reference_executions": 64,
+  "fixtures_identical": true,
+  "scope": "Actual CLR static calls, reference arguments, typed delegates, overloads, defaults, params, recursion, closures and strict class initialization. Fresh tag types isolate runtime state; generic Pascal classes are not claimed. Native recipes follow the source compiler. No original Pascal compiler or development runtime is shipped. Static properties/operators/explicit constructors, record statics, inheritance/generics, complete visibility/reflection/exception wrapping and complete modules remain unfinished.",
+  "artifacts": [
+    {
+      "path": "reference/static-methods.cs",
+      "sha256_lf": "f8ea6671f379d1c76555a377ff212db94749bc9fc2b59cee1ac316ae05ae7669"
+    },
+    {
+      "path": "reference/generate-static-methods.ps1",
+      "sha256_lf": "1da889c54b7f072e717c1011bab521dff3a3e4c20ae9b9f8b2537447f5a35d8e"
+    },
+    {
+      "path": "fixtures/static-methods-reference.tsv",
+      "sha256_lf": "7e6c05086499283e51aeb82082ddbdcdb23024d85015f3e3f6c1eee2a39a7269"
+    },
+    {
+      "path": "fixtures/static-methods-template.pas",
+      "sha256_lf": "be77acbd97c783c6fa4a5c5ca68267cdce0d806f87695cc62e4c3152488965d8"
+    },
+    {
+      "path": "fixtures/static-methods-reference.md",
+      "sha256_lf": "f7314c967a0871ceb5ef7aa720c0a43762ffcd48a1178638bf8094ed58a00c15"
+    },
+    {
+      "path": "../../TestSuite/lambda_nonstatic_from_static.pas",
+      "sha256_lf": "920d4a422261080e9e290d5c070c74301d0dad707a263c6dff74f490b037e790"
+    },
+    {
+      "path": "../../NETGenerator/NETGenerator.cs",
+      "sha256_lf": "8948bf90f50157a57236e72fdea9521d14e3d3c238451e801895b2450d679a56"
+    }
+  ]
+}

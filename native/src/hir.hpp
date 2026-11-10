@@ -51,6 +51,7 @@ struct Module {
     std::optional<std::size_t> default_encoding;
     std::vector<FixedArrayShape> fixed_arrays;
     std::vector<StaticClass> static_classes;
+    std::vector<StaticMethod> static_methods;
 };
 
 Module analyze_pascal(std::string_view source);

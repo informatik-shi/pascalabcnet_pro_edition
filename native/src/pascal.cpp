@@ -324,6 +324,7 @@ struct SyntaxRoutine {
     bool expression_body=false, procedure_lambda=false, function_lambda=false;
     std::string owner{};
     bool constructor=false, declaration_only=false, function_header=false, explicit_parameters=false;
+    bool static_member=false;
     MemberAccess access=MemberAccess::public_member;
 };
 
@@ -332,7 +333,7 @@ bool reserved(std::string_view text) {
         "program", "begin", "end", "var", "if", "then", "else", "while", "do", "and", "or", "not",
         "div", "mod", "xor", "shl", "shr", "true", "false", "uses", "unit", "type", "const", "function", "procedure",
         "for", "to", "downto", "repeat", "until", "foreach", "in", "case", "of", "array", "record", "class", "nil",
-        "constructor", "property", "interface", "public", "private", "protected", "internal",
+        "constructor", "property", "interface", "public", "private", "protected", "internal", "static",
         "new", "default", "typeof", "out", "params", "set", "try", "except", "finally", "raise", "break", "continue", "exit", "writeln", "write", "readln", "read"};
     return words.contains(text);
 }
@@ -384,10 +385,10 @@ public:
                         }
                     }
                     if ((type->kind=="class" || type->kind=="record") && !type->named) for (const auto& method:type->methods) {
-                        if (method->parameters.size()>=16) throw Error("E_TYPE",method->name.location,"Class methods accept at most fifteen parameters");
+                        if (method->parameters.size()>(method->static_member?16U:15U)) throw Error("E_TYPE",method->name.location,"Method parameter limit exceeded");
                         auto self_type=std::make_shared<SyntaxType>();self_type->token=type_name;self_type->kind=type_name.text;self_type->named=true;
                         method->owner=type_name.text;
-                        method->parameters.insert(method->parameters.begin(),SyntaxParameter{Token{TokenKind::name,"self",method->name.location},self_type,type->kind=="record",{},type->kind!="record",false});
+                        if(!method->static_member)method->parameters.insert(method->parameters.begin(),SyntaxParameter{Token{TokenKind::name,"self",method->name.location},self_type,type->kind=="record",{},type->kind!="record",false});
                         root.routines.push_back(method);
                     }
                     root.type_declarations.emplace_back(type_name, std::move(type)); expect(";");
@@ -398,8 +399,11 @@ public:
             } else if (accept("const")) {
                 do { root.statements.push_back(constant_declaration()); expect(";"); }
                 while (current_.kind==TokenKind::name && (current_.escaped || !reserved(current_.text)));
-            } else if (is("function") || is("procedure") || is("constructor")) {
+            } else if (is("function") || is("procedure") || is("constructor") || is("static")) {
+                const bool static_member=accept("static");
                 auto definition=routine();
+                definition->static_member=static_member;
+                if(static_member&&(definition->owner.empty()||definition->constructor))throw Error("E_TYPE",definition->name.location,"Static method definition requires a class name","Для определения статического метода нужно имя класса");
                 if (!definition->owner.empty()) root.method_definitions.push_back(std::move(definition));
                 else if (definition->constructor) throw Error("E_TYPE",definition->name.location,"Constructor definition requires a class name");
                 else root.routines.push_back(std::move(definition));
@@ -518,9 +522,13 @@ private:
                         : is("protected") ? MemberAccess::protected_member : MemberAccess::internal_member;
                     consume();continue;
                 }
+                const bool static_member=object&&accept("static");
                 if ((is("function") || is("procedure") || is("constructor"))) {
-                    auto method=routine(true);method->access=access;result->methods.push_back(std::move(method));continue;
+                    auto method=routine(true);method->access=access;method->static_member=static_member;
+                    if(static_member&&(method->constructor||method->explicit_interface))throw Error("E_UNSUPPORTED",method->name.location,"Static constructors and interface methods are not ported yet","Статические конструкторы и методы интерфейсов ещё не перенесены");
+                    result->methods.push_back(std::move(method));continue;
                 }
+                if(static_member&&is("property"))throw Error("E_UNSUPPORTED",current_.location,"Static properties are not ported yet","Статические свойства ещё не перенесены");
                 if (accept("property")) {
                     auto property=std::make_shared<SyntaxProperty>();property->access=access;
                     if(!explicit_member_header(property->explicit_interface,property->name))property->name=name();
@@ -534,8 +542,7 @@ private:
                 }
                 if (object && (is("destructor") || is("class") || is("var")))
                     throw Error("E_UNSUPPORTED",current_.location,"Class destructors, static members and var field sections are not ported yet");
-                const bool static_field=object&&accept("static");
-                if(static_field&&(is("function")||is("procedure")||is("constructor")))throw Error("E_UNSUPPORTED",current_.location,"Static routine declarations are not ported yet","Объявления статических подпрограмм ещё не перенесены");
+                const bool static_field=static_member;
                 std::vector<Token> fields{name()}; while (accept(",")) fields.push_back(name());
                 std::shared_ptr<SyntaxType> type;if(accept(":"))type=type_syntax();
                 const bool initialized=accept(":=");
@@ -1207,17 +1214,17 @@ public:
         for (const auto& routine : source.routines) {
             const auto explicit_target=routine->explicit_interface?resolve_type(*routine->explicit_interface):Type::invalid;
             if(explicit_target!=Type::invalid&&(routine->owner.empty()||routine->constructor||!compound(explicit_target)||!interface_kind(info(explicit_target,routine->name.location))))throw Error("E_TYPE",routine->name.location,"Explicit method qualifier must be an interface","Явная реализация метода требует имени интерфейса");
-            const auto qualified=routine->owner.empty() ? routine->name.text : routine->owner+"."+(explicit_target==Type::invalid?std::string{}:"$interface"+std::to_string(static_cast<unsigned>(explicit_target))+".")+routine->name.text;
+            const auto qualified=routine->owner.empty() ? routine->name.text : routine->owner+"."+(routine->static_member?std::string{"$static."}:explicit_target==Type::invalid?std::string{}:"$interface"+std::to_string(static_cast<unsigned>(explicit_target))+".")+routine->name.text;
             if ((routine_names_.contains(qualified)&&(routine->owner.empty()||routine->constructor)) || (routine->owner.empty() && lookup(routine->name))) throw Error("E_DUPLICATE",routine->name.location,"Duplicate routine");
             if (module_.routines.size()>=256) throw Error("E_LIMIT",routine->name.location,"Routine limit exceeded");
             hir::RoutineBody body;
-            body.signature.name=qualified;body.signature.constructor=routine->constructor;body.signature.access=explicit_target==Type::invalid?routine->access:MemberAccess::explicit_interface_member;
+            body.signature.name=qualified;body.signature.constructor=routine->constructor;body.signature.access=routine->static_member?MemberAccess::public_member:explicit_target==Type::invalid?routine->access:MemberAccess::explicit_interface_member;
             if (!routine->owner.empty()) {
-                body.signature.owner=aliases_.at(routine->owner);
-                for (const auto& field:info(body.signature.owner,routine->name.location).fields) if (explicit_target==Type::invalid&&field.name==routine->name.text)
+                const auto owner=aliases_.at(routine->owner);if(!routine->static_member)body.signature.owner=owner;
+                for (const auto& field:info(owner,routine->name.location).fields) if (explicit_target==Type::invalid&&field.name==routine->name.text)
                     throw Error("E_DUPLICATE",routine->name.location,"Class method conflicts with a field");
                 if (routine->constructor) class_constructors_[body.signature.owner]=module_.routines.size();
-                else if(explicit_target==Type::invalid)class_methods_[body.signature.owner].try_emplace(routine->name.text,module_.routines.size());
+                else if(!routine->static_member&&explicit_target==Type::invalid)class_methods_[body.signature.owner].try_emplace(routine->name.text,module_.routines.size());
             }
             body.signature.result = routine->result ? resolve_type(*routine->result) : Type::unit;
             for (std::size_t n=0;n<routine->parameters.size();++n) {
@@ -1228,8 +1235,10 @@ public:
                 body.signature.parameters.push_back({0,type,parameter.by_reference,parameter.variadic,parameter.read_only});
             }
             if(body.signature.owner!=Type::invalid&&!body.signature.constructor){auto& overloads=explicit_target==Type::invalid?class_method_overloads_[body.signature.owner][routine->name.text]:class_explicit_methods_[body.signature.owner][explicit_target][routine->name.text];for(auto previous:overloads){const auto& signature=module_.routines[previous].signature;if(signature.parameters.size()==body.signature.parameters.size()&&std::equal(signature.parameters.begin(),signature.parameters.end(),body.signature.parameters.begin(),[](const auto& a,const auto& b){return a.type==b.type&&a.by_reference==b.by_reference;}))throw Error("E_DUPLICATE",routine->name.location,"Duplicate method signature");}overloads.push_back(module_.routines.size());}
+            if(routine->static_member){const auto owner=aliases_.at(routine->owner);auto& overloads=static_methods_[owner][routine->name.text];for(auto previous:overloads){const auto& signature=module_.routines[previous].signature;if(signature.parameters.size()==body.signature.parameters.size()&&std::equal(signature.parameters.begin(),signature.parameters.end(),body.signature.parameters.begin(),[](const auto& a,const auto& b){return a.type==b.type&&a.by_reference==b.by_reference;}))throw Error("E_DUPLICATE",routine->name.location,"Duplicate static method signature");}overloads.push_back(module_.routines.size());module_.static_methods.push_back({owner,routine->name.text,module_.routines.size(),routine->access});}
             routine_names_.try_emplace(qualified,module_.routines.size());module_.routines.push_back(std::move(body));
         }
+        for(const auto& method:module_.static_methods)if(class_methods_.contains(method.owner)&&class_methods_.at(method.owner).contains(method.name))throw Error("E_UNSUPPORTED",{},"Mixed static and instance method overloads are not ported yet","Смешанные перегрузки статических и нестатических методов ещё не перенесены");
         for(auto& type:module_.static_classes)type.initializer=routine_names_.at("$initialize_static_"+std::to_string(static_cast<unsigned>(type.owner)));
         register_properties(source);
         register_interface_implementations(source);
@@ -1243,7 +1252,7 @@ public:
         for (std::size_t i = 0; i < source.routines.size(); ++i) {
             const auto& syntax = *source.routines[i]; auto& routine = module_.routines[i];
             in_routine_ = true; current_result_ = routine.signature.result; current_name_ = syntax.name.text; current_owner_=routine.signature.owner;
-            current_static_initializer_=static_initializer_owners_.contains(&syntax);if(current_static_initializer_)current_owner_=static_initializer_owners_.at(&syntax);scopes_.emplace_back();
+            current_static_initializer_=static_initializer_owners_.contains(&syntax)||syntax.static_member;if(syntax.static_member)current_owner_=aliases_.at(syntax.owner);else if(current_static_initializer_)current_owner_=static_initializer_owners_.at(&syntax);scopes_.emplace_back();
             const auto first = module_.locals.size();
             for (std::size_t n = 0; n < syntax.parameters.size(); ++n) {
                 const auto& name = syntax.parameters[n].name;
@@ -1264,6 +1273,7 @@ public:
             }
             if (current_owner_!=Type::invalid&&!current_static_initializer_) current_self_=routine.signature.parameters.front().local;
             routine.body = statement(syntax.body);
+            if(syntax.static_member&&static_class_indices_.contains(current_owner_)){hir::Stmt body;body.location=syntax.name.location;hir::Stmt initialize;initialize.kind=hir::StmtKind::call;initialize.location=syntax.name.location;initialize.expression=static_initializer_expression(current_owner_,syntax.name.location);body.statements.push_back(std::move(initialize));body.statements.push_back(std::move(routine.body));routine.body=std::move(body);}
             for (const auto& parameter:routine.signature.parameters) constant_parameters_.erase(parameter.local);
             for (auto n = first; n < module_.locals.size(); ++n) if (!module_.locals[n].global && !lambda_locals_.contains(n)) routine.signature.locals.push_back(n);
             scopes_.pop_back(); in_routine_ = false; current_name_.clear();current_owner_=Type::invalid;current_static_initializer_=false;
@@ -1433,10 +1443,13 @@ private:
             routine->body.statements.push_back(std::move(guard));source.routines.push_back(std::move(routine));
         }
     }
+    std::unique_ptr<hir::Expr> static_initializer_expression(Type owner,SourceLocation location){
+        auto result=std::make_unique<hir::Expr>();result->kind=hir::ExprKind::user_call;result->type=Type::unit;result->location=location;result->operation="$static_init";result->local=static_class_indices_.at(owner);return result;
+    }
     std::unique_ptr<hir::Expr> static_field_expression(Type owner,const Token& token){
         const auto found=static_class_indices_.find(owner);if(found==static_class_indices_.end())return {};const auto& metadata=module_.static_classes[found->second];const auto field=std::find_if(metadata.fields.begin(),metadata.fields.end(),[&](const auto& f){return f.name==token.text;});if(field==metadata.fields.end())return {};
         auto result=std::make_unique<hir::Expr>();result->kind=hir::ExprKind::local;result->type=module_.locals[field->local].type;result->local=field->local;result->location=token.location;
-        result->left=std::make_unique<hir::Expr>();result->left->kind=hir::ExprKind::user_call;result->left->type=Type::unit;result->left->location=token.location;result->left->operation="$static_init";result->left->local=found->second;return result;
+        result->left=static_initializer_expression(owner,token.location);return result;
     }
     ABC_PASCAL_NOINLINE void prepare_type_initializers(SyntaxStmt& source){
         std::map<Type,SyntaxType*> declarations;std::map<Type,Token> names;
@@ -1457,20 +1470,21 @@ private:
             const auto owner=aliases_.find(definition->owner);
             if (owner==aliases_.end() || !compound(owner->second) || (info(owner->second,definition->name.location).kind!=CompoundKind::object_class && info(owner->second,definition->name.location).kind!=CompoundKind::record))
                 throw Error("E_NAME",definition->name.location,"Method definition requires a declared class");
-            const auto matches=[&](const auto& routine){if(routine->owner.empty()||aliases_.at(routine->owner)!=owner->second||routine->name.text!=definition->name.text)return false;if(bool(routine->explicit_interface)!=bool(definition->explicit_interface)||(routine->explicit_interface&&resolve_type(*routine->explicit_interface)!=resolve_type(*definition->explicit_interface)))return false;if(!definition->explicit_parameters)return true;if(routine->parameters.size()!=definition->parameters.size()+1)return false;for(std::size_t i=0;i<definition->parameters.size();++i){const auto& a=routine->parameters[i+1];const auto& b=definition->parameters[i];if(resolve_type(*a.type)!=resolve_type(*b.type)||a.by_reference!=b.by_reference||a.variadic!=b.variadic)return false;}return true;};
+            const auto matches=[&](const auto& routine){if(routine->owner.empty()||aliases_.at(routine->owner)!=owner->second||routine->name.text!=definition->name.text)return false;if(bool(routine->explicit_interface)!=bool(definition->explicit_interface)||(routine->explicit_interface&&resolve_type(*routine->explicit_interface)!=resolve_type(*definition->explicit_interface)))return false;if(!definition->explicit_parameters)return true;const auto offset=routine->static_member?0U:1U;if(routine->parameters.size()!=definition->parameters.size()+offset)return false;for(std::size_t i=0;i<definition->parameters.size();++i){const auto& a=routine->parameters[i+offset];const auto& b=definition->parameters[i];if(resolve_type(*a.type)!=resolve_type(*b.type)||a.by_reference!=b.by_reference||a.variadic!=b.variadic)return false;}return true;};
             const auto found=std::find_if(source.routines.begin(),source.routines.end(),matches);
             if(found==source.routines.end()){const bool named=std::any_of(source.routines.begin(),source.routines.end(),[&](const auto& routine){return !routine->owner.empty()&&aliases_.at(routine->owner)==owner->second&&routine->name.text==definition->name.text;});throw Error(named?"E_TYPE":"E_NAME",definition->name.location,named?"Method definition does not match its declared signature":"Method definition has no matching declaration");}
             if(std::find_if(found+1,source.routines.end(),matches)!=source.routines.end())throw Error("E_TYPE",definition->name.location,"Ambiguous method definition");
             auto& declared=**found;
             if (!declared.declaration_only) throw Error("E_DUPLICATE",definition->name.location,"Class method already has a body");
-            if (declared.constructor!=definition->constructor || declared.function_header!=definition->function_header
+            if ((definition->static_member&&!declared.static_member) || declared.constructor!=definition->constructor || declared.function_header!=definition->function_header
                 || (definition->result && resolve_type(*definition->result)!=resolve_type(*declared.result)))
                 throw Error("E_TYPE",definition->name.location,"Method definition does not match its declared signature");
             if (definition->explicit_parameters) {
-                if (definition->parameters.size()+1!=declared.parameters.size())
+                const auto offset=declared.static_member?0U:1U;
+                if (definition->parameters.size()+offset!=declared.parameters.size())
                     throw Error("E_TYPE",definition->name.location,"Method definition does not match its declared signature");
                 for (std::size_t i=0;i<definition->parameters.size();++i) {
-                    const auto& actual=definition->parameters[i];auto& wanted=declared.parameters[i+1];
+                    const auto& actual=definition->parameters[i];auto& wanted=declared.parameters[i+offset];
                     if (actual.name.text!=wanted.name.text || resolve_type(*actual.type)!=resolve_type(*wanted.type)
                         || actual.by_reference!=wanted.by_reference || actual.read_only!=wanted.read_only || actual.variadic!=wanted.variadic)
                         throw Error("E_TYPE",actual.name.location,"Method definition does not match its declared signature");
@@ -1562,6 +1576,7 @@ private:
                 const auto& fields=info(owner,property->name.location).fields;
                 if(properties.contains(property->name.text)||(qualifier==Type::invalid&&((property->name.text=="create" && class_constructors_.contains(owner))
                     || (class_methods_.contains(owner) && class_methods_.at(owner).contains(property->name.text))
+                    || (static_methods_.contains(owner) && static_methods_.at(owner).contains(property->name.text))
                     || std::any_of(fields.begin(),fields.end(),[wanted=property->name.text](const auto& field){return field.name==wanted;}))))
                     throw Error("E_DUPLICATE",property->name.location,"Duplicate class property or member name");
                 ClassProperty bound{resolve_type(*property->type),{},{},{},property->default_indexer};
@@ -1709,6 +1724,7 @@ private:
         std::string_view unit;
         if (source.kind==SyntaxExprKind::name) {
             if (lookup(source.token) || routine_names_.contains(source.token.text)) return {};
+            if(static_methods_.contains(current_owner_)&&static_methods_.at(current_owner_).contains(source.token.text))return {};
         } else if (source.kind==SyntaxExprKind::field && source.left && source.left->kind==SyntaxExprKind::name) {
             unit=source.left->token.text;
             if (lookup(source.left->token) || !imported_units_.contains(std::string(unit))) return {};
@@ -2682,8 +2698,24 @@ private:
         }
         return result;
     }
+    ABC_PASCAL_NOINLINE std::unique_ptr<hir::Expr> static_method_expression(Type owner,const SyntaxExpr& source,Type expected){
+        const auto methods=static_methods_.find(owner);if(methods==static_methods_.end()||!methods->second.contains(source.token.text))return {};
+        const auto overloads=methods->second.at(source.token.text);auto id=overloads.front();const bool bare=source.kind==SyntaxExprKind::field||source.kind==SyntaxExprKind::name;
+        if(bare&&callable_type(expected))for(auto candidate:overloads){const auto& signature=module_.routines[candidate].signature;if(signature.parameters.empty()&&signature.result==expected){auto result=std::make_unique<hir::Expr>();result->kind=hir::ExprKind::user_call;result->type=expected;result->local=candidate;result->location=source.token.location;return result;}}
+        if(bare&&callable_type(expected)){std::optional<std::size_t> match;for(auto candidate:overloads)if(callable_matches(info(expected,source.token.location),module_.routines[candidate].signature)){if(match)throw Error("E_TYPE",source.token.location,"Ambiguous static method value");match=candidate;}if(!match)throw Error("E_TYPE",source.token.location,"Static method does not match the callable type");return routine_value(*match,source.token.location,expected);}
+        std::vector<std::unique_ptr<hir::Expr>> arguments;
+        if(overloads.size()>1){std::vector<MethodOverload> candidates;for(auto candidate:overloads){std::vector<CallableParameter> parameters;for(const auto& p:module_.routines[candidate].signature.parameters)parameters.push_back({p.type,p.by_reference,p.variadic});auto required=parameters.size()-(parameters.size()&&parameters.back().variadic?1U:0U);while(required&&candidate<parameter_defaults_.size()&&parameter_defaults_[candidate][required-1])--required;candidates.push_back({candidate,std::move(parameters),required});}id=choose_method_overload(std::move(candidates),source,arguments);}
+        const auto signature=module_.routines[id].signature;
+        if(bare&&overloads.size()==1&&(signature.result==Type::unit||(!signature.parameters.empty()&&!signature.parameters[0].variadic&&(id>=parameter_defaults_.size()||!parameter_defaults_[id][0]))))return routine_value(id,source.token.location);
+        auto result=std::make_unique<hir::Expr>();result->kind=hir::ExprKind::user_call;result->location=source.token.location;result->local=id;result->type=signature.result;
+        for(std::size_t n=0;n<source.arguments.size();++n){auto context=n<signature.parameters.size()?signature.parameters[n].type:Type::invalid;if(!signature.parameters.empty()&&signature.parameters.back().variadic&&n+1>=signature.parameters.size())context=info(signature.parameters.back().type,source.token.location).element;result->arguments.push_back(overloads.size()>1?std::move(arguments[n]):expression(*source.arguments[n],context));}
+        add_default_arguments(*result,id);
+        for(std::size_t n=0;n<result->arguments.size();++n){const auto& parameter=signature.parameters[n];if(parameter.by_reference){if(!lvalue(*result->arguments[n])||result->arguments[n]->type!=parameter.type)throw Error("E_TYPE",result->location,"var argument requires an assignable value of exactly the parameter type");}else result->arguments[n]=convert(std::move(result->arguments[n]),parameter.type,false,!parameter.read_only);}
+        return result;
+    }
     std::unique_ptr<hir::Expr> implicit_class_member(const SyntaxExpr& source,Type expected) {
         if (current_owner_==Type::invalid || (source.kind!=SyntaxExprKind::name && source.kind!=SyntaxExprKind::call)) return {};
+        if(static_methods_.contains(current_owner_)&&static_methods_.at(current_owner_).contains(source.token.text)){if(const auto local=lookup(source.token);local&&!module_.locals[*local].global&&!(source.kind==SyntaxExprKind::call&&module_.locals[*local].name=="result"))return {};return static_method_expression(current_owner_,source,expected);}
         if(auto field=static_field_expression(current_owner_,source.token)){if(const auto local=lookup(source.token);local&&!module_.locals[*local].global)return {};if(source.kind==SyntaxExprKind::call){auto call=std::make_unique<hir::Expr>();call->location=source.token.location;call->left=std::move(field);bind_value_call(*call,source.arguments);return call;}return field;}
         const auto methods=class_methods_.find(current_owner_);
         const bool method=methods!=class_methods_.end() && methods->second.contains(source.token.text);
@@ -2693,9 +2725,9 @@ private:
         const bool property=properties!=class_properties_.end() && properties->second.contains(source.token.text);
         const bool constructor=source.token.text=="create" && class_constructors_.contains(current_owner_);
         if (!method && !field && !property && !constructor) return {};
-        if(current_static_initializer_)throw Error("E_TYPE",source.token.location,"An instance member requires an object","Для нестатического члена нужен объект");
         if (const auto local=lookup(source.token);local && !module_.locals[*local].global
             && !(method && source.kind==SyntaxExprKind::call && module_.locals[*local].name=="result")) return {};
+        if(current_static_initializer_)throw Error("E_TYPE",source.token.location,"An instance member requires an object","Для нестатического члена нужен объект");
         auto result=std::make_unique<hir::Expr>();result->location=source.token.location;
         result->left=std::make_unique<hir::Expr>();result->left->kind=hir::ExprKind::local;result->left->local=current_self_;
         result->left->type=current_owner_;result->left->location=source.token.location;capture_local(current_self_,source.token.location);
@@ -2894,7 +2926,7 @@ private:
     }
     ABC_PASCAL_NOINLINE std::unique_ptr<hir::Expr> bind_member_expression(const SyntaxExpr& source,Type expected,std::unique_ptr<hir::Expr> result) {
         (void)expected;
-        if(!result->left&&source.left&&source.left->kind==SyntaxExprKind::name&&!lookup(source.left->token)){const auto owner=aliases_.find(source.left->token.text);if(owner!=aliases_.end())if(auto field=static_field_expression(owner->second,source.token)){if(source.kind==SyntaxExprKind::member_call){auto call=std::make_unique<hir::Expr>();call->location=source.token.location;call->left=std::move(field);bind_value_call(*call,source.arguments);return call;}return field;}}
+        if(!result->left&&source.left&&source.left->kind==SyntaxExprKind::name&&!lookup(source.left->token)){const auto owner=aliases_.find(source.left->token.text);if(owner!=aliases_.end()){if(auto method=static_method_expression(owner->second,source,expected))return method;if(auto field=static_field_expression(owner->second,source.token)){if(source.kind==SyntaxExprKind::member_call){auto call=std::make_unique<hir::Expr>();call->location=source.token.location;call->left=std::move(field);bind_value_call(*call,source.arguments);return call;}return field;}}}
         do {
  {
             if(bind_inifile_static(*result,source))break;
@@ -5164,6 +5196,10 @@ private:
     }
     LibraryCallback library_callback(const SyntaxExpr& source,std::vector<Type> hints={}) {
         if (source.kind==SyntaxExprKind::lambda) return library_callback_value(bind_lambda(source,Type::invalid,std::move(hints)));
+        Type static_owner=Type::invalid;
+        if(source.kind==SyntaxExprKind::name&&!lookup(source.token))static_owner=current_owner_;
+        else if(source.kind==SyntaxExprKind::field&&source.left&&source.left->kind==SyntaxExprKind::name&&!lookup(source.left->token)&&aliases_.contains(source.left->token.text))static_owner=aliases_.at(source.left->token.text);
+        if(!hints.empty()&&static_methods_.contains(static_owner)&&static_methods_.at(static_owner).contains(source.token.text)){std::optional<std::size_t> match;for(auto id:static_methods_.at(static_owner).at(source.token.text)){const auto& parameters=module_.routines[id].signature.parameters;if(parameters.empty()||parameters.size()>hints.size())continue;bool fits=true;for(std::size_t n=0;n<parameters.size();++n)if(parameters[n].type!=hints[n]||parameters[n].by_reference||parameters[n].variadic)fits=false;if(fits){if(match)throw Error("E_TYPE",source.token.location,"Ambiguous static method callback");match=id;}}if(match)return library_callback_value(routine_value(*match,source.token.location));}
         if (source.kind==SyntaxExprKind::name && routine_names_.contains(source.token.text)
             && (!lookup(source.token) || source.token.text==current_name_)) {
             LibraryCallback callback; callback.named=routine_names_.at(source.token.text);
@@ -6879,6 +6915,7 @@ private:
     std::map<const SyntaxType*,Type> resolved_types_;
     std::map<std::string,std::size_t> routine_names_;
     std::map<Type,std::map<std::string,std::size_t>> class_methods_;
+    std::map<Type,std::map<std::string,std::vector<std::size_t>>> static_methods_;
     std::map<Type,std::map<std::string,std::vector<std::size_t>>> class_method_overloads_;
     std::map<Type,std::map<Type,std::map<std::string,std::vector<std::size_t>>>> class_explicit_methods_;
     std::map<Type,std::size_t> class_constructors_;
