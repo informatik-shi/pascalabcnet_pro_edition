@@ -1,0 +1,59 @@
+{
+  "schema": 2,
+  "primitive_runtimes": [
+    "Windows .NET Framework 4.0.30319.42000",
+    "Windows .NET 10.0.12"
+  ],
+  "primitive_fixtures_identical": true,
+  "uncompressed_fixture_bytes": 34932673,
+  "sha256_uncompressed_fixture_bytes": "c22e2d95124698d9046d7c7942237059df1cb3a21322b42780423eff43aee0bf",
+  "code_page": 65000,
+  "encoder_contexts": 22,
+  "contextual_bmp_inputs": 1441792,
+  "supplementary_scalars": 1048576,
+  "decoder_contexts": 21847,
+  "contextual_decoder_bytes": 5592832,
+  "fresh_byte_pairs": 65536,
+  "aliases": 6,
+  "file_recipes_per_runtime": 1421,
+  "file_fixtures_identical": true,
+  "scope": "Actual public UTF7Encoding(false) primitive and file fixtures are byte-identical across Framework/.NET 10. Every UTF-16 unit in every encoder residual state, all supplementary scalars and splits, every decoder residual value and phase with every next byte, default/strict outcomes and final resets are covered. This ports Framework code page 65000; the modern runtime disables its GetEncoding factory by default and is used only through its explicit constructor in this development oracle. All 140 Framework code pages have native codecs; full Encoding/object/class APIs, code-page zero/default and complete standard-library modules remain unfinished. No Pascal compiler is invoked.",
+  "artifacts": [
+    {
+      "path": "reference/utf7-encoding.cs",
+      "sha256_lf": "ef91e1affb59dc404ae87e61d257ec26b75cae25d56791652e3a7a0da7a61b46"
+    },
+    {
+      "path": "reference/utf7-files.cs",
+      "sha256_lf": "d0991ce7a02dfcf19f6adecc878bfa06cf8a9e23a915df8e50e0782e0ffe8c76"
+    },
+    {
+      "path": "reference/generate-utf7.ps1",
+      "sha256_lf": "4e9ea4224f926f3e141d55a5f99cc230558597d558a7ab44dbb26bd86fca27be"
+    },
+    {
+      "path": "fixtures/utf7-reference.zip",
+      "sha256_bytes": "ccecdb4a55ec04e3c77157573acad7db34133ee6b448304a59bb802b854f2238"
+    },
+    {
+      "path": "fixtures/utf7-files-reference.tsv",
+      "sha256_lf": "584a57e42b2452bf01b4ba59b6d288c1a6ebc1d550db0508314bc6822c01c20a"
+    },
+    {
+      "path": "fixtures/utf7-files-framework-reference.tsv",
+      "sha256_lf": "584a57e42b2452bf01b4ba59b6d288c1a6ebc1d550db0508314bc6822c01c20a"
+    },
+    {
+      "path": "fixtures/utf7-reference.md",
+      "sha256_lf": "d295ab6936ee411adaa4da1b71a611ee5c2fb818b20bfc7713f87f869b3bb04e"
+    },
+    {
+      "path": "fixtures/encoding-aliases-reference.tsv",
+      "sha256_lf": "b6f31da1cf7b9b39c653bfb3a2f6eefcf18fb1aec7a41e0545d5f24a6ff1cfec"
+    },
+    {
+      "path": "utf7-reference.cmake",
+      "sha256_lf": "0906ad3b6033ff7351a7b2cbbb7f6dd5a42888e338158bb96ce7a074d0e6e755"
+    }
+  ]
+}

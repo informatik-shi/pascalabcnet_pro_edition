@@ -144,10 +144,11 @@ AddRange/InsertRange с пользовательским ICollection: examples/l
 Именованные типы function/procedure, короткая запись со стрелкой и var-параметры: examples/named-callables.pas.
 Собственные типы Predicate2/Predicate3 и преобразования в Func: examples/predicate-generics.pas.
 Однобайтовые кодировки CP866, KOI8-R, Windows-1252, Latin-1 и EBCDIC: examples/single-byte-encodings.pas. Кодировки встроены, установка провайдеров не нужна.
-Двухбайтовые японская, китайские и корейская кодировки: examples/double-byte-encodings.pas. Всего поддержаны 139 страниц кодировок; перенос остальных продолжается.
+Двухбайтовые японская, китайские и корейская кодировки: examples/double-byte-encodings.pas. Поддержаны все 140 числовых кодировок исходной поставки; полный перенос библиотечных API продолжается.
 GB18030 с китайским текстом и всеми символами Unicode, включая эмодзи: examples/gb18030-encoding.pas.
 Десять кодировок ISCII с индийскими алфавитами и их смешением в одном тексте: examples/iscii-encodings.pas.
 ISO-2022-JP/KR и HZ-GB2312 с переключением режимов: examples/iso2022-encodings.pas.
+UTF-7 с исходными правилами UTF-16 и переключения режимов: examples/utf7-encoding.pas.
 Порядок вычисления объекта и ключа при составной записи в коллекцию: examples/collection-property-writes.pas.
 Перегрузки конструкторов, статические операции записей и оставшиеся возможности коллекций ещё переносятся.
 Contains без сравнителя сохраняет правила исходной коллекции; явный nil выбирает стандартное сравнение элементов.

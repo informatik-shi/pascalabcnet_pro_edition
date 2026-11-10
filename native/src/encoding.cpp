@@ -10,6 +10,7 @@ namespace abc {
 namespace {
 TextEncoding descriptor(std::int32_t code,SourceLocation location) {
     switch(code) {
+    case 65000:return {TextEncodingKind::utf7,false,false};
     case 65001:return {TextEncodingKind::utf8,true,false};
     case 1200:return {TextEncodingKind::utf16_le,true,false};
     case 1201:return {TextEncodingKind::utf16_be,true,false};
@@ -29,6 +30,7 @@ std::int32_t named_code(const Value& name,SourceLocation location) {
     if(const auto code=encoding_alias_code(text))return code;
     if(const auto code=double_byte_alias_code(text))return code;
     if(text==u"gb18030")return 54936;
+    if(text==u"csunicode11utf7"||text==u"unicode-1-1-utf-7"||text==u"unicode-2-0-utf-7"||text==u"utf-7"||text==u"x-unicode-1-1-utf-7"||text==u"x-unicode-2-0-utf-7")return 65000;
     if(text==u"csiso2022jp")return 50221;
     if(text==u"csiso2022kr")return 50225;
     if(text==u"hz-gb-2312")return 52936;
