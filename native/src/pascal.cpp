@@ -36,6 +36,7 @@
 
 
 #include <algorithm>
+#include <bit>
 #include <charconv>
 #include <cmath>
 #include <limits>
@@ -1797,12 +1798,15 @@ private:
         else {result->left->kind=hir::ExprKind::array_new;result->left->operation="raw_literal";auto count=std::make_unique<hir::Expr>();count->kind=hir::ExprKind::literal;count->type=Type::integer;count->location=location;count->value=static_cast<std::int32_t>(arguments.size());result->left->arguments.push_back(std::move(count));}
         result->arguments=std::move(arguments);return result;
     }
+    std::unique_ptr<hir::Expr> constant_expression(const SyntaxExpr& source,Type expected=Type::invalid){
+        struct Restore{bool& value;bool previous;~Restore(){value=previous;}} restore{binding_constant_,binding_constant_};binding_constant_=true;return expression(source,expected);
+    }
     const FixedArrayShape& fixed_shape(Type type) const {const auto found=std::find_if(module_.fixed_arrays.begin(),module_.fixed_arrays.end(),[&](const auto& s){return s.type==type;});if(found==module_.fixed_arrays.end())throw Error("E_HIR",{},"Missing fixed array shape");return *found;}
     std::unique_ptr<hir::Expr> fixed_expression(Type owner,FixedMethod method,std::vector<std::unique_ptr<hir::Expr>> args,SourceLocation location){auto result=std::make_unique<hir::Expr>();result->kind=hir::ExprKind::encoding_call;result->operation_type=owner;result->local=static_cast<unsigned>(method);result->location=location;result->type=fixed_result(module_.types,owner,result->local);result->arguments=std::move(args);return result;}
     std::unique_ptr<hir::Expr> fixed_view(std::unique_ptr<hir::Expr> value,bool indexing=false){const auto owner=value->type;const auto location=value->location;std::vector<std::unique_ptr<hir::Expr>> args;args.push_back(std::move(value));return fixed_expression(owner,indexing?FixedMethod::index_view:FixedMethod::view,std::move(args),location);}
     Type resolve_fixed_array(const SyntaxType& syntax){
         for(const auto* constant:enum_prior_constants_)if(constant->token.location.offset<syntax.token.location.offset&&!enum_bound_constants_.contains(constant)){(void)statement(*constant);enum_bound_constants_.insert(constant);}
-        const auto bound=[&](const SyntaxExpr& source){auto value=expression(source);if(!ordinal(value->type)&&!enumeration(value->type))throw Error("E_TYPE",source.token.location,"Fixed array bounds must have ordinal types","Границы фиксированного массива должны иметь порядковые типы");const auto constant=hir::constant_value(*value,module_.types);if(!constant)throw Error("E_TYPE",source.token.location,"Fixed array bounds must be known constants","Границы фиксированного массива должны быть известными константами");const auto number=enumeration(value->type)?std::get<EnumValue>(*constant).value:value->type==Type::character?std::int64_t(std::get<char16_t>(*constant)):value->type==Type::boolean?std::int64_t(std::get<bool>(*constant)):integral_number(*constant,source.token.location,"bound");if(number<INT32_MIN||number>INT32_MAX)throw Error("E_RANGE",source.token.location,"Fixed array bound exceeds Int32 range");return std::pair{value->type,static_cast<std::int32_t>(number)};};
+        const auto bound=[&](const SyntaxExpr& source){auto value=constant_expression(source);if(!ordinal(value->type)&&!enumeration(value->type))throw Error("E_TYPE",source.token.location,"Fixed array bounds must have ordinal types","Границы фиксированного массива должны иметь порядковые типы");const auto constant=hir::constant_value(*value,module_.types,module_.fixed_arrays);if(!constant)throw Error("E_TYPE",source.token.location,"Fixed array bounds must be known constants","Границы фиксированного массива должны быть известными константами");const auto number=enumeration(value->type)?std::get<EnumValue>(*constant).value:value->type==Type::character?std::int64_t(std::get<char16_t>(*constant)):value->type==Type::boolean?std::int64_t(std::get<bool>(*constant)):integral_number(*constant,source.token.location,"bound");if(number<INT32_MIN||number>INT32_MAX)throw Error("E_RANGE",source.token.location,"Fixed array bound exceeds Int32 range");return std::pair{value->type,static_cast<std::int32_t>(number)};};
         auto element=resolve_type(*syntax.element);
         for(std::size_t dimension=syntax.enum_values.size()/2;dimension>0;--dimension){Type index;std::int32_t lower,upper;const auto& lo=*syntax.enum_values[2*(dimension-1)];const auto& hi=syntax.enum_values[2*(dimension-1)+1];
             if(!hi&&lo.kind==SyntaxExprKind::name&&aliases_.contains(lo.token.text)&&enumeration(aliases_.at(lo.token.text))){index=aliases_.at(lo.token.text);const auto& members=info(index,lo.token.location).enum_members;lower=members.front().value;upper=members.back().value;}
@@ -2083,7 +2087,7 @@ private:
                 auto expression_value=expression(*syntax.enum_values[index]);
                 if(expression_value->type!=Type::integer || !constant_initializer(*expression_value))
                     throw Error("E_TYPE",member.location,"Enumeration value must be an integer constant");
-                const auto known=hir::constant_value(*expression_value,module_.types);
+                const auto known=hir::constant_value(*expression_value,module_.types,module_.fixed_arrays);
                 if(!known || !std::holds_alternative<std::int32_t>(*known))
                     throw Error("E_TYPE",member.location,"Enumeration value must be an integer constant");
                 value=std::get<std::int32_t>(*known);
@@ -2334,7 +2338,14 @@ private:
             && info(expression.left->type,expression.location).kind==CompoundKind::array) return constant_parameter_target(*expression.left);
         return false;
     }
+    bool constant_array_target(const hir::Expr& expression) const {
+        if(expression.kind==hir::ExprKind::local)return constant_locals_.contains(expression.local);
+        if(expression.kind==hir::ExprKind::index&&expression.left)return constant_array_target(*expression.left);
+        if(expression.kind==hir::ExprKind::encoding_call&&fixed(expression.operation_type)&&expression.local<=static_cast<unsigned>(FixedMethod::index_view)&&expression.arguments.size()==1)return constant_array_target(*expression.arguments.front());
+        return false;
+    }
     bool lvalue(const hir::Expr& expression) const {
+        if(constant_array_target(expression))return false;
         if (constant_parameter_target(expression)) return false;
         if(expression.kind==hir::ExprKind::new_set_hash)return new_set_addressable(*expression.left);
         if (expression.kind==hir::ExprKind::index && expression.left->type==Type::string) return false;
@@ -2428,7 +2439,7 @@ private:
             expression->type=type; return expression;
         }
         if (integer_type(type) && integer_type(expression->type) && expression->kind!=hir::ExprKind::literal && !can_widen(expression->type,type)) {
-            if (const auto value=hir::constant_value(*expression,module_.types)) {
+            if (const auto value=hir::constant_value(*expression,module_.types,module_.fixed_arrays)) {
                 const auto location=expression->location; const auto original_type=expression->type;
                 expression=std::make_unique<hir::Expr>(); expression->kind=hir::ExprKind::literal;
                 expression->type=original_type; expression->location=location; expression->value=*value;
@@ -2670,7 +2681,7 @@ private:
                 if (source.initialized_array) {
                     std::vector<std::int32_t> sizes;
                     for (const auto& dimension:result->arguments) {
-                        const auto value=hir::constant_value(*dimension,module_.types);
+                        const auto value=hir::constant_value(*dimension,module_.types,module_.fixed_arrays);
                         const auto size=value ? std::optional<std::int32_t>{std::get<std::int32_t>(*value)} : std::nullopt;
                         if (!size) throw Error("E_UNSUPPORTED",dimension->location,"Array initializer size requires a constant integer expression");
                         if (*size<0) throw Error("E_RANGE",dimension->location,"Array initializer size cannot be negative");
@@ -3573,7 +3584,7 @@ private:
         return result;
     }
     std::unique_ptr<hir::Expr> expression(const SyntaxExpr& source,Type expected=Type::invalid,unsigned parentheses_used=0) {
-        if(initializer_array(expected)&&source.kind!=SyntaxExprKind::tuple&&source.parentheses>parentheses_used){
+        if(initializer_array(expected)&&source.parentheses>parentheses_used&&(source.kind!=SyntaxExprKind::tuple||source.parentheses>parentheses_used+1)){
             auto value=expression(source,Type::invalid,source.parentheses);if(value->type==expected)return value;
             const auto element=info(expected,source.token.location).element;
             std::vector<std::unique_ptr<hir::Expr>> arguments;arguments.push_back(convert(initializer_array(element)?expression(source,element,parentheses_used+1):std::move(value),element,true));return array_initializer(expected,source.token.location,std::move(arguments));
@@ -3669,9 +3680,16 @@ private:
                 }
             }
             if (!result->left) result->left = expression(*source.left);
-            if(fixed(result->left->type)){
+            if(fixed(result->left->type)||(compound(result->left->type)&&info(result->left->type,result->location).kind==CompoundKind::array&&info(result->left->type,result->location).rank==1&&!source.arguments.empty())){
                 std::vector<const SyntaxExpr*> indices{source.right.get()};for(const auto& item:source.arguments)indices.push_back(item.get());auto value=std::move(result->left);
-                for(const auto* index:indices){if(!fixed(value->type))throw Error("E_TYPE",result->location,"Too many fixed array indices");const auto owner=value->type;const auto index_type=fixed_shape(owner).index;std::vector<std::unique_ptr<hir::Expr>> args;args.push_back(convert(expression(*index,index_type),index_type));auto offset=fixed_expression(owner,FixedMethod::index,std::move(args),index->token.location);auto next=std::make_unique<hir::Expr>();next->kind=hir::ExprKind::index;next->location=result->location;next->type=info(owner,result->location).element;next->left=fixed_view(std::move(value),true);next->right=std::move(offset);value=std::move(next);}return value;
+                for(std::size_t n=0;n<indices.size();){
+                    const auto owner=value->type;if(!compound(owner))throw Error("E_TYPE",result->location,"Too many array indices");const auto shape=info(owner,result->location);const bool bounded=fixed(owner);
+                    if(!bounded&&shape.kind!=CompoundKind::array)throw Error("E_TYPE",result->location,"Too many array indices");const auto rank=bounded?1U:shape.rank;if(indices.size()-n<rank)throw Error("E_TYPE",result->location,"Wrong number of array indices");
+                    auto next=std::make_unique<hir::Expr>();next->kind=hir::ExprKind::index;next->location=result->location;next->type=shape.element;
+                    if(bounded){const auto index_type=fixed_shape(owner).index;std::vector<std::unique_ptr<hir::Expr>> args;args.push_back(convert(expression(*indices[n],index_type),index_type));next->right=fixed_expression(owner,FixedMethod::index,std::move(args),indices[n]->token.location);next->left=fixed_view(std::move(value),true);}
+                    else {next->left=std::move(value);next->right=convert(expression(*indices[n]),Type::integer);for(unsigned axis=1;axis<rank;++axis)next->arguments.push_back(convert(expression(*indices[n+axis]),Type::integer));}
+                    n+=rank;value=std::move(next);
+                }return fold_constant_array_index(std::move(value));
             }
             if(bind_property_indices(result->left,source))return std::move(result->left);
             const auto receiver_type = result->left->type;
@@ -3680,7 +3698,7 @@ private:
             if (source.arguments.size()+1!=rank) throw Error("E_TYPE",result->location,"Wrong number of array indices");
             if (receiver_type==Type::string) {
                 result->right=convert(expression(*source.right),Type::integer);
-                result->type=Type::character; result->kind=hir::ExprKind::index; break;
+                result->type=Type::character; result->kind=hir::ExprKind::index; return fold_constant_array_index(std::move(result));
             }
             const auto kind = info(receiver_type,result->location).kind;
             if(kind==CompoundKind::dictionary){std::vector<std::unique_ptr<hir::Expr>> args;args.push_back(std::move(result->left));args.push_back(expression(*source.right,info(receiver_type,result->location).key));return dictionary_expression(receiver_type,DictionaryMethod::get_item,std::move(args),result->location);}
@@ -3708,7 +3726,7 @@ private:
                 result->arguments.push_back(std::move(result->right)); break;
             }
             if (!indexed_sequence(type.kind)) throw Error("E_TYPE",result->location,"Only arrays and lists are indexable");
-            result->type = type.element; result->kind = hir::ExprKind::index; break;
+            result->type = type.element; result->kind = hir::ExprKind::index; return fold_constant_array_index(std::move(result));
         }
         case SyntaxExprKind::field:
         case SyntaxExprKind::member_call:
@@ -6322,6 +6340,64 @@ private:
         for (std::size_t n=0;n<result.arguments.size();++n)
             result.arguments[n]=convert(std::move(result.arguments[n]),signature.parameters[n]);
     }
+    bool constant_array_type(Type type,unsigned depth=0)const{
+        if(depth>64)return false;if(scalar(type)||enumeration(type))return true;
+        if(!compound(type))return false;const auto& shape=info(type,{});
+        return (shape.kind==CompoundKind::array||shape.kind==CompoundKind::fixed_array)&&constant_array_type(shape.element,depth+1);
+    }
+    std::optional<Value> constant_array_value(const hir::Expr& node)const{
+        compilation_stack_.check(node.location);
+        if(auto scalar=hir::constant_value(node,module_.types,module_.fixed_arrays))return scalar;
+        if(node.kind==hir::ExprKind::local){const auto found=constant_aggregate_values_.find(node.local);if(found!=constant_aggregate_values_.end())return found->second;return {};}
+        if((node.kind==hir::ExprKind::null_literal||node.kind==hir::ExprKind::default_value)&&initializer_array(node.type)&&!fixed(node.type)){auto result=std::make_shared<Aggregate>();result->type=node.type;result->nil=true;return result;}
+        if((node.kind==hir::ExprKind::array_initialized||node.kind==hir::ExprKind::array_literal)&&constant_array_type(node.type)){
+            const auto& shape=info(node.type,node.location);auto data=std::make_shared<Aggregate>();data->type=fixed(node.type)?shape.key:node.type;
+            for(const auto& item:node.arguments){auto value=constant_array_value(*item);if(!value)return {};auto cell=std::make_shared<Cell>();cell->type=shape.element;cell->value=std::move(*value);data->items.push_back(std::move(cell));}
+            if(!fixed(node.type))return data;auto result=std::make_shared<Aggregate>();result->type=node.type;auto cell=std::make_shared<Cell>();cell->type=shape.key;cell->value=std::move(data);result->items.push_back(std::move(cell));return result;
+        }
+        if(node.kind==hir::ExprKind::encoding_call&&fixed(node.operation_type)&&node.arguments.size()==1){
+            auto value=constant_array_value(*node.arguments[0]);if(!value)return {};
+            if(node.local==static_cast<unsigned>(FixedMethod::copy_value)||node.local==static_cast<unsigned>(FixedMethod::copy_assign))return value;
+            if(node.local==static_cast<unsigned>(FixedMethod::view)||node.local==static_cast<unsigned>(FixedMethod::index_view)){const auto* object=std::get_if<std::shared_ptr<Aggregate>>(&*value);if(!object||!*object||(*object)->nil||(*object)->items.size()!=1)return {};return (*object)->items[0]->value;}
+            if(node.local==static_cast<unsigned>(FixedMethod::index)){
+                const auto& shape=fixed_shape(node.operation_type);std::uint32_t index=0;
+                if(shape.index==Type::character)index=std::get<char16_t>(*value);else if(shape.index==Type::boolean)index=std::get<bool>(*value);else if(enumeration(shape.index))index=static_cast<std::uint32_t>(std::get<EnumValue>(*value).value);else {try{index=static_cast<std::uint32_t>(integral_number(*value,node.location,"index"));}catch(const Error&){return {};}}
+                return std::bit_cast<std::int32_t>(index-static_cast<std::uint32_t>(shape.lower));
+            }
+        }
+        if(node.kind==hir::ExprKind::index&&node.arguments.empty()){
+            auto owner=constant_array_value(*node.left),index=constant_array_value(*node.right);if(!owner||!index||!std::holds_alternative<std::int32_t>(*index))return {};auto n=std::get<std::int32_t>(*index);
+            if(node.left->type==Type::string){const auto* text=std::get_if<std::u16string>(&*owner);if(text&&n>0&&static_cast<std::size_t>(n)<=text->size())return (*text)[static_cast<std::size_t>(n)-1];return {};}
+            const auto* array=std::get_if<std::shared_ptr<Aggregate>>(&*owner);if(!array||!*array||(*array)->nil||n<0||static_cast<std::size_t>(n)>=(*array)->items.size())return {};return (*array)->items[static_cast<std::size_t>(n)]->value;
+        }return {};
+    }
+    std::unique_ptr<hir::Expr> fold_constant_array_index(std::unique_ptr<hir::Expr> node)const{
+        if(binding_constant_&&(scalar(node->type)||enumeration(node->type)))if(auto value=constant_array_value(*node)){node->kind=hir::ExprKind::literal;node->value=std::move(*value);node->left.reset();node->right.reset();node->arguments.clear();}
+        return node;
+    }
+    bool array_constant_initializer(const hir::Expr& node,bool root=true)const{
+        if(!constant_array_type(node.type))return false;
+        if(!compound(node.type)||enumeration(node.type)){
+            if(node.kind==hir::ExprKind::local)return constant_locals_.contains(node.local);
+            switch(node.kind){
+            case hir::ExprKind::literal:case hir::ExprKind::enum_call:case hir::ExprKind::convert:case hir::ExprKind::unary:case hir::ExprKind::binary:case hir::ExprKind::default_value:case hir::ExprKind::length:case hir::ExprKind::conditional:case hir::ExprKind::call:break;
+            case hir::ExprKind::user_call:if(root)return false;break;
+            default:return false;
+            }
+            if(node.left&&!array_constant_initializer(*node.left,false))return false;if(node.right&&!array_constant_initializer(*node.right,false))return false;
+            return std::all_of(node.arguments.begin(),node.arguments.end(),[&](const auto& item){return array_constant_initializer(*item,false);});
+        }
+        if(node.kind==hir::ExprKind::local)return constant_locals_.contains(node.local);
+        if(node.kind==hir::ExprKind::null_literal||node.kind==hir::ExprKind::default_value)return !fixed(node.type);
+        if(node.kind==hir::ExprKind::array_initialized||node.kind==hir::ExprKind::array_literal||node.kind==hir::ExprKind::array_new||node.kind==hir::ExprKind::read_lines||(!root&&node.kind==hir::ExprKind::user_call))return std::all_of(node.arguments.begin(),node.arguments.end(),[&](const auto& item){return array_constant_initializer(*item,false);});
+        if(node.kind==hir::ExprKind::encoding_call&&fixed(node.operation_type)&&(node.local==static_cast<unsigned>(FixedMethod::copy_value)||node.local==static_cast<unsigned>(FixedMethod::copy_assign)))return std::all_of(node.arguments.begin(),node.arguments.end(),[&](const auto& item){return array_constant_initializer(*item,root);});
+        return false;
+    }
+    void promote_constant_temporaries(hir::Expr& node){
+        if(node.kind==hir::ExprKind::array_initialized)module_.locals.at(node.local).global=true;
+        if(node.left)promote_constant_temporaries(*node.left);if(node.right)promote_constant_temporaries(*node.right);
+        for(auto& item:node.arguments)promote_constant_temporaries(*item);
+    }
     bool constant_initializer(const hir::Expr& node) const {
         if(node.kind==hir::ExprKind::empty_call && (static_cast<EmptyMethod>(node.local)==EmptyMethod::singleton || static_cast<EmptyMethod>(node.local)==EmptyMethod::convert))return std::all_of(node.arguments.begin(),node.arguments.end(),[&](const auto& x){return constant_initializer(*x);});
         if(node.kind==hir::ExprKind::new_set_call && node.operation=="$set_literal")return std::all_of(node.arguments.begin(),node.arguments.end(),[&](const auto& array){return array->kind==hir::ExprKind::array_literal && std::all_of(array->arguments.begin(),array->arguments.end(),[&](const auto& x){return constant_initializer(*x);});});
@@ -6460,16 +6536,21 @@ private:
             if (scopes_.back().contains(name.text) || (!in_routine_ && routine_names_.contains(name.text)))
                 throw Error("E_DUPLICATE",name.location,"Duplicate constant name '"+name.text+"'");
             if(!source.annotation && source.expression->kind==SyntaxExprKind::set_literal && source.expression->arguments.empty())throw Error("E_TYPE",name.location,"Cannot infer an empty set element type");
-            auto initial=expression(*source.expression);
-            const auto type=source.annotation ? resolve_type(*source.annotation) : initial->type;
-            if ((compound(type) && !enumeration(type) && info(type,name.location).kind!=CompoundKind::new_set) || type==Type::text_file || type==Type::nil || type==Type::unit)
+            enum_bound_constants_.insert(&source);
+            const auto annotation=source.annotation?resolve_type(*source.annotation):Type::invalid;
+            auto initial=constant_expression(*source.expression,annotation);
+            const auto type=source.annotation ? annotation : initial->type;
+            const bool array=initializer_array(type);
+            if ((compound(type) && !enumeration(type) && info(type,name.location).kind!=CompoundKind::new_set&&!array) || type==Type::text_file || type==Type::nil || type==Type::unit)
                 throw Error("E_UNSUPPORTED",name.location,"Only scalar const declarations are ported");
-            initial=convert(std::move(initial),type);
-            if (!constant_initializer(*initial)) throw Error("E_TYPE",name.location,"Constant initializer cannot read a variable or call a user routine");
-            const auto value=hir::constant_value(*initial,module_.types);
+            initial=convert(std::move(initial),type,array);
+            if (!(array?array_constant_initializer(*initial):constant_initializer(*initial))) throw Error("E_TYPE",name.location,"Constant initializer cannot read a variable or call a user routine");
+            if(array)promote_constant_temporaries(*initial);
+            const auto value=hir::constant_value(*initial,module_.types,module_.fixed_arrays);
             if (module_.locals.size()>=4096) throw Error("E_LIMIT",name.location,"Local and constant limit exceeded");
             const auto local=module_.locals.size();
             module_.locals.push_back({name.text,type,true}); scopes_.back()[name.text]=local; constant_locals_.insert(local);
+            if(array)if(auto aggregate=constant_array_value(*initial))constant_aggregate_values_[local]=std::move(*aggregate);
             if (value) constant_values_[local]=*value;
             else {
                 hir::Stmt initialize; initialize.kind=hir::StmtKind::assign; initialize.local=local;
@@ -6492,6 +6573,9 @@ private:
                 const auto local = module_.locals.size();
                 module_.locals.push_back({token.text, type, !in_routine_});
                 scopes_.back().emplace(token.text, local);
+                // CLR global numeric fields are already zero before constant-pool
+                // initialization; a declaration must not erase callback writes.
+                if(!in_routine_&&scopes_.size()==1&&!source.expression&&((scalar(type)&&type!=Type::string)||enumeration(type)))continue;
                 hir::Stmt assignment;
                 assignment.kind = hir::StmtKind::assign;
                 assignment.location = token.location;
@@ -6777,6 +6861,8 @@ private:
     std::set<std::size_t> named_nested_routines_;
     CompilationStack compilation_stack_;
     std::map<std::size_t,Value> constant_values_;
+    std::map<std::size_t,Value> constant_aggregate_values_;
+    bool binding_constant_=false;
     std::vector<hir::Stmt> constant_initializers_;
     struct LambdaContext { std::size_t routine,first,scope; };
     std::vector<LambdaContext> lambdas_;

@@ -24,6 +24,11 @@ void reference(){
   check(out.str()==decoded(fields[3]),"Initializer, Clone, const and typed-file trace row "+std::to_string(rows)+" actual="+out.str());check(contents(folder/"native-fixed-reference.tmp")==unhex(fields[4]),"Packed fixed record bytes row "+std::to_string(rows));check(code==fields[5],"Reference outcome row "+std::to_string(rows));++rows;
  }check(rows==18,"Every Framework and modern reference case checked");
 }
+void constant_reference(){
+ const auto path=std::filesystem::path(abc::from_utf8(__FILE__)).parent_path()/"fixtures";const auto source=contents(path/"array-constants-template.pas");check(!source.empty(),"Array constant Pascal recipe exists");std::ifstream fixture(path/"array-constants-reference.tsv");check(bool(fixture),"Independent constant-pool reference exists");std::string line;unsigned rows=0;
+ while(std::getline(fixture,line)){if(!line.empty()&&line.back()=='\r')line.pop_back();if(line.empty()||line[0]=='#')continue;const auto f=split(line);if(f.size()!=5)throw std::runtime_error("Bad array constant reference row");auto program_text=source;replace(program_text,"@LOW@",f[0]);replace(program_text,"@HIGH@",std::to_string(std::stoi(f[0])+std::stoi(f[1])-1));std::string values,pairs;for(int n=0;n<std::stoi(f[1]);++n){if(n){values+=',';pairs+=',';}const auto value=n*11-17;values+=std::to_string(value);pairs+='('+std::to_string(value)+','+std::to_string(value+1)+')';}replace(program_text,"@VALUES@",values);replace(program_text,"@PAIRS@",pairs);std::istringstream in(f[2]+" "+f[3]);std::ostringstream out;try{abc::execute(abc::compile(program_text),in,out);check(out.str()==decoded(f[4]),"Static pools, owned copies and shared inner arrays row "+std::to_string(rows)+" actual="+out.str());}catch(const std::exception& e){check(false,e.what());}++rows;
+ }check(rows==81,"Every independent static-pool execution checked");
+}
 void semantics(){
  result("type A=array[-2..1] of integer;begin var a:A:=(4,5,6,7);var b:=a;b[-2]:=99;Writeln(a[-2],' ',b[-2],' ',Low(a),' ',High(a),' ',a.Length);end.","4 99 -2 1 4\n");
  result("type A=array[7..7] of integer;begin var a:A:=(42);var b:A:=(a);Writeln(a[7],' ',b[7]);end.","42 42\n");
@@ -65,9 +70,40 @@ void semantics(){
  error("begin var t:=(1,2,3,4,5,6,7,8);end.","E_UNSUPPORTED");
  abc::ExecutionOptions limited;limited.allocation_limit=8;error("function F:integer;begin Write('bad');Result:=1;end;begin Write('before');var a:array of integer:=(F,F,F,F,F,F,F,F,F,F);end.","E_LIMIT","before",limited);
  for(auto source:{"begin var a:=new integer[1];SetLength(a,2);end.","begin var a:=new integer[1,1];end."}){auto p=abc::compile(source);for(auto& instruction:p.code)if(instruction.op==abc::Op::resize_array||(instruction.op==abc::Op::array_new&&p.types[static_cast<unsigned>(instruction.type)-64U].rank==2)){instruction.operand=~std::size_t{0};break;}try{abc::verify(p);check(false,"Raw storage marker rejected outside rank-one creation");}catch(const abc::Error& e){check(e.code=="E_BYTECODE","Raw storage operand is verified");}}
+ result("type A=array[1..3] of integer;const a:A=(2,3,4);begin Writeln(a[2]);var b:=a;b[2]:=99;Writeln(a[2],' ',b[2]);end.","3\n3 99\n");
+ result("const a:array of integer=(2,3,4);begin Writeln(a[1]);end.","3\n");
+ result("type A=array[1..2,3..4] of integer;const a:A=((1,2),(3,4));begin Writeln(a[2,4]);end.","4\n");
+ result("const a:array of array of integer=((1,2),(3,4));begin Writeln(a[1,0]);end.","3\n");
+ result("procedure P;const a:array of integer=(7,8);begin Writeln(a[0]);end;begin P;P;end.","7\n7\n");
+ error("type A=array[1..2] of integer;const a:A=(1,2);begin Write('bad');a[1]:=3;end.","E_TYPE");
+ error("const a:array of integer=(1,2);begin Write('bad');a[0]:=3;end.","E_TYPE");
+ result("function F:integer;begin Write('F');Result:=1;end;const a:array of integer=(F,2);begin Writeln(a[0]);end.","F1\n");
+ result("const a:array of integer=(Random(1),2);begin Writeln(a[0]);end.","0\n");
+ result("type A=array[1..2] of array of integer;begin var a:A;a[1]:=Arr(3,4);a[1,0]:=7;Writeln(a[1,0]);end.","7\n");
+ result("type A=array[1..2] of integer;begin var a:array of A:=((3,4),(5,6));a[0,1]:=7;Writeln(a[0,1]);end.","7\n");
+ result("begin var a:array of array[,] of integer;SetLength(a,1);a[0]:=new integer[2,2];a[0,1,1]:=7;Writeln(a[0,1,1]);end.","7\n");
+ result("const a:array of integer=(1,3);n=a[1]+2;type A=array[a[0]..n] of integer;begin var b:A;b[5]:=7;Writeln(n,' ',Low(b),' ',High(b),' ',b[5]);end.","5 1 5 7\n");
+ result("const a:array of integer=(1,2);begin var b:=a;b[0]:=99;Writeln(a[0]);end.","99\n");
+ result("procedure P;const a:array of integer=(1,2);begin var b:=a;Inc(b[0]);Writeln(a[0]);end;begin P;P;end.","2\n3\n");
+ result("type A=array[-1..0] of integer;const a:A=(3,4);n=a[-1]+1;begin Writeln(n);end.","4\n");
+ result("const a:array of array of integer=((2,3),(4,5));n=a[1,1];type A=array[1..n] of integer;begin var b:A;Writeln(b.Length);end.","5\n");
+ result("const a:array of integer=nil;begin Writeln(a=nil);end.","True\n");
+ error("const a:array of integer=(1,2);begin Write('before');Writeln(a[9]);end.","E_BOUNDS","before");
+ result("const a:array[1..2] of integer=(7,8);begin Writeln(a[1]);end.","7\n");
+ result("type E=(red,green,blue);const a:array of E=(red,blue);n=Ord(a[1]);begin Writeln(n);end.","2\n");
+ result("procedure P;const a:array of integer=(1,2);begin var b:=a;Inc(b[0]);Writeln(a[0]);end;procedure Q;const a:array of integer=(1,2);begin var b:=a;Inc(b[0]);Writeln(a[0]);end;begin P;Q;P;Q;end.","2\n2\n3\n3\n");
+ error("var n:=1;const a:array of integer=(n,2);begin Write('bad');end.","E_TYPE");
+ {std::istringstream in("17");std::ostringstream out;abc::execute(abc::compile("const a:array of integer=(ReadInteger,2);begin Writeln(a[0]);end."),in,out);check(out.str()=="17\n","Standard input initializes array constants at execution, never compilation");}
+ result("const a=Arr(1,2);n=a[0]+a[1];begin Writeln(n);end.","3\n");
+ error("function F:array of integer:=Arr(1,2);const a=F;begin Write('bad');end.","E_TYPE");
+ result("function F:integer;begin Write('F');Result:=3;end;const a:array of integer=(F+1,2);begin Writeln(a[0]);end.","F4\n");
+ result("const a=new integer[3];begin Writeln(a.Length);end.","3\n");
+ error("const a=ReadAllLines('constant-missing-file-xyz');begin Write('bad');end.","E_IO");
+ result("var calls:integer;function F:integer;begin Inc(calls);Result:=calls;end;const a:array of integer=(F,2);begin Writeln(calls,' ',a[0]);end.","1 1\n");
+ result("var calls:integer:=5;function F:integer;begin Inc(calls);Result:=calls;end;const a:array of integer=(F,2);begin Writeln(calls,' ',a[0]);end.","5 1\n");
  auto original=abc::compile("type A=array[1..2] of integer;begin var a:A;a[1]:=3;end.");
  for(unsigned change=0;change<5;++change){auto p=original;if(change==0)p.fixed_arrays.clear();if(change==1)p.fixed_arrays[0].index=static_cast<abc::Type>(999999);if(change==2)p.fixed_arrays[0].upper=0;if(change==3)p.fixed_arrays.push_back(p.fixed_arrays[0]);if(change==4)p.types[static_cast<unsigned>(p.fixed_arrays[0].type)-64U].key=abc::Type::integer;try{abc::verify(p);check(false,"Forged fixed metadata rejected");}catch(const abc::Error& e){check(e.code=="E_BYTECODE","Invalid fixed shape fails verification");}}
  if(sizeof(void*)==8)check(sizeof(abc::Parameter)==16,"const marker fits existing parameter padding");
 }
 }
-int main(){const auto previous=std::filesystem::current_path();folder=std::filesystem::temp_directory_path()/("ABC native fixed "+std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));std::filesystem::create_directory(folder);std::filesystem::current_path(folder);try{reference();semantics();}catch(const std::exception& e){check(false,e.what());}std::filesystem::current_path(previous);std::error_code ignored;std::filesystem::remove_all(folder,ignored);std::cout<<checks<<" fixed array checks, "<<failures<<" failures\n";return failures?1:0;}
+int main(){const auto previous=std::filesystem::current_path();folder=std::filesystem::temp_directory_path()/("ABC native fixed "+std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));std::filesystem::create_directory(folder);std::filesystem::current_path(folder);try{reference();constant_reference();semantics();}catch(const std::exception& e){check(false,e.what());}std::filesystem::current_path(previous);std::error_code ignored;std::filesystem::remove_all(folder,ignored);std::cout<<checks<<" fixed array checks, "<<failures<<" failures\n";return failures?1:0;}

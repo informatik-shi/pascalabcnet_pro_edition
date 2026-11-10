@@ -4045,7 +4045,7 @@ void constants_language() {
         "const s='abc'; begin SetLength(s,4); end."}) compile_error(source,"E_TYPE");
     runtime_error("const n=ReadInteger; begin end.","E_INPUT");
     runtime_error("const n=ISqrt(-1); begin end.","E_DOMAIN");
-    compile_error("const a=Arr(1,2); begin end.","E_UNSUPPORTED");
+    result("const a=Arr(1,2); begin Writeln(a); end.","[1,2]\n");
     result("begin var n:byte:=100+1; Writeln(n); end.","101\n");
     result("begin Writeln(Seq(1,2).Skip(int64(1)).ToArray); end.","[2]\n");
     compile_error("begin var n:byte:=100+200; end.","E_RANGE");

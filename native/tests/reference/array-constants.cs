@@ -1,0 +1,11 @@
+// Development-only CLR constant-pool and emitted wrapper-copy recipe.
+using System;using System.IO;using System.Text;
+class ArrayConstantsReference{
+ sealed class Fixed{public int[] data;public Fixed(int[] values){data=new int[values.Length];Array.Copy(values,data,values.Length);}public Fixed Clone(){return new Fixed(data);}}
+ sealed class Mixed{public int[][] data;public Mixed(int[][] values){data=new int[values.Length][];Array.Copy(values,data,values.Length);}public Mixed Clone(){return new Mixed(data);}}
+ static int constructorCalls;static int Value(int value){++constructorCalls;return value;}
+ static int[] dynamicPool,localPool;static Fixed fixedPool;static Mixed mixedPool;
+ static string Run(int count,int calls,int delta){var values=new int[count];var rows=new int[count][];for(int i=0;i<count;++i){values[i]=i*11-17;rows[i]=new[]{values[i],values[i]+1};}dynamicPool=(int[])values.Clone();fixedPool=new Fixed(values);mixedPool=new Mixed(rows);localPool=new[]{10,20};constructorCalls=0;var runtimePool=new[]{Value(5),Value(6)};var output=new StringBuilder();output.Append(runtimePool[0]).Append(' ').Append(runtimePool[1]).Append(' ').Append(constructorCalls).Append('\n');for(int n=0;n<calls;++n){var d=dynamicPool;var f=fixedPool.Clone();var m=mixedPool.Clone();var l=localPool;d[0]+=delta;f.data[0]+=delta;m.data[0][0]+=delta;l[0]+=delta;output.Append(dynamicPool[0]).Append(' ').Append(fixedPool.data[0]).Append(' ').Append(f.data[0]).Append(' ').Append(mixedPool.data[0][0]).Append(' ').Append(localPool[0]).Append('\n');}return output.ToString();}
+ static string Units(string value){var output=new StringBuilder();foreach(char c in value)output.Append(((int)c).ToString("x4"));return output.ToString();}
+ static void Main(string[] args){int rows=0;using(var file=new StreamWriter(args[0],false,new UTF8Encoding(false))){file.WriteLine("# lower\tcount\tcalls\tdelta\tstdout_utf16");foreach(int lower in new[]{-3,0,7})foreach(int count in new[]{1,2,4})foreach(int calls in new[]{1,2,5})foreach(int delta in new[]{-7,0,9}){file.WriteLine(lower+"\t"+count+"\t"+calls+"\t"+delta+"\t"+Units(Run(count,calls,delta)));++rows;}}Console.WriteLine(rows+" actual static-pool and wrapper-copy executions");}
+}

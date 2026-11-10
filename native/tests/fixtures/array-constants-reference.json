@@ -1,0 +1,40 @@
+{
+  "schema": 1,
+  "reference_runtimes": [
+    "Windows .NET Framework 4.0.30319.42000",
+    "Windows .NET 10.0.12"
+  ],
+  "reference_executions": 81,
+  "fixtures_identical": true,
+  "scope": "Independent CLR static arrays and source-derived fixed-wrapper Array.Copy recipes. Native Pascal checks pool persistence, dynamic alias sharing, owned fixed scalar copies and shared managed inner arrays and initializer callbacks before namespace variable initialization, preserving CLR numeric zero storage. Standard runtime factory/input initialization is checked separately without executing it at compile time. Two original Pascal array-constant tests run natively. Compile-time element folding is verified separately as a native known-type requirement; no original Pascal compiler oracle is invoked or claimed. No development runtime is shipped. Records, sets, pointers, general generated reflection and full unit coverage remain unfinished.",
+  "artifacts": [
+    {
+      "path": "reference/array-constants.cs",
+      "sha256_lf": "45fc21b974f3d48c5dfcc529ed59fe89e970b7cb02db6bd332216f53f14de3bf"
+    },
+    {
+      "path": "reference/generate-array-constants.ps1",
+      "sha256_lf": "b89c36699f2400d68cfb8b493da3b85c94ad38b9ba41ed743afa30ce2e5bec32"
+    },
+    {
+      "path": "fixtures/array-constants-reference.tsv",
+      "sha256_lf": "1ebbde8212191c567f508a597f30128c9baa400816f8e06e5374c2ab64e168d1"
+    },
+    {
+      "path": "fixtures/array-constants-template.pas",
+      "sha256_lf": "a284bdfdfa34e015dce074c27c658485212cbececab2c6db433bf445a10da729"
+    },
+    {
+      "path": "fixtures/array-constants-reference.md",
+      "sha256_lf": "9544c71a0eaf4a6c128968be18bd1d66008fbc21139d9d0cc416ba2bb0c50a18"
+    },
+    {
+      "path": "../../TestSuite/arrays2.pas",
+      "sha256_lf": "776a4dbfdd3fbea19ea441bc919b0242416947027bb311cd215ef298ffb011af"
+    },
+    {
+      "path": "../../TestSuite/arrays3.pas",
+      "sha256_lf": "68b941a40a3266e5d98d9f49004028054936c2e7742b6c00961e13d15e5caed9"
+    }
+  ]
+}

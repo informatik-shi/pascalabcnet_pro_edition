@@ -38,11 +38,11 @@ std::unique_ptr<Expr> clone_constant(const Expr& source,const std::vector<TypeIn
     return result;
 }
 }
-std::optional<Value> constant_value(const Expr& expression,const std::vector<TypeInfo>& types) {
+std::optional<Value> constant_value(const Expr& expression,const std::vector<TypeInfo>& types,const std::vector<FixedArrayShape>& fixed_arrays) {
     auto copied=clone_constant(expression,types);
     if (!copied) return {};
     if (copied->kind==ExprKind::literal) return copied->value;
-    Module module;module.types=types;
+    Module module;module.types=types;module.fixed_arrays=fixed_arrays;
     module.locals.push_back({"$constant",copied->type,true});
     Stmt assignment; assignment.kind=StmtKind::assign; assignment.location=copied->location;
     assignment.expression=std::move(copied);
