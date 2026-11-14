@@ -706,8 +706,33 @@ private:
         default: throw Error("E_HIR",node.location,"Invalid expression dispatch");
         }
     }
+    ABC_BYTECODE_NOINLINE void case_selection(const hir::Stmt& node) {
+        if (node.expression) {
+            expression(*node.expression);
+            if (node.statements.empty()) emit(Op::drop,node.expression->type,0,node.location);
+            else local(Op::store,node.local,node.location);
+        }
+        std::vector<std::size_t> exits;
+        for (const auto& arm:node.statements) {
+            std::vector<std::size_t> matches;
+            for (const auto& test:arm.arguments) {
+                expression(*test);
+                const auto mismatch=emit(Op::jump_false,Type::invalid,0,test->location);
+                matches.push_back(emit(Op::jump,Type::invalid,0,test->location));
+                (*code_)[mismatch].operand=code_->size();
+            }
+            const auto next_arm=emit(Op::jump,Type::invalid,0,arm.location);
+            for (const auto match:matches) (*code_)[match].operand=code_->size();
+            statement(*arm.body);
+            exits.push_back(emit(Op::jump,Type::invalid,0,arm.location));
+            (*code_)[next_arm].operand=code_->size();
+        }
+        if (node.alternative) statement(*node.alternative);
+        for (const auto exit:exits) (*code_)[exit].operand=code_->size();
+    }
     void statement(const hir::Stmt& node) {
         switch (node.kind) {
+        case hir::StmtKind::case_selection: case_selection(node); break;
         case hir::StmtKind::block:
             for (const auto& child : node.statements) statement(child);
             break;

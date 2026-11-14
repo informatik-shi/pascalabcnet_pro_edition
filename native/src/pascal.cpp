@@ -293,7 +293,7 @@ std::unique_ptr<SyntaxExpr> make_conditional(Token token,std::unique_ptr<SyntaxE
 }
 
 enum class SyntaxStmtKind { block, declaration, constant_declaration, assignment, print, read, conditional, loop, increment, string_mutation, call, return_stmt,
-    for_loop, repeat_loop, break_stmt, continue_stmt, foreach_loop, local_routines };
+    for_loop, repeat_loop, break_stmt, continue_stmt, foreach_loop, local_routines, case_selection };
 struct SyntaxRoutine;
 struct SyntaxStmt {
     SyntaxStmtKind kind = SyntaxStmtKind::block;
@@ -746,6 +746,37 @@ private:
         expect("end");
         return result;
     }
+    ABC_PASCAL_NOINLINE SyntaxStmt case_statement(Token token) {
+        SyntaxStmt result;
+        result.kind=SyntaxStmtKind::case_selection;
+        result.token=std::move(token);
+        result.expression=expression();
+        expect("of");
+        std::size_t label_count=0;
+        while (!is("else") && !is("end")) {
+            SyntaxStmt arm;
+            arm.token=current_;
+            do {
+                if (++label_count>4096) throw Error("E_LIMIT",current_.location,"Case label limit exceeded");
+                arm.arguments.push_back(expression());
+            } while (accept(","));
+            expect(":");
+            arm.body=std::make_unique<SyntaxStmt>(statement());
+            result.statements.push_back(std::move(arm));
+            if (!accept(";") && !is("else") && !is("end")) fail("Expected ';' between case arms");
+        }
+        if (accept("else")) {
+            result.alternative=std::make_unique<SyntaxStmt>();
+            result.alternative->token=current_;
+            while (!is("end")) {
+                if (accept(";")) continue;
+                result.alternative->statements.push_back(statement());
+                if (!accept(";") && !is("end")) fail("Expected ';' between statements");
+            }
+        } else if (result.statements.empty()) fail("Expected case label or 'else'");
+        expect("end");
+        return result;
+    }
     SyntaxStmt statement() {
         DepthGuard guard(depth_, current_.location);
         if (is(";")) return SyntaxStmt{};
@@ -754,6 +785,7 @@ private:
         if (accept("const")) return constant_declaration();
         SyntaxStmt result;
         result.token = current_;
+        if (accept("case")) return case_statement(std::move(result.token));
         if (accept("exit")) {
             result.kind = SyntaxStmtKind::return_stmt;
             if (accept("(")) { if (!is(")")) result.expression = expression(); expect(")"); }
@@ -3004,8 +3036,30 @@ private:
         }
         return result;
     }
+    std::unique_ptr<hir::Expr> integer_limit_member(const SyntaxExpr& source) {
+        const bool max=source.token.text=="maxvalue";
+        if (!max && source.token.text!="minvalue") return {};
+        if (!source.left || source.left->kind!=SyntaxExprKind::name || lookup(source.left->token)) return {};
+        const auto type=find_type(source.left->token.text);
+        if (!type || !integer_type(*type)) return {};
+        const auto location=source.token.location;
+        if (source.kind!=SyntaxExprKind::field) throw Error("E_TYPE",location,"Integer limit is a constant","Граница целого типа является константой");
+        auto result=std::make_unique<hir::Expr>();
+        result->kind=hir::ExprKind::literal;
+        result->type=*type;
+        result->location=location;
+        if (small_integer(*type)) {
+            const auto [minimum,maximum]=small_integer_bounds(*type);
+            result->value=checked_small_integer(*type,max?maximum:minimum,location);
+        } else if (*type==Type::integer) result->value=max?INT32_MAX:INT32_MIN;
+        else if (*type==Type::int64) result->value=max?std::int64_t{INT64_MAX}:std::int64_t{INT64_MIN};
+        else if (*type==Type::longword) result->value=max?std::uint32_t{UINT32_MAX}:std::uint32_t{0};
+        else result->value=max?std::uint64_t{UINT64_MAX}:std::uint64_t{0};
+        return result;
+    }
     ABC_PASCAL_NOINLINE std::unique_ptr<hir::Expr> bind_member_expression(const SyntaxExpr& source,Type expected,std::unique_ptr<hir::Expr> result) {
         (void)expected;
+        if (!result->left) if (auto limit=integer_limit_member(source)) return limit;
         if(!result->left&&source.left&&source.left->kind==SyntaxExprKind::name&&!lookup(source.left->token)){const auto owner=aliases_.find(source.left->token.text);if(owner!=aliases_.end()){if(auto property=static_property_member(owner->second,source))return property;if(auto method=static_method_expression(owner->second,source,expected))return method;if(auto field=static_field_expression(owner->second,source.token)){if(source.kind==SyntaxExprKind::member_call){auto call=std::make_unique<hir::Expr>();call->location=source.token.location;call->left=std::move(field);bind_value_call(*call,source.arguments);return call;}return field;}}}
         do {
  {
@@ -6582,6 +6636,119 @@ private:
         scopes_.pop_back();
         return result;
     }
+    std::unique_ptr<hir::Expr> case_label(const SyntaxExpr& source,Type type) {
+        auto bound=constant_expression(source);
+        auto value=hir::constant_value(*bound,module_.types,module_.fixed_arrays);
+        if (!value) throw Error("E_TYPE",source.token.location,"Case label must be a compile-time constant","Метка case должна быть константой времени компиляции");
+        bound->kind=hir::ExprKind::literal;
+        bound->value=*value;
+        bound->left.reset();
+        bound->right.reset();
+        bound->arguments.clear();
+        if (type==Type::string && bound->type!=Type::character && !std::holds_alternative<std::u16string>(*value))
+            throw Error("E_TYPE",source.token.location,"String case label must be text or a character","Метка строкового case должна быть строкой или символом");
+        if ((type==Type::int64 || type==Type::uint64) && integer_type(bound->type)) {
+            // The source compiler uses unchecked bit-pattern conversion for
+            // integer labels in its two 64-bit case paths.
+            const auto bits=bound->type==Type::uint64 ? std::get<std::uint64_t>(*value)
+                : static_cast<std::uint64_t>(integral_number(*value,source.token.location));
+            if (type==Type::int64) bound->value=std::bit_cast<std::int64_t>(bits);
+            else bound->value=bits;
+            bound->type=type;
+            return bound;
+        }
+        bound=convert(std::move(bound),type);
+        value=hir::constant_value(*bound,module_.types,module_.fixed_arrays);
+        if (!value) throw Error("E_TYPE",source.token.location,"Case label must be a compile-time constant","Метка case должна быть константой времени компиляции");
+        auto literal=std::make_unique<hir::Expr>();
+        literal->kind=hir::ExprKind::literal;
+        literal->location=source.token.location;
+        literal->type=type;
+        literal->value=*value;
+        return literal;
+    }
+    ABC_PASCAL_NOINLINE hir::Stmt bind_case_statement(const SyntaxStmt& source) {
+        const auto location=source.token.location;
+        auto selector=expression(*source.expression);
+        const auto type=selector->type;
+        if (!ordinal(type) && type!=Type::string)
+            throw Error("E_TYPE",selector->location,"Case selector requires an ordinal or string type","Выражение выбора case должно иметь порядковый или строковый тип");
+
+        hir::Stmt result;
+        result.kind=hir::StmtKind::case_selection;
+        result.location=location;
+        const bool wide=type==Type::int64 || type==Type::uint64;
+        std::optional<std::size_t> cached;
+        if (!wide && type!=Type::string) {
+            if (module_.locals.size()>=4096)throw Error("E_LIMIT",location,"Local and constant limit exceeded");
+            cached=module_.locals.size();
+            module_.locals.push_back({"$case_selector",type,!in_routine_});
+            result.local=*cached;
+            result.expression=std::move(selector);
+        }
+        const auto selector_read=[&](SourceLocation at) {
+            return cached ? cached_read(*cached,at) : clone_expression(*selector);
+        };
+        const auto binary=[](std::string op,std::unique_ptr<hir::Expr> left,std::unique_ptr<hir::Expr> right,SourceLocation at) {
+            auto node=std::make_unique<hir::Expr>();
+            node->kind=hir::ExprKind::binary;
+            node->type=Type::boolean;
+            node->location=at;
+            node->operation=std::move(op);
+            node->left=std::move(left);
+            node->right=std::move(right);
+            return node;
+        };
+        const auto order_key=[&](const hir::Expr& label) {
+            if (type==Type::uint64) return std::get<std::uint64_t>(label.value);
+            const auto signed_value=enumeration(type) ? std::get<EnumValue>(label.value).value
+                : integral_number(label.value,label.location);
+            return static_cast<std::uint64_t>(signed_value) ^ (std::uint64_t{1}<<63);
+        };
+        std::map<std::uint64_t,std::uint64_t> intervals;
+        std::set<std::u16string> strings;
+        for (const auto& syntax_arm:source.statements) {
+            hir::Stmt arm;
+            arm.location=syntax_arm.token.location;
+            for (const auto& label:syntax_arm.arguments) {
+                const auto at=label->token.location;
+                const bool range=label->kind==SyntaxExprKind::binary && label->token.text=="..";
+                if (range && type==Type::string)
+                    throw Error("E_TYPE",at,"String case labels cannot be ranges","Для строковых меток case диапазоны недопустимы");
+                auto first=case_label(range?*label->left:*label,type);
+                auto last=range?case_label(*label->right,type):nullptr;
+                if (type==Type::string) {
+                    if (!strings.insert(std::get<std::u16string>(first->value)).second)
+                        throw Error("E_DUPLICATE",at,"Duplicate case label","Повторяющаяся метка case");
+                } else {
+                    const auto lower=order_key(*first);
+                    const auto upper=last?order_key(*last):lower;
+                    if (lower>upper) throw Error("E_RANGE",at,"Case range lower bound exceeds upper bound","Нижняя граница диапазона case больше верхней");
+                    // The source comparison paths reject duplicate singleton
+                    // labels but allow intersecting 64-bit ranges.
+                    if (!wide || !range) {
+                        const auto next=intervals.lower_bound(lower);
+                        if ((next!=intervals.end() && next->first<=upper)
+                            || (next!=intervals.begin() && std::prev(next)->second>=lower))
+                            throw Error("E_DUPLICATE",at,"Overlapping case labels","Пересекающиеся метки case");
+                        intervals.emplace_hint(next,lower,upper);
+                    }
+                }
+                if (last) {
+                    auto lower=binary(">=",selector_read(at),std::move(first),at);
+                    auto upper=binary("<=",selector_read(at),std::move(last),at);
+                    arm.arguments.push_back(binary("and",std::move(lower),std::move(upper),at));
+                } else arm.arguments.push_back(binary("=",selector_read(at),std::move(first),at));
+            }
+            if (syntax_arm.body->kind==SyntaxStmtKind::declaration || syntax_arm.body->kind==SyntaxStmtKind::constant_declaration)
+                throw Error("E_SYNTAX",syntax_arm.body->token.location,"Case arm declarations require begin/end","Для объявлений в ветви case нужен блок begin/end");
+            arm.body=std::make_unique<hir::Stmt>(scoped_statement(*syntax_arm.body));
+            result.statements.push_back(std::move(arm));
+        }
+        if (wide && result.statements.empty()) result.expression=std::move(selector);
+        if (source.alternative) result.alternative=std::make_unique<hir::Stmt>(scoped_statement(*source.alternative));
+        return result;
+    }
     hir::Stmt stepped_for_statement(const SyntaxStmt& source) {
         const auto location=source.token.location,step_location=source.arguments[1]->token.location;
         const auto& syntax_step=*source.arguments[1];
@@ -6672,6 +6839,7 @@ private:
         output.statements.push_back(std::move(loop));scopes_.pop_back();return output;
     }
     hir::Stmt statement(const SyntaxStmt& source) {
+        if (source.kind==SyntaxStmtKind::case_selection) return bind_case_statement(source);
         hir::Stmt result;
         result.location = source.token.location;
         switch (source.kind) {

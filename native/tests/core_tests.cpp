@@ -5947,6 +5947,55 @@ void mutable_strings() {
     error([&] { abc::verify(program); }, "E_BYTECODE");
 }
 
+void case_statements() {
+    result(R"(const last=2+3;
+type Color=(red,green,blue);
+function Ordinal: integer; begin Write('O'); Result:=5; end;
+function TextValue: string; begin Write('S'); Result:='cat'; end;
+function Wide: int64; begin Write('W'); Result:=9; end;
+begin
+  case Ordinal of 0..3: Write('bad'); last,7: Write('A'); else Write('bad'); end;
+  case TextValue of 'dog','cat': Write('B'); else Write('bad'); end;
+  case Wide of 1..2: Write('bad'); 8..10: Write('C'); end;
+  case true of false..true: Write('D'); end;
+  case green of red..blue: Write('E'); end;
+  case TextValue of else Write('F'); end;
+  case Ordinal of else Write('G'); end;
+  case Wide of else Write('H'); end;
+  case 9 of 1: Write('bad'); end;
+  case 'a' of 'a': ; else Write('bad'); end;
+end.)", "OASSBWWWWCDEFOGWH");
+    result(R"(function Pick(x: integer): integer;
+begin
+  case x of
+    1: exit(4);
+    2: begin var y:=7; exit(y); end;
+    else Result:=3; Result+=5;
+  end;
+end;
+begin
+  for var i:=1 to 4 do
+    case i of
+      1: continue;
+      3: break;
+      else Write(Pick(i));
+    end;
+  Write(Pick(1),Pick(9));
+end.)", "748");
+    result("begin case int64(-1) of int64.MinValue..-1: Write('x'); end; end.","x");
+    result("begin case uint64.MaxValue of -1: Write('u'); end; case longword.MaxValue of $FFFFFFFF: Write('l'); end; end.","ul");
+    result("type T=(one,two);begin var n:T:=two;case n of one:Write('bad');two:Write('ok');end;end.","ok");
+    compile_error("begin case 2 of 0..2:; 2..4:; end; end.","E_DUPLICATE");
+    compile_error("begin case 2 of 0..3:; 2:; end; end.","E_DUPLICATE");
+    compile_error("begin case 2 of 5..1:; end; end.","E_RANGE");
+    compile_error("begin var n:=2;case n of n:;end;end.","E_TYPE");
+    compile_error("begin case 1.5 of 1:;end;end.","E_TYPE");
+    compile_error("begin var s:string;case s of 'ab'..'cd':;end;end.","E_TYPE");
+    compile_error("begin var s:string;case s of 'a','a':;end;end.","E_DUPLICATE");
+    compile_error("begin case byte(1) of 256:;end;end.","E_RANGE");
+    compile_error("begin case 1 of 1:var a:=7;end;end.","E_SYNTAX");
+}
+
 void language_foundations() {
     result("begin var a: array of integer; SetLength(a,3); a[0]:=10; a[2]:=20; writeln(Length(a),' ',a[1],' ',a[0]+a[2]); end.", "3 0 30\n");
     result("begin var a := Arr(1,2,3); var b := a; b[1]:=9; writeln(a[1]); SetLength(b,4); b[1]:=7; writeln(a[1],' ',b[3]); end.", "9\n9 0\n");
@@ -7534,6 +7583,7 @@ int main() {
     mutable_strings();
     nullable_strings();
     language_foundations();
+    case_statements();
     aggregate_semantics();
     ini_files(); file_library();
     file_extensions();
