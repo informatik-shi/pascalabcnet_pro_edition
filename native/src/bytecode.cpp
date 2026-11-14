@@ -593,7 +593,12 @@ private:
             for (const auto& argument:node.arguments) expression(*argument);
             emit(node.kind==hir::ExprKind::random_array ? Op::random_array : Op::fill_random_array,
                 node.left ? node.left->type : node.type,node.local,node.location); break;
-        case hir::ExprKind::default_value: if(node.operation=="new")for(const auto& type:program_.static_classes)if(type.owner==node.type)emit(Op::call_user,Type::unit,type.initializer,node.location);emit(Op::make_default,node.type,(node.operation=="default"?0:record_initializer_operand(program_,node.type)<<2U)|(node.operation=="new"?1U:node.operation=="default"?2U:0U),node.location); break;
+        case hir::ExprKind::default_value:
+            if (node.operation=="new" && compound(node.type) && type_info(program_,node.type).kind==CompoundKind::object_class)
+                for (const auto& type:program_.static_classes)
+                    if (type.owner==node.type)emit(Op::call_user,Type::unit,type.initializer,node.location);
+            emit(Op::make_default,node.type,(node.operation=="default"?0:record_initializer_operand(program_,node.type)<<2U)|(node.operation=="new"?1U:node.operation=="default"?2U:0U),node.location);
+            break;
         case hir::ExprKind::index:
             expression(*node.left); expression(*node.right);
             for (const auto& argument:node.arguments) expression(*argument);
@@ -639,7 +644,9 @@ private:
             for (std::size_t i=0;i<node.arguments.size();++i) {
                 if (signature.parameters[i+1].by_reference) reference(*node.arguments[i]);else expression(*node.arguments[i]);
             }
-            for(const auto& type:program_.static_classes)if(type.owner==node.type)emit(Op::call_user,Type::unit,type.initializer,node.location);
+            if (type_info(program_,node.type).kind==CompoundKind::object_class)
+                for (const auto& type:program_.static_classes)
+                    if (type.owner==node.type)emit(Op::call_user,Type::unit,type.initializer,node.location);
             emit(Op::construct_user,node.type,node.local,node.location);break;
         }
         case hir::ExprKind::property_access:
@@ -1939,7 +1946,18 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
 void verify(const Program& program) {
     std::set<Type> static_owners;std::set<std::size_t> static_slots,static_initializers;
     for(const auto& type:program.static_classes){
-        if(!compound(type.owner)||!valid_value_type(program,type.owner)||type_info(program,type.owner).kind!=CompoundKind::object_class||!static_owners.insert(type.owner).second||type.fields.size()>256||type.state>=program.locals.size()||!program.locals[type.state].global||program.locals[type.state].type!=Type::boolean||program.locals[type.state].name!="$static_state_"+std::to_string(static_cast<unsigned>(type.owner))||!static_slots.insert(type.state).second||type.initializer>=program.routines.size()||!static_initializers.insert(type.initializer).second)throw Error("E_BYTECODE",{},"Invalid static class storage");
+        if(!compound(type.owner) || !valid_value_type(program,type.owner))
+            throw Error("E_BYTECODE",{},"Invalid static storage owner");
+        const auto& owner=type_info(program,type.owner);
+        const bool supported_owner=owner.kind==CompoundKind::object_class
+            || (owner.kind==CompoundKind::record && owner.native_record==NativeRecord::none);
+        if(!supported_owner || !static_owners.insert(type.owner).second || type.fields.size()>256
+            || type.state>=program.locals.size() || !program.locals[type.state].global
+            || program.locals[type.state].type!=Type::boolean
+            || program.locals[type.state].name!="$static_state_"+std::to_string(static_cast<unsigned>(type.owner))
+            || !static_slots.insert(type.state).second || type.initializer>=program.routines.size()
+            || !static_initializers.insert(type.initializer).second)
+            throw Error("E_BYTECODE",{},"Invalid static type storage");
         const auto& init=program.routines[type.initializer];if(init.name!="$initialize_static_"+std::to_string(static_cast<unsigned>(type.owner))||init.owner!=Type::invalid||init.constructor||init.result!=Type::unit||!init.parameters.empty()||!init.captures.empty()||init.access!=MemberAccess::public_member)throw Error("E_BYTECODE",{},"Invalid static initializer signature");
         std::set<std::string> names;for(const auto& field:type.fields){if(field.name.empty()||!names.insert(field.name).second||!valid_member_access(field.access)||field.local>=program.locals.size()||!program.locals[field.local].global||!valid_value_type(program,program.locals[field.local].type)||program.locals[field.local].name!="$static_field_"+type_info(program,type.owner).name+"_"+field.name||!static_slots.insert(field.local).second)throw Error("E_BYTECODE",{},"Invalid static field metadata");}
     }

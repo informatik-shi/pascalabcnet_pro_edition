@@ -108,5 +108,69 @@ begin var o := new C; Writeln(C.v); end.)", "7\n");
     error("type C=class n:integer;static constructor := Inc(n);end;begin Write('bad');end.", "E_TYPE");
     error("type C=class static constructor := Write(1 div 0);end;begin Write('B');var o:=new C;end.", "E_DIV_ZERO", "B");
 }
+
+void record_statics() {
+    const auto source=R"(function Seed: integer;
+begin Write('F'); Result := 4; end;
+type R = record
+  n: integer := 2;
+  static x: integer := Seed;
+  static constructor;
+  static function Plain: integer := 8;
+  static property ConstantValue: integer read 9;
+  static property Shared: integer read x write x;
+  function ReadShared: integer := x + n;
+end;
+static constructor R.Create;
+begin Write('S', x); Inc(x); end;
+begin
+  var item := new R;
+  var zero := default(R);
+  Writeln(item.n, zero.n, R.Plain, R.ConstantValue);
+  Writeln(item.ReadShared);
+  R.Shared := 11;
+  Writeln(R.Shared, ' ', item.ReadShared);
+end.)";
+    result(source,"2089\nFS47\n11 13\n");
+    const auto program=abc::compile(source);
+    const auto& storage=program.static_classes.at(0);
+    const auto& instance=program.types.at(static_cast<unsigned>(storage.owner)-64);
+    check(instance.fields.size()==1 && instance.fields.front().name=="n"
+          && storage.fields.size()==1 && storage.fields.front().name=="x",
+          "Static fields do not occupy storage in each record value");
+
+    result(R"(type R = record
+  class values: array[1..2] of integer := (3, 5);
+  class constructor := values[1] += 7;
+end;
+procedure Change(var n: integer); begin Inc(n); end;
+begin
+  Change(R.values[1]); Writeln(R.values[1], ' ', R.values[2]);
+end.)", "11 5\n");
+    result(R"(type R = record
+  static x: integer := 7;
+  static constructor := Write('I', x);
+end;
+function Argument: integer; begin Write('A'); Result:=9; end;
+begin
+  R.x := Argument; Writeln(R.x); Inc(R.x); Writeln(R.x);
+end.)", "AI79\n10\n");
+    result(R"(type R = record
+  static x: integer := 7;
+  static constructor := x += 2;
+end;
+Alias = R;
+begin Writeln(Alias.x, ' ', R.x); end.)", "9 9\n");
+    result(R"(type R = record
+  static x: integer := 5;
+  static constructor := Write('S');
+  n: integer;
+  constructor(value: integer); begin n := value; end;
+end;
+begin var item := new R(8); Writeln(item.n); Writeln(R.x); end.)", "8\nS5\n");
+    error("begin var r:record static n:integer; end; Write('bad'); end.", "E_TYPE");
+    error("type R=record static n:integer; n:integer;end;begin Write('bad');end.", "E_DUPLICATE");
+    error("type R=record static n:integer:=7;static constructor := Write(1 div 0);end;begin Write('B');Writeln(R.n);end.", "E_DIV_ZERO", "B");
 }
-int main(){try{reference();semantics();static_constructors();}catch(const std::exception& e){check(false,e.what());}std::cout<<checks<<" static initialization checks, "<<failures<<" failures\n";return failures?1:0;}
+}
+int main(){try{reference();semantics();static_constructors();record_statics();}catch(const std::exception& e){check(false,e.what());}std::cout<<checks<<" static initialization checks, "<<failures<<" failures\n";return failures?1:0;}

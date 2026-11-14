@@ -529,8 +529,7 @@ private:
                     auto method=routine(true);method->access=access;method->static_member=static_member;
                     if(static_member && method->constructor){
                         check_static_constructor(*method);
-                        if(!object)throw Error("E_UNSUPPORTED",method->name.location,"Static record constructors are not ported yet","Статические конструкторы записей ещё не перенесены");
-                        if(result->static_constructor)throw Error("E_DUPLICATE",method->name.location,"Class already declares a static constructor","У класса уже объявлен статический конструктор");
+                        if(result->static_constructor)throw Error("E_DUPLICATE",method->name.location,"Type already declares a static constructor","У типа уже объявлен статический конструктор");
                         result->static_constructor=std::move(method);
                         continue;
                     }
@@ -552,7 +551,6 @@ private:
                 if (object && (is("destructor") || is("var")))
                     throw Error("E_UNSUPPORTED",current_.location,"Class destructors and var field sections are not ported yet");
                 const bool static_field=static_member;
-                if(static_field&&!object)throw Error("E_UNSUPPORTED",current_.location,"Record static fields are not ported yet","Статические поля записей ещё не перенесены");
                 std::vector<Token> fields{name()}; while (accept(",")) fields.push_back(name());
                 std::shared_ptr<SyntaxType> type;if(accept(":"))type=type_syntax();
                 const bool initialized=accept(":=")||(type&&accept("="));
@@ -1290,7 +1288,7 @@ public:
             }
             if (current_owner_!=Type::invalid&&!current_static_initializer_) current_self_=routine.signature.parameters.front().local;
             routine.body = statement(syntax.body);
-            if(syntax.static_member&&static_class_indices_.contains(current_owner_)){hir::Stmt body;body.location=syntax.name.location;hir::Stmt initialize;initialize.kind=hir::StmtKind::call;initialize.location=syntax.name.location;initialize.expression=static_initializer_expression(current_owner_,syntax.name.location);body.statements.push_back(std::move(initialize));body.statements.push_back(std::move(routine.body));routine.body=std::move(body);}
+            if (syntax.static_member) guard_static_accessor(routine.body,current_owner_,syntax.name.location);
             for (const auto& parameter:routine.signature.parameters) constant_parameters_.erase(parameter.local);
             for (auto n = first; n < module_.locals.size(); ++n) if (!module_.locals[n].global && !lambda_locals_.contains(n)) routine.signature.locals.push_back(n);
             scopes_.pop_back(); in_routine_ = false; current_name_.clear();current_owner_=Type::invalid;current_static_initializer_=false;
@@ -1454,7 +1452,7 @@ private:
             const auto owner=aliases_.find(definition->owner);
             const auto declaration=std::find_if(source.type_declarations.begin(),source.type_declarations.end(),[&](const auto& item){
                 return owner!=aliases_.end() && aliases_.at(item.first.text)==owner->second
-                    && !item.second->named && item.second->kind=="class";
+                    && !item.second->named && (item.second->kind=="class" || item.second->kind=="record");
             });
             if(declaration==source.type_declarations.end() || !declaration->second->static_constructor)
                 throw Error("E_NAME",definition->name.location,"Static constructor definition has no matching declaration","Для определения статического конструктора нет объявления");
@@ -1467,7 +1465,8 @@ private:
     }
     void prepare_static_fields(SyntaxStmt& source){
         for(auto& [name,syntax]:source.type_declarations){
-            if(syntax->kind!="class" || syntax->named || (syntax->static_fields.empty() && !syntax->static_constructor))continue;
+            if((syntax->kind!="class" && syntax->kind!="record") || syntax->named
+                || (syntax->static_fields.empty() && !syntax->static_constructor))continue;
             const auto& constructor=syntax->static_constructor;
             if(constructor && constructor->declaration_only)
                 throw Error("E_NAME",constructor->name.location,"Declared static constructor has no implementation","У объявленного статического конструктора нет реализации");
@@ -1485,6 +1484,21 @@ private:
     }
     std::unique_ptr<hir::Expr> static_initializer_expression(Type owner,SourceLocation location){
         auto result=std::make_unique<hir::Expr>();result->kind=hir::ExprKind::user_call;result->type=Type::unit;result->location=location;result->operation="$static_init";result->local=static_class_indices_.at(owner);return result;
+    }
+    void guard_static_accessor(hir::Stmt& body,Type owner,SourceLocation location) {
+        // The original emitter marks records BeforeFieldInit. Native record
+        // initialization is therefore deferred to the first static field access.
+        if (!static_class_indices_.contains(owner) || info(owner,location).kind!=CompoundKind::object_class)
+            return;
+        hir::Stmt block;
+        block.location=location;
+        hir::Stmt initialize;
+        initialize.kind=hir::StmtKind::call;
+        initialize.location=location;
+        initialize.expression=static_initializer_expression(owner,location);
+        block.statements.push_back(std::move(initialize));
+        block.statements.push_back(std::move(body));
+        body=std::move(block);
     }
     std::unique_ptr<hir::Expr> static_field_expression(Type owner,const Token& token){
         const auto found=static_class_indices_.find(owner);if(found==static_class_indices_.end())return {};const auto& metadata=module_.static_classes[found->second];const auto field=std::find_if(metadata.fields.begin(),metadata.fields.end(),[&](const auto& f){return f.name==token.text;});if(field==metadata.fields.end())return {};
@@ -1613,7 +1627,8 @@ private:
             const auto offset=binding.property->static_member?0U:1U;for(std::size_t n=0;n<binding.property->indices.size();++n)scopes_.back()[binding.property->indices[n].first.text]=helper.signature.parameters[n+offset].local;
             if(binding.setter){scopes_.back()["value"]=helper.signature.parameters.back().local;helper.body=statement(*binding.setter);}
             else{helper.body.kind=hir::StmtKind::return_stmt;helper.body.location=binding.expression->token.location;helper.body.expression=convert(expression(*binding.expression,helper.signature.result),helper.signature.result);}
-            if(binding.property->static_member&&static_class_indices_.contains(current_owner_)){hir::Stmt body;body.location=binding.property->name.location;hir::Stmt initialize;initialize.kind=hir::StmtKind::call;initialize.location=body.location;initialize.expression=static_initializer_expression(current_owner_,body.location);body.statements.push_back(std::move(initialize));body.statements.push_back(std::move(helper.body));helper.body=std::move(body);}
+            if (binding.property->static_member)
+                guard_static_accessor(helper.body,current_owner_,binding.property->name.location);
             for(auto n=first;n<module_.locals.size();++n)if(!module_.locals[n].global&&!lambda_locals_.contains(n))helper.signature.locals.push_back(n);
             if(!binding.property->static_member){constant_parameters_.erase(current_self_);reference_parameters_.erase(current_self_);}scopes_.pop_back();in_routine_=false;current_result_=Type::unit;current_owner_=Type::invalid;current_static_initializer_=false;current_name_.clear();
         }
@@ -2416,6 +2431,9 @@ private:
         }
         if (syntax.kind=="class") throw Error("E_UNSUPPORTED",syntax.token.location,"Classes require a named type declaration");
         if (syntax.kind == "record") {
+            if ((!syntax.static_fields.empty() || syntax.static_constructor) && syntax_root_
+                && std::none_of(syntax_root_->type_declarations.begin(),syntax_root_->type_declarations.end(),[&](const auto& declaration){return declaration.second.get()==&syntax;}))
+                throw Error("E_TYPE",syntax.token.location,"Static members require a named record declaration","Для статических членов нужна именованная запись");
             if(syntax.initializer&&syntax_root_&&std::none_of(syntax_root_->type_declarations.begin(),syntax_root_->type_declarations.end(),[&](const auto& declaration){return declaration.second.get()==&syntax;}))
                 throw Error("E_UNSUPPORTED",syntax.token.location,"Field initialization requires a named record declaration","Для инициализации полей нужна именованная запись");
             TypeInfo record{syntax.token.text,CompoundKind::record,Type::invalid,{}};

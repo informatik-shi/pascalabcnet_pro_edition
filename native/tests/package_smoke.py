@@ -369,6 +369,7 @@ def main():
                 ("static-fields.pas", "before init 7 7 1\n99 10 20\n"),
                 ("static-methods.pas", "12\n19\n20\n20\n"),
                 ("static-properties.pas", "60\n25 65\n7 0\n"),
+                ("record-statics.pas", "0 101 102\n"),
                 ("utf7-encoding.pas", "65000 UTF7Encoding\n0\n65,43,45,43,90,101,85,45\nПривет + 日本 🌍\n1 55357\n"),
                 ("iso2022-encodings.pas", "50220 [27,36,66,70,124,37,43,27,40,66,65]\n50221 [27,36,66,70,124,27,40,73,54,27,40,66,65]\n50222 [27,36,66,70,124,14,54,15,27,40,66,65]\n50225 한국어\n[126,123,86,80,78,68,126,125,126,126]\n52936 中文~\nISO2022Encoding\n"),
                 ("iscii-encodings.pas", "57002 ISCIIEncoding\nकকகకಕകકକਕ\n[179,239,67,179,239,68,179,239,66]\n57011 ਕ\n"),
@@ -2205,6 +2206,17 @@ def main():
                     or f"{static_constructor}:2:" not in invalid.stderr):
                 raise RuntimeError(f"{name} static constructor error mismatch: {invalid.stdout!r}, {invalid.stderr!r}")
             results[-1]["native_static_constructors_and_bilingual_errors"] = "passed"
+            record_static = folder / "Статическое поле записи.pas"
+            record_static.write_text(
+                "type R=record\nstatic x:integer:=7;\nstatic constructor := Write(1 div 0);\n"
+                "static function F:integer:=8;\nend;\nbegin Write(R.F);Writeln(R.x);end.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(record_static)], text=True, encoding="utf-8",
+                                     capture_output=True, cwd=folder, env=env, timeout=10)
+            if (invalid.returncode != 1 or invalid.stdout != "8" or "E_DIV_ZERO" not in invalid.stderr
+                    or "EN:" not in invalid.stderr or "RU:" not in invalid.stderr
+                    or f"{record_static}:3:" not in invalid.stderr):
+                raise RuntimeError(f"{name} static record error mismatch: {invalid.stdout!r}, {invalid.stderr!r}")
+            results[-1]["native_record_statics_and_bilingual_errors"] = "passed"
             nested_deep = folder / "Предел вложенности подпрограмм.pas"
             nested_deep.write_text("".join(f"procedure P{i};" for i in range(400))
                                    + "begin end;" * 400 + "begin end.", encoding="utf-8")
