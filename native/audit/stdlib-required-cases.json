@@ -15,6 +15,7 @@
     {"id":"system-binary-object-serialization","module":"PABCSystem","source_line":762,"source":"begin var f:file;Rewrite(f,'unused');f.Serialize(42);Close(f);end."},
     {"id":"system-user-record-fields","module":"PABCSystem","source_line":511,"source":"type R=record values:=new HashSet<integer>;end;begin var r:R;Writeln(r.values.Count);end."},
     {"id":"system-set-array-constant","module":"PABCSystem","source_line":507,"source":"const a:array of set of 1..4=([1,2,7],[]);begin assert(a[0]=[1,2,7]);end."},
+    {"id":"system-integral-set-membership","module":"PABCSystem","source_line":541,"source":"begin var s:set of byte:=[1,2];var x:integer:=2;assert(x in s);end."},
     {"id":"system-user-record-enumerator","module":"PABCSystem","source_line":168,"source":"type R=record(IEnumerator<integer>) public function MoveNext:boolean:=false; property Current:integer read 0; procedure Reset;begin end;procedure Dispose;begin end;end;begin var e:IEnumerator<integer>:=new R;Writeln(e.MoveNext);end."},
     {"id":"system-user-record-interface","module":"PABCSystem","source_line":803,"source":"type R=record(IEquatable<R>) public x:integer; function Equals(other:R):boolean:=Self=other; end; E=IEquatable<R>; begin var r:R; var e:E:=r; Writeln(e.Equals(R(e))); end."},
     {"id":"system-bigint","module":"PABCSystem","source_line":110,"source":"begin var value:BigInteger:=1; end."},

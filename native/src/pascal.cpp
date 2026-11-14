@@ -4470,7 +4470,16 @@ private:
                 all->arguments.push_back(std::move(value));};
             if(range){append(*item->left);append(*item->right);}else append(*item);
         }
-        bind_array_literal(*all);const auto element=info(all->type,location).element,owner=new_set_type(element);const bool ranged=std::any_of(ranges.begin(),ranges.end(),[](bool v){return v;});
+        if(std::all_of(all->arguments.begin(),all->arguments.end(),[](const auto& value){return integer_type(value->type);})){
+            constexpr std::array widths{Type::shortint,Type::byte,Type::smallint,Type::word,
+                Type::integer,Type::longword,Type::int64,Type::uint64};
+            auto common=widths.begin();
+            for(const auto& value:all->arguments)common=std::max(common,std::find(widths.begin(),widths.end(),value->type));
+            for(auto& value:all->arguments)value=convert_new_set_element(std::move(value),*common);
+            all->kind=hir::ExprKind::array_literal;
+            all->type=sequence_type(CompoundKind::array,*common);
+        }else bind_array_literal(*all);
+        const auto element=info(all->type,location).element,owner=new_set_type(element);const bool ranged=std::any_of(ranges.begin(),ranges.end(),[](bool v){return v;});
         std::vector<std::unique_ptr<hir::Expr>> arguments;
         if(!ranged)arguments.push_back(std::move(all));
         else{if(element!=Type::integer && element!=Type::boolean && element!=Type::character && !enumeration(element))throw Error("E_TYPE",location,"Set ranges require integer, char, boolean or enumeration endpoints");
@@ -4480,11 +4489,18 @@ private:
         }
         auto result=new_set_expression(owner,ranged ? NewSetMethod::literal_ranges : NewSetMethod::construct_array,std::move(arguments),location);result->operation="$set_literal";return result;
     }
+    std::unique_ptr<hir::Expr> convert_new_set_element(std::unique_ptr<hir::Expr> value,Type target){
+        if(integer_type(value->type) && integer_type(target) && !can_widen(value->type,target)){
+            if(target!=Type::uint64 || value->type==Type::int64)return subrange_integer_cast(std::move(value),target);
+            value=subrange_integer_cast(std::move(value),Type::longword);
+        }
+        return convert(std::move(value),target);
+    }
     std::unique_ptr<hir::Expr> new_set_expression(Type owner,NewSetMethod method,std::vector<std::unique_ptr<hir::Expr>> arguments,SourceLocation location,bool ref=false){
         const auto parameters=new_set_parameters(module_.types,owner,method,ref);
         if(arguments.size()!=parameters.size())throw Error("E_TYPE",location,"Wrong NewSet argument count");
         auto result=std::make_unique<hir::Expr>();result->kind=hir::ExprKind::new_set_call;result->type=new_set_result(module_.types,owner,method);result->location=location;result->operation_type=owner;result->local=static_cast<std::size_t>(method)|(ref ? 128U : 0U);
-        for(std::size_t i=0;i<arguments.size();++i)result->arguments.push_back(i==0 && ref ? std::move(arguments[i]) : convert(std::move(arguments[i]),parameters[i]));return result;
+        for(std::size_t i=0;i<arguments.size();++i)result->arguments.push_back(i==0 && ref ? std::move(arguments[i]) : convert_new_set_element(std::move(arguments[i]),parameters[i]));return result;
     }
     std::unique_ptr<hir::Expr> new_set_copy(std::unique_ptr<hir::Expr> value,SourceLocation location){const auto owner=value->type;std::vector<std::unique_ptr<hir::Expr>> arguments;arguments.push_back(std::move(value));return new_set_expression(owner,NewSetMethod::copy_value,std::move(arguments),location);}
     ABC_PASCAL_NOINLINE std::unique_ptr<hir::Expr> bind_mixed_set_arithmetic(hir::Expr& expression,NewSetMethod method,bool integer_left,Type element){

@@ -461,7 +461,7 @@ if(BUILD_TESTING)
             COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/../TestSuite/${case_fixture}.pas")
     endforeach()
     foreach(subrange_fixture IN ITEMS diapasons1 diapasons3 incdecdiap1 incdec1 arithm6 cast1 arrayofset2 fileofset1
-            set1 set4 setofbyte1 dynarrayofset1 foreachset1)
+            set1 set4 set7 set8 setofbyte1 dynarrayofset1 foreachset1)
         add_test(NAME original_${subrange_fixture}
             COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/../TestSuite/${subrange_fixture}.pas")
     endforeach()

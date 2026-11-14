@@ -5989,6 +5989,22 @@ begin
 end.)","");
     runtime_error("begin var b:set of byte;var a:=[1,256];b:=a;end.","E_RANGE");
     runtime_error("begin var b:set of uint64;var a:=Arr(-1,2);b:=a;end.","E_RANGE");
+    result(R"(begin
+  var b: set of byte;
+  var small: shortint := -1;
+  var i: integer := -1;
+  var wide: int64 := -1;
+  b.Add(small);
+  assert((small in b) and b.Contains(i) and (byte.MaxValue in b));
+  Exclude(b,i);
+  assert(b=[]);
+  var numbers := [byte(255),small];
+  assert(numbers.Count=1);
+  var u := [i,wide,uint64(1)];
+  assert(u.Count=3);
+  assert(uint64(4294967295) in u);
+  assert(uint64.MaxValue in u);
+end.)","");
     result("begin var b:=SetOf(byte(255));foreach x:shortint in b do Writeln(x);foreach y:byte in Arr(256,-1) do Writeln(y);end.","-1\n0\n255\n");
     result("begin foreach c:uint64 in Arr(-1) do Writeln(c);foreach d:int64 in Arr(longword.MaxValue) do Writeln(d);end.","4294967295\n-1\n");
     result(R"(type Bytes=set of byte; Ints=set of integer; Wide=set of int64;
