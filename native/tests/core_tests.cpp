@@ -5687,10 +5687,11 @@ void foreach_loops() {
     error([&]{(void)run("begin var l:=new List<integer>; l.Add(1); foreach var x in l do Readln(l[0]); end.","9\n");},"E_MODIFIED");
     runtime_error("begin var a:array of integer; foreach var x in a do Write(x); end.","E_NIL");
     runtime_error("begin var l:List<integer>; foreach var x in l do Write(x); end.","E_NIL");
+    result("begin foreach var x:integer in Arr(2147483648) do Write(x); end.","-2147483648");
+    result("begin foreach var b:byte in Arr(word(257)) do Write(b); end.","1");
     for (const auto* source:{"begin foreach var x in Arr(1,2) do x:=9; end.","begin foreach var x in Arr(1,2) do Inc(x); end.",
         "begin foreach var x in Arr(1) do Readln(x); end.",
         "procedure P(var n:integer); begin end; begin foreach var x in Arr(1) do P(x); end.",
-        "begin foreach var x:integer in Arr(2147483648) do Write(x); end.",
         "begin var s:string; foreach s in Arr(1) do Write(s); end.",
         "begin foreach var x in Arr(1) do foreach x in Arr(2) do Write(x); end.",
         "begin foreach var x in Arr(1) do for x:=1 to 2 do Write(x); end.",
@@ -5988,6 +5989,21 @@ begin
 end.)","");
     runtime_error("begin var b:set of byte;var a:=[1,256];b:=a;end.","E_RANGE");
     runtime_error("begin var b:set of uint64;var a:=Arr(-1,2);b:=a;end.","E_RANGE");
+    result("begin var b:=SetOf(byte(255));foreach x:shortint in b do Writeln(x);foreach y:byte in Arr(256,-1) do Writeln(y);end.","-1\n0\n255\n");
+    result("begin foreach c:uint64 in Arr(-1) do Writeln(c);foreach d:int64 in Arr(longword.MaxValue) do Writeln(d);end.","4294967295\n-1\n");
+    result(R"(type Bytes=set of byte; Ints=set of integer; Wide=set of int64;
+function B:Bytes; begin Write('B');Result:=[2,1];end;
+function I:Ints; begin Write('I');Result:=[300,1];end;
+begin
+  var total: Ints := B+I;
+  foreach var n in total do Write(' ',n);
+  var b:Bytes:=[1,2];
+  var w:Wide:=SetOf(int64(5000000000),int64(1));
+  var a:=Arr(300,1,1);
+  assert((a*b=[1]) and (b-a=[2]) and (a-b=[300]));
+  assert((a*w=[1]) and (a-w=[300]) and (w-a=SetOf(int64(5000000000))));
+  assert((a+w=SetOf(int64(5000000000),int64(1),int64(300))) and (b=[1,2]));
+end.)", "BI 300 1 2");
     compile_error("begin var a:5..1;end.","E_RANGE");
     compile_error("begin var a:1..'c';end.","E_TYPE");
     compile_error("begin var n:=2;var a:n..4;end.","E_TYPE");
@@ -7403,7 +7419,6 @@ void small_integers() {
         "begin var n:byte:=9223372036854775807; end."}) compile_error(source,"E_RANGE");
     for (const auto* source:{"begin var b:byte; var s:shortint:=b; end.","begin var s:shortint; var b:byte:=s; end.",
         "begin var i:integer:=1; var b:byte:=i; end.","procedure P(var n:integer); begin end; begin var b:byte; P(b); end.",
-        "begin foreach var b:byte in Arr(word(1)) do Write(b); end.",
         "begin for var b:byte:=0 to 1 do Inc(b); end.","begin var a:=new byte[1]; a[0]:='X'; end."}) compile_error(source,"E_TYPE");
     for (const auto* source:{"begin Writeln(byte(-1)); end.","begin Writeln(byte(256)); end.",
         "begin Writeln(shortint(-129)); end.","begin Writeln(shortint(128)); end.",

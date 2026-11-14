@@ -2758,19 +2758,22 @@ private:
         return std::make_unique<hir::Expr>(hir::Expr{
             hir::ExprKind::convert, type, location, std::int32_t{0}, 0, "", std::move(expression), {}});
     }
-    std::unique_ptr<hir::Expr> subrange_integer_cast(std::unique_ptr<hir::Expr> argument,Type target) {
-        if (argument->type==target) return argument;
+    static std::size_t integer_bit_cast_intrinsic(Type from,Type target,SourceLocation location) {
         const auto signatures=stdlib::signatures();
         const auto found=std::find_if(signatures.begin(),signatures.end(),[&](const auto& signature){
             return signature.function==stdlib::Function::subrange_integer_cast
-                && signature.result==target && signature.parameters.front()==argument->type;
+                && signature.result==target && signature.parameters.front()==from;
         });
-        if (found==signatures.end())throw Error("E_HIR",argument->location,"Missing subrange conversion");
+        if (found==signatures.end())throw Error("E_HIR",location,"Missing integral conversion");
+        return static_cast<std::size_t>(found-signatures.begin());
+    }
+    std::unique_ptr<hir::Expr> subrange_integer_cast(std::unique_ptr<hir::Expr> argument,Type target) {
+        if (argument->type==target) return argument;
         auto result=std::make_unique<hir::Expr>();
         result->kind=hir::ExprKind::call;
         result->location=argument->location;
         result->type=target;
-        result->local=static_cast<std::size_t>(found-signatures.begin());
+        result->local=integer_bit_cast_intrinsic(argument->type,target,argument->location);
         result->arguments.push_back(std::move(argument));
         return result;
     }
@@ -4226,6 +4229,10 @@ private:
                 };
                 const bool integer_left=integer_set_source(left,result->location) && numeric_target(right);
                 if(integer_left || (integer_set_source(right,result->location) && numeric_target(left))){
+                    const auto element=info(integer_left ? right : left,result->location).element;
+                    if((element==Type::byte || element==Type::int64)
+                        && (method==NewSetMethod::unite || method==NewSetMethod::subtract || method==NewSetMethod::intersect))
+                        return bind_mixed_set_arithmetic(*result,method,integer_left,element);
                     if(method!=NewSetMethod::equal && method!=NewSetMethod::not_equal)
                         throw Error("E_TYPE",result->location,"Mixed integral set operation is not supported","Эта операция над множествами разных целых типов пока не поддерживается");
                     operator_type=integer_left ? right : left;
@@ -4480,6 +4487,37 @@ private:
         for(std::size_t i=0;i<arguments.size();++i)result->arguments.push_back(i==0 && ref ? std::move(arguments[i]) : convert(std::move(arguments[i]),parameters[i]));return result;
     }
     std::unique_ptr<hir::Expr> new_set_copy(std::unique_ptr<hir::Expr> value,SourceLocation location){const auto owner=value->type;std::vector<std::unique_ptr<hir::Expr>> arguments;arguments.push_back(std::move(value));return new_set_expression(owner,NewSetMethod::copy_value,std::move(arguments),location);}
+    ABC_PASCAL_NOINLINE std::unique_ptr<hir::Expr> bind_mixed_set_arithmetic(hir::Expr& expression,NewSetMethod method,bool integer_left,Type element){
+        const auto location=expression.location;
+        const auto owner=new_set_type(element==Type::byte ? Type::integer : Type::int64);
+        auto left=cache_argument(std::move(expression.left));
+        auto right=cache_argument(std::move(expression.right));
+        auto integer=cached_read(integer_left ? left->local : right->local,location);
+        auto other=cached_read(integer_left ? right->local : left->local,location);
+        integer=convert(std::move(integer),owner);
+        if(element==Type::byte){
+            std::vector<std::unique_ptr<hir::Expr>> arguments;
+            arguments.push_back(std::move(other));
+            other=new_set_expression(owner,NewSetMethod::from_byte_set,std::move(arguments),location);
+        }
+        // The source overloads preserve lexical order for subtraction. The
+        // commutative overloads enumerate the result element's original set first.
+        const bool integer_first=method==NewSetMethod::subtract ? integer_left : element==Type::byte;
+        std::vector<std::unique_ptr<hir::Expr>> operands;
+        operands.push_back(integer_first ? std::move(integer) : std::move(other));
+        operands.push_back(integer_first ? std::move(other) : std::move(integer));
+        auto result=new_set_expression(owner,method,std::move(operands),location);
+        for(auto* cached:{&right,&left}){
+            auto evaluated=std::make_unique<hir::Expr>();
+            evaluated->kind=hir::ExprKind::evaluate_then;
+            evaluated->type=owner;
+            evaluated->location=location;
+            evaluated->left=std::move(*cached);
+            evaluated->right=std::move(result);
+            result=std::move(evaluated);
+        }
+        return result;
+    }
     bool bind_new_set_factory(hir::Expr& result,std::string_view name,std::string_view unit={}){
         if(name=="emptyset" && (unit.empty() || unit=="pabcsystem")){if(!result.arguments.empty())throw Error("E_TYPE",result.location,"EmptySet takes no arguments");result=std::move(*empty_expression(empty_type(),EmptyMethod::singleton,{},result.location));return true;}
         if(name!="setof" || (!unit.empty() && unit!="pabcsystem"))return false;
@@ -7241,7 +7279,15 @@ private:
                     throw Error("E_UNSUPPORTED",name.location,"Function Result as foreach variable is not supported");
             }
             const auto type=module_.locals[control].type;
-            if (!can_widen(element,type) && !sequence_view(element,type,name.location) && !interface_compatible(module_.types,element,type)) throw Error("E_TYPE",name.location,"Foreach element cannot be converted to the iteration variable type");
+            const bool widen=can_widen(element,type);
+            if (element==Type::longword && type==Type::int64)
+                result.local=integer_bit_cast_intrinsic(element,Type::integer,name.location)+1;
+            else if (!widen && integer_type(element) && integer_type(type)) {
+                // The source emitter extends the 32-bit stack value according to the destination's signedness.
+                const auto cast=type==Type::uint64 && element!=Type::int64 ? Type::longword : type;
+                result.local=integer_bit_cast_intrinsic(element,cast,name.location)+1;
+            } else if (!widen && !sequence_view(element,type,name.location) && !interface_compatible(module_.types,element,type))
+                throw Error("E_TYPE",name.location,"Foreach element cannot be converted to the iteration variable type");
             auto temporary=[&](Type type) {
                 const auto local=module_.locals.size(); module_.locals.push_back({"$foreach_"+std::to_string(local),type,!in_routine_}); return local;
             };

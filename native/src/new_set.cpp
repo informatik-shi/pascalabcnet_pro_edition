@@ -17,6 +17,7 @@ bool empty_left(NewSetMethod m){return (static_cast<unsigned>(m)-static_cast<uns
 bool range_element(const std::vector<TypeInfo>& types,Type element){return element==Type::integer || element==Type::character || element==Type::boolean || (compound(element) && shape(types,element).kind==CompoundKind::enumeration);}
 bool instance(NewSetMethod m){return m>=NewSetMethod::clone && m<=NewSetMethod::to_hash;}
 Value set_integer_value(std::int32_t number,Type target,SourceLocation location){
+    if(target==Type::integer)return number;
     if(small_integer(target))return checked_small_integer(target,number,location);
     if(wide_unsigned(target))return checked_unsigned_integer(target,number,location);
     if(target==Type::big_integer)return big_cast(number,target,location);
@@ -45,8 +46,10 @@ Value empty_invoke(Values& values,Type target,EmptyMethod method,std::span<const
     return values.zero(target,true);
 }
 bool new_set_signature(const Program& p,Type owner,NewSetMethod m,bool reference){
-    if(m>NewSetMethod::integer_not_equal_right || !compound(owner) || static_cast<unsigned>(owner)-64U>=p.types.size() || type_info(p,owner).kind!=CompoundKind::new_set)return false;
+    if(m>NewSetMethod::from_byte_set || !compound(owner) || static_cast<unsigned>(owner)-64U>=p.types.size() || type_info(p,owner).kind!=CompoundKind::new_set)return false;
     const auto element=type_info(p,owner).element;
+    if(m==NewSetMethod::from_byte_set)return !reference && element==Type::integer
+        && set_input_type(p.types,CompoundKind::new_set,Type::byte)!=Type::invalid;
     if(m==NewSetMethod::from_integer_set || m==NewSetMethod::from_integer_array || integer_equality(m)){
         return !reference && integer_set_conversion_target(element) && (!integer_equality(m) || element!=Type::big_integer)
             && set_input_type(p.types,m==NewSetMethod::from_integer_array ? CompoundKind::array : CompoundKind::new_set,Type::integer)!=Type::invalid;
@@ -59,6 +62,7 @@ bool new_set_signature(const Program& p,Type owner,NewSetMethod m,bool reference
 }
 std::vector<Type> new_set_parameters(const std::vector<TypeInfo>& types,Type owner,NewSetMethod m,bool reference){
     const auto& type=shape(types,owner);const auto hash=type.key;const auto sequence=shape(types,hash).key;
+    if(m==NewSetMethod::from_byte_set)return {set_input_type(types,CompoundKind::new_set,Type::byte)};
     if(m==NewSetMethod::from_integer_array)return {array_type(types,Type::integer)};
     if(m==NewSetMethod::from_integer_set || integer_equality(m)){
         const auto source=set_input_type(types,CompoundKind::new_set,Type::integer);
@@ -109,7 +113,7 @@ Value new_set_invoke(Values& values,Type owner,NewSetMethod m,bool reference,std
         const auto wrap=[&](Value value)->Value{return NewSetValue{owner,values.cell(hash,std::move(value))};};
         const auto seq_hash=[&](const std::shared_ptr<Aggregate>& h){return sequence_create(values,sequence,h,SequenceProvider::hash_set);};
         const auto update=[&](const std::shared_ptr<Aggregate>& h,const Value& source,HashSetMethod method){const std::array<Value,2> args{h,source};(void)call(method,args);};
-        if(m==NewSetMethod::from_integer_set || m==NewSetMethod::from_integer_array || integer_equality(m)){
+        if(m==NewSetMethod::from_byte_set || m==NewSetMethod::from_integer_set || m==NewSetMethod::from_integer_array || integer_equality(m)){
             const auto element=type_info(values.program,owner).element;
             const bool compare=integer_equality(m);
             const bool negate=m==NewSetMethod::integer_not_equal_left || m==NewSetMethod::integer_not_equal_right;
@@ -126,7 +130,8 @@ Value new_set_invoke(Values& values,Type owner,NewSetMethod m,bool reference,std
                 if((work==1 || !(work&255U)) && options.cancelled && options.cancelled())throw runtime_error(RuntimeError::cancelled,values.location);
                 if(!cell)continue;
                 std::array<Value,2> args{target,std::int32_t{0}};
-                try{args[1]=set_integer_value(std::get<std::int32_t>(cell->value),element,values.location);}
+                const std::int32_t number=m==NewSetMethod::from_byte_set ? std::get<std::uint8_t>(cell->value) : std::get<std::int32_t>(cell->value);
+                try{args[1]=set_integer_value(number,element,values.location);}
                 catch(const Error& error){
                     if(error.code!="E_OVERFLOW")throw;
                     if(compare)return negate;
