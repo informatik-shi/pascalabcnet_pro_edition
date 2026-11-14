@@ -2187,6 +2187,24 @@ def main():
                     or f"{static_property_error}:2:" not in invalid.stderr):
                 raise RuntimeError(f"{name} static-property error mismatch: {invalid.stdout!r}, {invalid.stderr!r}")
             results[-1]["native_static_properties_and_bilingual_errors"] = "passed"
+            static_constructor = folder / "Статический конструктор.pas"
+            static_constructor.write_text(
+                "type C=class\nstatic x:integer:=7;\nclass constructor := Inc(x);\nend;\n"
+                "begin var a:=new C;var b:=new C;Writeln(C.x);end.", encoding="utf-8")
+            executed = subprocess.run([runner, "run", str(static_constructor)], text=True, encoding="utf-8",
+                                      capture_output=True, cwd=folder, env=env, timeout=10)
+            if executed.returncode or executed.stdout != "8\n":
+                raise RuntimeError(f"{name} static constructor mismatch: {executed.stdout!r}, {executed.stderr!r}")
+            static_constructor.write_text(
+                "type C=class\nstatic constructor := Write(1 div 0);\nend;\n"
+                "begin Write('before');var o:=new C;end.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(static_constructor)], text=True, encoding="utf-8",
+                                     capture_output=True, cwd=folder, env=env, timeout=10)
+            if (invalid.returncode != 1 or invalid.stdout != "before" or "E_DIV_ZERO" not in invalid.stderr
+                    or "EN:" not in invalid.stderr or "RU:" not in invalid.stderr
+                    or f"{static_constructor}:2:" not in invalid.stderr):
+                raise RuntimeError(f"{name} static constructor error mismatch: {invalid.stdout!r}, {invalid.stderr!r}")
+            results[-1]["native_static_constructors_and_bilingual_errors"] = "passed"
             nested_deep = folder / "Предел вложенности подпрограмм.pas"
             nested_deep.write_text("".join(f"procedure P{i};" for i in range(400))
                                    + "begin end;" * 400 + "begin end.", encoding="utf-8")

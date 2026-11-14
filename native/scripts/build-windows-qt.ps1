@@ -170,6 +170,7 @@ DefaultEncoding изначально CP1251. Его смена и явные Enc
 Статические поля классов, однократная инициализация и общие данные: examples/static-fields.pas.
 Статические методы, типизированные функции и замыкания: examples/static-methods.pas.
 Статические свойства, индексы и нулевые значения записей: examples/static-properties.pas.
+Статические конструкторы классов: static constructor и class constructor.
 Типизированные файлы открываются только в однобайтовых кодировках; фиксированные массивы, короткие строки и сериализация объектов ещё переносятся.
 Для сохранения всех Unicode-символов выберите Encoding.UTF8/Unicode; полный API Encoding ещё переносится.
 ReadAllLines/WriteAllLines с Encoding и WriteLines для последовательностей: examples/file-lines.pas.

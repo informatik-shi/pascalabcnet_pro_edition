@@ -256,6 +256,7 @@ struct SyntaxType {
     std::vector<std::shared_ptr<SyntaxProperty>> properties{};
     std::map<std::string,MemberAccess> field_access{};
     std::shared_ptr<SyntaxRoutine> initializer{};
+    std::shared_ptr<SyntaxRoutine> static_constructor{};
     std::vector<SyntaxStaticField> static_fields{};
 };
 struct SyntaxProperty { Token name;std::shared_ptr<SyntaxType> type;std::optional<Token> getter,setter;MemberAccess access=MemberAccess::public_member;std::vector<std::pair<Token,std::shared_ptr<SyntaxType>>> indices{};bool default_indexer=false;std::shared_ptr<SyntaxType> explicit_interface{};std::shared_ptr<SyntaxExpr> getter_expression{};std::shared_ptr<SyntaxStmt> setter_statement{};bool static_member=false; };
@@ -399,11 +400,12 @@ public:
             } else if (accept("const")) {
                 do { root.statements.push_back(constant_declaration()); expect(";"); }
                 while (current_.kind==TokenKind::name && (current_.escaped || !reserved(current_.text)));
-            } else if (is("function") || is("procedure") || is("constructor") || is("static")) {
-                const bool static_member=accept("static");
+            } else if (is("function") || is("procedure") || is("constructor") || is("static") || is("class")) {
+                const bool static_member=accept("static") || accept("class");
                 auto definition=routine();
                 definition->static_member=static_member;
-                if(static_member&&(definition->owner.empty()||definition->constructor))throw Error("E_TYPE",definition->name.location,"Static method definition requires a class name","Для определения статического метода нужно имя класса");
+                if(static_member&&definition->owner.empty())throw Error("E_TYPE",definition->name.location,"Static method definition requires a class name","Для определения статического метода нужно имя класса");
+                if(static_member&&definition->constructor)check_static_constructor(*definition);
                 if (!definition->owner.empty()) root.method_definitions.push_back(std::move(definition));
                 else if (definition->constructor) throw Error("E_TYPE",definition->name.location,"Constructor definition requires a class name");
                 else root.routines.push_back(std::move(definition));
@@ -522,10 +524,17 @@ private:
                         : is("protected") ? MemberAccess::protected_member : MemberAccess::internal_member;
                     consume();continue;
                 }
-                const bool static_member=accept("static");
+                const bool static_member=accept("static") || accept("class");
                 if ((is("function") || is("procedure") || is("constructor"))) {
                     auto method=routine(true);method->access=access;method->static_member=static_member;
-                    if(static_member&&(method->constructor||method->explicit_interface))throw Error("E_UNSUPPORTED",method->name.location,"Static constructors and interface methods are not ported yet","Статические конструкторы и методы интерфейсов ещё не перенесены");
+                    if(static_member && method->constructor){
+                        check_static_constructor(*method);
+                        if(!object)throw Error("E_UNSUPPORTED",method->name.location,"Static record constructors are not ported yet","Статические конструкторы записей ещё не перенесены");
+                        if(result->static_constructor)throw Error("E_DUPLICATE",method->name.location,"Class already declares a static constructor","У класса уже объявлен статический конструктор");
+                        result->static_constructor=std::move(method);
+                        continue;
+                    }
+                    if(static_member&&method->explicit_interface)throw Error("E_TYPE",method->name.location,"A static method cannot implement an instance interface method","Статический метод не реализует нестатический метод интерфейса");
                     result->methods.push_back(std::move(method));continue;
                 }
                 if (accept("property")) {
@@ -540,8 +549,8 @@ private:
                     if (result->properties.size()>=256) throw Error("E_LIMIT",property->name.location,"Class property limit exceeded");
                     result->properties.push_back(std::move(property));continue;
                 }
-                if (object && (is("destructor") || is("class") || is("var")))
-                    throw Error("E_UNSUPPORTED",current_.location,"Class destructors, static members and var field sections are not ported yet");
+                if (object && (is("destructor") || is("var")))
+                    throw Error("E_UNSUPPORTED",current_.location,"Class destructors and var field sections are not ported yet");
                 const bool static_field=static_member;
                 if(static_field&&!object)throw Error("E_UNSUPPORTED",current_.location,"Record static fields are not ported yet","Статические поля записей ещё не перенесены");
                 std::vector<Token> fields{name()}; while (accept(",")) fields.push_back(name());
@@ -644,6 +653,10 @@ private:
             target=std::move(qualifier);name=member;
             lexer_=std::move(trial.lexer_);current_=std::move(trial.current_);return true;
         }catch(const Error& error){if(error.code=="E_LIMIT")throw;return false;}
+    }
+    static void check_static_constructor(const SyntaxRoutine& routine) {
+        if(!routine.parameters.empty())
+            throw Error("E_TYPE",routine.name.location,"A static constructor cannot take parameters","Статический конструктор не принимает параметры");
     }
     std::shared_ptr<SyntaxRoutine> routine(bool in_class=false) {
         compilation_stack_.check(current_.location);
@@ -1211,7 +1224,10 @@ public:
             if (fields.size()>256) throw Error("E_LIMIT",name.location,"Class field limit exceeded");
             module_.types[static_cast<unsigned>(aliases_.at(name.text))-64].fields=std::move(fields);
         }
-        prepare_type_initializers(source);prepare_static_fields(source);bind_method_definitions(source);
+        prepare_type_initializers(source);
+        bind_static_constructor_definitions(source);
+        prepare_static_fields(source);
+        bind_method_definitions(source);
         for (const auto& routine : source.routines) {
             const auto explicit_target=routine->explicit_interface?resolve_type(*routine->explicit_interface):Type::invalid;
             if(explicit_target!=Type::invalid&&(routine->owner.empty()||routine->constructor||!compound(explicit_target)||!interface_kind(info(explicit_target,routine->name.location))))throw Error("E_TYPE",routine->name.location,"Explicit method qualifier must be an interface","Явная реализация метода требует имени интерфейса");
@@ -1432,8 +1448,30 @@ private:
         const auto result=infer_field_expression(owner,*field.initializer);static_field_inference_.erase(key);
         if(result==Type::invalid||result==Type::unit||result==Type::nil)throw Error("E_TYPE",field.name.location,"Static field requires a known value type");return result;
     }
+    void bind_static_constructor_definitions(SyntaxStmt& source) {
+        for(const auto& definition:source.method_definitions) {
+            if(!definition->constructor || !definition->static_member)continue;
+            const auto owner=aliases_.find(definition->owner);
+            const auto declaration=std::find_if(source.type_declarations.begin(),source.type_declarations.end(),[&](const auto& item){
+                return owner!=aliases_.end() && aliases_.at(item.first.text)==owner->second
+                    && !item.second->named && item.second->kind=="class";
+            });
+            if(declaration==source.type_declarations.end() || !declaration->second->static_constructor)
+                throw Error("E_NAME",definition->name.location,"Static constructor definition has no matching declaration","Для определения статического конструктора нет объявления");
+            auto& constructor=*declaration->second->static_constructor;
+            if(!constructor.declaration_only)
+                throw Error("E_DUPLICATE",definition->name.location,"Static constructor already has a body","Тело статического конструктора уже определено");
+            constructor.body=std::move(definition->body);
+            constructor.declaration_only=false;
+        }
+    }
     void prepare_static_fields(SyntaxStmt& source){
-        for(auto& [name,syntax]:source.type_declarations){if(syntax->kind!="class"||syntax->named||syntax->static_fields.empty())continue;const auto owner=aliases_.at(name.text);StaticClass metadata;metadata.owner=owner;
+        for(auto& [name,syntax]:source.type_declarations){
+            if(syntax->kind!="class" || syntax->named || (syntax->static_fields.empty() && !syntax->static_constructor))continue;
+            const auto& constructor=syntax->static_constructor;
+            if(constructor && constructor->declaration_only)
+                throw Error("E_NAME",constructor->name.location,"Declared static constructor has no implementation","У объявленного статического конструктора нет реализации");
+            const auto owner=aliases_.at(name.text);StaticClass metadata;metadata.owner=owner;
             const auto state="$static_state_"+std::to_string(static_cast<unsigned>(owner));metadata.state=module_.locals.size();module_.locals.push_back({state,Type::boolean,true});scopes_.front()[state]=metadata.state;
             for(const auto& field:syntax->static_fields){if(metadata.fields.size()>=256||module_.locals.size()>=4096)throw Error("E_LIMIT",field.name.location,"Static field limit exceeded");if(std::any_of(syntax->fields.begin(),syntax->fields.end(),[&](const auto& f){return f.first.text==field.name.text;})||std::any_of(metadata.fields.begin(),metadata.fields.end(),[&](const auto& f){return f.name==field.name.text;})||std::any_of(syntax->methods.begin(),syntax->methods.end(),[&](const auto& m){return m->name.text==field.name.text;})||std::any_of(syntax->properties.begin(),syntax->properties.end(),[&](const auto& p){return p->name.text==field.name.text;}))throw Error("E_DUPLICATE",field.name.location,"Duplicate class member");const auto type=resolve_static_field_type(*syntax,field);const auto slot=module_.locals.size();module_.locals.push_back({"$static_field_"+name.text+"_"+field.name.text,type,true});metadata.fields.push_back({field.name.text,slot,field.access});}
             static_class_indices_[owner]=module_.static_classes.size();module_.static_classes.push_back(std::move(metadata));
@@ -1441,6 +1479,7 @@ private:
             SyntaxStmt guard;guard.kind=SyntaxStmtKind::conditional;guard.token=name;guard.expression=make_expression(SyntaxExprKind::unary,Token{TokenKind::name,"not",name.location},make_expression(SyntaxExprKind::name,Token{TokenKind::name,state,name.location}));guard.body=std::make_unique<SyntaxStmt>();guard.body->kind=SyntaxStmtKind::block;
             SyntaxStmt mark;mark.kind=SyntaxStmtKind::assignment;mark.token=name;mark.target=make_expression(SyntaxExprKind::name,Token{TokenKind::name,state,name.location});mark.expression=make_expression(SyntaxExprKind::literal,Token{TokenKind::name,"true",name.location});guard.body->statements.push_back(std::move(mark));
             for(auto& field:syntax->static_fields){const auto& descriptor=module_.static_classes[static_class_indices_.at(owner)];const auto member=std::find_if(descriptor.fields.begin(),descriptor.fields.end(),[&](const auto& f){return f.name==field.name.text;});const auto value_type=module_.locals[member->local].type;if(!field.initializer&&((scalar(value_type)&&value_type!=Type::string)||enumeration(value_type)))continue;SyntaxStmt set;set.kind=SyntaxStmtKind::assignment;set.token=field.name;set.field_initialization=true;set.target=make_expression(SyntaxExprKind::field,field.name,make_expression(SyntaxExprKind::name,name));set.expression=field.initializer?std::move(field.initializer):make_expression(SyntaxExprKind::initialized_default,field.name);guard.body->statements.push_back(std::move(set));}
+            if(constructor)guard.body->statements.push_back(std::move(constructor->body));
             routine->body.statements.push_back(std::move(guard));source.routines.push_back(std::move(routine));
         }
     }
@@ -1468,6 +1507,7 @@ private:
     }
     void bind_method_definitions(SyntaxStmt& source) {
         for (const auto& definition:source.method_definitions) {
+            if(definition->constructor && definition->static_member)continue;
             const auto owner=aliases_.find(definition->owner);
             if (owner==aliases_.end() || !compound(owner->second) || (info(owner->second,definition->name.location).kind!=CompoundKind::object_class && info(owner->second,definition->name.location).kind!=CompoundKind::record))
                 throw Error("E_NAME",definition->name.location,"Method definition requires a declared class");

@@ -42,5 +42,71 @@ void semantics(){
  auto original=abc::compile("type C=class static n:integer:=7;end;begin Writeln(C.n);end.");
  for(unsigned mutation=0;mutation<10;++mutation){auto p=original;auto& s=p.static_classes[0];if(mutation==0)s.owner=abc::Type::integer;if(mutation==1)s.state=p.locals.size();if(mutation==2)s.initializer=p.routines.size();if(mutation==3)s.fields[0].local=s.state;if(mutation==4)s.fields.push_back(s.fields[0]);if(mutation==5)p.locals[s.fields[0].local].global=false;if(mutation==6)p.routines[s.initializer].name="not-an-initializer";if(mutation==7)p.static_classes.push_back(s);if(mutation==8)p.static_classes.clear();if(mutation==9)s.fields.clear();try{abc::verify(p);check(false,"Invalid static metadata rejected");}catch(const abc::Error& e){check(e.code=="E_BYTECODE","Static storage metadata checked before execution");}}
 }
+
+void static_constructors() {
+    result(R"(function Seed: integer;
+begin Write('F'); Result := 4; end;
+type C = class
+  static x: integer := Seed;
+  static constructor;
+  begin Write('S', x); x += 2; end;
+  constructor(n: integer); begin Write('C', n); end;
+  class function ReadValue: integer := x;
+end;
+function Argument: integer; begin Write('A'); Result := 9; end;
+begin
+  Write('B'); var o := new C(Argument); Writeln(C.ReadValue);
+  o := new C(3); Writeln(C.ReadValue);
+end.)", "BAFS4C96\nC36\n");
+
+    result(R"(type C = class
+  static constructor := Write('S');
+  static function F(n: integer): integer := n + 1;
+  static property P: integer read 7;
+end;
+function Arg: integer; begin Write('A'); Result := 3; end;
+begin
+  var f: Func<integer, integer> := C.F;
+  Write('B'); Writeln(f(Arg)); Writeln(C.P);
+end.)", "BAS4\n7\n");
+
+    result(R"(type C = class
+  class constructor Create;
+  class property P: integer read 7;
+end;
+class constructor C.Create;
+begin
+  var f: Func0<integer> := () -> C.P;
+  Write('S', f());
+  var inner := new C;
+end;
+begin
+  Writeln(C.P); var outer := new C; Writeln(C.P);
+end.)", "S77\n7\n");
+
+    result(R"(type C = class static constructor := Write('unused'); end;
+begin var o: C; assert(o = nil); var t := typeof(C); Write('B'); end.)", "B");
+    result(R"(type A = class
+  static constructor := Write('A', B.Value);
+  static property Value: integer read 1;
+end;
+B = class
+  static constructor := Write('B', A.Value);
+  static property Value: integer read 2;
+end;
+begin Writeln(A.Value, B.Value); end.)", "B1A212\n");
+    result(R"(type C = class
+  static v: integer := 7;
+  static constructor := exit;
+end;
+begin var o := new C; Writeln(C.v); end.)", "7\n");
+    error("type C=class static constructor;end;begin Write('bad');end.", "E_NAME");
+    error("type C=class end;static constructor C.Create;begin end;begin Write('bad');end.", "E_NAME");
+    error("type C=class static constructor := exit;static constructor := exit;end;begin Write('bad');end.", "E_DUPLICATE");
+    error("type C=class static constructor := exit;end;static constructor C.Create;begin end;begin Write('bad');end.", "E_DUPLICATE");
+    error("type C=class static constructor(n:integer) := Write(n);end;begin Write('bad');end.", "E_TYPE");
+    error("type C=class n:integer;static constructor := Inc(n);end;begin Write('bad');end.", "E_TYPE");
+    error("type C=class static constructor := Write(1 div 0);end;begin Write('B');var o:=new C;end.", "E_DIV_ZERO", "B");
 }
-int main(){try{reference();semantics();}catch(const std::exception& e){check(false,e.what());}std::cout<<checks<<" static field checks, "<<failures<<" failures\n";return failures?1:0;}
+}
+int main(){try{reference();semantics();static_constructors();}catch(const std::exception& e){check(false,e.what());}std::cout<<checks<<" static initialization checks, "<<failures<<" failures\n";return failures?1:0;}
