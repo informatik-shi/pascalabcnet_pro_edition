@@ -371,6 +371,7 @@ def main():
                 ("static-properties.pas", "60\n25 65\n7 0\n"),
                 ("record-statics.pas", "0 101 102\n"),
                 ("case-statement.pas", "внимание\nв пределах нормы\n"),
+                ("subranges.pas", "2 4\n7 9\nготово\n"),
                 ("utf7-encoding.pas", "65000 UTF7Encoding\n0\n65,43,45,43,90,101,85,45\nПривет + 日本 🌍\n1 55357\n"),
                 ("iso2022-encodings.pas", "50220 [27,36,66,70,124,37,43,27,40,66,65]\n50221 [27,36,66,70,124,27,40,73,54,27,40,66,65]\n50222 [27,36,66,70,124,14,54,15,27,40,66,65]\n50225 한국어\n[126,123,86,80,78,68,126,125,126,126]\n52936 中文~\nISO2022Encoding\n"),
                 ("iscii-encodings.pas", "57002 ISCIIEncoding\nकকகకಕകકକਕ\n[179,239,67,179,239,68,179,239,66]\n57011 ਕ\n"),
@@ -2228,6 +2229,16 @@ def main():
                     or f"{invalid_case}:5:" not in invalid.stderr):
                 raise RuntimeError(f"{name} case label diagnostic mismatch: {invalid.stdout!r}, {invalid.stderr!r}")
             results[-1]["native_case_statements_and_bilingual_errors"] = "passed"
+            invalid_subrange = folder / "Границы поддиапазона.pas"
+            invalid_subrange.write_text(
+                "begin\nWrite('bad');\nvar index: 4..2;\nend.", encoding="utf-8")
+            invalid = subprocess.run([runner, "run", str(invalid_subrange)], text=True, encoding="utf-8",
+                                     capture_output=True, cwd=folder, env=env, timeout=10)
+            if (invalid.returncode != 1 or invalid.stdout or "E_RANGE" not in invalid.stderr
+                    or "EN:" not in invalid.stderr or "RU:" not in invalid.stderr
+                    or f"{invalid_subrange}:3:" not in invalid.stderr):
+                raise RuntimeError(f"{name} subrange diagnostic mismatch: {invalid.stdout!r}, {invalid.stderr!r}")
+            results[-1]["native_subranges_and_bilingual_errors"] = "passed"
             nested_deep = folder / "Предел вложенности подпрограмм.pas"
             nested_deep.write_text("".join(f"procedure P{i};" for i in range(400))
                                    + "begin end;" * 400 + "begin end.", encoding="utf-8")

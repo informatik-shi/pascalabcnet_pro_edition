@@ -456,10 +456,41 @@ private:
         }
         if(!property.getter&&!property.getter_expression&&!property.setter&&!property.setter_statement)throw Error("E_TYPE",property.name.location,"Property requires a getter or setter");
     }
+    bool has_subrange_separator() const {
+        if (current_.kind!=TokenKind::name && current_.kind!=TokenKind::number
+            && current_.kind!=TokenKind::text && current_.kind!=TokenKind::character_code
+            && !is("+") && !is("-") && !is("(")) return false;
+        auto lexer=lexer_;
+        auto token=current_;
+        unsigned parentheses=0;
+        for (std::size_t count=0;count<4096;++count,token=lexer.next()) {
+            if (token.kind==TokenKind::eof) return false;
+            if (token.kind==TokenKind::text || token.escaped) continue;
+            if (token.text=="(") { ++parentheses;continue; }
+            if (token.text==")" && parentheses) { --parentheses;continue; }
+            if (parentheses) continue;
+            if (token.text=="..") return true;
+            if (token.text==";" || token.text=="," || token.text==")" || token.text=="]"
+                || token.text=="[" || token.text=="<" || token.text==">" || token.text=="="
+                || token.text==":=" || token.text==":" || token.text=="->"
+                || token.text=="end" || token.text=="begin" || token.text=="read" || token.text=="write"
+                || token.text=="in" || token.text=="do" || token.text=="of"
+                || (token.kind==TokenKind::name && (token.text=="type" || token.text=="record"
+                    || token.text=="class" || token.text=="interface" || token.text=="array"
+                    || token.text=="file" || token.text=="set" || token.text=="sequence"
+                    || token.text=="procedure" || token.text=="function"))) return false;
+        }
+        return false;
+    }
     std::shared_ptr<SyntaxType> type_syntax(bool allow_empty_result=false,bool allow_arrow=true,bool allow_type_members=true) {
         DepthGuard guard(depth_, current_.location);
         auto result = std::make_shared<SyntaxType>(); result->token = current_;
-        if (is("function") || is("procedure")) {
+        if (has_subrange_separator()) {
+            result->kind="subrange";
+            result->enum_values.push_back(expression(3));
+            expect("..");
+            result->enum_values.push_back(expression(3));
+        } else if (is("function") || is("procedure")) {
             const bool function=accept("function"); if (!function) expect("procedure");
             result->kind="callable";
             if (accept("(")) {
@@ -1241,8 +1272,12 @@ public:
                 aliases_[name.text]=type;resolved_types_[syntax.get()]=type;
             }
         }
-        for (const auto& [name,syntax]:source.type_declarations)
-            if ((syntax->kind!="class" && syntax->kind!="interface") || syntax->named) aliases_[name.text]=resolve_type(*syntax);
+        for (const auto& [name,syntax]:source.type_declarations) {
+            if ((syntax->kind!="class" && syntax->kind!="interface") || syntax->named) {
+                aliases_[name.text]=resolve_type(*syntax);
+                if (const auto* shape=subrange_shape(*syntax)) subrange_aliases_.emplace(name.text,*shape);
+            }
+        }
         register_interface_contracts(source);
         for (const auto& [name,syntax]:source.type_declarations) if (syntax->kind=="class" && !syntax->named) {
             std::vector<Local> fields;
@@ -1274,6 +1309,7 @@ public:
                 else if(!routine->static_member&&explicit_target==Type::invalid)class_methods_[body.signature.owner].try_emplace(routine->name.text,module_.routines.size());
             }
             body.signature.result = routine->result ? resolve_type(*routine->result) : Type::unit;
+            if (routine->result && subrange_shape(*routine->result)) subrange_results_.insert(module_.routines.size());
             for (std::size_t n=0;n<routine->parameters.size();++n) {
                 const auto& parameter=routine->parameters[n]; const auto type=resolve_type(*parameter.type);
                 if (parameter.variadic && (n+1!=routine->parameters.size() || !compound(type)
@@ -1306,6 +1342,7 @@ public:
                 if (scopes_.back().contains(name.text)) throw Error("E_DUPLICATE", name.location,"Duplicate parameter");
                 auto& parameter = routine.signature.parameters[n]; parameter.local = module_.locals.size();
                 scopes_.back()[name.text] = parameter.local; module_.locals.push_back({name.text,parameter.type,false});
+                if (subrange_shape(*syntax.parameters[n].type)) subrange_locals_.insert(parameter.local);
                 if (syntax.parameters[n].read_only) constant_parameters_.insert(parameter.local);
                 if (parameter.by_reference) reference_parameters_.insert(parameter.local);
             }
@@ -1313,6 +1350,7 @@ public:
                 if (scopes_.back().contains("result")) throw Error("E_DUPLICATE",syntax.name.location,"Result is reserved inside functions");
                 routine.signature.result_local = module_.locals.size(); scopes_.back()["result"] = module_.locals.size();
                 module_.locals.push_back({"result",current_result_,false});
+                if (syntax.result && subrange_shape(*syntax.result)) subrange_locals_.insert(routine.signature.result_local);
                 if(!syntax.explicit_interface){
                     if (scopes_.back().contains(current_name_)) throw Error("E_DUPLICATE",syntax.name.location,"Parameter conflicts with function name");
                     scopes_.back()[current_name_] = routine.signature.result_local;
@@ -1958,12 +1996,67 @@ private:
     const FixedArrayShape& fixed_shape(Type type) const {const auto found=std::find_if(module_.fixed_arrays.begin(),module_.fixed_arrays.end(),[&](const auto& s){return s.type==type;});if(found==module_.fixed_arrays.end())throw Error("E_HIR",{},"Missing fixed array shape");return *found;}
     std::unique_ptr<hir::Expr> fixed_expression(Type owner,FixedMethod method,std::vector<std::unique_ptr<hir::Expr>> args,SourceLocation location){auto result=std::make_unique<hir::Expr>();result->kind=hir::ExprKind::encoding_call;result->operation_type=owner;result->local=static_cast<unsigned>(method);result->location=location;result->type=fixed_result(module_.types,owner,result->local);result->arguments=std::move(args);return result;}
     std::unique_ptr<hir::Expr> fixed_view(std::unique_ptr<hir::Expr> value,bool indexing=false){const auto owner=value->type;const auto location=value->location;std::vector<std::unique_ptr<hir::Expr>> args;args.push_back(std::move(value));return fixed_expression(owner,indexing?FixedMethod::index_view:FixedMethod::view,std::move(args),location);}
+    struct Subrange {
+        Type base;
+        std::int32_t lower,upper;
+    };
+    const Subrange* subrange_shape(const SyntaxType& syntax) const {
+        if (const auto found=subranges_.find(&syntax);found!=subranges_.end()) return &found->second;
+        if (syntax.named && !syntax.system_qualified && syntax.unit.empty() && syntax.nested.empty()) {
+            if (const auto found=subrange_aliases_.find(syntax.kind);found!=subrange_aliases_.end()) return &found->second;
+        }
+        return nullptr;
+    }
+    Type resolve_subrange(const SyntaxType& syntax) {
+        const auto location=syntax.token.location;
+        for (const auto* constant:enum_prior_constants_)
+            if (constant->token.location.offset<location.offset && !enum_bound_constants_.contains(constant)) {
+                (void)statement(*constant);
+                enum_bound_constants_.insert(constant);
+            }
+        const auto constant_bound=[&](const SyntaxExpr& node) {
+            auto bound=constant_expression(node);
+            if (!ordinal(bound->type))
+                throw Error("E_TYPE",node.token.location,"Subrange bounds must be ordinal","Границы поддиапазона должны иметь порядковый тип");
+            const auto value=hir::constant_value(*bound,module_.types,module_.fixed_arrays);
+            if (!value)
+                throw Error("E_TYPE",node.token.location,"Subrange bounds must be compile-time constants","Границы поддиапазона должны быть константами времени компиляции");
+            std::uint32_t bits;
+            if (enumeration(bound->type)) bits=static_cast<std::uint32_t>(std::get<EnumValue>(*value).value);
+            else if (bound->type==Type::uint64) bits=static_cast<std::uint32_t>(std::get<std::uint64_t>(*value));
+            else bits=static_cast<std::uint32_t>(integral_number(*value,node.token.location));
+            // The source ordinal interface compares the Int32 projection of bounds.
+            return std::pair{bound->type,std::bit_cast<std::int32_t>(bits)};
+        };
+        const auto [first_type,lower]=constant_bound(*syntax.enum_values[0]);
+        const auto [last_type,upper]=constant_bound(*syntax.enum_values[1]);
+        Type base=first_type;
+        if (first_type!=last_type) {
+            base=Type::invalid;
+            if (integer_type(first_type) && integer_type(last_type))
+                for (const auto candidate:{Type::integer,Type::int64,Type::uint64})
+                    if (can_widen(first_type,candidate) && can_widen(last_type,candidate)) { base=candidate;break; }
+            if (base==Type::invalid)
+                throw Error("E_TYPE",location,"Subrange bounds require compatible ordinal types","Границы поддиапазона должны иметь совместимые порядковые типы");
+        }
+        if (lower>upper)
+            throw Error("E_RANGE",syntax.enum_values[1]->token.location,"Subrange lower bound exceeds upper bound","Нижняя граница поддиапазона больше верхней");
+        subranges_.emplace(&syntax,Subrange{base,lower,upper});
+        return base;
+    }
     Type resolve_fixed_array(const SyntaxType& syntax){
         for(const auto* constant:enum_prior_constants_)if(constant->token.location.offset<syntax.token.location.offset&&!enum_bound_constants_.contains(constant)){(void)statement(*constant);enum_bound_constants_.insert(constant);}
         const auto bound=[&](const SyntaxExpr& source){auto value=constant_expression(source);if(!ordinal(value->type)&&!enumeration(value->type))throw Error("E_TYPE",source.token.location,"Fixed array bounds must have ordinal types","Границы фиксированного массива должны иметь порядковые типы");const auto constant=hir::constant_value(*value,module_.types,module_.fixed_arrays);if(!constant)throw Error("E_TYPE",source.token.location,"Fixed array bounds must be known constants","Границы фиксированного массива должны быть известными константами");const auto number=enumeration(value->type)?std::get<EnumValue>(*constant).value:value->type==Type::character?std::int64_t(std::get<char16_t>(*constant)):value->type==Type::boolean?std::int64_t(std::get<bool>(*constant)):integral_number(*constant,source.token.location,"bound");if(number<INT32_MIN||number>INT32_MAX)throw Error("E_RANGE",source.token.location,"Fixed array bound exceeds Int32 range");return std::pair{value->type,static_cast<std::int32_t>(number)};};
         auto element=resolve_type(*syntax.element);
         for(std::size_t dimension=syntax.enum_values.size()/2;dimension>0;--dimension){Type index;std::int32_t lower,upper;const auto& lo=*syntax.enum_values[2*(dimension-1)];const auto& hi=syntax.enum_values[2*(dimension-1)+1];
-            if(!hi&&lo.kind==SyntaxExprKind::name&&aliases_.contains(lo.token.text)&&enumeration(aliases_.at(lo.token.text))){index=aliases_.at(lo.token.text);const auto& members=info(index,lo.token.location).enum_members;lower=members.front().value;upper=members.back().value;}
+            if (!hi && lo.kind==SyntaxExprKind::name && subrange_aliases_.contains(lo.token.text)) {
+                const auto& shape=subrange_aliases_.at(lo.token.text);
+                if (shape.base==Type::int64 || wide_unsigned(shape.base))
+                    throw Error("E_RANGE",lo.token.location,"Fixed array subrange index is too wide","Поддиапазон индексов фиксированного массива имеет слишком широкий тип");
+                index=small_integer(shape.base)?Type::integer:shape.base;
+                lower=shape.lower;
+                upper=shape.upper;
+            } else if(!hi&&lo.kind==SyntaxExprKind::name&&aliases_.contains(lo.token.text)&&enumeration(aliases_.at(lo.token.text))){index=aliases_.at(lo.token.text);const auto& members=info(index,lo.token.location).enum_members;lower=members.front().value;upper=members.back().value;}
             else if(!hi&&lo.kind==SyntaxExprKind::name&&(lo.token.text=="byte"||lo.token.text=="shortint"||lo.token.text=="smallint"||lo.token.text=="word"||lo.token.text=="char"||lo.token.text=="boolean")){
                 const auto name=lo.token.text;index=name=="byte"?Type::byte:name=="shortint"?Type::shortint:name=="smallint"?Type::smallint:name=="word"?Type::word:name=="char"?Type::character:Type::boolean;
                 lower=index==Type::shortint?-128:index==Type::smallint?-32768:0;upper=index==Type::byte?255:index==Type::shortint?127:index==Type::smallint?32767:index==Type::boolean?1:65535;
@@ -2366,6 +2459,11 @@ private:
                 return found->second;
             }
         if(syntax.kind=="binaryfile")return binary_type(syntax.element?resolve_type(*syntax.element):Type::invalid,syntax.token.location);
+        if (syntax.kind=="subrange") {
+            const auto base=resolve_subrange(syntax);
+            resolved_types_[&syntax]=base;
+            return base;
+        }
         if(syntax.kind=="fixed_array"){const auto type=resolve_fixed_array(syntax);resolved_types_[&syntax]=type;return type;}
         if (syntax.named && (syntax.kind=="array" || syntax.kind=="record" || syntax.kind=="class" || syntax.kind=="sequence" || syntax.kind=="tuple" || syntax.kind=="callable" || syntax.kind=="empty_result"))
             throw Error("E_UNSUPPORTED",syntax.token.location,"Unknown or unsupported type '"+syntax.kind+"'");
@@ -2551,7 +2649,13 @@ private:
         auto result=std::make_unique<hir::Expr>();result->kind=value.kind;result->type=value.type;result->location=value.location;result->value=value.value;result->local=value.local;result->operation=value.operation;result->operation_type=value.operation_type;result->temporaries=value.temporaries;result->getter=value.getter;result->setter=value.setter;
         if(value.left)result->left=copy_expression(*value.left);if(value.right)result->right=copy_expression(*value.right);for(const auto& argument:value.arguments)result->arguments.push_back(copy_expression(*argument));return result;
     }
+    bool numeric_subrange_value(const hir::Expr& value) const {
+        return integer_type(value.type) && ((value.kind==hir::ExprKind::local && subrange_locals_.contains(value.local))
+            || (value.kind==hir::ExprKind::user_call && subrange_results_.contains(value.local)));
+    }
     ABC_PASCAL_NOINLINE std::unique_ptr<hir::Expr> convert(std::unique_ptr<hir::Expr> expression, Type type,bool assignment=false,bool copy=true) {
+        if (numeric_subrange_value(*expression) && integer_type(type) && !can_widen(expression->type,type))
+            return subrange_integer_cast(std::move(expression),type);
         if(fixed(expression->type)&&expression->type!=type&&compound(type)&&(info(type,expression->location).kind==CompoundKind::array||info(type,expression->location).kind==CompoundKind::sequence||interface_kind(info(type,expression->location))))expression=fixed_view(std::move(expression));
         if(expression->type!=type&&callable_compatible(module_.types,expression->type,type)){
             const auto location=expression->location;
@@ -2639,6 +2743,27 @@ private:
         return std::make_unique<hir::Expr>(hir::Expr{
             hir::ExprKind::convert, type, location, std::int32_t{0}, 0, "", std::move(expression), {}});
     }
+    std::unique_ptr<hir::Expr> subrange_integer_cast(std::unique_ptr<hir::Expr> argument,Type target) {
+        if (argument->type==target) return argument;
+        const auto signatures=stdlib::signatures();
+        const auto found=std::find_if(signatures.begin(),signatures.end(),[&](const auto& signature){
+            return signature.function==stdlib::Function::subrange_integer_cast
+                && signature.result==target && signature.parameters.front()==argument->type;
+        });
+        if (found==signatures.end())throw Error("E_HIR",argument->location,"Missing subrange conversion");
+        auto result=std::make_unique<hir::Expr>();
+        result->kind=hir::ExprKind::call;
+        result->location=argument->location;
+        result->type=target;
+        result->local=static_cast<std::size_t>(found-signatures.begin());
+        result->arguments.push_back(std::move(argument));
+        return result;
+    }
+    std::unique_ptr<hir::Expr> convert_to_subrange(std::unique_ptr<hir::Expr> value,Type target,bool range,bool copy=true) {
+        if (range && integer_type(value->type) && integer_type(target) && !can_widen(value->type,target))
+            return subrange_integer_cast(std::move(value),target);
+        return convert(std::move(value),target,true,copy);
+    }
     void bind_typed_value_arguments(hir::Expr& result,TypeInfo signature){
         const auto count=signature.parameters.size();const bool variadic=count&&signature.parameters.back().variadic;const auto fixed=count-(variadic?1U:0U);
         if(result.arguments.size()<fixed||(!variadic&&result.arguments.size()!=count))throw Error("E_TYPE",result.location,"Wrong callable argument count");
@@ -2712,12 +2837,14 @@ private:
             if (context && (type!=context->parameters[n].type || parameter.by_reference!=context->parameters[n].by_reference))
                 throw Error("E_TYPE",name.location,"Lambda parameter type does not match context");
             const auto local=module_.locals.size(); module_.locals.push_back({name.text,type,false}); scopes_.back()[name.text]=local;
+            if (parameter.type && subrange_shape(*parameter.type)) subrange_locals_.insert(local);
             routine.signature.parameters.push_back({local,type,parameter.by_reference,parameter.variadic,parameter.read_only});
             if (parameter.read_only) constant_parameters_.insert(local);
             if (parameter.by_reference) reference_parameters_.insert(local);
         }
         auto result=syntax.result ? resolve_type(*syntax.result) : syntax.procedure_lambda ? Type::unit : context ? context->element : Type::invalid;
         if (result!=Type::invalid) lambda_result(result,source.token.location);
+        if (syntax.result && subrange_shape(*syntax.result)) subrange_locals_.insert(routine.signature.result_local);
         if(const auto named=nested_routine_slots_.find(&syntax);named!=nested_routine_slots_.end()&&current_result_!=Type::unit){
             if(scopes_.back().contains(syntax.name.text))throw Error("E_DUPLICATE",syntax.name.location,"Parameter conflicts with function name");
             const auto returned=module_.routines[id].signature.result_local;scopes_.back()[syntax.name.text]=returned;nested_result_slots_[returned]=named->second;
@@ -2729,7 +2856,11 @@ private:
             if (current_result_==Type::unit) {
                 if (value->type!=Type::unit) throw Error("E_TYPE",value->location,"Procedure lambda expression must return no value");
                 routine.body.kind=hir::StmtKind::call; routine.body.expression=std::move(value);
-            } else { routine.body.kind=hir::StmtKind::return_stmt; routine.body.expression=convert(std::move(value),current_result_,true); }
+            } else {
+                routine.body.kind=hir::StmtKind::return_stmt;
+                routine.body.expression=convert_to_subrange(std::move(value),current_result_,
+                    syntax.result && subrange_shape(*syntax.result));
+            }
         } else routine.body=statement(syntax.body);
         if (current_result_==Type::invalid) lambda_result(Type::unit,source.token.location);
         if (syntax.function_lambda && current_result_==Type::unit) throw Error("E_TYPE",source.token.location,"Function lambda must return a value");
@@ -3711,6 +3842,17 @@ private:
                 bind_value_call(*result,source.arguments); break;
             }
             result->kind = hir::ExprKind::call;
+            if (!lookup(source.token) && subrange_aliases_.contains(source.token.text)) {
+                if (source.arguments.size()!=1)throw Error("E_TYPE",result->location,"Subrange conversion requires one value","Преобразование в поддиапазон требует одного значения");
+                const auto base=subrange_aliases_.at(source.token.text).base;
+                auto argument=expression(*source.arguments[0]);
+                if (enumeration(base) && integer_type(argument->type)) {
+                    std::vector<std::unique_ptr<hir::Expr>> args;
+                    args.push_back(subrange_integer_cast(std::move(argument),Type::integer));
+                    return enum_expression(base,EnumMethod::construct,std::move(args),result->location);
+                }
+                return convert_to_subrange(std::move(argument),base,true);
+            }
             if(bind_callable_cast(*result,source))break;
             if(!routine_names_.contains(source.token.text) && (bind_set_mutation(*result,source) || bind_print_extension(*result,source,false)))break;
             if(!routine_names_.contains(source.token.text) && bind_sort(*result,source))break;
@@ -3738,7 +3880,12 @@ private:
                     if (parameter.by_reference) {
                         if (!lvalue(*result->arguments[n]) || result->arguments[n]->type != parameter.type)
                             throw Error("E_TYPE",result->location,"var argument requires an assignable value of exactly the parameter type");
-                    } else result->arguments[n] = convert(std::move(result->arguments[n]),parameter.type,false,!parameter.read_only);
+                    } else {
+                        const auto& declaration=*syntax_root_->routines.at(routine->second);
+                        const auto range=subrange_shape(*declaration.parameters[n].type)!=nullptr;
+                        if (range)result->arguments[n]=convert_to_subrange(std::move(result->arguments[n]),parameter.type,true,!parameter.read_only);
+                        else result->arguments[n]=convert(std::move(result->arguments[n]),parameter.type,false,!parameter.read_only);
+                    }
                 }
                 break;
             }
@@ -4144,6 +4291,8 @@ private:
                 auto type=Type::invalid;
                 for (auto candidate:{Type::byte,Type::shortint,Type::smallint,Type::word,Type::integer,Type::longword,Type::int64,Type::uint64})
                     if (can_widen(left,candidate) && can_widen(right,candidate)) { type=candidate; break; }
+                if (type==Type::invalid && ((left==Type::uint64 && numeric_subrange_value(*result->left))
+                    || (right==Type::uint64 && numeric_subrange_value(*result->right)))) type=Type::int64;
                 if (type==Type::invalid) throw Error("E_TYPE",result->location,"No common integer type for bitwise operation");
                 result->left=convert(std::move(result->left),type); result->right=convert(std::move(result->right),type);
                 result->type=type; return result;
@@ -4183,9 +4332,14 @@ private:
             } else if (numeric(left) && numeric(right)) {
                 if ((op == "div" || op == "mod") && (left == Type::real || right == Type::real || left==Type::single || right==Type::single))
                     throw Error("E_TYPE", result->location, "div and mod require integer operands");
-                const auto common = left == Type::real || right == Type::real ? Type::real : left==Type::single || right==Type::single ? Type::single
+                auto common = left == Type::real || right == Type::real ? Type::real : left==Type::single || right==Type::single ? Type::single
                     : op=="/" ? Type::real : left==Type::big_integer || right==Type::big_integer ? Type::big_integer : left==Type::uint64 || right==Type::uint64 ? Type::uint64
                     : left == Type::int64 || right == Type::int64 || left==Type::longword || right==Type::longword ? Type::int64 : Type::integer;
+                if (common==Type::uint64 && left!=right) {
+                    const auto& wide=left==Type::uint64?*result->left:*result->right;
+                    const auto other=left==Type::uint64?right:left;
+                    if (numeric_subrange_value(wide) && !can_widen(other,Type::uint64)) common=Type::int64;
+                }
                 result->left = convert(std::move(result->left), common);
                 result->right = convert(std::move(result->right), common);
                 result->type = comparison ? Type::boolean : common;
@@ -4260,7 +4414,8 @@ private:
             if(compound(result.target->type) && info(result.target->type,location).kind==CompoundKind::new_set && !(result.target->kind==hir::ExprKind::index && info(result.target->left->type,location).kind==CompoundKind::list)){
                 const auto owner=result.target->type;std::vector<std::unique_ptr<hir::Expr>> arguments;arguments.push_back(std::move(result.target));arguments.push_back(value(owner));result.kind=hir::StmtKind::call;result.expression=new_set_expression(owner,NewSetMethod::assign,std::move(arguments),location,true);return result;
             }
-            result.expression = convert(value(result.target->type), result.target->type,true);
+            const bool range=result.target->kind==hir::ExprKind::local && subrange_locals_.contains(result.target->local);
+            result.expression=convert_to_subrange(value(result.target->type),result.target->type,range);
             if(field_initialization&&result.expression->kind==hir::ExprKind::array_initialized&&result.expression->operation=="initialize")result.expression->right=copy_expression(*result.target);
             return result;
     }
@@ -6895,13 +7050,15 @@ private:
             auto initial=source.expression ? expression(*source.expression,type) : nullptr;
             if (type==Type::invalid && initial) type=initial->type;
             if (type == Type::unit || type == Type::nil) throw Error("E_TYPE",source.token.location,"Procedure has no value");
-            if (initial) initial = convert(std::move(initial), type,true);
+            const bool range=source.annotation && subrange_shape(*source.annotation);
+            if (initial) initial=convert_to_subrange(std::move(initial),type,range);
             if(initial && compound(type) && info(type,result.location).kind==CompoundKind::new_set)initial=new_set_copy(std::move(initial),result.location);
             for (const auto& token : source.names) {
                 if (scopes_.back().contains(token.text))
                     throw Error("E_DUPLICATE", token.location, "Duplicate name '" + token.text + "'");
                 const auto local = module_.locals.size();
                 module_.locals.push_back({token.text, type, !in_routine_});
+                if (range)subrange_locals_.insert(local);
                 scopes_.back().emplace(token.text, local);
                 // CLR global numeric fields are already zero before constant-pool
                 // initialization; a declaration must not erase callback writes.
@@ -7095,7 +7252,9 @@ private:
                     auto initial=expression(*source.expression); lambda_result(initial->type,initial->location); result.expression=std::move(initial); break;
                 }
                 if (!in_routine_ || current_result_ == Type::unit) throw Error("E_TYPE",result.location,"Procedure Exit takes no value");
-                result.expression = convert(expression(*source.expression,current_result_),current_result_,true);
+                const auto slot=lookup(Token{TokenKind::name,"result",result.location});
+                result.expression=convert_to_subrange(expression(*source.expression,current_result_),current_result_,
+                    slot && subrange_locals_.contains(*slot));
             }
             break;
         case SyntaxStmtKind::print: {
@@ -7159,6 +7318,10 @@ private:
     }
     hir::Module module_;
     std::map<std::string,Type> aliases_;
+    std::map<std::string,Subrange> subrange_aliases_;
+    std::map<const SyntaxType*,Subrange> subranges_;
+    std::set<std::size_t> subrange_locals_;
+    std::set<std::size_t> subrange_results_;
     std::vector<const SyntaxStmt*> enum_prior_constants_;
     std::set<const SyntaxStmt*> enum_bound_constants_;
     std::map<Type,std::size_t> enum_ready_members_;

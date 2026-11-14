@@ -1,4 +1,5 @@
 #include "stdlib.hpp"
+#include <bit>
 #include "diagnostics.hpp"
 #include "files.hpp"
 #include "file_names.hpp"
@@ -207,7 +208,6 @@ std::span<const Signature> signatures() {
         for (auto target:{Type::word,Type::byte,Type::shortint,Type::smallint,Type::integer,Type::int64,Type::longword,Type::uint64})
             for (auto source:{Type::integer,Type::int64,Type::word,Type::character,Type::byte,Type::shortint,Type::smallint,Type::longword,Type::uint64})
                 add(type_name(target),{source},target,Function::integer_cast);
-        add("integer",{Type::boolean},Type::integer,Function::integer_cast);
         for(auto target:{Type::word,Type::byte,Type::shortint,Type::smallint,Type::integer,Type::int64,Type::longword,Type::uint64})
             for(auto source:{Type::single,Type::real})add(type_name(target),{source},target,Function::integer_cast);
         add("abs",{Type::single},Type::single,Function::abs);
@@ -301,6 +301,11 @@ std::span<const Signature> signatures() {
         add("$text_name",{Type::text_file},Type::string,Function::text_name);
         add("$text_full_name",{Type::text_file},Type::string,Function::text_full_name);
         add("$text_read_end",{Type::text_file},Type::string,Function::text_read_end);
+        for (auto target:{Type::word,Type::byte,Type::shortint,Type::smallint,Type::integer,Type::int64,Type::longword,Type::uint64}) {
+            add(type_name(target),{Type::boolean},target,Function::integer_cast);
+            for (auto source:{Type::word,Type::byte,Type::shortint,Type::smallint,Type::integer,Type::int64,Type::longword,Type::uint64})
+                add("$subrange_integer_cast",{source},target,Function::subrange_integer_cast);
+        }
         return entries;
     }();
     return catalog;
@@ -571,6 +576,20 @@ Value invoke(std::size_t id, std::span<const Value> arguments, SourceLocation lo
         float chosen=std::get<float>(value);for(std::size_t i=1;i<arguments.size();++i){const auto next=std::get<float>(arguments[i]);if(function==Function::minimum ? next<chosen : next>chosen)chosen=next;}return chosen;
     }
     if(function==Function::abs && std::holds_alternative<float>(value))return std::fabs(std::get<float>(value));
+    if (function==Function::subrange_integer_cast) {
+        const auto bits=std::holds_alternative<std::uint64_t>(value) ? std::get<std::uint64_t>(value)
+            : static_cast<std::uint64_t>(integral_number(value,location));
+        switch (signature.result) {
+        case Type::byte: return static_cast<std::uint8_t>(bits);
+        case Type::shortint: return std::bit_cast<std::int8_t>(static_cast<std::uint8_t>(bits));
+        case Type::word: return static_cast<std::uint16_t>(bits);
+        case Type::smallint: return std::bit_cast<std::int16_t>(static_cast<std::uint16_t>(bits));
+        case Type::integer: return std::bit_cast<std::int32_t>(static_cast<std::uint32_t>(bits));
+        case Type::longword: return static_cast<std::uint32_t>(bits);
+        case Type::int64: return std::bit_cast<std::int64_t>(bits);
+        default: return bits;
+        }
+    }
     if (function==Function::integer_cast) {
         if(std::holds_alternative<float>(value) || std::holds_alternative<double>(value))return floating_integer_cast(signature.result,value,location);
         if (wide_unsigned(signature.result)) return checked_unsigned_integer(signature.result,value,location);

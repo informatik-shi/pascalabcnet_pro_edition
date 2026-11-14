@@ -5947,6 +5947,37 @@ void mutable_strings() {
     error([&] { abc::verify(program); }, "E_BYTECODE");
 }
 
+void subrange_types() {
+    result(R"(const LeftEdge = -2;
+type Index = LeftEdge..(2+1);
+     Alias = Index;
+     Letter = 'b'..'d';
+     Color = (red,green,blue);
+     Cool = green..blue;
+     Narrow = byte(1)..byte(3);
+     Data = array[Alias,Letter] of integer;
+function Larger(value: integer): Narrow; begin exit(value); end;
+procedure Take(value: byte); begin Write(value, ' '); end;
+begin
+  var a: Data;
+  var n: 1..3 := 45;
+  var letterValue: Letter := 'a';
+  var colorValue: Cool := red;
+  a[-2,'d'] := 7;
+  a[3,'b'] := 9;
+  Take(n);
+  Write(default(Index), ' ', Larger(260), ' ', letterValue, ' ', colorValue, ' ');
+  Writeln(Low(a), ' ', High(a), ' ', a[-2,'d'], ' ', a[3,'b']);
+end.)", "45 0 4 a red -2 3 7 9\n");
+    result("type R=byte(1)..byte(3);begin var x:integer:=258;var n:=R(x);Writeln(n);end.","2\n");
+    result("begin foreach var n:integer in 1..3 do Write(n);end.","123");
+    compile_error("begin var a:5..1;end.","E_RANGE");
+    compile_error("begin var a:1..'c';end.","E_TYPE");
+    compile_error("begin var n:=2;var a:n..4;end.","E_TYPE");
+    compile_error("type R=int64(1)..int64(4);begin var a:array[R] of integer;end.","E_RANGE");
+    compile_error("procedure Take(value: byte);begin end;begin var n:=45; Take(n);end.","E_TYPE");
+}
+
 void case_statements() {
     result(R"(const last=2+3;
 type Color=(red,green,blue);
@@ -7584,6 +7615,7 @@ int main() {
     nullable_strings();
     language_foundations();
     case_statements();
+    subrange_types();
     aggregate_semantics();
     ini_files(); file_library();
     file_extensions();
