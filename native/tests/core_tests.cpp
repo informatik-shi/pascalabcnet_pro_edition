@@ -5971,6 +5971,23 @@ begin
 end.)", "45 0 4 a red -2 3 7 9\n");
     result("type R=byte(1)..byte(3);begin var x:integer:=258;var n:=R(x);Writeln(n);end.","2\n");
     result("begin foreach var n:integer in 1..3 do Write(n);end.","123");
+    result("type R=-2..3; const LowValue:R=-2; HighValue:1..4=2+2; begin Writeln(LowValue,' ',HighValue);end.","-2 4\n");
+    compile_error("type R=1..3; const Outlier:R=4; begin end.","E_RANGE");
+    compile_error("const Outlier:-4..-2=-5; begin end.","E_RANGE");
+    compile_error("var i:integer;const a:array of set of integer=([i]);begin end.","E_TYPE");
+    result(R"(const a:array of set of byte=([1,2],[],[8..10]);
+begin
+  var b: set of byte := Arr(2,1,2);
+  var l: set of longword := [1,2];
+  var w: set of uint64 := [1,2];
+  var g: set of BigInteger := [-2,3];
+  assert((b=a[0]) and (a[1]=[]) and (a[2]=[8..10]));
+  assert((b=Arr(1,2,2)) and (Arr(2,1,2)=b));
+  assert((b<>[256,2]) and ([-1,2]<>w) and (l<>[-1,2]));
+  assert((l=[1,2]) and ([2,1]=w) and (g=[BigInteger(-2),BigInteger(3)]));
+end.)","");
+    runtime_error("begin var b:set of byte;var a:=[1,256];b:=a;end.","E_RANGE");
+    runtime_error("begin var b:set of uint64;var a:=Arr(-1,2);b:=a;end.","E_RANGE");
     compile_error("begin var a:5..1;end.","E_RANGE");
     compile_error("begin var a:1..'c';end.","E_TYPE");
     compile_error("begin var n:=2;var a:n..4;end.","E_TYPE");

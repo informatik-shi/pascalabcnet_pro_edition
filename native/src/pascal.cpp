@@ -2021,12 +2021,7 @@ private:
             const auto value=hir::constant_value(*bound,module_.types,module_.fixed_arrays);
             if (!value)
                 throw Error("E_TYPE",node.token.location,"Subrange bounds must be compile-time constants","Границы поддиапазона должны быть константами времени компиляции");
-            std::uint32_t bits;
-            if (enumeration(bound->type)) bits=static_cast<std::uint32_t>(std::get<EnumValue>(*value).value);
-            else if (bound->type==Type::uint64) bits=static_cast<std::uint32_t>(std::get<std::uint64_t>(*value));
-            else bits=static_cast<std::uint32_t>(integral_number(*value,node.token.location));
-            // The source ordinal interface compares the Int32 projection of bounds.
-            return std::pair{bound->type,std::bit_cast<std::int32_t>(bits)};
+            return std::pair{bound->type,subrange_ordinal(*value,bound->type,node.token.location)};
         };
         const auto [first_type,lower]=constant_bound(*syntax.enum_values[0]);
         const auto [last_type,upper]=constant_bound(*syntax.enum_values[1]);
@@ -2043,6 +2038,14 @@ private:
             throw Error("E_RANGE",syntax.enum_values[1]->token.location,"Subrange lower bound exceeds upper bound","Нижняя граница поддиапазона больше верхней");
         subranges_.emplace(&syntax,Subrange{base,lower,upper});
         return base;
+    }
+    static std::int32_t subrange_ordinal(const Value& value,Type type,SourceLocation location) {
+        std::uint32_t bits;
+        if (std::holds_alternative<EnumValue>(value)) bits=static_cast<std::uint32_t>(std::get<EnumValue>(value).value);
+        else if (type==Type::uint64) bits=static_cast<std::uint32_t>(std::get<std::uint64_t>(value));
+        else bits=static_cast<std::uint32_t>(integral_number(value,location));
+        // The source ordinal interface compares the Int32 projection.
+        return std::bit_cast<std::int32_t>(bits);
     }
     Type resolve_fixed_array(const SyntaxType& syntax){
         for(const auto* constant:enum_prior_constants_)if(constant->token.location.offset<syntax.token.location.offset&&!enum_bound_constants_.contains(constant)){(void)statement(*constant);enum_bound_constants_.insert(constant);}
@@ -2653,6 +2656,12 @@ private:
         return integer_type(value.type) && ((value.kind==hir::ExprKind::local && subrange_locals_.contains(value.local))
             || (value.kind==hir::ExprKind::user_call && subrange_results_.contains(value.local)));
     }
+    bool integer_set_source(Type type,SourceLocation location) const {
+        if (!compound(type)) return false;
+        const auto& shape=info(type,location);
+        return shape.element==Type::integer && (shape.kind==CompoundKind::new_set
+            || (shape.kind==CompoundKind::array && shape.rank==1));
+    }
     ABC_PASCAL_NOINLINE std::unique_ptr<hir::Expr> convert(std::unique_ptr<hir::Expr> expression, Type type,bool assignment=false,bool copy=true) {
         if (numeric_subrange_value(*expression) && integer_type(type) && !can_widen(expression->type,type))
             return subrange_integer_cast(std::move(expression),type);
@@ -2676,6 +2685,12 @@ private:
         }
         if(expression->type!=type && compound(type) && info(type,expression->location).kind==CompoundKind::new_set){
             const auto target=info(type,expression->location);const auto from=expression->type;const auto location=expression->location;
+            if(integer_set_conversion_target(target.element) && integer_set_source(from,location)){
+                const auto method=info(from,location).kind==CompoundKind::new_set ? NewSetMethod::from_integer_set : NewSetMethod::from_integer_array;
+                std::vector<std::unique_ptr<hir::Expr>> arguments;
+                arguments.push_back(std::move(expression));
+                return new_set_expression(type,method,std::move(arguments),location);
+            }
             if(compound(from)){const auto source=info(from,location);const auto method=source.kind==CompoundKind::array && source.rank==1 && source.element==target.element ? NewSetMethod::cast_array : from==target.key ? NewSetMethod::cast_hash : NewSetMethod::construct;
                 if(method!=NewSetMethod::construct){std::vector<std::unique_ptr<hir::Expr>> arguments;arguments.push_back(std::move(expression));return new_set_expression(type,method,std::move(arguments),location);}}
             throw Error("E_TYPE",location,"NewSet conversion requires matching element types");
@@ -4204,7 +4219,22 @@ private:
                 const auto owner=compound(left) && info(left,result->location).kind==CompoundKind::new_set ? left : right;NewSetMethod method;
                 if(op=="+")method=NewSetMethod::unite;else if(op=="-")method=NewSetMethod::subtract;else if(op=="*")method=NewSetMethod::intersect;
                 else if(op=="=")method=NewSetMethod::equal;else if(op=="<>")method=NewSetMethod::not_equal;else if(op=="<")method=NewSetMethod::less;else if(op=="<=")method=NewSetMethod::less_equal;else if(op==">")method=NewSetMethod::greater;else if(op==">=")method=NewSetMethod::greater_equal;else throw Error("E_TYPE",result->location,"Unsupported NewSet operator");
-                std::vector<std::unique_ptr<hir::Expr>> arguments;arguments.push_back(std::move(result->left));arguments.push_back(std::move(result->right));return new_set_expression(owner,method,std::move(arguments),result->location);
+                auto operator_type=owner;
+                const auto numeric_target=[&](Type type){
+                    return compound(type) && info(type,result->location).kind==CompoundKind::new_set
+                        && integer_type(info(type,result->location).element) && info(type,result->location).element!=Type::integer;
+                };
+                const bool integer_left=integer_set_source(left,result->location) && numeric_target(right);
+                if(integer_left || (integer_set_source(right,result->location) && numeric_target(left))){
+                    if(method!=NewSetMethod::equal && method!=NewSetMethod::not_equal)
+                        throw Error("E_TYPE",result->location,"Mixed integral set operation is not supported","Эта операция над множествами разных целых типов пока не поддерживается");
+                    operator_type=integer_left ? right : left;
+                    auto& integer_set=integer_left ? result->left : result->right;
+                    integer_set=convert(std::move(integer_set),new_set_type(Type::integer));
+                    if(integer_left)method=op=="=" ? NewSetMethod::integer_equal_left : NewSetMethod::integer_not_equal_left;
+                    else method=op=="=" ? NewSetMethod::integer_equal_right : NewSetMethod::integer_not_equal_right;
+                }
+                std::vector<std::unique_ptr<hir::Expr>> arguments;arguments.push_back(std::move(result->left));arguments.push_back(std::move(result->right));return new_set_expression(operator_type,method,std::move(arguments),result->location);
             }
             const auto is_set=[&](Type type){return compound(type) && info(type,result->location).kind==CompoundKind::hash_set;};
             if(is_set(left) || is_set(right)){
@@ -4816,6 +4846,8 @@ private:
             if(!lvalue(*target))throw Error("E_TYPE",location,"Assignment target must be assignable");
             auto right=initial ? std::move(initial) : expression(*source.expression,info(type,location).element);NewSetMethod method;
             if(compound(right->type) && info(right->type,location).kind==CompoundKind::empty_collection && right->type!=info(type,location).element)right=convert(std::move(right),type);
+            if(integer_type(info(type,location).element) && integer_set_conversion_target(info(type,location).element)
+                && integer_set_source(right->type,location))right=convert(std::move(right),type);
             if(right->type==type)method=op=="+" ? NewSetMethod::union_assign : op=="-" ? NewSetMethod::except_assign : op=="*" ? NewSetMethod::intersect_assign : throw Error("E_TYPE",location,"Unsupported NewSet operator");
             else method=op=="+" ? NewSetMethod::item_add : op=="-" ? NewSetMethod::item_remove : throw Error("E_TYPE",location,"Unsupported NewSet operator");
             std::vector<std::unique_ptr<hir::Expr>> arguments;arguments.push_back(std::move(target));arguments.push_back(std::move(right));hir::Stmt result;result.kind=hir::StmtKind::call;result.location=location;result.expression=new_set_expression(type,method,std::move(arguments),location);return result;
@@ -6713,7 +6745,8 @@ private:
     bool constant_array_type(Type type,unsigned depth=0)const{
         if(depth>64)return false;if(scalar(type)||enumeration(type))return true;
         if(!compound(type))return false;const auto& shape=info(type,{});
-        return (shape.kind==CompoundKind::array||shape.kind==CompoundKind::fixed_array)&&constant_array_type(shape.element,depth+1);
+        return shape.kind==CompoundKind::new_set || ((shape.kind==CompoundKind::array||shape.kind==CompoundKind::fixed_array)
+            && constant_array_type(shape.element,depth+1));
     }
     std::optional<Value> constant_array_value(const hir::Expr& node)const{
         compilation_stack_.check(node.location);
@@ -6747,6 +6780,8 @@ private:
     }
     bool array_constant_initializer(const hir::Expr& node,bool root=true)const{
         if(!constant_array_type(node.type))return false;
+        if(compound(node.type)&&info(node.type,node.location).kind==CompoundKind::new_set)
+            return constant_initializer(node);
         if(!compound(node.type)||enumeration(node.type)){
             if(node.kind==hir::ExprKind::local)return constant_locals_.contains(node.local);
             switch(node.kind){
@@ -6770,7 +6805,13 @@ private:
     }
     bool constant_initializer(const hir::Expr& node) const {
         if(node.kind==hir::ExprKind::empty_call && (static_cast<EmptyMethod>(node.local)==EmptyMethod::singleton || static_cast<EmptyMethod>(node.local)==EmptyMethod::convert))return std::all_of(node.arguments.begin(),node.arguments.end(),[&](const auto& x){return constant_initializer(*x);});
-        if(node.kind==hir::ExprKind::new_set_call && node.operation=="$set_literal")return std::all_of(node.arguments.begin(),node.arguments.end(),[&](const auto& array){return array->kind==hir::ExprKind::array_literal && std::all_of(array->arguments.begin(),array->arguments.end(),[&](const auto& x){return constant_initializer(*x);});});
+        if(node.kind==hir::ExprKind::new_set_call){
+            if(node.operation=="$set_literal")return std::all_of(node.arguments.begin(),node.arguments.end(),[&](const auto& array){return array->kind==hir::ExprKind::array_literal && std::all_of(array->arguments.begin(),array->arguments.end(),[&](const auto& x){return constant_initializer(*x);});});
+            if(node.local==static_cast<std::size_t>(NewSetMethod::copy_value) || node.local==static_cast<std::size_t>(NewSetMethod::from_integer_set))
+                return constant_initializer(*node.arguments.front());
+        }
+        if(node.kind==hir::ExprKind::local&&compound(node.type)&&info(node.type,node.location).kind==CompoundKind::new_set)
+            return constant_locals_.contains(node.local);
         if ((compound(node.type) && !enumeration(node.type)) || node.type==Type::unit || node.type==Type::text_file || node.type==Type::nil) return false;
         switch (node.kind) {
         case hir::ExprKind::enum_call: case hir::ExprKind::literal: case hir::ExprKind::convert: case hir::ExprKind::unary:
@@ -7027,6 +7068,16 @@ private:
             const bool array=initializer_array(type);
             if ((compound(type) && !enumeration(type) && info(type,name.location).kind!=CompoundKind::new_set&&!array) || type==Type::text_file || type==Type::nil || type==Type::unit)
                 throw Error("E_UNSUPPORTED",name.location,"Only scalar const declarations are ported");
+            if (const auto* range=source.annotation?subrange_shape(*source.annotation):nullptr) {
+                const auto value=hir::constant_value(*initial,module_.types,module_.fixed_arrays);
+                if (!value)
+                    throw Error("E_TYPE",initial->location,"Subrange constant requires a compile-time value","Константа поддиапазона требует значения, известного во время компиляции");
+                if (integer_type(type) && integer_type(initial->type)) {
+                    const auto number=subrange_ordinal(*value,initial->type,initial->location);
+                    if (number<range->lower||number>range->upper)
+                        throw Error("E_RANGE",initial->location,"Constant is outside the declared subrange","Константа выходит за границы объявленного поддиапазона");
+                }
+            }
             initial=convert(std::move(initial),type,array);
             if (!(array?array_constant_initializer(*initial):constant_initializer(*initial))) throw Error("E_TYPE",name.location,"Constant initializer cannot read a variable or call a user routine");
             if(array)promote_constant_temporaries(*initial);

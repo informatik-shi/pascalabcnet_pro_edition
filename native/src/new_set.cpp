@@ -3,16 +3,27 @@
 #include "runtime_values.hpp"
 #include "sequences.hpp"
 #include "formatting.hpp"
+#include "big_integer_runtime.hpp"
+#include "integer_values.hpp"
 
 namespace abc {
 namespace {
 const TypeInfo& shape(const std::vector<TypeInfo>& types,Type owner){return types.at(static_cast<unsigned>(owner)-64U);}
-Type array_type(const std::vector<TypeInfo>& types,Type element){for(std::size_t i=0;i<types.size();++i)if(types[i].kind==CompoundKind::array && types[i].rank==1 && types[i].element==element)return static_cast<Type>(64+i);return Type::invalid;}
-bool empty_operation(NewSetMethod m){return m>=NewSetMethod::empty_unite_left;}
+Type set_input_type(const std::vector<TypeInfo>& types,CompoundKind kind,Type element){for(std::size_t i=0;i<types.size();++i)if(types[i].kind==kind && types[i].rank==1 && types[i].element==element)return static_cast<Type>(64+i);return Type::invalid;}
+Type array_type(const std::vector<TypeInfo>& types,Type element){return set_input_type(types,CompoundKind::array,element);}
+bool empty_operation(NewSetMethod m){return m>=NewSetMethod::empty_unite_left && m<=NewSetMethod::empty_array_intersect_right;}
+bool integer_equality(NewSetMethod m){return m>=NewSetMethod::integer_equal_left && m<=NewSetMethod::integer_not_equal_right;}
 bool empty_left(NewSetMethod m){return (static_cast<unsigned>(m)-static_cast<unsigned>(NewSetMethod::empty_unite_left))%2==0;}
 bool range_element(const std::vector<TypeInfo>& types,Type element){return element==Type::integer || element==Type::character || element==Type::boolean || (compound(element) && shape(types,element).kind==CompoundKind::enumeration);}
 bool instance(NewSetMethod m){return m>=NewSetMethod::clone && m<=NewSetMethod::to_hash;}
+Value set_integer_value(std::int32_t number,Type target,SourceLocation location){
+    if(small_integer(target))return checked_small_integer(target,number,location);
+    if(wide_unsigned(target))return checked_unsigned_integer(target,number,location);
+    if(target==Type::big_integer)return big_cast(number,target,location);
+    return static_cast<std::int64_t>(number);
 }
+}
+bool integer_set_conversion_target(Type element){return (integer_type(element) && element!=Type::integer) || element==Type::big_integer;}
 Type empty_collection_type(const std::vector<TypeInfo>& types){for(std::size_t i=0;i<types.size();++i)if(types[i].kind==CompoundKind::empty_collection)return static_cast<Type>(64+i);return Type::invalid;}
 bool empty_signature(const Program& p,Type target,EmptyMethod method){
     if(method>EmptyMethod::to_set || empty_collection_type(p.types)==Type::invalid || !valid_value_type(p,target))return false;
@@ -34,7 +45,12 @@ Value empty_invoke(Values& values,Type target,EmptyMethod method,std::span<const
     return values.zero(target,true);
 }
 bool new_set_signature(const Program& p,Type owner,NewSetMethod m,bool reference){
-    if(m>NewSetMethod::empty_array_intersect_right || !compound(owner) || static_cast<unsigned>(owner)-64U>=p.types.size() || type_info(p,owner).kind!=CompoundKind::new_set)return false;
+    if(m>NewSetMethod::integer_not_equal_right || !compound(owner) || static_cast<unsigned>(owner)-64U>=p.types.size() || type_info(p,owner).kind!=CompoundKind::new_set)return false;
+    const auto element=type_info(p,owner).element;
+    if(m==NewSetMethod::from_integer_set || m==NewSetMethod::from_integer_array || integer_equality(m)){
+        return !reference && integer_set_conversion_target(element) && (!integer_equality(m) || element!=Type::big_integer)
+            && set_input_type(p.types,m==NewSetMethod::from_integer_array ? CompoundKind::array : CompoundKind::new_set,Type::integer)!=Type::invalid;
+    }
     if((m==NewSetMethod::construct_array || m==NewSetMethod::cast_array) && array_type(p.types,type_info(p,owner).element)==Type::invalid)return false;
     if(m==NewSetMethod::literal_ranges && (!range_element(p.types,type_info(p,owner).element) || array_type(p.types,type_info(p,owner).element)==Type::invalid))return false;
     if(empty_operation(m) && (empty_collection_type(p.types)==Type::invalid || (m>=NewSetMethod::empty_array_unite_left && array_type(p.types,type_info(p,owner).element)==Type::invalid)))return false;
@@ -43,6 +59,13 @@ bool new_set_signature(const Program& p,Type owner,NewSetMethod m,bool reference
 }
 std::vector<Type> new_set_parameters(const std::vector<TypeInfo>& types,Type owner,NewSetMethod m,bool reference){
     const auto& type=shape(types,owner);const auto hash=type.key;const auto sequence=shape(types,hash).key;
+    if(m==NewSetMethod::from_integer_array)return {array_type(types,Type::integer)};
+    if(m==NewSetMethod::from_integer_set || integer_equality(m)){
+        const auto source=set_input_type(types,CompoundKind::new_set,Type::integer);
+        if(m==NewSetMethod::from_integer_set)return {source};
+        if(m==NewSetMethod::integer_equal_left || m==NewSetMethod::integer_not_equal_left)return {source,owner};
+        return {owner,source};
+    }
     if(empty_operation(m)){const auto empty=empty_collection_type(types),other=m>=NewSetMethod::empty_array_unite_left ? array_type(types,type.element) : owner;return empty_left(m) ? std::vector<Type>{empty,other} : std::vector<Type>{other,empty};}
     if(m==NewSetMethod::literal_ranges)return {array_type(types,type.element),array_type(types,type.element)};
     if(m==NewSetMethod::from_sequence)return {sequence};
@@ -58,6 +81,7 @@ std::vector<Type> new_set_parameters(const std::vector<TypeInfo>& types,Type own
     return result;
 }
 Type new_set_result(const std::vector<TypeInfo>& types,Type owner,NewSetMethod m){
+    if(integer_equality(m))return Type::boolean;
     if(m==NewSetMethod::include || m==NewSetMethod::exclude)return Type::unit;
     if(m==NewSetMethod::count)return Type::integer;
     if(m==NewSetMethod::add || m==NewSetMethod::remove || m==NewSetMethod::contains || (m>=NewSetMethod::equal && m<=NewSetMethod::membership) || (m>=NewSetMethod::empty_equal_left && m<=NewSetMethod::empty_greater_equal_right))return Type::boolean;
@@ -85,6 +109,35 @@ Value new_set_invoke(Values& values,Type owner,NewSetMethod m,bool reference,std
         const auto wrap=[&](Value value)->Value{return NewSetValue{owner,values.cell(hash,std::move(value))};};
         const auto seq_hash=[&](const std::shared_ptr<Aggregate>& h){return sequence_create(values,sequence,h,SequenceProvider::hash_set);};
         const auto update=[&](const std::shared_ptr<Aggregate>& h,const Value& source,HashSetMethod method){const std::array<Value,2> args{h,source};(void)call(method,args);};
+        if(m==NewSetMethod::from_integer_set || m==NewSetMethod::from_integer_array || integer_equality(m)){
+            const auto element=type_info(values.program,owner).element;
+            const bool compare=integer_equality(m);
+            const bool negate=m==NewSetMethod::integer_not_equal_left || m==NewSetMethod::integer_not_equal_right;
+            const std::size_t index=m==NewSetMethod::integer_equal_right || m==NewSetMethod::integer_not_equal_right ? 1U : 0U;
+            const auto input=m==NewSetMethod::from_integer_array ? std::get<std::shared_ptr<Aggregate>>(arguments[0])
+                : new_set_hash(values,std::get<NewSetValue>(arguments[index]));
+            if(!input || input->nil)throw runtime_error(RuntimeError::nil_reference,values.location);
+            auto result=compare ? std::get<NewSetValue>(arguments[1-index]) : std::get<NewSetValue>(values.zero(owner));
+            const auto target=new_set_hash(values,result);
+            if(compare && input->count!=target->count)return negate;
+            std::uint64_t work=0;
+            for(const auto& cell:input->items){
+                if(++work>options.instruction_limit)throw runtime_error(RuntimeError::instruction_limit,values.location);
+                if((work==1 || !(work&255U)) && options.cancelled && options.cancelled())throw runtime_error(RuntimeError::cancelled,values.location);
+                if(!cell)continue;
+                std::array<Value,2> args{target,std::int32_t{0}};
+                try{args[1]=set_integer_value(std::get<std::int32_t>(cell->value),element,values.location);}
+                catch(const Error& error){
+                    if(error.code!="E_OVERFLOW")throw;
+                    if(compare)return negate;
+                    throw Error("E_RANGE",values.location,"Out of type range in set assignment","Выход за границы типа множества");
+                }
+                const auto found=call(compare ? HashSetMethod::contains : HashSetMethod::add,args);
+                if(compare && !std::get<bool>(found))return negate;
+            }
+            if(compare)return !negate;
+            return result;
+        }
         if(m==NewSetMethod::from_sequence){const std::array<Value,1> args{arguments[0]};return wrap(call(HashSetMethod::construct_sequence,args));}
         if(m==NewSetMethod::literal_ranges){
             auto result=std::get<NewSetValue>(values.zero(owner));const auto object=new_set_hash(values,result),scalars=std::get<std::shared_ptr<Aggregate>>(arguments[0]),ranges=std::get<std::shared_ptr<Aggregate>>(arguments[1]);
