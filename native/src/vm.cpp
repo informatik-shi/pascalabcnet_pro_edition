@@ -713,6 +713,10 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
             else {if(descriptor.target==Type::invalid)trap(instruction,RuntimeError::nil_reference);stack.emplace_back(descriptor);}break;
         }
         case Op::object_text: {
+            if(instruction.operand==static_cast<unsigned>(ObjectTextMode::framework)){
+                stack.emplace_back(framework_object_text(values,pop(),instruction.type,options));
+                break;
+            }
             const auto width=instruction.operand ? std::get<std::int32_t>(pop()) : 0;
             const auto value=pop();
             stack.emplace_back(pad_field(output_object(value,instruction.type,instruction),width,instruction.location));

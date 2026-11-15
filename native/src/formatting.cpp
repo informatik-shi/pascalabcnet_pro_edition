@@ -10,6 +10,10 @@
 #include "calendar.hpp"
 #include "composite_format.hpp"
 #include "decimal.hpp"
+#include "number_format.hpp"
+#include "runtime_values.hpp"
+#include "string_builder.hpp"
+#include "type_names.hpp"
 #include <array>
 #include <charconv>
 #include <type_traits>
@@ -116,6 +120,81 @@ bool object_text_supported(const std::vector<TypeInfo>& types, Type type) { retu
 std::u16string object_text(const Program& program, const Value& value, Type type, SourceLocation location,
     const ExecutionOptions& options,const NumberFormatSettings* settings) {
     return ObjectWriter(program,location,options,settings).render(value,type);
+}
+namespace {
+class FrameworkWriter {
+    Values& values;
+    const ExecutionOptions& options;
+    std::uint64_t work=0;
+    std::u16string text;
+
+    void append(std::u16string_view part){
+        if(part.size()>1'048'576-text.size())throw runtime_error(RuntimeError::string_limit,values.location);
+        text+=part;
+    }
+
+    void write(const Value& value,Type type,unsigned depth){
+        if(work++>=options.instruction_limit || depth>32)throw runtime_error(RuntimeError::instruction_limit,values.location);
+        if(options.cancelled && options.cancelled())throw runtime_error(RuntimeError::cancelled,values.location);
+        const auto location=values.location;
+        if(std::holds_alternative<NilString>(value))return;
+        const auto& format=number_settings(values);
+        if(integer_type(type) || type==Type::real || type==Type::single){
+            append(format_number(value,type,{},format,location));
+            return;
+        }
+        if(scalar(type)){append(format_scalar(value,location));return;}
+        if(type==Type::type_descriptor){
+            const auto descriptor=std::get<ReflectedType>(value);
+            if(descriptor.target!=Type::invalid)append(reflected_type_text(values.program,descriptor,location,options));
+            return;
+        }
+        if(enumeration(values.program,type)){append(enum_text(values.program,std::get<EnumValue>(value),location));return;}
+        if(const auto* aggregate=std::get_if<std::shared_ptr<Aggregate>>(&value)){
+            const auto& object=*aggregate;
+            if(!object || object->nil)return;
+            const auto& shape=type_info(values.program,object->type);
+            if(shape.kind==CompoundKind::boxed_object && !object->items.empty()){
+                const auto& item=object->items.front();
+                write(item->value,item->type,depth+1);
+                return;
+            }
+            if(calendar_record(shape)){append(calendar_text(value,{},location));return;}
+            if(decimal_type(shape)){append(format_decimal(value,{},format,location));return;}
+            if(complex_number_type(shape)){append(complex_dotnet_text(value,{},format,location));return;}
+            if(ordinal_range_type(shape)){append(ordinal_range_text(object));return;}
+            if(real_interval_type(shape)){append(real_interval_text(object,location));return;}
+            if(shape.kind==CompoundKind::string_builder){
+                const std::array<Value,1> input{value};
+                append(std::get<std::u16string>(string_builder_invoke(values,object->type,StringBuilderMethod::text,input)));
+                return;
+            }
+            const bool pair=key_value_pair_type(shape);
+            if(pair || shape.kind==CompoundKind::tuple){
+                append(pair ? u"[" : u"(");
+                for(std::size_t i=0;i<object->items.size();++i){
+                    if(i)append(u", ");
+                    const auto& item=object->items[i];
+                    write(item->value,item->type,depth+1);
+                }
+                append(pair ? u"]" : u")");
+                return;
+            }
+        }
+        const auto descriptor=reflected_value_type(values.program,value,type,location,options);
+        if(descriptor.target!=Type::invalid)append(reflected_type_text(values.program,descriptor,location,options));
+    }
+
+public:
+    FrameworkWriter(Values& context,const ExecutionOptions& limits):values(context),options(limits){}
+    std::u16string render(const Value& value,Type type){
+        write(value,type,0);
+        return std::move(text);
+    }
+};
+}
+std::u16string framework_object_text(Values& values,const Value& value,Type type,const ExecutionOptions& options){
+    return FrameworkWriter(values,options).render(value,type);
 }
 std::u16string pad_field(std::u16string text, std::int32_t width, SourceLocation location) {
     if (width<0) throw runtime_error(RuntimeError::field_width,location);

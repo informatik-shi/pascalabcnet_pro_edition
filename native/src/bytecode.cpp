@@ -1289,7 +1289,10 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if (type!=Type::unit || instruction.operand/4>16 || instruction.operand%4<2) invalid(instruction,"Invalid Print output");
             break;
         case Op::object_text:
-            if (!object_text_supported(program.types,type) || type==Type::nil || instruction.operand>1) invalid(instruction,"Invalid object formatting");
+            if(instruction.operand==static_cast<unsigned>(ObjectTextMode::framework)){
+                if(!valid_value_type(program,type))invalid(instruction,"Invalid object formatting type");
+            }else if (!object_text_supported(program.types,type) || type==Type::nil
+                || instruction.operand>static_cast<unsigned>(ObjectTextMode::width))invalid(instruction,"Invalid object formatting");
             break;
         case Op::write_matrix:
             if (!compound(type) || type_info(program,type).kind!=CompoundKind::array || type_info(program,type).rank!=2
@@ -1969,7 +1972,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         case Op::type_operation:
             require(instruction.type);stack.push_back(instruction.operand==static_cast<unsigned>(TypeOperation::runtime_type) ? Type::type_descriptor : Type::string);break;
         case Op::object_text:
-            if (instruction.operand) require(Type::integer);
+            if (instruction.operand==static_cast<unsigned>(ObjectTextMode::width)) require(Type::integer);
             require(instruction.type); stack.push_back(Type::string); break;
         case Op::write_matrix:
             if (instruction.operand) require(Type::integer);

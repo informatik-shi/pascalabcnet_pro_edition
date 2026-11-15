@@ -208,7 +208,9 @@ bool module_name_valid(std::string_view name){
     if(name.empty() || name.size()>4096 || static_cast<unsigned char>(name.front())<=32 || name.find_first_of("/\\:")!=name.npos || name.find('\0')!=name.npos)return false;
     try{(void)from_utf8(name);return true;}catch(const std::invalid_argument&){return false;}
 }
-Value reflected_type_property(const Program& program,const ReflectedType& type,TypeOperation property,SourceLocation location,const ExecutionOptions& options) try {
+namespace {
+Value render_type_property(const Program& program,const ReflectedType& type,TypeOperation property,
+    SourceLocation location,const ExecutionOptions& options,bool assembly_arguments) try {
     if(!reflected_type_valid(program,type) || !type_operation_valid(program,Type::type_descriptor,property)
         || property==TypeOperation::value_name || property==TypeOperation::runtime_type)throw runtime_error(RuntimeError::invalid_bytecode,location);
     Work work{location,options};work.step();
@@ -235,13 +237,25 @@ Value reflected_type_property(const Program& program,const ReflectedType& type,T
         }
         text(std::move(info.suffix));
         if(!info.arguments.empty()){
-            text(u"]]");
-            for(std::size_t i=info.arguments.size();i>0;--i){push({ReflectedType{info.arguments[i-1]}, {},false,true,true});if(i>1)text(u"],[");}
-            text(u"[[");
+            text(assembly_arguments ? u"]]" : u"]");
+            for(std::size_t i=info.arguments.size();i>0;--i){
+                push({ReflectedType{info.arguments[i-1]}, {},false,assembly_arguments,assembly_arguments});
+                if(i>1)text(assembly_arguments ? u"],[" : u",");
+            }
+            text(assembly_arguments ? u"[[" : u"[");
         }
         text((info.name_space.empty() ? u"" : escaped_type_name(info.name_space)+u".")+info.name);
     }
     return result;
 }catch(const std::bad_alloc&){throw runtime_error(RuntimeError::allocation_limit,location);}
 catch(const std::invalid_argument&){throw runtime_error(RuntimeError::invalid_bytecode,location);}
+}
+Value reflected_type_property(const Program& program,const ReflectedType& type,TypeOperation property,
+    SourceLocation location,const ExecutionOptions& options){
+    return render_type_property(program,type,property,location,options,true);
+}
+std::u16string reflected_type_text(const Program& program,const ReflectedType& type,SourceLocation location,
+    const ExecutionOptions& options){
+    return std::get<std::u16string>(render_type_property(program,type,TypeOperation::full_name,location,options,false));
+}
 }

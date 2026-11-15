@@ -3893,7 +3893,8 @@ Include/Exclude принимают адресуемую переменную New
 ## Что ещё не перенесено
 
 Из 100 верхнеуровневых исходных модулей завершены только два пустых модуля совместимости.
-`PABCSystem`, `Arrays`, `Collections`, `School`, `FilesOperations` и `IniFile` поддержаны частично.
+`PABCSystem`, `Arrays`, `Collections`, `School`, `FilesOperations`,
+`IniFile` и `Oberon00System` поддержаны частично.
 Встроенный `List<T>` и начальные реализации `Stack<T>/Queue<T>/DynArray<T>/SimpleSet<T>/AssocArray<K,V>/LinkedList<T>`
 с `LinkedListNode<T>` и `SingleNode<T>` уже работают.
 Число реализованных функций не является процентом готовности всей среды.
@@ -4138,6 +4139,18 @@ Python/.NET в нём отсутствуют. Для 06b987469 успешны Wi
 в порядке ключей. Свойства `IDictionary<K,V>` возвращают те же
 представления через `ICollection<T>`.
 Непараметризованный `System.Collections.SortedList` ещё в работе.
+
+## Oberon00System
+
+`uses Oberon00System` подключает исходные алиасы типов.
+`SHORTINT` соответствует `Byte`, `LONGINT` — `Int64`,
+`LONGREAL` — `Double`, а `iset` — массиву целых.
+`Print` и `Println` вызываются напрямую и с именем модуля.
+`Println(integer, integer)` выводит числа подряд и добавляет перевод строки.
+Эталон проверяет разрешение перегрузок, пустой вывод `nil`, имена
+типов массивов, списков, классов и записей, а также вывод кортежа и пары.
+Значения процедур из модуля и виртуальные переопределения
+`Object.ToString` ещё требуют переноса.
 
 ## Конкретные перечислители словаря
 

@@ -1,0 +1,17 @@
+Byte Int64 Double
+200 5000000000 2.5 2
+tag 45
+one 67
+1 2 3
+
+
+System.Int32[]
+System.Collections.Generic.List`1[System.Int32]
+(1, 2)
+OberonStore.Section
+OberonStore.Sample
+red
+[3, three]
+199
+8|
+nil |

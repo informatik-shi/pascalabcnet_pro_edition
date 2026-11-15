@@ -3872,7 +3872,7 @@ void structural_output() {
     compile_error("uses Collections; begin var s:=new Stack<integer>; ObjectToString(s); end.","E_UNSUPPORTED");
     compile_error("type R=record f:Text; end; begin var r:R; ObjectToString(r); end.","E_UNSUPPORTED");
     auto program=abc::compile("begin Writeln(ObjectToString(Arr(1))); end.");
-    for (auto& instruction:program.code) if (instruction.op==abc::Op::object_text) instruction.operand=2;
+    for (auto& instruction:program.code) if (instruction.op==abc::Op::object_text) instruction.operand=3;
     error([&]{abc::verify(program);},"E_BYTECODE");
     program=abc::compile("begin Writeln(ObjectToString(Arr(1))); end.");
     for (auto& instruction:program.code) if (instruction.op==abc::Op::object_text) instruction.type=abc::Type::text_file;

@@ -371,7 +371,7 @@ public:
             do {
                 auto module = name();while(accept("."))module.text+="."+name().text;
                 if (module.text != "pabcsystem" && module.text != "arrays" && module.text != "collections"
-                    && module.text != "filesoperations" && module.text != "events" && module.text != "pointrect" && module.text != "school" && module.text != "system" && module.text != "system.text" && module.text != "system.numerics" && module.text != "inifile")
+                    && module.text != "filesoperations" && module.text != "events" && module.text != "pointrect" && module.text != "school" && module.text != "system" && module.text != "system.text" && module.text != "system.numerics" && module.text != "inifile" && module.text != "oberon00system")
                     throw Error("E_UNSUPPORTED", module.location, "Unit is not ported yet: '" + module.text + "'");
                 if (module.text == "collections") root.collections_imported = true;
                 root.imported_units.insert(module.text);
@@ -633,6 +633,10 @@ private:
             if(result->kind=="inifile" && is(".")) {
                 result->unit="inifile";expect(".");result->kind=name().text;
                 if(result->kind!="tinifile")throw Error("E_UNSUPPORTED",result->token.location,"Unknown IniFile type");
+            }
+            if(result->kind=="oberon00system" && accept(".")){
+                result->unit="oberon00system";
+                result->kind=name().text;
             }
             if (result->kind=="pabcsystem" && is(".") && [&]{
                 auto probe=lexer_;
@@ -3489,6 +3493,15 @@ private:
         module_.types.push_back({"assocarray",CompoundKind::association,element,{},key});
         return static_cast<Type>(63+module_.types.size());
     }
+    Type oberon_type(std::string_view name,bool qualified){
+        if(name=="shortint")return Type::byte;
+        if(name=="longint")return Type::int64;
+        if(name=="longreal")return Type::real;
+        if(name=="iset")return sequence_type(CompoundKind::array,Type::integer);
+        if(qualified && (name=="boolean" || name=="integer" || name=="real" || name=="char" || name=="string"))
+            return *find_type(name);
+        return Type::invalid;
+    }
     Type resolve_type(const SyntaxType& syntax,bool base_only=false) {
         if(!base_only)if(auto found=resolved_types_.find(&syntax);found!=resolved_types_.end())return found->second;
         if(!base_only && !syntax.nested.empty()){
@@ -3505,6 +3518,15 @@ private:
                 if(syntax.enum_flags){if(!enumeration(found->second))throw Error("E_TYPE",syntax.token.location,"FlagsAttribute requires an enumeration");module_.types[static_cast<unsigned>(found->second)-64U].enum_flags=true;}
                 return found->second;
             }
+        if(syntax.named && !syntax.system_qualified && !syntax.element && syntax.fields.empty()
+            && (syntax.unit=="oberon00system" || (syntax.unit.empty() && imported_units_.contains("oberon00system")))){
+            const bool qualified=syntax.unit=="oberon00system";
+            if(qualified && !imported_units_.contains("oberon00system"))
+                throw Error("E_TYPE",syntax.token.location,"Oberon00System is not imported","Модуль Oberon00System не подключён");
+            const auto type=oberon_type(syntax.kind,qualified);
+            if(type!=Type::invalid)return type;
+            if(qualified)throw Error("E_TYPE",syntax.token.location,"Unknown Oberon00System type","Неизвестный тип Oberon00System");
+        }
         if (syntax.kind=="object" && syntax.named && syntax.unit.empty()) return object_type(syntax.token.location);
         if (syntax.kind=="shortstring" && syntax.named && syntax.unit.empty() && !syntax.system_qualified)
             return short_string_type(max_short_string_capacity);
@@ -4655,6 +4677,14 @@ private:
                 if(bind_set_mutation(*result,source,source.left->token.text))break;
                 if(source.left->token.text=="pabcsystem" && bind_print_extension(*result,source,false))break;
                 for (const auto& argument:source.arguments) result->arguments.push_back(expression(*argument));
+                if(source.left->token.text=="oberon00system"){
+                    const auto type=oberon_type(name,true);
+                    if(type!=Type::invalid){
+                        if(result->arguments.size()!=1)throw Error("E_TYPE",result->location,
+                            "Oberon conversion requires one argument","Для преобразования типа Oberon нужен один аргумент");
+                        return convert(std::move(result->arguments[0]),type,true);
+                    }
+                }
                 if (bind_print(*result,source.token.text,source.left->token.text)) break;
                 if (bind_sequence_conversion(*result,source.token.text,source.left->token.text)) break;
                 if (bind_new_set_factory(*result,source.token.text,source.left->token.text)) break;
@@ -5400,6 +5430,14 @@ private:
                 break;
             }
             for (const auto& argument : source.arguments) result->arguments.push_back(expression(*argument));
+            if(imported_units_.contains("oberon00system") && native_alias==aliases_.end()){
+                const auto type=oberon_type(source.token.text,false);
+                if(type!=Type::invalid){
+                    if(result->arguments.size()!=1)throw Error("E_TYPE",result->location,
+                        "Oberon conversion requires one argument","Для преобразования типа Oberon нужен один аргумент");
+                    return convert(std::move(result->arguments[0]),type,true);
+                }
+            }
             if (result->arguments.size()==1 && is_decimal(result->arguments.front()->type)
                 && !routine_names_.contains(source.token.text)) {
                 const auto target=native_alias!=aliases_.end()?native_alias->second:find_type(source.token.text).value_or(Type::invalid);
@@ -8315,7 +8353,38 @@ private:
         finish(name=="print" ? PrintMethod::sequence_print : PrintMethod::sequence_println,self);return true;
     }
     bool bind_print(hir::Expr& result, std::string_view name, std::string_view unit = {}) {
-        if ((name!="print" && name!="println") || (!unit.empty() && unit!="pabcsystem")) return false;
+        if(name!="print" && name!="println")return false;
+        if(unit=="oberon00system" || (unit.empty() && imported_units_.contains("oberon00system"))){
+            const bool line=name=="println";
+            const auto count=result.arguments.size();
+            const bool pair=line && count==2 && can_widen(result.arguments[0]->type,Type::integer)
+                && can_widen(result.arguments[1]->type,Type::integer);
+            const bool single=count==1 && (unit=="oberon00system" || (result.arguments[0]->type!=Type::text_file
+                && (line || !can_widen(result.arguments[0]->type,Type::string))));
+            if(single || (line && count==0) || pair){
+                if(pair){
+                    for(auto& value:result.arguments)value=convert(std::move(value),Type::integer);
+                }else if(count==1){
+                    auto value=std::move(result.arguments[0]);
+                    if(value->type==Type::nil)value=convert(std::move(value),Type::string);
+                    if(value->type==Type::unit)throw Error("E_TYPE",value->location,"Expression has no value","Выражение не возвращает значение");
+                    auto text=std::make_unique<hir::Expr>();
+                    text->kind=hir::ExprKind::object_text;
+                    text->type=Type::string;
+                    text->location=value->location;
+                    text->left=std::move(value);
+                    text->local=static_cast<unsigned>(ObjectTextMode::framework);
+                    result.arguments[0]=std::move(text);
+                }
+                result.kind=hir::ExprKind::file_output;
+                result.type=Type::unit;
+                result.local=static_cast<std::size_t>(line ? TextOutput::writeln : TextOutput::write);
+                return true;
+            }
+            if(!unit.empty())throw Error("E_TYPE",result.location,"Wrong Oberon Print argument types or count",
+                "Неверные типы или число аргументов Oberon Print");
+        }
+        if(!unit.empty() && unit!="pabcsystem")return false;
         (void)print_delimiter();
         if (!result.arguments.empty() && result.arguments[0]->type==Type::text_file) {
             result.left=std::move(result.arguments[0]); result.arguments.erase(result.arguments.begin());

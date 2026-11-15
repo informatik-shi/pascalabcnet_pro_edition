@@ -110,6 +110,7 @@ Halt завершает программу с кодом 0; Halt(integer) зад
 SortedDictionary поддерживает индексатор, сравнитель ключей, CopyTo, живые Keys и Values и интерфейс IDictionary.
 SortedList<K,V> поддерживает индексатор по ключу, ёмкость, IndexOfKey, IndexOfValue и RemoveAt.
 Живые Keys и Values в SortedList доступны по индексу через IList.
+Oberon00System предоставляет исходные алиасы типов и прямые вызовы Print и Println.
 Перечислители словаря с независимым копированием: examples/dictionary-enumerators.pas.
 Общие интерфейсы IEnumerable<T>/IEnumerator<T>: examples/enumerator-interfaces.pas.
 Перечислители List<T> и HashSet<T> с копированием и интерфейсами: examples/collection-enumerators.pas.
