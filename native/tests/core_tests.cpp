@@ -5948,6 +5948,37 @@ void mutable_strings() {
     error([&] { abc::verify(program); }, "E_BYTECODE");
 }
 
+void global_routine_overloads() {
+    result(R"(type ActionOnInteger = function(n: integer): integer;
+function Pick(n: integer): integer := n+10;
+function Pick(s: string): integer := s.Length;
+function Pick(n: integer; extra: integer): integer := n*extra;
+function WithDefault(s: string; n: integer := 7): integer := s.Length+n;
+function WithDefault(n: integer): integer := n;
+function Fixed(n: integer): integer := n+10;
+function Fixed(params ns: array of integer): integer := ns.Length;
+procedure Mutate(var n: integer); begin n+=3; end;
+procedure Mutate(s: string); begin Write(s); end;
+function Natural: integer := 42;
+function Natural(s: string): integer := s.Length;
+begin
+  var f:ActionOnInteger := Pick;
+  var g:=Arr(1,2).Select(f).ToArray;
+  assert((Pick(2)=12) and (Pick('abc')=3) and (Pick(3,4)=12));
+  assert((f(4)=14) and (g[0]=11) and (g[1]=12));
+  assert((WithDefault('ab')=9) and (WithDefault(5)=5));
+  assert((Fixed(3)=13) and (Fixed(1,2)=2));
+  var x:=1; Mutate(x); Mutate('hi'); assert(x=4);
+  assert(Natural=42);
+  Writeln(' ',x,' ',f(4),' ',g[1]);
+end.)","hi 4 14 12\n");
+    result("procedure P(s:set of byte);begin Write(s.Count);end;procedure P(s:string);begin Write(s);end;begin P([1,2]);end.","2");
+    compile_error("procedure P(x:integer);begin end;procedure P(y:integer);begin end;begin end.","E_DUPLICATE");
+    compile_error("procedure P(x:byte;y:integer);begin end;procedure P(x:integer;y:byte);begin end;begin var b:byte:=1;P(b,b);end.","E_TYPE");
+    compile_error("procedure P(x:integer);begin end;procedure P(x:string);begin end;begin P(true);end.","E_TYPE");
+    compile_error("procedure P(x:integer);begin end;procedure P(x:string);begin end;begin var p1:=P;end.","E_TYPE");
+}
+
 void integral_set_relations() {
     result(R"(type Bytes=set of byte; Ints=set of integer; Wide=set of int64;
 function AsBytes:Bytes; begin Write('B');Result:=[1,255];end;
@@ -7706,6 +7737,7 @@ int main() {
     nullable_strings();
     language_foundations();
     case_statements();
+    global_routine_overloads();
     integral_set_relations();
     subrange_types();
     aggregate_semantics();

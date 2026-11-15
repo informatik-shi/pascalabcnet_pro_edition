@@ -465,6 +465,10 @@ if(BUILD_TESTING)
         add_test(NAME original_${subrange_fixture}
             COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/../TestSuite/${subrange_fixture}.pas")
     endforeach()
+    foreach(overload_fixture IN ITEMS setinoverload1 overloads2 overloads6)
+        add_test(NAME original_${overload_fixture}
+            COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/../TestSuite/${overload_fixture}.pas")
+    endforeach()
     add_test(NAME original_short_class_constructor COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/../TestSuite/ShortClassConstructor.pas")
     add_test(NAME original_static_constructor_closure COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/../TestSuite/lambdas23.pas")
     add_test(NAME original_class_constructor_closure COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/../TestSuite/lambda_closure_class_fields_5.pas")

@@ -1297,7 +1297,7 @@ public:
             const auto explicit_target=routine->explicit_interface?resolve_type(*routine->explicit_interface):Type::invalid;
             if(explicit_target!=Type::invalid&&(routine->owner.empty()||routine->constructor||!compound(explicit_target)||!interface_kind(info(explicit_target,routine->name.location))))throw Error("E_TYPE",routine->name.location,"Explicit method qualifier must be an interface","Явная реализация метода требует имени интерфейса");
             const auto qualified=routine->owner.empty() ? routine->name.text : routine->owner+"."+(routine->static_member?std::string{"$static."}:explicit_target==Type::invalid?std::string{}:"$interface"+std::to_string(static_cast<unsigned>(explicit_target))+".")+routine->name.text;
-            if ((routine_names_.contains(qualified)&&(routine->owner.empty()||routine->constructor)) || (routine->owner.empty() && lookup(routine->name))) throw Error("E_DUPLICATE",routine->name.location,"Duplicate routine");
+            if ((routine_names_.contains(qualified)&&routine->constructor) || (routine->owner.empty() && lookup(routine->name))) throw Error("E_DUPLICATE",routine->name.location,"Duplicate routine");
             if (module_.routines.size()>=256) throw Error("E_LIMIT",routine->name.location,"Routine limit exceeded");
             hir::RoutineBody body;
             body.signature.name=qualified;body.signature.constructor=routine->constructor;body.signature.access=routine->static_member?MemberAccess::public_member:explicit_target==Type::invalid?routine->access:MemberAccess::explicit_interface_member;
@@ -1316,6 +1316,16 @@ public:
                     || info(type,parameter.name.location).kind!=CompoundKind::array || info(type,parameter.name.location).rank!=1))
                     throw Error("E_TYPE",parameter.name.location,"params requires a final rank-one array parameter");
                 body.signature.parameters.push_back({0,type,parameter.by_reference,parameter.variadic,parameter.read_only});
+            }
+            if(routine->owner.empty()){
+                auto& overloads=global_overloads_[qualified];
+                for(const auto previous:overloads){
+                    const auto& parameters=module_.routines[previous].signature.parameters;
+                    if(std::equal(parameters.begin(),parameters.end(),body.signature.parameters.begin(),body.signature.parameters.end(),
+                        [](const auto& a,const auto& b){return a.type==b.type && a.by_reference==b.by_reference;}))
+                        throw Error("E_DUPLICATE",routine->name.location,"Duplicate routine signature","Повторная сигнатура подпрограммы");
+                }
+                overloads.push_back(module_.routines.size());
             }
             if(body.signature.owner!=Type::invalid&&!body.signature.constructor){auto& overloads=explicit_target==Type::invalid?class_method_overloads_[body.signature.owner][routine->name.text]:class_explicit_methods_[body.signature.owner][explicit_target][routine->name.text];for(auto previous:overloads){const auto& signature=module_.routines[previous].signature;if(signature.parameters.size()==body.signature.parameters.size()&&std::equal(signature.parameters.begin(),signature.parameters.end(),body.signature.parameters.begin(),[](const auto& a,const auto& b){return a.type==b.type&&a.by_reference==b.by_reference;}))throw Error("E_DUPLICATE",routine->name.location,"Duplicate method signature");}overloads.push_back(module_.routines.size());}
             if(routine->static_member){const auto owner=aliases_.at(routine->owner);auto& overloads=static_methods_[owner][routine->name.text];for(auto previous:overloads){const auto& signature=module_.routines[previous].signature;if(signature.parameters.size()==body.signature.parameters.size()&&std::equal(signature.parameters.begin(),signature.parameters.end(),body.signature.parameters.begin(),[](const auto& a,const auto& b){return a.type==b.type&&a.by_reference==b.by_reference;}))throw Error("E_DUPLICATE",routine->name.location,"Duplicate static method signature");}overloads.push_back(module_.routines.size());module_.static_methods.push_back({owner,routine->name.text,module_.routines.size(),routine->access});}
@@ -2791,22 +2801,47 @@ private:
         for(std::size_t n=0;n<count;++n){const auto& parameter=signature.parameters[n];if(parameter.by_reference){if(!lvalue(*result.arguments[n])||result.arguments[n]->type!=parameter.type)throw Error("E_TYPE",result.location,"var argument requires an assignable value of exactly the parameter type");}else result.arguments[n]=convert(std::move(result.arguments[n]),parameter.type,false,!(named&&n<named->parameters.size()&&named->parameters[n].read_only));}
     }
     struct MethodOverload {std::size_t id;std::vector<CallableParameter> parameters;std::size_t required;};
-    bool overload_conversion(Type from,Type to)const{
+    bool overload_conversion(Type from,Type to,bool global=false)const{
         if(from==to)return true;if(from==Type::nil&&compound(to)){const auto& shape=info(to,{});return shape.kind!=CompoundKind::record&&shape.kind!=CompoundKind::tuple&&shape.kind!=CompoundKind::enumeration;}
+        if(global && compound(from) && compound(to)){
+            const auto& target=info(to,{});
+            const auto& input=info(from,{});
+            if(target.kind==CompoundKind::new_set && (input.kind==CompoundKind::empty_collection
+                || (input.kind==CompoundKind::array && input.rank==1 && input.element==target.element)
+                || (integer_set_conversion_target(target.element) && integer_set_source(from,{}))))return true;
+        }
         return can_widen(from,to)||interface_compatible(module_.types,from,to)||sequence_view(from,to,{});
     }
-    ABC_PASCAL_NOINLINE std::size_t choose_method_overload(std::vector<MethodOverload> candidates,const SyntaxExpr& source,std::vector<std::unique_ptr<hir::Expr>>& arguments){
+    ABC_PASCAL_NOINLINE std::size_t choose_method_overload(std::vector<MethodOverload> candidates,const SyntaxExpr& source,std::vector<std::unique_ptr<hir::Expr>>& arguments,bool global=false){
+        const auto no_match=[&]{return global ? Error("E_TYPE",source.token.location,"No matching routine overload","Нет подходящей перегрузки подпрограммы")
+            : Error("E_TYPE",source.token.location,"No matching method overload","Нет подходящей перегрузки метода");};
         const auto count=source.arguments.size();
         candidates.erase(std::remove_if(candidates.begin(),candidates.end(),[&](const auto& option){return count<option.required||(!(option.parameters.size()&&option.parameters.back().variadic)&&count>option.parameters.size());}),candidates.end());
         const auto parameter=[&](const MethodOverload& option,std::size_t i){auto p=option.parameters[std::min(i,option.parameters.size()-1)];if(p.variadic){p.type=info(p.type,source.token.location).element;p.variadic=false;}return p;};
         for(std::size_t i=0;i<count;++i)if(source.arguments[i]->kind==SyntaxExprKind::lambda)candidates.erase(std::remove_if(candidates.begin(),candidates.end(),[&](const auto& option){return !callable_type(parameter(option,i).type);}),candidates.end());
-        if(candidates.empty())throw Error("E_TYPE",source.token.location,"No matching method overload","Нет подходящей перегрузки метода");
+        if(candidates.empty())throw no_match();
         for(std::size_t i=0;i<count;++i){auto context=parameter(candidates.front(),i).type;for(const auto& option:candidates)if(parameter(option,i).type!=context)context=Type::invalid;arguments.push_back(expression(*source.arguments[i],context));}
         const auto actual_parameter=[&](const MethodOverload& option,std::size_t i){if(i+1==option.parameters.size()&&count==option.parameters.size()&&option.parameters.back().variadic&&(arguments[i]->type==option.parameters.back().type||arguments[i]->type==Type::nil))return option.parameters.back();return parameter(option,i);};
-        candidates.erase(std::remove_if(candidates.begin(),candidates.end(),[&](const auto& option){for(std::size_t i=0;i<count;++i){const auto p=actual_parameter(option,i);if(p.by_reference?(!lvalue(*arguments[i])||arguments[i]->type!=p.type):!overload_conversion(arguments[i]->type,p.type))return true;}return false;}),candidates.end());
-        const auto better=[&](const MethodOverload& a,const MethodOverload& b){bool strict=false;for(std::size_t i=0;i<count;++i){const auto pa=actual_parameter(a,i),pb=actual_parameter(b,i);if(pa.type==pb.type)continue;if(arguments[i]->type==pa.type){strict=true;continue;}if(arguments[i]->type==pb.type)return false;const bool ab=overload_conversion(pa.type,pb.type),ba=overload_conversion(pb.type,pa.type);if(!ab||ba)return false;strict=true;}if(strict)return true;const auto omitted_a=a.parameters.size()>count?a.parameters.size()-count:0,omitted_b=b.parameters.size()>count?b.parameters.size()-count:0;if(omitted_a!=omitted_b)return omitted_a<omitted_b;const bool va=!a.parameters.empty()&&a.parameters.back().variadic,vb=!b.parameters.empty()&&b.parameters.back().variadic;return !va&&vb;};
-        std::optional<std::size_t> selected;for(std::size_t i=0;i<candidates.size();++i){bool dominated=false;for(std::size_t j=0;j<candidates.size();++j)if(i!=j&&better(candidates[j],candidates[i]))dominated=true;if(!dominated){if(selected)throw Error("E_TYPE",source.token.location,"Ambiguous method overload","Неоднозначная перегрузка метода");selected=i;}}
-        if(!selected)throw Error("E_TYPE",source.token.location,"No matching method overload","Нет подходящей перегрузки метода");return candidates[*selected].id;
+        candidates.erase(std::remove_if(candidates.begin(),candidates.end(),[&](const auto& option){for(std::size_t i=0;i<count;++i){const auto p=actual_parameter(option,i);if(p.by_reference?(!lvalue(*arguments[i])||arguments[i]->type!=p.type):!overload_conversion(arguments[i]->type,p.type,global))return true;}return false;}),candidates.end());
+        const auto better=[&](const MethodOverload& a,const MethodOverload& b){bool strict=false;for(std::size_t i=0;i<count;++i){const auto pa=actual_parameter(a,i),pb=actual_parameter(b,i);if(pa.type==pb.type)continue;if(arguments[i]->type==pa.type){strict=true;continue;}if(arguments[i]->type==pb.type)return false;const bool ab=overload_conversion(pa.type,pb.type,global),ba=overload_conversion(pb.type,pa.type,global);if(!ab||ba)return false;strict=true;}if(strict)return true;const auto omitted_a=a.parameters.size()>count?a.parameters.size()-count:0,omitted_b=b.parameters.size()>count?b.parameters.size()-count:0;if(omitted_a!=omitted_b)return omitted_a<omitted_b;const bool va=!a.parameters.empty()&&a.parameters.back().variadic,vb=!b.parameters.empty()&&b.parameters.back().variadic;return !va&&vb;};
+        std::optional<std::size_t> selected;for(std::size_t i=0;i<candidates.size();++i){bool dominated=false;for(std::size_t j=0;j<candidates.size();++j)if(i!=j&&better(candidates[j],candidates[i]))dominated=true;if(!dominated){if(selected){if(global)throw Error("E_TYPE",source.token.location,"Ambiguous routine overload","Неоднозначная перегрузка подпрограммы");throw Error("E_TYPE",source.token.location,"Ambiguous method overload","Неоднозначная перегрузка метода");}selected=i;}}
+        if(!selected)throw no_match();return candidates[*selected].id;
+    }
+    std::size_t required_routine_arguments(std::size_t id)const{
+        const auto& parameters=module_.routines[id].signature.parameters;
+        auto required=parameters.size()-(parameters.size() && parameters.back().variadic ? 1U : 0U);
+        while(required && id<parameter_defaults_.size() && parameter_defaults_[id][required-1])--required;
+        return required;
+    }
+    ABC_PASCAL_NOINLINE std::size_t choose_global_overload(const std::vector<std::size_t>& overloads,const SyntaxExpr& source,std::vector<std::unique_ptr<hir::Expr>>& arguments){
+        std::vector<MethodOverload> candidates;
+        for(const auto id:overloads){
+            std::vector<CallableParameter> parameters;
+            for(const auto& parameter:module_.routines[id].signature.parameters)
+                parameters.push_back({parameter.type,parameter.by_reference,parameter.variadic});
+            candidates.push_back({id,std::move(parameters),required_routine_arguments(id)});
+        }
+        return choose_method_overload(std::move(candidates),source,arguments,true);
     }
     void bind_value_call(hir::Expr& result,const std::vector<std::unique_ptr<SyntaxExpr>>& arguments) {
         const auto type=result.left->type;
@@ -3800,10 +3835,12 @@ private:
             } else if (auto routine = routine_names_.find(source.token.text); routine != routine_names_.end()) {
                 const auto& signature=module_.routines[routine->second].signature;
                 const auto id=routine->second;
-                const bool no_arguments=signature.parameters.empty()
-                    || (signature.parameters.size()==1 && signature.parameters[0].variadic)
-                    || (id<parameter_defaults_.size() && !parameter_defaults_[id].empty() && parameter_defaults_[id][0].has_value());
-                if (!no_arguments || signature.result==Type::unit) return routine_value(id,result->location);
+                const auto& overloads=global_overloads_.at(source.token.text);
+                if(overloads.size()>1){
+                    if(std::none_of(overloads.begin(),overloads.end(),[&](auto candidate){
+                        return module_.routines[candidate].signature.result!=Type::unit && !required_routine_arguments(candidate);
+                    }))throw Error("E_TYPE",result->location,"An overloaded routine value requires a known callable type","Значению перегруженной подпрограммы нужен известный вызываемый тип");
+                }else if(required_routine_arguments(id) || signature.result==Type::unit)return routine_value(id,result->location);
                 SyntaxExpr call{SyntaxExprKind::call,source.token,{},{},1,{},{}};
                 return expression(call);
             } else if (auto builtin_value=builtin_function_value(source)) {
@@ -3884,22 +3921,26 @@ private:
             if (!routine_names_.contains(source.token.text) && bind_sequence_predicate(*result,source)) break;
             if (!routine_names_.contains(source.token.text) && bind_sequence_transform(*result,source)) break;
             if (auto routine = routine_names_.find(source.token.text); routine != routine_names_.end()) {
-                const auto signature = module_.routines[routine->second].signature;
-                for (std::size_t n=0;n<source.arguments.size();++n) {
-                    auto context=n<signature.parameters.size() ? signature.parameters[n].type : Type::invalid;
-                    if (!signature.parameters.empty() && signature.parameters.back().variadic && n+1>=signature.parameters.size())
-                        context=info(signature.parameters.back().type,result->location).element;
-                    result->arguments.push_back(expression(*source.arguments[n],context));
+                const auto& overloads=global_overloads_.at(source.token.text);
+                const auto id=overloads.size()>1 ? choose_global_overload(overloads,source,result->arguments) : routine->second;
+                const auto signature=module_.routines[id].signature;
+                if(overloads.size()==1){
+                    for (std::size_t n=0;n<source.arguments.size();++n) {
+                        auto context=n<signature.parameters.size() ? signature.parameters[n].type : Type::invalid;
+                        if (!signature.parameters.empty() && signature.parameters.back().variadic && n+1>=signature.parameters.size())
+                            context=info(signature.parameters.back().type,result->location).element;
+                        result->arguments.push_back(expression(*source.arguments[n],context));
+                    }
                 }
-                add_default_arguments(*result,routine->second);
-                result->kind = hir::ExprKind::user_call; result->local = routine->second; result->type = signature.result;
+                add_default_arguments(*result,id);
+                result->kind = hir::ExprKind::user_call; result->local = id; result->type = signature.result;
                 for (std::size_t n = 0; n < result->arguments.size(); ++n) {
                     const auto& parameter = signature.parameters[n];
                     if (parameter.by_reference) {
                         if (!lvalue(*result->arguments[n]) || result->arguments[n]->type != parameter.type)
                             throw Error("E_TYPE",result->location,"var argument requires an assignable value of exactly the parameter type");
                     } else {
-                        const auto& declaration=*syntax_root_->routines.at(routine->second);
+                        const auto& declaration=*syntax_root_->routines.at(id);
                         const auto range=subrange_shape(*declaration.parameters[n].type)!=nullptr;
                         if (range)result->arguments[n]=convert_to_subrange(std::move(result->arguments[n]),parameter.type,true,!parameter.read_only);
                         else result->arguments[n]=convert(std::move(result->arguments[n]),parameter.type,false,!parameter.read_only);
@@ -3983,11 +4024,20 @@ private:
         if (source.kind==SyntaxExprKind::name && callable_type(expected)) {
             const auto local=lookup(source.token);
             if ((!local || source.token.text==current_name_) && routine_names_.contains(source.token.text)) {
-                const auto id=routine_names_.at(source.token.text); const auto& signature=module_.routines[id].signature;
-                if (signature.parameters.empty() && signature.result==expected) {
+                const auto& overloads=global_overloads_.at(source.token.text);
+                if(overloads.size()>1){
+                    for(const auto candidate:overloads)
+                        if(callable_matches(info(expected,source.token.location),module_.routines[candidate].signature))
+                            return routine_value(candidate,source.token.location,expected);
+                }
+                if(std::any_of(overloads.begin(),overloads.end(),[&](auto id){
+                    const auto& signature=module_.routines[id].signature;
+                    return signature.parameters.empty() && signature.result==expected;
+                })){
                     SyntaxExpr call{SyntaxExprKind::call,source.token,{},{},1,{},{}}; return expression(call);
                 }
-                return routine_value(id,source.token.location,expected);
+                if(overloads.size()>1)throw Error("E_TYPE",source.token.location,"No overload matches the callable type","Нет перегрузки с подходящим вызываемым типом");
+                return routine_value(overloads.front(),source.token.location,expected);
             }
         }
         if (callable_type(expected) || source.kind==SyntaxExprKind::field)
@@ -5608,6 +5658,8 @@ private:
         if(!hints.empty()&&static_methods_.contains(static_owner)&&static_methods_.at(static_owner).contains(source.token.text)){std::optional<std::size_t> match;for(auto id:static_methods_.at(static_owner).at(source.token.text)){const auto& parameters=module_.routines[id].signature.parameters;if(parameters.empty()||parameters.size()>hints.size())continue;bool fits=true;for(std::size_t n=0;n<parameters.size();++n)if(parameters[n].type!=hints[n]||parameters[n].by_reference||parameters[n].variadic)fits=false;if(fits){if(match)throw Error("E_TYPE",source.token.location,"Ambiguous static method callback");match=id;}}if(match)return library_callback_value(routine_value(*match,source.token.location));}
         if (source.kind==SyntaxExprKind::name && routine_names_.contains(source.token.text)
             && (!lookup(source.token) || source.token.text==current_name_)) {
+            if(global_overloads_.at(source.token.text).size()>1)
+                throw Error("E_TYPE",source.token.location,"An overloaded callback requires a known callable type","Для перегруженной подпрограммы обратного вызова нужен известный вызываемый тип");
             LibraryCallback callback; callback.named=routine_names_.at(source.token.text);
             const auto& signature=module_.routines[*callback.named].signature;
             callback.signature.result=signature.result; callback.signature.parameters=signature.parameters; return callback;
@@ -7469,6 +7521,7 @@ private:
     bool enum_initializing_=false;
     std::map<const SyntaxType*,Type> resolved_types_;
     std::map<std::string,std::size_t> routine_names_;
+    std::map<std::string,std::vector<std::size_t>> global_overloads_;
     std::map<Type,std::map<std::string,std::size_t>> class_methods_;
     std::map<Type,std::map<std::string,std::vector<std::size_t>>> static_methods_;
     std::map<Type,std::map<std::string,std::vector<std::size_t>>> class_method_overloads_;
