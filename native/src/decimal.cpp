@@ -91,6 +91,77 @@ Decimal fit(BigInteger magnitude,unsigned scale,bool negative,SourceLocation loc
     }
     throw decimal_overflow(location);
 }
+Decimal divide_decimal(const Decimal& left,const Decimal& right,SourceLocation location) {
+    if (right.coefficient.zero()) throw runtime_error(RuntimeError::division_zero,location);
+    const bool negative=left.negative!=right.negative;
+    const auto difference=static_cast<int>(left.scale)-static_cast<int>(right.scale);
+    const auto lowest_scale=static_cast<unsigned>(std::max(0,difference));
+    const auto numerator=difference<0?left.coefficient.multiply(power10(static_cast<unsigned>(-difference))):left.coefficient;
+    const auto& denominator=right.coefficient;
+    auto [initial,remainder]=numerator.divide(denominator);
+    if (remainder.zero()) return fit(std::move(initial),lowest_scale,negative,location);
+    if (initial.bits()>96) throw decimal_overflow(location);
+
+    // Find the most precise representable quotient and round only once.
+    for (auto scale=static_cast<int>(scale_limit);scale>=static_cast<int>(lowest_scale);--scale) {
+        const auto additional=static_cast<unsigned>(scale)-lowest_scale;
+        auto [result,residue]=numerator.multiply(power10(additional)).divide(denominator);
+        if (result.bits()>96) continue;
+        result=rounded(std::move(result),residue,denominator);
+        if (result.bits()>96) continue;
+        auto final_scale=static_cast<unsigned>(scale);
+        if (result.zero()) final_scale=0;
+        while (final_scale) {
+            auto [next,tail]=result.divide(power10(1));
+            if (!tail.zero()) break;
+            result=std::move(next);
+            --final_scale;
+        }
+        return {std::move(result),final_scale,negative};
+    }
+    throw decimal_overflow(location);
+}
+Decimal add_decimal(const Decimal& left,const Decimal& right,bool subtract,SourceLocation location) {
+    const auto scale=std::max(left.scale,right.scale);
+    const auto first=signed_coefficient(left,scale),second=signed_coefficient(right,scale);
+    const auto sum=subtract?first.subtract(second):first.add(second);
+    return fit(sum.absolute(),scale,sum.negative(),location);
+}
+Decimal multiply_decimal(const Decimal& left,const Decimal& right,SourceLocation location) {
+    return fit(left.coefficient.multiply(right.coefficient),left.scale+right.scale,
+        left.negative!=right.negative,location);
+}
+bool smaller_magnitude(const Decimal& left,const Decimal& right) {
+    const auto scale=std::max(left.scale,right.scale);
+    return signed_coefficient(left,scale).absolute()<signed_coefficient(right,scale).absolute();
+}
+Decimal round_decimal(Decimal input,unsigned scale,M call) {
+    if (input.scale<=scale) return input;
+    const auto& divisor=power10(input.scale-scale);
+    auto [quotient,remainder]=input.coefficient.divide(divisor);
+    if (call==M::round || call==M::round_scale) quotient=rounded(std::move(quotient),remainder,divisor);
+    else if (!remainder.zero() && ((call==M::floor && input.negative) || (call==M::ceiling && !input.negative)))
+        quotient=quotient.add(power10(0));
+    return {std::move(quotient),scale,input.negative};
+}
+Decimal remainder_decimal(const Decimal& left,Decimal divisor,SourceLocation location) {
+    if (divisor.coefficient.zero()) throw runtime_error(RuntimeError::division_zero,location);
+    if (smaller_magnitude(left,divisor)) return left;
+    divisor.negative=left.negative;
+    // The source runtime reduces the dividend before division. Its
+    // intermediate operations use Decimal precision and may reduce scale.
+    auto reduced=add_decimal(left,divisor,true,location);
+    if (reduced.coefficient.zero()) reduced.negative=left.negative;
+    const auto quotient=round_decimal(divide_decimal(reduced,divisor,location),0,M::truncate);
+    const auto multiple=multiply_decimal(quotient,divisor,location);
+    auto result=add_decimal(reduced,multiple,true,location);
+    if (result.negative!=reduced.negative) {
+        const Decimal near_zero{power10(0),27,false};
+        if (smaller_magnitude(near_zero,result)) result=add_decimal(result,divisor,false,location);
+        else result.negative=reduced.negative;
+    }
+    return result;
+}
 Decimal fit_digits(std::string_view text,unsigned scale,bool negative,SourceLocation location) {
     const auto first=text.find_first_not_of('0');
     text=first==std::string_view::npos?std::string_view{}:text.substr(first);
@@ -235,7 +306,7 @@ bool decimal_signature(std::span<const TypeInfo> types,Type owner,std::size_t op
     if (!compound(owner) || static_cast<unsigned>(owner)-64U>=types.size()
         || !decimal_record_shape(types[static_cast<unsigned>(owner)-64U])) return false;
     const auto call=method(operation);
-    if (call>M::compare) return false;
+    if (call>M::ceiling) return false;
     if (call!=M::from_bits && call!=M::get_bits) return (operation>>8U)==0;
     if ((operation>>8U)>65535U) return false;
     const auto array=payload(operation);
@@ -254,8 +325,10 @@ std::vector<Type> decimal_parameters(Type owner,std::size_t operation) {
     case M::from_bits: return {payload(operation)};
     case M::parse: return {Type::string};
     case M::try_parse: return {Type::string,reference_type(owner)};
+    case M::round_scale: return {owner,Type::integer};
     case M::add: case M::subtract: case M::multiply: case M::equal: case M::unequal:
     case M::less: case M::less_equal: case M::greater: case M::greater_equal: case M::compare:
+    case M::divide: case M::remainder:
         return {owner,owner};
     default: return {owner};
     }
@@ -345,18 +418,24 @@ Value decimal_invoke(Values& values,Type owner,std::size_t operation,std::span<c
         case M::to_int64: return to_integral<std::int64_t>(left,location);
         case M::to_uint32: return to_integral<std::uint32_t>(left,location);
         case M::to_uint64: return to_integral<std::uint64_t>(left,location);
+        case M::round: case M::truncate: case M::floor: case M::ceiling:
+            return build(round_decimal(left,0,call));
+        case M::round_scale: {
+            const auto scale=std::get<std::int32_t>(args[1]);
+            if (scale<0 || scale>static_cast<int>(scale_limit))
+                throw Error("E_RANGE",location,"Decimal rounding scale must be between 0 and 28",
+                    "Масштаб округления Decimal должен быть от 0 до 28");
+            return build(round_decimal(left,static_cast<unsigned>(scale),call));
+        }
         default: break;
         }
         const auto right=parts(args[1]);
-        if (call==M::multiply)
-            return build(fit(left.coefficient.multiply(right.coefficient),left.scale+right.scale,
-                left.negative!=right.negative,location));
+        if (call==M::divide) return build(divide_decimal(left,right,location));
+        if (call==M::remainder) return build(remainder_decimal(left,right,location));
+        if (call==M::multiply) return build(multiply_decimal(left,right,location));
+        if (call==M::add || call==M::subtract) return build(add_decimal(left,right,call==M::subtract,location));
         const auto scale=std::max(left.scale,right.scale);
         const auto first=signed_coefficient(left,scale),second=signed_coefficient(right,scale);
-        if (call==M::add || call==M::subtract) {
-            const auto sum=call==M::add?first.add(second):first.subtract(second);
-            return build(fit(sum.absolute(),scale,sum.negative(),location));
-        }
         const auto order=first.compare(second);
         switch (call) {
         case M::equal: return order==0;

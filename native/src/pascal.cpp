@@ -2337,7 +2337,9 @@ private:
             {"parse",M::parse},{"tryparse",M::try_parse},{"getbits",M::get_bits},{"toint32",M::to_int32},
             {"toint64",M::to_int64},{"touint32",M::to_uint32},{"touint64",M::to_uint64},{"tosingle",M::to_single},
             {"todouble",M::to_real},{"add",M::add},{"subtract",M::subtract},{"multiply",M::multiply},
-            {"negate",M::negate},{"compare",M::compare},{"equals",M::equal}
+            {"negate",M::negate},{"compare",M::compare},{"equals",M::equal},
+            {"divide",M::divide},{"remainder",M::remainder},{"round",M::round},{"truncate",M::truncate},
+            {"floor",M::floor},{"ceiling",M::ceiling}
         };
         for (const auto& [member,method]:members) if (member==name) {
             if (method<=M::maximum && source.kind!=SyntaxExprKind::field)
@@ -2345,7 +2347,8 @@ private:
             const auto payload=method==M::get_bits?sequence_type(CompoundKind::array,Type::integer):Type::integer;
             std::vector<std::unique_ptr<hir::Expr>> args;
             for (const auto& arg:source.arguments) args.push_back(expression(*arg));
-            return decimal_expression(type,method,std::move(args),location,payload);
+            const auto selected=method==M::round && args.size()==2?M::round_scale:method;
+            return decimal_expression(type,selected,std::move(args),location,payload);
         }
         throw Error("E_UNSUPPORTED",location,"Decimal member is not ported yet","Член Decimal ещё не перенесён");
     }
@@ -2368,7 +2371,7 @@ private:
     std::unique_ptr<hir::Expr> bind_decimal_binary(hir::Expr& result,Type owner) {
         using M=DecimalMethod;
         static constexpr std::pair<std::string_view,M> operations[]{
-            {"+",M::add},{"-",M::subtract},{"*",M::multiply},{"=",M::equal},{"<>",M::unequal},
+            {"+",M::add},{"-",M::subtract},{"*",M::multiply},{"/",M::divide},{"mod",M::remainder},{"=",M::equal},{"<>",M::unequal},
             {"<",M::less},{"<=",M::less_equal},{">",M::greater},{">=",M::greater_equal}
         };
         for (const auto& [op,method]:operations) if (op==result.operation) {

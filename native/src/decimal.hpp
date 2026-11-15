@@ -8,7 +8,8 @@ enum class DecimalMethod : std::uint8_t {
     zero, one, minus_one, minimum, maximum,
     from_signed, from_unsigned, from_single, from_real, from_parts, from_bits, get_bits,
     parse, try_parse, to_string, to_int32, to_int64, to_uint32, to_uint64, to_single, to_real,
-    negate, add, subtract, multiply, equal, unequal, less, less_equal, greater, greater_equal, compare
+    negate, add, subtract, multiply, equal, unequal, less, less_equal, greater, greater_equal, compare,
+    divide, remainder, round, round_scale, truncate, floor, ceiling
 };
 inline bool decimal_type(const TypeInfo& type) {return type.native_record==NativeRecord::decimal_value;}
 bool decimal_record_shape(const TypeInfo&);

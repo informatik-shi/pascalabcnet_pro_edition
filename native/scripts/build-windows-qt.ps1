@@ -179,6 +179,7 @@ DateTime и TimeSpan поддерживают календарную арифм�
 DateTime поддерживает шаблоны через ToString и Format. TimeSpan поддерживает форматы c, g и G.
 DateTime разбирает ISO со смещением и преобразует UTC и локальное время.
 Decimal хранит 96-битный коэффициент и поддерживает Parse, TryParse, GetBits, сложение, вычитание и умножение.
+Decimal также поддерживает деление, остаток, Round, Truncate, Floor и Ceiling.
 WriteFormat и WritelnFormat выводят результат Format в консоль или файл Text.
 Статические массивы, независимые копии, двумерные индексы и file of массив: examples/fixed-arrays.pas.
 Инициализаторы динамических массивов, записи и более семи элементов: examples/array-literals.pas.
