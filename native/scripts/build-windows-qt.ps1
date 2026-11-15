@@ -182,6 +182,7 @@ Decimal хранит 96-битный коэффициент и поддержи�
 Decimal также поддерживает деление, остаток, Round, Truncate, Floor и Ceiling.
 Форматы Decimal F, N, E и G доступны в ToString, Format и AppendFormat.
 Файлы с Decimal, TimeSpan и Complex используют проверенный двоичный формат PascalABC.NET.
+Serialize и Deserialize поддерживают отдельные Decimal, DateTime, TimeSpan и Complex в формате NRBF.
 WriteFormat и WritelnFormat выводят результат Format в консоль или файл Text.
 Статические массивы, независимые копии, двумерные индексы и file of массив: examples/fixed-arrays.pas.
 Инициализаторы динамических массивов, записи и более семи элементов: examples/array-literals.pas.

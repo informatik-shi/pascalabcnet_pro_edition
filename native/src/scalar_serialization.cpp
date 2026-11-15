@@ -1,16 +1,20 @@
 #include "scalar_serialization.hpp"
 #include "binary_codec.hpp"
+#include "calendar.hpp"
+#include "decimal.hpp"
 #include "runtime_values.hpp"
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <map>
+#include <optional>
 
 namespace abc {
 namespace {
 // MS-NRBF 2.1.2 and the scalar records emitted by PascalABC.NET.
 enum class Record : std::uint8_t {
-    header=0, system_class=4, string=6, binary_array=7, member_reference=9, nil=10, end=11,
-    nil_run_byte=13, nil_run=14, primitive_array=15, string_array=17
+    header=0, system_class=4, user_class=5, string=6, binary_array=7, member_reference=9, nil=10, end=11,
+    library=12, nil_run_byte=13, nil_run=14, primitive_array=15, string_array=17
 };
 constexpr std::uint8_t rectangular_shape=2, primitive_member=0;
 struct Primitive {
@@ -36,6 +40,107 @@ constexpr std::array primitives{
 [[noreturn]] void invalid(SourceLocation location) {
     throw Error("E_FORMAT",location,"Invalid or unsupported serialized value",
         "Недопустимое или неподдерживаемое сериализованное значение");
+}
+struct SerializedMember {
+    std::u16string_view name;
+    Type type;
+    std::uint8_t code;
+};
+struct NativeLayout {
+    NativeRecord tag;
+    std::u16string_view name;
+    std::span<const SerializedMember> members;
+    bool numerics_library=false;
+};
+constexpr std::array decimal_members{
+    SerializedMember{u"flags",Type::integer,8},
+    SerializedMember{u"hi",Type::integer,8},
+    SerializedMember{u"lo",Type::integer,8},
+    SerializedMember{u"mid",Type::integer,8}
+};
+constexpr std::array date_members{
+    SerializedMember{u"ticks",Type::int64,9},
+    SerializedMember{u"dateData",Type::uint64,16}
+};
+constexpr std::array span_members{SerializedMember{u"_ticks",Type::int64,9}};
+constexpr std::array complex_members{
+    SerializedMember{u"m_real",Type::real,6},
+    SerializedMember{u"m_imaginary",Type::real,6}
+};
+constexpr std::array native_layouts{
+    NativeLayout{NativeRecord::decimal_value,u"System.Decimal",decimal_members},
+    NativeLayout{NativeRecord::date_time,u"System.DateTime",date_members},
+    NativeLayout{NativeRecord::time_span,u"System.TimeSpan",span_members},
+    NativeLayout{NativeRecord::complex,u"System.Numerics.Complex",complex_members,true}
+};
+constexpr std::u16string_view numerics_assembly=
+    u"System.Numerics, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089";
+const NativeLayout* native_layout(const Program& program,Type type) {
+    if (!compound(type)) return nullptr;
+    const auto tag=type_info(program,type).native_record;
+    for (const auto& layout:native_layouts) if (layout.tag==tag) return &layout;
+    return nullptr;
+}
+Type registered_native_type(const Program& program,NativeRecord tag,SourceLocation location) {
+    for (std::size_t i=0;i<program.types.size();++i)
+        if (program.types[i].native_record==tag) return static_cast<Type>(64+i);
+    invalid(location);
+}
+void write_native_value(BinaryCodec& codec,const NativeLayout& layout,const Value& value,
+    SourceLocation location,const ExecutionOptions& options) {
+    const auto byte=[&](std::uint8_t field){codec.write(Type::byte,field,location,options);};
+    const auto integer=[&](std::int32_t field){codec.write(Type::integer,field,location,options);};
+    if (layout.numerics_library) {
+        byte(static_cast<std::uint8_t>(Record::library));
+        integer(2);
+        codec.write_string(numerics_assembly,location,options);
+    }
+    byte(static_cast<std::uint8_t>(layout.numerics_library?Record::user_class:Record::system_class));
+    integer(1);
+    codec.write_string(layout.name,location,options);
+    integer(static_cast<std::int32_t>(layout.members.size()));
+    for (const auto& member:layout.members) codec.write_string(member.name,location,options);
+    for (std::size_t i=0;i<layout.members.size();++i) byte(primitive_member);
+    for (const auto& member:layout.members) byte(member.code);
+    if (layout.numerics_library) integer(2);
+    if (layout.tag==NativeRecord::decimal_value) {
+        const auto words=decimal_bits(value);
+        for (const auto index:decimal_file_order) integer(std::bit_cast<std::int32_t>(words[index]));
+    } else if (layout.tag==NativeRecord::date_time) {
+        const auto raw=date_time_binary_bits(value);
+        codec.write(Type::int64,static_cast<std::int64_t>(raw&date_time_ticks_mask),location,options);
+        codec.write(Type::uint64,raw,location,options);
+    } else {
+        const auto& fields=std::get<std::shared_ptr<Aggregate>>(value)->items;
+        for (std::size_t i=0;i<layout.members.size();++i)
+            codec.write(layout.members[i].type,fields[i]->value,location,options);
+    }
+}
+SerializedValue read_native_value(BinaryCodec& codec,Values& values,const NativeLayout& layout,
+    std::optional<std::int32_t> library,SourceLocation location,const ExecutionOptions& options) {
+    const auto byte=[&]{return std::get<std::uint8_t>(codec.read(Type::byte,location,options));};
+    const auto integer=[&]{return std::get<std::int32_t>(codec.read(Type::integer,location,options));};
+    if (library.has_value()!=layout.numerics_library || integer()!=static_cast<std::int32_t>(layout.members.size()))
+        invalid(location);
+    for (const auto& member:layout.members) if (codec.read_string(location,options)!=member.name) invalid(location);
+    for (std::size_t i=0;i<layout.members.size();++i) if (byte()!=primitive_member) invalid(location);
+    for (const auto& member:layout.members) if (byte()!=member.code) invalid(location);
+    if (library && integer()!=*library) invalid(location);
+    const auto type=registered_native_type(values.program,layout.tag,location);
+    if (layout.tag==NativeRecord::decimal_value) {
+        std::array<std::uint32_t,4> words{};
+        for (const auto index:decimal_file_order) words[index]=std::bit_cast<std::uint32_t>(integer());
+        return {type,decimal_from_bits(values,type,words)};
+    }
+    if (layout.tag==NativeRecord::date_time) {
+        (void)codec.read(Type::int64,location,options);
+        const auto data=std::get<std::uint64_t>(codec.read(Type::uint64,location,options));
+        return {type,date_time_from_binary_bits(values,type,data)};
+    }
+    auto result=std::get<std::shared_ptr<Aggregate>>(values.zero(type,false,true));
+    for (std::size_t i=0;i<layout.members.size();++i)
+        result->items[i]->value=codec.read(layout.members[i].type,location,options);
+    return {type,std::move(result)};
 }
 void checkpoint(std::size_t index,SourceLocation location,const ExecutionOptions& options) {
     if (index>=options.instruction_limit) throw runtime_error(RuntimeError::instruction_limit,location);
@@ -139,10 +244,11 @@ bool nrbf_array_type(const std::vector<TypeInfo>& types,Type type) {
 
 void serialize_value(BinaryDevice& stream,const Program& program,Type type,const Value& value,SourceLocation location,const ExecutionOptions& options) {
     const bool array=nrbf_array_type(program.types,type);
+    const auto* layout=native_layout(program,type);
     const auto payload=array ? type_info(program,type).element : type;
     const bool matrix=array && type_info(program,type).rank==2;
     const auto primitive=std::find_if(primitives.begin(),primitives.end(),[&](const Primitive& entry){return entry.type==payload;});
-    if ((payload!=Type::string && primitive==primitives.end()) || std::holds_alternative<NilString>(value))
+    if ((!layout && payload!=Type::string && primitive==primitives.end()) || std::holds_alternative<NilString>(value))
         invalid(location);
     BinaryCodec codec(stream,{TextEncodingKind::utf8,false,true});
     const auto byte=[&](std::uint8_t field){codec.write(Type::byte,field,location,options);};
@@ -153,7 +259,9 @@ void serialize_value(BinaryDevice& stream,const Program& program,Type type,const
     integer(-1);
     integer(1);
     integer(0);
-    if (array) {
+    if (layout) {
+        write_native_value(codec,*layout,value,location,options);
+    } else if (array) {
         const auto& data=std::get<std::shared_ptr<Aggregate>>(value);
         if (!data || data->nil || data->items.size()>static_cast<std::size_t>(INT32_MAX)) invalid(location);
         const auto record=matrix ? Record::binary_array : payload==Type::string ? Record::string_array : Record::primitive_array;
@@ -201,7 +309,7 @@ void serialize_value(BinaryDevice& stream,const Program& program,Type type,const
         byte(primitive_member);
         byte(primitive->code);
     }
-    if (!array) codec.write(type,value,location,options);
+    if (!array && !layout) codec.write(type,value,location,options);
     byte(static_cast<std::uint8_t>(Record::end));
 }
 
@@ -214,7 +322,14 @@ SerializedValue deserialize_value(BinaryDevice& stream,Values& values,SourceLoca
     const auto root=integer();
     (void)integer();
     if (root<=0 || integer()!=1 || integer()!=0) invalid(location);
-    const auto record=static_cast<Record>(byte());
+    auto record=static_cast<Record>(byte());
+    std::optional<std::int32_t> library;
+    if (record==Record::library) {
+        library=integer();
+        if (*library<=0 || codec.read_string(location,options)!=numerics_assembly) invalid(location);
+        record=static_cast<Record>(byte());
+    }
+    if (library.has_value()!=(record==Record::user_class)) invalid(location);
     if (integer()!=root) invalid(location);
 
     const bool matrix=record==Record::binary_array;
@@ -270,8 +385,15 @@ SerializedValue deserialize_value(BinaryDevice& stream,Values& values,SourceLoca
     }
 
     auto type=Type::string;
-    if (record==Record::system_class) {
+    if (record==Record::system_class || record==Record::user_class) {
         const auto name=codec.read_string(location,options);
+        const auto layout=std::find_if(native_layouts.begin(),native_layouts.end(),[&](const auto& entry){return entry.name==name;});
+        if (layout!=native_layouts.end()) {
+            auto value=read_native_value(codec,values,*layout,library,location,options);
+            if (static_cast<Record>(byte())!=Record::end) invalid(location);
+            return value;
+        }
+        if (record==Record::user_class) invalid(location);
         if (integer()!=1 || codec.read_string(location,options)!=u"m_value" || byte()!=primitive_member) invalid(location);
         const auto primitive_code=byte();
         const auto primitive=std::find_if(primitives.begin(),primitives.end(),[&](const Primitive& entry){

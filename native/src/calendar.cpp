@@ -845,4 +845,12 @@ std::u16string calendar_text(const Value& value,std::u16string_view format,Sourc
     const auto data=calendar_value(value);
     return aggregate->items.size()==2?date_text(data,format,location):span_text(data.ticks,format,location);
 }
+std::uint64_t date_time_binary_bits(const Value& value) {
+    const auto date=calendar_value(value);
+    return static_cast<std::uint64_t>(date.ticks)|(static_cast<std::uint64_t>(date.kind)<<62U);
+}
+Value date_time_from_binary_bits(Values& values,Type type,std::uint64_t data) {
+    const auto ticks=date_ticks(static_cast<std::int64_t>(data&date_time_ticks_mask),values.location);
+    return make_calendar(values,type,ticks,static_cast<std::int32_t>(data>>62U));
+}
 }

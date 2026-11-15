@@ -2203,6 +2203,9 @@ private:
                     "Методы сериализации требуют нетипизированный двоичный файл");
             const bool write=name=="serialize";
             if (!write) {
+                (void)decimal_record_type(location);
+                (void)calendar_type("datetime",location);
+                (void)complex_type(location);
                 for (unsigned code=0;code<static_cast<unsigned>(Type::first_compound);++code) {
                     const auto element=static_cast<Type>(code);
                     const bool primitive=nrbf_primitive_type(element);
