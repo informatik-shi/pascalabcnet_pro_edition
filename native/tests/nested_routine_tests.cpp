@@ -40,7 +40,12 @@ void semantics(){
  error("procedure P;procedure Q;begin end;begin Write('bad');Q:=nil;end;begin P;end.","E_TYPE");
  error("procedure P;procedure Q;begin end;begin end;begin Write('bad');Q;end.","E_NAME");
  error("procedure P;function F(F:integer):integer:=F;begin Write('bad');end;begin P;end.","E_DUPLICATE");
- error("procedure P;procedure Q(n:integer:=1);begin end;begin Write('bad');Q;end;begin P;end.","E_UNSUPPORTED");
+ error("procedure P;procedure Q(n:integer:=1; m:integer);begin end;begin Write('bad');Q;end;begin P;end.","E_TYPE");
+ error("procedure P;var x:=1;procedure Q(n:integer:=x);begin end;begin Write('bad');Q;end;begin P;end.","E_TYPE");
+ error("const n=1;procedure P;procedure Q(n:integer; m:integer:=n);begin end;begin Write('bad');Q(2);end;begin P;end.","E_TYPE");
+ error("procedure P;procedure Q(n:integer:=1;params a:array of integer);begin end;begin Write('bad');Q;end;begin P;end.","E_TYPE");
+ error("procedure P;procedure Q(const n:integer:=1);begin end;begin Write('bad');Q;end;begin P;end.","E_TYPE");
+ error("procedure P;function G:integer:=1;procedure Q(n:integer:=G);begin end;begin Write('bad');Q;end;begin P;end.","E_TYPE");
  abc::ExecutionOptions limited;limited.call_limit=12;error("procedure P;function F(n:integer):integer;begin Result:=F(n+1);end;begin F(0);end;begin P;end.","E_LIMIT",limited);
  for(const unsigned depth:{200U,300U}){std::string deep;for(unsigned n=0;n<depth;++n)deep+="procedure P"+std::to_string(n)+";";for(unsigned n=0;n<depth;++n)deep+="begin end;";deep+="begin end.";if(depth==300)error(deep,"E_LIMIT");else try{abc::compile(deep);check(true,"Deep declarations fit the native compilation stack");}catch(const abc::Error& e){check(e.code=="E_LIMIT"&&!e.russian.empty()&&e.location.line>0,"Deep declarations fail safely within the compilation stack budget");}}
 }

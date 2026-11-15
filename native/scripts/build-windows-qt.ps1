@@ -165,6 +165,7 @@ Encoding, CP1251/ASCII/Unicode и выбор кодировки ReadAllText/Writ
 DefaultEncoding изначально CP1251. Его смена и явные Encoding-перегрузки Text: examples/default-encoding.pas.
 Двоичные file и file of T, числа, строки, перечисления и вложенные записи: examples/binary-files.pas.
 Вложенные процедуры/функции, рекурсия и сохранение локального состояния: examples/nested-routines.pas.
+Вложенные процедуры и функции подставляют типизированные аргументы по умолчанию при прямом вызове.
 Статические массивы, независимые копии, двумерные индексы и file of массив: examples/fixed-arrays.pas.
 Инициализаторы динамических массивов, записи и более семи элементов: examples/array-literals.pas.
 Константы-массивы, известные границы типов и постоянные локальные таблицы: examples/array-constants.pas.

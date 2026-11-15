@@ -1799,7 +1799,8 @@ private:
     }
     void check_default_expression(const hir::Expr& expression) {
         if (expression.kind==hir::ExprKind::local && !constant_locals_.contains(expression.local))
-            throw Error("E_TYPE",expression.location,"Variable reference is not allowed in a default parameter expression");
+            throw Error("E_TYPE",expression.location,"Variable reference is not allowed in a default parameter expression",
+                "Ссылка на переменную недопустима в выражении параметра по умолчанию");
         if (expression.left) check_default_expression(*expression.left);
         if (expression.right) check_default_expression(*expression.right);
         for (const auto& argument:expression.arguments) check_default_expression(*argument);
@@ -2743,6 +2744,11 @@ private:
         return true;
     }
     std::optional<std::size_t> lookup(const Token& token) const {
+        if (local_default_declaration_ &&
+            std::any_of(local_default_declaration_->parameters.begin(),local_default_declaration_->parameters.end(),
+                [&](const auto& parameter){return parameter.name.text==token.text;}))
+            throw Error("E_TYPE",token.location,"A default argument cannot refer to a parameter",
+                "Аргумент по умолчанию не может ссылаться на параметр");
         for (auto scope = scopes_.rbegin(); scope != scopes_.rend(); ++scope) {
             if (const auto found = scope->find(token.text); found != scope->end()) return found->second;
         }
@@ -2938,7 +2944,8 @@ private:
         if(result.arguments.size()<fixed||(!variadic&&result.arguments.size()!=count))throw Error("E_TYPE",result.location,"Wrong callable argument count");
         if(variadic&&!(result.arguments.size()==count&&(result.arguments.back()->type==signature.parameters.back().type||result.arguments.back()->type==Type::nil))){auto packed=std::make_unique<hir::Expr>();packed->kind=hir::ExprKind::array_literal;packed->type=signature.parameters.back().type;packed->location=result.location;const auto element=info(packed->type,result.location).element;for(auto n=fixed;n<result.arguments.size();++n)packed->arguments.push_back(convert(std::move(result.arguments[n]),element));result.arguments.resize(fixed);result.arguments.push_back(std::move(packed));}
         const SyntaxRoutine* named=nullptr;
-        if(result.left&&result.left->kind==hir::ExprKind::local)for(const auto& [syntax,slot]:nested_routine_slots_)if(slot==result.left->local){named=syntax;break;}
+        if (result.left&&result.left->kind==hir::ExprKind::local)
+            named=local_routine_declaration(result.left->local);
         for(std::size_t n=0;n<count;++n){const auto& parameter=signature.parameters[n];if(parameter.by_reference){if(!lvalue(*result.arguments[n])||result.arguments[n]->type!=parameter.type)throw Error("E_TYPE",result.location,"var argument requires an assignable value of exactly the parameter type");}else result.arguments[n]=convert(std::move(result.arguments[n]),parameter.type,false,!(named&&n<named->parameters.size()&&named->parameters[n].read_only));}
     }
     struct MethodOverload {std::size_t id;std::vector<CallableParameter> parameters;std::size_t required;};
@@ -2984,7 +2991,8 @@ private:
         }
         return choose_method_overload(std::move(candidates),source,arguments,true);
     }
-    void bind_value_call(hir::Expr& result,const std::vector<std::unique_ptr<SyntaxExpr>>& arguments) {
+    void bind_value_call(hir::Expr& result,const std::vector<std::unique_ptr<SyntaxExpr>>& arguments,
+        const std::vector<std::optional<std::size_t>>* defaults=nullptr) {
         const auto type=result.left->type;
         if (!callable_type(type)) throw Error("E_TYPE",result.location,"Expression is not callable");
         // Binding an argument may register more types; do not retain references into types.
@@ -2992,13 +3000,83 @@ private:
         result.kind=hir::ExprKind::value_call; result.type=signature.element;
         const auto count=signature.parameters.size(); const bool variadic=count && signature.parameters.back().variadic;
         const auto fixed=count-(variadic ? 1U : 0U);
-        if (arguments.size()<fixed || (!variadic && arguments.size()!=count)) throw Error("E_TYPE",result.location,"Wrong callable argument count");
+        const auto required=defaults
+            ? static_cast<std::size_t>(std::find_if(defaults->begin(),defaults->end(),
+                [](const auto& helper){return helper.has_value();})-defaults->begin())
+            : fixed;
+        if (arguments.size()<required || (!variadic && arguments.size()>count))
+            throw Error("E_TYPE",result.location,"Wrong callable argument count","Неверное число аргументов вызова");
         for (std::size_t n=0;n<arguments.size();++n) {
             const auto expected=n<fixed ? signature.parameters[n].type : signature.parameters.back().type;
             const auto context=variadic && n>=fixed ? info(expected,result.location).element : expected;
             result.arguments.push_back(expression(*arguments[n],context));
         }
+        if (defaults) for (auto n=arguments.size();n<count;++n) {
+            auto argument=std::make_unique<hir::Expr>();
+            argument->kind=hir::ExprKind::user_call;
+            argument->local=defaults->at(n).value();
+            argument->type=signature.parameters[n].type;
+            argument->location=result.location;
+            result.arguments.push_back(std::move(argument));
+        }
         bind_typed_value_arguments(result,signature);
+    }
+    const SyntaxRoutine* local_routine_declaration(std::size_t slot) const {
+        for (const auto& [declaration,routine_slot]:nested_routine_slots_)
+            if (routine_slot==slot) return declaration;
+        return nullptr;
+    }
+    const std::vector<std::optional<std::size_t>>* local_defaults(std::size_t slot) const {
+        const auto found=local_defaults_.find(slot);
+        return found==local_defaults_.end()?nullptr:&found->second;
+    }
+    void bind_local_defaults(const SyntaxRoutine& declaration,std::size_t slot) {
+        const auto& parameters=declaration.parameters;
+        const auto first_default=std::find_if(parameters.begin(),parameters.end(),
+            [](const auto& parameter){return parameter.default_value!=nullptr;});
+        if (first_default==parameters.end()) return;
+        const auto signature=info(module_.locals[slot].type,declaration.name.location);
+        auto& defaults=local_defaults_[slot];
+        defaults.resize(parameters.size());
+        for (auto i=static_cast<std::size_t>(first_default-parameters.begin());i<parameters.size();++i) {
+            const auto& parameter=parameters[i];
+            const auto location=parameter.name.location;
+            if (parameter.variadic)
+                throw Error("E_TYPE",location,"A routine with params cannot have default parameters",
+                    "Подпрограмма с params не может иметь параметры по умолчанию");
+            if (!parameter.default_value)
+                throw Error("E_TYPE",location,"Required parameter cannot follow an optional parameter",
+                    "Обязательный параметр не может следовать за необязательным");
+            if (parameter.by_reference||parameter.read_only)
+                throw Error("E_TYPE",location,"var, out and const parameters cannot have defaults",
+                    "Параметры var, out и const не могут иметь значений по умолчанию");
+            if (module_.routines.size()>=256)
+                throw Error("E_LIMIT",location,"Routine limit exceeded by default parameter helpers",
+                    "Превышен лимит подпрограмм при подготовке значений по умолчанию");
+            if (module_.locals.size()>=4096)
+                throw Error("E_LIMIT",location,"Local limit exceeded","Превышен лимит локальных переменных");
+
+            const auto helper_id=module_.routines.size();
+            module_.routines.emplace_back();
+            auto& helper=module_.routines.back();
+            helper.signature.name="$local_default_"+std::to_string(helper_id);
+            helper.signature.result=signature.parameters[i].type;
+            const auto first_local=module_.locals.size();
+            helper.signature.result_local=first_local;
+            module_.locals.push_back({"$default_result",helper.signature.result,false});
+            helper.body.kind=hir::StmtKind::return_stmt;
+            helper.body.location=parameter.default_value->token.location;
+            const auto* saved_declaration=local_default_declaration_;
+            local_default_declaration_=&declaration;
+            helper.body.expression=convert(expression(*parameter.default_value,helper.signature.result),helper.signature.result);
+            local_default_declaration_=saved_declaration;
+            check_default_expression(*helper.body.expression);
+            for (auto local=first_local;local<module_.locals.size();++local) {
+                if (!module_.locals[local].global && lambda_locals_.insert(local).second)
+                    helper.signature.locals.push_back(local);
+            }
+            defaults[i]=helper_id;
+        }
     }
     void lambda_result(Type type,SourceLocation location) {
         if (type==Type::invalid || type==Type::nil) throw Error("E_TYPE",location,"Lambda result type cannot be inferred");
@@ -3963,9 +4041,17 @@ private:
         return result;
     }
     ABC_PASCAL_NOINLINE std::unique_ptr<hir::Expr> bind_name_expression(const SyntaxExpr& source,Type expected,std::unique_ptr<hir::Expr> result) {
-        (void)expected;
         do {
             if (const auto local = lookup(source.token)) {
+                if (local_default_declaration_ && local_routine_declaration(*local))
+                    throw Error("E_TYPE",result->location,"A default argument cannot call a local routine",
+                        "Аргумент по умолчанию не может вызывать локальную подпрограмму");
+                if (const auto* defaults=local_defaults(*local);
+                    defaults && defaults->front() && !callable_type(expected)
+                    && info(module_.locals[*local].type,result->location).element!=Type::unit) {
+                    SyntaxExpr call{SyntaxExprKind::call,source.token,{},{},1,{},{}};
+                    return expression(call);
+                }
                 capture_local(*local,result->location);
                 result->kind = hir::ExprKind::local;
                 result->local = *local;
@@ -4037,11 +4123,14 @@ private:
  {
             if (const auto local=lookup(source.token); local && (source.token.text!=current_name_||nested_result_slots_.contains(*local))) {
                 const auto callable=nested_result_slots_.contains(*local)?nested_result_slots_.at(*local):*local;
+                if (local_default_declaration_ && local_routine_declaration(callable))
+                    throw Error("E_TYPE",result->location,"A default argument cannot call a local routine",
+                        "Аргумент по умолчанию не может вызывать локальную подпрограмму");
                 if(!callable_type(module_.locals[callable].type) && bind_callable_cast(*result,source))break;
                 capture_local(callable,result->location);
                 result->left=std::make_unique<hir::Expr>(); result->left->kind=hir::ExprKind::local;
                 result->left->local=callable; result->left->type=module_.locals[callable].type; result->left->location=result->location;
-                bind_value_call(*result,source.arguments); break;
+                bind_value_call(*result,source.arguments,local_defaults(callable)); break;
             }
             result->kind = hir::ExprKind::call;
             if (!lookup(source.token) && subrange_aliases_.contains(source.token.text)) {
@@ -7369,11 +7458,15 @@ private:
             for(const auto& routine:source.routines){
                 if(!routine->owner.empty()||routine->constructor||routine->declaration_only)throw Error("E_UNSUPPORTED",routine->name.location,"This local routine declaration is not ported yet","Это объявление локальной подпрограммы ещё не перенесено");
                 if(scopes_.back().contains(routine->name.text))throw Error("E_DUPLICATE",routine->name.location,"Duplicate local routine name");
-                std::vector<CallableParameter> parameters;for(const auto& parameter:routine->parameters){if(parameter.default_value)throw Error("E_UNSUPPORTED",parameter.name.location,"Local routine default arguments are not ported yet","Аргументы по умолчанию локальных подпрограмм ещё не перенесены");parameters.push_back({resolve_type(*parameter.type),parameter.by_reference,parameter.variadic});}
+                std::vector<CallableParameter> parameters;
+                for (const auto& parameter:routine->parameters)
+                    parameters.push_back({resolve_type(*parameter.type),parameter.by_reference,parameter.variadic});
                 const auto type=function_type(routine->result?resolve_type(*routine->result):Type::unit,std::move(parameters),routine->name.location);
                 if(module_.locals.size()>=4096)throw Error("E_LIMIT",routine->name.location,"Local limit exceeded");const auto slot=module_.locals.size();module_.locals.push_back({routine->name.text,type,false});scopes_.back()[routine->name.text]=slot;nested_routine_slots_[routine.get()]=slot;constant_parameters_.insert(slot);
                 hir::Stmt declare;declare.kind=hir::StmtKind::assign;declare.location=routine->name.location;declare.local=slot;declare.declaration=true;declare.expression=std::make_unique<hir::Expr>();declare.expression->kind=hir::ExprKind::default_value;declare.expression->type=type;declare.expression->location=declare.location;declare.expression->operation="default";result.statements.push_back(std::move(declare));
             }
+            for (const auto& routine:source.routines)
+                bind_local_defaults(*routine,nested_routine_slots_.at(routine.get()));
             for(const auto& routine:source.routines){routine->procedure_lambda=!routine->function_header;routine->function_lambda=routine->function_header;auto lambda=make_expression(SyntaxExprKind::lambda,routine->name);lambda->lambda=routine;const auto slot=nested_routine_slots_.at(routine.get());hir::Stmt initialize;initialize.kind=hir::StmtKind::assign;initialize.location=routine->name.location;initialize.local=slot;initialize.expression=bind_lambda(*lambda,module_.locals[slot].type);result.statements.push_back(std::move(initialize));}
             break;
         }
@@ -7536,7 +7629,11 @@ private:
             result.kind = hir::StmtKind::call; result.expression = expression(*source.expression);
             if (callable_type(result.expression->type) && result.expression->kind!=hir::ExprKind::user_call && result.expression->kind!=hir::ExprKind::value_call) {
                 auto call=std::make_unique<hir::Expr>(); call->location=result.location; call->left=std::move(result.expression);
-                const std::vector<std::unique_ptr<SyntaxExpr>> arguments; bind_value_call(*call,arguments); result.expression=std::move(call);
+                const auto* defaults=source.expression->kind==SyntaxExprKind::name && call->left->kind==hir::ExprKind::local
+                    ? local_defaults(call->left->local) : nullptr;
+                const std::vector<std::unique_ptr<SyntaxExpr>> arguments;
+                bind_value_call(*call,arguments,defaults);
+                result.expression=std::move(call);
             }
             break;
         case SyntaxStmtKind::break_stmt: case SyntaxStmtKind::continue_stmt:
@@ -7772,6 +7869,8 @@ private:
     std::vector<std::map<std::string, std::size_t>> scopes_;
     std::set<std::size_t> for_controls_,constant_parameters_,constant_locals_;
     std::map<const SyntaxRoutine*,std::size_t> nested_routine_slots_;
+    std::map<std::size_t,std::vector<std::optional<std::size_t>>> local_defaults_;
+    const SyntaxRoutine* local_default_declaration_=nullptr;
     std::map<std::size_t,std::size_t> nested_result_slots_;
     std::set<std::size_t> named_nested_routines_;
     CompilationStack compilation_stack_;
