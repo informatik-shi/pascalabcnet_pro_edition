@@ -663,6 +663,7 @@ private:
                     && result->kind!="decimal" && result->kind!="midpointrounding")
                     throw Error("E_UNSUPPORTED",result->token.location,"Unknown or unsupported type 'System."+result->kind+"'");
             }
+            if (result->kind=="comparer" || result->kind=="equalitycomparer") accept("&");
             if (result->kind=="func" || result->kind=="func0" || result->kind=="func2" || result->kind=="func3"
                 || result->kind=="action" || result->kind=="action0" || result->kind=="action2" || result->kind=="action3"
                 || result->kind=="predicate" || result->kind=="predicate2" || result->kind=="predicate3") {
@@ -1140,9 +1141,25 @@ private:
         return postfix(std::move(result));
     }
     ABC_PASCAL_NOINLINE bool comparison_reference() const {
-        if(!is("comparer") && !is("equalitycomparer") && !is("system"))return false;
-        auto probe=lexer_;auto token=current_;if(token.text=="system"){for(const auto word:{".","collections",".","generic","."})if(probe.next().text!=word)return false;token=probe.next();if(token.text!="comparer" && token.text!="equalitycomparer")return false;token=probe.next();}else token=probe.next();
-            if(token.text!="<")return false;unsigned depth=1;for(unsigned count=0;count<1024;++count){token=probe.next();if(token.kind==TokenKind::eof)return false;if(token.text=="<")++depth;else if(token.text==">" && !--depth)return probe.next().text==".";}return false;
+        auto probe=lexer_;
+        auto owner=current_;
+        if(owner.text=="system"){
+            for(const auto token:{".","collections",".","generic","."})
+                if(probe.next().text!=token)return false;
+            owner=probe.next();
+        }
+        if(owner.text!="comparer" && owner.text!="equalitycomparer")return false;
+        auto token=probe.next();
+        if(token.text=="&")token=probe.next();
+        if(token.text!="<")return false;
+        unsigned depth=1;
+        for(unsigned count=0;count<1024;++count){
+            token=probe.next();
+            if(token.kind==TokenKind::eof)return false;
+            if(token.text=="<")++depth;
+            else if(token.text==">" && --depth==0)return probe.next().text==".";
+        }
+        return false;
     }
     ABC_PASCAL_NOINLINE std::unique_ptr<SyntaxExpr> prefix() {
         DepthGuard guard(depth_, current_.location);

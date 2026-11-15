@@ -4,6 +4,8 @@
 #include "runtime_values.hpp"
 #include "value_hash.hpp"
 #include "big_integer_runtime.hpp"
+#include "calendar.hpp"
+#include "decimal.hpp"
 #include <array>
 #include <bit>
 #include <charconv>
@@ -18,7 +20,14 @@ std::int32_t signed_hash(std::uint32_t n){return std::bit_cast<std::int32_t>(n);
 }
 bool equality_nil(const Value& value){return nil(value);}
 Type equatable_contract(const std::vector<TypeInfo>& types,Type element){for(std::size_t i=0;i<types.size();++i)if(types[i].kind==CompoundKind::equatable_interface && types[i].element==element)return static_cast<Type>(64+i);return Type::invalid;}
-bool default_equatable(const std::vector<TypeInfo>& types,Type element){if(scalar(element))return true;const auto contract=equatable_contract(types,element);return contract!=Type::invalid && interface_compatible(types,element,contract);}
+bool default_equatable(const std::vector<TypeInfo>& types,Type element){
+ if(scalar(element))return true;
+ if(compound(element) && static_cast<unsigned>(element)-64U<types.size()){
+  const auto& shape=types[static_cast<unsigned>(element)-64U];
+  if(decimal_type(shape) || calendar_record(shape) || complex_number_type(shape))return true;
+ }
+ const auto contract=equatable_contract(types,element);return contract!=Type::invalid && interface_compatible(types,element,contract);
+}
 bool equality_value(Values& values,Type type,const Value& a,const Value& b,const ExecutionOptions& options){
  guard(values,options);const bool an=nil(a),bn=nil(b);if(an || bn)return an==bn;
  const auto contract=equatable_contract(values.program.types,type);

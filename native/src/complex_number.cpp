@@ -175,7 +175,7 @@ Value complex_invoke(Values& values,Type owner,std::size_t operation,std::span<c
         const auto imaginary=multiply({0,1},a);
         return build(multiply({0,0.5},subtract(logarithm(subtract({1,0},imaginary)),logarithm(add({1,0},imaginary)))));
     }
-    case M::hash_code: return (double_hash(a.real)%99999997)^double_hash(a.imaginary);
+    case M::hash_code: return complex_hash_code(args[0]);
     case M::equals_boxed: {
         const auto& object=std::get<std::shared_ptr<Aggregate>>(args[1]);
         return object && !object->nil && object->items.size()==1 && object->items.front()->type==owner
@@ -214,6 +214,10 @@ std::u16string complex_pascal_text(const Value& input,const NumberFormatSettings
         return settings?localize_number(text,*settings,location):std::move(text);
     };
     return component(part.real)+(part.imaginary>=0?u"+":u"")+component(part.imaginary)+u"i";
+}
+std::int32_t complex_hash_code(const Value& value) {
+    const auto input=parts(value);
+    return (double_hash(input.real)%99999997)^double_hash(input.imaginary);
 }
 std::u16string complex_dotnet_text(const Value& input,std::u16string_view specifier,
     const NumberFormatSettings& settings,SourceLocation location) {

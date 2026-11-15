@@ -135,6 +135,10 @@ bool smaller_magnitude(const Decimal& left,const Decimal& right) {
     const auto scale=std::max(left.scale,right.scale);
     return signed_coefficient(left,scale).absolute()<signed_coefficient(right,scale).absolute();
 }
+int compare_decimal(const Decimal& left,const Decimal& right) {
+    const auto scale=std::max(left.scale,right.scale);
+    return signed_coefficient(left,scale).compare(signed_coefficient(right,scale));
+}
 Decimal round_decimal(Decimal input,unsigned scale,M call,bool away_from_zero=false) {
     if (input.scale<=scale) return input;
     const auto& divisor=power10(input.scale-scale);
@@ -434,14 +438,7 @@ Value decimal_invoke(Values& values,Type owner,std::size_t operation,std::span<c
         }
         case M::to_single: return static_cast<float>(to_real(words(args[0])));
         case M::to_real: return to_real(words(args[0]));
-        case M::hash_code: {
-            const auto converted=to_real(words(args[0]));
-            if (converted==0) return std::int32_t{0};
-            const auto bits=std::bit_cast<std::uint64_t>(converted);
-            const auto low=static_cast<std::uint32_t>(bits)&0xfffffff0U;
-            const auto high=static_cast<std::uint32_t>(bits>>32U);
-            return std::bit_cast<std::int32_t>(high^low);
-        }
+        case M::hash_code: return decimal_hash_code(args[0]);
         case M::negate: {
             auto data=words(args[0]);
             data[3]^=sign_mask;
@@ -481,9 +478,7 @@ Value decimal_invoke(Values& values,Type owner,std::size_t operation,std::span<c
         if (call==M::remainder) return build(remainder_decimal(left,right,location));
         if (call==M::multiply) return build(multiply_decimal(left,right,location));
         if (call==M::add || call==M::subtract) return build(add_decimal(left,right,call==M::subtract,location));
-        const auto scale=std::max(left.scale,right.scale);
-        const auto first=signed_coefficient(left,scale),second=signed_coefficient(right,scale);
-        const auto order=first.compare(second);
+        const auto order=compare_decimal(left,right);
         switch (call) {
         case M::equal: return order==0;
         case M::unequal: return order!=0;
@@ -499,6 +494,17 @@ Value decimal_invoke(Values& values,Type owner,std::size_t operation,std::span<c
 std::u16string decimal_text(const Value& value) {
     const auto text=ascii_text(parts(value));
     return std::u16string(text.begin(),text.end());
+}
+int compare_decimal_values(const Value& left,const Value& right,SourceLocation location) {
+    return checked_big(location,[&]{return compare_decimal(parts(left),parts(right));});
+}
+std::int32_t decimal_hash_code(const Value& value) {
+    const auto converted=to_real(words(value));
+    if (converted==0) return 0;
+    const auto bits=std::bit_cast<std::uint64_t>(converted);
+    const auto low=static_cast<std::uint32_t>(bits)&0xfffffff0U;
+    const auto high=static_cast<std::uint32_t>(bits>>32U);
+    return std::bit_cast<std::int32_t>(high^low);
 }
 std::array<std::uint32_t,4> decimal_bits(const Value& value) {
     return words(value);

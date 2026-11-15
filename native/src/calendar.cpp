@@ -800,10 +800,7 @@ Value calendar_invoke(Values& values,Type owner,std::size_t operation,std::span<
     case M::difference: return make_calendar(values,info.element,t-calendar_value(args[1]).ticks);
     case M::negate: return build(safe_subtract(0,t,location));
     case M::duration: return build(t<0?safe_subtract(0,t,location):t);
-    case M::hash: {
-        const auto bits=std::bit_cast<std::uint64_t>(t);
-        return std::bit_cast<std::int32_t>(static_cast<std::uint32_t>(bits^(bits>>32)));
-    }
+    case M::hash: return calendar_hash_code(args[0]);
     case M::compare: case M::compare_static: {
         const auto second=calendar_value(args[1]).ticks;
         return static_cast<std::int32_t>((t>second)-(t<second));
@@ -844,6 +841,14 @@ std::u16string calendar_text(const Value& value,std::u16string_view format,Sourc
     const auto& aggregate=std::get<std::shared_ptr<Aggregate>>(value);
     const auto data=calendar_value(value);
     return aggregate->items.size()==2?date_text(data,format,location):span_text(data.ticks,format,location);
+}
+int compare_calendar_values(const Value& left,const Value& right) {
+    const auto a=calendar_value(left).ticks,b=calendar_value(right).ticks;
+    return (a>b)-(a<b);
+}
+std::int32_t calendar_hash_code(const Value& value) {
+    const auto bits=std::bit_cast<std::uint64_t>(calendar_value(value).ticks);
+    return std::bit_cast<std::int32_t>(static_cast<std::uint32_t>(bits^(bits>>32)));
 }
 std::uint64_t date_time_binary_bits(const Value& value) {
     const auto date=calendar_value(value);

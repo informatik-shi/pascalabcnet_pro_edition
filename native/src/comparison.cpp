@@ -4,6 +4,8 @@
 #include "runtime_values.hpp"
 #include "enumeration.hpp"
 #include "big_integer_runtime.hpp"
+#include "calendar.hpp"
+#include "decimal.hpp"
 #include <array>
 #include <cmath>
 #include <type_traits>
@@ -14,15 +16,25 @@ bool nil(const Value& value){if(std::holds_alternative<NilString>(value))return 
 [[noreturn]] void unsupported(SourceLocation location){throw Error("E_COMPARE",location,"Values do not support comparison","Значения не поддерживают сравнение");}
 }
 Type comparable_contract(const std::vector<TypeInfo>& types,Type element){for(std::size_t i=0;i<types.size();++i)if(types[i].kind==CompoundKind::comparable_interface && types[i].element==element)return static_cast<Type>(64+i);return Type::invalid;}
-bool default_comparable(const std::vector<TypeInfo>& types,Type element){if(scalar(element) || enumeration(types,element))return true;const auto target=comparable_contract(types,element);return target!=Type::invalid && interface_compatible(types,element,target);}
+bool default_comparable(const std::vector<TypeInfo>& types,Type element){
+ if(scalar(element) || enumeration(types,element))return true;
+ if(compound(element) && static_cast<unsigned>(element)-64U<types.size()){
+  const auto& shape=types[static_cast<unsigned>(element)-64U];
+  if(decimal_type(shape) || calendar_record(shape))return true;
+ }
+ const auto target=comparable_contract(types,element);return target!=Type::invalid && interface_compatible(types,element,target);
+}
 int comparison_value(Values& values,Type type,const Value& a,const Value& b,bool null_safe,bool ordinal_strings,const ExecutionOptions& options){
  if(!options.instruction_limit)throw runtime_error(RuntimeError::instruction_limit,values.location);if(options.cancelled && options.cancelled())throw runtime_error(RuntimeError::cancelled,values.location);
  const bool an=nil(a),bn=nil(b);if(null_safe && (an || bn))return an ? bn ? 0 : -1 : 1;
  if(type==Type::string){if(ordinal_strings)return compare_strings(a,b);if(an)throw runtime_error(RuntimeError::nil_reference,values.location);if(bn)return 1;return ordinal_strings ? compare_strings(a,b) : compare_culture_strings(string_text(a),string_text(b),values.location,options);}
  if(compound(type) && !enumeration(values.program,type)){
+  const auto& shape=type_info(values.program,type);
+  if(decimal_type(shape))return compare_decimal_values(a,b,values.location);
+  if(calendar_record(shape))return compare_calendar_values(a,b);
   const auto target=comparable_contract(values.program.types,type);
   if(target!=Type::invalid && interface_compatible(values.program.types,type,target)){if(an)throw runtime_error(RuntimeError::nil_reference,values.location);const std::array<Value,1> arguments{b};return std::get<std::int32_t>(interface_invoke(values,target,0,a,arguments,options));}
-  const auto kind=type_info(values.program,type).kind;if(null_safe && kind!=CompoundKind::record && std::get<Object>(a)==std::get<Object>(b))return 0;
+  if(null_safe && shape.kind!=CompoundKind::record && std::get<Object>(a)==std::get<Object>(b))return 0;
   unsupported(values.location);
  }
  if(!scalar(type) && !enumeration(values.program,type)){if(null_safe && values.equal(a,b))return 0;unsupported(values.location);}

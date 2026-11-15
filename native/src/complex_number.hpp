@@ -18,5 +18,6 @@ std::vector<Type> complex_parameters(Type,std::size_t);
 Type complex_result(Type,std::size_t);
 Value complex_invoke(Values&,Type,std::size_t,std::span<const Value>);
 std::u16string complex_pascal_text(const Value&,const NumberFormatSettings*,SourceLocation);
+std::int32_t complex_hash_code(const Value&);
 std::u16string complex_dotnet_text(const Value&,std::u16string_view,const NumberFormatSettings&,SourceLocation);
 }

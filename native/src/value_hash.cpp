@@ -3,6 +3,9 @@
 #include "ordinal_range.hpp"
 #include "real_interval.hpp"
 #include "big_integer_runtime.hpp"
+#include "calendar.hpp"
+#include "complex_number.hpp"
+#include "decimal.hpp"
 #include <cmath>
 #include <type_traits>
 namespace abc {
@@ -14,10 +17,12 @@ bool value_equal(ValueHashWork& work,const Value& a,const Value& b){
     if(const auto* x=std::get_if<double>(&a)){const auto y=std::get<double>(b);return *x==y || (std::isnan(*x) && std::isnan(y));}
     if(const auto* x=std::get_if<std::u16string>(&a)){const auto* y=std::get_if<std::u16string>(&b);if(!y || x->size()!=y->size())return false;for(std::size_t i=0;i<x->size();++i){work.step();if((*x)[i]!=(*y)[i])return false;}return true;}
     if(const auto* x=std::get_if<std::shared_ptr<Aggregate>>(&a)){
-        const auto& left=record_box_value(*x);const auto& y=record_box_value(std::get<std::shared_ptr<Aggregate>>(b));const auto kind=type_info(work.values.program,left->type).kind;
+        const auto& left=record_box_value(*x);const auto& y=record_box_value(std::get<std::shared_ptr<Aggregate>>(b));const auto& shape=type_info(work.values.program,left->type);const auto kind=shape.kind;
         if(kind==CompoundKind::record || kind==CompoundKind::tuple){if(left->nil || y->nil)return left->nil==y->nil;if(left->type!=y->type)return false;
+            if(decimal_type(shape))return compare_decimal_values(Value{left},Value{y},work.values.location)==0;
+            if(calendar_record(shape))return compare_calendar_values(Value{left},Value{y})==0;
             // RealRange overrides object equality using its IEEE comparison operator.
-            if(real_interval_type(type_info(work.values.program,left->type)))return std::get<double>(left->items[0]->value)==std::get<double>(y->items[0]->value)&&std::get<double>(left->items[1]->value)==std::get<double>(y->items[1]->value);
+            if(real_interval_type(shape))return std::get<double>(left->items[0]->value)==std::get<double>(y->items[0]->value)&&std::get<double>(left->items[1]->value)==std::get<double>(y->items[1]->value);
             for(std::size_t i=0;i<left->items.size();++i)if(!value_equal(work,left->items[i]->value,y->items[i]->value))return false;return true;}
     }
     return work.values.equal(a,b);
@@ -34,9 +39,12 @@ std::size_t value_hash(ValueHashWork& work,const Value& value){
         else if constexpr(std::is_same_v<T,BigInteger>){big_work(v.bits()/16+1,work.values.location,work.options);std::size_t result=0;for(const auto c:v.text(16)){work.step();result=mix(result,static_cast<unsigned char>(c));}return result;}
         else if constexpr(std::is_same_v<T,std::shared_ptr<Aggregate>>){
             if(record_box_identity(v.get())!=v.get())return value_hash(work,Value{v->sequence->source});
-            if(!v || v->nil)return 0;const auto kind=type_info(work.values.program,v->type).kind;
-            if(ordinal_range_type(type_info(work.values.program,v->type)))return static_cast<std::uint32_t>(ordinal_range_hash(v));
-            if(real_interval_type(type_info(work.values.program,v->type)))return static_cast<std::uint32_t>(real_interval_hash(v));
+            if(!v || v->nil)return 0;const auto& shape=type_info(work.values.program,v->type);const auto kind=shape.kind;
+            if(ordinal_range_type(shape))return static_cast<std::uint32_t>(ordinal_range_hash(v));
+            if(real_interval_type(shape))return static_cast<std::uint32_t>(real_interval_hash(v));
+            if(decimal_type(shape))return static_cast<std::uint32_t>(decimal_hash_code(value));
+            if(calendar_record(shape))return static_cast<std::uint32_t>(calendar_hash_code(value));
+            if(complex_number_type(shape))return static_cast<std::uint32_t>(complex_hash_code(value));
             if(kind==CompoundKind::record || kind==CompoundKind::tuple){std::size_t result=0;for(const auto& field:v->items)result=mix(result,value_hash(work,field->value));return result;}
             if(kind==CompoundKind::callable)return callable_hash(*v);
             if(kind==CompoundKind::sequence && v->sequence && (collection_sequence(v->sequence->provider) || v->sequence->provider==SequenceProvider::hash_set || dictionary_provider(v->sequence->provider)))return std::hash<const void*>{}(v->sequence->source.get());

@@ -23,6 +23,8 @@ std::vector<Type> decimal_parameters(Type,std::size_t);
 Type decimal_result(Type,std::size_t);
 Value decimal_invoke(Values&,Type,std::size_t,std::span<const Value>);
 std::u16string decimal_text(const Value&);
+int compare_decimal_values(const Value&,const Value&,SourceLocation);
+std::int32_t decimal_hash_code(const Value&);
 // Decimal fields are ordered by reflection in files written by PascalABC.NET.
 inline constexpr std::array<std::size_t,4> decimal_file_order{3,2,0,1};
 std::array<std::uint32_t,4> decimal_bits(const Value&);
