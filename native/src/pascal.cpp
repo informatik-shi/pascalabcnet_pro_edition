@@ -2259,8 +2259,8 @@ private:
         return Type::invalid;
     }
     std::unique_ptr<hir::Expr> complex_expression(Type owner,ComplexMethod method,
-        std::vector<std::unique_ptr<hir::Expr>> args,SourceLocation location,Type tuple=Type::integer) {
-        const auto operation=static_cast<std::size_t>(method)|(static_cast<std::size_t>(tuple)<<8U);
+        std::vector<std::unique_ptr<hir::Expr>> args,SourceLocation location,Type payload=Type::integer) {
+        const auto operation=static_cast<std::size_t>(method)|(static_cast<std::size_t>(payload)<<8U);
         const auto parameters=complex_parameters(owner,operation);
         if (parameters.size()!=args.size())
             throw Error("E_TYPE",location,"Wrong Complex argument count","Неверное число аргументов Complex");
@@ -2280,6 +2280,8 @@ private:
         static constexpr std::pair<std::string_view,M> methods[]{
             {"abs",M::magnitude},{"sqrt",M::square_root},{"conjugate",M::conjugate},{"exp",M::exponential},
             {"ln",M::logarithm},{"log10",M::logarithm10},{"power",M::power},{"pow",M::power},{"sin",M::sine},{"cos",M::cosine},
+            {"tan",M::tangent},{"sinh",M::hyperbolic_sine},{"cosh",M::hyperbolic_cosine},{"tanh",M::hyperbolic_tangent},
+            {"asin",M::arc_sine},{"acos",M::arc_cosine},{"atan",M::arc_tangent},
             {"add",M::add},{"subtract",M::subtract},{"multiply",M::multiply},{"divide",M::divide},
             {"negate",M::negate},{"reciprocal",M::reciprocal},{"frompolarcoordinates",M::from_polar}
         };
@@ -2317,12 +2319,32 @@ private:
             else if (name=="phase") method=M::phase;
         } else if (name=="conjugate") method=M::conjugate;
         else if (name=="equals") method=M::equals;
+        else if (name=="gethashcode") method=M::hash_code;
         else if (name=="tostring") method=M::to_string;
         else throw Error("E_UNSUPPORTED",location,"Complex member is not ported yet","Член Complex ещё не перенесён");
         std::vector<std::unique_ptr<hir::Expr>> args;
         args.push_back(std::move(receiver.left));
         for (const auto& arg:source.arguments) args.push_back(expression(*arg));
-        return complex_expression(type,method,std::move(args),location);
+        auto payload=Type::integer;
+        if (method==M::equals && args.size()==2) {
+            const auto argument=args[1]->type;
+            if (boxed_object(argument,location) || argument==Type::nil || argument==Type::string
+                || argument==Type::character || argument==Type::boolean) {
+                method=M::equals_boxed;
+                payload=object_type(location);
+            }
+        }
+        if (method==M::to_string && args.size()==2) {
+            if (is_number_format(args[1]->type)) {
+                method=M::to_string_provider;
+                payload=args[1]->type;
+            } else method=M::to_string_specifier;
+        }
+        if (method==M::to_string && args.size()==3) {
+            method=M::to_string_specifier_provider;
+            payload=number_format_type(location);
+        }
+        return complex_expression(type,method,std::move(args),location,payload);
     }
     std::unique_ptr<hir::Expr> bind_complex_builtin(hir::Expr& result,std::string_view name) {
         using M=ComplexMethod;
@@ -3266,7 +3288,8 @@ private:
             args.push_back(std::move(expression));
             return string_builder_expression(type,StringBuilderMethod::create_text,std::move(args),location);
         }
-        if (boxed_object(type,expression->location) && (scalar(expression->type) || nrbf_array_type(module_.types,expression->type))) {
+        if (boxed_object(type,expression->location)
+            && (scalar(expression->type) || nrbf_array_type(module_.types,expression->type) || is_complex(expression->type))) {
             if (short_string(expression->type)) expression=convert(std::move(expression),Type::string);
             return object_conversion(std::move(expression),type,type);
         }
@@ -4664,6 +4687,18 @@ private:
                     return enum_expression(base,EnumMethod::construct,std::move(args),result->location);
                 }
                 return convert_to_subrange(std::move(argument),base,true);
+            }
+            if ((aliases_.contains(source.token.text) ? is_complex(aliases_.at(source.token.text)) : source.token.text=="complex")
+                && !routine_names_.contains(source.token.text)) {
+                if (source.arguments.size()!=1)
+                    throw Error("E_TYPE",result->location,"Complex conversion requires one value","Для приведения к Complex нужно одно значение");
+                const auto type=complex_type(result->location);
+                auto argument=expression(*source.arguments.front());
+                if (boxed_object(argument->type,result->location)) {
+                    const auto object=argument->type;
+                    return object_conversion(std::move(argument),type,object);
+                }
+                return convert(std::move(argument),type);
             }
             if(bind_callable_cast(*result,source))break;
             if(!routine_names_.contains(source.token.text) && (bind_set_mutation(*result,source) || bind_print_extension(*result,source,false)))break;

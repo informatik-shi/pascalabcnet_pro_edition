@@ -34,6 +34,7 @@ class ObjectWriter {
     const Program& program;
     SourceLocation location;
     const ExecutionOptions& options;
+    const NumberFormatSettings* settings;
     std::u16string text;
     std::vector<const Aggregate*> path;
     void append(std::u16string_view part) {
@@ -62,7 +63,7 @@ class ObjectWriter {
         path.push_back(object.get());
         if(ordinal_range_type(info))append(ordinal_range_text(object));
         else if(real_interval_type(info))append(real_interval_text(object,location));
-        else if(complex_number_type(info))append(complex_pascal_text(data,location));
+        else if(complex_number_type(info))append(complex_pascal_text(data,settings,location));
         else if (school_ip_kind(info.kind)) append(school_ip_text(program,object,location));
         else if (info.kind==CompoundKind::record || info.kind==CompoundKind::tuple) {
             append(u"(");
@@ -98,13 +99,15 @@ class ObjectWriter {
         append(u"]");
     }
 public:
-    ObjectWriter(const Program& p, SourceLocation l, const ExecutionOptions& o):program(p),location(l),options(o) {}
+    ObjectWriter(const Program& p, SourceLocation l, const ExecutionOptions& o,const NumberFormatSettings* format)
+        :program(p),location(l),options(o),settings(format) {}
     std::u16string render(const Value& data, Type type) { value(data,type); return std::move(text); }
 };
 }
 bool object_text_supported(const std::vector<TypeInfo>& types, Type type) { return supports(types,type,0); }
-std::u16string object_text(const Program& program, const Value& value, Type type, SourceLocation location, const ExecutionOptions& options) {
-    return ObjectWriter(program,location,options).render(value,type);
+std::u16string object_text(const Program& program, const Value& value, Type type, SourceLocation location,
+    const ExecutionOptions& options,const NumberFormatSettings* settings) {
+    return ObjectWriter(program,location,options,settings).render(value,type);
 }
 std::u16string pad_field(std::u16string text, std::int32_t width, SourceLocation location) {
     if (width<0) throw runtime_error(RuntimeError::field_width,location);

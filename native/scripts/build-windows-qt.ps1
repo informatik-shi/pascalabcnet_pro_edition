@@ -174,7 +174,7 @@ Format и StringBuilder.AppendFormat поддерживают позиционн
 NumberFormatInfo и NumberFormat задают числовые разделители, знаки и размеры групп. FloatToStr принимает эти настройки.
 AppendFormat принимает NumberFormatInfo перед шаблоном. Без провайдера используется CurrentInfo.
 SetNumberFormat и SetDecimalSeparator меняют числовой формат программы. StrToFloat и StrToReal принимают NumberFormatInfo.
-Complex поддерживает Cplx, CplxFromPolar, арифметику, сопряжение и основные комплексные функции.
+Complex поддерживает арифметику, тригонометрические функции, приведение через object и ToString с NumberFormatInfo.
 Статические массивы, независимые копии, двумерные индексы и file of массив: examples/fixed-arrays.pas.
 Инициализаторы динамических массивов, записи и более семи элементов: examples/array-literals.pas.
 Константы-массивы, известные границы типов и постоянные локальные таблицы: examples/array-constants.pas.

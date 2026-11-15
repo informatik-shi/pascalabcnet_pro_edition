@@ -1,0 +1,16 @@
+True
+True
+True
+True
+True
+(NaN, NaN) True False True
+0+0i
+0 72693278 1072693248
+1149056542 -1074790400
+System.Numerics.Complex True
+(0.25, -0.5)
+True False False
+(0.250, -0.500)
+(0::25, ~0::5) (0::250, ~0::500)
+(0.250, -0.500)
+(0.25, -0.5)

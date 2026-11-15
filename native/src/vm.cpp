@@ -272,6 +272,9 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
             return localize_number(format_scalar(value,instruction.location),pabc_number_settings(values),instruction.location);
         return scalar_text(value,instruction);
     };
+    const auto output_object=[&](const Value& value,Type type,const Instruction& instruction) {
+        return object_text(program,value,type,instruction.location,options,&pabc_number_settings(values));
+    };
     auto pop = [&]() { auto value = std::move(stack.back()); stack.pop_back(); return value; };
     auto account_number=[&](const Value& result,std::span<const Value> inputs={}) {
         const auto* big=std::get_if<BigInteger>(&result);
@@ -694,7 +697,7 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
         case Op::object_text: {
             const auto width=instruction.operand ? std::get<std::int32_t>(pop()) : 0;
             const auto value=pop();
-            stack.emplace_back(pad_field(object_text(program,value,instruction.type,instruction.location,options),width,instruction.location));
+            stack.emplace_back(pad_field(output_object(value,instruction.type,instruction),width,instruction.location));
             break;
         }
         case Op::write_matrix: {
@@ -707,7 +710,7 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
                     if ((c&255U)==0 && options.cancelled && options.cancelled()) trap(instruction,RuntimeError::cancelled);
                     const auto& value=matrix->items[r*matrix->columns+c]->value;
                     write(digits ? format_field(value,width,digits,instruction.location)
-                        : pad_field(object_text(program,value,type_info(program,instruction.type).element,instruction.location,options),width,instruction.location),instruction);
+                        : pad_field(output_object(value,type_info(program,instruction.type).element,instruction),width,instruction.location),instruction);
                     write(u" ",instruction);
                 }
                 write(u"\n",instruction);
@@ -733,7 +736,7 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
             std::vector<Value> arguments(instruction.operand/2);
             for (auto i=arguments.size();i>0;--i) arguments[i-1]=pop();
             for (const auto& value:arguments) write(compound(value_type(value))
-                ? object_text(program,value,value_type(value),instruction.location,options) : output_scalar(value,instruction),instruction);
+                ? output_object(value,value_type(value),instruction) : output_scalar(value,instruction),instruction);
             if (instruction.operand&1U) write(u"\n",instruction);
             break;
         }
@@ -818,7 +821,7 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
                     if ((r&255U)==0 && options.cancelled && options.cancelled()) trap(instruction,RuntimeError::cancelled);
                     for (std::size_t c=0;c<sequence->columns;++c) {
                         if ((c&255U)==0 && options.cancelled && options.cancelled()) trap(instruction,RuntimeError::cancelled);
-                        write(object_text(program,sequence->items[r*sequence->columns+c]->value,type_info(program,instruction.type).element,instruction.location,options),instruction);
+                        write(output_object(sequence->items[r*sequence->columns+c]->value,type_info(program,instruction.type).element,instruction),instruction);
                         write(output_scalar(delimiter,instruction),instruction);
                     }
                     write(u"\n",instruction);
@@ -829,7 +832,7 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
             for (std::size_t i=0;i<sequence->items.size();++i) {
                 if ((i&255U)==0 && options.cancelled && options.cancelled()) trap(instruction,RuntimeError::cancelled);
                 if (i) write(output_scalar(delimiter,instruction),instruction);
-                write(object_text(program,sequence->items[i]->value,type_info(program,instruction.type).element,instruction.location,options),instruction);
+                write(output_object(sequence->items[i]->value,type_info(program,instruction.type).element,instruction),instruction);
             }
             if (instruction.operand&1U) write(u"\n",instruction);
             break;
@@ -1160,7 +1163,7 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
             if (arguments.empty() && (method==TextOutput::write || method==TextOutput::print)) break;
             for (std::size_t n=0;n<arguments.size();++n) {
                 emit_text(compound(value_type(arguments[n]))
-                    ? object_text(program,arguments[n],value_type(arguments[n]),instruction.location,options) : output_scalar(arguments[n],instruction));
+                    ? output_object(arguments[n],value_type(arguments[n]),instruction) : output_scalar(arguments[n],instruction));
                 if (method==TextOutput::print || (method==TextOutput::println && n+1<arguments.size())) {
                     const auto& delimiter=delimiter_value();
                     if (std::holds_alternative<NilString>(delimiter) || !string_text(delimiter).empty())
@@ -1306,7 +1309,8 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
             if (instruction.operand&1U) {
                 const auto& object=std::get<std::shared_ptr<Aggregate>>(value);
                 if (object->nil) {
-                    if (payload!=Type::string && !compound(payload)) trap(instruction,RuntimeError::nil_reference);
+                    if (payload!=Type::string && (!compound(payload) || type_info(program,payload).kind!=CompoundKind::array))
+                        trap(instruction,RuntimeError::nil_reference);
                     stack.push_back(values.zero(payload,false,true));
                     break;
                 }

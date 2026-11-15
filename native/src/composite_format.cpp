@@ -1,4 +1,5 @@
 #include "composite_format.hpp"
+#include "complex_number.hpp"
 #include "diagnostics.hpp"
 #include "formatting.hpp"
 #include "number_format.hpp"
@@ -192,10 +193,19 @@ std::u16string render_argument(const Program& program,const Value& argument,std:
     if (std::holds_alternative<NilString>(value)) return {};
     if (compound(item.type) && type_info(program,item.type).kind==CompoundKind::array)
         return std::get<std::u16string>(reflected_type_property(program,{item.type},TypeOperation::full_name,location,{}));
+    if (compound(item.type) && complex_number_type(type_info(program,item.type)))
+        return complex_dotnet_text(value,specifier,format,location);
     if (!scalar(item.type))
         throw Error("E_UNSUPPORTED",location,"Formatting this object type is not supported",
             "Форматирование этого типа объекта ещё не поддерживается");
     if (!integer_type(item.type) && !floating(value)) return format_scalar(value,location);
+    return format_number(value,item.type,specifier,format,location);
+}
+bool digit(char16_t ch) { return ch>=u'0' && ch<=u'9'; }
+}
+
+std::u16string format_number(const Value& value,Type type,std::u16string_view specifier,
+    const NumberFormatSettings& format,SourceLocation location) {
     if (specifier.empty()) return localize_number(format_scalar(value,location),format,location);
     const auto symbol=specifier.front();
     const auto letter=static_cast<char16_t>(symbol>=u'a' && symbol<=u'z'?symbol-u'a'+u'A':symbol);
@@ -208,7 +218,7 @@ std::u16string render_argument(const Program& program,const Value& argument,std:
         }
     }
     if (letter==u'D') {
-        if (!integer_type(item.type)) throw invalid_format(location);
+        if (!integer_type(type)) throw invalid_format(location);
         auto text=format_scalar(value,location);
         const auto negative=text.starts_with(u'-');
         const auto digits=text.size()-negative;
@@ -231,8 +241,6 @@ std::u16string render_argument(const Program& program,const Value& argument,std:
     const auto number=decimal_digits(value,location);
     if (letter==u'E') return localize_number(scientific_number(number,precision<0?6:precision,symbol),format,location);
     return fixed_number(number,precision<0?format.digits:precision,letter==u'N',format,location);
-}
-bool digit(char16_t ch) { return ch>=u'0' && ch<=u'9'; }
 }
 
 std::u16string format_scalar(const Value& value,SourceLocation location) {
