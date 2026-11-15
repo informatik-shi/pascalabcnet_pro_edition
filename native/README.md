@@ -5829,8 +5829,12 @@ var/out-параметры и Self записи и могут менять Resul
 `TimeSpan` поддерживает вывод `c`, `g` и `G`. Оба типа можно
 присвоить `object`, получить обратно проверяемым приведением и
 передать в `Format` или `AppendFormat`.
-Разбор по заданному шаблону, преобразование между часовыми поясами
-и форматы других культур ещё переносятся.
+ISO-строки со смещением или суффиксом `Z` преобразуются в местное
+время. `ToLocalTime`, `ToUniversalTime` и `IsDaylightSavingTime`
+используют системный пояс и сохраняют точность в семь знаков долей
+секунды. При переводе часов назад сохраняется исходное смещение
+для значений, полученных из UTC.
+Разбор по заданному шаблону и форматы других культур ещё переносятся.
 [Исходная реализация DateTime](https://github.com/microsoft/referencesource/blob/main/mscorlib/system/datetime.cs)
 [Исходная реализация TimeSpan](https://github.com/microsoft/referencesource/blob/main/mscorlib/system/timespan.cs)
 

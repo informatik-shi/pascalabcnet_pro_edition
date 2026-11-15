@@ -24,7 +24,8 @@ constexpr std::int64_t ticks_per_day=24*ticks_per_hour;
 constexpr std::int64_t date_max_ticks=3'155'378'975'999'999'999;
 constexpr auto epoch=sys_days{year{1}/January/1};
 constexpr auto unix_epoch=sys_days{year{1970}/January/1};
-constexpr int unspecified_kind=0, utc_kind=1, local_kind=2;
+constexpr auto unix_epoch_ticks=(unix_epoch-epoch).count()*ticks_per_day;
+constexpr int unspecified_kind=0, utc_kind=1, local_kind=2, ambiguous_daylight_kind=3;
 
 struct CalendarValue {std::int64_t ticks; std::int32_t kind;};
 struct ClockFields {int hour,minute,second,millisecond;};
@@ -139,24 +140,86 @@ Value make_calendar(Values& values,Type type,std::int64_t ticks,std::int32_t kin
     if (object->items.size()>1) object->items[1]->value=kind;
     return object;
 }
-CalendarValue current_date(M call,SourceLocation location) {
-    const auto instant=system_clock::now();
-    const auto seconds_floor=floor<seconds>(instant);
-    const auto fraction=duration_cast<duration<std::int64_t,std::ratio<1,10'000'000>>>(instant-seconds_floor).count();
-    if (call==M::utc_now)
-        return {(unix_epoch-epoch).count()*ticks_per_day+seconds_floor.time_since_epoch().count()*ticks_per_second
-            +fraction,utc_kind};
-    const auto clock=system_clock::to_time_t(seconds_floor);
+Error local_zone_error(SourceLocation location) {
+    return Error("E_RANGE",location,"Local time zone cannot represent this DateTime",
+        "Эта дата выходит за диапазон локального часового пояса");
+}
+std::optional<std::tm> local_fields(std::time_t unix_time) {
     std::tm local{};
 #ifdef _WIN32
-    const bool ok=localtime_s(&local,&clock)==0;
+    if (localtime_s(&local,&unix_time)!=0) return {};
 #else
-    const bool ok=localtime_r(&clock,&local)!=nullptr;
+    if (!localtime_r(&unix_time,&local)) return {};
 #endif
-    if (!ok) throw bad_date(location);
-    const auto day_ticks=date_only(local.tm_year+1900,local.tm_mon+1,local.tm_mday,location);
-    if (call==M::today) return {day_ticks,local_kind};
-    return {day_ticks+clock_ticks(local.tm_hour,local.tm_min,local.tm_sec,0,location)+fraction,local_kind};
+    return local;
+}
+bool same_wall_clock(const std::tm& a,const std::tm& b) {
+    return a.tm_year==b.tm_year && a.tm_mon==b.tm_mon && a.tm_mday==b.tm_mday
+        && a.tm_hour==b.tm_hour && a.tm_min==b.tm_min && a.tm_sec==b.tm_sec;
+}
+std::optional<std::time_t> wall_clock_time(std::tm& fields,int dst) {
+    fields.tm_isdst=dst;
+    errno=0;
+    const auto result=std::mktime(&fields);
+    if (result==std::time_t{-1} && errno) return {};
+    return result;
+}
+std::optional<std::time_t> local_to_unix(CalendarValue value) {
+    const auto date=date_fields(value.ticks);
+    const auto time=clock_fields(value.ticks);
+    std::tm wall{};
+    wall.tm_year=static_cast<int>(date.year())-1900;
+    wall.tm_mon=static_cast<int>(static_cast<unsigned>(date.month()))-1;
+    wall.tm_mday=static_cast<int>(static_cast<unsigned>(date.day()));
+    wall.tm_hour=time.hour;
+    wall.tm_min=time.minute;
+    wall.tm_sec=time.second;
+    auto requested=wall;
+    // An explicit local wall time uses standard time during the overlap.
+    const auto preferred=wall_clock_time(requested,value.kind==ambiguous_daylight_kind?1:0);
+    if (preferred && same_wall_clock(requested,wall)) return preferred;
+    auto normalized=wall;
+    const auto detected=wall_clock_time(normalized,-1);
+    if (detected && same_wall_clock(normalized,wall)) return detected;
+    // During a skipped interval the standard-time offset remains defined.
+    return preferred?preferred:detected;
+}
+std::optional<CalendarValue> utc_to_local(std::int64_t ticks,SourceLocation location) {
+    using ticks_duration=duration<std::int64_t,std::ratio<1,10'000'000>>;
+    const auto unix_ticks=ticks_duration{ticks-unix_epoch_ticks};
+    const auto seconds_floor=floor<seconds>(unix_ticks);
+    const auto remainder=(unix_ticks-seconds_floor).count();
+    const auto local=local_fields(static_cast<std::time_t>(seconds_floor.count()));
+    if (!local) return {};
+    const auto y=local->tm_year+1900;
+    if (y<1) return CalendarValue{0,local_kind};
+    if (y>9999) return CalendarValue{date_max_ticks,local_kind};
+    const auto local_ticks=date_only(y,local->tm_mon+1,local->tm_mday,location)
+        +clock_ticks(local->tm_hour,local->tm_min,local->tm_sec,0,location)+remainder;
+    auto kind=local_kind;
+    if (local->tm_isdst>0) {
+        auto standard=*local;
+        if (const auto alternative=wall_clock_time(standard,0); alternative && same_wall_clock(standard,*local)
+            && *alternative!=static_cast<std::time_t>(seconds_floor.count())) kind=ambiguous_daylight_kind;
+    }
+    return CalendarValue{local_ticks,kind};
+}
+CalendarValue to_universal(CalendarValue date,SourceLocation location) {
+    if (date.kind==utc_kind) return date;
+    const auto unix_time=local_to_unix(date);
+    if (!unix_time) throw local_zone_error(location);
+    const auto ticks=static_cast<std::int64_t>(*unix_time)*ticks_per_second+unix_epoch_ticks
+        +date.ticks%ticks_per_second;
+    return {std::clamp<std::int64_t>(ticks,0,date_max_ticks),utc_kind};
+}
+CalendarValue current_date(M call,SourceLocation location) {
+    using ticks_duration=duration<std::int64_t,std::ratio<1,10'000'000>>;
+    const auto now=unix_epoch_ticks+duration_cast<ticks_duration>(system_clock::now().time_since_epoch()).count();
+    if (call==M::utc_now) return {now,utc_kind};
+    auto local=utc_to_local(now,location);
+    if (!local) throw local_zone_error(location);
+    if (call==M::today) return {local->ticks-local->ticks%ticks_per_day,local_kind};
+    return *local;
 }
 void digits(std::u16string& text,std::uint64_t number,std::size_t width=1) {
     char16_t buffer[20];
@@ -203,8 +266,15 @@ struct TextCursor {
         for (auto count=offset-first;count<7;++count) *value*=10;
         return value;
     }
+    std::optional<int> two_digits() {
+        if (text.size()-offset<2 || text[offset]<u'0' || text[offset]>u'9'
+            || text[offset+1]<u'0' || text[offset+1]>u'9') return {};
+        const auto number=10*(text[offset]-u'0')+(text[offset+1]-u'0');
+        offset+=2;
+        return number;
+    }
 };
-std::optional<CalendarValue> parse_date(std::u16string_view text) {
+std::optional<CalendarValue> parse_date(std::u16string_view text,SourceLocation location) {
     TextCursor input{text};
     input.spaces();
     const auto first_index=input.offset;
@@ -248,18 +318,38 @@ std::optional<CalendarValue> parse_date(std::u16string_view text) {
         }
     }
     input.spaces();
-    if (!input.done()) {
-        bool afternoon;
-        if (input.take(u'P') || input.take(u'p')) afternoon=true;
-        else if (input.take(u'A') || input.take(u'a')) afternoon=false;
-        else return {};
+    std::optional<bool> afternoon;
+    if (input.take(u'P') || input.take(u'p')) afternoon=true;
+    else if (input.take(u'A') || input.take(u'a')) afternoon=false;
+    if (afternoon) {
         if ((!input.take(u'M') && !input.take(u'm')) || *hour<1 || *hour>12) return {};
-        *hour=(*hour%12)+(afternoon?12:0);
+        *hour=(*hour%12)+(*afternoon?12:0);
         input.spaces();
     }
+    std::optional<int> utc_offset;
+    if (input.take(u'Z') || input.take(u'z')) utc_offset=0;
+    else {
+        const bool positive=input.take(u'+');
+        if (positive || input.take(u'-')) {
+            const auto hours=input.two_digits();
+            if (!hours) return {};
+            int minutes=0;
+            if (input.take(u':') || (!input.done() && input.text[input.offset]>=u'0' && input.text[input.offset]<=u'9')) {
+                const auto part=input.two_digits();
+                if (!part) return {};
+                minutes=*part;
+            }
+            if (*hours>14 || minutes>=60 || (*hours==14 && minutes!=0)) return {};
+            utc_offset=(positive?1:-1)*(*hours*60+minutes);
+        }
+    }
+    input.spaces();
     if (!input.done() || *hour>=24) return {};
-    return CalendarValue{base+*hour*ticks_per_hour+*minute*ticks_per_minute+second_value*ticks_per_second+fraction,
-        unspecified_kind};
+    const auto wall=base+*hour*ticks_per_hour+*minute*ticks_per_minute+second_value*ticks_per_second+fraction;
+    if (!utc_offset) return CalendarValue{wall,unspecified_kind};
+    const auto utc=wall-*utc_offset*ticks_per_minute;
+    if (utc<0 || utc>date_max_ticks) return {};
+    return utc_to_local(utc,location);
 }
 std::optional<CalendarValue> parse_span(std::u16string_view text) {
     TextCursor input{text};
@@ -340,23 +430,11 @@ std::u16string span_text(std::int64_t ticks,std::u16string_view format,SourceLoc
     return text;
 }
 std::int64_t local_offset_minutes(CalendarValue value,SourceLocation location) {
-    const auto fields=date_fields(value.ticks);
-    const auto clock=clock_fields(value.ticks);
-    std::tm local{};
-    local.tm_year=static_cast<int>(fields.year())-1900;
-    local.tm_mon=static_cast<int>(static_cast<unsigned>(fields.month()))-1;
-    local.tm_mday=static_cast<int>(static_cast<unsigned>(fields.day()));
-    local.tm_hour=clock.hour;
-    local.tm_min=clock.minute;
-    local.tm_sec=clock.second;
-    local.tm_isdst=-1;
-    errno=0;
-    const auto utc_seconds=std::mktime(&local);
-    if (utc_seconds==std::time_t{-1} && errno)
-        throw Error("E_RANGE",location,"Local time zone cannot represent this DateTime",
-            "Эта дата выходит за диапазон локального часового пояса");
-    const auto wall_seconds=(value.ticks-(unix_epoch-epoch).count()*ticks_per_day)/ticks_per_second;
-    return (wall_seconds-static_cast<std::int64_t>(utc_seconds))/60;
+    const auto utc=local_to_unix(value);
+    if (!utc) throw local_zone_error(location);
+    using ticks_duration=duration<std::int64_t,std::ratio<1,10'000'000>>;
+    const auto wall_seconds=floor<seconds>(ticks_duration{value.ticks-unix_epoch_ticks}).count();
+    return (wall_seconds-static_cast<std::int64_t>(*utc))/60;
 }
 void append_offset(std::u16string& text,std::int64_t minutes,std::size_t width) {
     text.push_back(minutes<0?u'-':u'+');
@@ -415,7 +493,7 @@ std::u16string custom_date_text(CalendarValue value,std::u16string_view format,S
         }
         case u'K':
             if (value.kind==utc_kind) text.append(width,u'Z');
-            if (value.kind==local_kind) {
+            if (value.kind>=local_kind) {
                 const auto offset=local_offset_minutes(value,location);
                 for (std::size_t i=0;i<width;++i) append_offset(text,offset,3);
             }
@@ -458,6 +536,7 @@ std::u16string custom_date_text(CalendarValue value,std::u16string_view format,S
 }
 std::u16string date_text(CalendarValue date,std::u16string_view format,SourceLocation location) {
     if (format.size()>1) return custom_date_text(date,format,location);
+    if (format==u"U") {date=to_universal(date,location);format=u"F";}
     if (format.empty()) format=u"G";
     const auto fields=date_fields(date.ticks);
     const auto clock=clock_fields(date.ticks);
@@ -483,7 +562,7 @@ std::u16string date_text(CalendarValue date,std::u16string_view format,SourceLoc
         if (format==u"O" || format==u"o") {
             text.push_back(u'.'); digits(text,static_cast<std::uint64_t>(date.ticks%ticks_per_second),7);
             if (date.kind==utc_kind) text.push_back(u'Z');
-            if (date.kind==local_kind) append_offset(text,local_offset_minutes(date,location),3);
+            if (date.kind>=local_kind) append_offset(text,local_offset_minutes(date,location),3);
         } else if (format==u"u") text.push_back(u'Z');
         return text;
     }
@@ -535,7 +614,7 @@ bool calendar_signature(std::span<const TypeInfo> types,Type owner,std::size_t o
     const auto info=find_type(types,owner);
     if (!info || !calendar_record_shape(types,*info)) return false;
     const auto call=method(operation);
-    if (call>M::try_parse) return false;
+    if (call>M::is_daylight_saving) return false;
     const bool date=info->native_record==NativeRecord::date_time;
     if (call==M::weekday) return date && (operation>>8U)<=0xffffU
         && tagged_enum(find_type(types,payload(operation)),"system.dayofweek",weekdays);
@@ -547,6 +626,7 @@ bool calendar_signature(std::span<const TypeInfo> types,Type owner,std::size_t o
     case M::time_of_day: case M::difference: case M::add_days: case M::add_hours: case M::add_minutes:
     case M::add_seconds: case M::add_milliseconds: case M::add_ticks: case M::add_months: case M::add_years:
     case M::short_date_text: case M::short_time_text: case M::long_date_text: case M::long_time_text:
+    case M::to_local_time: case M::to_universal_time: case M::is_daylight_saving:
         return date;
     case M::span_clock: case M::span_days: case M::span_millis: case M::zero: case M::total_days:
     case M::total_hours: case M::total_minutes: case M::total_seconds: case M::total_milliseconds: case M::from_days:
@@ -599,7 +679,8 @@ Type calendar_result(std::span<const TypeInfo> types,Type owner,std::size_t oper
     case M::year: case M::month: case M::day: case M::hour: case M::minute: case M::second: case M::millisecond:
     case M::day_of_year: case M::days_in_month: case M::hash: case M::compare: case M::compare_static:
         return Type::integer;
-    case M::try_parse: case M::leap_year: case M::equal: case M::unequal: case M::less: case M::less_equal: case M::greater:
+    case M::try_parse: case M::is_daylight_saving: case M::leap_year: case M::equal: case M::unequal:
+    case M::less: case M::less_equal: case M::greater:
     case M::greater_equal: case M::equals_static: return Type::boolean;
     case M::total_days: case M::total_hours: case M::total_minutes: case M::total_seconds: case M::total_milliseconds:
         return Type::real;
@@ -626,7 +707,7 @@ Value calendar_invoke(Values& values,Type owner,std::size_t operation,std::span<
     switch (call) {
     case M::parse: case M::try_parse: {
         const auto& text=string_text(args[0]);
-        const auto result=date?parse_date(text):parse_span(text);
+        const auto result=date?parse_date(text,location):parse_span(text);
         if (call==M::parse) {
             if (!result) throw Error("E_FORMAT",location,date?"Invalid DateTime text":"Invalid TimeSpan text",
                 date?"Некорректная строка DateTime":"Некорректная строка TimeSpan");
@@ -685,7 +766,7 @@ Value calendar_invoke(Values& values,Type owner,std::size_t operation,std::span<
         const auto y=date_fields(t).year();
         return static_cast<std::int32_t>((epoch+days{t/ticks_per_day}-sys_days{y/January/1}).count()+1);
     }
-    case M::kind: return EnumValue{info.key,first.kind};
+    case M::kind: return EnumValue{info.key,std::min(first.kind,local_kind)};
     case M::date: return build(t-t%ticks_per_day,first.kind);
     case M::time_of_day: return make_calendar(values,info.element,t%ticks_per_day);
     case M::ticks: return t;
@@ -739,6 +820,23 @@ Value calendar_invoke(Values& values,Type owner,std::size_t operation,std::span<
     case M::short_time_text: return date_text(first,u"t",location);
     case M::long_date_text: return date_text(first,u"D",location);
     case M::long_time_text: return date_text(first,u"T",location);
+    case M::to_universal_time: {
+        const auto converted=to_universal(first,location);
+        return build(converted.ticks,converted.kind);
+    }
+    case M::to_local_time: {
+        if (first.kind>=local_kind) return build(first.ticks,first.kind);
+        const auto local=utc_to_local(first.ticks,location);
+        if (!local) throw local_zone_error(location);
+        return build(local->ticks,local->kind);
+    }
+    case M::is_daylight_saving: {
+        if (first.kind==utc_kind) return false;
+        const auto unix_time=local_to_unix(first);
+        const auto local=unix_time?local_fields(*unix_time):std::nullopt;
+        if (!local) throw local_zone_error(location);
+        return local->tm_isdst>0;
+    }
     default: throw runtime_error(RuntimeError::invalid_bytecode,location);
     }
 }

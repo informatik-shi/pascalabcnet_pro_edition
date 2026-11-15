@@ -1128,7 +1128,7 @@ private:
         }
         else if (accept("(")) {
             if (!is(")")) do {
-                if (result->arguments.size() >= 7) fail("Constructor argument limit exceeded");
+                if (result->arguments.size() >= 16) fail("Constructor argument limit exceeded");
                 auto argument = expression(); result->depth = std::max(result->depth,argument->depth+1);
                 if (result->depth > 256) fail("Constructor nesting limit exceeded");
                 result->arguments.push_back(std::move(argument));
@@ -2414,7 +2414,8 @@ private:
             {"addticks",M::add_ticks},{"addmonths",M::add_months},{"addyears",M::add_years},
             {"duration",M::duration},{"negate",M::negate},{"compareto",M::compare},{"gethashcode",M::hash},
             {"equals",M::equal},{"tostring",M::to_string},{"toshortdatestring",M::short_date_text},
-            {"toshorttimestring",M::short_time_text},{"tolongdatestring",M::long_date_text},{"tolongtimestring",M::long_time_text}
+            {"toshorttimestring",M::short_time_text},{"tolongdatestring",M::long_date_text},{"tolongtimestring",M::long_time_text},
+            {"tolocaltime",M::to_local_time},{"touniversaltime",M::to_universal_time},{"isdaylightsavingtime",M::is_daylight_saving}
         };
         for (const auto& [member,operation]:methods) if (member==name) {
             std::vector<std::unique_ptr<hir::Expr>> args;

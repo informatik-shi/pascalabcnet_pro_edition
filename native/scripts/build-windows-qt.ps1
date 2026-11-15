@@ -177,6 +177,7 @@ SetNumberFormat и SetDecimalSeparator меняют числовой форма�
 Complex поддерживает арифметику, тригонометрические функции, приведение через object и ToString с NumberFormatInfo.
 DateTime и TimeSpan поддерживают календарную арифметику, основные форматы DateTime, Parse и TryParse.
 DateTime поддерживает шаблоны через ToString и Format. TimeSpan поддерживает форматы c, g и G.
+DateTime разбирает ISO со смещением и преобразует UTC и локальное время.
 WriteFormat и WritelnFormat выводят результат Format в консоль или файл Text.
 Статические массивы, независимые копии, двумерные индексы и file of массив: examples/fixed-arrays.pas.
 Инициализаторы динамических массивов, записи и более семи элементов: examples/array-literals.pas.
