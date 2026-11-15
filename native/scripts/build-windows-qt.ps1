@@ -88,6 +88,7 @@ InRange, Between, Clamp и методы ClampTop/ClampBottom: examples/comparabl
 SortedSet<T> также поддерживает CopyTo, TryGetValue, GetEnumerator и ленивый Reverse.
 Фабрики SSet, SSetInt, SSetStr, Copy и операции через ICollection<T> доступны для SortedSet<T>.
 SortedSet<T> проверяет равенство, включение и пересечение по сравнителю принимающего множества.
+UnionWith, IntersectWith, ExceptWith и SymmetricExceptWith доступны и через ISet<T>.
 CopyTo, TryGetValue, RemoveWhere и TrimExcess: examples/hash-set-extra.pas.
 HSet/HSetInt/HSetStr, Copy и явные преобразования: examples/hash-set-factories.pas.
 Записи IntRange/CharRange, 1..5, CopyTo и преобразования: examples/ordinal-ranges.pas.

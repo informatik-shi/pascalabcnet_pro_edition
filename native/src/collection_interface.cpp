@@ -17,7 +17,7 @@ void checkpoint(Values& values,const ExecutionOptions& options,std::uint64_t& wo
 }
 bool native_collection_type(const std::vector<TypeInfo>& types,Type from,Type to){
  if(!compound(from)||!compound(to)||static_cast<unsigned>(from)-64U>=types.size()||static_cast<unsigned>(to)-64U>=types.size())return false;
- const auto& source=types[static_cast<unsigned>(from)-64U];const auto& target=types[static_cast<unsigned>(to)-64U];return source.element==target.element&&((target.kind==CompoundKind::collection_interface&&native_kind(source))||(target.kind==CompoundKind::list_interface&&((source.kind==CompoundKind::array&&source.rank==1)||source.kind==CompoundKind::list))||(target.kind==CompoundKind::set_interface&&source.kind==CompoundKind::hash_set)||(target.kind==CompoundKind::dictionary_interface&&source.kind==CompoundKind::dictionary&&source.key==target.key));
+ const auto& source=types[static_cast<unsigned>(from)-64U];const auto& target=types[static_cast<unsigned>(to)-64U];return source.element==target.element&&((target.kind==CompoundKind::collection_interface&&native_kind(source))||(target.kind==CompoundKind::list_interface&&((source.kind==CompoundKind::array&&source.rank==1)||source.kind==CompoundKind::list))||(target.kind==CompoundKind::set_interface&&(source.kind==CompoundKind::hash_set||source.kind==CompoundKind::sorted_set))||(target.kind==CompoundKind::dictionary_interface&&source.kind==CompoundKind::dictionary&&source.key==target.key));
 }
 bool native_enumerable_type(const std::vector<TypeInfo>& types,Type from,Type to){
  if(!compound(from)||!compound(to)||static_cast<unsigned>(from)-64U>=types.size()||static_cast<unsigned>(to)-64U>=types.size())return false;
@@ -47,9 +47,19 @@ Value native_collection_invoke(Values& values,Type owner,std::size_t slot,const 
  if(set){
   const auto parent=type_info(values.program,owner).interfaces.read().parents[0];
   if(slot<7)return native_collection_invoke(values,parent,slot<2?slot:slot+1,receiver,arguments,options);
+  std::vector<Value> input{receiver};
+  input.insert(input.end(),arguments.begin(),arguments.end());
+  if(type_info(values.program,object->type).kind==CompoundKind::sorted_set){
+   constexpr std::array<SortedSetMethod,11> methods{
+    SortedSetMethod::add,SortedSetMethod::except_with,SortedSetMethod::intersect_with,
+    SortedSetMethod::proper_subset,SortedSetMethod::proper_superset,SortedSetMethod::subset,
+    SortedSetMethod::superset,SortedSetMethod::overlaps,SortedSetMethod::set_equal,
+    SortedSetMethod::symmetric_with,SortedSetMethod::union_with
+   };
+   return sorted_set_invoke(values,object->type,methods[slot-7],input,options);
+  }
   constexpr std::array<HashSetMethod,11> methods{HashSetMethod::add,HashSetMethod::except_with,HashSetMethod::intersect_with,HashSetMethod::proper_subset,HashSetMethod::proper_superset,HashSetMethod::subset,HashSetMethod::superset,HashSetMethod::overlaps,HashSetMethod::set_equals,HashSetMethod::symmetric_with,HashSetMethod::union_with};
   const auto sequence=type_info(values.program,parent).interfaces.read().parents[0];
-  std::vector<Value> input{receiver};input.insert(input.end(),arguments.begin(),arguments.end());
   return hash_set_invoke(values,object->type,slot==7?Type::invalid:sequence,methods[slot-7],input,options);
  }
  const auto shape=type_info(values.program,object->type);const auto kind=shape.kind;const bool view=kind==CompoundKind::dictionary_keys||kind==CompoundKind::dictionary_values;

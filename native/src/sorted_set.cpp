@@ -25,6 +25,9 @@ bool copies_items(Method method){
 bool relation_method(Method method){
     return method>=Method::set_equal && method<=Method::overlaps;
 }
+bool update_method(Method method){
+    return method>=Method::union_with && method<=Method::symmetric_with;
+}
 
 class OrderedSet {
     Values& values;
@@ -63,6 +66,30 @@ public:
             else first=middle+1;
         }
         return {first,false};
+    }
+
+    bool change(const Object& set,const Value& item,bool adding){
+        auto& items=set->items;
+        if(!items.empty())++set->version;
+        const auto [position,present]=locate(set,item);
+        if(adding==present)return false;
+        if(adding && items.size()>=INT32_MAX)
+            throw runtime_error(RuntimeError::integer_overflow,values.location);
+        step(items.size()-position);
+        const auto at=items.begin()+static_cast<std::ptrdiff_t>(position);
+        if(adding){
+            const auto was_empty=items.empty();
+            const auto element=type_info(values.program,set->type).element;
+            items.insert(at,values.cell(element,values.copy(item)));
+            if(was_empty)++set->version;
+        }else items.erase(at);
+        return true;
+    }
+
+    void clear(const Object& set){
+        step(set->items.size());
+        set->items.clear();
+        ++set->version;
     }
 };
 
@@ -165,6 +192,120 @@ bool relation(Values& values,OrderedSet& order,const Object& left,const Object& 
     if(method==Method::proper_subset)return missing && unique==items.size();
     return unique==items.size() && (method==Method::subset || !missing);
 }
+
+void merge_sorted(Values& values,OrderedSet& order,const Object& left,const Object& right,bool intersection){
+    const auto left_count=left->items.size();
+    const auto right_count=right->items.size();
+    if(!intersection && right_count>static_cast<std::size_t>(INT32_MAX)-left_count)
+        throw runtime_error(RuntimeError::integer_overflow,values.location);
+    const auto capacity=intersection ? left_count : left_count+right_count;
+    if(capacity>values.remaining)throw runtime_error(RuntimeError::allocation_limit,values.location);
+    values.remaining-=capacity;
+    std::vector<std::shared_ptr<Cell>> result;
+    result.reserve(capacity);
+    const auto maximum=intersection ? values.copy(left->items.back()->value) : Value{std::int32_t{0}};
+    const auto version=right->version;
+    const auto check_right=[&]{
+        if(right->version!=version)throw runtime_error(RuntimeError::collection_changed,values.location);
+    };
+    std::size_t i=0,j=0;
+    while(i<left_count && j<right_count){
+        if(intersection){
+            const auto beyond_maximum=order.compare(left,right->items[j]->value,maximum)>0;
+            check_right();
+            if(beyond_maximum)break;
+        }
+        const auto comparison=order.compare(left,left->items[i]->value,right->items[j]->value);
+        check_right();
+        if(comparison<0){
+            if(!intersection)result.push_back(left->items[i]);
+            ++i;
+        }else{
+            if(!intersection || comparison==0)result.push_back(right->items[j]);
+            ++j;
+            if(comparison==0)++i;
+        }
+    }
+    if(!intersection){
+        order.step(left_count-i+right_count-j);
+        result.insert(result.end(),left->items.begin()+static_cast<std::ptrdiff_t>(i),left->items.end());
+        result.insert(result.end(),right->items.begin()+static_cast<std::ptrdiff_t>(j),right->items.end());
+    }
+    left->items=std::move(result);
+    ++left->version;
+}
+
+void update(Values& values,OrderedSet& order,const Object& left,const Object& input,Method method,const ExecutionOptions& options){
+    if(!input || input->nil)
+        throw Error("E_NIL",values.location,"SortedSet source collection is nil","Исходная коллекция SortedSet равна nil");
+    if((method==Method::intersect_with || method==Method::except_with) && left->items.empty())return;
+    const auto right=as_sorted(input);
+    const bool same_policy=right && right->ordering==left->ordering;
+    const auto& shape=type_info(values.program,left->type);
+    const auto include=[&](const Value& item){
+        if(!order.locate(left,item).second)(void)order.change(left,item,true);
+        return true;
+    };
+    const auto toggle=[&](const Value& item){
+        (void)order.change(left,item,!order.locate(left,item).second);
+        return true;
+    };
+    if(method==Method::symmetric_with && left->items.empty())method=Method::union_with;
+    if(method==Method::union_with){
+        if(right && left->items.empty()){
+            const std::array<Value,2> args{input,left->ordering};
+            auto copy=std::get<Object>(sorted_set_invoke(values,left->type,Method::construct_source_comparer,args,options));
+            left->items=std::move(copy->items);
+            ++left->version;
+        }else if(same_policy && right->items.size()>left->items.size()/2)
+            merge_sorted(values,order,left,right,false);
+        else for_each_item(values,order,input,options,include);
+        return;
+    }
+    if(method==Method::intersect_with){
+        if(same_policy){merge_sorted(values,order,left,right,true);return;}
+        std::vector<Value> saved;
+        for_each_item(values,order,input,options,[&](const Value& item){
+            if(order.locate(left,item).second){
+                if(!values.remaining)throw runtime_error(RuntimeError::allocation_limit,values.location);
+                --values.remaining;
+                saved.push_back(values.copy(item));
+                (void)order.change(left,item,false);
+            }
+            return true;
+        });
+        order.clear(left);
+        for(const auto& item:saved)include(item);
+        return;
+    }
+    if(right==left){order.clear(left);return;}
+    if(method==Method::except_with){
+        const auto min=values.copy(left->items.front()->value);
+        const auto max=values.copy(left->items.back()->value);
+        if(same_policy){
+            if(right->items.empty() || order.compare(left,right->items.back()->value,min)<0)return;
+            if(right->items.empty() || order.compare(left,right->items.front()->value,max)>0)return;
+        }
+        for_each_item(values,order,input,options,[&](const Value& item){
+            if(order.compare(left,item,min)<0)return true;
+            if(order.compare(left,item,max)>0)return !same_policy;
+            if(same_policy || order.locate(left,item).second)(void)order.change(left,item,false);
+            return true;
+        });
+        return;
+    }
+    if(same_policy){for_each_item(values,order,input,options,toggle);return;}
+    const auto list_type=sorted_set_type_for(values.program.types,shape.element,CompoundKind::list);
+    const auto policy=sorted_set_type_for(values.program.types,shape.element,CompoundKind::comparer_interface);
+    const auto list=std::get<Object>(sequence_collect(values,input,list_type,options));
+    sort_legacy_list(values,list_type,policy,list,left->ordering,options);
+    const Cell* previous=nullptr;
+    for(const auto& cell:list->items){
+        if(previous && order.compare(left,cell->value,previous->value)==0)continue;
+        toggle(cell->value);
+        previous=cell.get();
+    }
+}
 }
 
 Type sorted_set_type_for(const std::vector<TypeInfo>& types,Type element,CompoundKind kind){
@@ -174,7 +315,7 @@ Type sorted_set_type_for(const std::vector<TypeInfo>& types,Type element,Compoun
 }
 
 bool sorted_set_signature(const Program& program,Type owner,SortedSetMethod method){
-    if(method>Method::overlaps || !compound(owner) || !valid_value_type(program,owner))return false;
+    if(method>Method::symmetric_with || !compound(owner) || !valid_value_type(program,owner))return false;
     const auto& shape=type_info(program,owner);
     return shape.kind==CompoundKind::sorted_set
         && sorted_set_type_for(program.types,shape.element,CompoundKind::comparer_interface)!=Type::invalid
@@ -192,7 +333,7 @@ std::vector<Type> sorted_set_parameters(const std::vector<TypeInfo>& types,Type 
         return parameters;
     }
     if(method==Method::membership)return {shape.element,owner};
-    if(relation_method(method))return {owner,shape.key};
+    if(relation_method(method) || update_method(method))return {owner,shape.key};
     if(method==Method::try_get_value)return {owner,shape.element,reference_type(shape.element)};
     if(copies_items(method)){
         std::vector<Type> parameters{owner,sorted_set_type_for(types,shape.element,CompoundKind::array)};
@@ -206,6 +347,7 @@ std::vector<Type> sorted_set_parameters(const std::vector<TypeInfo>& types,Type 
 
 Type sorted_set_result(const std::vector<TypeInfo>& types,Type owner,SortedSetMethod method){
     if(method<=Method::construct_source_comparer || method==Method::copy)return owner;
+    if(update_method(method))return Type::unit;
     const auto& shape=types.at(static_cast<unsigned>(owner)-64U);
     const auto element=shape.element;
     switch(method){
@@ -260,6 +402,7 @@ Value sorted_set_invoke(Values& values,Type owner,SortedSetMethod method,std::sp
         if(!receiver || receiver->nil)throw runtime_error(RuntimeError::nil_reference,values.location);
         auto& items=receiver->items;
         if(relation_method(method))return relation(values,order,receiver,std::get<Object>(args[1]),method,options);
+        if(update_method(method)){update(values,order,receiver,std::get<Object>(args[1]),method,options);return false;}
         if(method==Method::copy){
             const auto source=sequence_create(values,shape.key,receiver,SequenceProvider::sorted_set);
             const std::array<Value,2> input{source,receiver->ordering};
@@ -270,7 +413,7 @@ Value sorted_set_invoke(Values& values,Type owner,SortedSetMethod method,std::sp
             return items.empty() ? values.zero(shape.element,false,true)
                 : values.copy((method==Method::minimum ? items.front() : items.back())->value);
         if(method==Method::comparer)return receiver->ordering;
-        if(method==Method::clear){order.step(items.size());items.clear();++receiver->version;return false;}
+        if(method==Method::clear){order.clear(receiver);return false;}
         if(method==Method::reverse)return sequence_create(values,shape.key,receiver,SequenceProvider::sorted_set_reverse);
         if(copies_items(method)){
             const auto target=std::get<Object>(args[1]);
@@ -290,9 +433,8 @@ Value sorted_set_invoke(Values& values,Type owner,SortedSetMethod method,std::sp
             return false;
         }
 
-        const bool adding=method==Method::add;
-        const bool removing=method==Method::remove;
-        if(!items.empty() && (adding || removing))++receiver->version;
+        if(method==Method::add || method==Method::remove)
+            return order.change(receiver,args[1],method==Method::add);
         const auto& item=args[method==Method::membership ? 0U : 1U];
         const auto [position,present]=order.locate(receiver,item);
         if(method==Method::try_get_value){
@@ -300,17 +442,7 @@ Value sorted_set_invoke(Values& values,Type owner,SortedSetMethod method,std::sp
             values.write(output,present ? items[position]->value : values.zero(shape.element,false,true));
             return present;
         }
-        if(!adding && !removing)return present;
-        if(adding==present)return false;
-        if(adding && items.size()>=INT32_MAX)throw runtime_error(RuntimeError::integer_overflow,values.location);
-        order.step(items.size()-position);
-        const auto at=items.begin()+static_cast<std::ptrdiff_t>(position);
-        if(adding){
-            const auto was_empty=items.empty();
-            items.insert(at,values.cell(shape.element,values.copy(item)));
-            if(was_empty)++receiver->version;
-        }else items.erase(at);
-        return true;
+        return present;
     } catch(const std::bad_alloc&){
         throw runtime_error(RuntimeError::allocation_limit,values.location);
     } catch(const std::length_error&){

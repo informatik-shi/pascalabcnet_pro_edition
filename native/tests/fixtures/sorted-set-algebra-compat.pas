@@ -1,0 +1,35 @@
+uses System;
+function Render(s: SortedSet<Decimal>): string := s.Select(x -> x.ToString).JoinIntoString('|');
+begin
+  var a:=new SortedSet<Decimal>(Arr(Decimal.Parse('1.00'),Decimal.Parse('2.00')));
+  var b:=new SortedSet<Decimal>(Arr(Decimal.Parse('1.0'),Decimal.Parse('3.0')));
+  var unionWithSet:=Copy(a);
+  unionWithSet.UnionWith(b);
+  Writeln(Render(unionWithSet));
+  var unionWithArray:=Copy(a);
+  unionWithArray.UnionWith(b.ToArray);
+  Writeln(Render(unionWithArray));
+  var intersectSet:=Copy(a);
+  intersectSet.IntersectWith(b);
+  Writeln(Render(intersectSet));
+  var intersectArr:=Copy(a);
+  intersectArr.IntersectWith(b.ToArray);
+  Writeln(Render(intersectArr));
+  var sym:=Copy(a);
+  sym.SymmetricExceptWith(Arr(Decimal.Parse('3.00'),Decimal.Parse('1.0'),Decimal.Parse('3.000')));
+  Writeln(Render(sym));
+  var s:=SSetInt(3,1,2);
+  Writeln(s.SetEquals(Arr(3,1,2,2)),' ',s.Overlaps(Arr(2,8)),' ',s.IsProperSubsetOf(Arr(5,2,1,3)),' ',s.IsProperSupersetOf(Arr(1,1,2)));
+  Writeln(s.IsSubsetOf(s),' ',s.IsSupersetOf(s),' ',s.IsProperSubsetOf(s),' ',s.IsProperSupersetOf(s));
+  var numbers:=SSetInt(1,2,3);
+  var policy: System.Collections.Generic.ISet<integer> := numbers;
+  policy.ExceptWith(Arr(1));
+  policy.UnionWith(Arr(4,5));
+  policy.SymmetricExceptWith(Arr(3,7));
+  policy.IntersectWith(Arr(2,7,20));
+  Writeln(policy.Contains(2),' ',policy.IsProperSubsetOf(Arr(2,7,20)),' ',numbers.Count,' ',numbers.Min,' ',numbers.Max);
+  var iter:=numbers.GetEnumerator;
+  Writeln(iter.MoveNext,' ',iter.Current);
+  numbers.UnionWith(Arr(2,7,2));
+  Writeln(iter.MoveNext,' ',iter.Current);
+end.

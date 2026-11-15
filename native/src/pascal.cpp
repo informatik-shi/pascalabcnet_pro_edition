@@ -4922,7 +4922,9 @@ private:
                     {"trygetvalue",Method::try_get_value},{"reverse",Method::reverse},
                     {"setequals",Method::set_equal},{"issubsetof",Method::subset},
                     {"ispropersubsetof",Method::proper_subset},{"issupersetof",Method::superset},
-                    {"ispropersupersetof",Method::proper_superset},{"overlaps",Method::overlaps}
+                    {"ispropersupersetof",Method::proper_superset},{"overlaps",Method::overlaps},
+                    {"unionwith",Method::union_with},{"intersectwith",Method::intersect_with},
+                    {"exceptwith",Method::except_with},{"symmetricexceptwith",Method::symmetric_with}
                 };
                 const auto found=methods.find(source.token.text);
                 const bool copying=source.token.text=="copyto";
