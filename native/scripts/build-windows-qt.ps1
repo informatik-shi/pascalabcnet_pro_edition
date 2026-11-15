@@ -178,7 +178,7 @@ DefaultEncoding изначально CP1251. Его смена и явные Enc
 Типизированные указатели ^T поддерживают New, Dispose и разыменование p^.
 Скалярные значения в object и array of object сохраняют исходный тип для GetType и явных приведений.
 Типизированные файлы открываются в однобайтовых кодировках.
-Serialize и Deserialize поддерживают скаляры, строки и одномерные массивы чисел, boolean и char.
+Serialize и Deserialize поддерживают скаляры и одномерные массивы чисел, boolean, char и string.
 Для сохранения всех Unicode-символов выберите Encoding.UTF8/Unicode; полный API Encoding ещё переносится.
 ReadAllLines/WriteAllLines с Encoding и WriteLines для последовательностей: examples/file-lines.pas.
 Перед ReadAllText/ReadAllLines закройте писатель того же файла.

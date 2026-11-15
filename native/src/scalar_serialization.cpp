@@ -3,11 +3,15 @@
 #include "runtime_values.hpp"
 #include <algorithm>
 #include <array>
+#include <map>
 
 namespace abc {
 namespace {
 // MS-NRBF 2.1.2 and the scalar records emitted by PascalABC.NET.
-enum class Record : std::uint8_t { header=0, system_class=4, string=6, end=11, primitive_array=15 };
+enum class Record : std::uint8_t {
+    header=0, system_class=4, string=6, member_reference=9, nil=10, end=11,
+    nil_run_byte=13, nil_run=14, primitive_array=15, string_array=17
+};
 struct Primitive {
     Type type;
     std::uint8_t code;
@@ -37,22 +41,105 @@ void checkpoint(std::size_t index,SourceLocation location,const ExecutionOptions
     if ((index&255U)==0 && options.cancelled && options.cancelled())
         throw runtime_error(RuntimeError::cancelled,location);
 }
+void write_strings(BinaryCodec& codec,const Aggregate& array,SourceLocation location,const ExecutionOptions& options) {
+    const auto record=[&](Record code){codec.write(Type::byte,static_cast<std::uint8_t>(code),location,options);};
+    const auto integer=[&](std::int32_t field){codec.write(Type::integer,field,location,options);};
+    std::int32_t next_id=2;
+    for (std::size_t i=0;i<array.items.size();) {
+        checkpoint(i,location,options);
+        if (!std::holds_alternative<NilString>(array.items[i]->value)) {
+            record(Record::string);
+            integer(next_id++);
+            codec.write_string(string_text(array.items[i++]->value),location,options);
+            continue;
+        }
+        const auto first=i;
+        while (i<array.items.size() && std::holds_alternative<NilString>(array.items[i]->value)) {
+            checkpoint(i,location,options);
+            ++i;
+        }
+        const auto count=i-first;
+        if (count==1) {
+            record(Record::nil);
+        } else if (count<=255) {
+            record(Record::nil_run_byte);
+            codec.write(Type::byte,static_cast<std::uint8_t>(count),location,options);
+        } else {
+            record(Record::nil_run);
+            integer(static_cast<std::int32_t>(count));
+        }
+    }
+}
+void read_strings(BinaryCodec& codec,Aggregate& array,Values& values,std::int32_t root,SourceLocation location,const ExecutionOptions& options) {
+    const auto byte=[&]{return std::get<std::uint8_t>(codec.read(Type::byte,location,options));};
+    const auto integer=[&]{return std::get<std::int32_t>(codec.read(Type::integer,location,options));};
+    const auto charge=[&](std::size_t units){
+        if (units>values.remaining) throw runtime_error(RuntimeError::allocation_limit,location);
+        values.remaining-=units;
+    };
+    std::map<std::int32_t,std::size_t> definitions;
+    std::vector<std::pair<std::size_t,std::int32_t>> references;
+    for (std::size_t i=0;i<array.items.size();) {
+        checkpoint(i,location,options);
+        switch (static_cast<Record>(byte())) {
+        case Record::string: {
+            const auto id=integer();
+            if (id<=0 || id==root || !definitions.emplace(id,i).second) invalid(location);
+            auto text=codec.read_string(location,options);
+            charge(text.size());
+            array.items[i++]->value=std::move(text);
+            break;
+        }
+        case Record::member_reference: {
+            const auto id=integer();
+            if (id<=0 || id==root) invalid(location);
+            references.emplace_back(i++,id);
+            break;
+        }
+        case Record::nil:
+            ++i;
+            break;
+        case Record::nil_run_byte: {
+            const auto count=byte();
+            if (count==0 || count>array.items.size()-i) invalid(location);
+            i+=count;
+            break;
+        }
+        case Record::nil_run: {
+            const auto count=integer();
+            if (count<=0 || static_cast<std::size_t>(count)>array.items.size()-i) invalid(location);
+            i+=static_cast<std::size_t>(count);
+            break;
+        }
+        default: invalid(location);
+        }
+    }
+    for (const auto& [index,id]:references) {
+        checkpoint(index,location,options);
+        const auto known=definitions.find(id);
+        if (known==definitions.end()) invalid(location);
+        const auto& value=array.items[known->second]->value;
+        charge(string_text(value).size());
+        array.items[index]->value=value;
+    }
+}
 }
 
 bool nrbf_primitive_type(Type type) {
     return std::any_of(primitives.begin(),primitives.end(),[&](const Primitive& entry){return entry.type==type;});
 }
-bool nrbf_primitive_array(const std::vector<TypeInfo>& types,Type type) {
+bool nrbf_single_array_type(const std::vector<TypeInfo>& types,Type type) {
     if (!compound(type) || static_cast<unsigned>(type)-64U>=types.size()) return false;
     const auto& shape=types[static_cast<unsigned>(type)-64U];
-    return shape.kind==CompoundKind::array && shape.rank==1 && nrbf_primitive_type(shape.element);
+    return shape.kind==CompoundKind::array && shape.rank==1
+        && (shape.element==Type::string || nrbf_primitive_type(shape.element));
 }
 
 void serialize_value(BinaryDevice& stream,const Program& program,Type type,const Value& value,SourceLocation location,const ExecutionOptions& options) {
-    const bool array=nrbf_primitive_array(program.types,type);
+    const bool array=nrbf_single_array_type(program.types,type);
     const auto payload=array ? type_info(program,type).element : type;
     const auto primitive=std::find_if(primitives.begin(),primitives.end(),[&](const Primitive& entry){return entry.type==payload;});
-    if ((type!=Type::string && primitive==primitives.end()) || std::holds_alternative<NilString>(value))
+    if ((payload!=Type::string && primitive==primitives.end()) || std::holds_alternative<NilString>(value))
         invalid(location);
     BinaryCodec codec(stream,{TextEncodingKind::utf8,false,true});
     const auto byte=[&](std::uint8_t field){codec.write(Type::byte,field,location,options);};
@@ -66,11 +153,13 @@ void serialize_value(BinaryDevice& stream,const Program& program,Type type,const
     if (array) {
         const auto& data=std::get<std::shared_ptr<Aggregate>>(value);
         if (!data || data->nil || data->items.size()>static_cast<std::size_t>(INT32_MAX)) invalid(location);
-        byte(static_cast<std::uint8_t>(Record::primitive_array));
+        byte(static_cast<std::uint8_t>(payload==Type::string ? Record::string_array : Record::primitive_array));
         integer(1);
         integer(static_cast<std::int32_t>(data->items.size()));
-        byte(primitive->code);
-        if (payload==Type::character) {
+        if (payload!=Type::string) byte(primitive->code);
+        if (payload==Type::string) {
+            write_strings(codec,*data,location,options);
+        } else if (payload==Type::character) {
             std::u16string characters;
             characters.reserve(data->items.size());
             for (std::size_t i=0;i<data->items.size();++i) {
@@ -112,22 +201,29 @@ SerializedValue deserialize_value(BinaryDevice& stream,Values& values,SourceLoca
     const auto record=static_cast<Record>(byte());
     if (integer()!=root) invalid(location);
 
-    if (record==Record::primitive_array) {
+    if (record==Record::primitive_array || record==Record::string_array) {
         const auto length=integer();
-        const auto primitive_code=byte();
-        const auto primitive=std::find_if(primitives.begin(),primitives.end(),[&](const Primitive& entry){return entry.code==primitive_code;});
-        if (length<0 || primitive==primitives.end()) invalid(location);
+        auto element=Type::string;
+        if (record==Record::primitive_array) {
+            const auto primitive_code=byte();
+            const auto primitive=std::find_if(primitives.begin(),primitives.end(),[&](const Primitive& entry){return entry.code==primitive_code;});
+            if (primitive==primitives.end()) invalid(location);
+            element=primitive->type;
+        }
+        if (length<0) invalid(location);
         const auto size=static_cast<std::size_t>(length);
         if (size>values.remaining || size>1'048'576)
             throw runtime_error(RuntimeError::allocation_limit,location);
         if (size>options.instruction_limit) throw runtime_error(RuntimeError::instruction_limit,location);
         const auto array=std::find_if(values.program.types.begin(),values.program.types.end(),[&](const TypeInfo& info){
-            return info.kind==CompoundKind::array && info.rank==1 && info.element==primitive->type;
+            return info.kind==CompoundKind::array && info.rank==1 && info.element==element;
         });
         if (array==values.program.types.end()) invalid(location);
         const auto type=static_cast<Type>(64+(array-values.program.types.begin()));
         auto data=values.array(type,size,true);
-        if (primitive->type==Type::character) {
+        if (element==Type::string) {
+            read_strings(codec,*data,values,root,location,options);
+        } else if (element==Type::character) {
             TextDecoder decoder({TextEncodingKind::utf8,false,true},false);
             for (std::size_t i=0,bytes=0;i<size;) {
                 checkpoint(bytes++,location,options);
@@ -139,7 +235,7 @@ SerializedValue deserialize_value(BinaryDevice& stream,Values& values,SourceLoca
         } else {
             for (std::size_t i=0;i<size;++i) {
                 checkpoint(i,location,options);
-                values.write(data->items[i],codec.read(primitive->type,location,options));
+                values.write(data->items[i],codec.read(element,location,options));
             }
         }
         if (static_cast<Record>(byte())!=Record::end) invalid(location);

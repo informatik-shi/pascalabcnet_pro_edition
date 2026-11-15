@@ -1390,7 +1390,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if (!compound(type) || type_info(program,type).kind!=CompoundKind::boxed_object
                 || payload>65535U) invalid(instruction,"Invalid object conversion metadata");
             const auto value=static_cast<Type>(payload);
-            if ((!scalar(value) || short_string(value)) && !nrbf_primitive_array(program.types,value))
+            if ((!scalar(value) || short_string(value)) && !nrbf_single_array_type(program.types,value))
                 invalid(instruction,"Invalid object conversion metadata");
             break;
         }
