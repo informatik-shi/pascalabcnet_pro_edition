@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <array>
 #include <bit>
+#include <cerrno>
 #include <chrono>
 #include <cmath>
 #include <ctime>
@@ -311,30 +312,152 @@ std::optional<CalendarValue> parse_span(std::u16string_view text) {
     return CalendarValue{ticks,unspecified_kind};
 }
 std::u16string span_text(std::int64_t ticks,std::u16string_view format,SourceLocation location) {
-    if (!format.empty() && format!=u"c" && format!=u"t" && format!=u"T")
+    const bool general=format==u"g",full=format==u"G";
+    if (!general && !full && !format.empty() && format!=u"c" && format!=u"t" && format!=u"T")
         throw Error("E_FORMAT",location,"Unsupported TimeSpan format","Формат TimeSpan ещё не поддерживается");
     const auto bits=static_cast<std::uint64_t>(ticks);
     const auto count=ticks<0?std::uint64_t{0}-bits:bits;
     const auto days_part=count/ticks_per_day;
-    const auto fraction=count%ticks_per_second;
+    auto fraction=count%ticks_per_second;
     std::u16string text;
     if (ticks<0) text.push_back(u'-');
-    if (days_part) {
+    if (days_part || full) {
         digits(text,days_part);
-        text.push_back(u'.');
+        text.push_back(general || full?u':':u'.');
     }
-    digits(text,count/ticks_per_hour%24,2);
+    digits(text,count/ticks_per_hour%24,general?1:2);
     text.push_back(u':');
     digits(text,count/ticks_per_minute%60,2);
     text.push_back(u':');
     digits(text,count/ticks_per_second%60,2);
-    if (fraction) {
+    if (fraction || full) {
+        std::size_t fraction_width=7;
+        if (general)
+            while (fraction%10==0) {fraction/=10;--fraction_width;}
         text.push_back(u'.');
-        digits(text,fraction,7);
+        digits(text,fraction,fraction_width);
+    }
+    return text;
+}
+std::int64_t local_offset_minutes(CalendarValue value,SourceLocation location) {
+    const auto fields=date_fields(value.ticks);
+    const auto clock=clock_fields(value.ticks);
+    std::tm local{};
+    local.tm_year=static_cast<int>(fields.year())-1900;
+    local.tm_mon=static_cast<int>(static_cast<unsigned>(fields.month()))-1;
+    local.tm_mday=static_cast<int>(static_cast<unsigned>(fields.day()));
+    local.tm_hour=clock.hour;
+    local.tm_min=clock.minute;
+    local.tm_sec=clock.second;
+    local.tm_isdst=-1;
+    errno=0;
+    const auto utc_seconds=std::mktime(&local);
+    if (utc_seconds==std::time_t{-1} && errno)
+        throw Error("E_RANGE",location,"Local time zone cannot represent this DateTime",
+            "Эта дата выходит за диапазон локального часового пояса");
+    const auto wall_seconds=(value.ticks-(unix_epoch-epoch).count()*ticks_per_day)/ticks_per_second;
+    return (wall_seconds-static_cast<std::int64_t>(utc_seconds))/60;
+}
+void append_offset(std::u16string& text,std::int64_t minutes,std::size_t width) {
+    text.push_back(minutes<0?u'-':u'+');
+    const auto magnitude=static_cast<std::uint64_t>(std::abs(minutes));
+    digits(text,magnitude/60,width==1?1:2);
+    if (width>=3) {
+        text.push_back(u':');
+        digits(text,magnitude%60,2);
+    }
+}
+Error date_format_error(SourceLocation location) {
+    return Error("E_FORMAT",location,"Invalid DateTime format","Некорректный формат DateTime");
+}
+std::u16string custom_date_text(CalendarValue value,std::u16string_view format,SourceLocation location) {
+    const auto fields=date_fields(value.ticks);
+    const auto clock=clock_fields(value.ticks);
+    const auto day_number=static_cast<unsigned>(fields.day());
+    const auto month_number=static_cast<unsigned>(fields.month());
+    const auto year_number=static_cast<unsigned>(static_cast<int>(fields.year()));
+    const auto day_name=weekdays[static_cast<std::size_t>((value.ticks/ticks_per_day+1)%7)];
+    const auto month_name=months[month_number-1];
+    std::u16string text;
+    const auto render=[&](char16_t token,std::size_t width) {
+        const auto narrow=std::min<std::size_t>(width,2);
+        switch (token) {
+        case u'y':
+            digits(text,width<=2?year_number%100:year_number,width);
+            break;
+        case u'M':
+            if (width<=2) digits(text,month_number,width);
+            else ascii(text,width==3?month_name.substr(0,3):month_name);
+            break;
+        case u'd':
+            if (width<=2) digits(text,day_number,width);
+            else ascii(text,width==3?day_name.substr(0,3):day_name);
+            break;
+        case u'H': digits(text,static_cast<unsigned>(clock.hour),narrow); break;
+        case u'h': digits(text,static_cast<unsigned>(clock.hour%12==0?12:clock.hour%12),narrow); break;
+        case u'm': digits(text,static_cast<unsigned>(clock.minute),narrow); break;
+        case u's': digits(text,static_cast<unsigned>(clock.second),narrow); break;
+        case u't':
+            text.push_back(clock.hour<12?u'A':u'P');
+            if (width>=2) text.push_back(u'M');
+            break;
+        case u'f': case u'F': {
+            if (width>7) throw date_format_error(location);
+            auto fraction=static_cast<std::uint64_t>(value.ticks%ticks_per_second);
+            for (auto i=width;i<7;++i) fraction/=10;
+            auto count=width;
+            if (token==u'F') {
+                while (count && fraction%10==0) {fraction/=10;--count;}
+                if (!count && text.ends_with(u'.')) text.pop_back();
+            }
+            if (count) digits(text,fraction,count);
+            break;
+        }
+        case u'K':
+            if (value.kind==utc_kind) text.append(width,u'Z');
+            if (value.kind==local_kind) {
+                const auto offset=local_offset_minutes(value,location);
+                for (std::size_t i=0;i<width;++i) append_offset(text,offset,3);
+            }
+            break;
+        case u'g':
+            text+=u"A.D.";
+            break;
+        case u'z':
+            append_offset(text,local_offset_minutes(value,location),width);
+            break;
+        default:
+            text.append(width,token);
+            break;
+        }
+    };
+    for (std::size_t i=0;i<format.size();) {
+        const auto token=format[i++];
+        if (token==u'\'' || token==u'"') {
+            while (i<format.size() && format[i]!=token) {
+                if (format[i]==u'\\' && ++i==format.size()) throw date_format_error(location);
+                text.push_back(format[i++]);
+            }
+            if (i==format.size()) throw date_format_error(location);
+            ++i;
+        } else if (token==u'\\') {
+            if (i==format.size()) throw date_format_error(location);
+            text.push_back(format[i++]);
+        } else if (token==u'%') {
+            if (i==format.size() || format[i]==u'%' || format[i]==u'\\' || format[i]==u'\'' || format[i]==u'"')
+                throw date_format_error(location);
+            render(format[i++],1);
+        } else {
+            const auto start=i-1;
+            while (i<format.size() && format[i]==token) ++i;
+            render(token,i-start);
+        }
+        if (text.size()>1'048'576) throw runtime_error(RuntimeError::string_limit,location);
     }
     return text;
 }
 std::u16string date_text(CalendarValue date,std::u16string_view format,SourceLocation location) {
+    if (format.size()>1) return custom_date_text(date,format,location);
     if (format.empty()) format=u"G";
     const auto fields=date_fields(date.ticks);
     const auto clock=clock_fields(date.ticks);
@@ -360,7 +483,20 @@ std::u16string date_text(CalendarValue date,std::u16string_view format,SourceLoc
         if (format==u"O" || format==u"o") {
             text.push_back(u'.'); digits(text,static_cast<std::uint64_t>(date.ticks%ticks_per_second),7);
             if (date.kind==utc_kind) text.push_back(u'Z');
+            if (date.kind==local_kind) append_offset(text,local_offset_minutes(date,location),3);
         } else if (format==u"u") text.push_back(u'Z');
+        return text;
+    }
+    if (format==u"R" || format==u"r") {
+        ascii(text,weekdays[static_cast<std::size_t>((date.ticks/ticks_per_day+1)%7)].substr(0,3));
+        text+=u", "; digits(text,d,2); text.push_back(u' '); ascii(text,months[m-1].substr(0,3));
+        text.push_back(u' '); digits(text,y,4); text.push_back(u' '); time(true,true); text+=u" GMT";
+        return text;
+    }
+    if (format==u"M" || format==u"m" || format==u"Y" || format==u"y") {
+        ascii(text,months[m-1]); text.push_back(u' ');
+        if (format==u"M" || format==u"m") digits(text,d);
+        else digits(text,y,4);
         return text;
     }
     if (format==u"D" || format==u"F" || format==u"f") {

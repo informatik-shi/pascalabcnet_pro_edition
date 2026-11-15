@@ -1,4 +1,5 @@
 #include "composite_format.hpp"
+#include "calendar.hpp"
 #include "complex_number.hpp"
 #include "diagnostics.hpp"
 #include "formatting.hpp"
@@ -191,10 +192,13 @@ std::u16string render_argument(const Program& program,const Value& argument,std:
     const auto& item=*object->items.front();
     const auto& value=item.value;
     if (std::holds_alternative<NilString>(value)) return {};
-    if (compound(item.type) && type_info(program,item.type).kind==CompoundKind::array)
-        return std::get<std::u16string>(reflected_type_property(program,{item.type},TypeOperation::full_name,location,{}));
-    if (compound(item.type) && complex_number_type(type_info(program,item.type)))
-        return complex_dotnet_text(value,specifier,format,location);
+    if (compound(item.type)) {
+        const auto& shape=type_info(program,item.type);
+        if (shape.kind==CompoundKind::array)
+            return std::get<std::u16string>(reflected_type_property(program,{item.type},TypeOperation::full_name,location,{}));
+        if (complex_number_type(shape)) return complex_dotnet_text(value,specifier,format,location);
+        if (calendar_record(shape)) return calendar_text(value,specifier,location);
+    }
     if (!scalar(item.type))
         throw Error("E_UNSUPPORTED",location,"Formatting this object type is not supported",
             "Форматирование этого типа объекта ещё не поддерживается");

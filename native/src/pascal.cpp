@@ -3528,7 +3528,8 @@ private:
             return string_builder_expression(type,StringBuilderMethod::create_text,std::move(args),location);
         }
         if (boxed_object(type,expression->location)
-            && (scalar(expression->type) || nrbf_array_type(module_.types,expression->type) || is_complex(expression->type))) {
+            && (scalar(expression->type) || nrbf_array_type(module_.types,expression->type)
+                || is_complex(expression->type) || is_calendar(expression->type))) {
             if (short_string(expression->type)) expression=convert(std::move(expression),Type::string);
             return object_conversion(std::move(expression),type,type);
         }
@@ -4935,11 +4936,15 @@ private:
                 }
                 return convert_to_subrange(std::move(argument),base,true);
             }
-            if ((aliases_.contains(source.token.text) ? is_complex(aliases_.at(source.token.text)) : source.token.text=="complex")
-                && !routine_names_.contains(source.token.text)) {
+            const auto native_alias=aliases_.find(source.token.text);
+            const bool complex_cast=native_alias!=aliases_.end()?is_complex(native_alias->second):source.token.text=="complex";
+            const bool calendar_cast=native_alias!=aliases_.end()?is_calendar(native_alias->second)
+                :(source.token.text=="datetime" || source.token.text=="timespan");
+            if ((complex_cast || calendar_cast) && !routine_names_.contains(source.token.text)) {
                 if (source.arguments.size()!=1)
-                    throw Error("E_TYPE",result->location,"Complex conversion requires one value","Для приведения к Complex нужно одно значение");
-                const auto type=complex_type(result->location);
+                    throw Error("E_TYPE",result->location,"Value conversion requires one argument","Для приведения значения нужен один аргумент");
+                const auto type=native_alias!=aliases_.end()?native_alias->second:complex_cast
+                    ? complex_type(result->location):calendar_type(source.token.text,result->location);
                 auto argument=expression(*source.arguments.front());
                 if (boxed_object(argument->type,result->location)) {
                     const auto object=argument->type;
