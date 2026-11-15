@@ -2145,7 +2145,9 @@ private:
             if (!write) {
                 for (unsigned code=0;code<static_cast<unsigned>(Type::first_compound);++code) {
                     const auto element=static_cast<Type>(code);
-                    if (element==Type::string || nrbf_primitive_type(element)) (void)sequence_type(CompoundKind::array,element);
+                    const bool primitive=nrbf_primitive_type(element);
+                    if (element==Type::string || primitive) (void)sequence_type(CompoundKind::array,element);
+                    if (primitive) (void)sequence_type(CompoundKind::array,element,2);
                 }
             }
             const auto method=receiver ? (write ? BinaryMethod::serialize : BinaryMethod::deserialize)
@@ -2780,7 +2782,7 @@ private:
             || (shape.kind==CompoundKind::array && shape.rank==1));
     }
     ABC_PASCAL_NOINLINE std::unique_ptr<hir::Expr> convert(std::unique_ptr<hir::Expr> expression, Type type,bool assignment=false,bool copy=true) {
-        if (boxed_object(type,expression->location) && (scalar(expression->type) || nrbf_single_array_type(module_.types,expression->type))) {
+        if (boxed_object(type,expression->location) && (scalar(expression->type) || nrbf_array_type(module_.types,expression->type))) {
             if (short_string(expression->type)) expression=convert(std::move(expression),Type::string);
             return object_conversion(std::move(expression),type,type);
         }
@@ -4096,7 +4098,7 @@ private:
             }
             if (result->arguments.size()==1 && boxed_object(result->arguments.front()->type,result->location)) {
                 const auto cast=cast_alias!=aliases_.end() ? cast_alias->second : find_type(source.token.text).value_or(Type::invalid);
-                if (scalar(cast) || nrbf_single_array_type(module_.types,cast)) {
+                if (scalar(cast) || nrbf_array_type(module_.types,cast)) {
                     const auto object=result->arguments.front()->type;
                     auto unboxed=object_conversion(std::move(result->arguments.front()),short_string(cast) ? Type::string : cast,object);
                     return short_string(cast) ? convert(std::move(unboxed),cast) : std::move(unboxed);

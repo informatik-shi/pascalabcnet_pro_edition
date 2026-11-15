@@ -10,7 +10,7 @@ struct SerializedValue {
 };
 
 bool nrbf_primitive_type(Type);
-bool nrbf_single_array_type(const std::vector<TypeInfo>&,Type);
+bool nrbf_array_type(const std::vector<TypeInfo>&,Type);
 void serialize_value(BinaryDevice&,const Program&,Type,const Value&,SourceLocation,const ExecutionOptions&);
 SerializedValue deserialize_value(BinaryDevice&,Values&,SourceLocation,const ExecutionOptions&);
 }

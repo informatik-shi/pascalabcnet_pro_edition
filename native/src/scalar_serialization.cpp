@@ -9,9 +9,10 @@ namespace abc {
 namespace {
 // MS-NRBF 2.1.2 and the scalar records emitted by PascalABC.NET.
 enum class Record : std::uint8_t {
-    header=0, system_class=4, string=6, member_reference=9, nil=10, end=11,
+    header=0, system_class=4, string=6, binary_array=7, member_reference=9, nil=10, end=11,
     nil_run_byte=13, nil_run=14, primitive_array=15, string_array=17
 };
+constexpr std::uint8_t rectangular_shape=2, primitive_member=0;
 struct Primitive {
     Type type;
     std::uint8_t code;
@@ -128,16 +129,18 @@ void read_strings(BinaryCodec& codec,Aggregate& array,Values& values,std::int32_
 bool nrbf_primitive_type(Type type) {
     return std::any_of(primitives.begin(),primitives.end(),[&](const Primitive& entry){return entry.type==type;});
 }
-bool nrbf_single_array_type(const std::vector<TypeInfo>& types,Type type) {
+bool nrbf_array_type(const std::vector<TypeInfo>& types,Type type) {
     if (!compound(type) || static_cast<unsigned>(type)-64U>=types.size()) return false;
     const auto& shape=types[static_cast<unsigned>(type)-64U];
-    return shape.kind==CompoundKind::array && shape.rank==1
-        && (shape.element==Type::string || nrbf_primitive_type(shape.element));
+    return shape.kind==CompoundKind::array
+        && ((shape.rank==1 && shape.element==Type::string)
+            || ((shape.rank==1 || shape.rank==2) && nrbf_primitive_type(shape.element)));
 }
 
 void serialize_value(BinaryDevice& stream,const Program& program,Type type,const Value& value,SourceLocation location,const ExecutionOptions& options) {
-    const bool array=nrbf_single_array_type(program.types,type);
+    const bool array=nrbf_array_type(program.types,type);
     const auto payload=array ? type_info(program,type).element : type;
+    const bool matrix=array && type_info(program,type).rank==2;
     const auto primitive=std::find_if(primitives.begin(),primitives.end(),[&](const Primitive& entry){return entry.type==payload;});
     if ((payload!=Type::string && primitive==primitives.end()) || std::holds_alternative<NilString>(value))
         invalid(location);
@@ -153,13 +156,26 @@ void serialize_value(BinaryDevice& stream,const Program& program,Type type,const
     if (array) {
         const auto& data=std::get<std::shared_ptr<Aggregate>>(value);
         if (!data || data->nil || data->items.size()>static_cast<std::size_t>(INT32_MAX)) invalid(location);
-        byte(static_cast<std::uint8_t>(payload==Type::string ? Record::string_array : Record::primitive_array));
+        const auto record=matrix ? Record::binary_array : payload==Type::string ? Record::string_array : Record::primitive_array;
+        byte(static_cast<std::uint8_t>(record));
         integer(1);
-        integer(static_cast<std::int32_t>(data->items.size()));
+        if (matrix) {
+            const auto rows=data->rows, columns=data->columns;
+            if (rows>static_cast<std::size_t>(INT32_MAX) || columns>static_cast<std::size_t>(INT32_MAX)
+                || (rows && columns>data->items.size()/rows) || rows*columns!=data->items.size())
+                invalid(location);
+            byte(rectangular_shape);
+            integer(2);
+            integer(static_cast<std::int32_t>(rows));
+            integer(static_cast<std::int32_t>(columns));
+            byte(primitive_member);
+        } else {
+            integer(static_cast<std::int32_t>(data->items.size()));
+        }
         if (payload!=Type::string) byte(primitive->code);
         if (payload==Type::string) {
             write_strings(codec,*data,location,options);
-        } else if (payload==Type::character) {
+        } else if (payload==Type::character && !matrix) {
             std::u16string characters;
             characters.reserve(data->items.size());
             for (std::size_t i=0;i<data->items.size();++i) {
@@ -182,7 +198,7 @@ void serialize_value(BinaryDevice& stream,const Program& program,Type type,const
         codec.write_string(primitive->name,location,options);
         integer(1);
         codec.write_string(u"m_value",location,options);
-        byte(0);
+        byte(primitive_member);
         byte(primitive->code);
     }
     if (!array) codec.write(type,value,location,options);
@@ -201,29 +217,40 @@ SerializedValue deserialize_value(BinaryDevice& stream,Values& values,SourceLoca
     const auto record=static_cast<Record>(byte());
     if (integer()!=root) invalid(location);
 
-    if (record==Record::primitive_array || record==Record::string_array) {
-        const auto length=integer();
+    const bool matrix=record==Record::binary_array;
+    if (record==Record::primitive_array || record==Record::string_array || matrix) {
+        std::int32_t rows=1, columns;
+        if (matrix) {
+            if (byte()!=rectangular_shape || integer()!=2) invalid(location);
+            rows=integer();
+            columns=integer();
+            if (byte()!=primitive_member) invalid(location);
+        } else {
+            columns=integer();
+        }
         auto element=Type::string;
-        if (record==Record::primitive_array) {
+        if (record!=Record::string_array) {
             const auto primitive_code=byte();
             const auto primitive=std::find_if(primitives.begin(),primitives.end(),[&](const Primitive& entry){return entry.code==primitive_code;});
             if (primitive==primitives.end()) invalid(location);
             element=primitive->type;
         }
-        if (length<0) invalid(location);
-        const auto size=static_cast<std::size_t>(length);
-        if (size>values.remaining || size>1'048'576)
+        if (rows<0 || columns<0) invalid(location);
+        const auto count=static_cast<std::uint64_t>(rows)*static_cast<std::uint64_t>(columns);
+        if (count>values.remaining || count>1'048'576)
             throw runtime_error(RuntimeError::allocation_limit,location);
-        if (size>options.instruction_limit) throw runtime_error(RuntimeError::instruction_limit,location);
+        if (count>options.instruction_limit) throw runtime_error(RuntimeError::instruction_limit,location);
+        const auto size=static_cast<std::size_t>(count);
+        const auto rank=matrix ? 2U : 1U;
         const auto array=std::find_if(values.program.types.begin(),values.program.types.end(),[&](const TypeInfo& info){
-            return info.kind==CompoundKind::array && info.rank==1 && info.element==element;
+            return info.kind==CompoundKind::array && info.rank==rank && info.element==element;
         });
         if (array==values.program.types.end()) invalid(location);
         const auto type=static_cast<Type>(64+(array-values.program.types.begin()));
-        auto data=values.array(type,size,true);
+        auto data=matrix ? values.matrix(type,rows,columns,true) : values.array(type,size,true);
         if (element==Type::string) {
             read_strings(codec,*data,values,root,location,options);
-        } else if (element==Type::character) {
+        } else if (element==Type::character && !matrix) {
             TextDecoder decoder({TextEncodingKind::utf8,false,true},false);
             for (std::size_t i=0,bytes=0;i<size;) {
                 checkpoint(bytes++,location,options);
@@ -245,7 +272,7 @@ SerializedValue deserialize_value(BinaryDevice& stream,Values& values,SourceLoca
     auto type=Type::string;
     if (record==Record::system_class) {
         const auto name=codec.read_string(location,options);
-        if (integer()!=1 || codec.read_string(location,options)!=u"m_value" || byte()!=0) invalid(location);
+        if (integer()!=1 || codec.read_string(location,options)!=u"m_value" || byte()!=primitive_member) invalid(location);
         const auto primitive_code=byte();
         const auto primitive=std::find_if(primitives.begin(),primitives.end(),[&](const Primitive& entry){
             return entry.code==primitive_code && entry.name==name;
