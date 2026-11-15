@@ -4919,7 +4919,10 @@ private:
                     {"count",Method::count},{"min",Method::minimum},{"max",Method::maximum},
                     {"comparer",Method::comparer},{"contains",Method::contains},
                     {"add",Method::add},{"remove",Method::remove},{"clear",Method::clear},
-                    {"trygetvalue",Method::try_get_value},{"reverse",Method::reverse}
+                    {"trygetvalue",Method::try_get_value},{"reverse",Method::reverse},
+                    {"setequals",Method::set_equal},{"issubsetof",Method::subset},
+                    {"ispropersubsetof",Method::proper_subset},{"issupersetof",Method::superset},
+                    {"ispropersupersetof",Method::proper_superset},{"overlaps",Method::overlaps}
                 };
                 const auto found=methods.find(source.token.text);
                 const bool copying=source.token.text=="copyto";

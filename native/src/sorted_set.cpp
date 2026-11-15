@@ -1,6 +1,10 @@
 #include "sorted_set.hpp"
 #include "comparison.hpp"
+#include "collection_interface.hpp"
+#include "dictionary.hpp"
+#include "interfaces.hpp"
 #include "runtime_values.hpp"
+#include "sequence_scope.hpp"
 #include "sequences.hpp"
 #include "sorting.hpp"
 #include <array>
@@ -17,6 +21,9 @@ bool uses_comparer(Method method){
 }
 bool copies_items(Method method){
     return method>=Method::copy_array && method<=Method::copy_count;
+}
+bool relation_method(Method method){
+    return method>=Method::set_equal && method<=Method::overlaps;
 }
 
 class OrderedSet {
@@ -58,6 +65,106 @@ public:
         return {first,false};
     }
 };
+
+Object as_sorted(const Object& input){
+    return input && input->sequence && input->sequence->provider==SequenceProvider::sorted_set
+        ? input->sequence->source : Object{};
+}
+
+std::optional<std::int32_t> collection_count(Values& values,const Object& input,bool generic,const ExecutionOptions& options){
+    const auto& state=*input->sequence;
+    if(collection_sequence(state.provider))return static_cast<std::int32_t>(state.source->items.size());
+    if(dictionary_provider(state.provider))
+        return static_cast<std::int32_t>(dictionary_sequence_source(state,values.location)->count);
+    if(!generic)return std::nullopt;
+    if(state.provider==SequenceProvider::hash_set)return static_cast<std::int32_t>(state.source->count);
+    if(const auto contract=sequence_collection_owner(values.program,input);contract!=Type::invalid)
+        return std::get<std::int32_t>(interface_invoke(values,contract,0,state.source,{},options));
+    return std::nullopt;
+}
+
+template<class Visit>
+bool for_each_item(Values& values,OrderedSet& order,const Object& source,const ExecutionOptions& options,Visit&& visit){
+    const auto iterator=sequence_begin(values,source,options);
+    return sequence_finally(values,iterator,options,[&]{
+        for(std::uint64_t i=0;sequence_resume(values,iterator,i,options);++i){
+            order.step();
+            if(!visit(sequence_at(values,iterator,static_cast<std::int64_t>(i),options)))return false;
+        }
+        return true;
+    });
+}
+
+bool relation(Values& values,OrderedSet& order,const Object& left,const Object& input,Method method,const ExecutionOptions& options){
+    if(!input || input->nil)
+        throw Error("E_NIL",values.location,"SortedSet comparison collection is nil","Коллекция для сравнения с SortedSet равна nil");
+    if(!input->sequence)throw runtime_error(RuntimeError::invalid_bytecode,values.location);
+    const auto& items=left->items;
+    if(method==Method::subset && items.empty())return true;
+    if((method==Method::overlaps || method==Method::proper_superset) && items.empty())return false;
+    if(method==Method::superset || method==Method::proper_superset || method==Method::overlaps){
+        if(const auto size=collection_count(values,input,method==Method::overlaps,options);size && *size==0)
+            return method!=Method::overlaps;
+    }
+    if(method==Method::proper_subset && items.empty()){
+        if(const auto size=collection_count(values,input,false,options))return *size>0;
+    }
+    const auto right=as_sorted(input);
+    if(right && right->ordering==left->ordering){
+        if(method==Method::set_equal){
+            const auto version=right->version;
+            const auto size=std::min(items.size(),right->items.size());
+            for(std::size_t i=0;i<size;++i){
+                if(order.compare(left,items[i]->value,right->items[i]->value)!=0)return false;
+                if(right->version!=version)throw runtime_error(RuntimeError::collection_changed,values.location);
+            }
+            return items.size()==right->items.size();
+        }
+        if((method==Method::subset && items.size()>right->items.size())
+            || (method==Method::proper_subset && items.size()>=right->items.size())
+            || (method==Method::superset && items.size()<right->items.size())
+            || (method==Method::proper_superset && items.size()<=right->items.size()))
+            return false;
+        if(method==Method::overlaps){
+            const auto element=type_info(values.program,left->type).element;
+            const auto bound=[&](bool minimum){
+                if(right->items.empty())return values.zero(element,false,true);
+                return values.copy((minimum ? right->items.front() : right->items.back())->value);
+            };
+            if(order.compare(left,items.front()->value,bound(false))>0
+                || order.compare(left,items.back()->value,bound(true))<0)return false;
+        }
+    }
+    if(method==Method::superset)
+        return for_each_item(values,order,input,options,[&](const Value& item){return order.locate(left,item).second;});
+    if(method==Method::overlaps)
+        return !for_each_item(values,order,input,options,[&](const Value& item){return !order.locate(left,item).second;});
+    if(items.empty()){
+        const auto empty=for_each_item(values,order,input,options,[](const Value&){return false;});
+        return method==Method::set_equal ? empty : !empty;
+    }
+    const auto words=(items.size()+31)/32;
+    if(words>values.remaining)throw runtime_error(RuntimeError::allocation_limit,values.location);
+    values.remaining-=words;
+    std::vector<std::uint32_t> seen(words,0);
+    std::size_t unique=0;
+    bool missing=false;
+    for_each_item(values,order,input,options,[&](const Value& item){
+        const auto [index,present]=order.locate(left,item);
+        if(!present){
+            missing=true;
+            return method==Method::subset || method==Method::proper_subset;
+        }
+        const auto word=index/32;
+        const auto mask=std::uint32_t{1}<<(index%32);
+        if(word>=seen.size())++unique;
+        else if(!(seen[word]&mask)){seen[word]|=mask;++unique;}
+        return true;
+    });
+    if(method==Method::proper_superset)return !missing && unique<items.size();
+    if(method==Method::proper_subset)return missing && unique==items.size();
+    return unique==items.size() && (method==Method::subset || !missing);
+}
 }
 
 Type sorted_set_type_for(const std::vector<TypeInfo>& types,Type element,CompoundKind kind){
@@ -67,7 +174,7 @@ Type sorted_set_type_for(const std::vector<TypeInfo>& types,Type element,Compoun
 }
 
 bool sorted_set_signature(const Program& program,Type owner,SortedSetMethod method){
-    if(method>Method::copy || !compound(owner) || !valid_value_type(program,owner))return false;
+    if(method>Method::overlaps || !compound(owner) || !valid_value_type(program,owner))return false;
     const auto& shape=type_info(program,owner);
     return shape.kind==CompoundKind::sorted_set
         && sorted_set_type_for(program.types,shape.element,CompoundKind::comparer_interface)!=Type::invalid
@@ -85,6 +192,7 @@ std::vector<Type> sorted_set_parameters(const std::vector<TypeInfo>& types,Type 
         return parameters;
     }
     if(method==Method::membership)return {shape.element,owner};
+    if(relation_method(method))return {owner,shape.key};
     if(method==Method::try_get_value)return {owner,shape.element,reference_type(shape.element)};
     if(copies_items(method)){
         std::vector<Type> parameters{owner,sorted_set_type_for(types,shape.element,CompoundKind::array)};
@@ -129,8 +237,7 @@ Value sorted_set_invoke(Values& values,Type owner,SortedSetMethod method,std::sp
             const auto sequence=std::get<Object>(args.front());
             if(!sequence || sequence->nil)
                 throw Error("E_NIL",values.location,"SortedSet source collection is nil","Исходная коллекция SortedSet равна nil");
-            const auto source=sequence->sequence && sequence->sequence->provider==SequenceProvider::sorted_set
-                ? sequence->sequence->source : Object{};
+            const auto source=as_sorted(sequence);
             if(source && source->ordering==result->ordering){
                 order.step(source->items.size());
                 if(source->items.size()>values.remaining)
@@ -152,6 +259,7 @@ Value sorted_set_invoke(Values& values,Type owner,SortedSetMethod method,std::sp
         if(method==Method::copy && (!receiver || receiver->nil))return receiver;
         if(!receiver || receiver->nil)throw runtime_error(RuntimeError::nil_reference,values.location);
         auto& items=receiver->items;
+        if(relation_method(method))return relation(values,order,receiver,std::get<Object>(args[1]),method,options);
         if(method==Method::copy){
             const auto source=sequence_create(values,shape.key,receiver,SequenceProvider::sorted_set);
             const std::array<Value,2> input{source,receiver->ordering};

@@ -1402,7 +1402,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         case Op::hash_set_call:
             if((instruction.operand>>8U)>65535U || !hash_set_signature(program,type,static_cast<Type>(instruction.operand>>8U),static_cast<HashSetMethod>(instruction.operand&255U)))invalid(instruction,"Invalid HashSet call metadata");break;
         case Op::sorted_set_call:
-            if(instruction.operand>static_cast<std::size_t>(SortedSetMethod::copy)
+            if(instruction.operand>static_cast<std::size_t>(SortedSetMethod::overlaps)
                 || !sorted_set_signature(program,type,static_cast<SortedSetMethod>(instruction.operand)))
                 invalid(instruction,"Invalid SortedSet call metadata");
             break;
