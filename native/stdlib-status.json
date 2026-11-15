@@ -853,7 +853,7 @@
     {
       "name": "Oberon00System",
       "source": "bin/Lib/Oberon00System.pas",
-      "status": "partial", "notes": "Source aliases and all four direct Print/Println signatures are supported in Pascal programs. The original fixture verifies built-in overload selection, typed conversions and output for scalars, arrays, generic lists, classes, records, tuples, enums and pairs. Object output calls the virtual ToString implementation and treats a nil result as empty. First-class routine references and full culture parity remain pending."
+      "status": "partial", "notes": "Source aliases and all four direct Print/Println signatures are supported in Pascal programs. The original fixture verifies built-in overload selection, typed conversions and output for scalars, arrays, generic lists, classes, records, tuples, enums and pairs. Object output calls the virtual ToString implementation and treats a nil result as empty. All four signatures can be assigned to closed procedure types and the unique qualified Print signature is inferred in a declaration. The original fixture verifies qualified and unqualified routine binding and output through object-typed callbacks. Full culture parity remains pending."
     },
     {
       "name": "OpenCL",

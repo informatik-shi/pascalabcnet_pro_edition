@@ -2145,6 +2145,62 @@ private:
             throw Error("E_TYPE",location,"Routine does not match the callable parameter and result types");
         return value;
     }
+    std::unique_ptr<hir::Expr> oberon_print_value(const SyntaxExpr& source,Type expected,bool qualified) {
+        const auto& name=source.token.text;
+        if(name!="print" && name!="println")return {};
+        const auto location=source.token.location;
+        const auto signature=callable_type(expected) ? std::optional<TypeInfo>{info(expected,location)} : std::nullopt;
+        if(!signature && name=="println")return {};
+        const auto object=object_type(location);
+        const std::vector<CallableParameter> one{{object,false,false}};
+        const std::vector<CallableParameter> pair{{Type::integer,false,false},{Type::integer,false,false}};
+        std::size_t overload=0;
+        std::vector<CallableParameter> parameters=one;
+        if(signature){
+            if(signature->element==Type::unit && signature->parameters==one){
+                overload=name=="print" ? 0U : 1U;
+            }else if(signature->element==Type::unit && name=="println" && signature->parameters==pair){
+                overload=2;
+                parameters=pair;
+            }else if(signature->element==Type::unit && name=="println" && signature->parameters.empty()){
+                overload=3;
+                parameters.clear();
+            }else{
+                if(qualified)throw Error("E_TYPE",location,"No Oberon Print overload matches the procedure type",
+                    "Ни одна перегрузка Oberon Print не соответствует типу процедуры");
+                return {};
+            }
+        }
+        auto& routine=oberon_print_routines_[overload];
+        if(!routine){
+            if(module_.routines.size()>=256)throw Error("E_LIMIT",location,"Routine limit exceeded");
+            hir::RoutineBody body;
+            body.signature.name="$oberon_print_"+std::to_string(overload);
+            body.signature.result=Type::unit;
+            body.body.kind=hir::StmtKind::call;
+            body.body.location=location;
+            auto call=std::make_unique<hir::Expr>();
+            call->location=location;
+            for(const auto& parameter:parameters){
+                const auto slot=module_.locals.size();
+                module_.locals.push_back({"$argument",parameter.type,false});
+                body.signature.locals.push_back(slot);
+                body.signature.parameters.push_back({slot,parameter.type});
+                lambda_locals_.insert(slot);
+                auto argument=std::make_unique<hir::Expr>();
+                argument->kind=hir::ExprKind::local;
+                argument->location=location;
+                argument->type=parameter.type;
+                argument->local=slot;
+                call->arguments.push_back(std::move(argument));
+            }
+            (void)bind_print(*call,name,"oberon00system");
+            body.body.expression=std::move(call);
+            routine=module_.routines.size();
+            module_.routines.push_back(std::move(body));
+        }
+        return routine_value(*routine,location,expected);
+    }
     ABC_PASCAL_NOINLINE std::unique_ptr<hir::Expr> builtin_function_value(const SyntaxExpr& source,Type expected=Type::invalid,const std::vector<Type>& hints={}) {
         std::string_view unit;
         if (source.kind==SyntaxExprKind::name) {
@@ -2154,6 +2210,8 @@ private:
             unit=source.left->token.text;
             if (lookup(source.left->token) || !imported_units_.contains(std::string(unit))) return {};
         } else return {};
+        if(hints.empty() && (unit.empty() || unit=="oberon00system") && imported_units_.contains("oberon00system"))
+            if(auto value=oberon_print_value(source,expected,!unit.empty()))return value;
         const auto context=callable_type(expected) ? std::optional<TypeInfo>{info(expected,source.token.location)} : std::nullopt;
         const auto catalog=stdlib::signatures();
         const auto visible=[&](const auto& signature){
@@ -9707,6 +9765,7 @@ private:
     std::set<Type> implicit_class_constructors_;
     std::set<const SyntaxExpr*> inherited_constructor_calls_;
     std::map<std::size_t,std::size_t> builtin_routines_;
+    std::array<std::optional<std::size_t>,4> oberon_print_routines_{};
     std::map<std::pair<std::string,Type>,std::size_t> array_library_routines_;
     struct ClassProperty { Type type;std::optional<std::size_t> getter,setter;std::vector<Type> indices{};bool default_indexer=false; };
     std::map<Type,std::map<std::string,ClassProperty>> class_properties_;
