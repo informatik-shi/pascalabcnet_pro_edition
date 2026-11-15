@@ -183,6 +183,7 @@ FilesOperations.ReadFileToEnd повторяет исходную обработ
 ReadAllText, ReadAllLines, ReadLines и Text.ReadToEnd используют те же правила исходного декодера.
 Обобщённые строковые проверки используют en-US, строковые методы InRange/Between — порядок UTF-16.
 Для явного шага используйте to; downto step и нулевой шаг дают двуязычные ошибки.
+loop n do вычисляет целое n один раз и использует правила счётчика исходного PascalABC.NET.
 Текстовые файлы с BOM читаются как UTF-8, UTF-16LE/BE или UTF-32LE/BE.
 Символы CP1251 и ANSI-алиасы: examples/windows-characters.pas.
 Encoding, CP1251/ASCII/Unicode и выбор кодировки ReadAllText/WriteAllText: examples/text-encodings.pas.

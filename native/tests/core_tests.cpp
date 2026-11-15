@@ -6349,7 +6349,7 @@ void language_foundations() {
     compile_error("type P=record x: integer; end; Q=record x: integer; end; begin var p:P; var q:Q; p:=q; end.", "E_TYPE");
     runtime_error("begin var a:=Arr(1); writeln(a[-1]); end.", "E_BOUNDS");
     runtime_error("begin var a:=new integer[-1]; end.", "E_RANGE");
-    runtime_error("procedure Loop; begin Loop; end; begin Loop; end.", "E_LIMIT");
+    runtime_error("procedure &Loop; begin &Loop; end; begin &Loop; end.", "E_LIMIT");
 }
 
 void aggregate_semantics() {

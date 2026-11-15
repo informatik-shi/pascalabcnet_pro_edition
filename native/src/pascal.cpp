@@ -346,7 +346,7 @@ bool reserved(std::string_view text) {
     static const std::set<std::string_view> words{
         "program", "begin", "end", "var", "if", "then", "else", "while", "do", "and", "or", "not",
         "div", "mod", "xor", "shl", "shr", "true", "false", "uses", "unit", "type", "const", "function", "procedure",
-        "for", "to", "downto", "repeat", "until", "foreach", "in", "case", "of", "array", "record", "class", "nil",
+        "for", "to", "downto", "loop", "repeat", "until", "foreach", "in", "case", "of", "array", "record", "class", "nil",
         "constructor", "inherited", "property", "interface", "public", "private", "protected", "internal", "static", "virtual", "override", "abstract",
         "new", "default", "typeof", "out", "params", "set", "try", "except", "finally", "raise", "break", "continue", "exit", "writeln", "write", "readln", "read"};
     return words.contains(text);
@@ -924,6 +924,14 @@ private:
             result.arguments.push_back(expression());
             if(accept("step"))result.arguments.push_back(expression());
             expect("do"); result.body=std::make_unique<SyntaxStmt>(statement());
+        } else if (accept("loop")) {
+            result.kind=SyntaxStmtKind::for_loop;
+            result.declares_control=true;
+            result.names.push_back({TokenKind::name,"$loop_counter",result.token.location});
+            result.expression=make_expression(SyntaxExprKind::literal,{TokenKind::number,"1",result.token.location});
+            result.arguments.push_back(expression());
+            expect("do");
+            result.body=std::make_unique<SyntaxStmt>(statement());
         } else if (accept("repeat")) {
             result.kind=SyntaxStmtKind::repeat_loop;
             while (!is("until")) {
@@ -9619,7 +9627,14 @@ private:
             const auto type=module_.locals[control].type;
             if (!ordinal(type)) throw Error("E_TYPE",name.location,"For control must be an ordinal type");
             initial=convert(std::move(initial),type);
-            auto finish=convert(expression(*source.arguments[0]),type);
+            auto finish=expression(*source.arguments[0]);
+            if(source.token.text=="loop"){
+                if(!integer_type(finish->type))
+                    throw Error("E_TYPE",finish->location,"Integer loop count required","Для loop требуется целое число");
+                // The source lowers loop to an Integer counter, truncating a wider bound.
+                if(!can_widen(finish->type,type))finish=subrange_integer_cast(std::move(finish),type);
+            }
+            finish=convert(std::move(finish),type);
             const auto bound=module_.locals.size(); module_.locals.push_back({"$for_bound_"+std::to_string(bound),type,!in_routine_});
             auto assign=[&](std::size_t local,std::unique_ptr<hir::Expr> value) {
                 hir::Stmt node; node.kind=hir::StmtKind::assign; node.local=local; node.location=value->location;
