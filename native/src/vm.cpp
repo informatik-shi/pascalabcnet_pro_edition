@@ -1590,6 +1590,14 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
             enter_routine(instruction.operand,instruction.location);break;
         }
         case Op::call_user: enter_routine(instruction.operand,instruction.location); break;
+        case Op::call_virtual: {
+            const auto& signature=program.routines[instruction.operand];
+            const auto& object=std::get<std::shared_ptr<Aggregate>>(stack[stack.size()-signature.parameters.size()]);
+            if(!object || object->nil)trap(instruction,RuntimeError::nil_reference);
+            const auto target=virtual_method_target(program,instruction.operand,object->type,instruction.location);
+            enter_routine(target,instruction.location);
+            break;
+        }
         case Op::call_base_constructor:
             enter_routine(instruction.operand,instruction.location,{},class_parent(program.types,frame.routine->owner));
             break;

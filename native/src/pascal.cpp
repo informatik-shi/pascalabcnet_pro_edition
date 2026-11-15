@@ -324,6 +324,7 @@ struct SyntaxStmt {
 };
 
 struct SyntaxParameter { Token name; std::shared_ptr<SyntaxType> type; bool by_reference; std::shared_ptr<SyntaxExpr> default_value; bool read_only=false,variadic=false; };
+enum class MethodDispatch { ordinary, virtual_method, override_method };
 struct SyntaxRoutine {
     Token name;
     std::shared_ptr<SyntaxType> explicit_interface{};
@@ -335,6 +336,7 @@ struct SyntaxRoutine {
     bool constructor=false, declaration_only=false, function_header=false, explicit_parameters=false;
     bool static_member=false;
     bool implicit_constructor=false;
+    MethodDispatch dispatch=MethodDispatch::ordinary;
     MemberAccess access=MemberAccess::public_member;
 };
 
@@ -343,7 +345,7 @@ bool reserved(std::string_view text) {
         "program", "begin", "end", "var", "if", "then", "else", "while", "do", "and", "or", "not",
         "div", "mod", "xor", "shl", "shr", "true", "false", "uses", "unit", "type", "const", "function", "procedure",
         "for", "to", "downto", "repeat", "until", "foreach", "in", "case", "of", "array", "record", "class", "nil",
-        "constructor", "inherited", "property", "interface", "public", "private", "protected", "internal", "static",
+        "constructor", "inherited", "property", "interface", "public", "private", "protected", "internal", "static", "virtual", "override",
         "new", "default", "typeof", "out", "params", "set", "try", "except", "finally", "raise", "break", "continue", "exit", "writeln", "write", "readln", "read"};
     return words.contains(text);
 }
@@ -787,7 +789,15 @@ private:
             expect(";");return result;
         }
         expect(";");
-        while(accept("overload"))expect(";");
+        while(is("overload") || is("virtual") || is("override")){
+            const auto modifier=consume();
+            if(modifier.text!="overload"){
+                if(!in_class || result->dispatch!=MethodDispatch::ordinary)
+                    throw Error("E_TYPE",modifier.location,"Invalid virtual method modifier","Недопустимый модификатор виртуального метода");
+                result->dispatch=modifier.text=="virtual" ? MethodDispatch::virtual_method : MethodDispatch::override_method;
+            }
+            expect(";");
+        }
         if (in_class && !is("begin") && !is("var") && !is("const")) { result->declaration_only=true;return result; }
         while (is("var") || is("const") || is("function") || is("procedure")) {
             if(is("function")||is("procedure")){
@@ -1443,6 +1453,7 @@ public:
         }
         for(const auto& method:module_.static_methods)if(class_methods_.contains(method.owner)&&class_methods_.at(method.owner).contains(method.name))throw Error("E_UNSUPPORTED",{},"Mixed static and instance method overloads are not ported yet","Смешанные перегрузки статических и нестатических методов ещё не перенесены");
         for(auto& type:module_.static_classes)type.initializer=routine_names_.at("$initialize_static_"+std::to_string(static_cast<unsigned>(type.owner)));
+        register_virtual_methods(source);
         register_properties(source);
         register_interface_implementations(source);
         register_defaults(source);
@@ -1833,6 +1844,40 @@ private:
                 else statements.insert(statements.begin(),std::move(initialize));
             }
         }
+    }
+    void register_virtual_methods(const SyntaxStmt& source){
+        std::set<std::size_t> resolved;
+        std::function<void(std::size_t)> bind=[&](std::size_t id){
+            const auto& syntax=*source.routines[id];
+            if(syntax.dispatch==MethodDispatch::ordinary || !resolved.insert(id).second)return;
+            auto& method=module_.routines[id].signature;
+            if(!compound(method.owner) || info(method.owner,syntax.name.location).kind!=CompoundKind::object_class
+                || method.constructor || syntax.explicit_interface)
+                throw Error("E_TYPE",syntax.name.location,"Virtual methods require an instance class method",
+                    "Виртуальный метод должен быть методом экземпляра класса");
+            if(syntax.dispatch==MethodDispatch::virtual_method){
+                method.virtual_root=id;
+                return;
+            }
+            for(auto parent=class_parent(module_.types,method.owner);parent!=Type::invalid;parent=class_parent(module_.types,parent)){
+                const auto methods=class_method_overloads_.find(parent);
+                if(methods==class_method_overloads_.end())continue;
+                const auto named=methods->second.find(syntax.name.text);
+                if(named==methods->second.end())continue;
+                for(const auto candidate:named->second){
+                    const auto& ancestor=module_.routines[candidate].signature;
+                    if(!virtual_signature_matches(method,ancestor))continue;
+                    bind(candidate);
+                    if(!ancestor.virtual_root)
+                        throw Error("E_TYPE",syntax.name.location,"Base method is not virtual","Базовый метод не является виртуальным");
+                    method.virtual_root=ancestor.virtual_root;
+                    return;
+                }
+            }
+            throw Error("E_TYPE",syntax.name.location,"No virtual base method has this signature",
+                "У базового класса нет виртуального метода с такой сигнатурой");
+        };
+        for(std::size_t i=0;i<source.routines.size();++i)bind(i);
     }
     std::size_t field_property_accessor(Type owner,Type type,std::size_t field,bool write,SourceLocation location) {
         if (module_.routines.size()>=256) throw Error("E_LIMIT",location,"Routine limit exceeded");
@@ -4278,7 +4323,7 @@ private:
         lambdas_.pop_back(); scopes_.pop_back(); in_routine_=saved_routine; current_result_=saved_result; current_name_=saved_name; loop_depth_=saved_loop;
         return routine_value(id,source.token.location,expected);
     }
-    std::unique_ptr<hir::Expr> class_member(std::unique_ptr<hir::Expr> result,const SyntaxExpr& source,Type expected) {
+    std::unique_ptr<hir::Expr> class_member(std::unique_ptr<hir::Expr> result,const SyntaxExpr& source,Type expected,bool dynamic_dispatch=true) {
         const auto receiver=result->left->type;
         const auto& fields=info(receiver,result->location).fields;
         for (std::size_t i=0;i<fields.size();++i) if (fields[i].name==source.token.text) {
@@ -4292,6 +4337,7 @@ private:
         if (const auto properties=class_properties_.find(receiver);properties!=class_properties_.end() && properties->second.contains(source.token.text)) {
             const auto& property=properties->second.at(source.token.text);
             result->kind=hir::ExprKind::property_access;result->type=property.type;result->getter=property.getter;result->setter=property.setter;if(info(receiver,result->location).kind==CompoundKind::record&&!new_set_addressable(*result->left))result->left=cache_argument(std::move(result->left));
+            if(!dynamic_dispatch)result->operation="$inherited";
             if (source.kind==SyntaxExprKind::member_call || source.kind==SyntaxExprKind::call) {
                 auto call=std::make_unique<hir::Expr>();call->location=result->location;call->left=std::move(result);
                 bind_value_call(*call,source.arguments);return call;
@@ -4305,7 +4351,7 @@ private:
             if(parent!=Type::invalid){
                 result->left=convert(std::move(result->left),parent);
                 if(bind_inifile_member(*result,source))return result;
-                return class_member(std::move(result),source,expected);
+                return class_member(std::move(result),source,expected,dynamic_dispatch);
             }
             if(source.token.text=="tostring" && info(receiver,result->location).kind==CompoundKind::object_class
                 && source.arguments.empty() && !callable_type(expected)){
@@ -4340,6 +4386,7 @@ private:
             if (!signature.parameters[i].variadic && (id>=parameter_defaults_.size() || !parameter_defaults_[id][i]))
                 throw Error("E_UNSUPPORTED",result->location,"Bound method values are not ported yet");
         result->kind=hir::ExprKind::user_call;result->local=id;result->type=signature.result;
+        if(!dynamic_dispatch)result->operation="$inherited";
         result->arguments.push_back(info(receiver,result->location).kind==CompoundKind::record&&!new_set_addressable(*result->left)?cache_argument(std::move(result->left)):std::move(result->left));
         for (std::size_t i=0;i<source.arguments.size();++i) {
             auto context=i+1<signature.parameters.size() ? signature.parameters[i+1].type : Type::invalid;
@@ -4721,7 +4768,7 @@ private:
         if(!constructor){
             result->left=convert(std::move(self),parent);
             if(bind_inifile_member(*result,source))return result;
-            return class_member(std::move(result),source,expected);
+            return class_member(std::move(result),source,expected,false);
         }
         if(!inherited_constructor_calls_.contains(&source))
             throw Error("E_TYPE",result->location,"Inherited constructor call must be first in the constructor body",
@@ -6277,6 +6324,7 @@ private:
                 if (!property->setter) throw Error("E_TYPE",property->location,"Property is read-only");
                 const auto indices=property->operation=="interface"?interface_contract(module_.types,property->operation_type).at(*property->setter).parameters.size()-1:module_.routines.at(*property->setter).signature.parameters.size()-(property->operation=="static"?1U:2U);if(property->arguments.size()!=indices)throw Error("E_TYPE",property->location,"Indexed property requires indices","Для индексируемого свойства нужны индексы");
                 auto setter=std::make_unique<hir::Expr>();setter->kind=hir::ExprKind::user_call;setter->type=Type::unit;setter->location=property->location;setter->local=*property->setter;
+                if(property->operation=="$inherited")setter->operation="$inherited";
                 if(property->operation=="interface"){setter->kind=hir::ExprKind::interface_call;setter->operation_type=property->operation_type;setter->left=std::move(property->left);}else if(property->operation!="static")setter->arguments.push_back(std::move(property->left));for(auto& index:property->arguments)setter->arguments.push_back(std::move(index));setter->arguments.push_back(convert(value(property->type),property->type));
                 result.kind=hir::StmtKind::call;result.expression=std::move(setter);return result;
             }

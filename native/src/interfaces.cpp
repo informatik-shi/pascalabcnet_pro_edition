@@ -95,6 +95,45 @@ bool class_reference_compatible(const std::vector<TypeInfo>& types,Type from,Typ
  }
  return false;
 }
+bool virtual_signature_matches(const Routine& a,const Routine& b){
+ if(a.result!=b.result || a.parameters.empty() || a.parameters.size()!=b.parameters.size())return false;
+ return std::equal(a.parameters.begin()+1,a.parameters.end(),b.parameters.begin()+1,[](const auto& x,const auto& y){
+  return x.type==y.type && x.by_reference==y.by_reference && x.variadic==y.variadic && x.read_only==y.read_only;
+ });
+}
+void verify_virtual_methods(const Program& program){
+ std::set<std::pair<Type,std::size_t>> slots;
+ for(std::size_t id=0;id<program.routines.size();++id){
+  const auto& method=program.routines[id];
+  if(!method.virtual_root)continue;
+  const auto root=*method.virtual_root;
+  if(root>=program.routines.size() || !valid(program.types,method.owner)
+     || info(program.types,method.owner).kind!=CompoundKind::object_class || method.constructor
+     || method.access==MemberAccess::explicit_interface_member || !method.captures.empty()
+     || !slots.emplace(method.owner,root).second)
+   throw Error("E_BYTECODE",{},"Invalid virtual method metadata");
+  const auto& declaration=program.routines[root];
+  const auto suffix=[](const Routine& routine){return std::string_view(routine.name).substr(routine.name.find('.')+1);};
+  if(declaration.virtual_root!=root || !virtual_signature_matches(method,declaration) || suffix(method)!=suffix(declaration)
+     || (root!=id && !class_reference_compatible(program.types,method.owner,declaration.owner)))
+   throw Error("E_BYTECODE",{},"Invalid virtual method declaration or override");
+ }
+}
+std::size_t virtual_method_target(const Program& program,std::size_t id,Type receiver,SourceLocation location){
+ if(id>=program.routines.size())throw runtime_error(RuntimeError::invalid_bytecode,location);
+ const auto& statically_bound=program.routines[id];
+ const auto root=statically_bound.virtual_root;
+ if(!root)return id;
+ if(receiver!=statically_bound.owner && !class_reference_compatible(program.types,receiver,statically_bound.owner))
+  throw runtime_error(RuntimeError::invalid_bytecode,location);
+ for(auto owner=receiver;owner!=Type::invalid;owner=class_parent(program.types,owner)){
+  for(std::size_t candidate=0;candidate<program.routines.size();++candidate){
+   const auto& method=program.routines[candidate];
+   if(method.owner==owner && method.virtual_root==root)return candidate;
+  }
+ }
+ throw runtime_error(RuntimeError::invalid_bytecode,location);
+}
 bool interface_compatible(const std::vector<TypeInfo>& types,Type from,Type to){
  if(class_reference_compatible(types,from,to))return true;
  if(!valid(types,from) || !valid(types,to) || !interface_kind(info(types,to)))return false;
@@ -173,7 +212,7 @@ std::size_t interface_target(Values& values,Type owner,std::size_t slot,const Va
  const auto* table=type.kind==CompoundKind::object_class ? class_interface_implementation(values.program.types,object->type,owner) : implementation(type,owner);
  if((type.kind!=CompoundKind::object_class && !(type.kind==CompoundKind::record&&type.native_record==NativeRecord::none)) || !table || slot>=table->routines.size())
   throw runtime_error(RuntimeError::invalid_bytecode,values.location);
- return table->routines[slot];
+ return virtual_method_target(values.program,table->routines[slot],object->type,values.location);
 }
 Value interface_invoke(Values& values,Type owner,std::size_t slot,const Value& receiver,std::span<const Value> arguments,const ExecutionOptions& options){
  if(native_record_interface_target(values.program,owner,receiver))return native_record_interface_invoke(values,owner,slot,receiver,arguments,options);

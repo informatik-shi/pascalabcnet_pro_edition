@@ -686,11 +686,19 @@ private:
                     if (type.owner==node.type)emit(Op::call_user,Type::unit,type.initializer,node.location);
             emit(Op::construct_user,node.type,node.local,node.location);break;
         }
-        case hir::ExprKind::property_access:
+        case hir::ExprKind::property_access: {
             if (!node.getter) throw Error("E_TYPE",node.location,"Property is write-only");
             if(node.operation=="static"){const auto& signature=program_.routines.at(*node.getter);if(node.arguments.size()!=signature.parameters.size())throw Error("E_TYPE",node.location,"Indexed property requires indices","Для индексируемого свойства нужны индексы");for(const auto& index:node.arguments)expression(*index);emit(Op::call_user,node.type,*node.getter,node.location);break;}
             if(node.arguments.size()!=(node.operation=="interface"?interface_contract(program_.types,node.operation_type).at(*node.getter).parameters.size():program_.routines.at(*node.getter).parameters.size()-1))throw Error("E_TYPE",node.location,"Indexed property requires indices","Для индексируемого свойства нужны индексы");
-            if(node.operation!="interface"&&program_.routines.at(*node.getter).parameters.at(0).by_reference)reference(*node.left);else expression(*node.left);for(const auto& index:node.arguments)expression(*index);emit(node.operation=="interface" ? Op::interface_call : Op::call_user,node.operation=="interface" ? node.operation_type : node.type,*node.getter,node.location);break;
+            const bool interface=node.operation=="interface";
+            if(!interface && program_.routines.at(*node.getter).parameters.at(0).by_reference)reference(*node.left);
+            else expression(*node.left);
+            for(const auto& index:node.arguments)expression(*index);
+            const auto op=interface ? Op::interface_call
+                : program_.routines.at(*node.getter).virtual_root && node.operation!="$inherited" ? Op::call_virtual : Op::call_user;
+            emit(op,interface ? node.operation_type : node.type,*node.getter,node.location);
+            break;
+        }
 
         default: throw Error("E_HIR",node.location,"Invalid expression dispatch");
         }
@@ -708,7 +716,9 @@ private:
             for (std::size_t n = 0; n < node.arguments.size(); ++n) {
                 if (signature.parameters[n].by_reference) reference(*node.arguments[n]); else expression(*node.arguments[n]);
             }
-            emit(node.kind==hir::ExprKind::base_constructor_call ? Op::call_base_constructor : Op::call_user,
+            const auto op=node.kind==hir::ExprKind::base_constructor_call ? Op::call_base_constructor
+                : signature.virtual_root && node.operation!="$inherited" ? Op::call_virtual : Op::call_user;
+            emit(op,
                 node.type,node.local,node.location); break;
         }
         case hir::ExprKind::list_add: case hir::ExprKind::list_remove: case hir::ExprKind::list_clear: case hir::ExprKind::list_contains:
@@ -1540,8 +1550,10 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
                 invalid(instruction,"Invalid class constructor target");
             break;
         case Op::call_user:
+        case Op::call_virtual:
             if (instruction.operand >= program.routines.size() || program.routines[instruction.operand].constructor || type != program.routines[instruction.operand].result
-                || !program.routines[instruction.operand].captures.empty()) invalid(instruction,"Invalid user call");
+                || !program.routines[instruction.operand].captures.empty()
+                || (instruction.op==Op::call_virtual && !program.routines[instruction.operand].virtual_root)) invalid(instruction,"Invalid user call");
             break;
         case Op::call_base_constructor:
             if(type!=Type::unit || !routine || !routine->constructor || instruction.operand>=program.routines.size()
@@ -2080,6 +2092,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             stack.push_back(instruction.type);break;
         }
         case Op::call_user:
+        case Op::call_virtual:
         case Op::call_base_constructor:
             for (auto parameter = program.routines[instruction.operand].parameters.rbegin(); parameter != program.routines[instruction.operand].parameters.rend(); ++parameter)
                 require(parameter->by_reference ? reference_type(parameter->type) : parameter->type);
@@ -2396,6 +2409,7 @@ void verify(const Program& program) {
         if (level > 32) throw Error("E_BYTECODE",{},"Type nesting limit exceeded"); depth[i] = level;
     }
     verify_interfaces(program);
+    verify_virtual_methods(program);
     std::vector<bool> owned_locals(program.locals.size());
     for (const auto& routine:program.routines) for (auto local:routine.locals) {
         if (local>=program.locals.size() || program.locals[local].global || owned_locals[local]) throw Error("E_BYTECODE",{},"Invalid or shared routine local ownership");
