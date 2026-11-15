@@ -2,6 +2,7 @@
 #include "list_bulk_user.hpp"
 #include "equality.hpp"
 #include "sequences.hpp"
+#include "sorted_set.hpp"
 #include "sequence_scope.hpp"
 #include "ordinal_range.hpp"
 #include <bit>
@@ -87,7 +88,10 @@ void list_bulk(Values& values,const std::shared_ptr<Aggregate>& target,const std
     std::shared_ptr<Aggregate> collection;
     const auto kind=type_info(values.program,input->type).kind;
     if (kind==CompoundKind::array || kind==CompoundKind::list) collection=input;
-    else if (input->sequence && collection_sequence(input->sequence->provider)) collection=input->sequence->source;
+    else if (input->sequence && collection_sequence(input->sequence->provider)){
+        collection=input->sequence->source;
+        if(input->sequence->provider==SequenceProvider::sorted_set)sorted_set_refresh(values,collection,options);
+    }
     else if(input->sequence && input->sequence->provider==SequenceProvider::hash_set){
         Type array=Type::invalid;for(std::size_t i=0;i<values.program.types.size();++i){const auto& type=values.program.types[i];if(type.kind==CompoundKind::array && type.rank==1 && type.element==element){array=static_cast<Type>(64+i);break;}}
         if(array==Type::invalid)throw runtime_error(RuntimeError::invalid_bytecode,values.location);

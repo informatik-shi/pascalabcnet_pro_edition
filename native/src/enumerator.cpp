@@ -5,6 +5,7 @@
 #include "value_hash.hpp"
 #include "sequences.hpp"
 #include "new_set.hpp"
+#include "sorted_set.hpp"
 #include "interfaces.hpp"
 #include <array>
 namespace abc {
@@ -73,10 +74,12 @@ Value enumerator_invoke(Values& values,Type owner,Type payload,EnumeratorMethod 
   if(method==EnumeratorMethod::collection_current)return values.copy(iterator->items[3]->value);
   if(method==EnumeratorMethod::collection_dispose)return false;
   const auto source=std::get<Object>(iterator->items[0]->value);if(!source || source->nil)throw runtime_error(RuntimeError::nil_reference,values.location);
-  if(std::get<std::uint64_t>(iterator->items[1]->value)!=source->version)throw runtime_error(RuntimeError::collection_changed,values.location);
+  const auto source_kind=type_info(values.program,source->type).kind;
+  const auto version=source_kind==CompoundKind::sorted_set ? sorted_set_version(*source) : source->version;
+  if(std::get<std::uint64_t>(iterator->items[1]->value)!=version)throw runtime_error(RuntimeError::collection_changed,values.location);
   const auto element=type_info(values.program,owner).element;
   auto position=iterator->items[2];
-  if(type_info(values.program,source->type).kind==CompoundKind::sorted_set){
+  if(source_kind==CompoundKind::sorted_set){
    const auto shared=std::get<Object>(position->value);
    if(!shared || shared->nil || shared->items.size()!=1)throw runtime_error(RuntimeError::invalid_bytecode,values.location);
    position=shared->items[0];
@@ -92,9 +95,11 @@ Value enumerator_invoke(Values& values,Type owner,Type payload,EnumeratorMethod 
  const auto object=std::get<Object>(argument);
  if(!object || object->nil)throw runtime_error(RuntimeError::nil_reference,values.location);
  if(method==EnumeratorMethod::get_collection){
+  const bool sorted=type_info(values.program,owner).kind==CompoundKind::sorted_set;
+  if(sorted)sorted_set_refresh(values,object,options);
   auto result=std::get<Object>(values.zero(payload));
   values.write(result->items[0],argument);values.write(result->items[1],object->version);
-  if(type_info(values.program,owner).kind==CompoundKind::sorted_set){
+  if(sorted){
    // Copying the source enumerator copies Current and shares its pending traversal.
    const auto position=result->items[2];
    values.write(position,values.array(position->type,1));

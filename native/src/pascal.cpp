@@ -4924,7 +4924,8 @@ private:
                     {"ispropersubsetof",Method::proper_subset},{"issupersetof",Method::superset},
                     {"ispropersupersetof",Method::proper_superset},{"overlaps",Method::overlaps},
                     {"unionwith",Method::union_with},{"intersectwith",Method::intersect_with},
-                    {"exceptwith",Method::except_with},{"symmetricexceptwith",Method::symmetric_with}
+                    {"exceptwith",Method::except_with},{"symmetricexceptwith",Method::symmetric_with},
+                    {"getviewbetween",Method::view_between}
                 };
                 const auto found=methods.find(source.token.text);
                 const bool copying=source.token.text=="copyto";

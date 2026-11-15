@@ -10,6 +10,14 @@
 #include <array>
 
 namespace abc {
+struct SortedSetViewState {
+    std::shared_ptr<Aggregate> underlying;
+    Value lower,upper;
+    bool cache_valid=false;
+};
+std::uint64_t sorted_set_version(const Aggregate& set){
+    return set.sorted_view ? set.sorted_view->underlying->version : set.version;
+}
 namespace {
 using Object=std::shared_ptr<Aggregate>;
 using Method=SortedSetMethod;
@@ -55,14 +63,55 @@ public:
 
     int compare(const Object& set,const Value& left,const Value& right){
         step();
-        const auto version=set->version;
+        const auto version=sorted_set_version(*set);
         const std::array<Value,2> arguments{left,right};
         const auto result=std::get<std::int32_t>(comparer_invoke(values,policy,set->ordering,arguments,options));
-        if(set->version!=version)throw runtime_error(RuntimeError::collection_changed,values.location);
+        if(sorted_set_version(*set)!=version)throw runtime_error(RuntimeError::collection_changed,values.location);
         return result;
     }
 
+    std::size_t boundary(const Object& set,const Value& bound,bool upper){
+        std::size_t first=0,last=set->items.size();
+        while(first<last){
+            const auto middle=first+(last-first)/2;
+            const auto comparison=compare(set,bound,set->items[middle]->value);
+            if(comparison>0 || (upper && comparison==0))first=middle+1;
+            else last=middle;
+        }
+        return first;
+    }
+
+    void refresh(const Object& set){
+        const auto& view=set->sorted_view;
+        if(!view || (view->cache_valid && set->version==view->underlying->version))return;
+        const auto& source=view->underlying;
+        const auto first=boundary(source,view->lower,false);
+        const auto last=boundary(source,view->upper,true);
+        if(last<first)throw Error("E_COMPARE",values.location,"SortedSet view bounds are inconsistent","Границы представления SortedSet несогласованны");
+        const auto length=last-first;
+        step(length);
+        if(length>set->items.capacity()){
+            const auto growth=length-set->items.capacity();
+            if(growth>values.remaining)throw runtime_error(RuntimeError::allocation_limit,values.location);
+            set->items.reserve(length);
+            values.remaining-=growth;
+        }
+        set->items.assign(source->items.begin()+static_cast<std::ptrdiff_t>(first),
+            source->items.begin()+static_cast<std::ptrdiff_t>(last));
+        set->version=source->version;
+        view->cache_valid=true;
+    }
+
+    bool within(const Object& set,const Value& item){
+        const auto& view=*set->sorted_view;
+        return compare(set,view.lower,item)<=0 && compare(set,view.upper,item)>=0;
+    }
+
     std::pair<std::size_t,bool> locate(const Object& set,const Value& item){
+        if(set->sorted_view){
+            refresh(set);
+            if(!within(set,item))return {0,false};
+        }
         std::size_t first=0,last=set->items.size();
         while(first<last){
             const auto middle=first+(last-first)/2;
@@ -75,6 +124,15 @@ public:
     }
 
     bool change(const Object& set,const Value& item,bool adding){
+        if(set->sorted_view){
+            if(!within(set,item)){
+                if(adding)throw Error("E_RANGE",values.location,"Element is outside the SortedSet view","Элемент находится за пределами представления SortedSet");
+                return false;
+            }
+            const auto changed=change(set->sorted_view->underlying,item,adding);
+            refresh(set);
+            return changed;
+        }
         auto& items=set->items;
         if(!items.empty())++set->version;
         const auto [position,present]=locate(set,item);
@@ -93,11 +151,43 @@ public:
     }
 
     void clear(const Object& set){
+        if(set->sorted_view){
+            if(set->items.empty())return;
+            refresh(set);
+            if(set->items.size()>values.remaining)throw runtime_error(RuntimeError::allocation_limit,values.location);
+            values.remaining-=set->items.size();
+            const auto selected=set->items;
+            for(auto item=selected.rbegin();item!=selected.rend();++item)
+                (void)change(set->sorted_view->underlying,(*item)->value,false);
+            refresh(set);
+            return;
+        }
         step(set->items.size());
         set->items.clear();
         ++set->version;
     }
 };
+
+Value create_view(Values& values,OrderedSet& order,const Object& receiver,const Value& lower,const Value& upper){
+    auto root=receiver;
+    if(const auto& parent=receiver->sorted_view){
+        if(order.compare(receiver,parent->lower,lower)>0)
+            throw Error("E_RANGE",values.location,"Lower bound is outside the parent SortedSet view","Нижняя граница выходит за пределы исходного представления SortedSet");
+        if(order.compare(receiver,parent->upper,upper)<0)
+            throw Error("E_RANGE",values.location,"Upper bound is outside the parent SortedSet view","Верхняя граница выходит за пределы исходного представления SortedSet");
+        root=parent->underlying;
+    }
+    if(order.compare(root,lower,upper)>0)
+        throw Error("E_RANGE",values.location,"SortedSet lower bound exceeds the upper bound","Нижняя граница SortedSet больше верхней");
+    auto result=std::get<Object>(values.zero(root->type,true));
+    if(!values.remaining)throw runtime_error(RuntimeError::allocation_limit,values.location);
+    --values.remaining;
+    result->ordering=root->ordering;
+    result->sorted_view=std::make_shared<SortedSetViewState>(
+        SortedSetViewState{root,values.copy(lower),values.copy(upper)});
+    order.refresh(result);
+    return result;
+}
 
 Object as_sorted(const Object& input){
     return input && input->sequence && input->sequence->provider==SequenceProvider::sorted_set
@@ -106,6 +196,7 @@ Object as_sorted(const Object& input){
 
 std::optional<std::int32_t> collection_count(Values& values,const Object& input,bool generic,const ExecutionOptions& options){
     const auto& state=*input->sequence;
+    if(state.provider==SequenceProvider::sorted_set)sorted_set_refresh(values,state.source,options);
     if(collection_sequence(state.provider))return static_cast<std::int32_t>(state.source->items.size());
     if(dictionary_provider(state.provider))
         return static_cast<std::int32_t>(dictionary_sequence_source(state,values.location)->count);
@@ -132,6 +223,7 @@ bool relation(Values& values,OrderedSet& order,const Object& left,const Object& 
     if(!input || input->nil)
         throw Error("E_NIL",values.location,"SortedSet comparison collection is nil","Коллекция для сравнения с SortedSet равна nil");
     if(!input->sequence)throw runtime_error(RuntimeError::invalid_bytecode,values.location);
+    order.refresh(left);
     const auto& items=left->items;
     if(method==Method::subset && items.empty())return true;
     if((method==Method::overlaps || method==Method::proper_superset) && items.empty())return false;
@@ -143,13 +235,14 @@ bool relation(Values& values,OrderedSet& order,const Object& left,const Object& 
         if(const auto size=collection_count(values,input,false,options))return *size>0;
     }
     const auto right=as_sorted(input);
+    if(right)order.refresh(right);
     if(right && right->ordering==left->ordering){
         if(method==Method::set_equal){
-            const auto version=right->version;
+            const auto version=sorted_set_version(*right);
             const auto size=std::min(items.size(),right->items.size());
             for(std::size_t i=0;i<size;++i){
                 if(order.compare(left,items[i]->value,right->items[i]->value)!=0)return false;
-                if(right->version!=version)throw runtime_error(RuntimeError::collection_changed,values.location);
+                if(sorted_set_version(*right)!=version)throw runtime_error(RuntimeError::collection_changed,values.location);
             }
             return items.size()==right->items.size();
         }
@@ -210,9 +303,9 @@ void merge_sorted(Values& values,OrderedSet& order,const Object& left,const Obje
     std::vector<std::shared_ptr<Cell>> result;
     result.reserve(capacity);
     const auto maximum=intersection ? values.copy(left->items.back()->value) : Value{std::int32_t{0}};
-    const auto version=right->version;
+    const auto version=sorted_set_version(*right);
     const auto check_right=[&]{
-        if(right->version!=version)throw runtime_error(RuntimeError::collection_changed,values.location);
+        if(sorted_set_version(*right)!=version)throw runtime_error(RuntimeError::collection_changed,values.location);
     };
     std::size_t i=0,j=0;
     while(i<left_count && j<right_count){
@@ -244,9 +337,13 @@ void merge_sorted(Values& values,OrderedSet& order,const Object& left,const Obje
 void update(Values& values,OrderedSet& order,const Object& left,const Object& input,Method method,const ExecutionOptions& options){
     if(!input || input->nil)
         throw Error("E_NIL",values.location,"SortedSet source collection is nil","Исходная коллекция SortedSet равна nil");
-    if((method==Method::intersect_with || method==Method::except_with) && left->items.empty())return;
+    if(method==Method::except_with && left->items.empty())return;
+    order.refresh(left);
+    if(method==Method::intersect_with && left->items.empty())return;
     const auto right=as_sorted(input);
+    if(right)order.refresh(right);
     const bool same_policy=right && right->ordering==left->ordering;
+    const bool can_merge=!left->sorted_view && same_policy;
     const auto& shape=type_info(values.program,left->type);
     const auto include=[&](const Value& item){
         if(!order.locate(left,item).second)(void)order.change(left,item,true);
@@ -258,18 +355,18 @@ void update(Values& values,OrderedSet& order,const Object& left,const Object& in
     };
     if(method==Method::symmetric_with && left->items.empty())method=Method::union_with;
     if(method==Method::union_with){
-        if(right && left->items.empty()){
+        if(right && !left->sorted_view && left->items.empty()){
             const std::array<Value,2> args{input,left->ordering};
             auto copy=std::get<Object>(sorted_set_invoke(values,left->type,Method::construct_source_comparer,args,options));
             left->items=std::move(copy->items);
             ++left->version;
-        }else if(same_policy && right->items.size()>left->items.size()/2)
+        }else if(can_merge && right->items.size()>left->items.size()/2)
             merge_sorted(values,order,left,right,false);
         else for_each_item(values,order,input,options,include);
         return;
     }
     if(method==Method::intersect_with){
-        if(same_policy){merge_sorted(values,order,left,right,true);return;}
+        if(can_merge){merge_sorted(values,order,left,right,true);return;}
         std::vector<Value> saved;
         for_each_item(values,order,input,options,[&](const Value& item){
             if(order.locate(left,item).second){
@@ -360,6 +457,14 @@ Value apply_operator(Values& values,OrderedSet& order,Type owner,Method method,s
 }
 }
 
+void sorted_set_refresh(Values& values,const std::shared_ptr<Aggregate>& set,const ExecutionOptions& options){
+    if(!set || !set->sorted_view)return;
+    const auto element=type_info(values.program,set->type).element;
+    const auto policy=sorted_set_type_for(values.program.types,element,CompoundKind::comparer_interface);
+    OrderedSet order(values,options,policy);
+    order.refresh(set);
+}
+
 Type sorted_set_type_for(const std::vector<TypeInfo>& types,Type element,CompoundKind kind){
     for(std::size_t i=0;i<types.size();++i)
         if(types[i].kind==kind && types[i].element==element && types[i].rank==1)return static_cast<Type>(64+i);
@@ -367,7 +472,7 @@ Type sorted_set_type_for(const std::vector<TypeInfo>& types,Type element,Compoun
 }
 
 bool sorted_set_signature(const Program& program,Type owner,SortedSetMethod method){
-    if(method>Method::ref_except || !compound(owner) || !valid_value_type(program,owner))return false;
+    if(method>Method::view_between || !compound(owner) || !valid_value_type(program,owner))return false;
     const auto& shape=type_info(program,owner);
     return shape.kind==CompoundKind::sorted_set
         && sorted_set_type_for(program.types,shape.element,CompoundKind::comparer_interface)!=Type::invalid
@@ -388,6 +493,7 @@ std::vector<Type> sorted_set_parameters(const std::vector<TypeInfo>& types,Type 
         return parameters;
     }
     if(method==Method::membership)return {shape.element,owner};
+    if(method==Method::view_between)return {owner,shape.element,shape.element};
     if(sorted_set_reference(method))
         return {reference_type(owner),method<=Method::ref_remove ? shape.element : shape.key};
     if(pair_operator(method))return {owner,owner};
@@ -405,7 +511,7 @@ std::vector<Type> sorted_set_parameters(const std::vector<TypeInfo>& types,Type 
 }
 
 Type sorted_set_result(const std::vector<TypeInfo>& types,Type owner,SortedSetMethod method){
-    if(method<=Method::construct_source_comparer || method==Method::copy)return owner;
+    if(method<=Method::construct_source_comparer || method==Method::copy || method==Method::view_between)return owner;
     if(method>=Method::union_copy && method<=Method::remove_copy)return owner;
     if(update_method(method) || sorted_set_reference(method))return Type::unit;
     const auto& shape=types.at(static_cast<unsigned>(owner)-64U);
@@ -440,7 +546,7 @@ Value sorted_set_invoke(Values& values,Type owner,SortedSetMethod method,std::sp
             if(!sequence || sequence->nil)
                 throw Error("E_NIL",values.location,"SortedSet source collection is nil","Исходная коллекция SortedSet равна nil");
             const auto source=as_sorted(sequence);
-            if(source && source->ordering==result->ordering){
+            if(source && !source->sorted_view && source->ordering==result->ordering){
                 order.step(source->items.size());
                 if(source->items.size()>values.remaining)
                     throw runtime_error(RuntimeError::allocation_limit,values.location);
@@ -471,14 +577,18 @@ Value sorted_set_invoke(Values& values,Type owner,SortedSetMethod method,std::sp
             const std::array<Value,2> input{source,receiver->ordering};
             return sorted_set_invoke(values,owner,Method::construct_source_comparer,input,options);
         }
-        if(method==Method::count)return static_cast<std::int32_t>(items.size());
-        if(method==Method::minimum || method==Method::maximum)
-            return items.empty() ? values.zero(shape.element,false,true)
-                : values.copy((method==Method::minimum ? items.front() : items.back())->value);
         if(method==Method::comparer)return receiver->ordering;
         if(method==Method::clear){order.clear(receiver);return false;}
         if(method==Method::reverse)return sequence_create(values,shape.key,receiver,SequenceProvider::sorted_set_reverse);
+        if(method==Method::view_between)return create_view(values,order,receiver,args[1],args[2]);
+        if(method==Method::count || method==Method::minimum || method==Method::maximum){
+            order.refresh(receiver);
+            if(method==Method::count)return static_cast<std::int32_t>(items.size());
+            return items.empty() ? values.zero(shape.element,false,true)
+                : values.copy((method==Method::minimum ? items.front() : items.back())->value);
+        }
         if(copies_items(method)){
+            if(method!=Method::copy_count)order.refresh(receiver);
             const auto target=std::get<Object>(args[1]);
             if(!target || target->nil)throw runtime_error(RuntimeError::nil_reference,values.location);
             const auto index=method>=Method::copy_index ? std::get<std::int32_t>(args[2]) : 0;
@@ -489,6 +599,7 @@ Value sorted_set_invoke(Values& values,Type owner,SortedSetMethod method,std::sp
             const auto length=static_cast<std::size_t>(count);
             if(start>target->items.size() || length>target->items.size()-start)
                 throw Error("E_RANGE",values.location,"Destination array is too small for the SortedSet copy","В массиве недостаточно места для копирования SortedSet");
+            order.refresh(receiver);
             for(std::size_t i=0;i<std::min(length,items.size());++i){
                 order.step();
                 values.write(target->items[start+i],items[i]->value);

@@ -212,6 +212,7 @@ std::shared_ptr<Aggregate> sequence_begin(Values& values,const std::shared_ptr<A
     state.count=0;
     if(state.provider==SequenceProvider::new_set){if(!state.seed)throw runtime_error(RuntimeError::invalid_bytecode,values.location);state.source=new_set_hash(values,std::get<NewSetValue>(state.seed->value));}
     require(state.source,values.location);
+    if(state.provider==SequenceProvider::sorted_set)sorted_set_refresh(values,state.source,options);
     if(state.provider==SequenceProvider::hash_set || state.provider==SequenceProvider::new_set){reserve_state(values);state.count=state.source->count;state.version=state.source->version;state.hash_cursor=std::make_shared<HashSetCursor>();}
     else if(dictionary_provider(state.provider)){const auto owner=dictionary_sequence_source(state,values.location);reserve_state(values);state.count=owner->count;state.version=owner->version;state.hash_cursor=std::make_shared<HashSetCursor>();}
     else if (collection_sequence(state.provider)) { state.count=state.source->items.size(); state.version=state.source->version; }
@@ -222,9 +223,11 @@ void sequence_check(const std::shared_ptr<Aggregate>& sequence,SourceLocation lo
     const auto& state=cursor(sequence,location);
     if(state.disposed)return;
     if(dictionary_provider(state.provider) && state.version!=dictionary_sequence_source(state,location)->version)throw runtime_error(RuntimeError::collection_changed,location);
-    if ((state.provider==SequenceProvider::list || state.provider==SequenceProvider::hash_set
-        || state.provider==SequenceProvider::new_set || state.provider==SequenceProvider::sorted_set
+    if ((state.provider==SequenceProvider::sorted_set
         || (state.provider==SequenceProvider::sorted_set_reverse && state.source_captured))
+        && state.version!=sorted_set_version(*state.source))throw runtime_error(RuntimeError::collection_changed,location);
+    if ((state.provider==SequenceProvider::list || state.provider==SequenceProvider::hash_set
+        || state.provider==SequenceProvider::new_set)
         && state.version!=state.source->version) throw runtime_error(RuntimeError::collection_changed,location);
 }
 static bool sequence_resume_impl(Values& values,const std::shared_ptr<Aggregate>& sequence,std::uint64_t index,const ExecutionOptions& options) {
@@ -232,9 +235,10 @@ static bool sequence_resume_impl(Values& values,const std::shared_ptr<Aggregate>
     sequence_check(sequence,location); auto& state=*sequence->sequence;
     if(state.disposed)return false;
     if(state.provider==SequenceProvider::sorted_set_reverse && !state.source_captured){
+        sorted_set_refresh(values,state.source,options);
         state.source_captured=true;
         state.count=state.source->items.size();
-        state.version=state.source->version;
+        state.version=sorted_set_version(*state.source);
     }
     if(state.provider==SequenceProvider::user_source){
         if(!state.protocol_cursor)throw runtime_error(RuntimeError::invalid_bytecode,location);auto& c=*state.protocol_cursor;

@@ -31,7 +31,7 @@ struct ReferenceObjects {
     void observe(const std::shared_ptr<Aggregate>& object) { entries.push_back({object,{}}); }
     ~ReferenceObjects() {
         for (auto& entry:entries) entry.retained=entry.object.lock();
-        for (auto& entry:entries) if (entry.retained) {entry.retained->enumerator.reset();entry.retained->list_storage.reset();entry.retained->hash_set.reset();entry.retained->ordering.reset();entry.retained->delegate_source.reset();entry.retained->captures.clear();entry.retained->items.clear();}
+        for (auto& entry:entries) if (entry.retained) {entry.retained->enumerator.reset();entry.retained->list_storage.reset();entry.retained->hash_set.reset();entry.retained->ordering.reset();entry.retained->sorted_view.reset();entry.retained->delegate_source.reset();entry.retained->captures.clear();entry.retained->items.clear();}
     }
 };
 struct Values {

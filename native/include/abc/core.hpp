@@ -75,6 +75,7 @@ struct StringBuilderState;
 struct NumberFormatState;
 struct BinaryFile;
 struct HashSetState;
+struct SortedSetViewState;
 struct HashSetCursor;
 struct LinkedLinks { std::weak_ptr<Aggregate> prev, next; };
 // A null string keeps its static string type and differs from an empty string.
@@ -278,6 +279,7 @@ struct Aggregate {
     std::shared_ptr<BinaryFile> binary{};
     std::shared_ptr<HashSetState> hash_set{};
     std::shared_ptr<Aggregate> ordering{};
+    std::shared_ptr<SortedSetViewState> sorted_view{};
     std::weak_ptr<Aggregate> dictionary_keys{},dictionary_values{};
 };
 Type value_type(const Value& value);

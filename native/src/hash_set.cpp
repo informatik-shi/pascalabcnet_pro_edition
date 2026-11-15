@@ -5,6 +5,7 @@
 #include "real_interval.hpp"
 #include "runtime_values.hpp"
 #include "sequences.hpp"
+#include "sorted_set.hpp"
 #include "collection_interface.hpp"
 #include "interfaces.hpp"
 #include "sequence_scope.hpp"
@@ -137,6 +138,8 @@ std::optional<std::size_t> collection_count(const std::shared_ptr<Aggregate>& se
     return {};
 }
 std::optional<std::int64_t> collection_count(Work& work,const std::shared_ptr<Aggregate>& sequence){
+    if(sequence && sequence->sequence && sequence->sequence->provider==SequenceProvider::sorted_set)
+        sorted_set_refresh(work.values,sequence->sequence->source,work.options);
     if(const auto count=collection_count(sequence))return static_cast<std::int64_t>(*count);
     const auto owner=sequence_collection_owner(work.values.program,sequence);
     if(owner==Type::invalid)return {};
