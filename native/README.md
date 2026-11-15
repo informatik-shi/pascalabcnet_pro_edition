@@ -5757,7 +5757,12 @@ var/out-параметры и Self записи и могут менять Resul
 `Capacity`, `MaxCapacity`, `EnsureCapacity`, `Clear`, `Equals` для двух
 объектов StringBuilder и `ToString` для всего текста или диапазона.
 Ошибки аргументов и обращения через `nil` выводятся на двух языках.
-Форматирование объектов и расширенные перегрузки ещё требуют переноса.
+Поддержаны `AppendFormat` и `PABCSystem.Format` с позиционными аргументами,
+выравниванием, экранированием скобок и числовыми форматами `D`, `X`, `F`,
+`N`, `G`, `E`. Аргументы можно передать списком или как `array of object`.
+Поддержка пользовательских и культурных форматов ещё переносится.
+[Составное форматирование](https://learn.microsoft.com/en-us/dotnet/standard/base-types/composite-formatting)
+
 [Справочник StringBuilder](https://learn.microsoft.com/en-gb/dotnet/api/system.text.stringbuilder?view=netframework-4.8)
 
 

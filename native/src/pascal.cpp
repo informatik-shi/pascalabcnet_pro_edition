@@ -2270,6 +2270,26 @@ private:
         }
         return Type::invalid;
     }
+    std::unique_ptr<hir::Expr> bind_composite_format(Type owner,StringBuilderMethod method,
+        std::vector<std::unique_ptr<hir::Expr>> args,SourceLocation location) {
+        const auto format=method==StringBuilderMethod::append_format?1U:0U;
+        if (args.size()<=format)
+            throw Error("E_TYPE",location,"Format requires a format string","Для Format нужна строка формата");
+        const auto object=object_type(location);
+        const auto array=sequence_type(CompoundKind::array,object);
+        const auto first_arg=format+1;
+        if (args.size()==first_arg+1 && args[first_arg]->type==array)
+            return string_builder_expression(owner,method,std::move(args),location,array);
+        auto pack=std::make_unique<hir::Expr>();
+        pack->kind=hir::ExprKind::array_literal;
+        pack->type=array;
+        pack->location=location;
+        for (auto i=static_cast<std::size_t>(first_arg);i<args.size();++i)
+            pack->arguments.push_back(convert(std::move(args[i]),object));
+        args.resize(first_arg);
+        args.push_back(std::move(pack));
+        return string_builder_expression(owner,method,std::move(args),location,array);
+    }
     std::unique_ptr<hir::Expr> bind_string_builder_member(hir::Expr& receiver,const SyntaxExpr& source) {
         using M=StringBuilderMethod;
         if (!is_string_builder(receiver.left->type)) return {};
@@ -2288,6 +2308,7 @@ private:
         else if (name=="equals") method=M::equals;
         else if (name=="appendline") method=count==0?M::append_line:M::append_line_text;
         else if (name=="copyto") method=M::copy_to;
+        else if (name=="appendformat") method=M::append_format;
         else if (name=="insert") method=M::insert_text;
         else if (name=="remove") method=M::remove;
         else if (name=="replace") {
@@ -2303,6 +2324,8 @@ private:
         std::vector<std::unique_ptr<hir::Expr>> args;
         args.push_back(std::move(receiver.left));
         for (const auto& arg:source.arguments) args.push_back(expression(*arg));
+        if (method==M::append_format)
+            return bind_composite_format(type,method,std::move(args),location);
         if (name=="replace" && (args[1]->type!=Type::character || args[2]->type!=Type::character))
             method=count==2?M::replace_text:M::replace_text_range;
         auto payload=Type::invalid;
@@ -3669,6 +3692,12 @@ private:
                 break;
             }
             if (source.left->kind==SyntaxExprKind::name && !lookup(source.left->token) && imported_units_.contains(source.left->token.text)) {
+                if (source.left->token.text=="pabcsystem" && source.token.text=="format") {
+                    std::vector<std::unique_ptr<hir::Expr>> args;
+                    for (const auto& arg:source.arguments) args.push_back(expression(*arg));
+                    return bind_composite_format(string_builder_type(result->location),StringBuilderMethod::format,
+                        std::move(args),result->location);
+                }
                 if (source.kind==SyntaxExprKind::field && source.left->token.text=="pabcsystem") {
                     if(source.token.text=="defaultencoding") {
                         result->local=default_encoding();result->kind=hir::ExprKind::local;result->type=module_.locals[result->local].type;break;
@@ -4299,6 +4328,12 @@ private:
                 result->left=std::make_unique<hir::Expr>(); result->left->kind=hir::ExprKind::local;
                 result->left->local=callable; result->left->type=module_.locals[callable].type; result->left->location=result->location;
                 bind_value_call(*result,source.arguments,local_defaults(callable)); break;
+            }
+            if (source.token.text=="format" && !routine_names_.contains(source.token.text)) {
+                std::vector<std::unique_ptr<hir::Expr>> args;
+                for (const auto& arg:source.arguments) args.push_back(expression(*arg));
+                return bind_composite_format(string_builder_type(result->location),StringBuilderMethod::format,
+                    std::move(args),result->location);
             }
             result->kind = hir::ExprKind::call;
             if (!lookup(source.token) && subrange_aliases_.contains(source.token.text)) {

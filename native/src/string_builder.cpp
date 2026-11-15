@@ -1,9 +1,7 @@
 #include "string_builder.hpp"
-#include "formatting.hpp"
+#include "composite_format.hpp"
 #include "runtime_values.hpp"
 #include <algorithm>
-#include <charconv>
-#include <cmath>
 #include <limits>
 
 namespace abc {
@@ -34,20 +32,6 @@ std::size_t nonnegative(const Value& input,SourceLocation location) {
 std::u16string_view slice(std::u16string_view text,std::size_t start,std::size_t count,SourceLocation location) {
     if (start>text.size() || count>text.size()-start) throw out_of_range(location);
     return text.substr(start,count);
-}
-std::u16string scalar_text(const Value& value,SourceLocation location) {
-    if (!std::holds_alternative<float>(value) && !std::holds_alternative<double>(value))
-        return format_field(value,0,std::nullopt,location);
-    const auto single=std::holds_alternative<float>(value);
-    const auto number=single?static_cast<double>(std::get<float>(value)):std::get<double>(value);
-    if (number==0) return u"0";
-    if (std::isnan(number)) return u"NaN";
-    if (std::isinf(number)) return number<0?u"-Infinity":u"Infinity";
-    char buffer[64];
-    const auto result=std::to_chars(buffer,buffer+sizeof buffer,number,std::chars_format::general,single?7:15);
-    if (result.ec!=std::errc{}) throw runtime_error(RuntimeError::number_format,location);
-    std::replace(buffer,result.ptr,'e','E');
-    return std::u16string(buffer,result.ptr);
 }
 std::size_t appended_capacity(const StringBuilderState& builder,std::size_t count,SourceLocation location) {
     if (count>text_limit-builder.text.size()) throw runtime_error(RuntimeError::string_limit,location);
@@ -284,6 +268,13 @@ bool string_builder_signature(const Program& program,Type owner,std::size_t oper
         const auto& shape=type_info(program,payload);
         return shape.kind==CompoundKind::array && shape.rank==1 && shape.element==Type::character;
     }
+    if (method==M::append_format || method==M::format) {
+        if (!compound(payload) || static_cast<unsigned>(payload)-64U>=program.types.size()) return false;
+        const auto& shape=type_info(program,payload);
+        return shape.kind==CompoundKind::array && shape.rank==1 && compound(shape.element)
+            && static_cast<unsigned>(shape.element)-64U<program.types.size()
+            && type_info(program,shape.element).kind==CompoundKind::boxed_object;
+    }
     return method<=M::replace_text_range && (operation>>8U)==0;
 }
 std::vector<Type> string_builder_parameters(Type owner,StringBuilderMethod method,Type payload) {
@@ -316,6 +307,8 @@ std::vector<Type> string_builder_parameters(Type owner,StringBuilderMethod metho
     case M::remove: return {owner,Type::integer,Type::integer};
     case M::replace_text: return {owner,Type::string,Type::string};
     case M::replace_text_range: return {owner,Type::string,Type::string,Type::integer,Type::integer};
+    case M::append_format: return {owner,Type::string,payload};
+    case M::format: return {Type::string,payload};
     default: return {owner};
     }
 }
@@ -324,7 +317,7 @@ Type string_builder_result(Type owner,StringBuilderMethod method) {
     switch (method) {
     case M::length: case M::capacity: case M::max_capacity: case M::ensure_capacity: return Type::integer;
     case M::set_length: case M::set_capacity: case M::set_char: case M::copy_to: return Type::unit;
-    case M::text: case M::text_range: return Type::string;
+    case M::text: case M::text_range: case M::format: return Type::string;
     case M::get_char: return Type::character;
     case M::equals: return Type::boolean;
     default: return owner;
@@ -334,6 +327,14 @@ Value string_builder_invoke(Values& values,Type owner,StringBuilderMethod method
     using M=StringBuilderMethod;
     if (method<=M::create_slice) return construct(values,owner,method,args);
     const auto location=values.location;
+    if (method==M::format) {
+        std::u16string text;
+        composite_format(values.program,args[0],args[1],u'.',location,[&](std::u16string_view part) {
+            if (part.size()>text_limit-text.size()) throw runtime_error(RuntimeError::string_limit,location);
+            text.append(part);
+        });
+        return text;
+    }
     auto& builder=state(std::get<std::shared_ptr<Aggregate>>(args[0]),location);
     const auto number=[&](std::size_t n){return nonnegative(args[n],location);};
     const auto length=builder.text.size();
@@ -373,7 +374,7 @@ Value string_builder_invoke(Values& values,Type owner,StringBuilderMethod method
     case M::append_slice:
         append_text(builder,slice(string_text(args[1]),number(2),number(3),location),location);
         break;
-    case M::append_scalar: append_text(builder,scalar_text(args[1],location),location); break;
+    case M::append_scalar: append_text(builder,format_scalar(args[1],location),location); break;
     case M::append_array: append_text(builder,array_text(args[1],0,std::nullopt,location),location); break;
     case M::append_array_range: append_text(builder,array_text(args[1],number(2),number(3),location),location); break;
     case M::append_builder: {
@@ -409,7 +410,7 @@ Value string_builder_invoke(Values& values,Type owner,StringBuilderMethod method
         insert_text(builder,number(1),string_text(args[2]),method==M::insert_text?1U:number(3),location);
         break;
     case M::insert_scalar:
-        insert_text(builder,number(1),scalar_text(args[2],location),1,location);
+        insert_text(builder,number(1),format_scalar(args[2],location),1,location);
         break;
     case M::insert_array:
         insert_text(builder,number(1),array_text(args[2],0,std::nullopt,location),1,location);
@@ -426,6 +427,11 @@ Value string_builder_invoke(Values& values,Type owner,StringBuilderMethod method
         replace_text(builder,start,count,args[1],string_text(args[2]),location);
         break;
     }
+    case M::append_format:
+        composite_format(values.program,args[1],args[2],u',',location,[&](std::u16string_view part) {
+            append_text(builder,part,location);
+        });
+        break;
     case M::append_line: case M::append_line_text:
         if (method==M::append_line_text) append_text(builder,string_text(args[1]),location);
 #ifdef _WIN32

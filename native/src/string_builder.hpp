@@ -11,7 +11,7 @@ enum class StringBuilderMethod : std::uint8_t {
     append_repeated, append_slice, append_line, append_line_text, equals,
     append_scalar, append_array, append_array_range, append_builder, copy_to, replace_char, replace_char_range,
     insert_text, insert_repeated, insert_scalar, insert_array, insert_array_range, remove,
-    replace_text, replace_text_range
+    replace_text, replace_text_range, append_format, format
 };
 bool string_builder_signature(const Program&,Type,std::size_t);
 std::vector<Type> string_builder_parameters(Type,StringBuilderMethod,Type=Type::invalid);
