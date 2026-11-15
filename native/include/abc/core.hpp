@@ -541,6 +541,7 @@ struct Routine {
     MemberAccess access=MemberAccess::public_member;
     std::optional<std::size_t> virtual_root;
     bool abstract_method=false;
+    bool object_to_string_override=false;
 };
 
 inline bool callable_matches(const TypeInfo& type, const Routine& routine) {

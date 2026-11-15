@@ -12,6 +12,7 @@
 #include "decimal.hpp"
 #include "number_format.hpp"
 #include "runtime_values.hpp"
+#include "interfaces.hpp"
 #include "string_builder.hpp"
 #include "type_names.hpp"
 #include <array>
@@ -121,6 +122,20 @@ std::u16string object_text(const Program& program, const Value& value, Type type
     const ExecutionOptions& options,const NumberFormatSettings* settings) {
     return ObjectWriter(program,location,options,settings).render(value,type);
 }
+Value class_object_to_string(Values& values,const Value& value,const ExecutionOptions& options){
+    const auto& object=std::get<std::shared_ptr<Aggregate>>(value);
+    if(!object || object->nil)throw runtime_error(RuntimeError::nil_reference,values.location);
+    for(auto type=object->type;type!=Type::invalid;type=class_parent(values.program.types,type)){
+        for(std::size_t id=0;id<values.program.routines.size();++id){
+            const auto& method=values.program.routines[id];
+            if(method.owner!=type || !method.object_to_string_override)continue;
+            if(!values.invoke)throw runtime_error(RuntimeError::invalid_bytecode,values.location);
+            const std::array<Value,1> arguments{value};
+            return values.invoke(id,arguments);
+        }
+    }
+    return reflected_type_property(values.program,{object->type},TypeOperation::full_name,values.location,options);
+}
 namespace {
 class FrameworkWriter {
     Values& values;
@@ -154,6 +169,10 @@ class FrameworkWriter {
             const auto& object=*aggregate;
             if(!object || object->nil)return;
             const auto& shape=type_info(values.program,object->type);
+            if(shape.kind==CompoundKind::object_class || shape.kind==CompoundKind::ini_file){
+                append(string_text(class_object_to_string(values,value,options)));
+                return;
+            }
             if(shape.kind==CompoundKind::boxed_object && !object->items.empty()){
                 const auto& item=object->items.front();
                 write(item->value,item->type,depth+1);

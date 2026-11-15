@@ -7,7 +7,7 @@
 #include "runtime_values.hpp"
 #include "files.hpp"
 #include "stdlib.hpp"
-#include "type_names.hpp"
+#include "formatting.hpp"
 #include "value_hash.hpp"
 #include <algorithm>
 #include <bit>
@@ -156,7 +156,7 @@ Value ini_invoke(Values& values,FileContext& files,Type type,IniMethod method,st
         }
         switch(method) {
         case IniMethod::to_string:
-            return reflected_type_property(values.program,{object->type},TypeOperation::full_name,values.location,options);
+            return class_object_to_string(values,arguments[0],options);
         case IniMethod::equals:
             return object==std::get<std::shared_ptr<Aggregate>>(arguments[1]);
         case IniMethod::get_hash_code: {

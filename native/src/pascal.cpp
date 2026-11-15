@@ -1891,8 +1891,14 @@ private:
                     if(!ancestor.virtual_root)
                         throw Error("E_TYPE",syntax.name.location,"Base method is not virtual","Базовый метод не является виртуальным");
                     method.virtual_root=ancestor.virtual_root;
+                    method.object_to_string_override=ancestor.object_to_string_override;
                     return;
                 }
+            }
+            if(syntax.name.text=="tostring" && method.result==Type::string && method.parameters.size()==1){
+                method.virtual_root=id;
+                method.object_to_string_override=true;
+                return;
             }
             throw Error("E_TYPE",syntax.name.location,"No virtual base method has this signature",
                 "У базового класса нет виртуального метода с такой сигнатурой");
@@ -4353,6 +4359,20 @@ private:
         lambdas_.pop_back(); scopes_.pop_back(); in_routine_=saved_routine; current_result_=saved_result; current_name_=saved_name; loop_depth_=saved_loop;
         return routine_value(id,source.token.location,expected);
     }
+    static std::unique_ptr<hir::Expr> class_default_text(std::unique_ptr<hir::Expr> receiver){
+        receiver->kind=hir::ExprKind::type_operation;
+        receiver->operation_type=receiver->left->type;
+        receiver->local=static_cast<unsigned>(TypeOperation::runtime_type);
+        receiver->type=Type::type_descriptor;
+        auto name=std::make_unique<hir::Expr>();
+        name->kind=hir::ExprKind::type_operation;
+        name->operation_type=Type::type_descriptor;
+        name->local=static_cast<unsigned>(TypeOperation::full_name);
+        name->type=Type::string;
+        name->location=receiver->location;
+        name->left=std::move(receiver);
+        return name;
+    }
     std::unique_ptr<hir::Expr> class_member(std::unique_ptr<hir::Expr> result,const SyntaxExpr& source,Type expected,bool dynamic_dispatch=true) {
         const auto receiver=result->left->type;
         const auto& fields=info(receiver,result->location).fields;
@@ -4385,18 +4405,11 @@ private:
             }
             if(source.token.text=="tostring" && info(receiver,result->location).kind==CompoundKind::object_class
                 && source.arguments.empty() && !callable_type(expected)){
-                result->kind=hir::ExprKind::type_operation;
-                result->operation_type=receiver;
-                result->local=static_cast<unsigned>(TypeOperation::runtime_type);
-                result->type=Type::type_descriptor;
-                auto name=std::make_unique<hir::Expr>();
-                name->kind=hir::ExprKind::type_operation;
-                name->operation_type=Type::type_descriptor;
-                name->local=static_cast<unsigned>(TypeOperation::full_name);
-                name->type=Type::string;
-                name->location=result->location;
-                name->left=std::move(result);
-                return name;
+                if(!dynamic_dispatch)return class_default_text(std::move(result));
+                result->kind=hir::ExprKind::object_text;
+                result->local=static_cast<unsigned>(ObjectTextMode::class_to_string);
+                result->type=Type::string;
+                return result;
             }
             throw Error("E_NAME",result->location,"Unknown class member '"+source.token.text+"'");
         }
@@ -4790,8 +4803,9 @@ private:
     ABC_PASCAL_NOINLINE std::unique_ptr<hir::Expr> bind_inherited_expression(const SyntaxExpr& source,Type expected,std::unique_ptr<hir::Expr> result){
         const auto parent=class_parent(module_.types,current_owner_);
         const bool constructor=inherited_constructor_call(source);
+        const bool native_text=source.token.text=="tostring" && source.arguments.empty();
         if(current_owner_==Type::invalid || info(current_owner_,result->location).kind!=CompoundKind::object_class
-            || current_static_initializer_ || (parent==Type::invalid && !constructor))
+            || current_static_initializer_ || (parent==Type::invalid && !constructor && !native_text))
             throw Error("E_TYPE",result->location,"Inherited member requires a base class and an instance",
                 "Для inherited нужны базовый класс и экземпляр");
         auto self=std::make_unique<hir::Expr>();
@@ -4801,6 +4815,10 @@ private:
         self->local=current_self_;
         capture_local(current_self_,result->location);
         if(!constructor){
+            if(native_text && (parent==Type::invalid || info(parent,result->location).kind==CompoundKind::ini_file)){
+                result->left=std::move(self);
+                return class_default_text(std::move(result));
+            }
             result->left=convert(std::move(self),parent);
             if(bind_inifile_member(*result,source))return result;
             return class_member(std::move(result),source,expected,false);

@@ -1330,7 +1330,11 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if (type!=Type::unit || instruction.operand/4>16 || instruction.operand%4<2) invalid(instruction,"Invalid Print output");
             break;
         case Op::object_text:
-            if(instruction.operand==static_cast<unsigned>(ObjectTextMode::framework)){
+            if(instruction.operand==static_cast<unsigned>(ObjectTextMode::class_to_string)){
+                if(!compound(type) || !valid_value_type(program,type)
+                    || (type_info(program,type).kind!=CompoundKind::object_class && type_info(program,type).kind!=CompoundKind::ini_file))
+                    invalid(instruction,"Invalid native Object.ToString receiver");
+            }else if(instruction.operand==static_cast<unsigned>(ObjectTextMode::framework)){
                 if(!valid_value_type(program,type))invalid(instruction,"Invalid object formatting type");
             }else if (!object_text_supported(program.types,type) || type==Type::nil
                 || instruction.operand>static_cast<unsigned>(ObjectTextMode::width))invalid(instruction,"Invalid object formatting");

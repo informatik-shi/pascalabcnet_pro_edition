@@ -113,10 +113,14 @@ bool has_abstract_methods(const std::vector<TypeInfo>& types,const std::vector<R
 }
 void verify_virtual_methods(const Program& program){
  std::set<std::pair<Type,std::size_t>> slots;
+ const auto suffix=[](const Routine& routine){return std::string_view(routine.name).substr(routine.name.find('.')+1);};
  for(std::size_t id=0;id<program.routines.size();++id){
   const auto& method=program.routines[id];
   if(method.abstract_method && (!method.virtual_root || !method.code.empty()))
    throw Error("E_BYTECODE",{},"Invalid abstract method metadata");
+  if(method.object_to_string_override && (!method.virtual_root || method.parameters.size()!=1
+     || method.result!=Type::string || suffix(method)!="tostring"))
+   throw Error("E_BYTECODE",{},"Invalid Object.ToString override metadata");
   if(!method.virtual_root)continue;
   const auto root=*method.virtual_root;
   if(root>=program.routines.size() || !valid(program.types,method.owner)
@@ -125,8 +129,8 @@ void verify_virtual_methods(const Program& program){
      || !slots.emplace(method.owner,root).second)
    throw Error("E_BYTECODE",{},"Invalid virtual method metadata");
   const auto& declaration=program.routines[root];
-  const auto suffix=[](const Routine& routine){return std::string_view(routine.name).substr(routine.name.find('.')+1);};
   if(declaration.virtual_root!=root || !virtual_signature_matches(method,declaration) || suffix(method)!=suffix(declaration)
+     || method.object_to_string_override!=declaration.object_to_string_override
      || (root!=id && !class_reference_compatible(program.types,method.owner,declaration.owner)))
    throw Error("E_BYTECODE",{},"Invalid virtual method declaration or override");
  }
