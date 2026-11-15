@@ -33,8 +33,8 @@ splits, explicit Flush, final ASCII restoration, fresh append, the snapshot
 encoding of an open writer and Rewrite after emitted non-ASCII text. A native
 resource test rejects an oversized write on a copied encoder and compares the
 subsequent close bytes with an unchanged source baseline, including Korean
-designation state. ReadFileToEnd follows the Framework at EOF. The 2,031
-remaining Framework differences concern ReadAllText. ReadFileToEnd uses the source ReadLine/AppendLine
+designation state. ReadAllText and ReadFileToEnd both follow the Framework at
+EOF. ReadFileToEnd uses the source ReadLine/AppendLine
 recipe and normalizes host newlines to LF in both reference and tests.
 
 Factories retain distinct ISO2022Encoding metadata, integer code pages,

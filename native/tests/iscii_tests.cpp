@@ -72,7 +72,7 @@ void files(){
    try{abc::text_write(file,std::u16string(1'047'550,glyph),{0,23,2});check(false,"Oversize writer preview accepted");}catch(const abc::Error& e){check(e.code=="E_LIMIT"&&!e.russian.empty()&&e.location.line==23,"Rejected preview retains writer state");}
    file.close({});
   }else abc::execute(program,input,output);
-  const auto& reference=op==2 ? oldLine : line; const auto expected=unhex(std::string_view(reference).substr(reference.rfind('\t')+1),!write);
+  const auto& reference=op==1 || op==2 ? oldLine : line; const auto expected=unhex(std::string_view(reference).substr(reference.rfind('\t')+1),!write);
   if(write){std::ifstream file(path,std::ios::binary);std::ostringstream raw;raw<<file.rdbuf();check(output.str().empty()&&raw.str()==expected,"ISCII buffered/font/surrogate/flush/append write row "+std::to_string(rows));}
   else{auto actual=output.str();if(op==2)for(std::size_t n=0;(n=actual.find("\r\n",n))!=actual.npos;)actual.erase(n,1);check(actual==expected,"ISCII complete/post-line/BOM/state read row "+std::to_string(rows));}
   ++rows;

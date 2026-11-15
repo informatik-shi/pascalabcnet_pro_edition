@@ -18,8 +18,8 @@
 #endif
 
 namespace abc {
-LineReader::LineReader(std::filesystem::path path,TextEncoding encoding,SourceLocation location,TextDecoding decoding)
-    :path_(std::move(path)),decoder_(encoding,true,decoding) {
+LineReader::LineReader(std::filesystem::path path,TextEncoding encoding,SourceLocation location)
+    :path_(std::move(path)),decoder_(encoding,true,TextDecoding::framework) {
 #ifdef _WIN32
     auto opened=::CreateFileW(path_.c_str(),GENERIC_READ,FILE_SHARE_READ,nullptr,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,nullptr);
     if(opened==INVALID_HANDLE_VALUE)throw runtime_error(RuntimeError::file_io,location);

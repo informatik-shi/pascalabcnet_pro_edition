@@ -16,8 +16,7 @@ constexpr std::size_t string_limit=1'048'576;
 std::u16string file_operations_read(FileContext& files, const Value& name, SourceLocation location) {
     auto file=std::make_shared<TextFile>();
     text_assign(files,*file,name,location);
-    // The source StreamReader stops at EOF without flushing an incomplete decoder sequence.
-    text_open(files,file,0,location,nullptr,TextDecoding::framework);
+    text_open(files,file,0,location);
     std::u16string result;
     while (!text_eof(*file,false,false,location)) {
         const auto value=text_read(*file,Type::string,location);

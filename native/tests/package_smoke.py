@@ -343,7 +343,7 @@ def main():
                 ("foreach.pas", "Сумма: 14\nИмена: Анна Борис \nНечётные: 3 1 1 5 \n"),
                 ("characters.pas", "Буква: Б\nКод UTF-16: 1041\nИмя: Инна\nАлфавит: абвгде\nСимволы: И|н|н|а|\n"),
                 ("file-operations.pas", "Прочитано:\nПервая строка\nВторая строка\nФайл удалён: True\n"),
-                ("file-streams.pas", "ReadFileToEnd: 0\nReadAllText: 1\nText.ReadToEnd: 1\nУдалён: True\n"),
+                ("file-streams.pas", "ReadFileToEnd: 0\nReadAllText: 0\nText.ReadToEnd: 0\nУдалён: True\n"),
                 ("array-generics.pas", "1/2/3\n3|2|1\n7,7,7\n1.5 1.5 \n1.50 1.50 \n"),
                 ("collection-interfaces.pas", "2 False True\n[0,7,8]\n7 8 \nTrue 1\nTrue\n1 True\n0\n"),
                 ("list-interfaces.pas", "кот пёс кот\n5 1\n5 7 \nTrue [1,9]\n"),
@@ -1146,8 +1146,8 @@ def main():
             unicode_source.write_text(f"begin Writeln(ReadAllText('{malformed_name}'));end.", encoding="utf-8")
             attempted = subprocess.run([runner, "run", str(unicode_source)], text=True, encoding="utf-8",
                                        capture_output=True, cwd=folder, env=env, timeout=10)
-            if attempted.returncode or attempted.stdout != "\ufffd\ufffd\n":
-                raise RuntimeError(f"{name} UTF-16 surrogate/trailing-byte replacement failed: {attempted.stdout!r}, {attempted.stderr!r}")
+            if attempted.returncode or attempted.stdout != "\n":
+                raise RuntimeError(f"{name} UTF-16 pending bytes at EOF failed: {attempted.stdout!r}, {attempted.stderr!r}")
             short_error = folder / "Короткое тело функции.pas"
             short_error.write_text("function Divide(n:integer):integer :=\n1 div n;begin Writeln(Divide(0));end.", encoding="utf-8")
             invalid = subprocess.run([runner, "run", str(short_error)], text=True, encoding="utf-8",

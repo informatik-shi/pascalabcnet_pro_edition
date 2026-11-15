@@ -40,7 +40,7 @@
     },
     {
       "path": "fixtures/dbcs-reference.md",
-      "sha256_lf": "8a5ff28b9e46a4b1247321024648eaa8557d472f3e46f606d1a96504be7a1a71"
+      "sha256_lf": "3d08b2ecbda1040f89ee2014f8c61a60db69a26c21bb590668185c4cdcd654f0"
     },
     {
       "path": "../tools/generate-dbcs.mjs",

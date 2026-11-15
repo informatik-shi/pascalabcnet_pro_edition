@@ -72,7 +72,7 @@ void files(){
   do{if(!std::getline(legacy,oldLine))throw std::runtime_error("Truncated legacy GB18030 file corpus");if(!oldLine.empty()&&oldLine.back()=='\r')oldLine.pop_back();}while(oldLine.empty()||oldLine.front()=='#');if(line!=oldLine)++differences;
   const auto first=line.find('\t'),second=line.find('\t',first+1);const auto op=std::stoi(line.substr(0,first));const bool write=op==0||op>=3;
   if(write){std::error_code e;std::filesystem::remove(path,e);}else{std::ofstream file(path,std::ios::binary);const auto bytes=unhex(std::string_view(line).substr(first+1,second-first-1),false);file.write(bytes.data(),bytes.size());}
-  std::istringstream input(std::to_string(op));std::ostringstream output;abc::execute(program,input,output);const auto& reference=op==2 ? oldLine : line; const auto expected=unhex(std::string_view(reference).substr(reference.rfind('\t')+1),!write);
+  std::istringstream input(std::to_string(op));std::ostringstream output;abc::execute(program,input,output);const auto& reference=op==1 || op==2 ? oldLine : line; const auto expected=unhex(std::string_view(reference).substr(reference.rfind('\t')+1),!write);
   if(write){std::ifstream file(path,std::ios::binary);std::ostringstream bytes;bytes<<file.rdbuf();check(output.str().empty()&&bytes.str()==expected,"GB18030 file write, surrogate buffer and Flush");}
   else{auto actual=output.str();if(op==2)for(std::size_t n=0;(n=actual.find("\r\n",n))!=actual.npos;)actual.erase(n,1);check(actual==expected,"GB18030 file read/BOM/EOF row "+std::to_string(rows));}
   ++rows;

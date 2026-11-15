@@ -43,7 +43,7 @@
                       },
                       {
                           "path":  "fixtures/gb18030-reference.md",
-                          "sha256_lf":  "2461755e42b09094f84a8aef86db999cdfefbc10d8a94594327998fc5c606345"
+                          "sha256_lf":  "d8a4d26028d6c11ec1421d8a45974e7eee590f40ef1beb1c4e686fbd8fe5a7ea"
                       },
                       {
                           "path":  "fixtures/encoding-aliases-reference.tsv",

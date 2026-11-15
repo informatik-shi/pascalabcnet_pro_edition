@@ -35,10 +35,9 @@ The two 161-row file corpora run actual StreamReader/StreamWriter with a
 1024-character buffer: writes, ReadAllText, the FilesOperations ReadLine/AppendLine
 recipe, split surrogate writes, BOM override and a two-byte character crossing
 the reader block boundary. In the last recipe each file ends with a lone lead.
-Framework StreamReader drops it; .NET 10.0.12 flushes replacement. Native follows
-the modern behavior already selected by the earlier file-operations work. Both
-results are retained; these 23 legacy differences are explicit compatibility
-gaps. The other 138 recipes agree. No original Pascal compiler is executed.
+Framework StreamReader drops it and .NET 10.0.12 flushes a replacement.
+ReadAllText follows the Framework in all 23 such recipes. Both runtime
+references are retained. The other 138 recipes agree.
 
 The C++ runtime uses static tables and binary search, without platform codecs,
 registry access, Python or managed dependencies in the application. Reference

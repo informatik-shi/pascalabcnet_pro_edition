@@ -43,7 +43,7 @@
                       },
                       {
                           "path":  "fixtures/iso2022-reference.md",
-                          "sha256_lf":  "7deb0413647df6fcbf8d56ae789f5f0b05014f18caa5df172cdf80274773cc74"
+                          "sha256_lf":  "4ecdce0cb22e1937e955b937ceed0aec282f55a791f5021f3123a5d9751b9f7d"
                       },
                       {
                           "path":  "fixtures/encoding-aliases-reference.tsv",

@@ -106,7 +106,7 @@ void files(){
   }else check(line==oldLine,"Other legacy and modern file recipes agree");
   if(write){std::error_code e;std::filesystem::remove(path,e);}
   else {std::ofstream file(path,std::ios::binary);const auto input=unhex(std::string_view(line).substr(second+1,third-second-1),false);file.write(input.data(),input.size());}
-  auto output=run(program,cp+" "+std::to_string(op));const auto expected=unhex(std::string_view(line).substr(third+1),!write);
+  auto output=run(program,cp+" "+std::to_string(op));const auto& reference=op==6 ? oldLine : line; const auto expected=unhex(std::string_view(reference).substr(reference.rfind('\t')+1),!write);
   if(write){std::ifstream file(path,std::ios::binary);std::ostringstream bytes;bytes<<file.rdbuf();check(output.empty()&&bytes.str()==expected,"DefaultEncoding write, close and surrogate boundary "+cp);}
   else {if(op==2)for(std::size_t n=0;(n=output.find("\r\n",n))!=output.npos;)output.erase(n,1);check(output==expected,"ReadAllText/ReadFileToEnd/BOM with DefaultEncoding "+cp+" operation "+std::to_string(op)+" lengths "+std::to_string(output.size())+"/"+std::to_string(expected.size()));}
   ++rows;

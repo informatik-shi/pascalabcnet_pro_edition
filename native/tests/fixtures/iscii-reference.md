@@ -44,9 +44,9 @@ Each runtime produces 9,490 file recipes over all ten pages, including single
 bytes, special lookahead, mixed scripts, ATR/reset and reader block boundaries,
 BOM override, writer buffer boundaries, surrogate splits, Flush after Virama,
 changed-font flush, append and the encoding snapshot of an open writer, Rewrite after emitted font changes and recovery after a rejected
-native size preflight. Both runtime references are retained. ReadFileToEnd
-follows the Framework at EOF and normalizes host AppendLine newlines to LF.
-The 479 remaining Framework differences concern ReadAllText.
+native size preflight. Both runtime references are retained. ReadAllText and
+ReadFileToEnd follow the Framework at EOF. ReadFileToEnd normalizes host
+AppendLine newlines to LF.
 
 Integer/name factories use the ten validated aliases from the complete alias
 fixture and preserve ISCIIEncoding metadata and per-execution cache identity.
