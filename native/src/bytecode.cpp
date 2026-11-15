@@ -15,6 +15,7 @@
 #include "ini_file.hpp"
 #include "compound.hpp"
 #include "hash_set.hpp"
+#include "sorted_set.hpp"
 #include "dictionary.hpp"
 #include "enumerator.hpp"
 #include "sequence_set.hpp"
@@ -209,6 +210,7 @@ private:
         case hir::ExprKind::enumerator_call:
         case hir::ExprKind::dictionary_call:
         case hir::ExprKind::hash_set_call:
+        case hir::ExprKind::sorted_set_call:
         case hir::ExprKind::ordinal_range_call: expression_part_5(node);break;
         case hir::ExprKind::real_interval_call:
         case hir::ExprKind::compound_call:
@@ -560,6 +562,9 @@ private:
         case hir::ExprKind::ordinal_range_call:
             for(const auto& argument:node.arguments)expression(*argument);
             emit(Op::ordinal_range_call,node.operation_type,node.local,node.location);break;
+        case hir::ExprKind::sorted_set_call:
+            for(const auto& argument:node.arguments)expression(*argument);
+            emit(Op::sorted_set_call,node.operation_type,node.local,node.location);break;
 
         default: throw Error("E_HIR",node.location,"Invalid expression dispatch");
         }
@@ -1389,6 +1394,11 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if((instruction.operand>>8U)>65535U || !dictionary_signature(program,type,static_cast<Type>(instruction.operand>>8U),static_cast<DictionaryMethod>(instruction.operand&255U)))invalid(instruction,"Invalid Dictionary call metadata");break;
         case Op::hash_set_call:
             if((instruction.operand>>8U)>65535U || !hash_set_signature(program,type,static_cast<Type>(instruction.operand>>8U),static_cast<HashSetMethod>(instruction.operand&255U)))invalid(instruction,"Invalid HashSet call metadata");break;
+        case Op::sorted_set_call:
+            if(instruction.operand>static_cast<std::size_t>(SortedSetMethod::membership)
+                || !sorted_set_signature(program,type,static_cast<SortedSetMethod>(instruction.operand)))
+                invalid(instruction,"Invalid SortedSet call metadata");
+            break;
         case Op::ordinal_range_call:
             if(instruction.operand>static_cast<std::size_t>(OrdinalRangeMethod::membership_uint64) || !ordinal_range_signature(program,type,static_cast<OrdinalRangeMethod>(instruction.operand)))invalid(instruction,"Invalid ordinal range call metadata");break;
         case Op::real_interval_call:
@@ -1463,7 +1473,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if (instruction.op==Op::make_default && (instruction.operand&3U)==1 && compound(type)
                 && type_info(program,type).kind==CompoundKind::number_format)
                 invalid(instruction,"NumberFormatInfo constructor cannot be bypassed");
-            if (instruction.op==Op::make_default && (instruction.operand&3U)==1 && compound(type) && (node_kind(type_info(program,type).kind) || type_info(program,type).kind==CompoundKind::tuple || type_info(program,type).kind==CompoundKind::sequence || type_info(program,type).kind==CompoundKind::enumerator || type_info(program,type).kind==CompoundKind::user_interface || type_info(program,type).kind==CompoundKind::collection_interface || type_info(program,type).kind==CompoundKind::list_interface || type_info(program,type).kind==CompoundKind::dictionary_interface || type_info(program,type).kind==CompoundKind::set_interface || type_info(program,type).kind==CompoundKind::equality_comparer || type_info(program,type).kind==CompoundKind::equatable_interface || type_info(program,type).kind==CompoundKind::equality_comparer_interface || type_info(program,type).kind==CompoundKind::comparer || type_info(program,type).kind==CompoundKind::comparable_interface || type_info(program,type).kind==CompoundKind::comparer_interface || type_info(program,type).kind==CompoundKind::callable || type_info(program,type).kind==CompoundKind::encoding || type_info(program,type).kind==CompoundKind::ini_file || type_info(program,type).kind==CompoundKind::hash_set || type_info(program,type).kind==CompoundKind::dictionary || type_info(program,type).kind==CompoundKind::dictionary_keys || type_info(program,type).kind==CompoundKind::dictionary_values || school_ip_kind(type_info(program,type).kind)))
+            if (instruction.op==Op::make_default && (instruction.operand&3U)==1 && compound(type) && (node_kind(type_info(program,type).kind) || type_info(program,type).kind==CompoundKind::tuple || type_info(program,type).kind==CompoundKind::sequence || type_info(program,type).kind==CompoundKind::enumerator || type_info(program,type).kind==CompoundKind::user_interface || type_info(program,type).kind==CompoundKind::collection_interface || type_info(program,type).kind==CompoundKind::list_interface || type_info(program,type).kind==CompoundKind::dictionary_interface || type_info(program,type).kind==CompoundKind::set_interface || type_info(program,type).kind==CompoundKind::equality_comparer || type_info(program,type).kind==CompoundKind::equatable_interface || type_info(program,type).kind==CompoundKind::equality_comparer_interface || type_info(program,type).kind==CompoundKind::comparer || type_info(program,type).kind==CompoundKind::comparable_interface || type_info(program,type).kind==CompoundKind::comparer_interface || type_info(program,type).kind==CompoundKind::callable || type_info(program,type).kind==CompoundKind::encoding || type_info(program,type).kind==CompoundKind::ini_file || type_info(program,type).kind==CompoundKind::hash_set || type_info(program,type).kind==CompoundKind::sorted_set || type_info(program,type).kind==CompoundKind::dictionary || type_info(program,type).kind==CompoundKind::dictionary_keys || type_info(program,type).kind==CompoundKind::dictionary_values || school_ip_kind(type_info(program,type).kind)))
                 invalid(instruction,"Nodes and tuples require the typed constructor");
             break;
         case Op::routine_value:
@@ -1892,6 +1902,14 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             const auto method=static_cast<OrdinalRangeMethod>(instruction.operand);const auto parameters=ordinal_range_parameters(program.types,instruction.type,method);
             for(auto it=parameters.rbegin();it!=parameters.rend();++it)require(*it);const auto result=ordinal_range_result(program.types,instruction.type,method);if(result!=Type::unit)stack.push_back(result);break;
         }
+        case Op::sorted_set_call: {
+            const auto method=static_cast<SortedSetMethod>(instruction.operand);
+            const auto parameters=sorted_set_parameters(program.types,instruction.type,method);
+            for(auto it=parameters.rbegin();it!=parameters.rend();++it)require(*it);
+            const auto result=sorted_set_result(program.types,instruction.type,method);
+            if(result!=Type::unit)stack.push_back(result);
+            break;
+        }
         case Op::directory_sequence:require(Type::string);require(Type::string);stack.push_back(instruction.type);break;
         case Op::random_sequence: {
             const auto parameters=random_sequence_parameters(static_cast<RandomSequenceMethod>(instruction.operand));for(auto it=parameters.rbegin();it!=parameters.rend();++it)require(*it);stack.push_back(instruction.type);break;
@@ -2161,6 +2179,14 @@ void verify(const Program& program) {
             if(type.name!=(type.kind==CompoundKind::dictionary_keys ? "dictionarykeys" : "dictionaryvalues") || !type.fields.empty())throw Error("E_BYTECODE",{},"Invalid Dictionary view metadata");prior(type.key);prior(type.element);
             const auto& owner=type_info(program,type.key);
             if(owner.kind!=CompoundKind::dictionary || (type.kind==CompoundKind::dictionary_keys ? owner.key : type_info(program,owner.element).fields.at(1).type)!=type.element)throw Error("E_BYTECODE",{},"Invalid Dictionary view owner");
+        } else if(type.kind==CompoundKind::sorted_set) {
+            if(type.name!="sortedset" || type.rank!=1 || !type.fields.empty() || !compound(type.key))
+                throw Error("E_BYTECODE",{},"Invalid SortedSet type metadata");
+            prior(type.element);prior(type.key);
+            const auto& sequence=type_info(program,type.key);
+            if(sequence.kind!=CompoundKind::sequence || sequence.element!=type.element
+                || !sorted_set_signature(program,static_cast<Type>(64+i),SortedSetMethod::construct))
+                throw Error("E_BYTECODE",{},"Invalid SortedSet element metadata");
         } else if(type.kind==CompoundKind::ini_file) {
             if(type.name!="tinifile" || type.element!=Type::invalid || type.key!=Type::invalid || !type.fields.empty())throw Error("E_BYTECODE",{},"Invalid TIniFile type metadata");
         } else if (type.kind==CompoundKind::string_builder) {

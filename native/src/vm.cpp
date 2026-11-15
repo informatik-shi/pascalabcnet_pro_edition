@@ -45,6 +45,7 @@
 #include "ini_file.hpp"
 #include "compound.hpp"
 #include "hash_set.hpp"
+#include "sorted_set.hpp"
 #include "dictionary.hpp"
 #include "enumerator.hpp"
 #include "sequence_set.hpp"
@@ -477,6 +478,10 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
             if (instruction.type==Type::string) { stack.emplace_back(sequence_text(values,static_cast<Type>(instruction.operand),pop())); break; }
             const auto source=std::get<std::shared_ptr<Aggregate>>(pop());
             if(ordinal_range_type(type_info(program,instruction.type))){stack.emplace_back(sequence_create(values,static_cast<Type>(instruction.operand),std::get<std::shared_ptr<Aggregate>>(values.copy(source)),SequenceProvider::ordinal_range));break;}
+            if(type_info(program,instruction.type).kind==CompoundKind::sorted_set){
+                stack.emplace_back(sequence_create(values,static_cast<Type>(instruction.operand),source,SequenceProvider::sorted_set));
+                break;
+            }
             stack.emplace_back(sequence_create(values,static_cast<Type>(instruction.operand),source,type_info(program,instruction.type).kind==CompoundKind::dictionary ? SequenceProvider::dictionary_entries : type_info(program,instruction.type).kind==CompoundKind::dictionary_keys ? SequenceProvider::dictionary_keys : type_info(program,instruction.type).kind==CompoundKind::dictionary_values ? SequenceProvider::dictionary_values : type_info(program,instruction.type).kind==CompoundKind::array ? SequenceProvider::array : type_info(program,instruction.type).kind==CompoundKind::hash_set ? SequenceProvider::hash_set : SequenceProvider::list)); break;
         }
         case Op::sequence_dispose: {
@@ -1259,6 +1264,14 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
             const auto method=static_cast<OrdinalRangeMethod>(instruction.operand);const auto parameters=ordinal_range_parameters(program.types,instruction.type,method);
             std::vector<Value> arguments(parameters.size());for(std::size_t i=arguments.size();i>0;--i)arguments[i-1]=pop();
             auto result=ordinal_range_invoke(values,instruction.type,method,arguments,options);if(ordinal_range_result(program.types,instruction.type,method)!=Type::unit)stack.push_back(std::move(result));break;
+        }
+        case Op::sorted_set_call: {
+            const auto method=static_cast<SortedSetMethod>(instruction.operand);
+            std::vector<Value> arguments(sorted_set_parameters(program.types,instruction.type,method).size());
+            for(std::size_t i=arguments.size();i>0;--i)arguments[i-1]=pop();
+            auto result=sorted_set_invoke(values,instruction.type,method,arguments,options);
+            if(sorted_set_result(program.types,instruction.type,method)!=Type::unit)stack.push_back(std::move(result));
+            break;
         }
         case Op::real_interval_call: {
             const auto method=static_cast<RealIntervalMethod>(instruction.operand);const auto parameters=real_interval_parameters(instruction.type,method);

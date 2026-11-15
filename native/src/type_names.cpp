@@ -51,7 +51,7 @@ std::u16string byref_name(const Program& program,Type type,Work& work){
         case CompoundKind::record:case CompoundKind::object_class:case CompoundKind::enumeration:case CompoundKind::user_interface:name=named(info);arity=0;break;
         case CompoundKind::list:name=u"List";break;case CompoundKind::stack:name=u"Stack";break;case CompoundKind::queue:name=u"Queue";break;
         case CompoundKind::dynarray:name=u"DynArray";break;case CompoundKind::simple_set:name=u"SimpleSet";break;
-        case CompoundKind::hash_set:name=u"HashSet";break;case CompoundKind::new_set:name=u"NewSet";break;
+        case CompoundKind::hash_set:name=u"HashSet";break;case CompoundKind::sorted_set:name=u"SortedSet";break;case CompoundKind::new_set:name=u"NewSet";break;
         case CompoundKind::dictionary_interface:name=u"IDictionary";arity=2;break;case CompoundKind::dictionary:name=u"Dictionary";arity=2;break;
         case CompoundKind::dictionary_keys:name=u"KeyCollection";arity=2;break;
         case CompoundKind::dictionary_values:name=u"ValueCollection";arity=2;break;
@@ -177,7 +177,7 @@ std::u16string reflected_type_name(const Program& program,const ReflectedType& t
             if(compound(root)){const auto& info=type_info(program,root);
                 switch(info.kind){
                 case CompoundKind::list:name=u"List";break;case CompoundKind::stack:name=u"Stack";break;case CompoundKind::queue:name=u"Queue";break;
-                case CompoundKind::dynarray:name=u"DynArray";break;case CompoundKind::simple_set:name=u"SimpleSet";break;case CompoundKind::hash_set:name=u"HashSet";break;
+                case CompoundKind::dynarray:name=u"DynArray";break;case CompoundKind::simple_set:name=u"SimpleSet";break;case CompoundKind::hash_set:name=u"HashSet";break;case CompoundKind::sorted_set:name=u"SortedSet";break;
                 case CompoundKind::new_set:name=u"NewSet";break;case CompoundKind::linked_list:name=u"LinkedList";break;case CompoundKind::linked_node:name=u"LinkedListNode";break;
                 case CompoundKind::single_node:name=u"SingleNode";break;case CompoundKind::sequence:name=u"IEnumerable";break;case CompoundKind::enumerator:name=u"IEnumerator";break;
         case CompoundKind::set_interface:name=u"ISet";break;case CompoundKind::list_interface:name=u"IList";break;case CompoundKind::collection_interface:name=u"ICollection";break;case CompoundKind::equatable_interface:name=u"IEquatable";break;case CompoundKind::equality_comparer_interface:name=u"IEqualityComparer";break;case CompoundKind::equality_comparer:name=u"EqualityComparer";break;
@@ -243,7 +243,7 @@ std::u16string reflected_type_name(const Program& program,const ReflectedType& t
         case CompoundKind::queue:name=u"Queue";break;case CompoundKind::dynarray:name=u"DynArray";break;
         case CompoundKind::simple_set:name=u"SimpleSet";break;case CompoundKind::association:name=u"AssocArray";break;
         case CompoundKind::linked_node:name=u"LinkedListNode";break;case CompoundKind::linked_list:name=u"LinkedList";break;
-        case CompoundKind::single_node:name=u"SingleNode";break;case CompoundKind::hash_set:name=u"HashSet";break;
+        case CompoundKind::single_node:name=u"SingleNode";break;case CompoundKind::hash_set:name=u"HashSet";break;case CompoundKind::sorted_set:name=u"SortedSet";break;
         case CompoundKind::sequence:name=u"IEnumerable";break;case CompoundKind::enumerator:name=u"IEnumerator";break;
         case CompoundKind::set_interface:name=u"ISet";break;case CompoundKind::list_interface:name=u"IList";break;case CompoundKind::collection_interface:name=u"ICollection";break;case CompoundKind::equatable_interface:name=u"IEquatable";break;case CompoundKind::equality_comparer_interface:name=u"IEqualityComparer";break;case CompoundKind::equality_comparer:name=u"EqualityComparer";break;
         case CompoundKind::comparable_interface:name=u"IComparable";break;case CompoundKind::comparer_interface:name=u"IComparer";break;case CompoundKind::comparer:name=u"Comparer";break;

@@ -163,6 +163,7 @@ Definition definition(const Program& program,ReflectedType type,Work& work){
             switch(info.kind){
             case CompoundKind::list:result.name=u"List";break;
             case CompoundKind::hash_set:result.name=u"HashSet";result.assembly=u"System.Core";break;
+            case CompoundKind::sorted_set:result.name=u"SortedSet";result.assembly=u"System";break;
             case CompoundKind::sequence:result.name=u"IEnumerable";break;
             case CompoundKind::enumerator:result.name=u"IEnumerator";break;
             case CompoundKind::collection_interface:result.name=u"ICollection";break;

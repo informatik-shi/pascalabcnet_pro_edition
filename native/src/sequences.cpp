@@ -18,6 +18,7 @@
 #include "matrix_operations.hpp"
 #include "file_lines.hpp"
 #include "hash_set.hpp"
+#include "sorted_set.hpp"
 #include "dictionary.hpp"
 #include "ordinal_range.hpp"
 #include "new_set.hpp"
@@ -217,7 +218,9 @@ void sequence_check(const std::shared_ptr<Aggregate>& sequence,SourceLocation lo
     const auto& state=cursor(sequence,location);
     if(state.disposed)return;
     if(dictionary_provider(state.provider) && state.version!=dictionary_sequence_source(state,location)->version)throw runtime_error(RuntimeError::collection_changed,location);
-    if ((state.provider==SequenceProvider::list || state.provider==SequenceProvider::hash_set || state.provider==SequenceProvider::new_set) && state.version!=state.source->version) throw runtime_error(RuntimeError::collection_changed,location);
+    if ((state.provider==SequenceProvider::list || state.provider==SequenceProvider::hash_set
+        || state.provider==SequenceProvider::new_set || state.provider==SequenceProvider::sorted_set)
+        && state.version!=state.source->version) throw runtime_error(RuntimeError::collection_changed,location);
 }
 static bool sequence_resume_impl(Values& values,const std::shared_ptr<Aggregate>& sequence,std::uint64_t index,const ExecutionOptions& options) {
     const auto location=values.location;
@@ -428,6 +431,10 @@ Value sequence_query(Values& values,const std::shared_ptr<Aggregate>& sequence,S
         if(collection_owner!=Type::invalid){const std::array<Value,1> args{argument};return interface_invoke(values,collection_owner,4,source,args,options);}
         if(state.provider==SequenceProvider::array && source && type_info(values.program,source->type).kind==CompoundKind::array){require(source,values.location);ValueHashWork work{values,options};for(const auto& cell:source->items){if(value_equal(work,cell->value,argument))return true;}return false;}
         if(state.provider==SequenceProvider::list && source && type_info(values.program,source->type).element==element)return list_contains(values,source,argument,options);
+        if(state.provider==SequenceProvider::sorted_set && source){
+            const std::array<Value,2> args{source,argument};
+            return sorted_set_invoke(values,source->type,SortedSetMethod::contains,args,options);
+        }
         if(state.provider==SequenceProvider::hash_set && source && type_info(values.program,source->type).element==element){require(source,values.location);const std::array<Value,2> args{source,argument};return hash_set_invoke(values,source->type,Type::invalid,HashSetMethod::contains,args,options);}
         if(dictionary_provider(state.provider) && source && type_info(values.program,source->type).element==element){require(source,values.location);const std::array<Value,2> args{source,argument};return dictionary_invoke(values,source->type,Type::invalid,state.provider==SequenceProvider::dictionary_entries ? DictionaryMethod::pair_contains : DictionaryMethod::view_contains,args,options);}
     }

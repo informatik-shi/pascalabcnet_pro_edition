@@ -31,7 +31,7 @@ struct ReferenceObjects {
     void observe(const std::shared_ptr<Aggregate>& object) { entries.push_back({object,{}}); }
     ~ReferenceObjects() {
         for (auto& entry:entries) entry.retained=entry.object.lock();
-        for (auto& entry:entries) if (entry.retained) {entry.retained->enumerator.reset();entry.retained->list_storage.reset();entry.retained->hash_set.reset();entry.retained->delegate_source.reset();entry.retained->captures.clear();entry.retained->items.clear();}
+        for (auto& entry:entries) if (entry.retained) {entry.retained->enumerator.reset();entry.retained->list_storage.reset();entry.retained->hash_set.reset();entry.retained->ordering.reset();entry.retained->delegate_source.reset();entry.retained->captures.clear();entry.retained->items.clear();}
     }
 };
 struct Values {
@@ -107,7 +107,7 @@ struct Values {
             const bool object=info.kind==CompoundKind::object_class;
             const bool iterator=info.kind==CompoundKind::enumerator;
             const bool dictionary=info.kind==CompoundKind::dictionary || info.kind==CompoundKind::dictionary_keys || info.kind==CompoundKind::dictionary_values;
-            if ((object || iterator || dictionary || info.kind==CompoundKind::list || info.kind==CompoundKind::hash_set || info.kind==CompoundKind::empty_collection) && constructed) {
+            if ((object || iterator || dictionary || info.kind==CompoundKind::list || info.kind==CompoundKind::hash_set || info.kind==CompoundKind::sorted_set || info.kind==CompoundKind::empty_collection) && constructed) {
                 if (!remaining) throw runtime_error(RuntimeError::allocation_limit,location);
                 --remaining;
             }
@@ -119,7 +119,7 @@ struct Values {
                 aggregate->ends = std::make_unique<std::deque<std::shared_ptr<Cell>>>();
             if (info.kind == CompoundKind::record || (object && constructed))
                 for (const auto& field : info.fields) aggregate->items.push_back(cell(field.type, zero(field.type,false,generic || object || key_value_pair_type(info) || dictionary_enumerator_type(info) || collection_enumerator_type(info))));
-            if ((object || iterator || dictionary || info.kind==CompoundKind::list || info.kind==CompoundKind::hash_set) && constructed && observe_object) observe_object(aggregate);
+            if ((object || iterator || dictionary || info.kind==CompoundKind::list || info.kind==CompoundKind::hash_set || info.kind==CompoundKind::sorted_set) && constructed && observe_object) observe_object(aggregate);
             return aggregate;
         }
         }

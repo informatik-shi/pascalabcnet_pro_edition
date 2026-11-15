@@ -52,6 +52,40 @@ class Sorter {
   }swap(left,last-1);return left;
  }
  void intro(int first,int last,int depth){while(first<last){step();const auto size=last-first+1;if(size<=16){if(size==2)ordered_pair(first,last);else if(size==3){ordered_pair(first,last-1);ordered_pair(first,last);ordered_pair(last-1,last);}else insertion(first,last);return;}if(depth==0){heap(first,last);return;}--depth;const auto pivot=partition(first,last);intro(pivot+1,last,depth);last=pivot-1;}}
+ void legacy_quicksort(int first,int last,int depth){
+  while(first<last){
+   step();
+   if(depth--==0){heap(first,last);return;}
+   const auto middle=first+(last-first)/2;
+   ordered_pair(first,middle);ordered_pair(first,last);ordered_pair(middle,last);
+   const auto pivot=hold(middle).key;
+   int left=first,right=last;
+   do {
+    if(specialized && is_nil(pivot)){
+     while(right>first && !is_nil(key(right)))--right;
+    }else{
+     while((specialized ? compare(pivot,key(left))>0 : compare(key(left),pivot)<0)){
+      if(left==last)bad_order(values.location);
+      ++left;
+     }
+     while(compare(pivot,key(right))<0){
+      if(right==first)bad_order(values.location);
+      --right;
+     }
+    }
+    if(left>right)break;
+    if(left<right)swap(left,right);
+    ++left;--right;
+   }while(left<=right);
+   if(right-first<=last-left){
+    legacy_quicksort(first,right,depth);
+    first=left;
+   }else{
+    legacy_quicksort(left,last,depth);
+    last=right;
+   }
+  }
+ }
 public:
  Sorter(Values& v,const ExecutionOptions& o,Object target,Type type,std::size_t code,Object function,Object items={}):values(v),options(o),array(std::move(target)),paired(std::move(items)),element(type_info(v.program,type).element),key_type(sort_method(code)==SortMethod::key ? type_info(v.program,sort_callback(code)).element : element),slots(&array->items),logical_size(array->items.size()),callback(std::move(function)),method(sort_algorithm(code)),interface_type(sort_callback(code)),specialized(false),ordinal(method==SortMethod::ordinal_order || (method==SortMethod::key && key_type==Type::string && !(code&sort_generic_key))){
   if(type_info(v.program,type).kind==CompoundKind::list){backing=values.list_backing(array);slots=&backing->cells;}
@@ -72,7 +106,14 @@ public:
   int depth=0;for(auto n=fast ? size : slots->size();n;n/=2)++depth;intro(index,index+static_cast<int>(size)-1,2*depth);
  }
  void reverse(){for(std::size_t i=0,n=logical_size;i<n/2;++i)swap(static_cast<int>(i),static_cast<int>(n-1-i));}
+ void run_legacy(){
+  if(logical_size>INT32_MAX)throw runtime_error(RuntimeError::allocation_limit,values.location);
+  if(logical_size>1)legacy_quicksort(0,static_cast<int>(logical_size)-1,32);
+ }
 };
+template<class Sort> void wrap_sort(Values& values,Sort&& sort){
+ try{sort();}catch(const Error& failure){if(failure.code=="E_LIMIT" || failure.code=="E_CANCELLED" || failure.code=="E_COMPARER")throw;if(failure.code=="E_BOUNDS")bad_order(values.location);throw Error("E_SORT",values.location,std::string("Failed to compare two elements in the array: ")+failure.what(),std::string("Не удалось сравнить два элемента массива: ")+failure.russian);}
+}
 }
 bool sort_reference(const Program& program,Type owner,std::size_t code){return compound(owner) && type_info(program,owner).kind==CompoundKind::list && sort_method(code)==SortMethod::key;}
 std::vector<Type> sort_parameters(const Program& program,Type owner,std::size_t code){
@@ -120,9 +161,15 @@ void sort_array(Values& values,Type owner,std::size_t code,const Value& source,c
  }
  if(by_reference){auto snapshot=values.array(owner,array->items.size(),true);for(std::size_t i=0;i<array->items.size();++i)values.write(snapshot->items[i],array->items[i]->value,false);array=std::move(snapshot);}
  Sorter sorter(values,options,array,owner,code,function,paired);sorter.extract();
- try{sorter.run(index,count);}catch(const Error& failure){if(failure.code=="E_LIMIT" || failure.code=="E_CANCELLED" || failure.code=="E_COMPARER")throw;if(failure.code=="E_BOUNDS")bad_order(values.location);throw Error("E_SORT",values.location,std::string("Failed to compare two elements in the array: ")+failure.what(),std::string("Не удалось сравнить два элемента массива: ")+failure.russian);}
+ wrap_sort(values,[&]{sorter.run(index,count);});
  if(by_reference){auto result=values.array(owner,array->items.size(),true);for(std::size_t i=0;i<array->items.size();++i)values.write(result->items[i],array->items[i]->value,false);values.write(reference,result);array=std::move(result);}
  else if(list && (method==SortMethod::default_order || method==SortMethod::ordinal_order || method==SortMethod::comparer))++array->version;
  if(code&sort_descending){if(list){Sorter reverse(values,options,array,owner,0,{});reverse.reverse();++array->version;}else sorter.reverse();}
+}
+void sort_legacy_list(Values& values,Type list,Type policy,const Value& source,const Value& comparer,const ExecutionOptions& options){
+ const auto code=static_cast<std::size_t>(SortMethod::comparer)|sort_extension|(static_cast<std::size_t>(policy)<<8U);
+ if(!sort_signature(values.program,list,code))throw runtime_error(RuntimeError::invalid_bytecode,values.location);
+ Sorter sorter(values,options,std::get<Object>(source),list,code,std::get<Object>(comparer));
+ wrap_sort(values,[&]{sorter.run_legacy();});
 }
 }

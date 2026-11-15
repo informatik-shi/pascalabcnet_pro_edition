@@ -53,6 +53,7 @@ add_library(abc_core
     src/enumeration.cpp
     src/comparable.cpp
     src/comparison.cpp
+    src/sorted_set.cpp
     src/equality.cpp
     src/sorting.cpp
     src/ini_file.cpp
@@ -511,6 +512,9 @@ if(BUILD_TESTING)
     add_test(NAME native_value_collections_compatibility COMMAND ${CMAKE_COMMAND}
         -DABC_RUNNER=$<TARGET_FILE:abc> -DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures
         -DABC_FIXTURE_NAME=native-value-collections-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")
+    add_test(NAME sorted_set_core_compatibility COMMAND ${CMAKE_COMMAND}
+        -DABC_RUNNER=$<TARGET_FILE:abc> -DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures
+        -DABC_FIXTURE_NAME=sorted-set-core-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")
     add_executable(abc_nested_routine_tests tests/nested_routine_tests.cpp)
     target_link_libraries(abc_nested_routine_tests PRIVATE abc_core)
     if(MSVC)

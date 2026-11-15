@@ -3623,6 +3623,22 @@ TrimExcess уплотняет непустое множество без изм�
 ещё не перенесены. Конкретный HashSet<T>.Enumerator поддерживается, как описано ниже.
 TypedSet и SortedSet остаются в работе; поддержка NewSet описана ниже. Вся библиотека не завершена.
 
+## Базовые операции SortedSet<T>
+
+`SortedSet<T>` принимает пустой конструктор, типизированную
+последовательность и `IComparer<T>`. По умолчанию используется
+`Comparer<T>.Default`. Доступны `Count`, `Min`, `Max`, `Comparer`,
+`Add`, `Remove`, `Clear`, `Contains` и оператор `in`.
+`foreach` и преобразование в массив сохраняют порядок сравнителя.
+При равенстве элементов конструктор выбирает значение по порядку
+сортировки исходной библиотеки, включая масштаб у `Decimal`.
+Проверены исходный пример и 96 наборов `SortedSet<Decimal>`.
+[Исходная реализация SortedSet](https://github.com/microsoft/referencesource/blob/main/System/compmod/system/collections/generic/sortedset.cs)
+
+Текущая реализация хранит элементы в упорядоченном массиве.
+`GetViewBetween`, интерфейсные операции, фабрики `SSet` и
+операторы множеств требуют дальнейшего переноса.
+
 ## Фабрики и копирование HashSet<T>
 
 HSet(params T[]) и HSet(sequence of T), HSetInt и HSetStr создают нативные

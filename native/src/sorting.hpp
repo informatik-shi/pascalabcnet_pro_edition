@@ -15,4 +15,5 @@ bool sort_signature(const Program&,Type,std::size_t);
 bool sort_reference(const Program&,Type,std::size_t);
 std::vector<Type> sort_parameters(const Program&,Type,std::size_t);
 void sort_array(Values&,Type,std::size_t,const Value&,const Value*,const ExecutionOptions&,std::int32_t index=0,std::int32_t count=-1,const Value* items=nullptr);
+void sort_legacy_list(Values&,Type list,Type policy,const Value& source,const Value& comparer,const ExecutionOptions&);
 }

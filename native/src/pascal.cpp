@@ -26,6 +26,7 @@
 #include "ini_file.hpp"
 #include "compound.hpp"
 #include "hash_set.hpp"
+#include "sorted_set.hpp"
 #include "dictionary.hpp"
 #include "enumerator.hpp"
 #include "sequence_set.hpp"
@@ -657,7 +658,7 @@ private:
                     if(result->kind!="complex")
                         throw Error("E_UNSUPPORTED",result->token.location,"Unknown or unsupported System.Numerics type");
                 }
-                else if(result->kind=="collections"){expect(".");const auto generic=name();if(generic.text!="generic")throw Error("E_UNSUPPORTED",generic.location,"Unknown System.Collections namespace");expect(".");result->kind=name().text;if(result->kind!="dictionary" && result->kind!="keyvaluepair" && result->kind!="ienumerable" && result->kind!="ienumerator" && result->kind!="list" && result->kind!="hashset" && result->kind!="icomparer" && result->kind!="comparer" && result->kind!="iequalitycomparer" && result->kind!="equalitycomparer" && result->kind!="icollection" && result->kind!="ilist" && result->kind!="iset" && result->kind!="idictionary")throw Error("E_UNSUPPORTED",result->token.location,"Unknown generic collection type");}
+                else if(result->kind=="collections"){expect(".");const auto generic=name();if(generic.text!="generic")throw Error("E_UNSUPPORTED",generic.location,"Unknown System.Collections namespace");expect(".");result->kind=name().text;if(result->kind!="dictionary" && result->kind!="keyvaluepair" && result->kind!="ienumerable" && result->kind!="ienumerator" && result->kind!="list" && result->kind!="hashset" && result->kind!="sortedset" && result->kind!="icomparer" && result->kind!="comparer" && result->kind!="iequalitycomparer" && result->kind!="equalitycomparer" && result->kind!="icollection" && result->kind!="ilist" && result->kind!="iset" && result->kind!="idictionary")throw Error("E_UNSUPPORTED",result->token.location,"Unknown generic collection type");}
                 else if (result->kind!="func" && result->kind!="action" && result->kind!="predicate" && result->kind!="type" && result->kind!="void" && result->kind!="single" && result->kind!="object" && result->kind!="icomparable" && result->kind!="iequatable"
                     && result->kind!="datetime" && result->kind!="timespan" && result->kind!="datetimekind" && result->kind!="dayofweek"
                     && result->kind!="decimal" && result->kind!="midpointrounding")
@@ -687,7 +688,7 @@ private:
                         if(is(".") && [&]{auto probe=lexer_;return probe.next().text=="enumerator";}()){expect(".");const auto member=name();if(member.text!="enumerator")throw Error("E_UNSUPPORTED",member.location,"Unknown Dictionary nested type");result->kind=nested.text=="keycollection" ? "dictionary_key_enumerator" : "dictionary_value_enumerator";}
                     }else throw Error("E_UNSUPPORTED",nested.location,"Unknown Dictionary nested type");
                 }
-            } else if ((result->kind=="icomparable" || result->kind=="icomparer" || result->kind=="comparer" || result->kind=="iequatable" || result->kind=="iequalitycomparer" || result->kind=="equalitycomparer" || result->kind=="icollection" || result->kind=="ilist" || result->kind=="iset" || result->kind=="ienumerable" || result->kind=="ienumerator" || result->kind == "list" || result->kind == "hashset" || result->kind=="newset" || result->kind == "stack" || result->kind == "queue" || result->kind == "dynarray" || result->kind == "simpleset" || result->kind == "linkedlist" || result->kind == "linkedlistnode" || result->kind == "singlenode") && accept("<")) {
+            } else if ((result->kind=="icomparable" || result->kind=="icomparer" || result->kind=="comparer" || result->kind=="iequatable" || result->kind=="iequalitycomparer" || result->kind=="equalitycomparer" || result->kind=="icollection" || result->kind=="ilist" || result->kind=="iset" || result->kind=="ienumerable" || result->kind=="ienumerator" || result->kind == "list" || result->kind == "hashset" || result->kind=="sortedset" || result->kind=="newset" || result->kind == "stack" || result->kind == "queue" || result->kind == "dynarray" || result->kind == "simpleset" || result->kind == "linkedlist" || result->kind == "linkedlistnode" || result->kind == "singlenode") && accept("<")) {
                 result->named=false; result->element = type_syntax(); expect(">");
             }
         }
@@ -3263,11 +3264,17 @@ private:
             if (module_.types[i].kind == kind && module_.types[i].element == element && module_.types[i].rank==rank) return static_cast<Type>(64+i);
         if (module_.types.size() >= 1024) throw Error("E_LIMIT",{},"Type limit exceeded");
         const auto name = kind == CompoundKind::array ? "array" : kind == CompoundKind::list ? "list" : kind==CompoundKind::hash_set ? "hashset"
+            : kind==CompoundKind::sorted_set ? "sortedset"
             : kind == CompoundKind::stack ? "stack" : kind == CompoundKind::queue ? "queue"
             : kind == CompoundKind::dynarray ? "dynarray" : kind == CompoundKind::linked_node ? "linkedlistnode"
             : kind == CompoundKind::single_node ? "singlenode" : kind==CompoundKind::sequence ? "sequence" : "simpleset";
-        const auto key=kind==CompoundKind::hash_set ? sequence_type(CompoundKind::sequence,element) : Type::invalid;
+        const auto key=kind==CompoundKind::hash_set || kind==CompoundKind::sorted_set
+            ? sequence_type(CompoundKind::sequence,element) : Type::invalid;
         if(kind==CompoundKind::hash_set)(void)comparison_type(CompoundKind::equality_comparer,element);
+        if(kind==CompoundKind::sorted_set){
+            (void)comparison_type(CompoundKind::comparer,element);
+            (void)sequence_type(CompoundKind::list,element);
+        }
         if(module_.types.size()>=1024)throw Error("E_LIMIT",{},"Type limit exceeded");
         module_.types.push_back({name,kind,element,{},key,rank});
         const auto result=static_cast<Type>(63+module_.types.size());if(kind==CompoundKind::list || kind==CompoundKind::hash_set)(void)collection_enumerator(result);return result;
@@ -3560,6 +3567,8 @@ private:
         if(syntax.kind=="intrange" || syntax.kind=="charrange")return ordinal_range_record(syntax.kind=="intrange" ? Type::integer : Type::character);
         if(syntax.kind=="realrange")return real_interval_record();
         if(syntax.kind=="newset" && syntax.element)return new_set_type(resolve_type(*syntax.element));
+        if(syntax.kind=="sortedset" && syntax.element)
+            return sequence_type(CompoundKind::sorted_set,resolve_type(*syntax.element));
         if (syntax.kind == "array" || ((syntax.kind == "list" || syntax.kind=="hashset") && syntax.element))
             return sequence_type(syntax.kind == "array" ? CompoundKind::array : syntax.kind=="hashset" ? CompoundKind::hash_set : CompoundKind::list,resolve_type(*syntax.element),syntax.rank);
         if(syntax.kind.starts_with("dictionary_") && syntax.key && syntax.element){
@@ -4317,6 +4326,19 @@ private:
                     const auto method=arguments.empty() ? HashSetMethod::construct : arguments.size()==1 && arguments[0]->type==type ? HashSetMethod::construct_copy : HashSetMethod::construct_sequence;
                     return hash_set_expression(type,method,std::move(arguments),result->location);
                 }
+                if(info(type,result->location).kind==CompoundKind::sorted_set){
+                    std::vector<std::unique_ptr<hir::Expr>> arguments;
+                    for(const auto& argument:source.arguments)arguments.push_back(expression(*argument));
+                    auto method=SortedSetMethod::construct;
+                    if(arguments.size()==1){
+                        if(arguments[0]->type==Type::nil)
+                            throw Error("E_TYPE",result->location,"SortedSet constructor requires a typed argument","Конструктору SortedSet нужен аргумент с известным типом");
+                        const auto policy=sorted_set_type_for(module_.types,info(type,result->location).element,CompoundKind::comparer_interface);
+                        method=interface_compatible(module_.types,arguments[0]->type,policy)
+                            ? SortedSetMethod::construct_comparer : SortedSetMethod::construct_source;
+                    }else if(arguments.size()>1)method=SortedSetMethod::construct_source_comparer;
+                    return sorted_set_expression(type,method,std::move(arguments),result->location);
+                }
                 if(info(type,result->location).kind==CompoundKind::ini_file) {
                     for(const auto& argument:source.arguments)result->arguments.push_back(expression(*argument));
                     ini_expression(*result,type,IniMethod::construct);break;
@@ -4862,6 +4884,25 @@ private:
                     const bool ref=method!=NewSetMethod::to_hash && new_set_addressable(*result->left);const auto parameters=new_set_parameters(module_.types,receiver,method,ref);
                     if(parameters.size()!=source.arguments.size()+1)throw Error("E_TYPE",result->location,"Wrong NewSet argument count");
                     std::vector<std::unique_ptr<hir::Expr>> arguments;arguments.push_back(std::move(result->left));for(std::size_t i=0;i<source.arguments.size();++i)arguments.push_back(expression(*source.arguments[i],parameters[i+1]));return new_set_expression(receiver,method,std::move(arguments),result->location,ref);
+                }
+            }
+            if(type.kind==CompoundKind::sorted_set){
+                using Method=SortedSetMethod;
+                static const std::map<std::string,Method> methods{
+                    {"count",Method::count},{"min",Method::minimum},{"max",Method::maximum},
+                    {"comparer",Method::comparer},{"contains",Method::contains},
+                    {"add",Method::add},{"remove",Method::remove},{"clear",Method::clear}
+                };
+                if(const auto found=methods.find(source.token.text);found!=methods.end()){
+                    const auto method=found->second;
+                    if(method<=Method::comparer && source.kind==SyntaxExprKind::member_call)
+                        throw Error("E_TYPE",result->location,"SortedSet property is not callable","Свойство SortedSet нельзя вызвать как подпрограмму");
+                    const auto parameters=sorted_set_parameters(module_.types,receiver,method);
+                    std::vector<std::unique_ptr<hir::Expr>> arguments;
+                    arguments.push_back(std::move(result->left));
+                    for(std::size_t i=0;i<source.arguments.size();++i)
+                        arguments.push_back(expression(*source.arguments[i],i+1<parameters.size() ? parameters[i+1] : Type::invalid));
+                    return sorted_set_expression(receiver,method,std::move(arguments),result->location);
                 }
             }
             if(type.kind==CompoundKind::hash_set){
@@ -5641,6 +5682,11 @@ private:
                 if(compound(right) && info(right,result->location).kind==CompoundKind::empty_collection && left!=Type::nil && left!=Type::unit){const auto owner=new_set_type(left);result->right=convert(std::move(result->right),owner);right=owner;}
                 if(compound(right) && info(right,result->location).kind==CompoundKind::new_set){std::vector<std::unique_ptr<hir::Expr>> arguments;arguments.push_back(std::move(result->left));arguments.push_back(std::move(result->right));return new_set_expression(right,NewSetMethod::membership,std::move(arguments),result->location);}
                 if(compound(right) && info(right,result->location).kind==CompoundKind::dictionary){std::vector<std::unique_ptr<hir::Expr>> args;args.push_back(std::move(result->left));args.push_back(std::move(result->right));return dictionary_expression(right,DictionaryMethod::membership,std::move(args),result->location);}
+                if(compound(right) && info(right,result->location).kind==CompoundKind::sorted_set){
+                    std::vector<std::unique_ptr<hir::Expr>> arguments;
+                    arguments.push_back(std::move(result->left));arguments.push_back(std::move(result->right));
+                    return sorted_set_expression(right,SortedSetMethod::membership,std::move(arguments),result->location);
+                }
                 if(compound(right) && info(right,result->location).kind==CompoundKind::hash_set){std::vector<std::unique_ptr<hir::Expr>> arguments;arguments.push_back(std::move(result->left));arguments.push_back(std::move(result->right));return hash_set_expression(right,HashSetMethod::membership,std::move(arguments),result->location);}
                 if(right==Type::string || right==Type::character || (right==Type::nil && (left==Type::string || left==Type::character)))
                     return compound_expression(Type::string,CompoundMethod::string_in,std::move(result->left),std::move(result->right),result->location);
@@ -6329,6 +6375,20 @@ private:
         if(arguments.size()!=parameters.size())throw Error("E_TYPE",location,"Wrong HashSet argument count");
         auto result=std::make_unique<hir::Expr>();result->kind=hir::ExprKind::hash_set_call;result->type=hash_set_result(owner,method,sequence);result->location=location;result->operation_type=owner;result->local=static_cast<std::size_t>(method)|(static_cast<std::size_t>(sequence)<<8U);
         for(std::size_t i=0;i<arguments.size();++i)result->arguments.push_back((i==0 && hash_set_reference(method)) || (i==2 && method==HashSetMethod::try_get_value) ? std::move(arguments[i]) : convert(std::move(arguments[i]),parameters[i]));return result;
+    }
+    std::unique_ptr<hir::Expr> sorted_set_expression(Type owner,SortedSetMethod method,std::vector<std::unique_ptr<hir::Expr>> arguments,SourceLocation location){
+        const auto parameters=sorted_set_parameters(module_.types,owner,method);
+        if(arguments.size()!=parameters.size())
+            throw Error("E_TYPE",location,"Wrong SortedSet argument count","Неверное число аргументов SortedSet");
+        auto result=std::make_unique<hir::Expr>();
+        result->kind=hir::ExprKind::sorted_set_call;
+        result->type=sorted_set_result(module_.types,owner,method);
+        result->location=location;
+        result->operation_type=owner;
+        result->local=static_cast<std::size_t>(method);
+        for(std::size_t i=0;i<arguments.size();++i)
+            result->arguments.push_back(convert(std::move(arguments[i]),parameters[i]));
+        return result;
     }
     std::unique_ptr<hir::Expr> compound_expression(Type owner,CompoundMethod method,std::unique_ptr<hir::Expr> left,std::unique_ptr<hir::Expr> right,SourceLocation location) {
         const auto parameters=compound_parameters(module_.types,owner,method);
@@ -8814,7 +8874,7 @@ private:
             if (short_string(result.expression->type)) result.expression=convert(std::move(result.expression),Type::string);
             if(fixed(result.expression->type))result.expression=fixed_view(std::move(result.expression));
             if(const auto protocol=enumerable_contract(result.expression->type,result.location);protocol!=Type::invalid && protocol!=result.expression->type)result.expression=convert(std::move(result.expression),protocol);
-            if(compound(result.expression->type)){const auto shape=info(result.expression->type,result.location);if(shape.kind==CompoundKind::hash_set || shape.kind==CompoundKind::new_set || ordinal_range_type(shape) || shape.kind==CompoundKind::dictionary || shape.kind==CompoundKind::dictionary_keys || shape.kind==CompoundKind::dictionary_values){const auto target=shape.kind==CompoundKind::dictionary || shape.kind==CompoundKind::dictionary_keys || shape.kind==CompoundKind::dictionary_values ? sequence_type(CompoundKind::sequence,shape.element) : shape.kind==CompoundKind::new_set ? info(shape.key,result.location).key : shape.key;result.expression=convert(std::move(result.expression),target);}}
+            if(compound(result.expression->type)){const auto shape=info(result.expression->type,result.location);if(shape.kind==CompoundKind::hash_set || shape.kind==CompoundKind::sorted_set || shape.kind==CompoundKind::new_set || ordinal_range_type(shape) || shape.kind==CompoundKind::dictionary || shape.kind==CompoundKind::dictionary_keys || shape.kind==CompoundKind::dictionary_values){const auto target=shape.kind==CompoundKind::dictionary || shape.kind==CompoundKind::dictionary_keys || shape.kind==CompoundKind::dictionary_values ? sequence_type(CompoundKind::sequence,shape.element) : shape.kind==CompoundKind::new_set ? info(shape.key,result.location).key : shape.key;result.expression=convert(std::move(result.expression),target);}}
             const auto sequence=result.expression->type;
             const bool lazy=compound(sequence) && info(sequence,result.location).kind==CompoundKind::sequence;
             if (sequence!=Type::string && (!compound(sequence) || (!indexed_sequence(info(sequence,result.location).kind) && !lazy)))
