@@ -3,6 +3,7 @@
 #include "encoding.hpp"
 #include "native_resource.hpp"
 #include "calendar.hpp"
+#include "decimal.hpp"
 #include "binary_file.hpp"
 #include "scalar_serialization.hpp"
 #include "fixed_array.hpp"
@@ -1505,7 +1506,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             break;
         case Op::get_field: case Op::ref_field:
             if (!compound(type) || (type_info(program,type).kind!=CompoundKind::record && type_info(program,type).kind!=CompoundKind::object_class && !(instruction.op==Op::get_field && type_info(program,type).kind==CompoundKind::tuple))
-                || collection_enumerator_type(type_info(program,type)) || dictionary_enumerator_type(type_info(program,type)) || ordinal_range_type(type_info(program,type)) || real_interval_type(type_info(program,type)) || complex_number_type(type_info(program,type)) || calendar_record(type_info(program,type)) || (instruction.op==Op::ref_field && key_value_pair_type(type_info(program,type))) || instruction.operand>=type_info(program,type).fields.size()) invalid(instruction,"Invalid or writable tuple/record access");
+                || collection_enumerator_type(type_info(program,type)) || dictionary_enumerator_type(type_info(program,type)) || ordinal_range_type(type_info(program,type)) || real_interval_type(type_info(program,type)) || complex_number_type(type_info(program,type)) || calendar_record(type_info(program,type)) || decimal_type(type_info(program,type)) || (instruction.op==Op::ref_field && key_value_pair_type(type_info(program,type))) || instruction.operand>=type_info(program,type).fields.size()) invalid(instruction,"Invalid or writable tuple/record access");
             break;
         case Op::list_add: case Op::list_remove: case Op::list_clear: case Op::list_contains:
             if (!compound(type) || type_info(program,type).kind != CompoundKind::list) invalid(instruction,"Invalid list instruction"); break;
@@ -2103,7 +2104,7 @@ void verify(const Program& program) {
     if(fixed_owners.size()!=static_cast<std::size_t>(std::count_if(program.types.begin(),program.types.end(),[](const auto& t){return t.kind==CompoundKind::fixed_array;})))throw Error("E_BYTECODE",{},"Missing fixed array shape");
     for (std::size_t i = 0; i < program.types.size(); ++i) {
         const auto& type = program.types[i]; unsigned level = 1;
-        if(type.native_record!=NativeRecord::none && ((type.native_record!=NativeRecord::ordinal_range && type.native_record!=NativeRecord::real_interval && type.native_record!=NativeRecord::key_value_pair && type.native_record!=NativeRecord::dictionary_enumerator && type.native_record!=NativeRecord::collection_enumerator && !complex_number_type(type) && !calendar_record(type)) || type.kind!=CompoundKind::record))throw Error("E_BYTECODE",{},"Invalid native record metadata");
+        if(type.native_record!=NativeRecord::none && ((type.native_record!=NativeRecord::ordinal_range && type.native_record!=NativeRecord::real_interval && type.native_record!=NativeRecord::key_value_pair && type.native_record!=NativeRecord::dictionary_enumerator && type.native_record!=NativeRecord::collection_enumerator && !complex_number_type(type) && !calendar_record(type) && !decimal_type(type)) || type.kind!=CompoundKind::record))throw Error("E_BYTECODE",{},"Invalid native record metadata");
         for (const auto& field:type.fields) if (!valid_member_access(field.access)
             || (type.kind!=CompoundKind::object_class && !(type.kind==CompoundKind::record&&type.native_record==NativeRecord::none) && field.access!=MemberAccess::public_member))
             throw Error("E_BYTECODE",{},"Invalid class member visibility metadata");
@@ -2240,6 +2241,8 @@ void verify(const Program& program) {
                     throw Error("E_BYTECODE",{},"Invalid native class field");
             }
         } else if (type.kind == CompoundKind::record || type.kind==CompoundKind::tuple) {
+            if (decimal_type(type) && !decimal_record_shape(type))
+                throw Error("E_BYTECODE",{},"Invalid Decimal record fields");
             if (calendar_record(type)) {
                 if (!calendar_record_shape(program.types,type)) throw Error("E_BYTECODE",{},"Invalid calendar record fields");
                 if (type.native_record==NativeRecord::date_time) {prior(type.element);prior(type.key);}

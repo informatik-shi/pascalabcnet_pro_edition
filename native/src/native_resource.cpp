@@ -6,6 +6,7 @@
 #include "number_format.hpp"
 #include "complex_number.hpp"
 #include "calendar.hpp"
+#include "decimal.hpp"
 namespace abc {
 namespace {
 bool resource_kind(const Program& program,Type type,CompoundKind kind) {
@@ -18,6 +19,9 @@ bool complex_resource(const Program& program,Type type) {
 bool calendar_resource(const Program& program,Type type) {
     return resource_kind(program,type,CompoundKind::record) && calendar_record(type_info(program,type));
 }
+bool decimal_resource(const Program& program,Type type) {
+    return resource_kind(program,type,CompoundKind::record) && decimal_type(type_info(program,type));
+}
 }
 bool native_resource_signature_valid(const Program& program,Type owner,std::size_t method) {
     if (pascal_copy_type(program.types,owner)) return fixed_signature_valid(program,owner,method);
@@ -26,6 +30,7 @@ bool native_resource_signature_valid(const Program& program,Type owner,std::size
     if (resource_kind(program,owner,CompoundKind::number_format)) return number_format_signature(program,owner,method);
     if (complex_resource(program,owner)) return complex_signature(program,owner,method);
     if (calendar_resource(program,owner)) return calendar_signature(program.types,owner,method);
+    if (decimal_resource(program,owner)) return decimal_signature(program.types,owner,method);
     return method<=static_cast<std::size_t>(EncodingMethod::max_char_count)
         && encoding_signature_valid(program,owner,static_cast<EncodingMethod>(method));
 }
@@ -41,6 +46,7 @@ std::vector<Type> native_resource_parameters(const Program& program,Type owner,s
         return number_format_parameters(owner,type_info(program,owner).key,method);
     if (complex_resource(program,owner)) return complex_parameters(owner,method);
     if (calendar_resource(program,owner)) return calendar_parameters(program.types,owner,method);
+    if (decimal_resource(program,owner)) return decimal_parameters(owner,method);
     return encoding_parameters(program,owner,static_cast<EncodingMethod>(method));
 }
 Type native_resource_result(const Program& program,Type owner,std::size_t method) {
@@ -52,6 +58,7 @@ Type native_resource_result(const Program& program,Type owner,std::size_t method
         return number_format_result(owner,type_info(program,owner).key,method);
     if (complex_resource(program,owner)) return complex_result(owner,method);
     if (calendar_resource(program,owner)) return calendar_result(program.types,owner,method);
+    if (decimal_resource(program,owner)) return decimal_result(owner,method);
     return encoding_result(program,owner,static_cast<EncodingMethod>(method));
 }
 Value native_resource_invoke(EncodingContext& enc,Values& values,FileContext& files,Type owner,std::size_t method,std::span<const Value> args) {
@@ -63,6 +70,7 @@ Value native_resource_invoke(EncodingContext& enc,Values& values,FileContext& fi
         return number_format_invoke(values,owner,method,args);
     if (complex_resource(values.program,owner)) return complex_invoke(values,owner,method,args);
     if (calendar_resource(values.program,owner)) return calendar_invoke(values,owner,method,args);
+    if (decimal_resource(values.program,owner)) return decimal_invoke(values,owner,method,args);
     return enc.invoke(values,files,owner,static_cast<EncodingMethod>(method),args);
 }
 }

@@ -43,6 +43,7 @@ std::u16string byref_name(const Program& program,Type type,Work& work){
         else if(complex_number_type(info)){name=u"Complex";arity=0;}
         else if(info.native_record==NativeRecord::date_time){name=u"DateTime";arity=0;}
         else if(info.native_record==NativeRecord::time_span){name=u"TimeSpan";arity=0;}
+        else if(info.native_record==NativeRecord::decimal_value){name=u"Decimal";arity=0;}
         else if(key_value_pair_type(info)){name=u"KeyValuePair";arity=2;}
         else if(dictionary_enumerator_type(info)){name=u"Enumerator";arity=2;}
         else if(collection_enumerator_type(info)){name=u"Enumerator";arity=1;}
@@ -210,6 +211,7 @@ std::u16string reflected_type_name(const Program& program,const ReflectedType& t
         if(complex_number_type(info)){text(u"Complex");continue;}
         if(info.native_record==NativeRecord::date_time){text(u"DateTime");continue;}
         if(info.native_record==NativeRecord::time_span){text(u"TimeSpan");continue;}
+        if(info.native_record==NativeRecord::decimal_value){text(u"decimal");continue;}
         if(collection_enumerator_type(info)){text(u">");child(info.element);text(u"Enumerator<");continue;}
         if(dictionary_enumerator_type(info)){const auto& pair=enumerator_pair(program,info);text(u">");child(pair.fields[1].type);text(u", ");child(pair.fields[0].type);text(u"Enumerator<");continue;}
         if(key_value_pair_type(info) || info.kind==CompoundKind::dictionary || info.kind==CompoundKind::dictionary_interface || info.kind==CompoundKind::dictionary_keys || info.kind==CompoundKind::dictionary_values){

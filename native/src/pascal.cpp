@@ -14,6 +14,7 @@
 #include "number_format.hpp"
 #include "complex_number.hpp"
 #include "calendar.hpp"
+#include "decimal.hpp"
 #include "fixed_array.hpp"
 #include "type_names.hpp"
 #include "callable_identity.hpp"
@@ -630,7 +631,7 @@ private:
             if (result->kind=="pabcsystem" && is(".") && [&]{
                 auto probe=lexer_;
                 const auto name=probe.next().text;
-                return name=="stringbuilder" || name=="faststring" || name=="numberformatinfo" || name=="complex" || name=="datetime";
+                return name=="stringbuilder" || name=="faststring" || name=="numberformatinfo" || name=="complex" || name=="datetime" || name=="decimal";
             }()) {
                 result->unit="pabcsystem";
                 expect(".");
@@ -658,7 +659,8 @@ private:
                 }
                 else if(result->kind=="collections"){expect(".");const auto generic=name();if(generic.text!="generic")throw Error("E_UNSUPPORTED",generic.location,"Unknown System.Collections namespace");expect(".");result->kind=name().text;if(result->kind!="dictionary" && result->kind!="keyvaluepair" && result->kind!="ienumerable" && result->kind!="ienumerator" && result->kind!="list" && result->kind!="hashset" && result->kind!="icomparer" && result->kind!="comparer" && result->kind!="iequalitycomparer" && result->kind!="equalitycomparer" && result->kind!="icollection" && result->kind!="ilist" && result->kind!="iset" && result->kind!="idictionary")throw Error("E_UNSUPPORTED",result->token.location,"Unknown generic collection type");}
                 else if (result->kind!="func" && result->kind!="action" && result->kind!="predicate" && result->kind!="type" && result->kind!="void" && result->kind!="single" && result->kind!="object" && result->kind!="icomparable" && result->kind!="iequatable"
-                    && result->kind!="datetime" && result->kind!="timespan" && result->kind!="datetimekind" && result->kind!="dayofweek")
+                    && result->kind!="datetime" && result->kind!="timespan" && result->kind!="datetimekind" && result->kind!="dayofweek"
+                    && result->kind!="decimal")
                     throw Error("E_UNSUPPORTED",result->token.location,"Unknown or unsupported type 'System."+result->kind+"'");
             }
             if (result->kind=="func" || result->kind=="func0" || result->kind=="func2" || result->kind=="func3"
@@ -2231,6 +2233,152 @@ private:
         if((method==BinaryMethod::read_bytes||method==BinaryMethod::write_bytes)&&info(owner,result.location).element!=Type::invalid)throw Error("E_TYPE",result.location,"Byte buffer methods require an untyped binary file","Методы буфера байтов требуют нетипизированный двоичный файл");
         result=std::move(*binary_expression(owner,method,std::move(result.arguments),result.location));return true;
     }
+    bool is_decimal(Type type) const {
+        return compound(type) && decimal_type(info(type,{}));
+    }
+    Type decimal_record_type(SourceLocation location) {
+        for (std::size_t i=0;i<module_.types.size();++i)
+            if (decimal_type(module_.types[i])) return static_cast<Type>(64+i);
+        if (module_.types.size()>=1024) throw Error("E_LIMIT",location,"Type limit exceeded");
+        TypeInfo shape{"decimal",CompoundKind::record,Type::invalid,
+            {{"_lo",Type::longword,false},{"_mid",Type::longword,false},
+             {"_hi",Type::longword,false},{"_flags",Type::longword,false}}};
+        shape.native_record=NativeRecord::decimal_value;
+        module_.types.push_back(std::move(shape));
+        return static_cast<Type>(63+module_.types.size());
+    }
+    Type decimal_owner(const SyntaxExpr& target) {
+        if (target.kind==SyntaxExprKind::name && !lookup(target.token)) {
+            if (const auto alias=aliases_.find(target.token.text); alias!=aliases_.end())
+                return is_decimal(alias->second)?alias->second:Type::invalid;
+            if (target.token.text=="decimal") return decimal_record_type(target.token.location);
+        }
+        if (target.kind==SyntaxExprKind::field && target.token.text=="decimal" && target.left) {
+            const auto& unit=*target.left;
+            if (unit.kind==SyntaxExprKind::name && !lookup(unit.token)
+                && (unit.token.text=="system" || unit.token.text=="pabcsystem"))
+                return decimal_record_type(target.token.location);
+        }
+        return Type::invalid;
+    }
+    std::unique_ptr<hir::Expr> decimal_expression(Type owner,DecimalMethod method,
+        std::vector<std::unique_ptr<hir::Expr>> args,SourceLocation location,Type payload=Type::integer) {
+        const auto operation=static_cast<std::size_t>(method)|(static_cast<std::size_t>(payload)<<8U);
+        const auto parameters=decimal_parameters(owner,operation);
+        if (parameters.size()!=args.size())
+            throw Error("E_TYPE",location,"Wrong Decimal argument count","Неверное число аргументов Decimal");
+        for (std::size_t i=0;i<parameters.size();++i) {
+            if (method==DecimalMethod::try_parse && i==1) {
+                if (args[i]->type!=owner || !lvalue(*args[i]))
+                    throw Error("E_TYPE",args[i]->location,"TryParse requires a writable Decimal value",
+                        "Для TryParse нужно изменяемое значение Decimal");
+            } else args[i]=convert(std::move(args[i]),parameters[i]);
+        }
+        auto result=std::make_unique<hir::Expr>();
+        result->kind=hir::ExprKind::encoding_call;
+        result->type=decimal_result(owner,operation);
+        result->operation_type=owner;
+        result->local=operation;
+        result->location=location;
+        result->arguments=std::move(args);
+        return result;
+    }
+    std::unique_ptr<hir::Expr> convert_decimal(std::unique_ptr<hir::Expr> value,Type owner,bool explicit_cast) {
+        using M=DecimalMethod;
+        const auto type=value->type;
+        const auto location=value->location;
+        if (type==owner) return value;
+        M method{};
+        if (integer_type(type)) method=wide_unsigned(type)?M::from_unsigned:M::from_signed;
+        else if (explicit_cast && type==Type::single) method=M::from_single;
+        else if (explicit_cast && type==Type::real) method=M::from_real;
+        else throw Error("E_TYPE",location,"Decimal requires an integer or an explicit floating-point conversion",
+            "Для Decimal требуется целое число или явное приведение вещественного числа");
+        std::vector<std::unique_ptr<hir::Expr>> args;
+        args.push_back(std::move(value));
+        return decimal_expression(owner,method,std::move(args),location);
+    }
+    std::optional<DecimalMethod> decimal_scalar_conversion(Type target) const {
+        using M=DecimalMethod;
+        switch (target) {
+        case Type::integer: return M::to_int32;
+        case Type::int64: return M::to_int64;
+        case Type::longword: return M::to_uint32;
+        case Type::uint64: return M::to_uint64;
+        case Type::single: return M::to_single;
+        case Type::real: return M::to_real;
+        default: return {};
+        }
+    }
+    std::unique_ptr<hir::Expr> make_decimal_object(Type owner,const SyntaxExpr& source,SourceLocation location) {
+        using M=DecimalMethod;
+        std::vector<std::unique_ptr<hir::Expr>> args;
+        for (const auto& arg:source.arguments) args.push_back(expression(*arg));
+        if (args.empty()) return decimal_expression(owner,M::zero,{},location);
+        if (args.size()==5) return decimal_expression(owner,M::from_parts,std::move(args),location);
+        if (args.size()==1) {
+            const auto array=sequence_type(CompoundKind::array,Type::integer);
+            if (args[0]->type==array || args[0]->type==Type::nil)
+                return decimal_expression(owner,M::from_bits,std::move(args),location,array);
+            return convert_decimal(std::move(args.front()),owner,true);
+        }
+        throw Error("E_TYPE",location,"No Decimal constructor matches the arguments",
+            "Аргументы не соответствуют ни одному конструктору Decimal");
+    }
+    std::unique_ptr<hir::Expr> bind_decimal_static(const SyntaxExpr& source) {
+        using M=DecimalMethod;
+        const auto type=decimal_owner(*source.left);
+        if (type==Type::invalid) return {};
+        const auto& name=source.token.text;
+        const auto location=source.token.location;
+        if (name=="create") return make_decimal_object(type,source,location);
+        static constexpr std::pair<std::string_view,M> members[]{
+            {"zero",M::zero},{"one",M::one},{"minusone",M::minus_one},{"minvalue",M::minimum},{"maxvalue",M::maximum},
+            {"parse",M::parse},{"tryparse",M::try_parse},{"getbits",M::get_bits},{"toint32",M::to_int32},
+            {"toint64",M::to_int64},{"touint32",M::to_uint32},{"touint64",M::to_uint64},{"tosingle",M::to_single},
+            {"todouble",M::to_real},{"add",M::add},{"subtract",M::subtract},{"multiply",M::multiply},
+            {"negate",M::negate},{"compare",M::compare},{"equals",M::equal}
+        };
+        for (const auto& [member,method]:members) if (member==name) {
+            if (method<=M::maximum && source.kind!=SyntaxExprKind::field)
+                throw Error("E_TYPE",location,"Decimal constant is not callable","Константу Decimal нельзя вызвать");
+            const auto payload=method==M::get_bits?sequence_type(CompoundKind::array,Type::integer):Type::integer;
+            std::vector<std::unique_ptr<hir::Expr>> args;
+            for (const auto& arg:source.arguments) args.push_back(expression(*arg));
+            return decimal_expression(type,method,std::move(args),location,payload);
+        }
+        throw Error("E_UNSUPPORTED",location,"Decimal member is not ported yet","Член Decimal ещё не перенесён");
+    }
+    std::unique_ptr<hir::Expr> bind_decimal_member(hir::Expr& receiver,const SyntaxExpr& source) {
+        using M=DecimalMethod;
+        const auto type=receiver.left->type;
+        const auto& name=source.token.text;
+        const auto location=receiver.location;
+        if (!is_decimal(type) || name=="gettype") return {};
+        auto method=M::to_string;
+        if (name=="compareto") method=M::compare;
+        else if (name=="equals") method=M::equal;
+        else if (name!="tostring")
+            throw Error("E_UNSUPPORTED",location,"Decimal member is not ported yet","Член Decimal ещё не перенесён");
+        std::vector<std::unique_ptr<hir::Expr>> args;
+        args.push_back(std::move(receiver.left));
+        for (const auto& arg:source.arguments) args.push_back(expression(*arg));
+        return decimal_expression(type,method,std::move(args),location);
+    }
+    std::unique_ptr<hir::Expr> bind_decimal_binary(hir::Expr& result,Type owner) {
+        using M=DecimalMethod;
+        static constexpr std::pair<std::string_view,M> operations[]{
+            {"+",M::add},{"-",M::subtract},{"*",M::multiply},{"=",M::equal},{"<>",M::unequal},
+            {"<",M::less},{"<=",M::less_equal},{">",M::greater},{">=",M::greater_equal}
+        };
+        for (const auto& [op,method]:operations) if (op==result.operation) {
+            std::vector<std::unique_ptr<hir::Expr>> args;
+            args.push_back(std::move(result.left));
+            args.push_back(std::move(result.right));
+            return decimal_expression(owner,method,std::move(args),result.location);
+        }
+        throw Error("E_UNSUPPORTED",result.location,"Decimal operator is not ported yet","Оператор Decimal ещё не перенесён");
+    }
     bool is_calendar(Type type) const {
         return compound(type) && calendar_record(info(type,{}));
     }
@@ -3387,6 +3535,9 @@ private:
         if (calendar_type_name(syntax.kind) &&
             (syntax.system_qualified || syntax.unit=="pabcsystem" || !aliases_.contains(syntax.kind)))
             return calendar_type(syntax.kind,syntax.token.location);
+        if (syntax.kind=="decimal" &&
+            (syntax.system_qualified || syntax.unit=="pabcsystem" || !aliases_.contains(syntax.kind)))
+            return decimal_record_type(syntax.token.location);
         if (syntax.kind=="numberformatinfo" &&
             (syntax.system_qualified || syntax.unit=="pabcsystem" || !aliases_.contains(syntax.kind)))
             return number_format_type(syntax.token.location);
@@ -3501,6 +3652,8 @@ private:
             || (shape.kind==CompoundKind::array && shape.rank==1));
     }
     ABC_PASCAL_NOINLINE std::unique_ptr<hir::Expr> convert(std::unique_ptr<hir::Expr> expression, Type type,bool assignment=false,bool copy=true) {
+        if (is_decimal(type) && expression->type!=type)
+            return convert_decimal(std::move(expression),type,false);
         if (is_complex(type) && expression->type!=type) {
             const auto location=expression->location;
             const auto from=expression->type;
@@ -3973,6 +4126,7 @@ private:
         do {
  {
             auto type = resolve_type(*source.constructed);
+            if (!source.array_construction && is_decimal(type)) return make_decimal_object(type,source,result->location);
             if (!source.array_construction && is_calendar(type)) return make_calendar_object(type,source,result->location);
             if (!source.array_construction && is_complex(type)) {
                 std::vector<std::unique_ptr<hir::Expr>> args;
@@ -4205,6 +4359,7 @@ private:
  {
             if(bind_inifile_static(*result,source))break;
             if (auto number_format=bind_number_format_static(source)) return number_format;
+            if (auto decimal=bind_decimal_static(source)) return decimal;
             if (auto calendar=bind_calendar_static(source)) return calendar;
             if (auto complex=bind_complex_static(source)) return complex;
             if (source.token.text=="create")
@@ -4371,6 +4526,7 @@ private:
             if(bind_dictionary_member(*result,source))break;
             if(bind_inifile_member(*result,source))break;
             if (auto number_format=bind_number_format_member(*result,source)) return number_format;
+            if (auto decimal=bind_decimal_member(*result,source)) return decimal;
             if (auto calendar=bind_calendar_member(*result,source)) return calendar;
             if (auto complex=bind_complex_member(*result,source)) return complex;
             if (auto builder=bind_string_builder_member(*result,source)) return builder;
@@ -4938,6 +5094,14 @@ private:
                 return convert_to_subrange(std::move(argument),base,true);
             }
             const auto native_alias=aliases_.find(source.token.text);
+            const bool decimal_cast=native_alias!=aliases_.end()?is_decimal(native_alias->second):source.token.text=="decimal";
+            if (decimal_cast && !routine_names_.contains(source.token.text)) {
+                if (source.arguments.size()!=1)
+                    throw Error("E_TYPE",result->location,"Decimal conversion requires one argument",
+                        "Для приведения к Decimal нужен один аргумент");
+                const auto type=decimal_record_type(result->location);
+                return convert_decimal(expression(*source.arguments.front()),type,true);
+            }
             const bool complex_cast=native_alias!=aliases_.end()?is_complex(native_alias->second):source.token.text=="complex";
             const bool calendar_cast=native_alias!=aliases_.end()?is_calendar(native_alias->second)
                 :(source.token.text=="datetime" || source.token.text=="timespan");
@@ -4994,6 +5158,14 @@ private:
                 break;
             }
             for (const auto& argument : source.arguments) result->arguments.push_back(expression(*argument));
+            if (result->arguments.size()==1 && is_decimal(result->arguments.front()->type)
+                && !routine_names_.contains(source.token.text)) {
+                const auto target=native_alias!=aliases_.end()?native_alias->second:find_type(source.token.text).value_or(Type::invalid);
+                if (const auto method=decimal_scalar_conversion(target)) {
+                    const auto type=result->arguments.front()->type;
+                    return decimal_expression(type,*method,std::move(result->arguments),result->location);
+                }
+            }
             if (source.token.text=="new" || source.token.text=="dispose") {
                 if (result->arguments.size()!=1)
                     throw Error("E_TYPE",result->location,"New and Dispose require one pointer variable","New и Dispose требуют одну переменную-указатель");
@@ -5277,6 +5449,13 @@ private:
         case SyntaxExprKind::unary:
             result->kind = hir::ExprKind::unary;
             result->left = expression(*source.left);
+            if (is_decimal(result->left->type) && (source.token.text=="-" || source.token.text=="+")) {
+                if (source.token.text=="+") return std::move(result->left);
+                const auto owner=result->left->type;
+                std::vector<std::unique_ptr<hir::Expr>> args;
+                args.push_back(std::move(result->left));
+                return decimal_expression(owner,DecimalMethod::negate,std::move(args),result->location);
+            }
             if (source.token.text=="-" && is_complex(result->left->type)) {
                 const auto owner=result->left->type;
                 std::vector<std::unique_ptr<hir::Expr>> args;
@@ -5325,6 +5504,7 @@ private:
             auto left = result->left->type;
             auto right = result->right->type;
             const auto& op = result->operation;
+            if (is_decimal(left)||is_decimal(right)) return bind_decimal_binary(*result,is_decimal(left)?left:right);
             if (is_calendar(left)||is_calendar(right)) return bind_calendar_binary(*result);
             if (is_complex(left)||is_complex(right)) return bind_complex_binary(*result,is_complex(left)?left:right);
             if (op=="**") {

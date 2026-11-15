@@ -34,6 +34,7 @@ add_library(abc_core
     src/number_format.cpp
     src/complex_number.cpp
     src/calendar.cpp
+    src/decimal.cpp
     src/binary_file.cpp
     src/native_resource.cpp
     src/fixed_array.cpp
@@ -489,6 +490,9 @@ if(BUILD_TESTING)
     add_test(NAME calendar_zone_compatibility COMMAND ${CMAKE_COMMAND}
         -DABC_RUNNER=$<TARGET_FILE:abc> -DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures
         -DABC_FIXTURE_NAME=calendar-zone-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")
+    add_test(NAME decimal_core_compatibility COMMAND ${CMAKE_COMMAND}
+        -DABC_RUNNER=$<TARGET_FILE:abc> -DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures
+        -DABC_FIXTURE_NAME=decimal-core-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")
     add_executable(abc_nested_routine_tests tests/nested_routine_tests.cpp)
     target_link_libraries(abc_nested_routine_tests PRIVATE abc_core)
     if(MSVC)
@@ -875,6 +879,7 @@ if(BUILD_TESTING)
     add_test(NAME original_shortstring1 COMMAND $<TARGET_FILE:abc> run "${CMAKE_CURRENT_SOURCE_DIR}/../TestSuite/shortstring1.pas")
     set_tests_properties(original_shortstring1 PROPERTIES RUN_SERIAL TRUE)
     add_test(NAME original_dynarrays1 COMMAND $<TARGET_FILE:abc> run "${CMAKE_CURRENT_SOURCE_DIR}/../TestSuite/dynarrays1.pas")
+    add_test(NAME original_decimal1 COMMAND $<TARGET_FILE:abc> run "${CMAKE_CURRENT_SOURCE_DIR}/../TestSuite/decimal1.pas")
     add_test(NAME typed_file_short_strings COMMAND ${CMAKE_COMMAND}
         -DABC_RUNNER=$<TARGET_FILE:abc> "-DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
         -DABC_FIXTURE_NAME=typed-file-short-strings -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")
