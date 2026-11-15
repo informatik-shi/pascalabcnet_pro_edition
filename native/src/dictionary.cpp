@@ -48,7 +48,7 @@ bool dictionary_enumerator_metadata(const Program& p,Type iterator){
  return true;
 }
 bool dictionary_signature(const Program& p,Type owner,Type payload,DictionaryMethod m){
- if(m>DictionaryMethod::remove_at || !valid(p,owner))return false;const auto& d=type_info(p,owner);
+ if(m>DictionaryMethod::view_index_of || !valid(p,owner))return false;const auto& d=type_info(p,owner);
  if(m==DictionaryMethod::get_enumerator)return dictionary_enumerator_metadata(p,payload) && type_info(p,payload).key==owner;
  if(ordered_dictionary_kind(d.kind)){
   if(!valid(p,d.element))return false;
@@ -71,17 +71,21 @@ bool dictionary_signature(const Program& p,Type owner,Type payload,DictionaryMet
   if(m==DictionaryMethod::pair_copy_to)
    return valid(p,payload) && type_info(p,payload).kind==CompoundKind::array
        && type_info(p,payload).rank==1 && type_info(p,payload).element==d.element;
-  if(sorted_list && (m==DictionaryMethod::construct_capacity || m>=DictionaryMethod::capacity))return payload==Type::invalid;
+  if(sorted_list && (m==DictionaryMethod::construct_capacity || (m>=DictionaryMethod::capacity && m<=DictionaryMethod::remove_at)))
+   return payload==Type::invalid;
   return payload==Type::invalid && (m==DictionaryMethod::construct || (m>=DictionaryMethod::count && m<=DictionaryMethod::clear)
       || m==DictionaryMethod::membership || m==DictionaryMethod::pair_contains);
  }
  if(m>=DictionaryMethod::enumerator_move && m<=DictionaryMethod::enumerator_reset)return payload==Type::invalid && dictionary_enumerator_metadata(p,owner);
  if(m==DictionaryMethod::pair_construct || m==DictionaryMethod::pair_to_string)
   return d.kind==CompoundKind::record && key_value_pair_type(d) && d.fields.size()==2 && payload==Type::invalid;
- if(m==DictionaryMethod::view_count || m==DictionaryMethod::view_contains || m==DictionaryMethod::view_copy_to){
+ if(m==DictionaryMethod::view_count || m==DictionaryMethod::view_contains || m==DictionaryMethod::view_copy_to
+    || m==DictionaryMethod::view_index || m==DictionaryMethod::view_index_of){
   if((d.kind!=CompoundKind::dictionary_keys && d.kind!=CompoundKind::dictionary_values) || !valid(p,d.key))return false;
   const auto kind=type_info(p,d.key).kind;
   if(!dictionary_kind(kind))return false;
+  if(m==DictionaryMethod::view_index || m==DictionaryMethod::view_index_of)
+   return kind==CompoundKind::sorted_list && payload==Type::invalid;
   if(m!=DictionaryMethod::view_copy_to)return payload==Type::invalid;
   return valid(p,payload) && type_info(p,payload).kind==CompoundKind::array && type_info(p,payload).rank==1 && type_info(p,payload).element==d.element;
  }
@@ -125,6 +129,8 @@ std::vector<Type> dictionary_parameters(const std::vector<TypeInfo>& types,Type 
  if(m==DictionaryMethod::enumerator_move || m==DictionaryMethod::enumerator_reset)return {reference_type(owner)};
  if(m==DictionaryMethod::view_count)return {owner};
  if(m==DictionaryMethod::view_contains)return {owner,info(types,owner).element};
+ if(m==DictionaryMethod::view_index)return {owner,Type::integer};
+ if(m==DictionaryMethod::view_index_of)return {owner,info(types,owner).element};
  if(m==DictionaryMethod::view_copy_to)return {owner,payload,Type::integer};
  if(m==DictionaryMethod::pair_copy_to)return {owner,payload,Type::integer};
  if(m==DictionaryMethod::pair_construct)return {info(types,owner).fields[0].type,info(types,owner).fields[1].type};
@@ -171,6 +177,8 @@ Type dictionary_result(const std::vector<TypeInfo>& types,Type owner,Type payloa
  if(m==DictionaryMethod::each_count || m==DictionaryMethod::each || m==DictionaryMethod::to_dictionary || m==DictionaryMethod::to_dictionary_elements)return owner;
  if(m<=DictionaryMethod::from_sequences || m==DictionaryMethod::copy_value || m==DictionaryMethod::merge || m==DictionaryMethod::without_key || m==DictionaryMethod::without_keys || m==DictionaryMethod::pair_construct)return owner;
  if(m==DictionaryMethod::view_count)return Type::integer;
+ if(m==DictionaryMethod::view_index)return info(types,owner).element;
+ if(m==DictionaryMethod::view_index_of)return Type::integer;
  if(m==DictionaryMethod::capacity || m==DictionaryMethod::index_of_key || m==DictionaryMethod::index_of_value)return Type::integer;
  if(m==DictionaryMethod::view_contains)return Type::boolean;
  if(m==DictionaryMethod::pair_to_string)return Type::string;
@@ -548,11 +556,22 @@ Value dictionary_invoke(Values& values,Type owner,Type payload,DictionaryMethod 
    values.write(position,static_cast<std::int32_t>(static_cast<std::uint32_t>(d->items.size())+1U));
    values.write(iterator->items[3],values.zero(shape.element,false,true));return false;
   }
-  if(m==DictionaryMethod::view_count || m==DictionaryMethod::view_contains || m==DictionaryMethod::view_copy_to){
+  if(m==DictionaryMethod::view_count || m==DictionaryMethod::view_contains || m==DictionaryMethod::view_copy_to
+     || m==DictionaryMethod::view_index || m==DictionaryMethod::view_index_of){
    const auto view=std::get<Object>(args[0]);if(!view || view->nil)throw runtime_error(RuntimeError::nil_reference,values.location);
    if(view->items.size()!=1)throw runtime_error(RuntimeError::invalid_bytecode,values.location);const auto d=std::get<Object>(view->items[0]->value);require_dictionary_data(d,values.location);
    const bool keys=type_info(values.program,owner).kind==CompoundKind::dictionary_keys;
    if(m==DictionaryMethod::view_count)return static_cast<std::int32_t>(dictionary_count(*d));
+   if(m==DictionaryMethod::view_index){
+    const auto index=std::get<std::int32_t>(args[1]);
+    if(index<0 || static_cast<std::size_t>(index)>=d->items.size())throw runtime_error(RuntimeError::list_index,values.location);
+    const auto pair=entry(d,static_cast<std::size_t>(index));
+    return values.copy(pair->items[keys ? 0U : 1U]->value);
+   }
+   if(m==DictionaryMethod::view_index_of){
+    const std::array<Value,2> input{d,args[1]};
+    return ordered_dictionary_invoke(values,d->type,keys ? DictionaryMethod::index_of_key : DictionaryMethod::index_of_value,input,options);
+   }
    if(m==DictionaryMethod::view_contains){
     if(ordered_dictionary_kind(type_info(values.program,d->type).kind)){
      const std::array<Value,2> input{d,args[1]};

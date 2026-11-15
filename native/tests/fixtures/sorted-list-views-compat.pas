@@ -1,0 +1,34 @@
+uses System;
+begin
+  var cmp := Comparer&<integer>.Create((a,b)-> b.CompareTo(a));
+  var m := new SortedList<integer,string>(cmp);
+  var keys: IList<integer> := m.Keys;
+  var vals: IList<string> := m.Values;
+  m[2] := 'two';
+  m[5] := 'five';
+  m[1] := 'one';
+  Println(keys.GetType.Name,vals.GetType.Name,keys.IsReadOnly,vals.IsReadOnly);
+  Println(keys.Count,keys[0],vals[1],keys.IndexOf(2),vals.IndexOf('one'),vals.IndexOf('absent'));
+  var karr:=ArrFill(5,-1);
+  var varr:=ArrFill(5,'__');
+  keys.CopyTo(karr,1);
+  vals.CopyTo(varr,1);
+  Println(karr.JoinIntoString(','),varr.JoinIntoString(','));
+  var ke:=IEnumerable&<integer>(keys).GetEnumerator;
+  var ve:=IEnumerable&<string>(vals).GetEnumerator;
+  Println(ke.GetType.Name,ve.GetType.Name);
+  Println(ke.Current,ve.Current=nil);
+  Println(ke.MoveNext,ke.Current,ve.MoveNext,ve.Current);
+  var keAlias:=ke;
+  var veAlias:=ve;
+  Println(keAlias.MoveNext,ke.Current,veAlias.MoveNext,ve.Current);
+  ke.Dispose;
+  ve.Dispose;
+  Println(ke.Current,ve.Current=nil);
+  Println(ke.MoveNext,ke.Current,ve.MoveNext,ve.Current);
+  m.RemoveAt(0);
+  m[2] := 'updated';
+  Println(keys.JoinIntoString(','), vals.JoinIntoString(','), vals.Contains('five'),vals.Contains('updated'));
+  var api: IDictionary<integer,string> := m;
+  Println(ICollection&<integer>(keys)=api.Keys,ICollection&<string>(vals)=api.Values);
+end.

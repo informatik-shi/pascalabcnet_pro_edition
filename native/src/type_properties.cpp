@@ -58,6 +58,12 @@ void dictionary(Definition& result,const Program& program,Type owner){
 }
 void collection_iterator(Definition& result,const Program& program,Type owner){
     const auto& info=type_info(program,owner);
+    if((info.kind==CompoundKind::dictionary_keys || info.kind==CompoundKind::dictionary_values)
+       && type_info(program,info.key).kind==CompoundKind::sorted_list){
+        dictionary(result,program,info.key);
+        result.name+=info.kind==CompoundKind::dictionary_keys ? u"+SortedListKeyEnumerator" : u"+SortedListValueEnumerator";
+        return;
+    }
     if(dictionary_kind(info.kind) || info.kind==CompoundKind::dictionary_keys || info.kind==CompoundKind::dictionary_values)dictionary(result,program,owner);
     else if(info.kind==CompoundKind::list || info.kind==CompoundKind::hash_set || info.kind==CompoundKind::sorted_set){
         result.name=info.kind==CompoundKind::list ? u"List`1" : info.kind==CompoundKind::hash_set ? u"HashSet`1" : u"SortedSet`1";

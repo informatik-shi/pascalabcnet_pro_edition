@@ -3494,7 +3494,7 @@ private:
         if(!base_only && !syntax.nested.empty()){
             auto type=resolve_type(syntax,true);for(const auto& member:syntax.nested){if(!compound(type))throw Error("E_TYPE",syntax.token.location,"Unknown collection nested type");const auto shape=info(type,syntax.token.location);
                 if(member=="enumerator" && (shape.kind==CompoundKind::list || shape.kind==CompoundKind::hash_set || shape.kind==CompoundKind::sorted_set))type=collection_enumerator(type);
-                else if(member=="enumerator" && (dictionary_kind(shape.kind) || shape.kind==CompoundKind::dictionary_keys || shape.kind==CompoundKind::dictionary_values))type=dictionary_enumerator(type);
+                else if(member=="enumerator" && (shape.kind==CompoundKind::dictionary || shape.kind==CompoundKind::sorted_dictionary || shape.kind==CompoundKind::dictionary_keys || shape.kind==CompoundKind::dictionary_values))type=dictionary_enumerator(type);
                 else if((member=="keycollection" || member=="valuecollection") && (shape.kind==CompoundKind::dictionary || shape.kind==CompoundKind::sorted_dictionary))type=dictionary_view_type(type,member=="keycollection");
                 else throw Error("E_TYPE",syntax.token.location,"Unknown collection nested type");
             }return type;
@@ -6344,10 +6344,9 @@ private:
                 result=std::move(*dictionary_expression(owner,method,std::move(arguments),result.location));
                 return true;
             }
-            if(name=="keys" || name=="values")return false;
         }
         if(name=="comparer"){if(source.kind==SyntaxExprKind::member_call)throw Error("E_TYPE",result.location,"Dictionary property is not callable");std::vector<std::unique_ptr<hir::Expr>> args;args.push_back(std::move(result.left));const auto policy=comparison_type(sorted ? CompoundKind::comparer_interface : CompoundKind::equality_comparer_interface,shape.key);result=std::move(*dictionary_expression(owner,DictionaryMethod::comparer,std::move(args),result.location,policy));return true;}
-        if(sorted && name=="copyto"){
+        if(shape.kind==CompoundKind::sorted_dictionary && name=="copyto"){
             const auto array=sequence_type(CompoundKind::array,shape.element);
             if(source.arguments.size()!=2)throw Error("E_TYPE",result.location,"SortedDictionary.CopyTo requires a typed array and index","SortedDictionary.CopyTo требует типизированный массив и индекс");
             std::vector<std::unique_ptr<hir::Expr>> args;
@@ -6382,7 +6381,11 @@ private:
             args.push_back(std::move(argument));
         }
         if(method==DictionaryMethod::get_default && args.size()==2){auto initial=std::make_unique<hir::Expr>();initial->kind=hir::ExprKind::default_value;initial->type=value;initial->operation="default";initial->location=result.location;args.push_back(std::move(initial));}
-        result=std::move(*dictionary_expression(owner,method,std::move(args),result.location,payload));return true;
+        auto bound=dictionary_expression(owner,method,std::move(args),result.location,payload);
+        if(shape.kind==CompoundKind::sorted_list && (method==DictionaryMethod::keys || method==DictionaryMethod::values))
+            bound=convert(std::move(bound),list_interface_type(info(payload,result.location).element));
+        result=std::move(*bound);
+        return true;
     }
     ABC_PASCAL_NOINLINE bool bind_fixed_dictionary_factory(hir::Expr& result,const SyntaxExpr& source,std::string_view unit={}){
         const auto& name=source.token.text;if((name!="dictstr" && name!="dictstrint" && name!="dictint") || (!unit.empty() && unit!="pabcsystem"))return false;

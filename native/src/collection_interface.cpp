@@ -13,11 +13,23 @@ namespace abc {
 namespace {
 using Object=std::shared_ptr<Aggregate>;
 bool native_kind(const TypeInfo& type){return (type.kind==CompoundKind::array&&type.rank==1)||type.kind==CompoundKind::list||type.kind==CompoundKind::hash_set||type.kind==CompoundKind::sorted_set||dictionary_kind(type.kind)||type.kind==CompoundKind::dictionary_keys||type.kind==CompoundKind::dictionary_values;}
+bool indexed_dictionary_view(const std::vector<TypeInfo>& types,const TypeInfo& view){
+ return (view.kind==CompoundKind::dictionary_keys || view.kind==CompoundKind::dictionary_values)
+     && compound(view.key) && static_cast<unsigned>(view.key)-64U<types.size()
+     && types[static_cast<unsigned>(view.key)-64U].kind==CompoundKind::sorted_list;
+}
 void checkpoint(Values& values,const ExecutionOptions& options,std::uint64_t& work){if(work>=options.instruction_limit)throw runtime_error(RuntimeError::instruction_limit,values.location);if((work++&255U)==0&&options.cancelled&&options.cancelled())throw runtime_error(RuntimeError::cancelled,values.location);}
 }
 bool native_collection_type(const std::vector<TypeInfo>& types,Type from,Type to){
  if(!compound(from)||!compound(to)||static_cast<unsigned>(from)-64U>=types.size()||static_cast<unsigned>(to)-64U>=types.size())return false;
- const auto& source=types[static_cast<unsigned>(from)-64U];const auto& target=types[static_cast<unsigned>(to)-64U];return source.element==target.element&&((target.kind==CompoundKind::collection_interface&&native_kind(source))||(target.kind==CompoundKind::list_interface&&((source.kind==CompoundKind::array&&source.rank==1)||source.kind==CompoundKind::list))||(target.kind==CompoundKind::set_interface&&(source.kind==CompoundKind::hash_set||source.kind==CompoundKind::sorted_set))||(target.kind==CompoundKind::dictionary_interface&&dictionary_kind(source.kind)&&source.key==target.key));
+ const auto& source=types[static_cast<unsigned>(from)-64U];
+ const auto& target=types[static_cast<unsigned>(to)-64U];
+ if(source.element!=target.element)return false;
+ if(target.kind==CompoundKind::list_interface)
+  return (source.kind==CompoundKind::array && source.rank==1) || source.kind==CompoundKind::list || indexed_dictionary_view(types,source);
+ if(target.kind==CompoundKind::collection_interface)return native_kind(source);
+ if(target.kind==CompoundKind::set_interface)return source.kind==CompoundKind::hash_set || source.kind==CompoundKind::sorted_set;
+ return target.kind==CompoundKind::dictionary_interface && dictionary_kind(source.kind) && source.key==target.key;
 }
 bool native_enumerable_type(const std::vector<TypeInfo>& types,Type from,Type to){
  if(!compound(from)||!compound(to)||static_cast<unsigned>(from)-64U>=types.size()||static_cast<unsigned>(to)-64U>=types.size())return false;
@@ -74,6 +86,12 @@ Value native_collection_invoke(Values& values,Type owner,std::size_t slot,const 
   return dictionary_invoke(values,object->type,payload,method,input,options);
  }
  if(slot>=8){
+  if(view){
+   if(slot!=8 && slot!=10)throw Error("E_READONLY",values.location,"Collection is read-only","Коллекция доступна только для чтения");
+   const std::array<Value,2> input{receiver,arguments[0]};
+   const auto method=slot==8 ? DictionaryMethod::view_index : DictionaryMethod::view_index_of;
+   return dictionary_invoke(values,object->type,Type::invalid,method,input,options);
+  }
   if(fixed&&(slot==11||slot==12))throw Error("E_READONLY",values.location,"Collection has a fixed size","Коллекция имеет фиксированный размер");
   if(slot==10)return kind==CompoundKind::list?list_operation(values,object,ListOperation::index,arguments,options):Value{equality_index(values,shape.element,object->items,arguments[0],0,static_cast<std::int32_t>(object->items.size()),false,options)};
   if(slot==11)return list_operation(values,object,ListOperation::insert,arguments,options);
