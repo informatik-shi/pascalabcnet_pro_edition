@@ -769,10 +769,11 @@
         "TIniFile.ToString",
         "TIniFile.Equals",
         "TIniFile.GetHashCode",
-        "Derived classes with inherited construction, fields, methods and checked reference conversions"
+        "Derived classes with inherited construction, fields, methods and checked reference conversions",
+        "Explicit inherited TIniFile.Create on the same object, inherited method dispatch and source field-initializer order"
       ],
       "remaining": [
-        "Explicit inherited constructor calls, inherited initialization and the remaining System.Object API",
+        "User-defined base constructor chains, inherited initialization without an explicit base constructor call and the remaining System.Object API",
         "General source-unit interoperability and complete platform error parity"
       ]
     },

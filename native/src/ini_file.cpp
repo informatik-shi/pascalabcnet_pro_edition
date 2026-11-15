@@ -25,11 +25,13 @@ Type ini_ancestor(const std::vector<TypeInfo>& types,Type type){
     return Type::invalid;
 }
 bool ini_signature(const Program& program,Type type,IniMethod method) {
-    return ini_ancestor(program.types,type)!=Type::invalid && method<=IniMethod::get_hash_code;
+    const auto base=ini_ancestor(program.types,type);
+    return base!=Type::invalid && method<=IniMethod::initialize && (method!=IniMethod::initialize || type==base);
 }
 std::vector<Type> ini_parameters(Type type,IniMethod method) {
     switch(method) {
     case IniMethod::construct:return {Type::string};
+    case IniMethod::initialize:return {type,Type::string};
     case IniMethod::save:case IniMethod::file_name:case IniMethod::to_string:case IniMethod::get_hash_code:return {type};
     case IniMethod::equals:return {type,type};
     case IniMethod::read_integer:case IniMethod::write_integer:return {type,Type::string,Type::string,Type::integer};
@@ -97,8 +99,8 @@ class IniCall {
     }
 public:
     IniCall(Values& v,FileContext& f,const ExecutionOptions& o):values(v),files(f),options(o){}
-    Value construct(Type type,const Value& filename) {
-        checkpoint();charge(size(filename)+1);auto object=std::get<std::shared_ptr<Aggregate>>(values.zero(type,true));
+    void initialize(const std::shared_ptr<Aggregate>& object,const Value& filename) {
+        checkpoint();charge(size(filename)+1);
         object->ini=std::make_shared<IniState>(IniState{filename,{}});auto file=std::make_shared<TextFile>();text_assign(files,*file,filename,location());
         if(!file_exists(files,string_text(filename)))text_open(files,file,1,location());
         else {
@@ -110,7 +112,7 @@ public:
             }
         }
         // Source Close is outside the swallowed parse/open exceptions.
-        file->close(location());return object;
+        file->close(location());
     }
     void save(const IniState& state) {
         checkpoint();auto file=std::make_shared<TextFile>();text_assign(files,*file,state.filename,location());text_open(files,file,1,location());
@@ -138,11 +140,20 @@ public:
 Value ini_invoke(Values& values,FileContext& files,Type type,IniMethod method,std::span<const Value> arguments,const ExecutionOptions& options) {
     if(!ini_signature(values.program,type,method) || arguments.size()!=ini_parameters(type,method).size())throw runtime_error(RuntimeError::invalid_bytecode,values.location);
     try {
-        IniCall call(values,files,options);if(method==IniMethod::construct)return call.construct(type,arguments[0]);
+        IniCall call(values,files,options);
+        if(method==IniMethod::construct){
+            auto object=std::get<std::shared_ptr<Aggregate>>(values.zero(type,true));
+            call.initialize(object,arguments[0]);
+            return object;
+        }
         const auto& object=std::get<std::shared_ptr<Aggregate>>(arguments[0]);
         if(!object || object->nil)throw runtime_error(RuntimeError::nil_reference,values.location);
         if(object->type!=type && !class_reference_compatible(values.program.types,object->type,type))
             throw runtime_error(RuntimeError::invalid_bytecode,values.location);
+        if(method==IniMethod::initialize){
+            call.initialize(object,arguments[1]);
+            return false;
+        }
         switch(method) {
         case IniMethod::to_string:
             return reflected_type_property(values.program,{object->type},TypeOperation::full_name,values.location,options);

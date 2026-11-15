@@ -939,6 +939,9 @@ private:
         } else if (pointer_allocation_statement()) {
             result.kind=SyntaxStmtKind::call;
             result.expression=postfix(make_expression(SyntaxExprKind::name,consume()));
+        } else if(is("inherited")){
+            result.kind=SyntaxStmtKind::call;
+            result.expression=expression();
         } else if(comparison_reference()){
             result.kind=SyntaxStmtKind::call;result.expression=prefix();
         } else if (current_.kind == TokenKind::name && (current_.escaped || !reserved(current_.text) || is("array"))) {
@@ -1225,6 +1228,11 @@ private:
             return postfix(std::move(result));
         }
         if(accept("new"))return construction_expression();
+        if(is("inherited")){
+            const auto keyword=consume();
+            auto parent=make_expression(SyntaxExprKind::name,Token{TokenKind::name,"$inherited",keyword.location});
+            return postfix(make_expression(SyntaxExprKind::field,name(),std::move(parent)));
+        }
         if(comparison_reference()){
             const auto token=current_;auto type=type_syntax();auto result=make_expression(SyntaxExprKind::type_reference,token);result->constructed=std::move(type);return postfix(std::move(result));
         }
@@ -1740,6 +1748,15 @@ private:
             if(type->kind=="class"&&std::none_of(type->methods.begin(),type->methods.end(),[](const auto& method){return method->constructor;})){auto constructor=std::make_shared<SyntaxRoutine>();constructor->name={TokenKind::name,"create",names.at(owner).location};constructor->constructor=true;lift(constructor);}
         }
     }
+    static bool inherited_constructor_call(const SyntaxExpr& expression){
+        return expression.token.text=="create" && expression.left
+            && expression.left->kind==SyntaxExprKind::name && expression.left->token.text=="$inherited";
+    }
+    static std::vector<SyntaxStmt>& constructor_statements(SyntaxRoutine& routine){
+        auto& body=routine.body.statements;
+        if(!body.empty() && body.back().kind==SyntaxStmtKind::block)return body.back().statements;
+        return body;
+    }
     void bind_method_definitions(SyntaxStmt& source) {
         for (const auto& definition:source.method_definitions) {
             if(definition->constructor && definition->static_member)continue;
@@ -1772,11 +1789,19 @@ private:
         }
         for (const auto& routine:source.routines) if (routine->declaration_only)
             throw Error("E_NAME",routine->name.location,"Declared class method has no implementation");
+        for(const auto& routine:source.routines)if(routine->constructor){
+            const auto& body=constructor_statements(*routine);
+            if(!body.empty() && body.front().expression && inherited_constructor_call(*body.front().expression))
+                inherited_constructor_calls_.insert(body.front().expression.get());
+        }
         for (const auto& [name,type]:source.type_declarations) if (type->initializer) {
             for (const auto& method:type->methods) if (method->constructor) {
                 SyntaxStmt initialize;initialize.kind=SyntaxStmtKind::call;initialize.token=type->initializer->name;
                 initialize.expression=make_expression(SyntaxExprKind::call,type->initializer->name);
-                method->body.statements.insert(method->body.statements.begin(),std::move(initialize));
+                auto& body=constructor_statements(*method);
+                if(!body.empty() && body.front().expression && inherited_constructor_calls_.contains(body.front().expression.get()))
+                    body.insert(body.begin()+1,std::move(initialize));
+                else method->body.statements.insert(method->body.statements.begin(),std::move(initialize));
             }
         }
     }
@@ -4638,7 +4663,39 @@ private:
         else result->value=max?std::uint64_t{UINT64_MAX}:std::uint64_t{0};
         return result;
     }
+    ABC_PASCAL_NOINLINE std::unique_ptr<hir::Expr> bind_inherited_expression(const SyntaxExpr& source,Type expected,std::unique_ptr<hir::Expr> result){
+        const auto parent=class_parent(module_.types,current_owner_);
+        if(parent==Type::invalid || current_static_initializer_)
+            throw Error("E_TYPE",result->location,"Inherited member requires a base class and an instance",
+                "Для inherited нужны базовый класс и экземпляр");
+        auto self=std::make_unique<hir::Expr>();
+        self->kind=hir::ExprKind::local;
+        self->type=current_owner_;
+        self->location=result->location;
+        self->local=current_self_;
+        capture_local(current_self_,result->location);
+        if(!inherited_constructor_call(source)){
+            result->left=convert(std::move(self),parent);
+            if(bind_inifile_member(*result,source))return result;
+            return class_member(std::move(result),source,expected);
+        }
+        if(!inherited_constructor_calls_.contains(&source))
+            throw Error("E_TYPE",result->location,"Inherited constructor call must be first in the constructor body",
+                "Вызов унаследованного конструктора должен быть первым в теле конструктора");
+        const auto ini=ini_ancestor(module_.types,parent);
+        for(auto type=parent;type!=ini;type=class_parent(module_.types,type)){
+            if(class_constructors_.contains(type))
+                throw Error("E_UNSUPPORTED",result->location,"Calling a user-defined base constructor requires additional support",
+                    "Вызов пользовательского конструктора базового класса ещё не поддерживается");
+        }
+        result->arguments.push_back(convert(std::move(self),ini));
+        for(const auto& argument:source.arguments)result->arguments.push_back(expression(*argument,Type::string));
+        ini_expression(*result,ini,IniMethod::initialize);
+        return result;
+    }
     ABC_PASCAL_NOINLINE std::unique_ptr<hir::Expr> bind_member_expression(const SyntaxExpr& source,Type expected,std::unique_ptr<hir::Expr> result) {
+        if(source.left->kind==SyntaxExprKind::name && source.left->token.text=="$inherited")
+            return bind_inherited_expression(source,expected,std::move(result));
         (void)expected;
         if (!result->left) if (auto limit=integer_limit_member(source)) return limit;
         if(!result->left&&source.left&&source.left->kind==SyntaxExprKind::name&&!lookup(source.left->token)){const auto owner=aliases_.find(source.left->token.text);if(owner!=aliases_.end()){if(auto property=static_property_member(owner->second,source))return property;if(auto method=static_method_expression(owner->second,source,expected))return method;if(auto field=static_field_expression(owner->second,source.token)){if(source.kind==SyntaxExprKind::member_call){auto call=std::make_unique<hir::Expr>();call->location=source.token.location;call->left=std::move(field);bind_value_call(*call,source.arguments);return call;}return field;}}}
@@ -9436,6 +9493,7 @@ private:
     std::map<Type,std::map<std::string,std::vector<std::size_t>>> class_method_overloads_;
     std::map<Type,std::map<Type,std::map<std::string,std::vector<std::size_t>>>> class_explicit_methods_;
     std::map<Type,std::size_t> class_constructors_;
+    std::set<const SyntaxExpr*> inherited_constructor_calls_;
     std::map<std::size_t,std::size_t> builtin_routines_;
     std::map<std::pair<std::string,Type>,std::size_t> array_library_routines_;
     struct ClassProperty { Type type;std::optional<std::size_t> getter,setter;std::vector<Type> indices{};bool default_indexer=false; };
