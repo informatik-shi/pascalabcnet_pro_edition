@@ -4,11 +4,7 @@
 #include <array>
 
 namespace abc {
-struct NumberFormatState {
-    std::u16string decimal=u".",group=u",",positive=u"+",negative=u"-",nan=u"NaN";
-    std::u16string positive_infinity=u"Infinity",negative_infinity=u"-Infinity";
-    std::int32_t digits=2,pattern=1;
-    std::vector<std::int32_t> groups{3};
+struct NumberFormatState : NumberFormatSettings {
     bool readonly=false;
 };
 namespace {
@@ -91,21 +87,7 @@ void set_property(NumberFormatState& format,F member,const Value& value,SourceLo
     else format.pattern=number;
 }
 std::u16string real_text(const Value& value,const NumberFormatState& format,SourceLocation location) {
-    const auto source=format_scalar(value,location);
-    if (source==u"NaN") return format.nan;
-    if (source==u"Infinity") return format.positive_infinity;
-    if (source==u"-Infinity") return format.negative_infinity;
-    std::u16string result;
-    constexpr std::size_t limit=1'048'576;
-    for (const auto ch:source) {
-        std::u16string_view part(&ch,1);
-        if (ch==u'.') part=format.decimal;
-        else if (ch==u'+') part=format.positive;
-        else if (ch==u'-') part=format.negative;
-        if (part.size()>limit-result.size()) throw runtime_error(RuntimeError::string_limit,location);
-        result.append(part);
-    }
-    return result;
+    return localize_number(format_scalar(value,location),format,location);
 }
 }
 bool number_format_signature(const Program& program,Type owner,std::size_t operation) {
@@ -114,6 +96,21 @@ bool number_format_signature(const Program& program,Type owner,std::size_t opera
     const auto call=method(operation);
     if (call==M::get || call==M::set) return (operation>>8U)<=static_cast<unsigned>(F::group_sizes);
     return call<=M::float_text && (operation>>8U)==0;
+}
+Type known_number_format_type(const Program& program) {
+    for (std::size_t i=0;i<program.types.size();++i)
+        if (program.types[i].kind==CompoundKind::number_format) return static_cast<Type>(64+i);
+    return Type::invalid;
+}
+const NumberFormatSettings& number_settings(const Values& values,const Value* provider) {
+    if (provider) {
+        const auto& object=std::get<std::shared_ptr<Aggregate>>(*provider);
+        if (object && !object->nil) return state(*provider,values.location);
+    }
+    if (values.current_number_format)
+        return state(Value{values.current_number_format},values.location);
+    static const NumberFormatSettings en_us;
+    return en_us;
 }
 std::vector<Type> number_format_parameters(Type owner,Type groups,std::size_t operation) {
     switch (method(operation)) {

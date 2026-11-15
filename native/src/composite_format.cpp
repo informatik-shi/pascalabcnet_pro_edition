@@ -1,6 +1,7 @@
 #include "composite_format.hpp"
 #include "diagnostics.hpp"
 #include "formatting.hpp"
+#include "number_format.hpp"
 #include "runtime_values.hpp"
 #include "type_names.hpp"
 #include <algorithm>
@@ -85,21 +86,58 @@ std::string rounded_digits(const std::string& digits,int width) {
     }
     return result;
 }
-std::u16string fixed_number(const DecimalDigits& number,int precision,char16_t group_separator) {
+void append_checked(std::u16string& result,std::u16string_view text,SourceLocation location) {
+    if (text.size()>text_limit-result.size()) throw runtime_error(RuntimeError::string_limit,location);
+    result.append(text);
+}
+std::vector<std::size_t> group_positions(std::size_t width,const NumberFormatSettings& format) {
+    std::vector<std::size_t> positions;
+    if (format.groups.empty() || format.group.empty()) return positions;
+    std::size_t group=0;
+    while (format.groups[group]>0 && width>static_cast<std::size_t>(format.groups[group])) {
+        width-=static_cast<std::size_t>(format.groups[group]);
+        positions.push_back(width);
+        if (group+1<format.groups.size()) ++group;
+    }
+    return positions;
+}
+std::u16string signed_fixed(std::u16string text,const NumberFormatSettings& format,int pattern,SourceLocation location) {
+    std::u16string result;
+    if (pattern==0) result.push_back(u'(');
+    else if (pattern==1 || pattern==2) {
+        append_checked(result,format.negative,location);
+        if (pattern==2) append_checked(result,u" ",location);
+    }
+    append_checked(result,text,location);
+    if (pattern==0) append_checked(result,u")",location);
+    else if (pattern==3 || pattern==4) {
+        if (pattern==4) append_checked(result,u" ",location);
+        append_checked(result,format.negative,location);
+    }
+    return result;
+}
+std::u16string fixed_number(const DecimalDigits& number,int precision,bool grouped,
+    const NumberFormatSettings& format,SourceLocation location) {
     const auto fraction=static_cast<std::size_t>(precision);
     auto digits=rounded_digits(number.digits,number.point+precision);
     if (digits.size()<=fraction) digits.insert(0,fraction+1-digits.size(),'0');
     std::u16string result;
-    if (number.negative && digits.find_first_not_of('0')!=digits.npos) result.push_back(u'-');
     const auto integer_length=digits.size()-fraction;
+    auto cuts=grouped?group_positions(integer_length,format):std::vector<std::size_t>{};
     for (std::size_t i=0;i<integer_length;++i) {
-        if (group_separator && i && (integer_length-i)%3==0) result.push_back(group_separator);
-        result.push_back(static_cast<char16_t>(digits[i]));
+        if (!cuts.empty() && cuts.back()==i) {
+            append_checked(result,format.group,location);
+            cuts.pop_back();
+        }
+        const auto digit=static_cast<char16_t>(digits[i]);
+        append_checked(result,std::u16string_view(&digit,1),location);
     }
     if (fraction) {
-        result.push_back(u'.');
-        result.append(digits.begin()+static_cast<std::ptrdiff_t>(integer_length),digits.end());
+        append_checked(result,format.decimal,location);
+        append_checked(result,std::u16string(digits.begin()+static_cast<std::ptrdiff_t>(integer_length),digits.end()),location);
     }
+    if (number.negative && digits.find_first_not_of('0')!=digits.npos)
+        return signed_fixed(std::move(result),format,grouped?format.pattern:1,location);
     return result;
 }
 std::u16string scientific_number(DecimalDigits number,int precision,char16_t exponent,bool general=false) {
@@ -143,7 +181,7 @@ std::u16string hexadecimal(const Value& value,std::size_t precision,bool upper,S
         text.push_back(static_cast<char16_t>(upper && *ch>='a'?*ch-'a'+'A':*ch));
     return text;
 }
-std::u16string render_argument(const Program& program,const Value& argument,std::u16string_view specifier,char16_t separator,
+std::u16string render_argument(const Program& program,const Value& argument,std::u16string_view specifier,const NumberFormatSettings& format,
     SourceLocation location) {
     const auto& object=std::get<std::shared_ptr<Aggregate>>(argument);
     if (!object || object->nil) return {};
@@ -157,7 +195,8 @@ std::u16string render_argument(const Program& program,const Value& argument,std:
     if (!scalar(item.type))
         throw Error("E_UNSUPPORTED",location,"Formatting this object type is not supported",
             "Форматирование этого типа объекта ещё не поддерживается");
-    if (specifier.empty() || (!integer_type(item.type) && !floating(value))) return format_scalar(value,location);
+    if (!integer_type(item.type) && !floating(value)) return format_scalar(value,location);
+    if (specifier.empty()) return localize_number(format_scalar(value,location),format,location);
     const auto symbol=specifier.front();
     const auto letter=static_cast<char16_t>(symbol>=u'a' && symbol<=u'z'?symbol-u'a'+u'A':symbol);
     int precision=-1;
@@ -175,21 +214,23 @@ std::u16string render_argument(const Program& program,const Value& argument,std:
         const auto digits=text.size()-negative;
         if (precision>=0 && static_cast<std::size_t>(precision)>digits)
             text.insert(negative,static_cast<std::size_t>(precision)-digits,u'0');
-        return text;
+        return localize_number(text,format,location);
     }
     if (letter==u'X') return hexadecimal(value,static_cast<std::size_t>(std::max(0,precision)),symbol==u'X',location);
     if (letter==u'G' && floating(value))
-        return general_float(value,std::max(0,precision),symbol==u'g'?'e':'E',location);
+        return localize_number(general_float(value,std::max(0,precision),symbol==u'g'?'e':'E',location),format,location);
     if (letter==u'G') {
         const auto number=decimal_digits(value,location);
-        if (precision<=0 || number.point<=precision) return format_scalar(value,location);
-        return scientific_number(number,precision-1,symbol==u'g'?u'e':u'E',true);
+        if (precision<=0 || number.point<=precision)
+            return localize_number(format_scalar(value,location),format,location);
+        return localize_number(scientific_number(number,precision-1,symbol==u'g'?u'e':u'E',true),format,location);
     }
     if (letter!=u'F' && letter!=u'N' && letter!=u'E') throw unsupported_number(location);
-    if (floating(value) && !std::isfinite(floating_value(value))) return format_scalar(value,location);
+    if (floating(value) && !std::isfinite(floating_value(value)))
+        return localize_number(format_scalar(value,location),format,location);
     const auto number=decimal_digits(value,location);
-    if (letter==u'E') return scientific_number(number,precision<0?6:precision,symbol);
-    return fixed_number(number,precision<0?2:precision,letter==u'N'?separator:0);
+    if (letter==u'E') return localize_number(scientific_number(number,precision<0?6:precision,symbol),format,location);
+    return fixed_number(number,precision<0?format.digits:precision,letter==u'N',format,location);
 }
 bool digit(char16_t ch) { return ch>=u'0' && ch<=u'9'; }
 }
@@ -198,7 +239,21 @@ std::u16string format_scalar(const Value& value,SourceLocation location) {
     if (floating(value)) return general_float(value,0,'E',location);
     return format_field(value,0,std::nullopt,location);
 }
-void composite_format(const Program& program,const Value& format,const Value& arguments,char16_t separator,SourceLocation location,
+std::u16string localize_number(std::u16string_view input,const NumberFormatSettings& format,SourceLocation location) {
+    if (input==u"NaN") return format.nan;
+    if (input==u"Infinity") return format.positive_infinity;
+    if (input==u"-Infinity") return format.negative_infinity;
+    std::u16string result;
+    for (const auto ch:input) {
+        std::u16string_view part(&ch,1);
+        if (ch==u'.') part=format.decimal;
+        else if (ch==u'+') part=format.positive;
+        else if (ch==u'-') part=format.negative;
+        append_checked(result,part,location);
+    }
+    return result;
+}
+void composite_format(const Program& program,const Value& format,const Value& arguments,const NumberFormatSettings& settings,SourceLocation location,
     const std::function<void(std::u16string_view)>& append) {
     const auto& args=std::get<std::shared_ptr<Aggregate>>(arguments);
     if (std::holds_alternative<NilString>(format) || !args || args->nil)
@@ -258,7 +313,7 @@ void composite_format(const Program& program,const Value& format,const Value& ar
         }
         if (!next(u'}')) throw invalid_format(location);
         ++cursor;
-        const auto rendered=render_argument(program,args->items[index]->value,specifier,separator,location);
+        const auto rendered=render_argument(program,args->items[index]->value,specifier,settings,location);
         const auto padding=width>rendered.size()?width-rendered.size():0U;
         if (padding && !left) append(std::u16string(padding,u' '));
         append(rendered);

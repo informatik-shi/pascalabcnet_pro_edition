@@ -1,5 +1,6 @@
 #include "string_builder.hpp"
 #include "composite_format.hpp"
+#include "number_format.hpp"
 #include "runtime_values.hpp"
 #include <algorithm>
 #include <limits>
@@ -268,7 +269,8 @@ bool string_builder_signature(const Program& program,Type owner,std::size_t oper
         const auto& shape=type_info(program,payload);
         return shape.kind==CompoundKind::array && shape.rank==1 && shape.element==Type::character;
     }
-    if (method==M::append_format || method==M::format) {
+    if (method==M::append_format || method==M::format || method==M::append_format_provider) {
+        if (method==M::append_format_provider && known_number_format_type(program)==Type::invalid) return false;
         if (!compound(payload) || static_cast<unsigned>(payload)-64U>=program.types.size()) return false;
         const auto& shape=type_info(program,payload);
         return shape.kind==CompoundKind::array && shape.rank==1 && compound(shape.element)
@@ -277,7 +279,7 @@ bool string_builder_signature(const Program& program,Type owner,std::size_t oper
     }
     return method<=M::replace_text_range && (operation>>8U)==0;
 }
-std::vector<Type> string_builder_parameters(Type owner,StringBuilderMethod method,Type payload) {
+std::vector<Type> string_builder_parameters(Type owner,StringBuilderMethod method,Type payload,Type provider) {
     using M=StringBuilderMethod;
     switch (method) {
     case M::create_empty: return {};
@@ -308,6 +310,7 @@ std::vector<Type> string_builder_parameters(Type owner,StringBuilderMethod metho
     case M::replace_text: return {owner,Type::string,Type::string};
     case M::replace_text_range: return {owner,Type::string,Type::string,Type::integer,Type::integer};
     case M::append_format: return {owner,Type::string,payload};
+    case M::append_format_provider: return {owner,provider,Type::string,payload};
     case M::format: return {Type::string,payload};
     default: return {owner};
     }
@@ -328,8 +331,13 @@ Value string_builder_invoke(Values& values,Type owner,StringBuilderMethod method
     if (method<=M::create_slice) return construct(values,owner,method,args);
     const auto location=values.location;
     if (method==M::format) {
+        static const auto pabc=[] {
+            NumberFormatSettings settings;
+            settings.group=u".";
+            return settings;
+        }();
         std::u16string text;
-        composite_format(values.program,args[0],args[1],u'.',location,[&](std::u16string_view part) {
+        composite_format(values.program,args[0],args[1],pabc,location,[&](std::u16string_view part) {
             if (part.size()>text_limit-text.size()) throw runtime_error(RuntimeError::string_limit,location);
             text.append(part);
         });
@@ -374,7 +382,9 @@ Value string_builder_invoke(Values& values,Type owner,StringBuilderMethod method
     case M::append_slice:
         append_text(builder,slice(string_text(args[1]),number(2),number(3),location),location);
         break;
-    case M::append_scalar: append_text(builder,format_scalar(args[1],location),location); break;
+    case M::append_scalar:
+        append_text(builder,localize_number(format_scalar(args[1],location),number_settings(values),location),location);
+        break;
     case M::append_array: append_text(builder,array_text(args[1],0,std::nullopt,location),location); break;
     case M::append_array_range: append_text(builder,array_text(args[1],number(2),number(3),location),location); break;
     case M::append_builder: {
@@ -410,7 +420,7 @@ Value string_builder_invoke(Values& values,Type owner,StringBuilderMethod method
         insert_text(builder,number(1),string_text(args[2]),method==M::insert_text?1U:number(3),location);
         break;
     case M::insert_scalar:
-        insert_text(builder,number(1),format_scalar(args[2],location),1,location);
+        insert_text(builder,number(1),localize_number(format_scalar(args[2],location),number_settings(values),location),1,location);
         break;
     case M::insert_array:
         insert_text(builder,number(1),array_text(args[2],0,std::nullopt,location),1,location);
@@ -427,11 +437,15 @@ Value string_builder_invoke(Values& values,Type owner,StringBuilderMethod method
         replace_text(builder,start,count,args[1],string_text(args[2]),location);
         break;
     }
-    case M::append_format:
-        composite_format(values.program,args[1],args[2],u',',location,[&](std::u16string_view part) {
+    case M::append_format: case M::append_format_provider: {
+        const auto provided=method==M::append_format_provider;
+        const auto& settings=number_settings(values,provided?&args[1]:nullptr);
+        const auto at=provided?2U:1U;
+        composite_format(values.program,args[at],args[at+1],settings,location,[&](std::u16string_view part) {
             append_text(builder,part,location);
         });
         break;
+    }
     case M::append_line: case M::append_line_text:
         if (method==M::append_line_text) append_text(builder,string_text(args[1]),location);
 #ifdef _WIN32

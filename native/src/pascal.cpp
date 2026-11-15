@@ -2331,7 +2331,8 @@ private:
     }
     std::unique_ptr<hir::Expr> string_builder_expression(Type owner,StringBuilderMethod method,
         std::vector<std::unique_ptr<hir::Expr>> args,SourceLocation location,Type payload=Type::invalid) {
-        const auto types=string_builder_parameters(owner,method,payload);
+        const auto provider=method==StringBuilderMethod::append_format_provider?number_format_type(location):Type::invalid;
+        const auto types=string_builder_parameters(owner,method,payload,provider);
         if (types.size()!=args.size())
             throw Error("E_TYPE",location,"Wrong StringBuilder argument count","Неверное число аргументов StringBuilder");
         for (std::size_t i=0;i<types.size();++i) args[i]=convert(std::move(args[i]),types[i]);
@@ -2380,7 +2381,11 @@ private:
     }
     std::unique_ptr<hir::Expr> bind_composite_format(Type owner,StringBuilderMethod method,
         std::vector<std::unique_ptr<hir::Expr>> args,SourceLocation location) {
-        const auto format=method==StringBuilderMethod::append_format?1U:0U;
+        auto format=method==StringBuilderMethod::append_format?1U:0U;
+        if (method==StringBuilderMethod::append_format && args.size()>1 && is_number_format(args[1]->type)) {
+            method=StringBuilderMethod::append_format_provider;
+            format=2;
+        }
         if (args.size()<=format)
             throw Error("E_TYPE",location,"Format requires a format string","Для Format нужна строка формата");
         const auto object=object_type(location);

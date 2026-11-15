@@ -3,7 +3,9 @@
 #include <functional>
 
 namespace abc {
+struct NumberFormatSettings;
 std::u16string format_scalar(const Value&,SourceLocation);
-void composite_format(const Program&,const Value& format,const Value& arguments,char16_t group_separator,
+std::u16string localize_number(std::u16string_view,const NumberFormatSettings&,SourceLocation);
+void composite_format(const Program&,const Value& format,const Value& arguments,const NumberFormatSettings&,
     SourceLocation,const std::function<void(std::u16string_view)>& append);
 }
