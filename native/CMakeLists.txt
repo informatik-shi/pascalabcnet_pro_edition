@@ -524,6 +524,9 @@ if(BUILD_TESTING)
     add_test(NAME collection_class_text_compatibility COMMAND ${CMAKE_COMMAND}
         -DABC_RUNNER=$<TARGET_FILE:abc> -DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures
         -DABC_FIXTURE_NAME=collection-class-text-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")
+    add_test(NAME collection_text_callbacks_compatibility COMMAND ${CMAKE_COMMAND}
+        -DABC_RUNNER=$<TARGET_FILE:abc> -DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures
+        -DABC_FIXTURE_NAME=collection-text-callbacks-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")
     add_test(NAME sorted_set_relations_compatibility COMMAND ${CMAKE_COMMAND}
         -DABC_RUNNER=$<TARGET_FILE:abc> -DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures
         -DABC_FIXTURE_NAME=sorted-set-relations-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")

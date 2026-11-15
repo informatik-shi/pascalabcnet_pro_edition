@@ -254,6 +254,21 @@ struct EnumeratorState {
     bool available=false,finished=false,disposed=false;
 };
 struct ListStorage { std::vector<std::shared_ptr<Cell>> cells; };
+struct EndpointNode {
+    explicit EndpointNode(Value item):value(std::move(item)) {}
+    ~EndpointNode() {
+        // Keep releasing an unshared chain on this stack frame.
+        while (next && next.use_count()==1) {
+            auto node=std::move(next);
+            next=std::move(node->next);
+        }
+    }
+    Value value;
+    std::shared_ptr<EndpointNode> next;
+};
+struct EndpointStorage {
+    std::shared_ptr<EndpointNode> head,tail;
+};
 struct Aggregate {
     Type type;
     std::vector<std::shared_ptr<Cell>> items;
@@ -264,8 +279,7 @@ struct Aggregate {
     std::shared_ptr<ListStorage> list_storage{};
     std::size_t rows = 0, columns = 0; // Shape of a rectangular rank-two array.
     std::uint64_t version = 0; // List enumerators detect successful writes and structural changes.
-    // Allocate deque storage only for constructed stacks and queues.
-    std::unique_ptr<std::deque<std::shared_ptr<Cell>>> ends;
+    std::unique_ptr<EndpointStorage> ends;
     std::unique_ptr<LinkedLinks> links;
     std::unique_ptr<SequenceState> sequence;
     std::unique_ptr<EnumeratorState> enumerator;

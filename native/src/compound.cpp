@@ -36,6 +36,22 @@ Type compound_result(Type owner,CompoundMethod method) {
     if(method>=CompoundMethod::string_in)return Type::boolean;
     return method==CompoundMethod::list_concat || method==CompoundMethod::list_repeat || method==CompoundMethod::list_repeat_reverse || method>=CompoundMethod::array_concat ? owner : Type::unit;
 }
+void Values::append_endpoint(const std::shared_ptr<Aggregate>& collection,const Value& item) {
+    if (!collection->ends) throw runtime_error(RuntimeError::invalid_bytecode,location);
+    auto value=copy(item);
+    if (!remaining) throw runtime_error(RuntimeError::allocation_limit,location);
+    --remaining;
+    auto node=std::make_shared<EndpointNode>(std::move(value));
+    auto& ends=*collection->ends;
+    if (type_info(program,collection->type).kind==CompoundKind::stack) {
+        node->next=std::move(ends.head);
+        ends.head=std::move(node);
+    } else {
+        if (ends.tail) ends.tail->next=node;
+        else ends.head=node;
+        ends.tail=std::move(node);
+    }
+}
 namespace {
 void require(const std::shared_ptr<Aggregate>& value,SourceLocation location) {if(!value || value->nil)throw runtime_error(RuntimeError::nil_reference,location);}
 std::shared_ptr<Aggregate> copy_list(Values& values,const std::shared_ptr<Aggregate>& source,const ExecutionOptions& options) {
@@ -132,8 +148,8 @@ Value compound_invoke(Values& values,Type owner,CompoundMethod method,std::span<
             return result;
         }
         if(method==CompoundMethod::endpoint_add){
-            if(!object->ends)throw runtime_error(RuntimeError::invalid_bytecode,values.location);
-            object->ends->push_back(values.cell(element,values.copy(arguments[1])));return false;
+            values.append_endpoint(object,arguments[1]);
+            return false;
         }
         if(method==CompoundMethod::list_add){
             values.grow_list(object,object->items.size()+1);auto cell=values.cell(element,values.copy(arguments[1]));values.own_list_cell(cell,object);values.list_append_cell(object,std::move(cell));++object->version;return false;
