@@ -4105,6 +4105,20 @@ Python/.NET в нём отсутствуют. Для 06b987469 успешны Wi
 редакторы Linux/macOS ещё не проверены. Успешная проверка ASan на Windows пока
 не заявляется; отдельная задача CI проверяет ASan/UBSan на Ubuntu.
 
+## Базовые операции SortedDictionary<K,V>
+
+`SortedDictionary<K,V>` хранит пары в порядке ключей. Доступны
+конструкторы с `IComparer<K>` и исходным `IDictionary<K,V>`,
+индексатор, `Add`, `Remove`, `TryGetValue`, `ContainsKey`,
+`ContainsValue`, `CopyTo`, `Count`, `Clear` и оператор `in`.
+Присваивание значения по эквивалентному ключу сохраняет исходный ключ.
+Это проверено на `Decimal` с разным масштабом. `foreach` отдаёт пары
+в порядке сравнителя и обнаруживает изменение словаря.
+[Исходная реализация SortedDictionary](https://github.com/microsoft/referencesource/blob/main/System/compmod/system/collections/generic/sorteddictionary.cs)
+
+Представления `Keys` и `Values`, конкретный перечислитель и приведение
+самого `SortedDictionary` к `IDictionary<K,V>` требуют дальнейшего переноса.
+
 ## Конкретные перечислители словаря
 
 Dictionary<K,V>, Keys и Values поддерживают GetEnumerator, MoveNext, Current и

@@ -106,7 +106,7 @@ struct Values {
             if (buffer_collection(info.kind) && constructed) return buffer(type,0);
             const bool object=info.kind==CompoundKind::object_class;
             const bool iterator=info.kind==CompoundKind::enumerator;
-            const bool dictionary=info.kind==CompoundKind::dictionary || info.kind==CompoundKind::dictionary_keys || info.kind==CompoundKind::dictionary_values;
+            const bool dictionary=info.kind==CompoundKind::dictionary || info.kind==CompoundKind::sorted_dictionary || info.kind==CompoundKind::dictionary_keys || info.kind==CompoundKind::dictionary_values;
             if ((object || iterator || dictionary || info.kind==CompoundKind::list || info.kind==CompoundKind::hash_set || info.kind==CompoundKind::sorted_set || info.kind==CompoundKind::empty_collection) && constructed) {
                 if (!remaining) throw runtime_error(RuntimeError::allocation_limit,location);
                 --remaining;

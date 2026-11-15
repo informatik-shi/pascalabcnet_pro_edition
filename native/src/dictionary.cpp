@@ -1,4 +1,6 @@
 #include "dictionary.hpp"
+#include "comparison.hpp"
+#include "sorted_set.hpp"
 #include "runtime_values.hpp"
 #include "value_hash.hpp"
 #include "equality.hpp"
@@ -38,6 +40,21 @@ bool dictionary_enumerator_metadata(const Program& p,Type iterator){
 }
 bool dictionary_signature(const Program& p,Type owner,Type payload,DictionaryMethod m){
  if(m>DictionaryMethod::pair_copy_to || !valid(p,owner))return false;const auto& d=type_info(p,owner);
+ if(d.kind==CompoundKind::sorted_dictionary){
+  if(!valid(p,d.element))return false;
+  const auto& pair=type_info(p,d.element);
+  if(pair.fields.size()!=2 || !pair_shape(p,d.element,d.key,pair.fields[1].type,false))return false;
+  if(m==DictionaryMethod::construct_comparer || m==DictionaryMethod::comparer)
+   return valid(p,payload) && type_info(p,payload).kind==CompoundKind::comparer_interface
+       && type_info(p,payload).element==d.key;
+  if(m==DictionaryMethod::construct_copy || m==DictionaryMethod::construct_copy_comparer)
+   return valid(p,payload) && type_info(p,payload).kind==CompoundKind::sequence && type_info(p,payload).element==d.element;
+  if(m==DictionaryMethod::pair_copy_to)
+   return valid(p,payload) && type_info(p,payload).kind==CompoundKind::array
+       && type_info(p,payload).rank==1 && type_info(p,payload).element==d.element;
+  return payload==Type::invalid && (m==DictionaryMethod::construct || (m>=DictionaryMethod::count && m<=DictionaryMethod::clear)
+      || m==DictionaryMethod::membership || m==DictionaryMethod::pair_contains);
+ }
  if(m==DictionaryMethod::get_enumerator)return dictionary_enumerator_metadata(p,payload) && type_info(p,payload).key==owner;
  if(m>=DictionaryMethod::enumerator_move && m<=DictionaryMethod::enumerator_reset)return payload==Type::invalid && dictionary_enumerator_metadata(p,owner);
  if(m==DictionaryMethod::pair_construct || m==DictionaryMethod::pair_to_string)
@@ -78,6 +95,11 @@ bool dictionary_signature(const Program& p,Type owner,Type payload,DictionaryMet
  return payload==Type::invalid;
 }
 std::vector<Type> dictionary_parameters(const std::vector<TypeInfo>& types,Type owner,Type payload,DictionaryMethod m){
+ if((m==DictionaryMethod::construct_copy || m==DictionaryMethod::construct_copy_comparer)
+     && info(types,owner).kind==CompoundKind::sorted_dictionary){
+  if(m==DictionaryMethod::construct_copy)return {payload};
+  return {payload,find_element_type(types,info(types,owner).key,CompoundKind::comparer_interface)};
+ }
  if(m==DictionaryMethod::get_enumerator || m==DictionaryMethod::enumerator_move_copy || m==DictionaryMethod::enumerator_current || m==DictionaryMethod::enumerator_dispose)return {owner};
  if(m==DictionaryMethod::enumerator_move || m==DictionaryMethod::enumerator_reset)return {reference_type(owner)};
  if(m==DictionaryMethod::view_count)return {owner};
@@ -236,9 +258,161 @@ bool dictionary_sequence_resume(Values& values,const std::shared_ptr<Aggregate>&
  }
  return true;
 }
+namespace {
+class OrderedDictionary {
+    Values& values;
+    const ExecutionOptions& options;
+    Type policy;
+    const Object& entries;
+    ValueHashWork work;
+
+public:
+    OrderedDictionary(Values& values,const ExecutionOptions& options,Type policy,const Object& entries)
+        : values(values),options(options),policy(policy),entries(entries),work{values,options}{}
+
+    void step(){work.step();}
+
+    void shift(std::size_t count){
+        if(count>options.instruction_limit-work.done)
+            throw runtime_error(RuntimeError::instruction_limit,values.location);
+        work.done+=count;
+    }
+
+    std::pair<std::size_t,bool> find(const Value& key){
+        std::size_t first=0,last=entries->items.size();
+        while(first<last){
+            step();
+            const auto middle=first+(last-first)/2;
+            const auto version=entries->version;
+            const std::array<Value,2> args{key,entry(entries,middle)->items[0]->value};
+            const auto cmp=std::get<std::int32_t>(comparer_invoke(values,policy,entries->ordering,args,options));
+            if(entries->version!=version)throw runtime_error(RuntimeError::collection_changed,values.location);
+            if(cmp==0)return {middle,true};
+            if(cmp<0)last=middle;
+            else first=middle+1;
+        }
+        return {first,false};
+    }
+
+    void insert(Type pair_type,const Value& key,const Value& value){
+        if(!entries->items.empty())++entries->version;
+        const auto [index,found]=find(key);
+        if(found)throw runtime_error(RuntimeError::dictionary_duplicate_key,values.location);
+        if(entries->items.size()>=INT32_MAX)throw runtime_error(RuntimeError::integer_overflow,values.location);
+        shift(entries->items.size()-index);
+        auto pair=std::get<Object>(values.zero(pair_type,false,true));
+        values.write(pair->items[0],key);
+        values.write(pair->items[1],value);
+        auto cell=values.cell(pair_type,std::move(pair));
+        const bool was_empty=entries->items.empty();
+        entries->items.insert(entries->items.begin()+static_cast<std::ptrdiff_t>(index),std::move(cell));
+        if(was_empty)++entries->version;
+    }
+
+    bool values_equal(Type type,Value a,const Value& b){
+        const auto version=entries->version;
+        const auto result=nil(b) ? nil(a) : equality_value(values,type,a,b,options);
+        if(entries->version!=version)throw runtime_error(RuntimeError::collection_changed,values.location);
+        return result;
+    }
+};
+
+Value sorted_dictionary_invoke(Values& values,Type owner,DictionaryMethod method,std::span<const Value> args,const ExecutionOptions& options){
+    using Method=DictionaryMethod;
+    const auto& shape=type_info(values.program,owner);
+    const auto policy=find_element_type(values.program.types,shape.key,CompoundKind::comparer_interface);
+    const bool copying=method==Method::construct_copy || method==Method::construct_copy_comparer;
+    if(method==Method::construct || method==Method::construct_comparer || copying){
+        const auto source=copying ? std::get<Object>(args.front()) : Object{};
+        if(copying && (!source || source->nil))throw runtime_error(RuntimeError::dictionary_nil_copy,values.location);
+        auto result=std::get<Object>(values.zero(owner,true));
+        if(method==Method::construct_comparer || method==Method::construct_copy_comparer)
+            result->ordering=std::get<Object>(args.back());
+        if(!result->ordering || result->ordering->nil){
+            const auto factory=find_element_type(values.program.types,shape.key,CompoundKind::comparer);
+            result->ordering=std::get<Object>(comparer_create(values,factory,nullptr,options));
+        }
+        if(copying){
+            OrderedDictionary order(values,options,policy,result);
+            const auto iterator=sequence_begin(values,source,options);
+            sequence_finally(values,iterator,options,[&]{
+                for(std::uint64_t i=0;sequence_resume(values,iterator,i,options);++i){
+                    order.step();
+                    const auto pair=std::get<Object>(sequence_at(values,iterator,static_cast<std::int64_t>(i),options));
+                    order.insert(shape.element,pair->items[0]->value,pair->items[1]->value);
+                }
+            });
+        }
+        return result;
+    }
+    const auto receiver=std::get<Object>(args[method==Method::membership ? 1U : 0U]);
+    if(!receiver || receiver->nil)throw runtime_error(RuntimeError::nil_reference,values.location);
+    auto& rows=receiver->items;
+    const auto value_type=dictionary_value_type(values.program.types,owner);
+    OrderedDictionary order(values,options,policy,receiver);
+    order.step();
+    if(method==Method::count)return static_cast<std::int32_t>(rows.size());
+    if(method==Method::comparer)return receiver->ordering;
+    if(method==Method::clear){order.shift(rows.size());rows.clear();++receiver->version;return false;}
+    if(method==Method::pair_copy_to){
+        const auto array=std::get<Object>(args[1]);
+        if(!array || array->nil)throw runtime_error(RuntimeError::nil_reference,values.location);
+        const auto index=std::get<std::int32_t>(args[2]);
+        if(index<0)throw runtime_error(RuntimeError::dictionary_copy_index,values.location);
+        const auto start=static_cast<std::size_t>(index);
+        if(start>array->items.size() || rows.size()>array->items.size()-start)
+            throw runtime_error(RuntimeError::dictionary_copy_range,values.location);
+        for(std::size_t i=0;i<rows.size();++i){order.step();values.write(array->items[start+i],rows[i]->value);}
+        return false;
+    }
+    if(method==Method::contains_value){
+        for(const auto& row:rows){
+            order.step();
+            const auto item=std::get<Object>(row->value);
+            if(order.values_equal(value_type,item->items[1]->value,args[1]))return true;
+        }
+        return false;
+    }
+    if(method==Method::pair_contains){
+        const auto pair=std::get<Object>(args[1]);
+        const auto [index,found]=order.find(pair->items[0]->value);
+        return found && order.values_equal(value_type,entry(receiver,index)->items[1]->value,pair->items[1]->value);
+    }
+    const auto& key=args[method==Method::membership ? 0U : 1U];
+    require_key(key,values.location);
+    if(method==Method::add){order.insert(shape.element,key,args[2]);return false;}
+    if(method==Method::remove && !rows.empty())++receiver->version;
+    const auto [index,found]=order.find(key);
+    if(method==Method::get_item){
+        if(!found)throw runtime_error(RuntimeError::dictionary_missing_key,values.location);
+        return values.copy(entry(receiver,index)->items[1]->value);
+    }
+    if(method==Method::set_item){
+        if(!found)order.insert(shape.element,key,args[2]);
+        else{
+            values.write(entry(receiver,index)->items[1],args[2]);
+            ++receiver->version;
+        }
+        return false;
+    }
+    if(method==Method::try_get_value){
+        const auto value=found ? entry(receiver,index)->items[1]->value : values.zero(value_type,false,true);
+        values.write(std::get<std::shared_ptr<Cell>>(args[2]),value);
+        return found;
+    }
+    if(method==Method::remove && found){
+        order.shift(rows.size()-index);
+        rows.erase(rows.begin()+static_cast<std::ptrdiff_t>(index));
+    }
+    return found;
+}
+}
+
 Value dictionary_invoke(Values& values,Type owner,Type payload,DictionaryMethod m,std::span<const Value> args,const ExecutionOptions& options){
  if(!dictionary_signature(values.program,owner,payload,m) || args.size()!=dictionary_parameters(values.program.types,owner,payload,m).size())throw runtime_error(RuntimeError::invalid_bytecode,values.location);
  try{
+  if(type_info(values.program,owner).kind==CompoundKind::sorted_dictionary)
+   return sorted_dictionary_invoke(values,owner,m,args,options);
   ValueHashWork work{values,options};work.step();
   if(m==DictionaryMethod::get_enumerator){
    auto d=std::get<Object>(args[0]);if(!d || d->nil)throw runtime_error(RuntimeError::nil_reference,values.location);

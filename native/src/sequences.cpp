@@ -227,7 +227,7 @@ void sequence_check(const std::shared_ptr<Aggregate>& sequence,SourceLocation lo
         || (state.provider==SequenceProvider::sorted_set_reverse && state.source_captured))
         && state.version!=sorted_set_version(*state.source))throw runtime_error(RuntimeError::collection_changed,location);
     if ((state.provider==SequenceProvider::list || state.provider==SequenceProvider::hash_set
-        || state.provider==SequenceProvider::new_set)
+        || state.provider==SequenceProvider::new_set || state.provider==SequenceProvider::sorted_dictionary)
         && state.version!=state.source->version) throw runtime_error(RuntimeError::collection_changed,location);
 }
 static bool sequence_resume_impl(Values& values,const std::shared_ptr<Aggregate>& sequence,std::uint64_t index,const ExecutionOptions& options) {
@@ -451,6 +451,10 @@ Value sequence_query(Values& values,const std::shared_ptr<Aggregate>& sequence,S
         if(state.provider==SequenceProvider::sorted_set && source){
             const std::array<Value,2> args{source,argument};
             return sorted_set_invoke(values,source->type,SortedSetMethod::contains,args,options);
+        }
+        if(state.provider==SequenceProvider::sorted_dictionary && source){
+            const std::array<Value,2> args{source,argument};
+            return dictionary_invoke(values,source->type,Type::invalid,DictionaryMethod::pair_contains,args,options);
         }
         if(state.provider==SequenceProvider::hash_set && source && type_info(values.program,source->type).element==element){require(source,values.location);const std::array<Value,2> args{source,argument};return hash_set_invoke(values,source->type,Type::invalid,HashSetMethod::contains,args,options);}
         if(dictionary_provider(state.provider) && source && type_info(values.program,source->type).element==element){require(source,values.location);const std::array<Value,2> args{source,argument};return dictionary_invoke(values,source->type,Type::invalid,state.provider==SequenceProvider::dictionary_entries ? DictionaryMethod::pair_contains : DictionaryMethod::view_contains,args,options);}

@@ -491,6 +491,10 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
                 stack.emplace_back(sequence_create(values,static_cast<Type>(instruction.operand),source,SequenceProvider::sorted_set));
                 break;
             }
+            if(type_info(program,instruction.type).kind==CompoundKind::sorted_dictionary){
+                stack.emplace_back(sequence_create(values,static_cast<Type>(instruction.operand),source,SequenceProvider::sorted_dictionary));
+                break;
+            }
             stack.emplace_back(sequence_create(values,static_cast<Type>(instruction.operand),source,type_info(program,instruction.type).kind==CompoundKind::dictionary ? SequenceProvider::dictionary_entries : type_info(program,instruction.type).kind==CompoundKind::dictionary_keys ? SequenceProvider::dictionary_keys : type_info(program,instruction.type).kind==CompoundKind::dictionary_values ? SequenceProvider::dictionary_values : type_info(program,instruction.type).kind==CompoundKind::array ? SequenceProvider::array : type_info(program,instruction.type).kind==CompoundKind::hash_set ? SequenceProvider::hash_set : SequenceProvider::list)); break;
         }
         case Op::sequence_dispose: {

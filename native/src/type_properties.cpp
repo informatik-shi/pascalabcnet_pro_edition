@@ -48,8 +48,10 @@ void arity(Definition& result){
 }
 void dictionary(Definition& result,const Program& program,Type owner){
     const auto& info=type_info(program,owner);
-    const auto& base=info.kind==CompoundKind::dictionary ? info : type_info(program,info.key);
-    result.name=u"Dictionary`2";result.name_space=u"System.Collections.Generic";
+    const bool sorted=info.kind==CompoundKind::sorted_dictionary;
+    const auto& base=info.kind==CompoundKind::dictionary || sorted ? info : type_info(program,info.key);
+    result.name=sorted ? u"SortedDictionary`2" : u"Dictionary`2";result.name_space=u"System.Collections.Generic";
+    if(sorted)result.assembly=u"System";
     result.arguments={base.key,type_info(program,base.element).fields[1].type};
     if(info.kind==CompoundKind::dictionary_keys)result.name+=u"+KeyCollection";
     if(info.kind==CompoundKind::dictionary_values)result.name+=u"+ValueCollection";
@@ -139,7 +141,7 @@ Definition definition(const Program& program,ReflectedType type,Work& work){
             const auto dot=name.rfind(u'.');result.name=dot==name.npos ? name : name.substr(dot+1);
             result.name_space=dot==name.npos ? from_utf8(source_namespace) : name.substr(0,dot);result.source=true;break;
         }
-        case CompoundKind::dictionary:case CompoundKind::dictionary_keys:case CompoundKind::dictionary_values:dictionary(result,program,type.target);break;
+        case CompoundKind::dictionary:case CompoundKind::sorted_dictionary:case CompoundKind::dictionary_keys:case CompoundKind::dictionary_values:dictionary(result,program,type.target);break;
         case CompoundKind::tuple:
             result.name=u"Tuple";for(const auto& field:info.fields)result.arguments.push_back(field.type);arity(result);break;
         case CompoundKind::callable:

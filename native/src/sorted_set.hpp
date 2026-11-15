@@ -14,7 +14,7 @@ enum class SortedSetMethod {
     union_copy, except_copy, intersect_copy, add_copy, remove_copy,
     ref_add, ref_remove, ref_union, ref_except, view_between
 };
-Type sorted_set_type_for(const std::vector<TypeInfo>&,Type element,CompoundKind kind);
+Type find_element_type(const std::vector<TypeInfo>&,Type element,CompoundKind kind);
 bool sorted_set_reference(SortedSetMethod);
 std::uint64_t sorted_set_version(const Aggregate&);
 void sorted_set_refresh(Values&,const std::shared_ptr<Aggregate>&,const ExecutionOptions&);

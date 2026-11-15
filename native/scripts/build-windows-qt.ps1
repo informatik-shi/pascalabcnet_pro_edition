@@ -107,6 +107,7 @@ Halt завершает программу с кодом 0; Halt(integer) зад
 Свойства Name/FullName/Namespace/AssemblyQualifiedName: examples/type-properties.pas. Полные имена пользовательских типов сохраняют имя исходного файла при запуске из редактора.
 Числа single с округлением до 32 бит, вводом и коллекциями: examples/single-numbers.pas.
 Словари Dictionary, Dict, Keys/Values, EachCount и ToDictionary: examples/dictionaries.pas.
+SortedDictionary поддерживает индексатор, сравнитель ключей, CopyTo и foreach в порядке ключей.
 Перечислители словаря с независимым копированием: examples/dictionary-enumerators.pas.
 Общие интерфейсы IEnumerable<T>/IEnumerator<T>: examples/enumerator-interfaces.pas.
 Перечислители List<T> и HashSet<T> с копированием и интерфейсами: examples/collection-enumerators.pas.

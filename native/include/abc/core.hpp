@@ -98,9 +98,9 @@ struct GeneratorState {
     std::uint64_t index=0;
     bool positioned=false, available=false;
 };
-enum class SequenceProvider { school_ip_hosts, school_ip_binary, array, list, repeat, range, stepped_range, big_range, partition, real_range, partial_sum, slice, concat, string, transform, zip, generated, cartesian, cartesian_power, combinatorics, array_view, matrix_lines, file_lines, text_lines, hash_set, new_set, ordinal_range, random, directory, dictionary_entries, dictionary_keys, dictionary_values, user_source, set_query, sorted_set, sorted_set_reverse };
+enum class SequenceProvider { school_ip_hosts, school_ip_binary, array, list, repeat, range, stepped_range, big_range, partition, real_range, partial_sum, slice, concat, string, transform, zip, generated, cartesian, cartesian_power, combinatorics, array_view, matrix_lines, file_lines, text_lines, hash_set, new_set, ordinal_range, random, directory, dictionary_entries, dictionary_keys, dictionary_values, user_source, set_query, sorted_set, sorted_set_reverse, sorted_dictionary };
 inline bool dictionary_provider(SequenceProvider provider){return provider==SequenceProvider::dictionary_entries || provider==SequenceProvider::dictionary_keys || provider==SequenceProvider::dictionary_values;}
-inline bool collection_sequence(SequenceProvider provider) { return provider==SequenceProvider::array || provider==SequenceProvider::list || provider==SequenceProvider::sorted_set; }
+inline bool collection_sequence(SequenceProvider provider) { return provider==SequenceProvider::array || provider==SequenceProvider::list || provider==SequenceProvider::sorted_set || provider==SequenceProvider::sorted_dictionary; }
 struct BigRangeState {
     BigInteger last,step,current;
     std::uint64_t index=0;
@@ -395,11 +395,11 @@ struct Local {
     MemberAccess access=MemberAccess::public_member;
 };
 
-enum class CompoundKind { array, record, list, stack, queue, dynarray, simple_set, association, linked_node, linked_list, single_node, tuple, school_address, school_ip, sequence, callable, object_class, encoding, enumeration, ini_file, hash_set, new_set, empty_collection, dictionary, dictionary_keys, dictionary_values, enumerator, user_interface, comparable_interface, comparer_interface, comparer, equatable_interface, equality_comparer_interface, equality_comparer, collection_interface, list_interface, dictionary_interface, set_interface, binary_file, fixed_array, typed_pointer, boxed_object, string_builder, number_format, sorted_set };
+enum class CompoundKind { array, record, list, stack, queue, dynarray, simple_set, association, linked_node, linked_list, single_node, tuple, school_address, school_ip, sequence, callable, object_class, encoding, enumeration, ini_file, hash_set, new_set, empty_collection, dictionary, dictionary_keys, dictionary_values, enumerator, user_interface, comparable_interface, comparer_interface, comparer, equatable_interface, equality_comparer_interface, equality_comparer, collection_interface, list_interface, dictionary_interface, set_interface, binary_file, fixed_array, typed_pointer, boxed_object, string_builder, number_format, sorted_set, sorted_dictionary };
 enum class NativeRecord { none, ordinal_range, real_interval, key_value_pair, dictionary_enumerator, collection_enumerator, complex, date_time, time_span, decimal_value };
 inline bool node_kind(CompoundKind kind) { return kind == CompoundKind::linked_node || kind == CompoundKind::single_node; }
 inline bool indexed_sequence(CompoundKind kind) { return kind == CompoundKind::array || kind == CompoundKind::list; }
-inline bool enumerable_collection(CompoundKind kind) { return indexed_sequence(kind) || kind==CompoundKind::sorted_set || kind==CompoundKind::hash_set || kind==CompoundKind::new_set || kind==CompoundKind::dictionary || kind==CompoundKind::dictionary_keys || kind==CompoundKind::dictionary_values; }
+inline bool enumerable_collection(CompoundKind kind) { return indexed_sequence(kind) || kind==CompoundKind::sorted_set || kind==CompoundKind::sorted_dictionary || kind==CompoundKind::hash_set || kind==CompoundKind::new_set || kind==CompoundKind::dictionary || kind==CompoundKind::dictionary_keys || kind==CompoundKind::dictionary_values; }
 inline bool endpoint_collection(CompoundKind kind) { return kind == CompoundKind::stack || kind == CompoundKind::queue; }
 inline bool buffer_collection(CompoundKind kind) { return kind == CompoundKind::dynarray || kind == CompoundKind::simple_set; }
 enum class BufferMethod { construct, add, insert, remove, find, contains, reserve, resize, count, capacity, get, set, to_string, print, println };

@@ -398,8 +398,8 @@ void update(Values& values,OrderedSet& order,const Object& left,const Object& in
         return;
     }
     if(same_policy){for_each_item(values,order,input,options,toggle);return;}
-    const auto list_type=sorted_set_type_for(values.program.types,shape.element,CompoundKind::list);
-    const auto policy=sorted_set_type_for(values.program.types,shape.element,CompoundKind::comparer_interface);
+    const auto list_type=find_element_type(values.program.types,shape.element,CompoundKind::list);
+    const auto policy=find_element_type(values.program.types,shape.element,CompoundKind::comparer_interface);
     const auto list=std::get<Object>(sequence_collect(values,input,list_type,options));
     sort_legacy_list(values,list_type,policy,list,left->ordering,options);
     const Cell* previous=nullptr;
@@ -460,12 +460,12 @@ Value apply_operator(Values& values,OrderedSet& order,Type owner,Method method,s
 void sorted_set_refresh(Values& values,const std::shared_ptr<Aggregate>& set,const ExecutionOptions& options){
     if(!set || !set->sorted_view)return;
     const auto element=type_info(values.program,set->type).element;
-    const auto policy=sorted_set_type_for(values.program.types,element,CompoundKind::comparer_interface);
+    const auto policy=find_element_type(values.program.types,element,CompoundKind::comparer_interface);
     OrderedSet order(values,options,policy);
     order.refresh(set);
 }
 
-Type sorted_set_type_for(const std::vector<TypeInfo>& types,Type element,CompoundKind kind){
+Type find_element_type(const std::vector<TypeInfo>& types,Type element,CompoundKind kind){
     for(std::size_t i=0;i<types.size();++i)
         if(types[i].kind==kind && types[i].element==element && types[i].rank==1)return static_cast<Type>(64+i);
     return Type::invalid;
@@ -475,10 +475,10 @@ bool sorted_set_signature(const Program& program,Type owner,SortedSetMethod meth
     if(method>Method::view_between || !compound(owner) || !valid_value_type(program,owner))return false;
     const auto& shape=type_info(program,owner);
     return shape.kind==CompoundKind::sorted_set
-        && sorted_set_type_for(program.types,shape.element,CompoundKind::comparer_interface)!=Type::invalid
-        && sorted_set_type_for(program.types,shape.element,CompoundKind::comparer)!=Type::invalid
-        && sorted_set_type_for(program.types,shape.element,CompoundKind::list)!=Type::invalid
-        && (!copies_items(method) || sorted_set_type_for(program.types,shape.element,CompoundKind::array)!=Type::invalid);
+        && find_element_type(program.types,shape.element,CompoundKind::comparer_interface)!=Type::invalid
+        && find_element_type(program.types,shape.element,CompoundKind::comparer)!=Type::invalid
+        && find_element_type(program.types,shape.element,CompoundKind::list)!=Type::invalid
+        && (!copies_items(method) || find_element_type(program.types,shape.element,CompoundKind::array)!=Type::invalid);
 }
 bool sorted_set_reference(SortedSetMethod method){
     return method>=Method::ref_add && method<=Method::ref_except;
@@ -489,7 +489,7 @@ std::vector<Type> sorted_set_parameters(const std::vector<TypeInfo>& types,Type 
     if(method<=Method::construct_source_comparer){
         std::vector<Type> parameters;
         if(uses_source(method))parameters.push_back(shape.key);
-        if(uses_comparer(method))parameters.push_back(sorted_set_type_for(types,shape.element,CompoundKind::comparer_interface));
+        if(uses_comparer(method))parameters.push_back(find_element_type(types,shape.element,CompoundKind::comparer_interface));
         return parameters;
     }
     if(method==Method::membership)return {shape.element,owner};
@@ -501,7 +501,7 @@ std::vector<Type> sorted_set_parameters(const std::vector<TypeInfo>& types,Type 
     if(relation_method(method) || update_method(method))return {owner,shape.key};
     if(method==Method::try_get_value)return {owner,shape.element,reference_type(shape.element)};
     if(copies_items(method)){
-        std::vector<Type> parameters{owner,sorted_set_type_for(types,shape.element,CompoundKind::array)};
+        std::vector<Type> parameters{owner,find_element_type(types,shape.element,CompoundKind::array)};
         if(method>=Method::copy_index)parameters.push_back(Type::integer);
         if(method==Method::copy_count)parameters.push_back(Type::integer);
         return parameters;
@@ -519,7 +519,7 @@ Type sorted_set_result(const std::vector<TypeInfo>& types,Type owner,SortedSetMe
     switch(method){
     case Method::minimum: case Method::maximum:return element;
     case Method::count:return Type::integer;
-    case Method::comparer:return sorted_set_type_for(types,element,CompoundKind::comparer_interface);
+    case Method::comparer:return find_element_type(types,element,CompoundKind::comparer_interface);
     case Method::clear: case Method::copy_array: case Method::copy_index: case Method::copy_count:return Type::unit;
     case Method::reverse:return shape.key;
     default:return Type::boolean;
@@ -531,14 +531,14 @@ Value sorted_set_invoke(Values& values,Type owner,SortedSetMethod method,std::sp
         || args.size()!=sorted_set_parameters(values.program.types,owner,method).size())
         throw runtime_error(RuntimeError::invalid_bytecode,values.location);
     const auto& shape=type_info(values.program,owner);
-    const auto policy=sorted_set_type_for(values.program.types,shape.element,CompoundKind::comparer_interface);
+    const auto policy=find_element_type(values.program.types,shape.element,CompoundKind::comparer_interface);
     OrderedSet order(values,options,policy);
     try {
         if(method<=Method::construct_source_comparer){
             const auto result=std::get<Object>(values.zero(owner,true));
             if(uses_comparer(method))result->ordering=std::get<Object>(args.back());
             if(!result->ordering || result->ordering->nil){
-                const auto factory=sorted_set_type_for(values.program.types,shape.element,CompoundKind::comparer);
+                const auto factory=find_element_type(values.program.types,shape.element,CompoundKind::comparer);
                 result->ordering=std::get<Object>(comparer_create(values,factory,nullptr,options));
             }
             if(!uses_source(method))return result;
@@ -554,7 +554,7 @@ Value sorted_set_invoke(Values& values,Type owner,SortedSetMethod method,std::sp
                 for(const auto& cell:source->items)result->items.push_back(values.cell(shape.element,values.copy(cell->value)));
                 return result;
             }
-            const auto list_type=sorted_set_type_for(values.program.types,shape.element,CompoundKind::list);
+            const auto list_type=find_element_type(values.program.types,shape.element,CompoundKind::list);
             const auto list=std::get<Object>(sequence_collect(values,sequence,list_type,options));
             sort_legacy_list(values,list_type,policy,list,result->ordering,options);
             for(const auto& cell:list->items){
