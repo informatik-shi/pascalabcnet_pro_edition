@@ -6,7 +6,10 @@
 #include "runtime_values.hpp"
 #include "files.hpp"
 #include "stdlib.hpp"
+#include "type_names.hpp"
+#include "value_hash.hpp"
 #include <algorithm>
+#include <bit>
 
 namespace abc {
 struct IniEntry {std::u16string name;Value value;};
@@ -14,12 +17,13 @@ struct IniSection {std::u16string name;std::vector<IniEntry> entries;};
 struct IniState {Value filename;std::vector<IniSection> sections;};
 bool ini_signature(const Program& program,Type type,IniMethod method) {
     return compound(type) && static_cast<unsigned>(type)-64U<program.types.size()
-        && program.types[static_cast<unsigned>(type)-64U].kind==CompoundKind::ini_file && method<=IniMethod::read_boolean;
+        && program.types[static_cast<unsigned>(type)-64U].kind==CompoundKind::ini_file && method<=IniMethod::get_hash_code;
 }
 std::vector<Type> ini_parameters(Type type,IniMethod method) {
     switch(method) {
     case IniMethod::construct:return {Type::string};
-    case IniMethod::save:case IniMethod::file_name:return {type};
+    case IniMethod::save:case IniMethod::file_name:case IniMethod::to_string:case IniMethod::get_hash_code:return {type};
+    case IniMethod::equals:return {type,type};
     case IniMethod::read_integer:case IniMethod::write_integer:return {type,Type::string,Type::string,Type::integer};
     case IniMethod::read_boolean:case IniMethod::write_boolean:return {type,Type::string,Type::string,Type::boolean};
     default:return {type,Type::string,Type::string,Type::string};
@@ -28,9 +32,9 @@ std::vector<Type> ini_parameters(Type type,IniMethod method) {
 Type ini_result(Type type,IniMethod method) {
     switch(method) {
     case IniMethod::construct:return type;
-    case IniMethod::file_name:case IniMethod::read_string:return Type::string;
-    case IniMethod::read_integer:return Type::integer;
-    case IniMethod::read_boolean:return Type::boolean;
+    case IniMethod::file_name:case IniMethod::read_string:case IniMethod::to_string:return Type::string;
+    case IniMethod::read_integer:case IniMethod::get_hash_code:return Type::integer;
+    case IniMethod::read_boolean:case IniMethod::equals:return Type::boolean;
     default:return Type::unit;
     }
 }
@@ -132,6 +136,14 @@ Value ini_invoke(Values& values,FileContext& files,Type type,IniMethod method,st
         if(object->type!=type || !object->ini)throw runtime_error(RuntimeError::invalid_bytecode,values.location);
         auto& state=*object->ini;
         switch(method) {
+        case IniMethod::to_string:
+            return reflected_type_property(values.program,{type},TypeOperation::full_name,values.location,options);
+        case IniMethod::equals:
+            return object==std::get<std::shared_ptr<Aggregate>>(arguments[1]);
+        case IniMethod::get_hash_code: {
+            ValueHashWork work{values,options};
+            return std::bit_cast<std::int32_t>(static_cast<std::uint32_t>(value_hash(work,arguments[0])));
+        }
         case IniMethod::file_name:return state.filename;
         case IniMethod::save:call.save(state);return false;
         case IniMethod::write_string:call.write(state,arguments[1],arguments[2],arguments[3]);return false;

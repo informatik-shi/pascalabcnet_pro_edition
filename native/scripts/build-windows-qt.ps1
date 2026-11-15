@@ -156,6 +156,7 @@ Contains без сравнителя сохраняет правила исхо�
 Обход автоматически вызывает Dispose при завершении, break, Exit и ошибке; общие пользовательские обобщения ещё переносятся.
 Нативный IniFile.TIniFile: uses IniFile; пример examples/ini-files.pas.
 WriteString/WriteInteger/WriteBoolean меняют память, Save записывает файл. Наследование TIniFile ещё не перенесено.
+TIniFile.ToString возвращает имя класса. Equals сравнивает ссылки, а GetHashCode возвращает хеш экземпляра.
 Обобщённые строковые проверки используют en-US, строковые методы InRange/Between — порядок UTF-16.
 Для явного шага используйте to; downto step и нулевой шаг дают двуязычные ошибки.
 Текстовые файлы с BOM читаются как UTF-8, UTF-16LE/BE или UTF-32LE/BE.

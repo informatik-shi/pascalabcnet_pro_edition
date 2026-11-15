@@ -1982,6 +1982,25 @@ private:
     void ini_expression(hir::Expr& result,Type owner,IniMethod method) {
         const auto parameters=ini_parameters(owner,method);
         if(result.arguments.size()!=parameters.size())throw Error("E_TYPE",result.location,"Wrong TIniFile argument count");
+        if (method==IniMethod::equals) {
+            auto& argument=result.arguments[1];
+            if (argument->type!=owner && argument->type!=Type::nil) {
+                const auto location=argument->location;
+                if (argument->type==Type::unit)
+                    throw Error("E_TYPE",location,"Equals requires a value","Для Equals требуется значение");
+                auto ignored=std::make_unique<hir::Expr>();
+                ignored->kind=hir::ExprKind::evaluate_then;
+                ignored->type=owner;
+                ignored->location=location;
+                ignored->left=std::move(argument);
+                ignored->right=std::make_unique<hir::Expr>();
+                ignored->right->kind=hir::ExprKind::default_value;
+                ignored->right->type=owner;
+                ignored->right->location=location;
+                ignored->right->operation="default";
+                argument=std::move(ignored);
+            }
+        }
         for(std::size_t i=0;i<parameters.size();++i)result.arguments[i]=convert(std::move(result.arguments[i]),parameters[i]);
         result.kind=hir::ExprKind::ini_call;result.operation_type=owner;result.local=static_cast<std::size_t>(method);result.type=ini_result(owner,method);
     }
@@ -1998,6 +2017,9 @@ private:
         if(name=="fname" || name=="sl" || name=="indexofsection" || name=="indexofident")throw Error("E_ACCESS",result.location,"TIniFile member is private");
         if(name=="filename") {if(source.kind!=SyntaxExprKind::field)throw Error("E_TYPE",result.location,"TIniFile property is not callable");method=IniMethod::file_name;}
         else if(name=="save")method=IniMethod::save;
+        else if(name=="tostring")method=IniMethod::to_string;
+        else if(name=="equals")method=IniMethod::equals;
+        else if(name=="gethashcode")method=IniMethod::get_hash_code;
         else if(name=="writestring")method=IniMethod::write_string;
         else if(name=="readstring")method=IniMethod::read_string;
         else if(name=="writeinteger")method=IniMethod::write_integer;

@@ -1399,7 +1399,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         case Op::store_field:
             if(!compound(type) || type_info(program,type).kind!=CompoundKind::object_class || instruction.operand>=type_info(program,type).fields.size())invalid(instruction,"Invalid deferred field store");break;
         case Op::ini_call:
-            if(instruction.operand>static_cast<std::size_t>(IniMethod::read_boolean) || !ini_signature(program,type,static_cast<IniMethod>(instruction.operand)))invalid(instruction,"Invalid TIniFile call metadata");break;
+            if(instruction.operand>static_cast<std::size_t>(IniMethod::get_hash_code) || !ini_signature(program,type,static_cast<IniMethod>(instruction.operand)))invalid(instruction,"Invalid TIniFile call metadata");break;
         case Op::sort_call: if(!sort_signature(program,type,instruction.operand))invalid(instruction,"Invalid typed sort metadata");break;
         case Op::comparer_create:
             if(!compound(type) || (type_info(program,type).kind!=CompoundKind::comparer && type_info(program,type).kind!=CompoundKind::equality_comparer) || instruction.operand>(type_info(program,type).kind==CompoundKind::equality_comparer ? 0U : 1U))invalid(instruction,"Invalid Comparer factory metadata");break;

@@ -468,6 +468,9 @@
     "TIniFile.ReadInteger",
     "TIniFile.WriteBoolean",
     "TIniFile.ReadBoolean",
+    "TIniFile.ToString",
+    "TIniFile.Equals",
+    "TIniFile.GetHashCode",
     "ParamCount",
     "ParamStr",
     "GetEXEFileName",
@@ -751,10 +754,13 @@
         "TIniFile.WriteInteger",
         "TIniFile.ReadInteger",
         "TIniFile.WriteBoolean",
-        "TIniFile.ReadBoolean"
+        "TIniFile.ReadBoolean",
+        "TIniFile.ToString",
+        "TIniFile.Equals",
+        "TIniFile.GetHashCode"
       ],
       "remaining": [
-        "Class inheritance and inherited System.Object API",
+        "Class inheritance and the remaining System.Object API",
         "General source-unit interoperability and complete platform error parity"
       ]
     },
