@@ -367,9 +367,17 @@ private:
         case hir::ExprKind::sequence_query:
             expression(*node.left); if (node.right) expression(*node.right);for(const auto& argument:node.arguments)expression(*argument);
             emit(Op::sequence_query,node.left->type,node.local,node.location); break;
-        case hir::ExprKind::encoding_call:
-            for(const auto& argument:node.arguments)expression(*argument);
+        case hir::ExprKind::encoding_call: {
+            const auto parameters=native_resource_parameters(program_,node.operation_type,node.local);
+            if (parameters.size()!=node.arguments.size())
+                throw Error("E_BYTECODE",node.location,"Invalid native resource arguments");
+            for (std::size_t i=0;i<parameters.size();++i) {
+                const auto& argument=*node.arguments[i];
+                if (parameters[i]==reference_type(argument.type)) reference(argument);
+                else expression(argument);
+            }
             emit(Op::encoding_call,node.operation_type,node.local,node.location);break;
+        }
         case hir::ExprKind::school_ip:
             for (const auto& argument:node.arguments) expression(*argument);
             emit(Op::school_ip,node.operation_type,node.local,node.location); break;
@@ -490,8 +498,12 @@ private:
         case hir::ExprKind::file_output:
             if (node.left) expression(*node.left);
             for (const auto& argument:node.arguments) expression(*argument);
-            // Low two bits select Write/Writeln/Print/Println; remaining bits hold arity.
-            emit(node.left ? Op::file_output : Op::print_output,node.left ? Type::text_file : Type::unit,node.arguments.size()*4+node.local,node.location); break;
+            if (!node.left && node.local<=static_cast<std::size_t>(TextOutput::writeln))
+                emit(Op::console_output,Type::unit,node.arguments.size()*2+node.local,node.location);
+            else
+                emit(node.left?Op::file_output:Op::print_output,node.left?Type::text_file:Type::unit,
+                    node.arguments.size()*4+node.local,node.location);
+            break;
         case hir::ExprKind::linked_call:
             if (node.left) expression(*node.left);
             for (const auto& argument : node.arguments) expression(*argument);

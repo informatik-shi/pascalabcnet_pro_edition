@@ -175,7 +175,8 @@ NumberFormatInfo и NumberFormat задают числовые разделит�
 AppendFormat принимает NumberFormatInfo перед шаблоном. Без провайдера используется CurrentInfo.
 SetNumberFormat и SetDecimalSeparator меняют числовой формат программы. StrToFloat и StrToReal принимают NumberFormatInfo.
 Complex поддерживает арифметику, тригонометрические функции, приведение через object и ToString с NumberFormatInfo.
-DateTime и TimeSpan поддерживают календарную арифметику, компоненты, текущее время и основные форматы вывода.
+DateTime и TimeSpan поддерживают календарную арифметику, основные форматы DateTime, Parse и TryParse.
+WriteFormat и WritelnFormat выводят результат Format в консоль или файл Text.
 Статические массивы, независимые копии, двумерные индексы и file of массив: examples/fixed-arrays.pas.
 Инициализаторы динамических массивов, записи и более семи элементов: examples/array-literals.pas.
 Константы-массивы, известные границы типов и постоянные локальные таблицы: examples/array-constants.pas.

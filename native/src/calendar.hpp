@@ -16,7 +16,7 @@ enum class CalendarMethod : std::uint8_t {
     add_days, add_hours, add_minutes, add_seconds, add_milliseconds, add_ticks, add_months, add_years,
     add, subtract, difference, negate, duration, hash, compare, compare_static,
     equal, unequal, less, less_equal, greater, greater_equal, equals_static,
-    to_string, to_string_format, short_date_text, short_time_text, long_date_text, long_time_text
+    to_string, to_string_format, short_date_text, short_time_text, long_date_text, long_time_text, parse, try_parse
 };
 inline bool calendar_record(const TypeInfo& type) {
     return type.native_record==NativeRecord::date_time || type.native_record==NativeRecord::time_span;

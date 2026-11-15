@@ -171,6 +171,145 @@ void digits(std::u16string& text,std::uint64_t number,std::size_t width=1) {
 void ascii(std::u16string& text,std::string_view word) {
     for (const auto ch:word) text.push_back(static_cast<char16_t>(ch));
 }
+struct TextCursor {
+    std::u16string_view text;
+    std::size_t offset=0;
+
+    void spaces() {
+        while (offset<text.size() && (text[offset]==u' ' || text[offset]==u'\r' || text[offset]==u'\n' || text[offset]==u'\t'))
+            ++offset;
+    }
+    bool take(char16_t ch) {
+        if (offset==text.size() || text[offset]!=ch) return false;
+        ++offset;
+        return true;
+    }
+    std::optional<int> number(std::size_t max_digits) {
+        const auto first=offset;
+        int value=0;
+        while (offset<text.size() && text[offset]>=u'0' && text[offset]<=u'9') {
+            if (offset-first==max_digits) return {};
+            value=value*10+(text[offset++]-u'0');
+        }
+        if (offset==first) return {};
+        return value;
+    }
+    bool done() const {return offset==text.size();}
+    std::optional<int> fraction() {
+        const auto first=offset;
+        auto value=number(7);
+        if (!value) return {};
+        for (auto count=offset-first;count<7;++count) *value*=10;
+        return value;
+    }
+};
+std::optional<CalendarValue> parse_date(std::u16string_view text) {
+    TextCursor input{text};
+    input.spaces();
+    const auto first_index=input.offset;
+    const auto first=input.number(4);
+    if (!first) return {};
+    const auto width=input.offset-first_index;
+    const auto separator=input.take(u'/')?u'/':input.take(u'-')?u'-':u'\0';
+    if (!separator) return {};
+    const auto second=input.number(2);
+    if (!second || !input.take(separator)) return {};
+    const auto last_index=input.offset;
+    const auto third=input.number(4);
+    if (!third) return {};
+    const bool year_first=width==4;
+    auto y=year_first?*first:*third;
+    const auto m=year_first?*second:*first;
+    const auto d=year_first?*third:*second;
+    if (!year_first && input.offset-last_index<=2) y+=y<=29?2000:1900;
+    if (y<1 || y>9999 || m<1 || m>12 || d<1 || d>31) return {};
+    const auto fields=year{y}/month{static_cast<unsigned>(m)}/day{static_cast<unsigned>(d)};
+    if (!fields.ok()) return {};
+    const auto base=(sys_days{fields}-epoch).count()*ticks_per_day;
+    const auto date_end=input.offset;
+    input.spaces();
+    if (input.done()) return CalendarValue{base,unspecified_kind};
+    if (input.offset==date_end && !input.take(u'T') && !input.take(u't')) return {};
+    auto hour=input.number(2);
+    if (!hour || !input.take(u':')) return {};
+    auto minute=input.number(2);
+    if (!minute || *minute>=60) return {};
+    int second_value=0;
+    int fraction=0;
+    if (input.take(u':')) {
+        const auto seconds_part=input.number(2);
+        if (!seconds_part || *seconds_part>=60) return {};
+        second_value=*seconds_part;
+        if (input.take(u'.')) {
+            const auto fractional=input.fraction();
+            if (!fractional) return {};
+            fraction=*fractional;
+        }
+    }
+    input.spaces();
+    if (!input.done()) {
+        bool afternoon;
+        if (input.take(u'P') || input.take(u'p')) afternoon=true;
+        else if (input.take(u'A') || input.take(u'a')) afternoon=false;
+        else return {};
+        if ((!input.take(u'M') && !input.take(u'm')) || *hour<1 || *hour>12) return {};
+        *hour=(*hour%12)+(afternoon?12:0);
+        input.spaces();
+    }
+    if (!input.done() || *hour>=24) return {};
+    return CalendarValue{base+*hour*ticks_per_hour+*minute*ticks_per_minute+second_value*ticks_per_second+fraction,
+        unspecified_kind};
+}
+std::optional<CalendarValue> parse_span(std::u16string_view text) {
+    TextCursor input{text};
+    input.spaces();
+    const bool negative=input.take(u'-');
+    const auto first=input.number(8);
+    if (!first) return {};
+    int days_count=0,h=0,m=0,s=0,subsecond=0;
+    const bool separated_days=input.take(u'.');
+    if (separated_days) {
+        days_count=*first;
+        const auto hours=input.number(2);
+        if (!hours || !input.take(u':')) return {};
+        h=*hours;
+        const auto minutes=input.number(2);
+        if (!minutes) return {};
+        m=*minutes;
+    } else if (input.take(u':')) {
+        h=*first;
+        const auto minutes=input.number(2);
+        if (!minutes) return {};
+        m=*minutes;
+    } else days_count=*first;
+    if (input.take(u':')) {
+        const auto seconds_value=input.number(2);
+        if (!seconds_value) return {};
+        s=*seconds_value;
+        if (!separated_days && input.take(u':')) {
+            const auto remaining=input.number(2);
+            if (!remaining) return {};
+            days_count=h;
+            h=m;
+            m=s;
+            s=*remaining;
+        }
+        if (input.take(u'.')) {
+            const auto value=input.fraction();
+            if (!value) return {};
+            subsecond=*value;
+        }
+    }
+    input.spaces();
+    if (!input.done() || days_count>INT64_MAX/ticks_per_day || h>=24 || m>=60 || s>=60) return {};
+    const auto duration=static_cast<std::uint64_t>(days_count)*ticks_per_day
+        +static_cast<std::uint64_t>(h)*ticks_per_hour+static_cast<std::uint64_t>(m)*ticks_per_minute
+        +static_cast<std::uint64_t>(s)*ticks_per_second+static_cast<std::uint64_t>(subsecond);
+    constexpr auto positive_limit=static_cast<std::uint64_t>(INT64_MAX);
+    if (duration>positive_limit+static_cast<unsigned>(negative)) return {};
+    const auto ticks=negative?std::bit_cast<std::int64_t>(std::uint64_t{0}-duration):static_cast<std::int64_t>(duration);
+    return CalendarValue{ticks,unspecified_kind};
+}
 std::u16string span_text(std::int64_t ticks,std::u16string_view format,SourceLocation location) {
     if (!format.empty() && format!=u"c" && format!=u"t" && format!=u"T")
         throw Error("E_FORMAT",location,"Unsupported TimeSpan format","Формат TimeSpan ещё не поддерживается");
@@ -260,7 +399,7 @@ bool calendar_signature(std::span<const TypeInfo> types,Type owner,std::size_t o
     const auto info=find_type(types,owner);
     if (!info || !calendar_record_shape(types,*info)) return false;
     const auto call=method(operation);
-    if (call> M::long_time_text) return false;
+    if (call>M::try_parse) return false;
     const bool date=info->native_record==NativeRecord::date_time;
     if (call==M::weekday) return date && (operation>>8U)<=0xffffU
         && tagged_enum(find_type(types,payload(operation)),"system.dayofweek",weekdays);
@@ -286,6 +425,8 @@ std::vector<Type> calendar_parameters(std::span<const TypeInfo> types,Type owner
     constexpr auto integer=Type::integer;
     constexpr auto tick_type=Type::int64;
     switch (method(operation)) {
+    case M::parse: return {Type::string};
+    case M::try_parse: return {Type::string,reference_type(owner)};
     case M::from_ticks: return {tick_type};
     case M::from_ticks_kind: return {tick_type,info.key};
     case M::date_parts: case M::span_clock: return {integer,integer,integer};
@@ -322,7 +463,7 @@ Type calendar_result(std::span<const TypeInfo> types,Type owner,std::size_t oper
     case M::year: case M::month: case M::day: case M::hour: case M::minute: case M::second: case M::millisecond:
     case M::day_of_year: case M::days_in_month: case M::hash: case M::compare: case M::compare_static:
         return Type::integer;
-    case M::leap_year: case M::equal: case M::unequal: case M::less: case M::less_equal: case M::greater:
+    case M::try_parse: case M::leap_year: case M::equal: case M::unequal: case M::less: case M::less_equal: case M::greater:
     case M::greater_equal: case M::equals_static: return Type::boolean;
     case M::total_days: case M::total_hours: case M::total_minutes: case M::total_seconds: case M::total_milliseconds:
         return Type::real;
@@ -347,6 +488,18 @@ Value calendar_invoke(Values& values,Type owner,std::size_t operation,std::span<
         return build(date_only(integer(0),integer(1),integer(2),location)+clock,date_kind);
     };
     switch (call) {
+    case M::parse: case M::try_parse: {
+        const auto& text=string_text(args[0]);
+        const auto result=date?parse_date(text):parse_span(text);
+        if (call==M::parse) {
+            if (!result) throw Error("E_FORMAT",location,date?"Invalid DateTime text":"Invalid TimeSpan text",
+                date?"Некорректная строка DateTime":"Некорректная строка TimeSpan");
+            return build(result->ticks,result->kind);
+        }
+        const auto output=result.value_or(CalendarValue{});
+        values.write(std::get<std::shared_ptr<Cell>>(args[1]),build(output.ticks,output.kind));
+        return result.has_value();
+    }
     case M::from_ticks: return build(date?date_ticks(ticks(0),location):ticks(0));
     case M::from_ticks_kind: return build(date_ticks(ticks(0),location),kind(1));
     case M::date_parts: return from_date();

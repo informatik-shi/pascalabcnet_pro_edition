@@ -2303,7 +2303,13 @@ private:
         const auto parameters=calendar_parameters(module_.types,owner,operation);
         if (parameters.size()!=args.size())
             throw Error("E_TYPE",location,"Wrong date or interval argument count","Неверное число аргументов даты или интервала");
-        for (std::size_t i=0;i<parameters.size();++i) args[i]=convert(std::move(args[i]),parameters[i]);
+        for (std::size_t i=0;i<parameters.size();++i) {
+            if (method==CalendarMethod::try_parse && i==1) {
+                if (args[i]->type!=owner || !lvalue(*args[i]))
+                    throw Error("E_TYPE",args[i]->location,"TryParse requires a writable value of the target type",
+                        "Для TryParse нужно изменяемое значение целевого типа");
+            } else args[i]=convert(std::move(args[i]),parameters[i]);
+        }
         auto result=std::make_unique<hir::Expr>();
         result->kind=hir::ExprKind::encoding_call;
         result->type=calendar_result(module_.types,owner,operation);
@@ -2365,7 +2371,7 @@ private:
             {"specifykind",M::specify_kind},{"isleapyear",M::leap_year},{"daysinmonth",M::days_in_month},
             {"fromticks",M::from_ticks},{"fromdays",M::from_days},{"fromhours",M::from_hours},
             {"fromminutes",M::from_minutes},{"fromseconds",M::from_seconds},{"frommilliseconds",M::from_milliseconds},
-            {"compare",M::compare_static},{"equals",M::equals_static}
+            {"compare",M::compare_static},{"equals",M::equals_static},{"parse",M::parse},{"tryparse",M::try_parse}
         };
         for (const auto& [member,method]:members) if (member==name) {
             if (method==M::from_ticks && info(type,location).native_record==NativeRecord::date_time) break;
@@ -2774,6 +2780,23 @@ private:
         args.resize(first_arg);
         args.push_back(std::move(pack));
         return string_builder_expression(owner,method,std::move(args),location,array);
+    }
+    std::unique_ptr<hir::Expr> bind_formatted_output(const SyntaxExpr& source) {
+        const auto location=source.token.location;
+        std::vector<std::unique_ptr<hir::Expr>> args;
+        for (const auto& arg:source.arguments) args.push_back(expression(*arg));
+        auto result=std::make_unique<hir::Expr>();
+        result->kind=hir::ExprKind::file_output;
+        result->type=Type::unit;
+        result->location=location;
+        result->local=static_cast<std::size_t>(source.token.text=="writelnformat"?TextOutput::writeln:TextOutput::write);
+        if (!args.empty() && args.front()->type==Type::text_file) {
+            result->left=std::move(args.front());
+            args.erase(args.begin());
+        }
+        result->arguments.push_back(bind_composite_format(string_builder_type(location),StringBuilderMethod::format,
+            std::move(args),location));
+        return result;
     }
     std::unique_ptr<hir::Expr> bind_string_builder_member(hir::Expr& receiver,const SyntaxExpr& source) {
         using M=StringBuilderMethod;
@@ -4250,6 +4273,8 @@ private:
                     return bind_composite_format(string_builder_type(result->location),StringBuilderMethod::format,
                         std::move(args),result->location);
                 }
+                if (source.left->token.text=="pabcsystem" && (name=="writeformat" || name=="writelnformat"))
+                    return bind_formatted_output(source);
                 if (source.kind==SyntaxExprKind::field && source.left->token.text=="pabcsystem") {
                     if(source.token.text=="defaultencoding") {
                         result->local=default_encoding();result->kind=hir::ExprKind::local;result->type=module_.locals[result->local].type;break;
@@ -4892,6 +4917,9 @@ private:
                 return bind_composite_format(string_builder_type(result->location),StringBuilderMethod::format,
                     std::move(args),result->location);
             }
+            if ((source.token.text=="writeformat" || source.token.text=="writelnformat")
+                && !routine_names_.contains(source.token.text))
+                return bind_formatted_output(source);
             if ((source.token.text=="numberformat" || source.token.text=="setnumberformat" || source.token.text=="setdecimalseparator")
                 && !routine_names_.contains(source.token.text))
                 return make_number_format(source,result->location);
