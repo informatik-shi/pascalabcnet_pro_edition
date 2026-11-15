@@ -13,6 +13,7 @@
 #include "string_builder.hpp"
 #include "number_format.hpp"
 #include "complex_number.hpp"
+#include "calendar.hpp"
 #include "fixed_array.hpp"
 #include "type_names.hpp"
 #include "callable_identity.hpp"
@@ -363,7 +364,7 @@ public:
             do {
                 auto module = name();while(accept("."))module.text+="."+name().text;
                 if (module.text != "pabcsystem" && module.text != "arrays" && module.text != "collections"
-                    && module.text != "filesoperations" && module.text != "events" && module.text != "pointrect" && module.text != "school" && module.text != "system.text" && module.text != "system.numerics" && module.text != "inifile")
+                    && module.text != "filesoperations" && module.text != "events" && module.text != "pointrect" && module.text != "school" && module.text != "system" && module.text != "system.text" && module.text != "system.numerics" && module.text != "inifile")
                     throw Error("E_UNSUPPORTED", module.location, "Unit is not ported yet: '" + module.text + "'");
                 if (module.text == "collections") root.collections_imported = true;
                 root.imported_units.insert(module.text);
@@ -629,7 +630,7 @@ private:
             if (result->kind=="pabcsystem" && is(".") && [&]{
                 auto probe=lexer_;
                 const auto name=probe.next().text;
-                return name=="stringbuilder" || name=="faststring" || name=="numberformatinfo" || name=="complex";
+                return name=="stringbuilder" || name=="faststring" || name=="numberformatinfo" || name=="complex" || name=="datetime";
             }()) {
                 result->unit="pabcsystem";
                 expect(".");
@@ -656,7 +657,8 @@ private:
                         throw Error("E_UNSUPPORTED",result->token.location,"Unknown or unsupported System.Numerics type");
                 }
                 else if(result->kind=="collections"){expect(".");const auto generic=name();if(generic.text!="generic")throw Error("E_UNSUPPORTED",generic.location,"Unknown System.Collections namespace");expect(".");result->kind=name().text;if(result->kind!="dictionary" && result->kind!="keyvaluepair" && result->kind!="ienumerable" && result->kind!="ienumerator" && result->kind!="list" && result->kind!="hashset" && result->kind!="icomparer" && result->kind!="comparer" && result->kind!="iequalitycomparer" && result->kind!="equalitycomparer" && result->kind!="icollection" && result->kind!="ilist" && result->kind!="iset" && result->kind!="idictionary")throw Error("E_UNSUPPORTED",result->token.location,"Unknown generic collection type");}
-                else if (result->kind!="func" && result->kind!="action" && result->kind!="predicate" && result->kind!="type" && result->kind!="void" && result->kind!="single" && result->kind!="object" && result->kind!="icomparable" && result->kind!="iequatable")
+                else if (result->kind!="func" && result->kind!="action" && result->kind!="predicate" && result->kind!="type" && result->kind!="void" && result->kind!="single" && result->kind!="object" && result->kind!="icomparable" && result->kind!="iequatable"
+                    && result->kind!="datetime" && result->kind!="timespan" && result->kind!="datetimekind" && result->kind!="dayofweek")
                     throw Error("E_UNSUPPORTED",result->token.location,"Unknown or unsupported type 'System."+result->kind+"'");
             }
             if (result->kind=="func" || result->kind=="func0" || result->kind=="func2" || result->kind=="func3"
@@ -2229,6 +2231,217 @@ private:
         if((method==BinaryMethod::read_bytes||method==BinaryMethod::write_bytes)&&info(owner,result.location).element!=Type::invalid)throw Error("E_TYPE",result.location,"Byte buffer methods require an untyped binary file","Методы буфера байтов требуют нетипизированный двоичный файл");
         result=std::move(*binary_expression(owner,method,std::move(result.arguments),result.location));return true;
     }
+    bool is_calendar(Type type) const {
+        return compound(type) && calendar_record(info(type,{}));
+    }
+    bool calendar_type_name(std::string_view name) const {
+        return name=="datetime" || name=="timespan" || name=="datetimekind" || name=="dayofweek";
+    }
+    Type calendar_enum(std::string_view name,SourceLocation location) {
+        const auto full_name="system."+std::string(name);
+        for (std::size_t i=0;i<module_.types.size();++i)
+            if (module_.types[i].kind==CompoundKind::enumeration && module_.types[i].name==full_name)
+                return static_cast<Type>(64+i);
+        if (module_.types.size()>=1024) throw Error("E_LIMIT",location,"Type limit exceeded");
+        const bool kind=name=="datetimekind";
+        TypeInfo shape{full_name,CompoundKind::enumeration,Type::integer,{}};
+        shape.display_name=kind?"DateTimeKind":"DayOfWeek";
+        const std::array<std::string_view,3> kinds{"Unspecified","Utc","Local"};
+        const std::array<std::string_view,7> days{"Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"};
+        const auto members=kind?std::span<const std::string_view>{kinds}:std::span<const std::string_view>{days};
+        for (std::size_t i=0;i<members.size();++i) {
+            std::string lower(members[i]);
+            std::transform(lower.begin(),lower.end(),lower.begin(),[](unsigned char c) {
+                return static_cast<char>(c>='A' && c<='Z'?c-'A'+'a':c);
+            });
+            shape.enum_members.push_back({std::move(lower),std::string(members[i]),static_cast<std::int32_t>(i)});
+        }
+        module_.types.push_back(std::move(shape));
+        return static_cast<Type>(63+module_.types.size());
+    }
+    Type calendar_type(std::string_view name,SourceLocation location) {
+        if (name=="datetimekind" || name=="dayofweek") return calendar_enum(name,location);
+        const bool date=name=="datetime";
+        const auto tag=date?NativeRecord::date_time:NativeRecord::time_span;
+        for (std::size_t i=0;i<module_.types.size();++i)
+            if (module_.types[i].native_record==tag) return static_cast<Type>(64+i);
+        TypeInfo shape{std::string(name),CompoundKind::record,Type::invalid,{{"_ticks",Type::int64,false}}};
+        if (date) {
+            shape.element=calendar_type("timespan",location);
+            shape.key=calendar_enum("datetimekind",location);
+            shape.fields.push_back({"_kind",Type::integer,false});
+        }
+        if (module_.types.size()>=1024) throw Error("E_LIMIT",location,"Type limit exceeded");
+        shape.native_record=tag;
+        module_.types.push_back(std::move(shape));
+        return static_cast<Type>(63+module_.types.size());
+    }
+    Type calendar_owner(const SyntaxExpr& target) {
+        if (target.kind==SyntaxExprKind::name && !lookup(target.token)) {
+            if (const auto alias=aliases_.find(target.token.text); alias!=aliases_.end()) {
+                const auto type=alias->second;
+                if (is_calendar(type)) return type;
+                if (enumeration(type) && info(type,target.token.location).name.starts_with("system.")) return type;
+                return Type::invalid;
+            }
+            if (calendar_type_name(target.token.text)) return calendar_type(target.token.text,target.token.location);
+        }
+        if (target.kind==SyntaxExprKind::field && calendar_type_name(target.token.text) && target.left) {
+            const auto& unit=*target.left;
+            if (unit.kind==SyntaxExprKind::name && !lookup(unit.token)
+                && (unit.token.text=="system" || (unit.token.text=="pabcsystem" && target.token.text=="datetime")))
+                return calendar_type(target.token.text,target.token.location);
+        }
+        return Type::invalid;
+    }
+    std::unique_ptr<hir::Expr> calendar_expression(Type owner,CalendarMethod method,
+        std::vector<std::unique_ptr<hir::Expr>> args,SourceLocation location,Type payload=Type::integer) {
+        const auto operation=static_cast<std::size_t>(method)|(static_cast<std::size_t>(payload)<<8U);
+        if (!calendar_signature(module_.types,owner,operation))
+            throw Error("E_TYPE",location,"Member is not defined for this calendar type",
+                "Член не определён для этого календарного типа");
+        const auto parameters=calendar_parameters(module_.types,owner,operation);
+        if (parameters.size()!=args.size())
+            throw Error("E_TYPE",location,"Wrong date or interval argument count","Неверное число аргументов даты или интервала");
+        for (std::size_t i=0;i<parameters.size();++i) args[i]=convert(std::move(args[i]),parameters[i]);
+        auto result=std::make_unique<hir::Expr>();
+        result->kind=hir::ExprKind::encoding_call;
+        result->type=calendar_result(module_.types,owner,operation);
+        result->operation_type=owner;
+        result->local=operation;
+        result->location=location;
+        result->arguments=std::move(args);
+        return result;
+    }
+    std::unique_ptr<hir::Expr> make_calendar_object(Type type,const SyntaxExpr& source,SourceLocation location) {
+        using M=CalendarMethod;
+        std::vector<std::unique_ptr<hir::Expr>> args;
+        for (const auto& arg:source.arguments) args.push_back(expression(*arg));
+        if (args.empty()) {
+            auto result=std::make_unique<hir::Expr>();
+            result->kind=hir::ExprKind::default_value;
+            result->type=type;
+            result->location=location;
+            return result;
+        }
+        const auto count=args.size();
+        auto constructor=count==1?std::optional<M>{M::from_ticks}:std::nullopt;
+        if (info(type,location).native_record==NativeRecord::date_time) {
+            if (count==2) constructor=M::from_ticks_kind;
+            if (count==3) constructor=M::date_parts;
+            if (count==6) constructor=M::date_clock;
+            if (count==7) constructor=args[6]->type==info(type,location).key?M::date_clock_kind:M::date_millis;
+            if (count==8) constructor=M::date_millis_kind;
+        } else {
+            if (count==3) constructor=M::span_clock;
+            if (count==4) constructor=M::span_days;
+            if (count==5) constructor=M::span_millis;
+        }
+        if (!constructor)
+            throw Error("E_TYPE",location,"No calendar constructor matches the arguments","Аргументы не соответствуют ни одному конструктору даты или интервала");
+        return calendar_expression(type,*constructor,std::move(args),location);
+    }
+    std::unique_ptr<hir::Expr> bind_calendar_static(const SyntaxExpr& source) {
+        using M=CalendarMethod;
+        const auto type=calendar_owner(*source.left);
+        if (type==Type::invalid) return {};
+        const auto location=source.token.location;
+        const auto& name=source.token.text;
+        if (enumeration(type)) {
+            if (source.kind!=SyntaxExprKind::field) return {};
+            const auto& members=info(type,location).enum_members;
+            for (const auto& member:members) if (member.name==name) {
+                auto result=std::make_unique<hir::Expr>();
+                result->kind=hir::ExprKind::literal;result->type=type;result->location=location;
+                result->value=EnumValue{type,member.value};
+                return result;
+            }
+            return {};
+        }
+        if (name=="create") return make_calendar_object(type,source,location);
+        static constexpr std::pair<std::string_view,M> members[] {
+            {"minvalue",M::minimum},{"maxvalue",M::maximum},{"zero",M::zero},
+            {"now",M::now},{"utcnow",M::utc_now},{"today",M::today},
+            {"specifykind",M::specify_kind},{"isleapyear",M::leap_year},{"daysinmonth",M::days_in_month},
+            {"fromticks",M::from_ticks},{"fromdays",M::from_days},{"fromhours",M::from_hours},
+            {"fromminutes",M::from_minutes},{"fromseconds",M::from_seconds},{"frommilliseconds",M::from_milliseconds},
+            {"compare",M::compare_static},{"equals",M::equals_static}
+        };
+        for (const auto& [member,method]:members) if (member==name) {
+            if (method==M::from_ticks && info(type,location).native_record==NativeRecord::date_time) break;
+            std::vector<std::unique_ptr<hir::Expr>> args;
+            for (const auto& arg:source.arguments) args.push_back(expression(*arg));
+            return calendar_expression(type,method,std::move(args),location);
+        }
+        throw Error("E_UNSUPPORTED",location,"Calendar member is not ported yet","Член даты или интервала ещё не перенесён");
+    }
+    std::unique_ptr<hir::Expr> bind_calendar_member(hir::Expr& receiver,const SyntaxExpr& source) {
+        using M=CalendarMethod;
+        const auto type=receiver.left->type;
+        const auto& name=source.token.text;
+        if (!is_calendar(type) || name=="gettype") return {};
+        const auto location=receiver.location;
+        const bool date=info(type,location).native_record==NativeRecord::date_time;
+        static constexpr std::pair<std::string_view,M> date_fields[]{
+            {"year",M::year},{"month",M::month},{"day",M::day},{"hour",M::hour},{"minute",M::minute},
+            {"second",M::second},{"millisecond",M::millisecond},{"dayofweek",M::weekday},
+            {"dayofyear",M::day_of_year},{"kind",M::kind},{"date",M::date},{"timeofday",M::time_of_day},{"ticks",M::ticks}
+        };
+        static constexpr std::pair<std::string_view,M> span_fields[]{
+            {"days",M::day},{"hours",M::hour},{"minutes",M::minute},{"seconds",M::second},
+            {"milliseconds",M::millisecond},{"ticks",M::ticks},{"totaldays",M::total_days},
+            {"totalhours",M::total_hours},{"totalminutes",M::total_minutes},{"totalseconds",M::total_seconds},
+            {"totalmilliseconds",M::total_milliseconds}
+        };
+        const auto fields=date?std::span{date_fields,std::size(date_fields)}:std::span{span_fields,std::size(span_fields)};
+        for (const auto& [field,method]:fields) if (field==name) {
+            if (source.kind!=SyntaxExprKind::field)
+                throw Error("E_TYPE",location,"Calendar property is not callable","Свойство даты или интервала нельзя вызвать");
+            const auto payload=method==M::weekday?calendar_enum("dayofweek",location):Type::integer;
+            std::vector<std::unique_ptr<hir::Expr>> args;
+            args.push_back(std::move(receiver.left));
+            return calendar_expression(type,method,std::move(args),location,payload);
+        }
+        static constexpr std::pair<std::string_view,M> methods[]{
+            {"add",M::add},{"subtract",M::subtract},{"adddays",M::add_days},{"addhours",M::add_hours},
+            {"addminutes",M::add_minutes},{"addseconds",M::add_seconds},{"addmilliseconds",M::add_milliseconds},
+            {"addticks",M::add_ticks},{"addmonths",M::add_months},{"addyears",M::add_years},
+            {"duration",M::duration},{"negate",M::negate},{"compareto",M::compare},{"gethashcode",M::hash},
+            {"equals",M::equal},{"tostring",M::to_string},{"toshortdatestring",M::short_date_text},
+            {"toshorttimestring",M::short_time_text},{"tolongdatestring",M::long_date_text},{"tolongtimestring",M::long_time_text}
+        };
+        for (const auto& [member,operation]:methods) if (member==name) {
+            std::vector<std::unique_ptr<hir::Expr>> args;
+            args.push_back(std::move(receiver.left));
+            for (const auto& arg:source.arguments) args.push_back(expression(*arg));
+            auto method=operation;
+            if (method==M::to_string && args.size()==2) method=M::to_string_format;
+            if (method==M::subtract && date && args.size()==2 && args[1]->type==type) method=M::difference;
+            return calendar_expression(type,method,std::move(args),location);
+        }
+        throw Error("E_UNSUPPORTED",location,"Calendar member is not ported yet","Член даты или интервала ещё не перенесён");
+    }
+    std::unique_ptr<hir::Expr> bind_calendar_binary(hir::Expr& result) {
+        using M=CalendarMethod;
+        const auto type=result.left->type;
+        if (!is_calendar(type))
+            throw Error("E_TYPE",result.location,"Operator requires a calendar value on the left",
+                "Слева от оператора требуется значение даты или интервала");
+        static constexpr std::pair<std::string_view,M> operations[]{
+            {"+",M::add},{"-",M::subtract},{"=",M::equal},{"<>",M::unequal},{"<",M::less},
+            {"<=",M::less_equal},{">",M::greater},{">=",M::greater_equal}
+        };
+        for (const auto& [op,operation]:operations) if (op==result.operation) {
+            const bool difference=operation==M::subtract && info(type,result.location).native_record==NativeRecord::date_time
+                && result.right->type==type;
+            std::vector<std::unique_ptr<hir::Expr>> args;
+            args.push_back(std::move(result.left));
+            args.push_back(std::move(result.right));
+            return calendar_expression(type,difference?M::difference:operation,std::move(args),result.location);
+        }
+        throw Error("E_TYPE",result.location,"Operator is not defined for this calendar type",
+            "Оператор не определён для этого календарного типа");
+    }
     bool is_complex(Type type) const {
         return compound(type) && complex_number_type(info(type,{}));
     }
@@ -3147,6 +3360,9 @@ private:
         if (syntax.kind=="complex" &&
             (syntax.system_qualified || syntax.unit=="pabcsystem" || !aliases_.contains(syntax.kind)))
             return complex_type(syntax.token.location);
+        if (calendar_type_name(syntax.kind) &&
+            (syntax.system_qualified || syntax.unit=="pabcsystem" || !aliases_.contains(syntax.kind)))
+            return calendar_type(syntax.kind,syntax.token.location);
         if (syntax.kind=="numberformatinfo" &&
             (syntax.system_qualified || syntax.unit=="pabcsystem" || !aliases_.contains(syntax.kind)))
             return number_format_type(syntax.token.location);
@@ -3732,6 +3948,7 @@ private:
         do {
  {
             auto type = resolve_type(*source.constructed);
+            if (!source.array_construction && is_calendar(type)) return make_calendar_object(type,source,result->location);
             if (!source.array_construction && is_complex(type)) {
                 std::vector<std::unique_ptr<hir::Expr>> args;
                 for (const auto& arg:source.arguments) args.push_back(expression(*arg));
@@ -3963,6 +4180,7 @@ private:
  {
             if(bind_inifile_static(*result,source))break;
             if (auto number_format=bind_number_format_static(source)) return number_format;
+            if (auto calendar=bind_calendar_static(source)) return calendar;
             if (auto complex=bind_complex_static(source)) return complex;
             if (source.token.text=="create")
                 if (const auto type=string_builder_constructor_owner(*source.left); type!=Type::invalid)
@@ -4126,6 +4344,7 @@ private:
             if(bind_dictionary_member(*result,source))break;
             if(bind_inifile_member(*result,source))break;
             if (auto number_format=bind_number_format_member(*result,source)) return number_format;
+            if (auto calendar=bind_calendar_member(*result,source)) return calendar;
             if (auto complex=bind_complex_member(*result,source)) return complex;
             if (auto builder=bind_string_builder_member(*result,source)) return builder;
             if(bind_encoding_member(*result,source))break;
@@ -5072,6 +5291,7 @@ private:
             auto left = result->left->type;
             auto right = result->right->type;
             const auto& op = result->operation;
+            if (is_calendar(left)||is_calendar(right)) return bind_calendar_binary(*result);
             if (is_complex(left)||is_complex(right)) return bind_complex_binary(*result,is_complex(left)?left:right);
             if (op=="**") {
                 if (left!=Type::big_integer) result->left=convert(std::move(result->left),Type::real);

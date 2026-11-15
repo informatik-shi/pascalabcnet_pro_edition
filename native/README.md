@@ -5808,6 +5808,20 @@ var/out-параметры и Self записи и могут менять Resul
 числовые шаблоны и сериализация сложных объектов ещё переносятся.
 [Исходная реализация Complex](https://github.com/microsoft/referencesource/blob/main/System.Numerics/System/Numerics/Complex.cs)
 
+### DateTime и TimeSpan
+
+`DateTime` и `TimeSpan` хранят целое число тактов по 100 нс. Типы даты,
+интервала, `DateTimeKind` и `DayOfWeek` известны при проверке программы.
+Доступны конструкторы, компоненты даты и интервала, `Now`, `UtcNow`,
+`Today`, календарное прибавление месяцев и лет, арифметика интервалов
+и сравнения. Дробные интервалы округляются до миллисекунды как
+в исходной библиотеке. Формат `O` проверен для UTC и дат без часового
+пояса. Обычный вывод и сокращённые форматы сверены для культуры en-US.
+Парсинг, смещения локального времени и пользовательские шаблоны
+ещё переносятся.
+[Исходная реализация DateTime](https://github.com/microsoft/referencesource/blob/main/mscorlib/system/datetime.cs)
+[Исходная реализация TimeSpan](https://github.com/microsoft/referencesource/blob/main/mscorlib/system/timespan.cs)
+
 
 ### Статические массивы и типизированные файлы
 

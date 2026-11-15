@@ -108,6 +108,14 @@ Definition definition(const Program& program,ReflectedType type,Work& work){
         if (complex_number_type(info)) {
             result.name=u"Complex";result.name_space=u"System.Numerics";result.assembly=u"System.Numerics";break;
         }
+        if (info.native_record==NativeRecord::date_time || info.native_record==NativeRecord::time_span) {
+            result.name=info.native_record==NativeRecord::date_time?u"DateTime":u"TimeSpan";
+            result.name_space=u"System";break;
+        }
+        if (info.kind==CompoundKind::enumeration && (info.name=="system.datetimekind" || info.name=="system.dayofweek")) {
+            result.name=info.name=="system.datetimekind"?u"DateTimeKind":u"DayOfWeek";
+            result.name_space=u"System";break;
+        }
         if(ordinal_range_type(info) || real_interval_type(info)){
             result.name=real_interval_type(info) ? u"RealRange" : info.element==Type::character ? u"CharRange" : u"IntRange";
             result.name_space=u"PABCSystem";result.source=true;break;
