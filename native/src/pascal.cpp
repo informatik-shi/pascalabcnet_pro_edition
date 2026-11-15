@@ -660,7 +660,7 @@ private:
                 else if(result->kind=="collections"){expect(".");const auto generic=name();if(generic.text!="generic")throw Error("E_UNSUPPORTED",generic.location,"Unknown System.Collections namespace");expect(".");result->kind=name().text;if(result->kind!="dictionary" && result->kind!="keyvaluepair" && result->kind!="ienumerable" && result->kind!="ienumerator" && result->kind!="list" && result->kind!="hashset" && result->kind!="icomparer" && result->kind!="comparer" && result->kind!="iequalitycomparer" && result->kind!="equalitycomparer" && result->kind!="icollection" && result->kind!="ilist" && result->kind!="iset" && result->kind!="idictionary")throw Error("E_UNSUPPORTED",result->token.location,"Unknown generic collection type");}
                 else if (result->kind!="func" && result->kind!="action" && result->kind!="predicate" && result->kind!="type" && result->kind!="void" && result->kind!="single" && result->kind!="object" && result->kind!="icomparable" && result->kind!="iequatable"
                     && result->kind!="datetime" && result->kind!="timespan" && result->kind!="datetimekind" && result->kind!="dayofweek"
-                    && result->kind!="decimal")
+                    && result->kind!="decimal" && result->kind!="midpointrounding")
                     throw Error("E_UNSUPPORTED",result->token.location,"Unknown or unsupported type 'System."+result->kind+"'");
             }
             if (result->kind=="func" || result->kind=="func0" || result->kind=="func2" || result->kind=="func3"
@@ -2250,6 +2250,46 @@ private:
         module_.types.push_back(std::move(shape));
         return static_cast<Type>(63+module_.types.size());
     }
+    Type midpoint_rounding_type(SourceLocation location) {
+        for (std::size_t i=0;i<module_.types.size();++i)
+            if (decimal_rounding_enum(module_.types[i])) return static_cast<Type>(64+i);
+        if (module_.types.size()>=1024) throw Error("E_LIMIT",location,"Type limit exceeded");
+        TypeInfo type{"system.midpointrounding",CompoundKind::enumeration,Type::integer,{}};
+        type.display_name="MidpointRounding";
+        type.enum_members={{"toeven","ToEven",0},{"awayfromzero","AwayFromZero",1}};
+        module_.types.push_back(std::move(type));
+        return static_cast<Type>(63+module_.types.size());
+    }
+    Type rounding_owner(const SyntaxExpr& target) {
+        if (target.kind==SyntaxExprKind::name && !lookup(target.token)) {
+            if (const auto alias=aliases_.find(target.token.text); alias!=aliases_.end()) {
+                const auto type=alias->second;
+                return compound(type) && decimal_rounding_enum(info(type,target.token.location))?type:Type::invalid;
+            }
+            if (target.token.text=="midpointrounding") return midpoint_rounding_type(target.token.location);
+        }
+        if (target.kind==SyntaxExprKind::field && target.token.text=="midpointrounding" && target.left) {
+            const auto& system=*target.left;
+            if (system.kind==SyntaxExprKind::name && system.token.text=="system" && !lookup(system.token))
+                return midpoint_rounding_type(target.token.location);
+        }
+        return Type::invalid;
+    }
+    std::unique_ptr<hir::Expr> bind_rounding_constant(const SyntaxExpr& source) {
+        if (source.kind!=SyntaxExprKind::field) return {};
+        const auto type=rounding_owner(*source.left);
+        if (type==Type::invalid) return {};
+        const auto& shape=info(type,source.token.location);
+        for (const auto& member:shape.enum_members) if (member.name==source.token.text) {
+            auto result=std::make_unique<hir::Expr>();
+            result->kind=hir::ExprKind::literal;
+            result->type=type;
+            result->location=source.token.location;
+            result->value=EnumValue{type,member.value};
+            return result;
+        }
+        return {};
+    }
     Type decimal_owner(const SyntaxExpr& target) {
         if (target.kind==SyntaxExprKind::name && !lookup(target.token)) {
             if (const auto alias=aliases_.find(target.token.text); alias!=aliases_.end())
@@ -2293,6 +2333,7 @@ private:
         if (type==owner) return value;
         M method{};
         if (integer_type(type)) method=wide_unsigned(type)?M::from_unsigned:M::from_signed;
+        else if (type==Type::character) method=M::from_character;
         else if (explicit_cast && type==Type::single) method=M::from_single;
         else if (explicit_cast && type==Type::real) method=M::from_real;
         else throw Error("E_TYPE",location,"Decimal requires an integer or an explicit floating-point conversion",
@@ -2308,6 +2349,11 @@ private:
         case Type::int64: return M::to_int64;
         case Type::longword: return M::to_uint32;
         case Type::uint64: return M::to_uint64;
+        case Type::byte: return M::to_byte;
+        case Type::shortint: return M::to_shortint;
+        case Type::smallint: return M::to_smallint;
+        case Type::word: return M::to_word;
+        case Type::character: return M::to_character;
         case Type::single: return M::to_single;
         case Type::real: return M::to_real;
         default: return {};
@@ -2331,7 +2377,7 @@ private:
     std::unique_ptr<hir::Expr> bind_decimal_static(const SyntaxExpr& source) {
         using M=DecimalMethod;
         const auto type=decimal_owner(*source.left);
-        if (type==Type::invalid) return {};
+        if (type==Type::invalid) return bind_rounding_constant(source);
         const auto& name=source.token.text;
         const auto location=source.token.location;
         if (name=="create") return make_decimal_object(type,source,location);
@@ -2339,6 +2385,7 @@ private:
             {"zero",M::zero},{"one",M::one},{"minusone",M::minus_one},{"minvalue",M::minimum},{"maxvalue",M::maximum},
             {"parse",M::parse},{"tryparse",M::try_parse},{"getbits",M::get_bits},{"toint32",M::to_int32},
             {"toint64",M::to_int64},{"touint32",M::to_uint32},{"touint64",M::to_uint64},{"tosingle",M::to_single},
+            {"tobyte",M::to_byte},{"tosbyte",M::to_shortint},{"toint16",M::to_smallint},{"touint16",M::to_word},
             {"todouble",M::to_real},{"add",M::add},{"subtract",M::subtract},{"multiply",M::multiply},
             {"negate",M::negate},{"compare",M::compare},{"equals",M::equal},
             {"divide",M::divide},{"remainder",M::remainder},{"round",M::round},{"truncate",M::truncate},
@@ -2347,10 +2394,17 @@ private:
         for (const auto& [member,method]:members) if (member==name) {
             if (method<=M::maximum && source.kind!=SyntaxExprKind::field)
                 throw Error("E_TYPE",location,"Decimal constant is not callable","Константу Decimal нельзя вызвать");
-            const auto payload=method==M::get_bits?sequence_type(CompoundKind::array,Type::integer):Type::integer;
+            auto payload=method==M::get_bits?sequence_type(CompoundKind::array,Type::integer):Type::integer;
             std::vector<std::unique_ptr<hir::Expr>> args;
             for (const auto& arg:source.arguments) args.push_back(expression(*arg));
-            const auto selected=method==M::round && args.size()==2?M::round_scale:method;
+            auto selected=method;
+            if (method==M::round && args.size()>=2) {
+                const auto last=args.back()->type;
+                if (compound(last) && decimal_rounding_enum(info(last,location))) {
+                    payload=last;
+                    selected=args.size()==2?M::round_mode:M::round_scale_mode;
+                } else if (args.size()==2) selected=M::round_scale;
+            }
             return decimal_expression(type,selected,std::move(args),location,payload);
         }
         throw Error("E_UNSUPPORTED",location,"Decimal member is not ported yet","Член Decimal ещё не перенесён");
@@ -2364,6 +2418,7 @@ private:
         auto method=M::to_string;
         if (name=="compareto") method=M::compare;
         else if (name=="equals") method=M::equal;
+        else if (name=="gethashcode") method=M::hash_code;
         else if (name!="tostring")
             throw Error("E_UNSUPPORTED",location,"Decimal member is not ported yet","Член Decimal ещё не перенесён");
         std::vector<std::unique_ptr<hir::Expr>> args;
@@ -3309,7 +3364,9 @@ private:
     bool bind_enumeration(hir::Expr& result,std::string_view name,std::string_view unit={}) {
         if(!unit.empty() && unit!="pabcsystem")return false;
         const auto alias=aliases_.find(std::string(name));
-        if(unit.empty() && alias!=aliases_.end() && enumeration(alias->second)) {
+        const auto enum_owner=alias!=aliases_.end()?alias->second:
+            name=="midpointrounding" && unit.empty()?midpoint_rounding_type(result.location):Type::invalid;
+        if(unit.empty() && enumeration(enum_owner)) {
             if(result.arguments.size()!=1)throw Error("E_TYPE",result.location,"Wrong enumeration argument count");
             auto& value=result.arguments[0];
             if(enumeration(value->type)) {
@@ -3320,7 +3377,7 @@ private:
                 auto cast=std::make_unique<hir::Expr>();cast->kind=hir::ExprKind::call;cast->location=result.location;
                 cast->arguments.push_back(std::move(value));bind_builtin(*cast,"integer","pabcsystem");value=std::move(cast);
             }
-            auto bound=enum_expression(alias->second,EnumMethod::construct,std::move(result.arguments),result.location);
+            auto bound=enum_expression(enum_owner,EnumMethod::construct,std::move(result.arguments),result.location);
             result=std::move(*bound);return true;
         }
         if(result.arguments.size()!=1 || !enumeration(result.arguments[0]->type))return false;
@@ -3554,6 +3611,8 @@ private:
         if (syntax.kind=="decimal" &&
             (syntax.system_qualified || syntax.unit=="pabcsystem" || !aliases_.contains(syntax.kind)))
             return decimal_record_type(syntax.token.location);
+        if (syntax.kind=="midpointrounding" && (syntax.system_qualified || !aliases_.contains(syntax.kind)))
+            return midpoint_rounding_type(syntax.token.location);
         if (syntax.kind=="numberformatinfo" &&
             (syntax.system_qualified || syntax.unit=="pabcsystem" || !aliases_.contains(syntax.kind)))
             return number_format_type(syntax.token.location);

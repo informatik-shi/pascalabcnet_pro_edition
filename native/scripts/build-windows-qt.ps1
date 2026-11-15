@@ -180,6 +180,7 @@ DateTime поддерживает шаблоны через ToString и Format. 
 DateTime разбирает ISO со смещением и преобразует UTC и локальное время.
 Decimal хранит 96-битный коэффициент и поддерживает Parse, TryParse, GetBits, сложение, вычитание и умножение.
 Decimal также поддерживает деление, остаток, Round, Truncate, Floor и Ceiling.
+Round принимает MidpointRounding.ToEven и AwayFromZero. Поддержаны узкие преобразования и GetHashCode.
 Форматы Decimal F, N, E и G доступны в ToString, Format и AppendFormat.
 Файлы с Decimal, TimeSpan и Complex используют проверенный двоичный формат PascalABC.NET.
 Serialize и Deserialize поддерживают отдельные Decimal, DateTime, TimeSpan и Complex в формате NRBF.

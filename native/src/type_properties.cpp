@@ -113,6 +113,9 @@ Definition definition(const Program& program,ReflectedType type,Work& work){
             result.name_space=u"System";break;
         }
         if (info.native_record==NativeRecord::decimal_value) {result.name=u"Decimal";result.name_space=u"System";break;}
+        if (info.kind==CompoundKind::enumeration && info.name=="system.midpointrounding") {
+            result.name=u"MidpointRounding";result.name_space=u"System";break;
+        }
         if (info.kind==CompoundKind::enumeration && (info.name=="system.datetimekind" || info.name=="system.dayofweek")) {
             result.name=info.name=="system.datetimekind"?u"DateTimeKind":u"DayOfWeek";
             result.name_space=u"System";break;

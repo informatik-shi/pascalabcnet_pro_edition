@@ -135,11 +135,14 @@ bool smaller_magnitude(const Decimal& left,const Decimal& right) {
     const auto scale=std::max(left.scale,right.scale);
     return signed_coefficient(left,scale).absolute()<signed_coefficient(right,scale).absolute();
 }
-Decimal round_decimal(Decimal input,unsigned scale,M call) {
+Decimal round_decimal(Decimal input,unsigned scale,M call,bool away_from_zero=false) {
     if (input.scale<=scale) return input;
     const auto& divisor=power10(input.scale-scale);
     auto [quotient,remainder]=input.coefficient.divide(divisor);
-    if (call==M::round || call==M::round_scale) quotient=rounded(std::move(quotient),remainder,divisor);
+    if (call==M::round) {
+        if (!away_from_zero) quotient=rounded(std::move(quotient),remainder,divisor);
+        else if (remainder.shift_left(1)>=divisor) quotient=quotient.add(power10(0));
+    }
     else if (!remainder.zero() && ((call==M::floor && input.negative) || (call==M::ceiling && !input.negative)))
         quotient=quotient.add(power10(0));
     return {std::move(quotient),scale,input.negative};
@@ -302,18 +305,26 @@ bool decimal_record_shape(const TypeInfo& info) {
             return false;
     return true;
 }
+bool decimal_rounding_enum(const TypeInfo& shape) {
+    return shape.kind==CompoundKind::enumeration && shape.name=="system.midpointrounding"
+        && !shape.enum_flags && shape.enum_members.size()==2
+        && shape.enum_members[0].name=="toeven" && shape.enum_members[0].value==0
+        && shape.enum_members[1].name=="awayfromzero" && shape.enum_members[1].value==1;
+}
 bool decimal_signature(std::span<const TypeInfo> types,Type owner,std::size_t operation) {
     if (!compound(owner) || static_cast<unsigned>(owner)-64U>=types.size()
         || !decimal_record_shape(types[static_cast<unsigned>(owner)-64U])) return false;
     const auto call=method(operation);
-    if (call>M::to_string_specifier_provider) return false;
+    if (call>M::hash_code) return false;
     const bool provider=call==M::to_string_provider || call==M::to_string_specifier_provider;
-    if (!provider && call!=M::from_bits && call!=M::get_bits) return (operation>>8U)==0;
+    const bool rounding=call==M::round_mode || call==M::round_scale_mode;
+    if (!provider && !rounding && call!=M::from_bits && call!=M::get_bits) return (operation>>8U)==0;
     if ((operation>>8U)>65535U) return false;
     const auto array=payload(operation);
     if (!compound(array) || static_cast<unsigned>(array)-64U>=types.size()) return false;
     const auto& shape=types[static_cast<unsigned>(array)-64U];
     if (provider) return shape.kind==CompoundKind::number_format;
+    if (rounding) return decimal_rounding_enum(shape);
     return shape.kind==CompoundKind::array && shape.rank==1 && shape.element==Type::integer;
 }
 std::vector<Type> decimal_parameters(Type owner,std::size_t operation) {
@@ -321,6 +332,7 @@ std::vector<Type> decimal_parameters(Type owner,std::size_t operation) {
     case M::zero: case M::one: case M::minus_one: case M::minimum: case M::maximum: return {};
     case M::from_signed: return {Type::int64};
     case M::from_unsigned: return {Type::uint64};
+    case M::from_character: return {Type::character};
     case M::from_single: return {Type::single};
     case M::from_real: return {Type::real};
     case M::from_parts: return {Type::integer,Type::integer,Type::integer,Type::boolean,Type::byte};
@@ -331,6 +343,8 @@ std::vector<Type> decimal_parameters(Type owner,std::size_t operation) {
     case M::to_string_provider: return {owner,payload(operation)};
     case M::to_string_specifier_provider: return {owner,Type::string,payload(operation)};
     case M::round_scale: return {owner,Type::integer};
+    case M::round_mode: return {owner,payload(operation)};
+    case M::round_scale_mode: return {owner,Type::integer,payload(operation)};
     case M::add: case M::subtract: case M::multiply: case M::equal: case M::unequal:
     case M::less: case M::less_equal: case M::greater: case M::greater_equal: case M::compare:
     case M::divide: case M::remainder:
@@ -343,10 +357,15 @@ Type decimal_result(Type owner,std::size_t operation) {
     case M::get_bits: return payload(operation);
     case M::to_string: case M::to_string_specifier: case M::to_string_provider: case M::to_string_specifier_provider:
         return Type::string;
-    case M::to_int32: case M::compare: return Type::integer;
+    case M::to_int32: case M::compare: case M::hash_code: return Type::integer;
     case M::to_int64: return Type::int64;
     case M::to_uint32: return Type::longword;
     case M::to_uint64: return Type::uint64;
+    case M::to_byte: return Type::byte;
+    case M::to_shortint: return Type::shortint;
+    case M::to_smallint: return Type::smallint;
+    case M::to_word: return Type::word;
+    case M::to_character: return Type::character;
     case M::to_real: return Type::real;
     case M::to_single: return Type::single;
     case M::try_parse: case M::equal: case M::unequal: case M::less: case M::less_equal:
@@ -371,6 +390,7 @@ Value decimal_invoke(Values& values,Type owner,std::size_t operation,std::span<c
             return build({BigInteger::from_signed(value).absolute(),0,value<0});
         }
         case M::from_unsigned: return build({BigInteger::from_unsigned(std::get<std::uint64_t>(args[0])),0,false});
+        case M::from_character: return build({BigInteger::from_unsigned(std::get<char16_t>(args[0])),0,false});
         case M::from_single: return build(from_float(std::get<float>(args[0]),location));
         case M::from_real: return build(from_float(std::get<double>(args[0]),location));
         case M::from_parts: {
@@ -414,6 +434,14 @@ Value decimal_invoke(Values& values,Type owner,std::size_t operation,std::span<c
         }
         case M::to_single: return static_cast<float>(to_real(words(args[0])));
         case M::to_real: return to_real(words(args[0]));
+        case M::hash_code: {
+            const auto converted=to_real(words(args[0]));
+            if (converted==0) return std::int32_t{0};
+            const auto bits=std::bit_cast<std::uint64_t>(converted);
+            const auto low=static_cast<std::uint32_t>(bits)&0xfffffff0U;
+            const auto high=static_cast<std::uint32_t>(bits>>32U);
+            return std::bit_cast<std::int32_t>(high^low);
+        }
         case M::negate: {
             auto data=words(args[0]);
             data[3]^=sign_mask;
@@ -427,14 +455,24 @@ Value decimal_invoke(Values& values,Type owner,std::size_t operation,std::span<c
         case M::to_int64: return to_integral<std::int64_t>(left,location);
         case M::to_uint32: return to_integral<std::uint32_t>(left,location);
         case M::to_uint64: return to_integral<std::uint64_t>(left,location);
-        case M::round: case M::truncate: case M::floor: case M::ceiling:
+        case M::to_byte: return to_integral<std::uint8_t>(left,location);
+        case M::to_shortint: return to_integral<std::int8_t>(left,location);
+        case M::to_smallint: return to_integral<std::int16_t>(left,location);
+        case M::to_word: return to_integral<std::uint16_t>(left,location);
+        case M::to_character: return static_cast<char16_t>(to_integral<std::uint16_t>(left,location));
+        case M::truncate: case M::floor: case M::ceiling:
             return build(round_decimal(left,0,call));
-        case M::round_scale: {
-            const auto scale=std::get<std::int32_t>(args[1]);
+        case M::round: case M::round_scale: case M::round_mode: case M::round_scale_mode: {
+            const bool has_scale=call==M::round_scale || call==M::round_scale_mode;
+            const bool has_mode=call==M::round_mode || call==M::round_scale_mode;
+            const auto scale=has_scale?std::get<std::int32_t>(args[1]):0;
             if (scale<0 || scale>static_cast<int>(scale_limit))
                 throw Error("E_RANGE",location,"Decimal rounding scale must be between 0 and 28",
                     "Масштаб округления Decimal должен быть от 0 до 28");
-            return build(round_decimal(left,static_cast<unsigned>(scale),call));
+            const auto mode=has_mode?std::get<EnumValue>(args.back()).value:0;
+            if (mode<0 || mode>1) throw Error("E_ARGUMENT",location,"Invalid MidpointRounding value",
+                "Недопустимое значение MidpointRounding");
+            return build(round_decimal(left,static_cast<unsigned>(scale),M::round,mode==1));
         }
         default: break;
         }

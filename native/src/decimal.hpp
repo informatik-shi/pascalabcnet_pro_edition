@@ -11,9 +11,12 @@ enum class DecimalMethod : std::uint8_t {
     parse, try_parse, to_string, to_int32, to_int64, to_uint32, to_uint64, to_single, to_real,
     negate, add, subtract, multiply, equal, unequal, less, less_equal, greater, greater_equal, compare,
     divide, remainder, round, round_scale, truncate, floor, ceiling,
-    to_string_specifier, to_string_provider, to_string_specifier_provider
+    to_string_specifier, to_string_provider, to_string_specifier_provider,
+    from_character, to_byte, to_shortint, to_smallint, to_word, to_character,
+    round_mode, round_scale_mode, hash_code
 };
 inline bool decimal_type(const TypeInfo& type) {return type.native_record==NativeRecord::decimal_value;}
+bool decimal_rounding_enum(const TypeInfo&);
 bool decimal_record_shape(const TypeInfo&);
 bool decimal_signature(std::span<const TypeInfo>,Type,std::size_t);
 std::vector<Type> decimal_parameters(Type,std::size_t);
