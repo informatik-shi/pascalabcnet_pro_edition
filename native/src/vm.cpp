@@ -733,7 +733,12 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
         case Op::read_console: {
             std::vector<std::shared_ptr<Cell>> targets(instruction.operand/2);
             for (auto i=targets.size();i>0;--i) targets[i-1]=std::get<std::shared_ptr<Cell>>(pop());
-            for (const auto& target:targets) { const auto value=console.read(target->type,instruction.location); account_number(value); values.write(target,value); }
+            for (const auto& target:targets) {
+                const auto value=short_string(target->type)
+                    ? Value{console.read_short_string(static_cast<std::int32_t>(short_string_capacity(target->type)),instruction.location)}
+                    : console.read(target->type,instruction.location);
+                account_number(value); values.write(target,value);
+            }
             if (instruction.operand&1U) console.skip_line(instruction.location);
             break;
         }
@@ -913,8 +918,15 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
             break;
         }
         case Op::set_character: {
-            const auto ch=std::get<char16_t>(pop()); const auto index=std::int64_t(std::get<std::int32_t>(pop()))-1;
+            const auto ch=std::get<char16_t>(pop());
+            const auto position=std::get<std::int32_t>(pop());
             const auto target=std::get<std::shared_ptr<Cell>>(pop());
+            if (short_string(instruction.type)) {
+                const std::array<Value,4> args{target->value,position,static_cast<std::int32_t>(short_string_capacity(instruction.type)),ch};
+                values.write(target,*stdlib::invoke_text(stdlib::Function::set_short_string_char,args,instruction.location));
+                break;
+            }
+            const auto index=std::int64_t(position)-1;
             if (std::holds_alternative<NilString>(target->value)) trap(instruction,RuntimeError::nil_reference);
             auto text=string_text(target->value);
             if (index<0 || static_cast<std::size_t>(index)>=text.size()) trap(instruction,RuntimeError::index_bounds);
@@ -1153,7 +1165,11 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
         }
         case Op::file_read: {
             const auto target=std::get<std::shared_ptr<Cell>>(pop());
-            const auto value=text_read(text_file(stack.back(),instruction.location),instruction.type,instruction.location); account_number(value); values.write(target,value); break;
+            auto& file=text_file(stack.back(),instruction.location);
+            const auto value=short_string(instruction.type)
+                ? Value{text_read_short_string(file,static_cast<std::int32_t>(short_string_capacity(instruction.type)),instruction.location)}
+                : text_read(file,instruction.type,instruction.location);
+            account_number(value); values.write(target,value); break;
         }
         case Op::file_newline:
             text_write(text_file(stack.back(),instruction.location),file_newline,instruction.location); break;
@@ -1182,8 +1198,11 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
             const auto& signature=stdlib::signatures()[instruction.operand];
             const auto ref=stdlib::string_mutation_reference(signature.function).value();
             std::vector<Value> arguments(signature.parameters.size());
-            for (std::size_t i=arguments.size();i>0;--i) arguments[i-1]=pop();
+            const bool implicit_capacity=short_string(instruction.type) && signature.function!=stdlib::Function::delete_string;
+            for (std::size_t i=arguments.size()-implicit_capacity;i>0;--i) arguments[i-1]=pop();
             auto target=std::get<std::shared_ptr<Cell>>(arguments[ref]); arguments[ref]=target->value;
+            if (implicit_capacity)
+                arguments.back()=static_cast<std::int32_t>(short_string_capacity(instruction.type));
             if(auto result=stdlib::mutate_text(signature.function,arguments,instruction.location,services))values.write(target,*result);
             break;
         }
@@ -1329,10 +1348,16 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
                 const auto index=std::get<std::int64_t>(pop()); const auto sequence=std::get<std::shared_ptr<Aggregate>>(pop());
                 stack.push_back(sequence_at(values,sequence,index,options)); break;
             }
-            const auto last=std::int64_t(std::get<std::int32_t>(pop()));
-            const bool matrix=instruction.type!=Type::string && type_info(program,instruction.type).rank==2 && !instruction.operand;
+            const auto position=std::get<std::int32_t>(pop());
+            const auto last=std::int64_t(position);
+            const bool matrix=!string_type(instruction.type) && type_info(program,instruction.type).rank==2 && !instruction.operand;
             const auto first=matrix ? std::int64_t(std::get<std::int32_t>(pop())) : last;
             const auto value=pop();
+            if (short_string(instruction.type)) {
+                const std::array<Value,3> args{value,position,static_cast<std::int32_t>(short_string_capacity(instruction.type))};
+                stack.push_back(*stdlib::invoke_text(stdlib::Function::get_short_string_char,args,instruction.location));
+                break;
+            }
             if (instruction.type==Type::string) {
                 if (std::holds_alternative<NilString>(value)) trap(instruction,RuntimeError::nil_reference);
                 const auto& text=string_text(value); const auto offset=first-(instruction.operand ? 0 : 1);
@@ -1369,7 +1394,7 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
             if (compound(instruction.type) && type_info(program,instruction.type).kind==CompoundKind::sequence) {
                 stack.emplace_back(static_cast<std::int64_t>(sequence_length(std::get<std::shared_ptr<Aggregate>>(value),instruction.location))); break;
             }
-            if (instruction.type==Type::string) { stack.emplace_back(static_cast<std::int32_t>(string_text(value).size())); break; }
+            if (string_type(instruction.type)) { stack.emplace_back(static_cast<std::int32_t>(string_text(value).size())); break; }
             auto array = std::get<std::shared_ptr<Aggregate>>(value);
             if (array->nil && (instruction.operand || type_info(program,instruction.type).kind==CompoundKind::list)) trap(instruction,RuntimeError::nil_reference);
             stack.emplace_back(static_cast<std::int32_t>(array->items.size())); break;
@@ -1460,7 +1485,7 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
         }
         case Op::construct_user: {
             const auto count=program.routines[instruction.operand].parameters.size()-1;
-            auto self=values.zero(instruction.type,true);
+            auto self=initialized_default(values,instruction.type,true,false,0);
             stack.insert(stack.end()-static_cast<std::ptrdiff_t>(count),std::move(self));
             enter_routine(instruction.operand,instruction.location);break;
         }
@@ -1487,7 +1512,11 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
         case Op::store: values.write(locals[instruction.operand],pop()); break;
         case Op::convert: {
             const auto value = pop();
-            if(instruction.type==Type::single){stack.emplace_back(single_number(value,instruction.location));}
+            if (short_string(instruction.type)) {
+                if (const auto* ch=std::get_if<char16_t>(&value)) stack.emplace_back(std::u16string(1,*ch));
+                else stack.emplace_back(string_text(value).substr(0,short_string_capacity(instruction.type)));
+            }
+            else if(instruction.type==Type::single){stack.emplace_back(single_number(value,instruction.location));}
             else if(value_type(value)==Type::single && instruction.type==Type::real){stack.emplace_back(static_cast<double>(std::get<float>(value)));}
             else if (instruction.type==Type::big_integer && value_type(value)!=instruction.type) {
                 auto result=big_cast(value,instruction.type,instruction.location); account_number(result,std::span<const Value>(&value,1)); stack.push_back(std::move(result));

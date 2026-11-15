@@ -7,9 +7,13 @@ class BinaryCodec {
     TextEncoding encoding_;
     TextEncoder encoder_;
     TextDecoder decoder_;
+    bool typed_;
     std::u16string decode(std::string_view,std::size_t capacity,SourceLocation);
+    std::u16string read_short_string(std::size_t capacity,SourceLocation,const ExecutionOptions&);
+    void write_short_string(std::u16string_view,std::size_t capacity,SourceLocation,const ExecutionOptions&);
 public:
-    BinaryCodec(BinaryDevice& stream,TextEncoding encoding):stream_(stream),encoding_(encoding),encoder_(encoding),decoder_(encoding,false){}
+    BinaryCodec(BinaryDevice& stream,TextEncoding encoding,bool typed=false)
+        :stream_(stream),encoding_(encoding),encoder_(encoding),decoder_(encoding,false),typed_(typed){}
     Value read(Type,SourceLocation,const ExecutionOptions&);
     void write(Type,const Value&,SourceLocation,const ExecutionOptions&);
     char16_t read_character(SourceLocation,const ExecutionOptions&);

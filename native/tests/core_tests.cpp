@@ -6004,6 +6004,53 @@ end.)","[ab]\n[cdef]\n[]\n[]\n[XYZ]\n[]\n");
     compile_error("begin var t:Text; ReadShortStringFromFile(t,'abc',2);end.","E_TYPE");
 }
 
+void short_string_types() {
+    result(R"(const Width = 1+2;
+type Small = string[Width];
+type Held = record s: Small; end;
+type Box = class s: Small; end;
+const ClippedConstant: Small = 'abcdef';
+var global: Small;
+function Clipped(const s: Small): Small := s+'!';
+function IsNil(s: string): boolean := s=nil;
+procedure Change(var s: Small); begin s:='abcde'; s[2]:='Y'; end;
+begin
+  var s: Small;
+  var r: Held;
+  var a:=new Small[1];
+  var f:array[1..1] of Small;
+  var box:=new Box;
+  assert(not IsNil(box.s));
+  var normal:=new string[2];
+  Writeln('[',s,'][',a[0],'][',r.s,'][',f[1],'][',global,'] ',IsNil(default(Small)),' ',normal[0]=nil);
+  Writeln(ClippedConstant,' ',Clipped('abcdef'));
+  Change(r.s); a[0]:=r.s+'-'; f[1]:='uvwxyz'; Writeln(a[0],' ',f[1]);
+  s:='a'; Writeln(Ord(s[0]),' ',Ord(s[3]));
+  s[3]:='z'; SetLength(s,5);
+  Insert('bc',s,2); Delete(s,2,1); s+='xyz';
+  Writeln('[',s,'] ',Length(s),' ',s.Length);
+  Writeln(typeof(Small).Name,' ',s.GetType.Name);
+  var big: ShortString := StringOfChar('b',256); Writeln(big.Length);
+end.)","[][][][][] True False\nabc abc\naYc uvw\n1 0\n[acx] 3 3\nString String\n255\n");
+    result("begin var s:string[2];Read(s);Writeln('[',s,']');Readln(s);Writeln('[',s,']');Readln(s);Writeln('[',s,']');end.",
+        "[ab]\n[cd]\n[xy]\n","abcdef\r\nxyz\r\n");
+    result(R"(begin
+  var t:Text;
+  var s:string[2];
+  Rewrite(t,'abc-short-type.txt'); Writeln(t,'abcdef'); Writeln(t,'xyz'); Close(t); Reset(t);
+  Read(t,s); Writeln('[',s,']'); Readln(t,s); Writeln('[',s,']');
+  Readln(t,s); Writeln('[',s,']'); Close(t); Erase(t);
+end.)","[ab]\n[cd]\n[xy]\n");
+    compile_error("begin var s:string[0];end.","E_RANGE");
+    compile_error("begin var s:string[256];end.","E_RANGE");
+    compile_error("begin var s:string[4294967297];end.","E_RANGE");
+    compile_error("begin var s:string[-4294967295];end.","E_RANGE");
+    compile_error("begin var s:string[1.5];end.","E_TYPE");
+    compile_error("procedure Change(var s:string[2]); begin end; begin var s:string[3]; Change(s); end.","E_TYPE");
+    runtime_error("begin var s:string[2]:='a'; Writeln(s[3]); end.","E_BOUNDS");
+    runtime_error("begin var s:string[2]:='a'; s[0]:='x'; end.","E_BOUNDS");
+}
+
 void global_routine_overloads() {
     result(R"(type ActionOnInteger = function(n: integer): integer;
 function Pick(n: integer): integer := n+10;
@@ -7794,6 +7841,7 @@ int main() {
     language_foundations();
     case_statements();
     short_string_helpers();
+    short_string_types();
     global_routine_overloads();
     integral_set_relations();
     subrange_types();

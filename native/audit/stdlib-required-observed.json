@@ -1,55 +1,63 @@
 {
   "schema": 1,
-  "runtime_source_base_revision": "eef95f82757621e318ecf9cfb57d4ee23eab53eb",
+  "runtime_source_base_revision": "5d9208c43fd324ab751bf6fcd5005aae745c1e47",
   "runtime_source_changes": [
     {
+      "path": "native/include/abc/core.hpp",
+      "sha256_lf": "c3201671755cb55dfa589463e712bcae1c7cc7ac712027bd1d6c2fd6dcfe5966"
+    },
+    {
+      "path": "native/src/binary_codec.cpp",
+      "sha256_lf": "de68485108d5e5b12f06912a05acc1302ecd249649815071b9e5fa5fbd8aeea8"
+    },
+    {
+      "path": "native/src/binary_codec.hpp",
+      "sha256_lf": "be950023007f4c60f538986c24892ec01e95bde632ac0c2135df78e683a1ab63"
+    },
+    {
+      "path": "native/src/binary_file.cpp",
+      "sha256_lf": "592ce2e98815b9532c240ffa422c67365bf0eb2e723077273f85bd5f60ea4dcb"
+    },
+    {
       "path": "native/src/bytecode.cpp",
-      "sha256_lf": "c9056f0e55aacd4cc529bbb314226b68d7316f665d0d4b188accda83b51c847c"
+      "sha256_lf": "6765a4d0a7a2f848e17662206790f4024a615ab95eee44b8d746648578f5a32c"
     },
     {
-      "path": "native/src/console_input.cpp",
-      "sha256_lf": "373b2bf88e15f14a41d4bb72181ef198c79f0e818a685713e1bf0203225c0ead"
-    },
-    {
-      "path": "native/src/console_input.hpp",
-      "sha256_lf": "8a86db2c4c0a3fd704e3cf9dda2e3217d1183a6cadebc6e26fd31ab0bc2e8405"
+      "path": "native/src/compound.cpp",
+      "sha256_lf": "5df0790102c0d8bd6a42b7ed6e9be2a21afad09a1f67c90f34085d294494a979"
     },
     {
       "path": "native/src/pascal.cpp",
-      "sha256_lf": "88406dfcee9b2629abff2299a0de0d6652cae572f57c6071cc61094dea379203"
+      "sha256_lf": "abc15258141b7d4ace3a18d73f186ca6212d59cbbcfb85b231116fe19fe8dcca"
     },
     {
-      "path": "native/src/stdlib.cpp",
-      "sha256_lf": "6b97cb2dc0a0544baa1af93023b01f1d235e749397dd51dbf2242c6f410fadde"
+      "path": "native/src/record_initialization.cpp",
+      "sha256_lf": "1aada1b31fb66024b0b723d428c79766b674490bdf759d15fad4af3f0ce72bec"
     },
     {
-      "path": "native/src/stdlib.hpp",
-      "sha256_lf": "a2c6e7dec3965423212e87ba11921431b35358a52d0d46e4650ec65c24929078"
+      "path": "native/src/runtime_values.hpp",
+      "sha256_lf": "9feebc893c6f1a73c581c3b6a8cc0c9fad2e4591d9146645656deec0ba0d1ad6"
     },
     {
-      "path": "native/src/stdlib_text.cpp",
-      "sha256_lf": "2625ab16f45d17db1928f641dcac74124113e2d2cdf0f98d0c03b633b63847bc"
+      "path": "native/src/type_names.cpp",
+      "sha256_lf": "7d5a32539c7833d00a5760cc289131c6933a9e0fff1fbda020b623c36643ca00"
     },
     {
-      "path": "native/src/text_file.cpp",
-      "sha256_lf": "df8f8607c066aa9286beb1b3ae76d6b128c32f391f593a49b44cf535fa3d8c7b"
-    },
-    {
-      "path": "native/src/text_file.hpp",
-      "sha256_lf": "ec798d0dd7bde47f5318951e262d3bfc6d180c1e3bee36767dff7c2c1e91a9c3"
+      "path": "native/src/types.cpp",
+      "sha256_lf": "f56492700ef5a3a51c82fdcf5ce350341efca748803c183877d78674ab00d3f6"
     },
     {
       "path": "native/src/vm.cpp",
-      "sha256_lf": "06dd8f8b16fc613aab12faae0356e48803da1a55dbf6edae0f7a2efdcdd9ce9a"
+      "sha256_lf": "227185ac3aa5b1be8ea5f3ed0a36c0604a92c5ab16da349ef18aa4df73cad105"
     }
   ],
-  "scope": "Short-string console and Text input consumes a bounded UTF-16 prefix without consuming CR/LF, writes through verified references, and preserves source-specific EOF semantics. Both positive programs match original PascalABCCompiler.Core v4.0.0.3882. Automatic dispatch and capacity-constrained declarations remain open. Five PABCSystem short-string helpers accept typed UTF-16 strings, explicit lengths and a verified reference where required. Runtime regressions cover nil, indexing, bounds diagnostics, clipping, padding, insertion and no-op writes. The positive source fixture matches PascalABCCompiler.Core v4.0.0.3882. Capacity-constrained declarations and binary layout remain open. Closed global procedure/function overload resolution shares native type ranking, validates by-reference arguments and works with defaults, params and typed callable values. Original setinoverload1, overloads2 and overloads6 run through both native interpreters. A supplemental call-resolution program also runs identically on PascalABCCompiler.Core v4.0.0.3882. Generic and nested overloads, subrange ranking and full callable inference remain open. Typed integer set and array relations follow the source PABCExtensions overloads. Byte/integer and int64/integer orderings preserve source guards and lexical argument order. Raw integer array comparisons preserve duplicates and count semantics, with verified bytecode and native regression tests. The positive typed comparison fixture compiles and runs unchanged on PascalABCCompiler.Core v4.0.0.3882 and both native interpreters. Set literals choose the element type using the source integral ordering, and typed in, Add, Remove, Contains, Include, Exclude and repeated single-element assignments preserve the original unchecked scalar conversion. Original set7 and set8 now run natively. Mixed byte/integer and int64/integer set union, intersection and difference preserve source result types, result order, and left-to-right evaluation. Integral foreach conversions reuse the verified bit-cast catalog and reproduce signed and unsigned stack conversion rules. Original foreachset1 is a permanent native test. Array constants containing NewSet literals, typed ordinal constant bounds and source-derived PABCExtensions conversions for integral sets. The checked conversion accepts sets or rank-one arrays of integer, handles narrower or wider target types and reports EN/RU range errors. Mixed equality and compound operations, array elements, and six unchanged upstream fixtures validate this stage. Explicit extensions imports and whole units remain open. Declared subrange types compile ordinal constants, keep source base storage and supply named fixed-array bounds and direct numeric casts. Eight unchanged upstream programs cover case, ordinal updates, arithmetic, casts and binary files. General range identity and inference remain open. Typed Pascal case supports constant values and ranges, default arms and source evaluation order for narrow ordinals, strings and wider integers. Six unchanged upstream tests and focused native diagnostics pass. The remaining upstream case2 passes with declared subranges. Named record static fields and constructors use per-type storage and a first-field-access trigger allowed by source BeforeFieldInit. Ordinary construction and fieldless methods stay lazy. Nine new native regressions and a portable example cover order, isolated values, by-reference arrays, aliases and bilingual diagnostics. Earlier JIT initialization and failure wrapping are outside the verified profile. Explicit strict class static/class constructors, separate and inline bodies, field order, reentry, lazy method values, instance construction, bilingual errors and three unchanged upstream tests. CLR failure caching/wrapping is unfinished. Typed class/user-record static properties and record static methods with field/method/expression accessors, read/write-only and callable properties, indexed/default access with once-evaluated compound indices, strict initialization/order/reentry and typed var/field = initialization. 64 actual CLR traces and 100 native checks plus original defaultparams4/lambda_static_1/property5; separate verified Program metadata without new opcodes or TypeInfo/Cell/Value/VM fields. Static operators, full inference/visibility/reflection/error wrapping and complete standard units remain unfinished. Typed static class methods using existing native calls and verified separate metadata, lazy delegate creation and class initialization after arguments, typed overload/callback selection, var/default/params arguments, recursion and captured closures; 64 actual CLR traces and 104 native checks, original lambda_nonstatic_from_static and portable example. Static operators/explicit constructors, record statics, mixed static/instance overloads, full inference, inheritance/generic declarations and complete visibility/reflection/exception wrapping remain unfinished. Typed class static fields with verified storage and strict one-time initialization, RHS/reference/new argument order and reentry; source array declaration publication before elements with fresh captured cells. 160 actual CLR traces, 193 native static checks, original arrays12 and portable example. Static properties/explicit constructors, record statics, inheritance/generics and full visibility/reflection remain unfinished. Typed scalar/enum array constants and static pools with standard runtime factories/input and nested element callbacks, preserved CLR default numeric fields before explicit global initializers; no I/O or user code at compile time: 81 independent CLR pool/copy traces, 228 native checks including 18 copy/file traces, original arrays2/arrays3, compile-time pure scalar element reads for known type bounds with full shape metadata, ordinary runtime alias reads and error timing retained, nested dynamic/fixed/matrix comma indices. Full aggregate constants, rectangular syntax, generated reflection and whole units remain unfinished. Dynamic array declaration literals, singleton/nested/record initializers, up to 4096 values, raw storage allocated before value evaluation without record initializer side effects, verified rank-one raw marker, mixed/small ordinal range promotion, original arrayinitializer1/arrays7 plus five file/fixed originals are permanent native tests. Typed aggregate constants and full compatibility remain unfinished. Statically typed fixed-bound arrays: 18 independent constructor/copy/typed-file traces and 228 native checks; four unmodified original fixed/file tests through the native interpreter. Fixed array structural conversions, subrange declarations, short strings, sets and full reflection remain positive gaps. Named statically typed local routines use existing closures: 1071 independent CLR traces and 1106 native checks, five original fileof1/nested1/nested3/nested4/fResult3 tests through the native interpreter. Local defaults/overloads/forward, local type sections and complete metadata remain unfinished. Native binary streams/file of scalar, enum and packed nested records: 4320 actual stream traces, 410752 actual Framework codec steps (489444 checks), all 140 encoding rows and 317 native Pascal file checks, with 311 modern runtime differences retained; remaining fixed-array conversions/subranges/short strings/sets, mutable ElementType, object coercions/reflection/classes/serialization and whole modules remain unfinished. Selected positive compile requirements in two native builds. Not API coverage or runtime validation. Ten invariant Encoding properties across all 140 default read-only factory codecs and both max-size methods with 18350080 actual exhaustive outcomes, independent FNV fingerprints and 6980 boundary outcomes (7696 native checks); UI-culture EncodingName and a 197-declaration API inventory remain positive requirements, not native coverage. UTF-7 raw UTF16 with all encoder/decoder residual values, actual strict/split/scalar evidence and 1421 identical raw-UTF16 file recipes, completing all 140 numbered Framework codecs but not full APIs or modules; all five ISO-2022/HZ pages with exhaustive encoder-mode and decoder-pending byte-pair suffixes, split and default/strict evidence, 9725 modern file recipes and 4062 retained legacy EOF differences, persistent writer encoders and all ten ISCII pages with exhaustive BMP/context/default/strict/script selection/file evidence and preserved legacy EOF differences, GB18030 full BMP/scalar/four-byte/split/default/strict maps and modern files with preserved legacy EOF differences, all Framework DBCS encoding maps, byte pairs, splits, aliases and modern file recipes with explicit legacy EOF differences, all Framework single-byte encoding maps, aliases and file recipes, standard generic Predicate2/Predicate3 families, named non-generic delegate families and arrow identities, raw Type property metadata and source-file identity, Predicate/Func identities and conversions, user ICollection bulk insertion, user-record field initialization, methods/interfaces, retained List arrays, native range boxing and RealRange equality semantics are validated separately. Field-initializer recipes are source-derived, not a Pascal compiler oracle. Whole standard-library units remain partial.",
+  "scope": "Statically typed string[N] and ShortString preserve capacities, bounded assignment and mutation, array and record storage, class defaults, and matching var parameters. Console and Text dispatch to bounded readers. PascalABC.NET programs shortstring2, shortstring3, and constparam1 pass unchanged. The CP1251 typed-file fixture matches the reference compiler output and all twenty bytes across two records. The pointer path in shortstring1 and generic short-string argument restrictions remain open. Short-string console and Text input consumes a bounded UTF-16 prefix without consuming CR/LF, writes through verified references, and preserves source-specific EOF semantics. Both positive programs match original PascalABCCompiler.Core v4.0.0.3882. Five PABCSystem short-string helpers accept typed UTF-16 strings, explicit lengths and a verified reference where required. Runtime regressions cover nil, indexing, bounds diagnostics, clipping, padding, insertion and no-op writes. The positive source fixture matches PascalABCCompiler.Core v4.0.0.3882. Closed global procedure/function overload resolution shares native type ranking, validates by-reference arguments and works with defaults, params and typed callable values. Original setinoverload1, overloads2 and overloads6 run through both native interpreters. A supplemental call-resolution program also runs identically on PascalABCCompiler.Core v4.0.0.3882. Generic and nested overloads, subrange ranking and full callable inference remain open. Typed integer set and array relations follow the source PABCExtensions overloads. Byte/integer and int64/integer orderings preserve source guards and lexical argument order. Raw integer array comparisons preserve duplicates and count semantics, with verified bytecode and native regression tests. The positive typed comparison fixture compiles and runs unchanged on PascalABCCompiler.Core v4.0.0.3882 and both native interpreters. Set literals choose the element type using the source integral ordering, and typed in, Add, Remove, Contains, Include, Exclude and repeated single-element assignments preserve the original unchecked scalar conversion. Original set7 and set8 now run natively. Mixed byte/integer and int64/integer set union, intersection and difference preserve source result types, result order, and left-to-right evaluation. Integral foreach conversions reuse the verified bit-cast catalog and reproduce signed and unsigned stack conversion rules. Original foreachset1 is a permanent native test. Array constants containing NewSet literals, typed ordinal constant bounds and source-derived PABCExtensions conversions for integral sets. The checked conversion accepts sets or rank-one arrays of integer, handles narrower or wider target types and reports EN/RU range errors. Mixed equality and compound operations, array elements, and six unchanged upstream fixtures validate this stage. Explicit extensions imports and whole units remain open. Declared subrange types compile ordinal constants, keep source base storage and supply named fixed-array bounds and direct numeric casts. Eight unchanged upstream programs cover case, ordinal updates, arithmetic, casts and binary files. General range identity and inference remain open. Typed Pascal case supports constant values and ranges, default arms and source evaluation order for narrow ordinals, strings and wider integers. Six unchanged upstream tests and focused native diagnostics pass. The remaining upstream case2 passes with declared subranges. Named record static fields and constructors use per-type storage and a first-field-access trigger allowed by source BeforeFieldInit. Ordinary construction and fieldless methods stay lazy. Nine new native regressions and a portable example cover order, isolated values, by-reference arrays, aliases and bilingual diagnostics. Earlier JIT initialization and failure wrapping are outside the verified profile. Explicit strict class static/class constructors, separate and inline bodies, field order, reentry, lazy method values, instance construction, bilingual errors and three unchanged upstream tests. CLR failure caching/wrapping is unfinished. Typed class/user-record static properties and record static methods with field/method/expression accessors, read/write-only and callable properties, indexed/default access with once-evaluated compound indices, strict initialization/order/reentry and typed var/field = initialization. 64 actual CLR traces and 100 native checks plus original defaultparams4/lambda_static_1/property5; separate verified Program metadata without new opcodes or TypeInfo/Cell/Value/VM fields. Static operators, full inference/visibility/reflection/error wrapping and complete standard units remain unfinished. Typed static class methods using existing native calls and verified separate metadata, lazy delegate creation and class initialization after arguments, typed overload/callback selection, var/default/params arguments, recursion and captured closures; 64 actual CLR traces and 104 native checks, original lambda_nonstatic_from_static and portable example. Static operators/explicit constructors, record statics, mixed static/instance overloads, full inference, inheritance/generic declarations and complete visibility/reflection/exception wrapping remain unfinished. Typed class static fields with verified storage and strict one-time initialization, RHS/reference/new argument order and reentry; source array declaration publication before elements with fresh captured cells. 160 actual CLR traces, 193 native static checks, original arrays12 and portable example. Static properties/explicit constructors, record statics, inheritance/generics and full visibility/reflection remain unfinished. Typed scalar/enum array constants and static pools with standard runtime factories/input and nested element callbacks, preserved CLR default numeric fields before explicit global initializers; no I/O or user code at compile time: 81 independent CLR pool/copy traces, 228 native checks including 18 copy/file traces, original arrays2/arrays3, compile-time pure scalar element reads for known type bounds with full shape metadata, ordinary runtime alias reads and error timing retained, nested dynamic/fixed/matrix comma indices. Full aggregate constants, rectangular syntax, generated reflection and whole units remain unfinished. Dynamic array declaration literals, singleton/nested/record initializers, up to 4096 values, raw storage allocated before value evaluation without record initializer side effects, verified rank-one raw marker, mixed/small ordinal range promotion, original arrayinitializer1/arrays7 plus five file/fixed originals are permanent native tests. Typed aggregate constants and full compatibility remain unfinished. Statically typed fixed-bound arrays: 18 independent constructor/copy/typed-file traces and 228 native checks; four unmodified original fixed/file tests through the native interpreter. Fixed array structural conversions, subrange declarations, short strings, sets and full reflection remain positive gaps. Named statically typed local routines use existing closures: 1071 independent CLR traces and 1106 native checks, five original fileof1/nested1/nested3/nested4/fResult3 tests through the native interpreter. Local defaults/overloads/forward, local type sections and complete metadata remain unfinished. Native binary streams/file of scalar, enum and packed nested records: 4320 actual stream traces, 410752 actual Framework codec steps (489444 checks), all 140 encoding rows and 317 native Pascal file checks, with 311 modern runtime differences retained; remaining fixed-array conversions/subranges/short strings/sets, mutable ElementType, object coercions/reflection/classes/serialization and whole modules remain unfinished. Selected positive compile requirements in two native builds. Not API coverage or runtime validation. Ten invariant Encoding properties across all 140 default read-only factory codecs and both max-size methods with 18350080 actual exhaustive outcomes, independent FNV fingerprints and 6980 boundary outcomes (7696 native checks); UI-culture EncodingName and a 197-declaration API inventory remain positive requirements, not native coverage. UTF-7 raw UTF16 with all encoder/decoder residual values, actual strict/split/scalar evidence and 1421 identical raw-UTF16 file recipes, completing all 140 numbered Framework codecs but not full APIs or modules; all five ISO-2022/HZ pages with exhaustive encoder-mode and decoder-pending byte-pair suffixes, split and default/strict evidence, 9725 modern file recipes and 4062 retained legacy EOF differences, persistent writer encoders and all ten ISCII pages with exhaustive BMP/context/default/strict/script selection/file evidence and preserved legacy EOF differences, GB18030 full BMP/scalar/four-byte/split/default/strict maps and modern files with preserved legacy EOF differences, all Framework DBCS encoding maps, byte pairs, splits, aliases and modern file recipes with explicit legacy EOF differences, all Framework single-byte encoding maps, aliases and file recipes, standard generic Predicate2/Predicate3 families, named non-generic delegate families and arrow identities, raw Type property metadata and source-file identity, Predicate/Func identities and conversions, user ICollection bulk insertion, user-record field initialization, methods/interfaces, retained List arrays, native range boxing and RealRange equality semantics are validated separately. Field-initializer recipes are source-derived, not a Pascal compiler oracle. Whole standard-library units remain partial.",
   "runs": [
     {
       "schema": 1,
       "scope": "Selected required positive compile cases derived from shipped interfaces. Every case must eventually compile. This is a growing gap list, not complete API coverage; accepting a case does not prove its runtime semantics. No expected failure is made a compatibility requirement.",
       "runner": "native/build/clang-incremental/abc.exe",
-      "runner_sha256": "718e80218cdf28cd2c9e8ab77caf29aa0f2dce93b32e8a90d1ac4bcc71c93f51",
+      "runner_sha256": "035ce10572db9340e0009305cfd211f0a68e5ecbe5bd7e4701a0e2be7d0535e0",
       "version": "ABC Native 0.1.0-dev (Pascal prototype)",
       "cases": [
         {
@@ -113,8 +121,8 @@
           "module": "PABCSystem",
           "source_line": 741,
           "source_anchor": "TypedFile = sealed class(AbstractBinaryFile)",
-          "accepted": false,
-          "diagnostic": "system-typed-file-short-string.pas:1:23: E_SYNTAX\nEN: Expected ';' after record field\nRU: После поля записи ожидается ';'"
+          "accepted": true,
+          "diagnostic": ""
         },
         {
           "id": "system-typed-file-element-type",
@@ -257,8 +265,8 @@
           "module": "PABCSystem",
           "source_line": 119,
           "source_anchor": "ShortString = string[255];",
-          "accepted": false,
-          "diagnostic": "system-shortstring.pas:1:17: E_UNSUPPORTED\nEN: Unknown or unsupported type 'shortstring'\nRU: Неизвестный или неподдерживаемый тип 'shortstring'"
+          "accepted": true,
+          "diagnostic": ""
         },
         {
           "id": "system-short-string-helpers",
@@ -454,7 +462,7 @@
         }
       ],
       "summary": {
-        "accepted": 31,
+        "accepted": 33,
         "required": 50
       }
     },
@@ -462,7 +470,7 @@
       "schema": 1,
       "scope": "Selected required positive compile cases derived from shipped interfaces. Every case must eventually compile. This is a growing gap list, not complete API coverage; accepting a case does not prove its runtime semantics. No expected failure is made a compatibility requirement.",
       "runner": "native/build/qt-editor/Release/abc.exe",
-      "runner_sha256": "5f100f748521b68d1531e39d0e97d38c4a505537bc84f5e11e07508438514a75",
+      "runner_sha256": "0ef7d11e1f8f9bb47e10719dde7ed97f7c48e64d4bf3a9c5258fc30c49a08e3f",
       "version": "ABC Native 0.1.0-dev (Pascal prototype)",
       "cases": [
         {
@@ -526,8 +534,8 @@
           "module": "PABCSystem",
           "source_line": 741,
           "source_anchor": "TypedFile = sealed class(AbstractBinaryFile)",
-          "accepted": false,
-          "diagnostic": "system-typed-file-short-string.pas:1:23: E_SYNTAX\nEN: Expected ';' after record field\nRU: После поля записи ожидается ';'"
+          "accepted": true,
+          "diagnostic": ""
         },
         {
           "id": "system-typed-file-element-type",
@@ -670,8 +678,8 @@
           "module": "PABCSystem",
           "source_line": 119,
           "source_anchor": "ShortString = string[255];",
-          "accepted": false,
-          "diagnostic": "system-shortstring.pas:1:17: E_UNSUPPORTED\nEN: Unknown or unsupported type 'shortstring'\nRU: Неизвестный или неподдерживаемый тип 'shortstring'"
+          "accepted": true,
+          "diagnostic": ""
         },
         {
           "id": "system-short-string-helpers",
@@ -867,7 +875,7 @@
         }
       ],
       "summary": {
-        "accepted": 31,
+        "accepted": 33,
         "required": 50
       }
     }

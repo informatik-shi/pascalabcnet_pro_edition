@@ -78,6 +78,7 @@ struct Values {
         return std::make_shared<Cell>(Cell{type, std::move(value)});
     }
     Value zero(Type type, bool constructed = false, bool generic = false) {
+        if(short_string(type))return generic ? Value{NilString{}} : Value{std::u16string{}};
         switch (type) {
         case Type::integer: return std::int32_t{0};
         case Type::int64: return std::int64_t{0};

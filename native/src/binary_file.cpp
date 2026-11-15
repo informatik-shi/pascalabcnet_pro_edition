@@ -26,7 +26,7 @@ void open(FileContext& files,const std::shared_ptr<BinaryFile>& file,bool create
     if(file->element!=Type::invalid&&!std::get<bool>(encoding_metadata_value(static_cast<std::uint16_t>(encoding.kind),EncodingMethod::is_single_byte,0,location)))throw runtime_error(RuntimeError::typed_file_encoding,location);
     if(file->is_open()){file->stream->seek(0,location);if(create)file->stream->truncate(location);return;}
     files.prepare_binary_open(file,location);auto stream=std::make_unique<BinaryStream>(file->filename,create,location);
-    auto codec=std::make_unique<BinaryCodec>(*stream,encoding);file->stream=std::move(stream);file->codec=std::move(codec);
+    auto codec=std::make_unique<BinaryCodec>(*stream,encoding,file->element!=Type::invalid);file->stream=std::move(stream);file->codec=std::move(codec);
 }
 Value read_value(Values& values,BinaryFile& file,Type type,const ExecutionOptions& options,unsigned depth){
     if(depth>64)throw runtime_error(RuntimeError::sequence_depth,values.location);
@@ -65,6 +65,7 @@ std::int64_t binary_element_size(const Program& program,Type type,SourceLocation
         if(t==Type::word||t==Type::smallint)return 2;
         if(t==Type::integer||t==Type::longword||t==Type::single)return 4;
         if(t==Type::int64||t==Type::uint64||t==Type::real)return 8;
+        if(short_string(t))return short_string_capacity(t)+1;
         const auto& shape=type_info(program,t);if(shape.kind==CompoundKind::enumeration)return 4;
         if(shape.kind==CompoundKind::fixed_array){const auto& s=fixed_array_shape(program,t);const auto count=static_cast<std::int64_t>(s.upper)-s.lower+1;const auto bytes=self(self,shape.element,depth+1);if(bytes&&count>INT64_MAX/bytes)throw runtime_error(RuntimeError::allocation_limit,location);return count*bytes;}std::int64_t size=0;
         for(const auto& field:shape.fields){const auto n=self(self,field.type,depth+1);if(n>std::numeric_limits<std::int64_t>::max()-size)throw runtime_error(RuntimeError::allocation_limit,location);size+=n;}return size;};

@@ -11,7 +11,7 @@ bool compound_reference(CompoundMethod method){return method<=CompoundMethod::bi
 bool compound_signature(const Program& program,Type owner,CompoundMethod method) {
     if(method>CompoundMethod::matrix_in)return false;
     if(method==CompoundMethod::string_in || method==CompoundMethod::string_contains)return owner==Type::string;
-    if(method<=CompoundMethod::text_repeat)return owner==Type::string;
+    if(method<=CompoundMethod::text_repeat)return string_type(owner);
     if(method<=CompoundMethod::big_multiply)return owner==Type::big_integer;
     if(!compound(owner) || static_cast<unsigned>(owner)-64U>=program.types.size())return false;
     const auto kind=type_info(program,owner).kind;
@@ -98,6 +98,10 @@ Value compound_invoke(Values& values,Type owner,CompoundMethod method,std::span<
                 const auto& first=string_text(target->value);const auto& last=string_text(suffix);
                 if(first.size()>1'048'576 || last.size()>1'048'576-first.size())throw runtime_error(RuntimeError::string_limit,values.location);
                 big_work((first.size()+last.size())/64+1,values.location,options);result=first+last;
+            }
+            if (short_string(owner)) {
+                auto& text=std::get<std::u16string>(result);
+                text.resize(std::min(text.size(),static_cast<std::size_t>(short_string_capacity(owner))));
             }
             values.write(target,result);return false;
         }

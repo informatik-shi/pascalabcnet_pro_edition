@@ -482,7 +482,7 @@ private:
         }
         return false;
     }
-    std::shared_ptr<SyntaxType> type_syntax(bool allow_empty_result=false,bool allow_arrow=true,bool allow_type_members=true) {
+    std::shared_ptr<SyntaxType> type_syntax(bool allow_empty_result=false,bool allow_arrow=true,bool allow_type_members=true,bool allow_short_string=true) {
         DepthGuard guard(depth_, current_.location);
         auto result = std::make_shared<SyntaxType>(); result->token = current_;
         if (has_subrange_separator()) {
@@ -608,6 +608,12 @@ private:
             expect("end");
         } else {
             result->token = name(); result->kind = result->token.text; result->named=true;
+            if (allow_short_string && result->kind=="string" && accept("[")) {
+                result->kind="$short_string";
+                result->named=false;
+                result->enum_values.push_back(expression());
+                expect("]");
+            }
             if(result->kind=="inifile" && is(".")) {
                 result->unit="inifile";expect(".");result->kind=name().text;
                 if(result->kind!="tinifile")throw Error("E_UNSUPPORTED",result->token.location,"Unknown IniFile type");
@@ -1034,7 +1040,7 @@ private:
         expect(")"); ++result->parentheses; return postfix(std::move(result));
     }
     ABC_PASCAL_NOINLINE std::unique_ptr<SyntaxExpr> construction_expression() {
-        const auto token = current_; auto type = type_syntax();
+        const auto token = current_; auto type = type_syntax(false,true,true,false);
         auto result = make_expression(SyntaxExprKind::construction, token); result->constructed = type;
         if (accept("[")) {
             result->array_construction=true;
@@ -2017,13 +2023,16 @@ private:
         }
         return nullptr;
     }
-    Type resolve_subrange(const SyntaxType& syntax) {
-        const auto location=syntax.token.location;
+    void bind_prior_constants(SourceLocation location) {
         for (const auto* constant:enum_prior_constants_)
             if (constant->token.location.offset<location.offset && !enum_bound_constants_.contains(constant)) {
                 (void)statement(*constant);
                 enum_bound_constants_.insert(constant);
             }
+    }
+    Type resolve_subrange(const SyntaxType& syntax) {
+        bind_prior_constants(syntax.token.location);
+        const auto location=syntax.token.location;
         const auto constant_bound=[&](const SyntaxExpr& node) {
             auto bound=constant_expression(node);
             if (!ordinal(bound->type))
@@ -2101,7 +2110,7 @@ private:
         if((!unit.empty()&&unit!="pabcsystem")||result.arguments.empty()||!binary(result.arguments[0]->type))return false;
         BinaryMethod method;const auto owner=result.arguments[0]->type;const auto count=result.arguments.size();
         if(name=="assign"||name=="assignfile")method=BinaryMethod::assign;
-        else if(name=="reset"||name=="rewrite"){(void)default_encoding();const bool create=name=="rewrite";if(count==1)method=create?BinaryMethod::rewrite:BinaryMethod::reset;else if(count==2){const bool text=result.arguments[1]->type==Type::string||result.arguments[1]->type==Type::character||result.arguments[1]->type==Type::nil;method=text?(create?BinaryMethod::rewrite_named:BinaryMethod::reset_named):(create?BinaryMethod::rewrite_encoding:BinaryMethod::reset_encoding);}else method=create?BinaryMethod::rewrite_named_encoding:BinaryMethod::reset_named_encoding;}
+        else if(name=="reset"||name=="rewrite"){(void)default_encoding();const bool create=name=="rewrite";if(count==1)method=create?BinaryMethod::rewrite:BinaryMethod::reset;else if(count==2){const bool text=string_type(result.arguments[1]->type)||result.arguments[1]->type==Type::character||result.arguments[1]->type==Type::nil;method=text?(create?BinaryMethod::rewrite_named:BinaryMethod::reset_named):(create?BinaryMethod::rewrite_encoding:BinaryMethod::reset_encoding);}else method=create?BinaryMethod::rewrite_named_encoding:BinaryMethod::reset_named_encoding;}
         else if(name=="close"||name=="closefile")method=BinaryMethod::close;else if(name=="truncate")method=BinaryMethod::truncate;
         else if(name=="eof")method=BinaryMethod::eof;else if(name=="filepos"||name=="position")method=BinaryMethod::position;
         else if(name=="filesize"||name=="size")method=BinaryMethod::size;else if(name=="seek")method=BinaryMethod::seek;
@@ -2471,6 +2480,22 @@ private:
                 if(syntax.enum_flags){if(!enumeration(found->second))throw Error("E_TYPE",syntax.token.location,"FlagsAttribute requires an enumeration");module_.types[static_cast<unsigned>(found->second)-64U].enum_flags=true;}
                 return found->second;
             }
+        if (syntax.kind=="shortstring" && syntax.named && syntax.unit.empty() && !syntax.system_qualified)
+            return short_string_type(max_short_string_capacity);
+        if (syntax.kind=="$short_string") {
+            bind_prior_constants(syntax.token.location);
+            const auto capacity=constant_expression(*syntax.enum_values.front());
+            const auto value=hir::constant_value(*capacity,module_.types,module_.fixed_arrays);
+            if (!integer_type(capacity->type) || !value)
+                throw Error("E_TYPE",capacity->location,"Short string capacity must be an integer constant","Ёмкость короткой строки должна быть целочисленной константой");
+            const auto size=capacity->type==Type::uint64 ? std::get<std::uint64_t>(*value)
+                : static_cast<std::uint64_t>(integral_number(*value,capacity->location));
+            if (size==0 || size>max_short_string_capacity)
+                throw Error("E_RANGE",capacity->location,"Short string capacity must be between 1 and 255","Ёмкость короткой строки должна быть от 1 до 255");
+            const auto type=short_string_type(static_cast<unsigned>(size));
+            resolved_types_[&syntax]=type;
+            return type;
+        }
         if(syntax.kind=="binaryfile")return binary_type(syntax.element?resolve_type(*syntax.element):Type::invalid,syntax.token.location);
         if (syntax.kind=="subrange") {
             const auto base=resolve_subrange(syntax);
@@ -2616,7 +2641,7 @@ private:
         if(constant_array_target(expression))return false;
         if (constant_parameter_target(expression)) return false;
         if(expression.kind==hir::ExprKind::new_set_hash)return new_set_addressable(*expression.left);
-        if (expression.kind==hir::ExprKind::index && expression.left->type==Type::string) return false;
+        if (expression.kind==hir::ExprKind::index && string_type(expression.left->type)) return false;
         if (expression.kind==hir::ExprKind::field && compound(expression.left->type) && info(expression.left->type,expression.location).kind==CompoundKind::object_class) return true;
         if (expression.kind==hir::ExprKind::field && compound(expression.left->type) && (info(expression.left->type,expression.location).kind==CompoundKind::tuple || key_value_pair_type(info(expression.left->type,expression.location)))) return false;
         if (expression.kind==hir::ExprKind::index && compound(expression.left->type)
@@ -2673,6 +2698,12 @@ private:
             || (shape.kind==CompoundKind::array && shape.rank==1));
     }
     ABC_PASCAL_NOINLINE std::unique_ptr<hir::Expr> convert(std::unique_ptr<hir::Expr> expression, Type type,bool assignment=false,bool copy=true) {
+        if (short_string(type) && can_widen(expression->type,type)) {
+            const auto location=expression->location;
+            if (expression->type==Type::nil) expression=convert(std::move(expression),Type::string);
+            return std::make_unique<hir::Expr>(hir::Expr{
+                hir::ExprKind::convert,type,location,std::int32_t{0},0,"",std::move(expression),{}});
+        }
         if (numeric_subrange_value(*expression) && integer_type(type) && !can_widen(expression->type,type))
             return subrange_integer_cast(std::move(expression),type);
         if(fixed(expression->type)&&expression->type!=type&&compound(type)&&(info(type,expression->location).kind==CompoundKind::array||info(type,expression->location).kind==CompoundKind::sequence||interface_kind(info(type,expression->location))))expression=fixed_view(std::move(expression));
@@ -3350,6 +3381,7 @@ private:
             if(!result->left)result->left=expression(*source.left);
             if(fixed(result->left->type)&&source.token.text=="clone"){if(!source.arguments.empty())throw Error("E_TYPE",result->location,"Fixed array Clone takes no arguments");const auto owner=result->left->type;std::vector<std::unique_ptr<hir::Expr>> args;args.push_back(std::move(result->left));return fixed_expression(owner,FixedMethod::copy_value,std::move(args),result->location);}
             if(fixed(result->left->type)&&source.token.text!="gettype"&&source.token.text!="tostring"&&source.token.text!="equals"&&source.token.text!="gethashcode")result->left=fixed_view(std::move(result->left));
+            if (short_string(result->left->type)) result->left=convert(std::move(result->left),Type::string);
             adapt_enumerable_member(*result,source.token.text);const auto receiver=result->left->type;
             if(receiver==Type::type_descriptor){
                 const auto operation=source.token.text=="name" ? TypeOperation::name : source.token.text=="fullname" ? TypeOperation::full_name
@@ -3830,6 +3862,11 @@ private:
                 result->type = module_.locals[*local].type;
                 if (const auto found=constant_values_.find(*local); found!=constant_values_.end()) {
                     result->kind=hir::ExprKind::literal; result->value=found->second;
+                    if (short_string(result->type)) {
+                        const auto type=result->type;
+                        result->type=Type::string;
+                        return convert(std::move(result),type);
+                    }
                     if(enum_initializing_ && std::holds_alternative<EnumValue>(result->value)){result->value=std::get<EnumValue>(result->value).value;result->type=Type::integer;}
                 }
             } else if (auto routine = routine_names_.find(source.token.text); routine != routine_names_.end()) {
@@ -4074,9 +4111,11 @@ private:
         case SyntaxExprKind::lambda: throw Error("E_HIR",result->location,"Lambda escaped typed binding");
         case SyntaxExprKind::value_call:
             result->left=expression(*source.left); bind_value_call(*result,source.arguments); break;
-        case SyntaxExprKind::type_literal:
+        case SyntaxExprKind::type_literal: {
             result->kind=hir::ExprKind::literal;result->type=Type::type_descriptor;
-            result->value=ReflectedType{source.constructed->kind=="void" && source.constructed->system_qualified ? Type::unit : resolve_type(*source.constructed)};break;
+            const auto type=source.constructed->kind=="void" && source.constructed->system_qualified ? Type::unit : resolve_type(*source.constructed);
+            result->value=ReflectedType{short_string(type) ? Type::string : type};break;
+        }
         case SyntaxExprKind::type_reference: throw Error("E_TYPE",source.token.location,"A type requires a static member");
         case SyntaxExprKind::initialized_default:
             if(expected==Type::invalid)throw Error("E_TYPE",result->location,"Field default requires a known type","Для значения поля по умолчанию нужен известный тип");result->kind=hir::ExprKind::default_value;result->type=expected;result->operation="initialize";return result;
@@ -4116,10 +4155,10 @@ private:
             }
             if(bind_property_indices(result->left,source))return std::move(result->left);
             const auto receiver_type = result->left->type;
-            if(receiver_type!=Type::string&&!compound(receiver_type))throw Error("E_TYPE",result->location,"Value is not indexable","Значение не поддерживает индексацию");
+            if(!string_type(receiver_type)&&!compound(receiver_type))throw Error("E_TYPE",result->location,"Value is not indexable","Значение не поддерживает индексацию");
             const auto rank=compound(receiver_type) && info(receiver_type,result->location).kind==CompoundKind::array ? info(receiver_type,result->location).rank : 1U;
             if (source.arguments.size()+1!=rank) throw Error("E_TYPE",result->location,"Wrong number of array indices");
-            if (receiver_type==Type::string) {
+            if (string_type(receiver_type)) {
                 result->right=convert(expression(*source.right),Type::integer);
                 result->type=Type::character; result->kind=hir::ExprKind::index; return fold_constant_array_index(std::move(result));
             }
@@ -4211,6 +4250,8 @@ private:
         return result;
     }
     std::unique_ptr<hir::Expr> bind_binary(std::unique_ptr<hir::Expr> result) {
+            if (short_string(result->left->type)) result->left=convert(std::move(result->left),Type::string);
+            if (short_string(result->right->type)) result->right=convert(std::move(result->right),Type::string);
             auto left = result->left->type;
             auto right = result->right->type;
             const auto& op = result->operation;
@@ -4469,7 +4510,7 @@ private:
                 setter->arguments.push_back(value(Type::invalid)); bind_school_ip(*setter,owner,SchoolIPMethod::address_set);
                 result.kind=hir::StmtKind::call; result.expression=std::move(setter); return result;
             }
-            if (result.target->kind==hir::ExprKind::index && result.target->left->type==Type::string) {
+            if (result.target->kind==hir::ExprKind::index && string_type(result.target->left->type)) {
                 if (!lvalue(*result.target->left)) throw Error("E_TYPE",result.location,"String character assignment requires a writable string");
                 result.expression=convert(value(Type::invalid),Type::character); return result;
             }
@@ -4524,6 +4565,7 @@ private:
         auto all=std::make_unique<hir::Expr>();all->location=location;std::vector<bool> ranges;
         for(const auto& item:source.arguments){const bool range=item->kind==SyntaxExprKind::binary && item->token.text=="..";ranges.push_back(range);
             const auto append=[&](const SyntaxExpr& syntax){if(syntax.kind==SyntaxExprKind::literal && syntax.token.text=="nil")throw Error("E_TYPE",syntax.token.location,"Nil is not allowed directly in a set literal");auto value=expression(syntax);
+                if (short_string(value->type)) value=convert(std::move(value),Type::string);
                 if(range){if(small_integer(value->type))value=convert(std::move(value),Type::integer);if(value->type!=Type::integer && value->type!=Type::boolean && value->type!=Type::character && !enumeration(value->type))throw Error("E_TYPE",syntax.token.location,"Set ranges require integer, char, boolean or enumeration endpoints");}
                 all->arguments.push_back(std::move(value));};
             if(range){append(*item->left);append(*item->right);}else append(*item);
@@ -4949,7 +4991,7 @@ private:
         if(target.kind==hir::ExprKind::dictionary_call && (target.local&255U)==static_cast<std::size_t>(DictionaryMethod::get_item))return true;
         if(target.kind==hir::ExprKind::property_access || target.kind==hir::ExprKind::list_capacity || target.kind==hir::ExprKind::school_ip
             || target.kind==hir::ExprKind::buffer_call || target.kind==hir::ExprKind::association_call)return true;
-        if(target.kind==hir::ExprKind::index)return target.left->type==Type::string || info(target.left->type,target.location).kind==CompoundKind::list;
+        if(target.kind==hir::ExprKind::index)return string_type(target.left->type) || (compound(target.left->type) && info(target.left->type,target.location).kind==CompoundKind::list);
         return target.kind==hir::ExprKind::linked_call;
     }
     std::unique_ptr<hir::Expr> checked_compound_cast(std::unique_ptr<hir::Expr> value,Type target,SourceLocation location) {
@@ -4992,7 +5034,7 @@ private:
             if(right->type==Type::nil && (element==Type::string || element==Type::text_file || (compound(element) && info(element,location).kind!=CompoundKind::record && info(element,location).kind!=CompoundKind::tuple && !enumeration(element))))throw Error("E_TYPE",location,"Ambiguous nil collection compound argument");
             std::vector<std::unique_ptr<hir::Expr>> arguments;arguments.push_back(std::move(target));arguments.push_back(std::move(right));hir::Stmt result;result.kind=hir::StmtKind::call;result.location=location;result.expression=hash_set_expression(type,method,std::move(arguments),location);return result;
         }
-        if(type==Type::string || type==Type::big_integer) {
+        if(string_type(type) || type==Type::big_integer) {
             if(!lvalue(*target))throw Error("E_TYPE",location,"Compound var operator requires a writable target");
             auto right=initial ? std::move(initial) : expression(*source.expression);CompoundMethod method;
             if(type==Type::big_integer){
@@ -5000,7 +5042,7 @@ private:
                 method=op=="+" ? CompoundMethod::big_add : op=="-" ? CompoundMethod::big_subtract : CompoundMethod::big_multiply;
             } else if(op=="*")method=CompoundMethod::text_repeat;
             else if(op!="+")throw Error("E_TYPE",location,"Unsupported string compound operator");
-            else if(right->type==Type::string || right->type==Type::character || right->type==Type::nil)method=CompoundMethod::text_add;
+            else if(string_type(right->type) || right->type==Type::character || right->type==Type::nil)method=CompoundMethod::text_add;
             else if(can_widen(right->type,Type::integer))method=CompoundMethod::text_integer;
             else if(can_widen(right->type,Type::real))method=CompoundMethod::text_real;
             else throw Error("E_TYPE",location,"Numeric string operation requires integer or real");
@@ -6909,7 +6951,7 @@ private:
         }return {};
     }
     std::unique_ptr<hir::Expr> fold_constant_array_index(std::unique_ptr<hir::Expr> node)const{
-        if(binding_constant_&&(scalar(node->type)||enumeration(node->type)))if(auto value=constant_array_value(*node)){node->kind=hir::ExprKind::literal;node->value=std::move(*value);node->left.reset();node->right.reset();node->arguments.clear();}
+        if(binding_constant_&&(scalar(node->type)||enumeration(node->type)) && !short_string(node->type))if(auto value=constant_array_value(*node)){node->kind=hir::ExprKind::literal;node->value=std::move(*value);node->left.reset();node->right.reset();node->arguments.clear();}
         return node;
     }
     bool array_constant_initializer(const hir::Expr& node,bool root=true)const{
@@ -7282,10 +7324,11 @@ private:
                 break;
             }
             if (source.arguments.size()!=count) throw Error("E_TYPE",result.location,"Wrong string mutation argument count");
-            if (target->type != Type::string) throw Error("E_TYPE",target->location,"String var argument must have type string");
+            if (!string_type(target->type)) throw Error("E_TYPE",target->location,"String var argument must have type string");
             result.kind = hir::StmtKind::string_mutation;
-            const auto function = resize ? stdlib::Function::resize_string
-                : insert ? stdlib::Function::insert_string : stdlib::Function::delete_string;
+            const bool bounded=short_string(target->type);
+            const auto function = resize ? (bounded ? stdlib::Function::resize_short_string : stdlib::Function::resize_string)
+                : insert ? (bounded ? stdlib::Function::insert_short_string : stdlib::Function::insert_string) : stdlib::Function::delete_string;
             const auto catalog = stdlib::signatures();
             std::size_t intrinsic = 0;
             while (intrinsic < catalog.size() && catalog[intrinsic].function != function) ++intrinsic;
@@ -7352,6 +7395,7 @@ private:
             break;
         case SyntaxStmtKind::foreach_loop: {
             result.kind=hir::StmtKind::foreach_loop; result.expression=expression(*source.expression);
+            if (short_string(result.expression->type)) result.expression=convert(std::move(result.expression),Type::string);
             if(fixed(result.expression->type))result.expression=fixed_view(std::move(result.expression));
             if(const auto protocol=enumerable_contract(result.expression->type,result.location);protocol!=Type::invalid && protocol!=result.expression->type)result.expression=convert(std::move(result.expression),protocol);
             if(compound(result.expression->type)){const auto shape=info(result.expression->type,result.location);if(shape.kind==CompoundKind::hash_set || shape.kind==CompoundKind::new_set || ordinal_range_type(shape) || shape.kind==CompoundKind::dictionary || shape.kind==CompoundKind::dictionary_keys || shape.kind==CompoundKind::dictionary_values){const auto target=shape.kind==CompoundKind::dictionary || shape.kind==CompoundKind::dictionary_keys || shape.kind==CompoundKind::dictionary_values ? sequence_type(CompoundKind::sequence,shape.element) : shape.kind==CompoundKind::new_set ? info(shape.key,result.location).key : shape.key;result.expression=convert(std::move(result.expression),target);}}

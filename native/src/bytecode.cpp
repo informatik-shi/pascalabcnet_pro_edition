@@ -743,15 +743,15 @@ private:
         }
         case hir::StmtKind::assign:
             if(node.deferred_write&&node.target&&node.target->kind==hir::ExprKind::local&&node.target->left){expression(*node.expression);expression(*node.target->left);local(Op::store,node.target->local,node.location);break;}
-            if(node.deferred_write && node.target && node.target->kind==hir::ExprKind::index && node.target->left->type!=Type::string) {
+            if(node.deferred_write && node.target && node.target->kind==hir::ExprKind::index && !string_type(node.target->left->type)) {
                 expression(*node.target->left);expression(*node.target->right);
                 for(const auto& argument:node.target->arguments)expression(*argument);
                 expression(*node.expression);emit(Op::store_index,node.target->left->type,0,node.location);
             } else if(node.deferred_write && node.target && node.target->kind==hir::ExprKind::field && type_info(program_,node.target->left->type).kind==CompoundKind::object_class) {
                 expression(*node.target->left);expression(*node.expression);emit(Op::store_field,node.target->left->type,node.target->local,node.location);
-            } else if (node.target && node.target->kind==hir::ExprKind::index && node.target->left->type==Type::string) {
+            } else if (node.target && node.target->kind==hir::ExprKind::index && string_type(node.target->left->type)) {
                 reference(*node.target->left); expression(*node.target->right); expression(*node.expression);
-                emit(Op::set_character,Type::string,0,node.location);
+                emit(Op::set_character,node.target->left->type,0,node.location);
             }
             else if (node.target) { reference(*node.target); expression(*node.expression); emit(Op::store_ref,node.target->type,0,node.location); }
             else {
@@ -767,7 +767,7 @@ private:
             for (std::size_t i=0;i<node.arguments.size();++i) {
                 if (i==ref) reference(*node.arguments[i]); else expression(*node.arguments[i]);
             }
-            emit(Op::mutate_string,Type::string,node.local,node.location); break;
+            emit(Op::mutate_string,node.arguments[ref]->type,node.local,node.location); break;
         }
         case hir::StmtKind::resize_array:
             reference(*node.target);
@@ -1286,7 +1286,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
                 invalid(instruction,"Invalid random array instruction");
             break;
         case Op::set_character:
-            if (type!=Type::string || instruction.operand) invalid(instruction,"Invalid string character assignment"); break;
+            if (!string_type(type) || instruction.operand) invalid(instruction,"Invalid string character assignment"); break;
         case Op::iteration_version: case Op::iteration_check:
             if ((type!=Type::string && (!compound(type) || (!indexed_sequence(type_info(program,type).kind) && type_info(program,type).kind!=CompoundKind::sequence))) || instruction.operand)
                 invalid(instruction,"Invalid foreach sequence instruction");
@@ -1326,10 +1326,13 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         case Op::increment:
             if ((!ordinal(type) && !enumeration(program,type)) || instruction.operand>1) invalid(instruction,"Invalid increment"); break;
         case Op::mutate_string:
-            if (type!=Type::string || instruction.operand>=stdlib::signatures().size()) invalid(instruction,"Invalid string mutation");
+            if (!string_type(type) || instruction.operand>=stdlib::signatures().size()) invalid(instruction,"Invalid string mutation");
             {
                 const auto function=stdlib::signatures()[instruction.operand].function;
                 if (!stdlib::string_mutation_reference(function))invalid(instruction,"Invalid mutation intrinsic");
+                if (short_string(type) && (function==stdlib::Function::resize_string || function==stdlib::Function::insert_string
+                    || function==stdlib::Function::read_short_string || function==stdlib::Function::read_short_string_from_file))
+                    invalid(instruction,"Invalid short string mutation");
             }
             break;
         case Op::encoding_call:
@@ -1439,8 +1442,8 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
                 if (instruction.op==Op::ref_index || instruction.operand) invalid(instruction,"Invalid or writable lazy sequence access");
                 break;
             }
-            if (type==Type::string) {
-                if (instruction.op==Op::ref_index || instruction.operand>(instruction.op==Op::get_index ? 1U : 0U)) invalid(instruction,"Invalid string sequence instruction");
+            if (string_type(type)) {
+                if (instruction.op==Op::ref_index || instruction.operand>(type==Type::string && instruction.op==Op::get_index ? 1U : 0U)) invalid(instruction,"Invalid string sequence instruction");
                 break;
             }
             if (!compound(type) || !indexed_sequence(type_info(program,type).kind)) invalid(instruction,"Invalid sequence instruction");
@@ -1484,7 +1487,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if (instruction.operand >= code.size()) invalid(instruction, "Invalid branch target");
             break;
         case Op::convert:
-            if (!numeric(type) && type!=Type::string) invalid(instruction,"Invalid conversion target");
+            if (!numeric(type) && !string_type(type)) invalid(instruction,"Invalid conversion target");
             break;
         case Op::negate:
             if (!numeric(type) || small_integer(type) || type==Type::longword) invalid(instruction, "Invalid numeric type");
@@ -1776,15 +1779,16 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
                 if (!object_text_supported(program.types,pop())) invalid(instruction,"Unsupported Text output type");
             if (instruction.op==Op::file_output) require(Type::text_file);
             break;
-        case Op::set_character: require(Type::character); require(Type::integer); require(reference_type(Type::string)); break;
+        case Op::set_character: require(Type::character); require(Type::integer); require(reference_type(instruction.type)); break;
         case Op::increment:
             if (instruction.type!=Type::boolean) require(increment_step_type(instruction.type));
             require(reference_type(instruction.type)); break;
         case Op::mutate_string: {
             const auto& signature=stdlib::signatures()[instruction.operand];
             const auto ref=stdlib::string_mutation_reference(signature.function).value();
-            for (std::size_t i=signature.parameters.size();i>0;--i)
-                require(i-1==ref ? reference_type(Type::string) : signature.parameters[i-1]);
+            const bool implicit_capacity=short_string(instruction.type) && signature.function!=stdlib::Function::delete_string;
+            for (std::size_t i=signature.parameters.size()-implicit_capacity;i>0;--i)
+                require(i-1==ref ? reference_type(instruction.type) : signature.parameters[i-1]);
             break;
         }
         case Op::encoding_call: {
@@ -1904,9 +1908,9 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             require(reference_type(instruction.type)); break;
         case Op::get_index: case Op::ref_index:
             require(compound(instruction.type) && type_info(program,instruction.type).kind==CompoundKind::sequence ? Type::int64 : Type::integer);
-            if (instruction.type!=Type::string && type_info(program,instruction.type).rank==2 && !instruction.operand) require(Type::integer);
+            if (!string_type(instruction.type) && type_info(program,instruction.type).rank==2 && !instruction.operand) require(Type::integer);
             require(instruction.type);
-            if (instruction.type==Type::string) { stack.push_back(Type::character); break; }
+            if (string_type(instruction.type)) { stack.push_back(Type::character); break; }
             stack.push_back(instruction.op == Op::get_index ? type_info(program,instruction.type).element : reference_type(type_info(program,instruction.type).element)); break;
         case Op::get_field: case Op::ref_field:
             require(instruction.op == Op::get_field || type_info(program,instruction.type).kind==CompoundKind::object_class ? instruction.type : reference_type(instruction.type));

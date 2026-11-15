@@ -26,6 +26,7 @@ std::u16string byref_name(const Program& program,Type type,Work& work){
         work.step();const auto& info=type_info(program,type);suffix=(info.rank==2 ? u"[,]" : u"[]")+suffix;type=info.element;
         if(suffix.size()>limit)throw runtime_error(RuntimeError::string_limit,work.location);
     }
+    if (short_string(type)) type=Type::string;
     std::u16string name;
     switch(type){
     case Type::integer:name=u"Int32";break;case Type::int64:name=u"Int64";break;case Type::real:name=u"Double";break;
@@ -191,7 +192,7 @@ std::u16string reflected_type_name(const Program& program,const ReflectedType& t
         }
         if(task.type==Type::unit){text(u"Void");continue;}
         if(task.type==Type::type_descriptor){text(u"Type");continue;}
-        if(!compound(task.type)){text(from_utf8(type_name(task.type)));continue;}
+        if(!compound(task.type)){text(from_utf8(type_name(short_string(task.type) ? Type::string : task.type)));continue;}
         const auto& info=type_info(program,task.type);
         if(ordinal_range_type(info)){text(info.element==Type::character ? u"CharRange" : u"IntRange");continue;}
         if(real_interval_type(info)){text(u"RealRange");continue;}

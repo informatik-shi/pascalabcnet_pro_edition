@@ -37,13 +37,18 @@ public:
 // English remains available through what(); source and runtime errors carry Russian.
 std::string format_diagnostic(const Error& error, std::string_view filename);
 
-enum class Type { integer, int64, real, boolean, string, invalid, unit, nil, text_file, character, word, byte, shortint, smallint, longword, uint64, big_integer, type_descriptor, single, first_compound = 64 };
+enum class Type { integer, int64, real, boolean, string, invalid, unit, nil, text_file, character, word, byte, shortint, smallint, longword, uint64, big_integer, type_descriptor, single, first_compound = 64, short_string_base = 4096 };
+inline constexpr unsigned max_short_string_capacity=255;
+inline constexpr Type short_string_type(unsigned capacity) { return static_cast<Type>(static_cast<unsigned>(Type::short_string_base)+capacity); }
+inline constexpr bool short_string(Type t) { return t>Type::short_string_base && t<=short_string_type(max_short_string_capacity); }
+inline constexpr unsigned short_string_capacity(Type t) { return static_cast<unsigned>(t)-static_cast<unsigned>(Type::short_string_base); }
+inline bool string_type(Type t) { return t==Type::string || short_string(t); }
 inline bool small_integer(Type t) { return t==Type::word || t==Type::byte || t==Type::shortint || t==Type::smallint; }
 inline bool wide_unsigned(Type t) { return t==Type::longword || t==Type::uint64; }
 inline bool integer_type(Type t) { return t==Type::integer || t==Type::int64 || small_integer(t) || wide_unsigned(t); }
 inline bool ordinal(Type t) { return integer_type(t) || t==Type::character || t==Type::boolean; }
 inline Type increment_step_type(Type t) { return t==Type::boolean ? Type::unit : t==Type::int64 || t==Type::uint64 ? Type::int64 : Type::integer; }
-inline bool scalar(Type t) { return integer_type(t) || t==Type::big_integer || t==Type::real || t==Type::single || t==Type::boolean || t==Type::string || t==Type::character; }
+inline bool scalar(Type t) { return integer_type(t) || t==Type::big_integer || t==Type::real || t==Type::single || t==Type::boolean || string_type(t) || t==Type::character; }
 inline std::pair<std::int64_t,std::int64_t> small_integer_bounds(Type t) {
     switch (t) {
     case Type::byte: return {0,255};
@@ -53,7 +58,7 @@ inline std::pair<std::int64_t,std::int64_t> small_integer_bounds(Type t) {
     default: throw std::logic_error("Small integer type required");
     }
 }
-inline bool compound(Type t) { return static_cast<unsigned>(t) >= 64 && static_cast<unsigned>(t) < 0x40000000U; }
+inline bool compound(Type t) { return t>=Type::first_compound && t<Type::short_string_base; }
 inline Type reference_type(Type t) { return static_cast<Type>(static_cast<unsigned>(t) | 0x40000000U); }
 std::string_view type_name(Type type);
 std::optional<Type> find_type(std::string_view name);

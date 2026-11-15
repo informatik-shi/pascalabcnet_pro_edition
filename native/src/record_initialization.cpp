@@ -21,7 +21,12 @@ void initialize(Values& values,const std::shared_ptr<Cell>& cell,std::size_t ope
 Value initialized_default(Values& values,Type type,bool constructed,bool generic,std::size_t initializer){
  if(compound(type)&&type_info(values.program,type).kind==CompoundKind::fixed_array&&!generic)return fixed_array_construct(values,type);
  if(!generic&&compound(type)&&type_info(values.program,type).kind==CompoundKind::binary_file&&type_info(values.program,type).element!=Type::invalid)binary_element_probe(values,type_info(values.program,type).element);
- auto result=values.zero(type,constructed,generic);if(initializer)initialize(values,values.cell(type,result),initializer);return result;
+ auto result=values.zero(type,constructed,generic);
+ if(constructed && compound(type) && type_info(values.program,type).kind==CompoundKind::object_class)
+  for(const auto& field:std::get<std::shared_ptr<Aggregate>>(result)->items)
+   if(short_string(field->type))field->value=std::u16string{};
+ if(initializer)initialize(values,values.cell(type,result),initializer);
+ return result;
 }
 void initialize_record_array(Values& values,const std::shared_ptr<Aggregate>& array,std::size_t initializer,std::size_t first){
  if(compound(type_info(values.program,array->type).element)&&type_info(values.program,type_info(values.program,array->type).element).kind==CompoundKind::fixed_array){for(std::size_t n=first;n<array->items.size();++n)array->items[n]->value=fixed_array_construct(values,type_info(values.program,array->type).element);return;}

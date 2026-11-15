@@ -16,6 +16,7 @@ std::strong_ordering NewSetValue::operator<=>(const NewSetValue& other) const {
 }
 
 std::string_view type_name(Type type) {
+    if (short_string(type)) return "ShortString";
     switch (type) {
     case Type::integer: return "integer";
     case Type::int64: return "int64";
@@ -54,6 +55,8 @@ bool numeric(Type type) {
 }
 
 bool can_widen(Type from, Type to) {
+    if(short_string(to))return string_type(from) || from==Type::character || from==Type::nil;
+    if(short_string(from))return to==Type::string;
     return from == to || (from==Type::single && to==Type::real) || (integer_type(from) && to==Type::single)
         || (from == Type::character && to == Type::string)
         || ((integer_type(from) || from==Type::character) && to==Type::big_integer)

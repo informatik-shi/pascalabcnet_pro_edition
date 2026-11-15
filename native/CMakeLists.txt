@@ -808,6 +808,13 @@ if(BUILD_TESTING)
         -DABC_FIXTURE_NAME=compound-assignments-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")
     add_test(NAME original_params1 COMMAND $<TARGET_FILE:abc> run "${CMAKE_CURRENT_SOURCE_DIR}/../TestSuite/params1.pas")
     add_test(NAME original_constparam2 COMMAND $<TARGET_FILE:abc> run "${CMAKE_CURRENT_SOURCE_DIR}/../TestSuite/constparam2.pas")
+    foreach(short_string_fixture IN ITEMS shortstring2 shortstring3 constparam1)
+        add_test(NAME original_${short_string_fixture}
+            COMMAND $<TARGET_FILE:abc> run "${CMAKE_CURRENT_SOURCE_DIR}/../TestSuite/${short_string_fixture}.pas")
+    endforeach()
+    add_test(NAME typed_file_short_strings COMMAND ${CMAKE_COMMAND}
+        -DABC_RUNNER=$<TARGET_FILE:abc> "-DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
+        -DABC_FIXTURE_NAME=typed-file-short-strings -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")
     add_test(NAME original_params5 COMMAND $<TARGET_FILE:abc> run "${CMAKE_CURRENT_SOURCE_DIR}/../TestSuite/params5.pas")
     add_test(NAME original_const1 COMMAND $<TARGET_FILE:abc> run "${CMAKE_CURRENT_SOURCE_DIR}/../TestSuite/const1.pas")
     add_test(NAME original_const3 COMMAND $<TARGET_FILE:abc> run "${CMAKE_CURRENT_SOURCE_DIR}/../TestSuite/const3.pas")

@@ -61,9 +61,47 @@ void BinaryCodec::write_string(std::u16string_view text,SourceLocation location,
     const auto chunk=256U/static_cast<unsigned>(maximum);
     for(std::size_t p=0;p<text.size();){checkpoint(work,location,options);const auto count=std::min<std::size_t>(chunk,text.size()-p);auto next=encoder_;const auto bytes=next.encode(text.substr(p,count),p+count==text.size(),location);stream_.write(bytes,location);encoder_=std::move(next);p+=count;}
 }
+std::u16string BinaryCodec::read_short_string(std::size_t capacity,SourceLocation location,const ExecutionOptions& options){
+    if (!typed_) return read_string(location,options).substr(0,capacity);
+    std::array<char,max_short_string_capacity> bytes{};
+    stream_.read_exact(std::span<char>(bytes).first(1),location);
+    const auto length=static_cast<std::uint8_t>(bytes[0]);
+    std::size_t received=0;
+    std::uint64_t work=0;
+    while (received<length) {
+        checkpoint(work,location,options);
+        const auto count=stream_.read(std::span<char>(bytes).subspan(received,length-received),location);
+        if (!count) break;
+        received+=count;
+    }
+    auto text=decode(std::string_view(bytes.data(),received),length,location);
+    const auto padding=static_cast<std::int64_t>(capacity)-static_cast<std::int64_t>(text.size());
+    if (padding) {
+        const auto position=stream_.position(location);
+        if (padding>0 && position>INT64_MAX-padding) throw runtime_error(RuntimeError::binary_position,location);
+        stream_.seek(position+padding,location);
+    }
+    text.resize(std::min(text.size(),capacity));
+    return text;
+}
+void BinaryCodec::write_short_string(std::u16string_view text,std::size_t capacity,SourceLocation location,const ExecutionOptions& options){
+    text=text.substr(0,capacity);
+    if (!typed_) { write_string(text,location,options); return; }
+    std::uint64_t work=0;
+    checkpoint(work,location,options);
+    auto next=encoder_;
+    const auto bytes=next.encode(text,true,location);
+    const char prefix=static_cast<char>(text.size());
+    const std::array<char,max_short_string_capacity> padding{};
+    stream_.write(std::string_view(&prefix,1),location);
+    stream_.write(bytes,location);
+    stream_.write(std::string_view(padding.data(),capacity-text.size()),location);
+    encoder_=std::move(next);
+}
 Value BinaryCodec::read(Type type,SourceLocation location,const ExecutionOptions& options){
     if(type==Type::character)return read_character(location,options);
     if(type==Type::string)return read_string(location,options);
+    if(short_string(type))return read_short_string(short_string_capacity(type),location,options);
     std::array<char,8> bytes{};const auto count=width(type);stream_.read_exact(std::span<char>(bytes).first(count),location);std::uint64_t bits=0;
     for(unsigned k=0;k<count;++k)bits|=static_cast<std::uint64_t>(static_cast<std::uint8_t>(bytes[k]))<<(k*8);
     switch(type){case Type::boolean:return bits!=0;case Type::byte:return static_cast<std::uint8_t>(bits);case Type::shortint:return std::bit_cast<std::int8_t>(static_cast<std::uint8_t>(bits));
@@ -75,7 +113,13 @@ Value BinaryCodec::read(Type type,SourceLocation location,const ExecutionOptions
 }
 void BinaryCodec::write(Type type,const Value& value,SourceLocation location,const ExecutionOptions& options){
     if(type==Type::character){write_character(std::get<char16_t>(value),location);return;}
-    if(type==Type::string){if(std::holds_alternative<NilString>(value))throw runtime_error(RuntimeError::nil_reference,location);write_string(std::get<std::u16string>(value),location,options);return;}
+    if (string_type(type)) {
+        if (std::holds_alternative<NilString>(value)) throw runtime_error(RuntimeError::nil_reference,location);
+        const auto& text=std::get<std::u16string>(value);
+        if (short_string(type)) write_short_string(text,short_string_capacity(type),location,options);
+        else write_string(text,location,options);
+        return;
+    }
     std::uint64_t bits=0;const auto count=width(type);
     switch(type){case Type::boolean:bits=std::get<bool>(value)?1U:0U;break;
     case Type::byte:bits=std::get<std::uint8_t>(value);break;case Type::shortint:bits=static_cast<std::uint8_t>(std::get<std::int8_t>(value));break;
