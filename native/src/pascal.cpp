@@ -4222,6 +4222,12 @@ private:
                 const auto owner=compound(left) && info(left,result->location).kind==CompoundKind::new_set ? left : right;NewSetMethod method;
                 if(op=="+")method=NewSetMethod::unite;else if(op=="-")method=NewSetMethod::subtract;else if(op=="*")method=NewSetMethod::intersect;
                 else if(op=="=")method=NewSetMethod::equal;else if(op=="<>")method=NewSetMethod::not_equal;else if(op=="<")method=NewSetMethod::less;else if(op=="<=")method=NewSetMethod::less_equal;else if(op==">")method=NewSetMethod::greater;else if(op==">=")method=NewSetMethod::greater_equal;else throw Error("E_TYPE",result->location,"Unsupported NewSet operator");
+                if(method>=NewSetMethod::equal && info(owner,result->location).element==Type::integer && left!=right){
+                    const bool array_left=left!=owner;
+                    const auto other=array_left ? left : right;
+                    if(integer_set_source(other,result->location) && info(other,result->location).kind==CompoundKind::array)
+                        return bind_integer_set_relation(*result,owner,method,array_left,true);
+                }
                 auto operator_type=owner;
                 const auto numeric_target=[&](Type type){
                     return compound(type) && info(type,result->location).kind==CompoundKind::new_set
@@ -4233,6 +4239,8 @@ private:
                     if((element==Type::byte || element==Type::int64)
                         && (method==NewSetMethod::unite || method==NewSetMethod::subtract || method==NewSetMethod::intersect))
                         return bind_mixed_set_arithmetic(*result,method,integer_left,element);
+                    if((element==Type::byte || element==Type::int64) && method>=NewSetMethod::less)
+                        return bind_integer_set_relation(*result,integer_left ? right : left,method,integer_left,false);
                     if(method!=NewSetMethod::equal && method!=NewSetMethod::not_equal)
                         throw Error("E_TYPE",result->location,"Mixed integral set operation is not supported","Эта операция над множествами разных целых типов пока не поддерживается");
                     operator_type=integer_left ? right : left;
@@ -4503,6 +4511,36 @@ private:
         for(std::size_t i=0;i<arguments.size();++i)result->arguments.push_back(i==0 && ref ? std::move(arguments[i]) : convert_new_set_element(std::move(arguments[i]),parameters[i]));return result;
     }
     std::unique_ptr<hir::Expr> new_set_copy(std::unique_ptr<hir::Expr> value,SourceLocation location){const auto owner=value->type;std::vector<std::unique_ptr<hir::Expr>> arguments;arguments.push_back(std::move(value));return new_set_expression(owner,NewSetMethod::copy_value,std::move(arguments),location);}
+    static std::unique_ptr<hir::Expr> evaluate_before(std::unique_ptr<hir::Expr> earlier,std::unique_ptr<hir::Expr> result){
+        auto evaluated=std::make_unique<hir::Expr>();
+        evaluated->kind=hir::ExprKind::evaluate_then;
+        evaluated->type=result->type;
+        evaluated->location=result->location;
+        evaluated->left=std::move(earlier);
+        evaluated->right=std::move(result);
+        return evaluated;
+    }
+    ABC_PASCAL_NOINLINE std::unique_ptr<hir::Expr> bind_integer_set_relation(hir::Expr& expression,Type owner,NewSetMethod relation,bool integer_left,bool raw_array){
+        const auto location=expression.location;
+        const auto first=raw_array ? NewSetMethod::equal : NewSetMethod::less;
+        const auto base=raw_array ? NewSetMethod::integer_array_equal_left : NewSetMethod::integer_less_left;
+        const auto method=static_cast<NewSetMethod>(static_cast<unsigned>(base)
+            +2*(static_cast<unsigned>(relation)-static_cast<unsigned>(first))+!integer_left);
+        auto& integer=integer_left ? expression.left : expression.right;
+        std::vector<std::unique_ptr<hir::Expr>> operands;
+        if(raw_array || info(integer->type,location).kind==CompoundKind::new_set){
+            operands.push_back(std::move(expression.left));
+            operands.push_back(std::move(expression.right));
+            return new_set_expression(owner,method,std::move(operands),location);
+        }
+        // The extension converts the array after evaluating both call arguments.
+        auto left=cache_argument(std::move(expression.left));
+        auto right=cache_argument(std::move(expression.right));
+        (void)new_set_type(Type::integer);
+        operands.push_back(cached_read(left->local,location));
+        operands.push_back(cached_read(right->local,location));
+        return evaluate_before(std::move(left),evaluate_before(std::move(right),new_set_expression(owner,method,std::move(operands),location)));
+    }
     ABC_PASCAL_NOINLINE std::unique_ptr<hir::Expr> bind_mixed_set_arithmetic(hir::Expr& expression,NewSetMethod method,bool integer_left,Type element){
         const auto location=expression.location;
         const auto owner=new_set_type(element==Type::byte ? Type::integer : Type::int64);
@@ -4522,17 +4560,7 @@ private:
         std::vector<std::unique_ptr<hir::Expr>> operands;
         operands.push_back(integer_first ? std::move(integer) : std::move(other));
         operands.push_back(integer_first ? std::move(other) : std::move(integer));
-        auto result=new_set_expression(owner,method,std::move(operands),location);
-        for(auto* cached:{&right,&left}){
-            auto evaluated=std::make_unique<hir::Expr>();
-            evaluated->kind=hir::ExprKind::evaluate_then;
-            evaluated->type=owner;
-            evaluated->location=location;
-            evaluated->left=std::move(*cached);
-            evaluated->right=std::move(result);
-            result=std::move(evaluated);
-        }
-        return result;
+        return evaluate_before(std::move(left),evaluate_before(std::move(right),new_set_expression(owner,method,std::move(operands),location)));
     }
     bool bind_new_set_factory(hir::Expr& result,std::string_view name,std::string_view unit={}){
         if(name=="emptyset" && (unit.empty() || unit=="pabcsystem")){if(!result.arguments.empty())throw Error("E_TYPE",result.location,"EmptySet takes no arguments");result=std::move(*empty_expression(empty_type(),EmptyMethod::singleton,{},result.location));return true;}

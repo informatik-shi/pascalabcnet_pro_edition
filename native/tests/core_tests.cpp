@@ -5948,6 +5948,49 @@ void mutable_strings() {
     error([&] { abc::verify(program); }, "E_BYTECODE");
 }
 
+void integral_set_relations() {
+    result(R"(type Bytes=set of byte; Ints=set of integer; Wide=set of int64;
+function AsBytes:Bytes; begin Write('B');Result:=[1,255];end;
+function AsInts:Ints; begin Write('I');Result:=[1];end;
+begin
+  var b:Bytes:=[1,255];
+  var i:Ints:=[1];
+  assert(AsInts < AsBytes);
+  assert(AsBytes > AsInts);
+  assert((i<=b) and (b>=i) and not(b<=i));
+  assert(not([257]<b) and not([256]<=b) and not(b>= [-1]));
+  assert(b < [1,255,256]);
+  var a:=Arr(1,1);
+  var twoInts: Ints := [1,2];
+  var threeInts: Ints := [1,2,3];
+  assert((i<a) and (a>i) and not(a=i));
+  assert(a=twoInts);
+  assert(twoInts=a);
+  assert((a <= twoInts) and not(twoInts<=a));
+  assert(a < threeInts);
+  b:=[1];
+  assert((b=a) and (b<=a) and not(b<a) and not(a>b));
+  var w:Wide:=SetOf(int64(300),int64(500));
+  assert(([300]<w) and (w>[300]) and not([300]<=w) and not(w>=[300]));
+  assert(([255,255]<=SetOf(int64(255))) and (SetOf(int64(255)) >= [255]));
+  w:=SetOf(int64(300));
+  assert(not(w<[300,500]) and not([300,500]>w) and (w<=[300,500]) and ([300,500]>=w));
+  assert(w<=Arr(300,500));
+  w:=SetOf(int64(4294967297));
+  assert((w<=[1]) and not(w<[1,2]));
+end.)","IBBI");
+    runtime_error("begin var a:array of integer; var b:set of byte; assert(a<b); end.","E_NIL");
+    runtime_error("begin var a:array of integer; assert(a<[1]); end.","E_NIL");
+    for (const auto method:{abc::NewSetMethod::integer_less_left,abc::NewSetMethod::integer_array_less_left}) {
+        auto program=abc::compile(method==abc::NewSetMethod::integer_less_left
+            ? "begin var b:set of byte;assert([1]<b);end."
+            : "begin var a:=Arr(1);assert(a<[1]);end.");
+        for (auto& op:program.code)
+            if(op.op==abc::Op::new_set_call && op.operand==static_cast<std::size_t>(method))op.operand|=128U;
+        error([&]{abc::verify(program);},"E_BYTECODE");
+    }
+}
+
 void subrange_types() {
     result(R"(const LeftEdge = -2;
 type Index = LeftEdge..(2+1);
@@ -7663,6 +7706,7 @@ int main() {
     nullable_strings();
     language_foundations();
     case_statements();
+    integral_set_relations();
     subrange_types();
     aggregate_semantics();
     ini_files(); file_library();

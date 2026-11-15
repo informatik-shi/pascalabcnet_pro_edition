@@ -12,7 +12,12 @@ enum class NewSetMethod {
     empty_equal_left,empty_equal_right,empty_not_equal_left,empty_not_equal_right,empty_less_left,empty_less_right,
     empty_less_equal_left,empty_less_equal_right,empty_greater_left,empty_greater_right,empty_greater_equal_left,empty_greater_equal_right,
     empty_array_unite_left,empty_array_unite_right,empty_array_subtract_left,empty_array_subtract_right,empty_array_intersect_left,empty_array_intersect_right,
-    from_integer_set,from_integer_array,integer_equal_left,integer_equal_right,integer_not_equal_left,integer_not_equal_right,from_byte_set
+    from_integer_set,from_integer_array,integer_equal_left,integer_equal_right,integer_not_equal_left,integer_not_equal_right,from_byte_set,
+    integer_less_left,integer_less_right,integer_less_equal_left,integer_less_equal_right,
+    integer_greater_left,integer_greater_right,integer_greater_equal_left,integer_greater_equal_right,
+    integer_array_equal_left,integer_array_equal_right,integer_array_not_equal_left,integer_array_not_equal_right,
+    integer_array_less_left,integer_array_less_right,integer_array_less_equal_left,integer_array_less_equal_right,
+    integer_array_greater_left,integer_array_greater_right,integer_array_greater_equal_left,integer_array_greater_equal_right
 };
 enum class EmptyMethod { singleton,convert,binary,to_string,to_set };
 Type empty_collection_type(const std::vector<TypeInfo>& types);

@@ -5,6 +5,7 @@
 #include "formatting.hpp"
 #include "big_integer_runtime.hpp"
 #include "integer_values.hpp"
+#include <bit>
 
 namespace abc {
 namespace {
@@ -13,6 +14,12 @@ Type set_input_type(const std::vector<TypeInfo>& types,CompoundKind kind,Type el
 Type array_type(const std::vector<TypeInfo>& types,Type element){return set_input_type(types,CompoundKind::array,element);}
 bool empty_operation(NewSetMethod m){return m>=NewSetMethod::empty_unite_left && m<=NewSetMethod::empty_array_intersect_right;}
 bool integer_equality(NewSetMethod m){return m>=NewSetMethod::integer_equal_left && m<=NewSetMethod::integer_not_equal_right;}
+bool integer_ordering(NewSetMethod m){return m>=NewSetMethod::integer_less_left && m<=NewSetMethod::integer_greater_equal_right;}
+bool integer_array_relation(NewSetMethod m){return m>=NewSetMethod::integer_array_equal_left && m<=NewSetMethod::integer_array_greater_equal_right;}
+unsigned relation_offset(NewSetMethod m){
+    const auto first=integer_array_relation(m) ? NewSetMethod::integer_array_equal_left : NewSetMethod::integer_less_left;
+    return static_cast<unsigned>(m)-static_cast<unsigned>(first);
+}
 bool empty_left(NewSetMethod m){return (static_cast<unsigned>(m)-static_cast<unsigned>(NewSetMethod::empty_unite_left))%2==0;}
 bool range_element(const std::vector<TypeInfo>& types,Type element){return element==Type::integer || element==Type::character || element==Type::boolean || (compound(element) && shape(types,element).kind==CompoundKind::enumeration);}
 bool instance(NewSetMethod m){return m>=NewSetMethod::clone && m<=NewSetMethod::to_hash;}
@@ -22,6 +29,52 @@ Value set_integer_value(std::int32_t number,Type target,SourceLocation location)
     if(wide_unsigned(target))return checked_unsigned_integer(target,number,location);
     if(target==Type::big_integer)return big_cast(number,target,location);
     return static_cast<std::int64_t>(number);
+}
+bool compare_integral_sets(Values& values,Type owner,NewSetMethod method,std::span<const Value> arguments,const ExecutionOptions& options){
+    const bool with_array=integer_array_relation(method);
+    const auto offset=relation_offset(method);
+    const auto relation=static_cast<NewSetMethod>(static_cast<unsigned>(with_array ? NewSetMethod::equal : NewSetMethod::less)+offset/2);
+    const std::size_t integer_index=offset%2;
+    const bool equality=relation==NewSetMethod::equal || relation==NewSetMethod::not_equal;
+    const bool strict=relation==NewSetMethod::less || relation==NewSetMethod::greater;
+    const bool negate=relation==NewSetMethod::not_equal;
+    const std::size_t subset_index=equality ? integer_index : (relation==NewSetMethod::greater || relation==NewSetMethod::greater_equal ? 1U : 0U);
+    const auto operand=[&](std::size_t index){
+        auto object=with_array && index==integer_index ? std::get<std::shared_ptr<Aggregate>>(arguments[index])
+            : new_set_hash(values,std::get<NewSetValue>(arguments[index]));
+        if(!object || object->nil)throw runtime_error(RuntimeError::nil_reference,values.location);
+        return object;
+    };
+    const auto subset=operand(subset_index),superset=operand(1U-subset_index);
+    const bool subset_is_integer=subset_index==integer_index;
+    const auto element=type_info(values.program,owner).element;
+    const bool bounds=element==Type::byte ? subset_is_integer : element==Type::int64 && subset_is_integer!=strict;
+    const bool superset_is_array=with_array && !subset_is_integer;
+    const auto subset_count=with_array && subset_is_integer ? subset->items.size() : subset->count;
+    const auto superset_count=superset_is_array ? superset->items.size() : superset->count;
+    if(equality ? subset_count!=superset_count : strict ? subset_count>=superset_count : subset_count>superset_count)return negate;
+    std::uint64_t work=0;
+    const auto step=[&]{
+        if(++work>options.instruction_limit)throw runtime_error(RuntimeError::instruction_limit,values.location);
+        if((work==1 || !(work&255U)) && options.cancelled && options.cancelled())throw runtime_error(RuntimeError::cancelled,values.location);
+    };
+    for(const auto& cell:subset->items){
+        step();
+        if(!cell)continue;
+        const auto number=integral_number(cell->value,values.location);
+        if(bounds && (number<0 || number>255))return negate;
+        if(superset_is_array){
+            if(std::none_of(superset->items.begin(),superset->items.end(),[&](const auto& item){
+                step();return std::get<std::int32_t>(item->value)==number;
+            }))return negate;
+        }else{
+            Value key=std::bit_cast<std::int32_t>(static_cast<std::uint32_t>(number));
+            if(subset_is_integer && element!=Type::integer)key=set_integer_value(std::get<std::int32_t>(key),element,values.location);
+            const std::array<Value,2> args{superset,std::move(key)};
+            if(!std::get<bool>(hash_set_invoke(values,superset->type,Type::invalid,HashSetMethod::contains,args,options)))return negate;
+        }
+    }
+    return !negate;
 }
 }
 bool integer_set_conversion_target(Type element){return (integer_type(element) && element!=Type::integer) || element==Type::big_integer;}
@@ -46,8 +99,11 @@ Value empty_invoke(Values& values,Type target,EmptyMethod method,std::span<const
     return values.zero(target,true);
 }
 bool new_set_signature(const Program& p,Type owner,NewSetMethod m,bool reference){
-    if(m>NewSetMethod::from_byte_set || !compound(owner) || static_cast<unsigned>(owner)-64U>=p.types.size() || type_info(p,owner).kind!=CompoundKind::new_set)return false;
+    if(m>NewSetMethod::integer_array_greater_equal_right || !compound(owner) || static_cast<unsigned>(owner)-64U>=p.types.size() || type_info(p,owner).kind!=CompoundKind::new_set)return false;
     const auto element=type_info(p,owner).element;
+    if(integer_ordering(m))return !reference && (element==Type::byte || element==Type::int64)
+        && set_input_type(p.types,CompoundKind::new_set,Type::integer)!=Type::invalid;
+    if(integer_array_relation(m))return !reference && element==Type::integer && array_type(p.types,Type::integer)!=Type::invalid;
     if(m==NewSetMethod::from_byte_set)return !reference && element==Type::integer
         && set_input_type(p.types,CompoundKind::new_set,Type::byte)!=Type::invalid;
     if(m==NewSetMethod::from_integer_set || m==NewSetMethod::from_integer_array || integer_equality(m)){
@@ -62,6 +118,11 @@ bool new_set_signature(const Program& p,Type owner,NewSetMethod m,bool reference
 }
 std::vector<Type> new_set_parameters(const std::vector<TypeInfo>& types,Type owner,NewSetMethod m,bool reference){
     const auto& type=shape(types,owner);const auto hash=type.key;const auto sequence=shape(types,hash).key;
+    if(integer_ordering(m) || integer_array_relation(m)){
+        const auto kind=integer_array_relation(m) ? CompoundKind::array : CompoundKind::new_set;
+        const auto source=set_input_type(types,kind,Type::integer);
+        return relation_offset(m)%2==0 ? std::vector<Type>{source,owner} : std::vector<Type>{owner,source};
+    }
     if(m==NewSetMethod::from_byte_set)return {set_input_type(types,CompoundKind::new_set,Type::byte)};
     if(m==NewSetMethod::from_integer_array)return {array_type(types,Type::integer)};
     if(m==NewSetMethod::from_integer_set || integer_equality(m)){
@@ -85,7 +146,7 @@ std::vector<Type> new_set_parameters(const std::vector<TypeInfo>& types,Type own
     return result;
 }
 Type new_set_result(const std::vector<TypeInfo>& types,Type owner,NewSetMethod m){
-    if(integer_equality(m))return Type::boolean;
+    if(integer_equality(m) || integer_ordering(m) || integer_array_relation(m))return Type::boolean;
     if(m==NewSetMethod::include || m==NewSetMethod::exclude)return Type::unit;
     if(m==NewSetMethod::count)return Type::integer;
     if(m==NewSetMethod::add || m==NewSetMethod::remove || m==NewSetMethod::contains || (m>=NewSetMethod::equal && m<=NewSetMethod::membership) || (m>=NewSetMethod::empty_equal_left && m<=NewSetMethod::empty_greater_equal_right))return Type::boolean;
@@ -108,6 +169,7 @@ std::shared_ptr<Aggregate> new_set_sequence(Values& values,Type sequence,NewSetV
 Value new_set_invoke(Values& values,Type owner,NewSetMethod m,bool reference,std::span<const Value> arguments,const ExecutionOptions& options){
     if(!new_set_signature(values.program,owner,m,reference) || arguments.size()!=new_set_parameters(values.program.types,owner,m,reference).size())throw runtime_error(RuntimeError::invalid_bytecode,values.location);
     try{
+        if(integer_ordering(m) || integer_array_relation(m))return compare_integral_sets(values,owner,m,arguments,options);
         const auto hash=type_info(values.program,owner).key,sequence=type_info(values.program,hash).key;
         const auto call=[&](HashSetMethod method,std::span<const Value> args){return hash_set_invoke(values,hash,hash_set_sequence_method(method) ? sequence : Type::invalid,method,args,options);};
         const auto wrap=[&](Value value)->Value{return NewSetValue{owner,values.cell(hash,std::move(value))};};
