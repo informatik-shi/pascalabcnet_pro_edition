@@ -65,7 +65,7 @@ void files(){
   if(op==10){abc::TextFile file;file.filename=path;file.encoding=abc::TextEncoding{static_cast<abc::TextEncodingKind>(cp),false,false};file.encoder.emplace(*file.encoding);file.writer=std::make_shared<abc::FileWriter>(path,false,abc::SourceLocation{});const auto glyph=cp==50225?u'한':cp==52936?u'中':u'日';abc::text_write(file,std::u16string(1025,glyph),{});
    try{abc::text_write(file,std::u16string(1'048'500,u'A'),{0,29,2});check(false,"Oversize ISO preflight accepted");}catch(const abc::Error& e){check(e.code=="E_LIMIT"&&!e.russian.empty()&&e.location.line==29,"ISO rejected preview retains modes/designator");}file.close({});
   }else abc::execute(program,input,output);
-  const auto expected=unhex(std::string_view(line).substr(c+1),!write);if(write){std::ifstream file(path,std::ios::binary);std::ostringstream raw;raw<<file.rdbuf();check(output.str().empty()&&raw.str()==expected,"ISO buffered/Flush/append/Rewrite write row "+std::to_string(rows));}
+  const auto& reference=op==2 ? oldLine : line; const auto expected=unhex(std::string_view(reference).substr(reference.rfind('\t')+1),!write);if(write){std::ifstream file(path,std::ios::binary);std::ostringstream raw;raw<<file.rdbuf();check(output.str().empty()&&raw.str()==expected,"ISO buffered/Flush/append/Rewrite write row "+std::to_string(rows));}
   else{auto actual=output.str();if(op==2)for(std::size_t n=0;(n=actual.find("\r\n",n))!=actual.npos;)actual.erase(n,1);check(actual==expected,"ISO complete/line/BOM/escape EOF read row "+std::to_string(rows));}++rows;
  }check(rows==9725,"All ISO file recipes checked");check(differences==4062,"Explicit legacy ISO StreamReader EOF differences");
 }

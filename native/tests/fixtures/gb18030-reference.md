@@ -32,11 +32,10 @@ against both runtimes; no newer GB18030 revision is claimed. See the official
 Each runtime also produces 786 StreamReader/StreamWriter file recipes: every
 single byte, short incomplete prefixes, BOM overrides, four-byte characters
 across each reader boundary, pending EOF prefixes, surrogate writer buffers,
-split writes and explicit Flush between surrogate halves. Native follows the
-modern flush behavior selected by earlier file work. Both corpora remain in
-the repository; the 490 differing Framework EOF rows are compatibility gaps,
-not claimed legacy passes. ReadFileToEnd uses the source ReadLine/AppendLine
-recipe, with platform newlines normalized to LF in both reference and tests.
+split writes and explicit Flush between surrogate halves. Both runtime
+references are retained. ReadFileToEnd follows the Framework at EOF and uses
+the source ReadLine/AppendLine recipe, with platform newlines normalized to LF.
+The 245 remaining Framework differences concern ReadAllText.
 
 The cached Pascal Encoding factory supports 54936 and the independently verified
 gb18030 alias, distinct GB18030Encoding metadata and full supplementary Unicode

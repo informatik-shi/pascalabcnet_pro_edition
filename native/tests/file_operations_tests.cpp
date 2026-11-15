@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <map>
 #include <sstream>
 #ifdef _WIN32
 #ifndef NOMINMAX
@@ -34,6 +35,18 @@ std::string read_bytes(const std::filesystem::path& path){std::ifstream input(pa
 void reference(){
  const auto fixtures=std::filesystem::path(abc::from_utf8(__FILE__)).parent_path()/"fixtures";
  std::ifstream input(fixtures/"file-operations-reference.tsv");check(bool(input),"Independent stream recipe fixture exists");
+ std::ifstream source(fixtures/"file-operations-framework-read-delta.tsv");
+ check(bool(source),"Original PascalABC.NET stream results exist");
+ std::map<int,std::string> original_reads;
+ std::string change;
+ while(std::getline(source,change)){
+  if(!change.empty()&&change.back()=='\r')change.pop_back();
+  if(change.empty()||change.front()=='#')continue;
+  const auto fields=split(change);
+  if(fields.size()!=2 || !original_reads.emplace(std::stoi(fields[0]),fields[1]).second)
+   throw std::runtime_error("Invalid original read result");
+ }
+ check(original_reads.size()==813,"Original read changes are all present");
  Temporary temporary;const auto file=temporary.directory/"stream.bin";
  abc::FileContext files;abc::ExecutionOptions options;files.execution_options=&options;abc::TextEncoding encoding;
  files.default_encoding=[&](abc::SourceLocation){return &encoding;};
@@ -46,7 +59,10 @@ void reference(){
    if(f[0]=="R"){
     const auto data=bytes(f[2]);{std::ofstream output(file,std::ios::binary|std::ios::trunc);output.write(data.data(),static_cast<std::streamsize>(data.size()));if(!output)throw std::runtime_error("Cannot prepare recipe input");}
     const auto actual=canonical(abc::file_operations_read(files,name,{}));
-    check(actual==text(f[3]),"Read row "+std::to_string(rows)+" code "+f[1]+" bytes "+f[2].substr(0,42)+" expected "+f[3].substr(0,60)+" got "+hex(actual).substr(0,60));
+    const auto original=original_reads.find(rows);
+    const auto& expected=original==original_reads.end() ? f[3] : original->second;
+    check(actual==text(expected),"Read row "+std::to_string(rows)+" code "+f[1]+" bytes "+f[2].substr(0,42)+" expected "+expected.substr(0,60)+" got "+hex(actual).substr(0,60));
+    if(original!=original_reads.end())original_reads.erase(original);
    }else if(f[0]=="D"){
     const auto actual=abc::decode_text_bytes(bytes(f[2]),encoding,false,{});
     check(actual==text(f[3]),"Decode row "+std::to_string(rows)+" code "+f[1]+" bytes "+f[2].substr(0,42)+" expected "+f[3].substr(0,60)+" got "+hex(actual).substr(0,60));
@@ -59,6 +75,7 @@ void reference(){
   ++rows;
  }
  check(rows==4459,"All independent complete stream recipes and direct decoder cases checked");
+ check(original_reads.empty(),"All original ReadFileToEnd results were applied");
 }
 void sharing(){
 #ifdef _WIN32
@@ -95,7 +112,7 @@ void recovery(){
  const auto path=temporary.directory/"repair.bin";const abc::Value name=path.u16string(),missing=(temporary.directory/"missing"/"file.txt").u16string();
  for(int n=0;n<100;++n){error([&]{abc::file_operations_read(files,missing,{});},"E_IO");error([&]{abc::file_operations_write(files,missing,std::u16string{u"x"},{});},"E_IO");}
  {std::ofstream output(path,std::ios::binary);output.write("\xff\xfe",2);}
- check(canonical(abc::file_operations_read(files,name,{}))==u"\ufffd\n","Incomplete configured UTF-32LE preamble remains decoder data at EOF");
+ check(abc::file_operations_read(files,name,{}).empty(),"Incomplete UTF-32LE preamble produces no flushed fallback in ReadFileToEnd");
  abc::file_operations_write(files,name,std::u16string{u"ready"},{});check(canonical(abc::file_operations_read(files,name,{}))==u"ready\n","Failed opens do not leak the shared Text quota");
  options.instruction_limit=1;
  error([&]{abc::file_operations_read(files,name,{});},"E_LIMIT");options.instruction_limit=10'000'000;

@@ -18,7 +18,8 @@ class LineReader {
     void checkpoint(SourceLocation location,const ExecutionOptions& options);
     std::optional<char16_t> peek(SourceLocation location,const ExecutionOptions& options);
 public:
-    LineReader(std::filesystem::path path,TextEncoding encoding,SourceLocation location);
+    LineReader(std::filesystem::path path,TextEncoding encoding,SourceLocation location,
+        TextDecoding decoding=TextDecoding::modern);
     ~LineReader();
     LineReader(const LineReader&)=delete;
     LineReader& operator=(const LineReader&)=delete;

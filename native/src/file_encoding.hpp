@@ -12,6 +12,7 @@ struct TextEncoding {
     bool preamble=false,strict=false;
     bool operator==(const TextEncoding&) const=default;
 };
+enum class TextDecoding { modern, framework };
 std::string_view text_encoding_preamble(TextEncoding encoding);
 std::u16string decode_text_bytes(std::string_view bytes,TextEncoding encoding,bool detect_preamble,SourceLocation location);
 std::string encode_text_bytes(std::u16string_view text,TextEncoding encoding,SourceLocation location);
@@ -27,6 +28,7 @@ public:
 };
 class TextDecoder {
     TextEncoding encoding_;
+    TextDecoding decoding_;
     bool detect_,finished_=false;
     std::string carry_;
     std::size_t received_=0,produced_=0;
@@ -34,7 +36,8 @@ class TextDecoder {
     IsoDecoderState iso_;
     Utf7DecoderState utf7_;
 public:
-    explicit TextDecoder(TextEncoding encoding,bool detect_preamble=true):encoding_(encoding),detect_(detect_preamble){}
+    explicit TextDecoder(TextEncoding encoding,bool detect_preamble=true,TextDecoding decoding=TextDecoding::modern)
+        :encoding_(encoding),decoding_(decoding),detect_(detect_preamble){}
     std::u16string decode(std::string_view bytes,bool final,SourceLocation location);
     void resume_after_final() noexcept{finished_=false;}
     // BinaryReader retains codec state across fields and seeks; each bounded

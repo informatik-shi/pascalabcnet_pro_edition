@@ -44,10 +44,9 @@ Each runtime produces 9,490 file recipes over all ten pages, including single
 bytes, special lookahead, mixed scripts, ATR/reset and reader block boundaries,
 BOM override, writer buffer boundaries, surrogate splits, Flush after Virama,
 changed-font flush, append and the encoding snapshot of an open writer, Rewrite after emitted font changes and recovery after a rejected
-native size preflight. Native
-follows the modern StreamReader flush policy selected by prior file work. Both
-corpora are retained; the 958 different legacy EOF rows are explicit remaining
-compatibility gaps. ReadFileToEnd normalizes host AppendLine newlines to LF.
+native size preflight. Both runtime references are retained. ReadFileToEnd
+follows the Framework at EOF and normalizes host AppendLine newlines to LF.
+The 479 remaining Framework differences concern ReadAllText.
 
 Integer/name factories use the ten validated aliases from the complete alias
 fixture and preserve ISCIIEncoding metadata and per-execution cache identity.

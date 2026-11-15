@@ -6,7 +6,7 @@
   "independent_source": "native/tests/reference/file-operations.cs",
   "independent_source_sha256_lf": "4d31628b9da369209934ad995956a9ace9ebeaa6dac53f7f3cfab0322b7bc831",
   "original_source": "bin/Lib/FilesOperations.pas",
-  "original_compiler_executed": false,
+  "original_compiler_executed": true,
   "fixtures": [
     {
       "path": "file-operations-reference.tsv",
@@ -27,5 +27,25 @@
       "format": "External FileAccess, FileShare, operation R/W, outcome, canonical result text hex, final file bytes hex. Failed opens must preserve the existing file; native tests close the external holder and verify successful reopening."
     }
   ],
-  "scope": "Independent stream and codec recipes for seven current encodings, not the complete Encoding API or complete library coverage. Windows sharing results are asserted only on Windows. The old Framework has different invalid UTF-8 grouping and decoder EOF flushing and is not the chosen file/codec baseline. Normal native builds and application execution need neither this generator nor any managed runtime."
+  "original_compiler": {
+    "path": "bin/pabcnetcclear.exe",
+    "file_version": "1.0.9780.24649",
+    "generator": "native/tests/reference/generate-file-operations-source.ps1",
+    "generator_sha256_lf": "659528bbdecc684187a52ce8057749d5a6a12e2f67597f93d569390eecca029e",
+    "source_fixture": {
+      "path": "files-operations-source-compat.pas",
+      "sha256_lf": "7d5cf19472340ea162a46e1e955e0e3b8f102e869ef5316b1c4953113676cc45",
+      "expected": "files-operations-source-compat.out",
+      "expected_sha256_lf": "35eeede707a7db2bf781fc8a7ace54027c5c84fcd577de600798e7701bf18bb4",
+      "output_rows": 3503,
+      "code_pages": 140
+    },
+    "read_results": {
+      "recipe_rows_executed": 2198,
+      "changed_rows": 813,
+      "delta_path": "file-operations-framework-read-delta.tsv",
+      "delta_sha256_lf": "19984cdcc26c6100caabc1b8d713dbfb387712d6d17652e6b9dd249a01ab7a71"
+    }
+  },
+  "scope": "The PascalABC.NET oracle is authoritative for ReadFileToEnd recipes, including legacy invalid UTF-8 grouping and unflushed EOF. The independent modern runtime recipes cover direct decoding and additional writes. The source fixture verifies both exports on all 140 code pages. Windows sharing is checked on Windows. The native build and application require no managed runtime."
 }

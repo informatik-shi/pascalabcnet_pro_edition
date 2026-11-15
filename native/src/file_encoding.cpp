@@ -34,7 +34,8 @@ void scalar(std::u16string& result,std::uint32_t value) {
         result.push_back(static_cast<char16_t>(0xdc00+((value-0x10000)&0x3ff)));
     }
 }
-std::u16string decode_utf8(std::string_view bytes,TextEncoding encoding,SourceLocation location) {
+std::u16string decode_utf8(std::string_view bytes,TextEncoding encoding,SourceLocation location,
+    TextDecoding decoding=TextDecoding::modern) {
     std::u16string result;result.reserve(bytes.size());
     for(std::size_t index=0;index<bytes.size();) {
         const auto lead=byte(bytes,index);
@@ -45,8 +46,13 @@ std::u16string decode_utf8(std::string_view bytes,TextEncoding encoding,SourceLo
         unsigned consumed=1;
         while(consumed<width && index+consumed<bytes.size()) {
             const auto next=byte(bytes,index+consumed);
-            if(next<0x80 || next>0xbf || (consumed==1 && ((lead==0xe0 && next<0xa0) || (lead==0xed && next>0x9f)
-                || (lead==0xf0 && next<0x90) || (lead==0xf4 && next>0x8f))))break;
+            if(next<0x80 || next>0xbf)break;
+            if(consumed==1 && ((lead==0xe0 && next<0xa0) || (lead==0xed && next>0x9f)
+                || (lead==0xf0 && next<0x90) || (lead==0xf4 && next>0x8f))){
+                // Framework groups this continuation byte into the invalid prefix.
+                if(decoding==TextDecoding::framework)++consumed;
+                break;
+            }
             value=(value<<6)|(next&0x3f);++consumed;
         }
         if(consumed!=width)result.push_back(invalid(encoding,location));else scalar(result,value);
@@ -140,6 +146,7 @@ std::u16string decode_text_bytes(std::string_view bytes,TextEncoding encoding,bo
     return result;
 }
 std::u16string TextDecoder::decode(std::string_view bytes,bool final,SourceLocation location) {
+    const bool flush=final && decoding_==TextDecoding::modern;
     validate(encoding_,location);
     if(finished_) {
         if(!bytes.empty())throw runtime_error(RuntimeError::invalid_bytecode,location);
@@ -156,20 +163,20 @@ std::u16string TextDecoder::decode(std::string_view bytes,bool final,SourceLocat
     }
     std::string_view view=data;
     if(detect_){detect_encoding(view,encoding_);detect_=false;}
-    if(encoding_.kind==TextEncodingKind::utf7){auto state=utf7_;auto result=utf7_decode(view,state,final,encoding_.strict,location);if(result.size()>data_limit-produced_)throw runtime_error(RuntimeError::encoding_limit,location);produced_+=result.size();utf7_=state;finished_=final;return result;}
-    if(iso2022_code_page(static_cast<std::uint16_t>(encoding_.kind))){auto state=iso_;auto result=iso2022_decode(view,static_cast<std::uint16_t>(encoding_.kind),state,final,encoding_.strict,location);if(result.size()>data_limit-produced_)throw runtime_error(RuntimeError::encoding_limit,location);produced_+=result.size();iso_=state;finished_=final;return result;}
+    if(encoding_.kind==TextEncodingKind::utf7){auto state=utf7_;auto result=utf7_decode(view,state,flush,encoding_.strict,location);if(result.size()>data_limit-produced_)throw runtime_error(RuntimeError::encoding_limit,location);produced_+=result.size();utf7_=state;finished_=final;return result;}
+    if(iso2022_code_page(static_cast<std::uint16_t>(encoding_.kind))){auto state=iso_;auto result=iso2022_decode(view,static_cast<std::uint16_t>(encoding_.kind),state,flush,encoding_.strict,location);if(result.size()>data_limit-produced_)throw runtime_error(RuntimeError::encoding_limit,location);produced_+=result.size();iso_=state;finished_=final;return result;}
     if(iscii_code_page(static_cast<std::uint16_t>(encoding_.kind))){
-        auto state=iscii_;auto result=iscii_decode(view,static_cast<std::uint16_t>(encoding_.kind),state,final,encoding_.strict,location);
+        auto state=iscii_;auto result=iscii_decode(view,static_cast<std::uint16_t>(encoding_.kind),state,flush,encoding_.strict,location);
         if(result.size()>data_limit-produced_)throw runtime_error(RuntimeError::encoding_limit,location);
         produced_+=result.size();iscii_=state;finished_=final;return result;
     }
     if(encoding_.kind==TextEncodingKind::gb18030){
-        auto result=gb18030_decode(view,pending,final,encoding_.strict,carry_,location);
+        auto result=gb18030_decode(view,pending,flush,encoding_.strict,carry_,location);
         if(result.size()>data_limit-produced_)throw runtime_error(RuntimeError::encoding_limit,location);
         produced_+=result.size();finished_=final;return result;
     }
     auto end=view.size();
-    if(!final) {
+    if(!flush) {
         if(encoding_.kind==TextEncodingKind::utf8) {
             for(std::size_t length=1;length<=3 && length<=view.size();++length) {
                 const auto pos=view.size()-length;const auto lead=byte(view,pos);
@@ -195,7 +202,9 @@ std::u16string TextDecoder::decode(std::string_view bytes,bool final,SourceLocat
             }
         }
     }
-    auto result=decode_text_bytes(view.substr(0,end),encoding_,false,location);
+    const auto complete=view.substr(0,end);
+    auto result=encoding_.kind==TextEncodingKind::utf8 ? decode_utf8(complete,encoding_,location,decoding_)
+        : decode_text_bytes(complete,encoding_,false,location);
     if(result.size()>data_limit-produced_)throw runtime_error(RuntimeError::encoding_limit,location);
     produced_+=result.size();carry_.assign(view.substr(end));finished_=final;return result;
 }

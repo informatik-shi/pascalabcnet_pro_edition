@@ -18,7 +18,8 @@
 #endif
 
 namespace abc {
-LineReader::LineReader(std::filesystem::path path,TextEncoding encoding,SourceLocation location):path_(std::move(path)),decoder_(encoding) {
+LineReader::LineReader(std::filesystem::path path,TextEncoding encoding,SourceLocation location,TextDecoding decoding)
+    :path_(std::move(path)),decoder_(encoding,true,decoding) {
 #ifdef _WIN32
     auto opened=::CreateFileW(path_.c_str(),GENERIC_READ,FILE_SHARE_READ,nullptr,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,nullptr);
     if(opened==INVALID_HANDLE_VALUE)throw runtime_error(RuntimeError::file_io,location);
@@ -77,7 +78,8 @@ std::optional<char16_t> LineReader::peek(SourceLocation location,const Execution
 #endif
         if(count>1'048'576-received_)throw runtime_error(RuntimeError::file_limit,location);
         received_+=count;eof_=count==0;
-        buffer_=decoder_.decode(std::string_view(bytes,count),eof_,location);position_=0;
+        buffer_=decoder_.decode(std::string_view(bytes,count),eof_,location);
+        position_=0;
     }
     return buffer_[position_];
 }

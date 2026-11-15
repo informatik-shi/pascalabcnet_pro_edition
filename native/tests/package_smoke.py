@@ -343,7 +343,7 @@ def main():
                 ("foreach.pas", "Сумма: 14\nИмена: Анна Борис \nНечётные: 3 1 1 5 \n"),
                 ("characters.pas", "Буква: Б\nКод UTF-16: 1041\nИмя: Инна\nАлфавит: абвгде\nСимволы: И|н|н|а|\n"),
                 ("file-operations.pas", "Прочитано:\nПервая строка\nВторая строка\nФайл удалён: True\n"),
-                ("file-streams.pas", "Код замены: 65533\nЧисло символов: 1\nText: 65533\nУдалён: True\n"),
+                ("file-streams.pas", "ReadFileToEnd: 0\nReadAllText: 1\nText.ReadToEnd: 1\nУдалён: True\n"),
                 ("array-generics.pas", "1/2/3\n3|2|1\n7,7,7\n1.5 1.5 \n1.50 1.50 \n"),
                 ("collection-interfaces.pas", "2 False True\n[0,7,8]\n7 8 \nTrue 1\nTrue\n1 True\n0\n"),
                 ("list-interfaces.pas", "кот пёс кот\n5 1\n5 7 \nTrue [1,9]\n"),

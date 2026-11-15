@@ -135,7 +135,8 @@ void TextFile::close(SourceLocation location) {
 void text_assign(FileContext& files, TextFile& file, const Value& name, SourceLocation location) {
     file.filename=files.resolve(string_text(name),location);
 }
-void text_open(FileContext& files,const std::shared_ptr<TextFile>& pointer,unsigned mode,SourceLocation location,const Value* explicit_encoding) {
+void text_open(FileContext& files,const std::shared_ptr<TextFile>& pointer,unsigned mode,SourceLocation location,
+    const Value* explicit_encoding,TextDecoding decoding) {
     auto& file=text_file(Value{pointer},location);assigned(file,location);
     files.prepare_text_open(pointer,location);
     if(mode==1 && file.writer) {
@@ -147,7 +148,8 @@ void text_open(FileContext& files,const std::shared_ptr<TextFile>& pointer,unsig
     const auto snapshot=selected ? std::optional<TextEncoding>{*selected} : std::nullopt;
     file.execution_options=files.execution_options;
     if(mode==0) {
-        auto next=std::make_shared<LineReader>(file.filename,snapshot.value_or(TextEncoding{TextEncodingKind::utf8,true,true}),location);
+        auto next=std::make_shared<LineReader>(file.filename,
+            snapshot.value_or(TextEncoding{TextEncodingKind::utf8,true,true}),location,decoding);
         const bool had_reader=static_cast<bool>(file.reader);file.reader=std::move(next);
         if(!had_reader && file.writer) {
             try{file.flush(location);}catch(...){file.writer->close();throw;}
