@@ -57,10 +57,11 @@ void dictionary(Definition& result,const Program& program,Type owner){
 void collection_iterator(Definition& result,const Program& program,Type owner){
     const auto& info=type_info(program,owner);
     if(info.kind==CompoundKind::dictionary || info.kind==CompoundKind::dictionary_keys || info.kind==CompoundKind::dictionary_values)dictionary(result,program,owner);
-    else if(info.kind==CompoundKind::list || info.kind==CompoundKind::hash_set){
-        result.name=info.kind==CompoundKind::list ? u"List`1" : u"HashSet`1";
+    else if(info.kind==CompoundKind::list || info.kind==CompoundKind::hash_set || info.kind==CompoundKind::sorted_set){
+        result.name=info.kind==CompoundKind::list ? u"List`1" : info.kind==CompoundKind::hash_set ? u"HashSet`1" : u"SortedSet`1";
         result.name_space=u"System.Collections.Generic";result.arguments={info.element};
         if(info.kind==CompoundKind::hash_set)result.assembly=u"System.Core";
+        if(info.kind==CompoundKind::sorted_set)result.assembly=u"System";
     }else unsupported({});
     result.name+=u"+Enumerator";
 }

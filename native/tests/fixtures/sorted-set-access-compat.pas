@@ -1,0 +1,35 @@
+uses System;
+begin
+  var s:=new SortedSet<integer>(Arr(1,2,3,4));
+  var a:=s.GetEnumerator;
+  var b:=a;
+  Writeln('original ',a.Current,' ',b.Current);
+  Writeln('a1 ',a.MoveNext,' ',a.Current,' ',b.Current);
+  Writeln('b1 ',b.MoveNext,' ',a.Current,' ',b.Current);
+  Writeln('a2 ',a.MoveNext,' ',a.Current,' ',b.Current);
+  b.Dispose;
+  Writeln('b2 ',b.MoveNext,' ',a.Current,' ',b.Current);
+  Writeln('b3 ',b.MoveNext,' ',a.Current,' ',b.Current);
+  Writeln('a3 ',a.MoveNext,' ',a.Current,' ',b.Current);
+  var direct:=s.GetEnumerator;
+  var boxed: System.Collections.Generic.IEnumerator<integer> := direct;
+  Writeln(direct.MoveNext,' ',direct.Current,' ',boxed.Current);
+  Writeln(boxed.MoveNext,' ',direct.Current,' ',boxed.Current);
+  boxed.Reset;
+  Writeln(direct.Current,' ',boxed.Current);
+  Writeln(direct.MoveNext,' ',direct.Current,' ',boxed.Current);
+  var back:=s.Reverse;
+  var lazy:=back.GetEnumerator;
+  s.Add(5);
+  Writeln(lazy.MoveNext,' ',lazy.Current);
+  foreach var item in back do Write(item,' ');
+  Writeln('|');
+  var dst:=ArrFill(5,-1);
+  s.CopyTo(dst,1,3);
+  foreach var item in dst do Write(item,' ');
+  Writeln('|');
+  var decs:=new SortedSet<Decimal>(Arr(Decimal.Parse('3.00'),Decimal.Parse('1.0')));
+  var item:=Decimal(99);
+  Writeln(decs.TryGetValue(Decimal.Parse('3.0'),item),' ',item.ToString);
+  Writeln(decs.TryGetValue(Decimal(2),item),' ',item.ToString);
+end.

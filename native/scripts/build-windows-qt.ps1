@@ -84,6 +84,7 @@ System.Enum как объект, reflection и поддиапазоны ещё �
 InRange, Between, Clamp и методы ClampTop/ClampBottom: examples/comparable-ranges.pas.
 Нативный HashSet<T>, операции множеств и проверки включения: examples/hash-sets.pas.
 Базовые операции SortedSet<T> включают Count, Min, Max, Add, Remove, Clear, Contains и обход в порядке сравнителя.
+SortedSet<T> также поддерживает CopyTo, TryGetValue, GetEnumerator и ленивый Reverse.
 CopyTo, TryGetValue, RemoveWhere и TrimExcess: examples/hash-set-extra.pas.
 HSet/HSetInt/HSetStr, Copy и явные преобразования: examples/hash-set-factories.pas.
 Записи IntRange/CharRange, 1..5, CopyTo и преобразования: examples/ordinal-ranges.pas.

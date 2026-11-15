@@ -34,8 +34,15 @@ Value boxed(Values& values,const std::shared_ptr<Cell>& cell,DictionaryMethod me
 bool collection_enumerator_metadata(const Program& p,Type type){
  if(!valid(p,type))return false;const auto& e=type_info(p,type);
  if(!collection_enumerator_type(e) || e.kind!=CompoundKind::record || e.name!="collectionenumerator" || !valid(p,e.key) || e.fields.size()!=4)return false;
- const auto& owner=type_info(p,e.key);if((owner.kind!=CompoundKind::list && owner.kind!=CompoundKind::hash_set) || e.element!=owner.element)return false;
- const std::array<std::string_view,4> names{"$source","$version","$index","$current"};const std::array<Type,4> fields{e.key,Type::uint64,Type::integer,e.element};
+ const auto& owner=type_info(p,e.key);if((owner.kind!=CompoundKind::list && owner.kind!=CompoundKind::hash_set && owner.kind!=CompoundKind::sorted_set) || e.element!=owner.element)return false;
+ auto index=Type::integer;
+ if(owner.kind==CompoundKind::sorted_set){
+  index=e.fields[2].type;
+  if(!valid(p,index))return false;
+  const auto& shared=type_info(p,index);
+  if(shared.kind!=CompoundKind::array || shared.rank!=1 || shared.element!=Type::integer)return false;
+ }
+ const std::array<std::string_view,4> names{"$source","$version","$index","$current"};const std::array<Type,4> fields{e.key,Type::uint64,index,e.element};
  for(std::size_t i=0;i<4;++i)if(e.fields[i].name!=names[i] || e.fields[i].type!=fields[i] || e.fields[i].global)return false;
  return true;
 }
@@ -68,22 +75,37 @@ Value enumerator_invoke(Values& values,Type owner,Type payload,EnumeratorMethod 
   const auto source=std::get<Object>(iterator->items[0]->value);if(!source || source->nil)throw runtime_error(RuntimeError::nil_reference,values.location);
   if(std::get<std::uint64_t>(iterator->items[1]->value)!=source->version)throw runtime_error(RuntimeError::collection_changed,values.location);
   const auto element=type_info(values.program,owner).element;
-  if(method==EnumeratorMethod::collection_reset){values.write(iterator->items[2],std::int32_t{0});values.write(iterator->items[3],values.zero(element,false,true));return false;}
-  auto index=static_cast<std::uint32_t>(std::get<std::int32_t>(iterator->items[2]->value));
+  auto position=iterator->items[2];
+  if(type_info(values.program,source->type).kind==CompoundKind::sorted_set){
+   const auto shared=std::get<Object>(position->value);
+   if(!shared || shared->nil || shared->items.size()!=1)throw runtime_error(RuntimeError::invalid_bytecode,values.location);
+   position=shared->items[0];
+  }
+  if(method==EnumeratorMethod::collection_reset){values.write(position,std::int32_t{0});values.write(iterator->items[3],values.zero(element,false,true));return false;}
+  auto index=static_cast<std::uint32_t>(std::get<std::int32_t>(position->value));
   while(index<source->items.size()){
-   work.step();const auto cell=source->items[index++];values.write(iterator->items[2],static_cast<std::int32_t>(index));
+   work.step();const auto cell=source->items[index++];values.write(position,static_cast<std::int32_t>(index));
    if(cell){values.write(iterator->items[3],cell->value);return true;}
   }
-  values.write(iterator->items[2],static_cast<std::int32_t>(static_cast<std::uint32_t>(source->items.size())+1U));values.write(iterator->items[3],values.zero(element,false,true));return false;
+  values.write(position,static_cast<std::int32_t>(static_cast<std::uint32_t>(source->items.size())+1U));values.write(iterator->items[3],values.zero(element,false,true));return false;
  }
  const auto object=std::get<Object>(argument);
  if(!object || object->nil)throw runtime_error(RuntimeError::nil_reference,values.location);
- if(method==EnumeratorMethod::get_collection){auto result=std::get<Object>(values.zero(payload));values.write(result->items[0],argument);values.write(result->items[1],object->version);return result;}
+ if(method==EnumeratorMethod::get_collection){
+  auto result=std::get<Object>(values.zero(payload));
+  values.write(result->items[0],argument);values.write(result->items[1],object->version);
+  if(type_info(values.program,owner).kind==CompoundKind::sorted_set){
+   // Copying the source enumerator copies Current and shares its pending traversal.
+   const auto position=result->items[2];
+   values.write(position,values.array(position->type,1));
+  }
+  return result;
+ }
  if(method>=EnumeratorMethod::move && method<=EnumeratorMethod::reset && (type_info(values.program,object->type).kind==CompoundKind::object_class||(type_info(values.program,object->type).kind==CompoundKind::record&&type_info(values.program,object->type).native_record==NativeRecord::none))){const auto slot=method==EnumeratorMethod::move ? 0U : method==EnumeratorMethod::current ? 1U : method==EnumeratorMethod::dispose ? 2U : 3U;return interface_invoke(values,owner,slot,argument,{},options);}
  if(method==EnumeratorMethod::box_dictionary || method==EnumeratorMethod::box_collection){auto result=make(values,payload);result->enumerator->boxed=values.cell(owner,values.copy(argument));return result;}
  if(method==EnumeratorMethod::get){
   if(object->sequence && object->sequence->provider==SequenceProvider::user_source)return interface_invoke(values,owner,0,object->sequence->source,{},options);
-  if(object->sequence && (object->sequence->provider==SequenceProvider::list || object->sequence->provider==SequenceProvider::hash_set || object->sequence->provider==SequenceProvider::new_set)){
+  if(object->sequence && (object->sequence->provider==SequenceProvider::list || object->sequence->provider==SequenceProvider::hash_set || object->sequence->provider==SequenceProvider::new_set || object->sequence->provider==SequenceProvider::sorted_set)){
    const auto& sequence=*object->sequence;const auto source=sequence.provider==SequenceProvider::new_set ? (sequence.seed ? new_set_hash(values,std::get<NewSetValue>(sequence.seed->value)) : Object{}) : sequence.source;
    if(!source || source->nil)throw runtime_error(RuntimeError::nil_reference,values.location);
    for(std::size_t i=0;i<values.program.types.size();++i){work.step();const auto& type=values.program.types[i];if(collection_enumerator_type(type) && type.key==source->type){const auto record=static_cast<Type>(64+i);auto iterator=enumerator_invoke(values,source->type,record,EnumeratorMethod::get_collection,source,options);return enumerator_invoke(values,record,payload,EnumeratorMethod::box_collection,iterator,options);}}

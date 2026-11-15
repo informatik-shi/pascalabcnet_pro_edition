@@ -158,6 +158,10 @@ std::shared_ptr<Aggregate> sequence_begin(Values& values,const std::shared_ptr<A
         return cursor_lease(std::move(result));
     }
     if(state.provider==SequenceProvider::set_query){reserve_state(values);state.set_query=std::make_shared<SequenceSetState>();return cursor_lease(std::move(result));}
+    if(state.provider==SequenceProvider::sorted_set_reverse){
+        state.source_captured=false;
+        return cursor_lease(std::move(result));
+    }
     if(state.provider==SequenceProvider::random){
         if(!state.random)throw runtime_error(RuntimeError::invalid_bytecode,values.location);
         reserve_state(values);state.random=std::make_shared<RandomSequenceState>(*state.random);state.random->positioned=false;state.random->available=false;state.random->index=0;state.random->current=values.zero(type_info(values.program,sequence->type).element);return cursor_lease(std::move(result));
@@ -219,13 +223,19 @@ void sequence_check(const std::shared_ptr<Aggregate>& sequence,SourceLocation lo
     if(state.disposed)return;
     if(dictionary_provider(state.provider) && state.version!=dictionary_sequence_source(state,location)->version)throw runtime_error(RuntimeError::collection_changed,location);
     if ((state.provider==SequenceProvider::list || state.provider==SequenceProvider::hash_set
-        || state.provider==SequenceProvider::new_set || state.provider==SequenceProvider::sorted_set)
+        || state.provider==SequenceProvider::new_set || state.provider==SequenceProvider::sorted_set
+        || (state.provider==SequenceProvider::sorted_set_reverse && state.source_captured))
         && state.version!=state.source->version) throw runtime_error(RuntimeError::collection_changed,location);
 }
 static bool sequence_resume_impl(Values& values,const std::shared_ptr<Aggregate>& sequence,std::uint64_t index,const ExecutionOptions& options) {
     const auto location=values.location;
     sequence_check(sequence,location); auto& state=*sequence->sequence;
     if(state.disposed)return false;
+    if(state.provider==SequenceProvider::sorted_set_reverse && !state.source_captured){
+        state.source_captured=true;
+        state.count=state.source->items.size();
+        state.version=state.source->version;
+    }
     if(state.provider==SequenceProvider::user_source){
         if(!state.protocol_cursor)throw runtime_error(RuntimeError::invalid_bytecode,location);auto& c=*state.protocol_cursor;
         if(c.positioned && c.index==index)return c.available;
@@ -315,6 +325,7 @@ bool sequence_resume(Values& values,const std::shared_ptr<Aggregate>& sequence,s
 std::optional<std::uint64_t> sequence_known_length(const std::shared_ptr<Aggregate>& sequence,SourceLocation location) {
     const auto& state=cursor(sequence,location);
     if(state.disposed)return std::uint64_t{0};
+    if(state.provider==SequenceProvider::sorted_set_reverse && !state.source_captured)return std::nullopt;
     if(state.provider==SequenceProvider::random || state.provider==SequenceProvider::directory || state.provider==SequenceProvider::user_source || state.provider==SequenceProvider::set_query)return std::nullopt;
     if (state.provider==SequenceProvider::text_lines || state.provider==SequenceProvider::file_lines || state.provider==SequenceProvider::matrix_lines || state.provider==SequenceProvider::array_view || state.provider==SequenceProvider::combinatorics || state.provider==SequenceProvider::cartesian || state.provider==SequenceProvider::cartesian_power || state.provider==SequenceProvider::generated || state.provider==SequenceProvider::zip || state.provider==SequenceProvider::transform || state.provider==SequenceProvider::concat || state.provider==SequenceProvider::slice || state.provider==SequenceProvider::partial_sum || state.provider==SequenceProvider::big_range || (state.provider==SequenceProvider::real_range && !state.real_range->initialized)) return std::nullopt;
     return state.count;
@@ -357,6 +368,8 @@ Value sequence_at(Values& values,const std::shared_ptr<Aggregate>& sequence,std:
     if (state.provider==SequenceProvider::big_range) return state.big_range->current;
     if (state.provider==SequenceProvider::partition) return state.partition->current;
     if (collection_sequence(state.provider)) return values.copy(state.source->items[static_cast<std::size_t>(index)]->value);
+    if(state.provider==SequenceProvider::sorted_set_reverse)
+        return values.copy(state.source->items[state.count-1-static_cast<std::uint64_t>(index)]->value);
     if (state.provider==SequenceProvider::repeat) return values.copy(state.seed->value);
     if (state.provider==SequenceProvider::range || state.provider==SequenceProvider::stepped_range) {
         const auto first=state.seed->type==Type::character ? std::int64_t(std::get<char16_t>(state.seed->value)) : std::int64_t(std::get<std::int32_t>(state.seed->value));

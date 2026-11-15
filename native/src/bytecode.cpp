@@ -563,7 +563,10 @@ private:
             for(const auto& argument:node.arguments)expression(*argument);
             emit(Op::ordinal_range_call,node.operation_type,node.local,node.location);break;
         case hir::ExprKind::sorted_set_call:
-            for(const auto& argument:node.arguments)expression(*argument);
+            for(std::size_t i=0;i<node.arguments.size();++i){
+                if(i==2 && node.local==static_cast<std::size_t>(SortedSetMethod::try_get_value))reference(*node.arguments[i]);
+                else expression(*node.arguments[i]);
+            }
             emit(Op::sorted_set_call,node.operation_type,node.local,node.location);break;
 
         default: throw Error("E_HIR",node.location,"Invalid expression dispatch");
@@ -1395,7 +1398,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         case Op::hash_set_call:
             if((instruction.operand>>8U)>65535U || !hash_set_signature(program,type,static_cast<Type>(instruction.operand>>8U),static_cast<HashSetMethod>(instruction.operand&255U)))invalid(instruction,"Invalid HashSet call metadata");break;
         case Op::sorted_set_call:
-            if(instruction.operand>static_cast<std::size_t>(SortedSetMethod::membership)
+            if(instruction.operand>static_cast<std::size_t>(SortedSetMethod::reverse)
                 || !sorted_set_signature(program,type,static_cast<SortedSetMethod>(instruction.operand)))
                 invalid(instruction,"Invalid SortedSet call metadata");
             break;

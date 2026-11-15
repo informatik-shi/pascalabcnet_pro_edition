@@ -3277,7 +3277,10 @@ private:
         }
         if(module_.types.size()>=1024)throw Error("E_LIMIT",{},"Type limit exceeded");
         module_.types.push_back({name,kind,element,{},key,rank});
-        const auto result=static_cast<Type>(63+module_.types.size());if(kind==CompoundKind::list || kind==CompoundKind::hash_set)(void)collection_enumerator(result);return result;
+        const auto result=static_cast<Type>(63+module_.types.size());
+        if(kind==CompoundKind::list || kind==CompoundKind::hash_set || kind==CompoundKind::sorted_set)
+            (void)collection_enumerator(result);
+        return result;
     }
     Type empty_type(){
         if(const auto type=empty_collection_type(module_.types);type!=Type::invalid)return type;
@@ -3418,8 +3421,10 @@ private:
     }
     ABC_PASCAL_NOINLINE Type collection_enumerator(Type owner){
         for(std::size_t i=0;i<module_.types.size();++i)if(collection_enumerator_type(module_.types[i]) && module_.types[i].key==owner)return static_cast<Type>(64+i);
-        if(module_.types.size()>=1024)throw Error("E_LIMIT",{},"Type limit exceeded");const auto element=info(owner,{}).element;
-        TypeInfo type{"collectionenumerator",CompoundKind::record,element,{{"$source",owner,false},{"$version",Type::uint64,false},{"$index",Type::integer,false},{"$current",element,false}},owner};
+        const auto element=info(owner,{}).element;
+        const auto index=info(owner,{}).kind==CompoundKind::sorted_set ? sequence_type(CompoundKind::array,Type::integer) : Type::integer;
+        if(module_.types.size()>=1024)throw Error("E_LIMIT",{},"Type limit exceeded");
+        TypeInfo type{"collectionenumerator",CompoundKind::record,element,{{"$source",owner,false},{"$version",Type::uint64,false},{"$index",index,false},{"$current",element,false}},owner};
         type.native_record=NativeRecord::collection_enumerator;module_.types.push_back(std::move(type));return static_cast<Type>(63+module_.types.size());
     }
     ABC_PASCAL_NOINLINE Type enumerator_type(Type element){
@@ -3464,7 +3469,7 @@ private:
         if(!base_only)if(auto found=resolved_types_.find(&syntax);found!=resolved_types_.end())return found->second;
         if(!base_only && !syntax.nested.empty()){
             auto type=resolve_type(syntax,true);for(const auto& member:syntax.nested){if(!compound(type))throw Error("E_TYPE",syntax.token.location,"Unknown collection nested type");const auto shape=info(type,syntax.token.location);
-                if(member=="enumerator" && (shape.kind==CompoundKind::list || shape.kind==CompoundKind::hash_set))type=collection_enumerator(type);
+                if(member=="enumerator" && (shape.kind==CompoundKind::list || shape.kind==CompoundKind::hash_set || shape.kind==CompoundKind::sorted_set))type=collection_enumerator(type);
                 else if(member=="enumerator" && (shape.kind==CompoundKind::dictionary || shape.kind==CompoundKind::dictionary_keys || shape.kind==CompoundKind::dictionary_values))type=dictionary_enumerator(type);
                 else if((member=="keycollection" || member=="valuecollection") && shape.kind==CompoundKind::dictionary)type=dictionary_view_type(type,member=="keycollection");
                 else throw Error("E_TYPE",syntax.token.location,"Unknown collection nested type");
@@ -4891,17 +4896,31 @@ private:
                 static const std::map<std::string,Method> methods{
                     {"count",Method::count},{"min",Method::minimum},{"max",Method::maximum},
                     {"comparer",Method::comparer},{"contains",Method::contains},
-                    {"add",Method::add},{"remove",Method::remove},{"clear",Method::clear}
+                    {"add",Method::add},{"remove",Method::remove},{"clear",Method::clear},
+                    {"trygetvalue",Method::try_get_value},{"reverse",Method::reverse}
                 };
-                if(const auto found=methods.find(source.token.text);found!=methods.end()){
-                    const auto method=found->second;
+                const auto found=methods.find(source.token.text);
+                const bool copying=source.token.text=="copyto";
+                if(found!=methods.end() || copying){
+                    auto method=Method::clear;
+                    if(copying){
+                        const auto count=source.arguments.size();
+                        if(count<1 || count>3)
+                            throw Error("E_TYPE",result->location,"Wrong SortedSet.CopyTo argument count","Неверное число аргументов SortedSet.CopyTo");
+                        (void)sequence_type(CompoundKind::array,type.element);
+                        method=count==1 ? Method::copy_array : count==2 ? Method::copy_index : Method::copy_count;
+                    }else method=found->second;
                     if(method<=Method::comparer && source.kind==SyntaxExprKind::member_call)
                         throw Error("E_TYPE",result->location,"SortedSet property is not callable","Свойство SortedSet нельзя вызвать как подпрограмму");
                     const auto parameters=sorted_set_parameters(module_.types,receiver,method);
                     std::vector<std::unique_ptr<hir::Expr>> arguments;
                     arguments.push_back(std::move(result->left));
-                    for(std::size_t i=0;i<source.arguments.size();++i)
-                        arguments.push_back(expression(*source.arguments[i],i+1<parameters.size() ? parameters[i+1] : Type::invalid));
+                    if(parameters.size()!=source.arguments.size()+1)
+                        throw Error("E_TYPE",result->location,"Wrong SortedSet argument count","Неверное число аргументов SortedSet");
+                    for(std::size_t i=0;i<source.arguments.size();++i){
+                        const auto expected=method==Method::try_get_value && i==1 ? type.element : parameters[i+1];
+                        arguments.push_back(expression(*source.arguments[i],expected));
+                    }
                     return sorted_set_expression(receiver,method,std::move(arguments),result->location);
                 }
             }
@@ -6140,7 +6159,7 @@ private:
     }
     ABC_PASCAL_NOINLINE bool bind_enumerator_member(hir::Expr& result,const SyntaxExpr& source){
         const auto owner=result.left->type;if(!compound(owner))return false;const auto shape=info(owner,result.location);const auto& name=source.token.text;
-        if((shape.kind==CompoundKind::list || shape.kind==CompoundKind::hash_set) && name=="getenumerator"){
+        if((shape.kind==CompoundKind::list || shape.kind==CompoundKind::hash_set || shape.kind==CompoundKind::sorted_set) && name=="getenumerator"){
             if(!source.arguments.empty())throw Error("E_TYPE",result.location,"Wrong enumerator argument count");const auto target=collection_enumerator(owner);auto bound=enumerator_expression(EnumeratorMethod::get_collection,std::move(result.left),target);bound->location=result.location;result=std::move(*bound);return true;
         }
         if(collection_enumerator_type(shape)){
@@ -6386,8 +6405,13 @@ private:
         result->location=location;
         result->operation_type=owner;
         result->local=static_cast<std::size_t>(method);
-        for(std::size_t i=0;i<arguments.size();++i)
-            result->arguments.push_back(convert(std::move(arguments[i]),parameters[i]));
+        for(std::size_t i=0;i<arguments.size();++i){
+            if(method==SortedSetMethod::try_get_value && i==2){
+                if(!lvalue(*arguments[i]) || arguments[i]->type!=info(owner,location).element)
+                    throw Error("E_TYPE",location,"SortedSet.TryGetValue requires a writable value of the element type","SortedSet.TryGetValue требует изменяемую переменную типа элемента");
+                result->arguments.push_back(std::move(arguments[i]));
+            }else result->arguments.push_back(convert(std::move(arguments[i]),parameters[i]));
+        }
         return result;
     }
     std::unique_ptr<hir::Expr> compound_expression(Type owner,CompoundMethod method,std::unique_ptr<hir::Expr> left,std::unique_ptr<hir::Expr> right,SourceLocation location) {

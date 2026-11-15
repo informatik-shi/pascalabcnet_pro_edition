@@ -15,6 +15,9 @@ bool uses_source(Method method){
 bool uses_comparer(Method method){
     return method==Method::construct_comparer || method==Method::construct_source_comparer;
 }
+bool copies_items(Method method){
+    return method>=Method::copy_array && method<=Method::copy_count;
+}
 
 class OrderedSet {
     Values& values;
@@ -59,17 +62,18 @@ public:
 
 Type sorted_set_type_for(const std::vector<TypeInfo>& types,Type element,CompoundKind kind){
     for(std::size_t i=0;i<types.size();++i)
-        if(types[i].kind==kind && types[i].element==element)return static_cast<Type>(64+i);
+        if(types[i].kind==kind && types[i].element==element && types[i].rank==1)return static_cast<Type>(64+i);
     return Type::invalid;
 }
 
 bool sorted_set_signature(const Program& program,Type owner,SortedSetMethod method){
-    if(method>Method::membership || !compound(owner) || !valid_value_type(program,owner))return false;
+    if(method>Method::reverse || !compound(owner) || !valid_value_type(program,owner))return false;
     const auto& shape=type_info(program,owner);
     return shape.kind==CompoundKind::sorted_set
         && sorted_set_type_for(program.types,shape.element,CompoundKind::comparer_interface)!=Type::invalid
         && sorted_set_type_for(program.types,shape.element,CompoundKind::comparer)!=Type::invalid
-        && sorted_set_type_for(program.types,shape.element,CompoundKind::list)!=Type::invalid;
+        && sorted_set_type_for(program.types,shape.element,CompoundKind::list)!=Type::invalid
+        && (!copies_items(method) || sorted_set_type_for(program.types,shape.element,CompoundKind::array)!=Type::invalid);
 }
 
 std::vector<Type> sorted_set_parameters(const std::vector<TypeInfo>& types,Type owner,SortedSetMethod method){
@@ -81,18 +85,27 @@ std::vector<Type> sorted_set_parameters(const std::vector<TypeInfo>& types,Type 
         return parameters;
     }
     if(method==Method::membership)return {shape.element,owner};
+    if(method==Method::try_get_value)return {owner,shape.element,reference_type(shape.element)};
+    if(copies_items(method)){
+        std::vector<Type> parameters{owner,sorted_set_type_for(types,shape.element,CompoundKind::array)};
+        if(method>=Method::copy_index)parameters.push_back(Type::integer);
+        if(method==Method::copy_count)parameters.push_back(Type::integer);
+        return parameters;
+    }
     if(method==Method::contains || method==Method::add || method==Method::remove)return {owner,shape.element};
     return {owner};
 }
 
 Type sorted_set_result(const std::vector<TypeInfo>& types,Type owner,SortedSetMethod method){
     if(method<=Method::construct_source_comparer)return owner;
-    const auto element=types.at(static_cast<unsigned>(owner)-64U).element;
+    const auto& shape=types.at(static_cast<unsigned>(owner)-64U);
+    const auto element=shape.element;
     switch(method){
     case Method::minimum: case Method::maximum:return element;
     case Method::count:return Type::integer;
     case Method::comparer:return sorted_set_type_for(types,element,CompoundKind::comparer_interface);
-    case Method::clear:return Type::unit;
+    case Method::clear: case Method::copy_array: case Method::copy_index: case Method::copy_count:return Type::unit;
+    case Method::reverse:return shape.key;
     default:return Type::boolean;
     }
 }
@@ -144,12 +157,35 @@ Value sorted_set_invoke(Values& values,Type owner,SortedSetMethod method,std::sp
                 : values.copy((method==Method::minimum ? items.front() : items.back())->value);
         if(method==Method::comparer)return receiver->ordering;
         if(method==Method::clear){order.step(items.size());items.clear();++receiver->version;return false;}
+        if(method==Method::reverse)return sequence_create(values,shape.key,receiver,SequenceProvider::sorted_set_reverse);
+        if(copies_items(method)){
+            const auto target=std::get<Object>(args[1]);
+            if(!target || target->nil)throw runtime_error(RuntimeError::nil_reference,values.location);
+            const auto index=method>=Method::copy_index ? std::get<std::int32_t>(args[2]) : 0;
+            const auto count=method==Method::copy_count ? std::get<std::int32_t>(args[3]) : static_cast<std::int32_t>(items.size());
+            if(index<0)throw Error("E_RANGE",values.location,"SortedSet copy index must be nonnegative","Индекс копирования SortedSet должен быть неотрицательным");
+            if(count<0)throw Error("E_RANGE",values.location,"SortedSet copy count must be nonnegative","Число копируемых элементов SortedSet должно быть неотрицательным");
+            const auto start=static_cast<std::size_t>(index);
+            const auto length=static_cast<std::size_t>(count);
+            if(start>target->items.size() || length>target->items.size()-start)
+                throw Error("E_RANGE",values.location,"Destination array is too small for the SortedSet copy","В массиве недостаточно места для копирования SortedSet");
+            for(std::size_t i=0;i<std::min(length,items.size());++i){
+                order.step();
+                values.write(target->items[start+i],items[i]->value);
+            }
+            return false;
+        }
 
         const bool adding=method==Method::add;
         const bool removing=method==Method::remove;
         if(!items.empty() && (adding || removing))++receiver->version;
         const auto& item=args[method==Method::membership ? 0U : 1U];
         const auto [position,present]=order.locate(receiver,item);
+        if(method==Method::try_get_value){
+            const auto output=std::get<std::shared_ptr<Cell>>(args[2]);
+            values.write(output,present ? items[position]->value : values.zero(shape.element,false,true));
+            return present;
+        }
         if(!adding && !removing)return present;
         if(adding==present)return false;
         if(adding && items.size()>=INT32_MAX)throw runtime_error(RuntimeError::integer_overflow,values.location);

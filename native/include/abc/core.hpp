@@ -97,7 +97,7 @@ struct GeneratorState {
     std::uint64_t index=0;
     bool positioned=false, available=false;
 };
-enum class SequenceProvider { school_ip_hosts, school_ip_binary, array, list, repeat, range, stepped_range, big_range, partition, real_range, partial_sum, slice, concat, string, transform, zip, generated, cartesian, cartesian_power, combinatorics, array_view, matrix_lines, file_lines, text_lines, hash_set, new_set, ordinal_range, random, directory, dictionary_entries, dictionary_keys, dictionary_values, user_source, set_query, sorted_set };
+enum class SequenceProvider { school_ip_hosts, school_ip_binary, array, list, repeat, range, stepped_range, big_range, partition, real_range, partial_sum, slice, concat, string, transform, zip, generated, cartesian, cartesian_power, combinatorics, array_view, matrix_lines, file_lines, text_lines, hash_set, new_set, ordinal_range, random, directory, dictionary_entries, dictionary_keys, dictionary_values, user_source, set_query, sorted_set, sorted_set_reverse };
 inline bool dictionary_provider(SequenceProvider provider){return provider==SequenceProvider::dictionary_entries || provider==SequenceProvider::dictionary_keys || provider==SequenceProvider::dictionary_values;}
 inline bool collection_sequence(SequenceProvider provider) { return provider==SequenceProvider::array || provider==SequenceProvider::list || provider==SequenceProvider::sorted_set; }
 struct BigRangeState {
@@ -201,7 +201,7 @@ struct SequenceState {
     std::shared_ptr<Aggregate> source;
     SequenceProvider provider=SequenceProvider::school_ip_hosts;
     std::uint64_t first=0,count=0,version=0;
-    bool started=false,disposed=false;
+    bool started=false,disposed=false,source_captured=false;
     std::int32_t step=1;
     bool exhaustion_overflow=false;
     std::shared_ptr<Cell> seed;
