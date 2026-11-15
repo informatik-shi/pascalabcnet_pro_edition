@@ -359,9 +359,14 @@ struct DepthGuard {
 class Parser {
 public:
     explicit Parser(std::string_view source) : lexer_(source), current_(lexer_.next()) {}
+    const std::string& source_namespace() const { return source_namespace_; }
     SyntaxStmt parse() {
         SyntaxStmt root;
-        if (accept("program")) { name(); expect(";"); }
+        if (accept("program")) {
+            const auto header=name();
+            source_namespace_=header.spelling.empty() ? header.text : header.spelling;
+            expect(";");
+        }
         if (accept("uses")) {
             do {
                 auto module = name();while(accept("."))module.text+="."+name().text;
@@ -1289,6 +1294,7 @@ private:
     }
     Lexer lexer_;
     Token current_;
+    std::string source_namespace_;
     unsigned depth_ = 0;
     CompilationStack compilation_stack_;
 };
@@ -4148,8 +4154,24 @@ private:
         }
         if (source.token.text=="create" && class_constructors_.contains(receiver)) throw Error("E_UNSUPPORTED",result->location,"Constructors require new ClassName(...)");
         const auto methods=class_methods_.find(receiver);
-        if (methods==class_methods_.end() || !methods->second.contains(source.token.text))
+        if (methods==class_methods_.end() || !methods->second.contains(source.token.text)){
+            if(source.token.text=="tostring" && info(receiver,result->location).kind==CompoundKind::object_class
+                && source.arguments.empty() && !callable_type(expected)){
+                result->kind=hir::ExprKind::type_operation;
+                result->operation_type=receiver;
+                result->local=static_cast<unsigned>(TypeOperation::runtime_type);
+                result->type=Type::type_descriptor;
+                auto name=std::make_unique<hir::Expr>();
+                name->kind=hir::ExprKind::type_operation;
+                name->operation_type=Type::type_descriptor;
+                name->local=static_cast<unsigned>(TypeOperation::full_name);
+                name->type=Type::string;
+                name->location=result->location;
+                name->left=std::move(result);
+                return name;
+            }
             throw Error("E_NAME",result->location,"Unknown class member '"+source.token.text+"'");
+        }
         auto id=methods->second.at(source.token.text);std::vector<std::unique_ptr<hir::Expr>> bound_arguments;
         const auto& overloads=class_method_overloads_.at(receiver).at(source.token.text);
         if(overloads.size()>1){std::vector<MethodOverload> candidates;for(auto candidate:overloads){const auto& signature=module_.routines[candidate].signature;std::vector<CallableParameter> parameters;for(std::size_t n=1;n<signature.parameters.size();++n)parameters.push_back({signature.parameters[n].type,signature.parameters[n].by_reference,signature.parameters[n].variadic});auto required=parameters.size()-(parameters.size()&&parameters.back().variadic?1U:0U);while(required&&candidate<parameter_defaults_.size()&&required<parameter_defaults_[candidate].size()&&parameter_defaults_[candidate][required])--required;candidates.push_back({candidate,std::move(parameters),required});}id=choose_method_overload(std::move(candidates),source,bound_arguments);}
@@ -4918,8 +4940,8 @@ private:
                     if(parameters.size()!=source.arguments.size()+1)
                         throw Error("E_TYPE",result->location,"Wrong SortedSet argument count","Неверное число аргументов SortedSet");
                     for(std::size_t i=0;i<source.arguments.size();++i){
-                        const auto expected=method==Method::try_get_value && i==1 ? type.element : parameters[i+1];
-                        arguments.push_back(expression(*source.arguments[i],expected));
+                        const auto argument_type=method==Method::try_get_value && i==1 ? type.element : parameters[i+1];
+                        arguments.push_back(expression(*source.arguments[i],argument_type));
                     }
                     return sorted_set_expression(receiver,method,std::move(arguments),result->location);
                 }
@@ -5086,8 +5108,9 @@ private:
                 else throw Error("E_NAME",result->location,"Unknown stack or queue method '"+name+"'");
                 const auto count = method == EndpointMethod::add ? 1U : 0U;
                 if (source.arguments.size() != count) throw Error("E_TYPE",result->location,"Wrong collection method argument count");
-                if (method >= EndpointMethod::to_string && !text_scalar(element))
-                    throw Error("E_UNSUPPORTED",result->location,"Collection text output currently requires scalar elements");
+                if (method >= EndpointMethod::to_string && !text_scalar(element)
+                    && (!compound(element) || info(element,result->location).kind!=CompoundKind::object_class))
+                    throw Error("E_UNSUPPORTED",result->location,"Collection text output requires scalar or class elements","Строковое представление коллекции поддерживает скалярные элементы и экземпляры классов");
                 result->kind = hir::ExprKind::endpoint_call; result->local = static_cast<std::size_t>(method);
                 result->type = endpoint_result(element,method);
                 if (count) result->arguments.push_back(convert(expression(*source.arguments[0],element),element));
@@ -9162,7 +9185,10 @@ private:
 
 hir::Module hir::analyze_pascal(std::string_view source) {
     if (source.size() > 1'048'576) throw Error("E_LIMIT", {}, "Source exceeds 1 MiB prototype limit");
-    return Analyzer().analyze(Parser(source).parse());
+    Parser parser(source);
+    auto module=Analyzer().analyze(parser.parse());
+    module.source_namespace=parser.source_namespace();
+    return module;
 }
 
 Program compile(std::string_view source,std::string_view module_name) {

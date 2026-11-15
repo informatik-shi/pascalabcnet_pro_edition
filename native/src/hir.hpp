@@ -53,6 +53,7 @@ struct Module {
     std::vector<StaticClass> static_classes;
     std::vector<StaticMethod> static_methods;
     std::vector<StaticProperty> static_properties;
+    std::string source_namespace;
 };
 
 Module analyze_pascal(std::string_view source);

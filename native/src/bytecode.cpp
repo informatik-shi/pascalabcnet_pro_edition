@@ -71,6 +71,7 @@ public:
         program_.static_classes=std::move(module.static_classes);
         program_.static_methods=std::move(module.static_methods);
         program_.static_properties=std::move(module.static_properties);
+        program_.source_namespace=std::move(module.source_namespace);
         program_.print_delimiter=module.print_delimiter;program_.print_matrix_format=module.print_matrix_format;program_.default_encoding=module.default_encoding;
         for (auto& routine : module.routines) {
             for (auto local:routine.signature.captures) captured_.insert(local);
@@ -1350,12 +1351,15 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if (instruction.operand >= static_cast<std::size_t>(BufferMethod::to_string) && !text_scalar(program,type_info(program,type).element))
                 invalid(instruction,"Collection text output requires scalar elements");
             break;
-        case Op::endpoint_call:
+        case Op::endpoint_call: {
             if (!compound(type) || !endpoint_collection(type_info(program,type).kind)
                 || instruction.operand > static_cast<std::size_t>(EndpointMethod::println)) invalid(instruction,"Invalid stack or queue instruction");
-            if (instruction.operand >= static_cast<std::size_t>(EndpointMethod::to_string) && !text_scalar(program,type_info(program,type).element))
-                invalid(instruction,"Collection text output requires scalar elements");
+            const auto element=type_info(program,type).element;
+            if (instruction.operand >= static_cast<std::size_t>(EndpointMethod::to_string) && !text_scalar(program,element)
+                && (!compound(element) || type_info(program,element).kind!=CompoundKind::object_class))
+                invalid(instruction,"Collection text output requires scalar or class elements");
             break;
+        }
         case Op::read_value:
             if (!valid_type(type) || instruction.operand) invalid(instruction,"Invalid read type"); break;
         case Op::file_print: case Op::file_read:
@@ -2110,6 +2114,8 @@ void verify(const Program& program) {
     }
     for(std::size_t n=0;n<program.routines.size();++n)if(program.routines[n].name.find(".$static.$property_expression_")!=std::string::npos&&!static_property_accessors.contains(n))throw Error("E_BYTECODE",{},"Missing static property metadata");
     if(!module_name_valid(program.module_name))throw Error("E_BYTECODE",{},"Invalid source module name","Недопустимое имя исходного модуля");
+    if(!program.source_namespace.empty() && !module_name_valid(program.source_namespace))
+        throw Error("E_BYTECODE",{},"Invalid source namespace","Недопустимое пространство имён исходного модуля");
     if (program.print_delimiter && (*program.print_delimiter>=program.locals.size() || !program.locals[*program.print_delimiter].global
         || program.locals[*program.print_delimiter].type!=Type::string)) throw Error("E_BYTECODE",{},"Invalid PrintDelimDefault global");
     if(program.print_matrix_format && (*program.print_matrix_format>=program.locals.size() || !program.locals[*program.print_matrix_format].global || program.locals[*program.print_matrix_format].type!=Type::boolean))throw Error("E_BYTECODE",{},"Invalid PrintMatrixWithFormat global");

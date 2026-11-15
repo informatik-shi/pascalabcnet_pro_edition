@@ -558,6 +558,7 @@ struct Program {
     std::vector<StaticClass> static_classes;
     std::vector<StaticMethod> static_methods;
     std::vector<StaticProperty> static_properties;
+    std::string source_namespace;
 };
 bool static_field_storage(const Program&,std::size_t);
 

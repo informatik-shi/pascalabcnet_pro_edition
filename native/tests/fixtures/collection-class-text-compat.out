@@ -1,0 +1,6 @@
+[]
+[CollectionClassText.MixedCaseItem ] [CollectionClassText.MixedCaseItem]
+[CollectionClassText.MixedCaseItem  ]
+[named method] [CollectionClassText.NamedMethod ] [CollectionClassText.NamedMethod ]
+CollectionClassText.MixedCaseItem, collection-class-text-compat, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null
+CollectionClassText.ExampleRecord CollectionClassText

@@ -187,11 +187,20 @@ constexpr std::u16string_view file_newline=
     u"\n";
 #endif
 
-void append_collection_text(const Program& program,std::u16string& text, const Value& value, const Instruction& instruction, bool concatenate = false) {
+void append_collection_text(const Program& program,std::u16string& text, const Value& value, const Instruction& instruction,
+    const ExecutionOptions& options,bool concatenate=false) {
     if (!concatenate && std::holds_alternative<NilString>(value)) trap(instruction,RuntimeError::nil_reference);
-    auto part = enumeration(program,value_type(value)) ? enum_text(program,std::get<EnumValue>(value),instruction.location)
-        : value_type(value) == Type::string ? string_text(value)
-        : value_type(value)==Type::character ? std::u16string(1,std::get<char16_t>(value)) : from_utf8(format(value,instruction));
+    const auto type=value_type(value);
+    std::u16string part;
+    if(compound(type) && type_info(program,type).kind==CompoundKind::object_class){
+        const auto& object=std::get<std::shared_ptr<Aggregate>>(value);
+        if(!object || object->nil){
+            if(!concatenate)trap(instruction,RuntimeError::nil_reference);
+        }else part=std::get<std::u16string>(reflected_type_property(program,ReflectedType{type},
+            TypeOperation::full_name,instruction.location,options));
+    }else part=enumeration(program,type) ? enum_text(program,std::get<EnumValue>(value),instruction.location)
+        : type==Type::string ? string_text(value)
+        : type==Type::character ? std::u16string(1,std::get<char16_t>(value)) : from_utf8(format(value,instruction));
     if (part.size() >= 1'048'576 || text.size() > 1'048'576 - part.size() - 1) trap(instruction,RuntimeError::string_limit);
     text += part; text += u' ';
 }
@@ -1002,7 +1011,7 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
                     if (steps++ >= options.instruction_limit) trap(instruction,RuntimeError::instruction_limit);
                     if (options.cancelled && options.cancelled()) trap(instruction,RuntimeError::cancelled);
                     // Original Collections.LinkedList.ToString replaces the result on each node.
-                    text.clear(); append_collection_text(program,text,node->items[0]->value,instruction);
+                    text.clear(); append_collection_text(program,text,node->items[0]->value,instruction,options);
                 }
                 if (method==LinkedMethod::to_string) stack.emplace_back(std::move(text));
                 else { write(text,instruction); if (method==LinkedMethod::println) write(u"\n",instruction); }
@@ -1040,8 +1049,8 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
             } else {
                 std::u16string text;
                 for (std::size_t i=0;i<target->items.size();i+=2) {
-                    append_collection_text(program,text,target->items[i]->value,instruction);
-                    append_collection_text(program,text,target->items[i+1]->value,instruction);
+                    append_collection_text(program,text,target->items[i]->value,instruction,options);
+                    append_collection_text(program,text,target->items[i+1]->value,instruction,options);
                     // Original AssocArray uses CRLF, including on non-Windows hosts.
                     text.back() = u'\r';
                     if (text.size() == 1'048'576) trap(instruction,RuntimeError::string_limit);
@@ -1104,7 +1113,7 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
             case BufferMethod::set: values.write(target->items[index()],arguments[1]); break;
             case BufferMethod::to_string: case BufferMethod::print: case BufferMethod::println: {
                 std::u16string text;
-                for (std::size_t i=0;i<target->count;++i) append_collection_text(program,text,target->items[i]->value,instruction);
+                for (std::size_t i=0;i<target->count;++i) append_collection_text(program,text,target->items[i]->value,instruction,options);
                 if (method == BufferMethod::to_string) stack.emplace_back(std::move(text));
                 else { write(text,instruction); if (method == BufferMethod::println) write(u"\n",instruction); }
                 break;
@@ -1134,7 +1143,7 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
             } else {
                 std::u16string text;
                 auto append = [&](const std::shared_ptr<Cell>& item) {
-                    append_collection_text(program,text,item->value,instruction,!lifo);
+                    append_collection_text(program,text,item->value,instruction,options,!lifo);
                 };
                 if (lifo) for (auto item = items.rbegin(); item != items.rend(); ++item) append(*item);
                 else for (const auto& item : items) append(item);

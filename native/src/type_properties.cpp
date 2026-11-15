@@ -67,6 +67,7 @@ void collection_iterator(Definition& result,const Program& program,Type owner){
 }
 Definition definition(const Program& program,ReflectedType type,Work& work){
     Definition result;
+    const auto& source_namespace=program.source_namespace.empty() ? program.module_name : program.source_namespace;
     while(compound(type.target) && type_info(program,type.target).kind==CompoundKind::array){
         work.step();const auto& info=type_info(program,type.target);
         result.suffix=(info.rank==2 ? u"[,]" : u"[]")+result.suffix;type.target=info.element;
@@ -136,14 +137,14 @@ Definition definition(const Program& program,ReflectedType type,Work& work){
             auto name=from_utf8(info.display_name.empty() ? info.name : info.display_name);
             if(name.empty() || name==u"record" || name.front()==u'$')unsupported(work.location);
             const auto dot=name.rfind(u'.');result.name=dot==name.npos ? name : name.substr(dot+1);
-            result.name_space=dot==name.npos ? from_utf8(program.module_name) : name.substr(0,dot);result.source=true;break;
+            result.name_space=dot==name.npos ? from_utf8(source_namespace) : name.substr(0,dot);result.source=true;break;
         }
         case CompoundKind::dictionary:case CompoundKind::dictionary_keys:case CompoundKind::dictionary_values:dictionary(result,program,type.target);break;
         case CompoundKind::tuple:
             result.name=u"Tuple";for(const auto& field:info.fields)result.arguments.push_back(field.type);arity(result);break;
         case CompoundKind::callable:
             if(info.name.starts_with("$delegate:")){
-                result.name=from_utf8(info.display_name);result.name_space=from_utf8(program.module_name);result.source=true;break;
+                result.name=from_utf8(info.display_name);result.name_space=from_utf8(source_namespace);result.source=true;break;
             }
             if(info.name=="predicate2" || info.name=="predicate3"){
                 result.name=info.name=="predicate2" ? u"Predicate2" : u"Predicate3";result.name_space=u"PABCSystem";result.source=true;
