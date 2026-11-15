@@ -21,21 +21,21 @@ std::vector<Type> native_resource_parameters(const Program& program,Type owner,s
     if (pascal_copy_type(program.types,owner)) return fixed_parameters(program.types,program.fixed_arrays,owner,method);
     if (resource_kind(program,owner,CompoundKind::binary_file)) return binary_parameters(program.types,owner,method);
     if (resource_kind(program,owner,CompoundKind::string_builder))
-        return string_builder_parameters(owner,static_cast<StringBuilderMethod>(method));
+        return string_builder_parameters(owner,static_cast<StringBuilderMethod>(method&255U),static_cast<Type>(method>>8U));
     return encoding_parameters(program,owner,static_cast<EncodingMethod>(method));
 }
 Type native_resource_result(const Program& program,Type owner,std::size_t method) {
     if (pascal_copy_type(program.types,owner)) return fixed_result(program.types,owner,method);
     if (resource_kind(program,owner,CompoundKind::binary_file)) return binary_result(program.types,owner,method);
     if (resource_kind(program,owner,CompoundKind::string_builder))
-        return string_builder_result(owner,static_cast<StringBuilderMethod>(method));
+        return string_builder_result(owner,static_cast<StringBuilderMethod>(method&255U));
     return encoding_result(program,owner,static_cast<EncodingMethod>(method));
 }
 Value native_resource_invoke(EncodingContext& enc,Values& values,FileContext& files,Type owner,std::size_t method,std::span<const Value> args) {
     if (pascal_copy_type(values.program.types,owner)) return fixed_invoke(values,owner,method,args);
     if (resource_kind(values.program,owner,CompoundKind::binary_file)) return binary_invoke(values,files,owner,method,args);
     if (resource_kind(values.program,owner,CompoundKind::string_builder))
-        return string_builder_invoke(values,owner,static_cast<StringBuilderMethod>(method),args);
+        return string_builder_invoke(values,owner,static_cast<StringBuilderMethod>(method&255U),args);
     return enc.invoke(values,files,owner,static_cast<EncodingMethod>(method),args);
 }
 }

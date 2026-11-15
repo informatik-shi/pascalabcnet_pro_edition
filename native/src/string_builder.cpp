@@ -1,6 +1,9 @@
 #include "string_builder.hpp"
+#include "formatting.hpp"
 #include "runtime_values.hpp"
 #include <algorithm>
+#include <charconv>
+#include <cmath>
 #include <limits>
 
 namespace abc {
@@ -27,6 +30,20 @@ std::u16string_view slice(std::u16string_view text,std::size_t start,std::size_t
     if (start>text.size() || count>text.size()-start) throw out_of_range(location);
     return text.substr(start,count);
 }
+std::u16string scalar_text(const Value& value,SourceLocation location) {
+    if (!std::holds_alternative<float>(value) && !std::holds_alternative<double>(value))
+        return format_field(value,0,std::nullopt,location);
+    const auto single=std::holds_alternative<float>(value);
+    const auto number=single?static_cast<double>(std::get<float>(value)):std::get<double>(value);
+    if (number==0) return u"0";
+    if (std::isnan(number)) return u"NaN";
+    if (std::isinf(number)) return number<0?u"-Infinity":u"Infinity";
+    char buffer[64];
+    const auto result=std::to_chars(buffer,buffer+sizeof buffer,number,std::chars_format::general,single?7:15);
+    if (result.ec!=std::errc{}) throw runtime_error(RuntimeError::number_format,location);
+    std::replace(buffer,result.ptr,'e','E');
+    return std::u16string(buffer,result.ptr);
+}
 std::size_t appended_capacity(const StringBuilderState& builder,std::size_t count,SourceLocation location) {
     if (count>text_limit-builder.text.size()) throw runtime_error(RuntimeError::string_limit,location);
     const auto length=builder.text.size()+count;
@@ -42,6 +59,22 @@ void append_text(StringBuilderState& builder,std::u16string_view text,SourceLoca
 void append_repeated(StringBuilderState& builder,char16_t character,std::size_t count,SourceLocation location) {
     const auto capacity=appended_capacity(builder,count,location);
     builder.text.append(count,character);
+    builder.capacity=capacity;
+}
+void append_array(StringBuilderState& builder,const Value& argument,std::size_t start,
+    std::optional<std::size_t> count,SourceLocation location) {
+    const auto& array=std::get<std::shared_ptr<Aggregate>>(argument);
+    if (!array || array->nil) {
+        if (start || count.value_or(0)) throw runtime_error(RuntimeError::nil_reference,location);
+        return;
+    }
+    const auto size=array->items.size();
+    if (start>size || count.value_or(size)>size-start) throw out_of_range(location);
+    const auto amount=count.value_or(size);
+    const auto capacity=appended_capacity(builder,amount,location);
+    builder.text.reserve(builder.text.size()+amount);
+    for (std::size_t i=0;i<amount;++i)
+        builder.text.push_back(std::get<char16_t>(array->items[start+i]->value));
     builder.capacity=capacity;
 }
 void set_capacity(StringBuilderState& builder,std::size_t capacity,SourceLocation location) {
@@ -89,12 +122,23 @@ Value construct(Values& values,Type owner,StringBuilderMethod method,std::span<c
 }
 }
 
-bool string_builder_signature(const Program& program,Type owner,std::size_t method) {
-    return compound(owner) && static_cast<unsigned>(owner)-64U<program.types.size()
-        && type_info(program,owner).kind==CompoundKind::string_builder
-        && method<=static_cast<std::size_t>(StringBuilderMethod::equals);
+bool string_builder_signature(const Program& program,Type owner,std::size_t operation) {
+    using M=StringBuilderMethod;
+    if (!compound(owner) || static_cast<unsigned>(owner)-64U>=program.types.size()
+        || type_info(program,owner).kind!=CompoundKind::string_builder
+        || (operation>>8U)>std::numeric_limits<std::uint16_t>::max()) return false;
+    const auto method=static_cast<M>(operation&255U);
+    const auto payload=static_cast<Type>(operation>>8U);
+    if (method==M::append_scalar)
+        return integer_type(payload) || payload==Type::single || payload==Type::real || payload==Type::boolean;
+    if (method==M::append_array || method==M::append_array_range || method==M::copy_to) {
+        if (!compound(payload) || static_cast<unsigned>(payload)-64U>=program.types.size()) return false;
+        const auto& shape=type_info(program,payload);
+        return shape.kind==CompoundKind::array && shape.rank==1 && shape.element==Type::character;
+    }
+    return method<=M::replace_char_range && (operation>>8U)==0;
 }
-std::vector<Type> string_builder_parameters(Type owner,StringBuilderMethod method) {
+std::vector<Type> string_builder_parameters(Type owner,StringBuilderMethod method,Type payload) {
     using M=StringBuilderMethod;
     switch (method) {
     case M::create_empty: return {};
@@ -111,7 +155,12 @@ std::vector<Type> string_builder_parameters(Type owner,StringBuilderMethod metho
     case M::append_char: return {owner,Type::character};
     case M::append_repeated: return {owner,Type::character,Type::integer};
     case M::append_slice: return {owner,Type::string,Type::integer,Type::integer};
-    case M::equals: return {owner,owner};
+    case M::equals: case M::append_builder: return {owner,owner};
+    case M::append_scalar: case M::append_array: return {owner,payload};
+    case M::append_array_range: return {owner,payload,Type::integer,Type::integer};
+    case M::copy_to: return {owner,Type::integer,payload,Type::integer,Type::integer};
+    case M::replace_char: return {owner,Type::character,Type::character};
+    case M::replace_char_range: return {owner,Type::character,Type::character,Type::integer,Type::integer};
     default: return {owner};
     }
 }
@@ -119,7 +168,7 @@ Type string_builder_result(Type owner,StringBuilderMethod method) {
     using M=StringBuilderMethod;
     switch (method) {
     case M::length: case M::capacity: case M::max_capacity: case M::ensure_capacity: return Type::integer;
-    case M::set_length: case M::set_capacity: case M::set_char: return Type::unit;
+    case M::set_length: case M::set_capacity: case M::set_char: case M::copy_to: return Type::unit;
     case M::text: case M::text_range: return Type::string;
     case M::get_char: return Type::character;
     case M::equals: return Type::boolean;
@@ -169,6 +218,38 @@ Value string_builder_invoke(Values& values,Type owner,StringBuilderMethod method
     case M::append_slice:
         append_text(builder,slice(string_text(args[1]),number(2),number(3),location),location);
         break;
+    case M::append_scalar: append_text(builder,scalar_text(args[1],location),location); break;
+    case M::append_array: append_array(builder,args[1],0,std::nullopt,location); break;
+    case M::append_array_range: append_array(builder,args[1],number(2),number(3),location); break;
+    case M::append_builder: {
+        const auto& other=std::get<std::shared_ptr<Aggregate>>(args[1]);
+        if (other && !other->nil) {
+            const auto text=state(other,location).text;
+            append_text(builder,text,location);
+        }
+        break;
+    }
+    case M::copy_to: {
+        const auto& target=std::get<std::shared_ptr<Aggregate>>(args[2]);
+        if (!target || target->nil) throw runtime_error(RuntimeError::nil_reference,location);
+        const auto start=number(1);
+        const auto destination=number(3);
+        const auto count=number(4);
+        const auto content=slice(builder.text,start,count,location);
+        if (destination>target->items.size() || count>target->items.size()-destination)
+            throw out_of_range(location);
+        for (std::size_t i=0;i<count;++i) values.write(target->items[destination+i],content[i]);
+        return false;
+    }
+    case M::replace_char: case M::replace_char_range: {
+        const auto start=method==M::replace_char?0U:number(3);
+        const auto count=method==M::replace_char?length:number(4);
+        (void)slice(builder.text,start,count,location);
+        auto begin=builder.text.begin()+static_cast<std::ptrdiff_t>(start);
+        std::replace(begin,begin+static_cast<std::ptrdiff_t>(count),
+            std::get<char16_t>(args[1]),std::get<char16_t>(args[2]));
+        break;
+    }
     case M::append_line: case M::append_line_text:
         if (method==M::append_line_text) append_text(builder,string_text(args[1]),location);
 #ifdef _WIN32

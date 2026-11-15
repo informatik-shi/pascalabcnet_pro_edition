@@ -2222,8 +2222,8 @@ private:
         return static_cast<Type>(63+module_.types.size());
     }
     std::unique_ptr<hir::Expr> string_builder_expression(Type owner,StringBuilderMethod method,
-        std::vector<std::unique_ptr<hir::Expr>> args,SourceLocation location) {
-        const auto types=string_builder_parameters(owner,method);
+        std::vector<std::unique_ptr<hir::Expr>> args,SourceLocation location,Type payload=Type::invalid) {
+        const auto types=string_builder_parameters(owner,method,payload);
         if (types.size()!=args.size())
             throw Error("E_TYPE",location,"Wrong StringBuilder argument count","Неверное число аргументов StringBuilder");
         for (std::size_t i=0;i<types.size();++i) args[i]=convert(std::move(args[i]),types[i]);
@@ -2231,6 +2231,7 @@ private:
         result->kind=hir::ExprKind::encoding_call;
         result->operation_type=owner;
         result->local=static_cast<std::size_t>(method);
+        if (payload!=Type::invalid) result->local|=static_cast<std::size_t>(payload)<<8U;
         result->type=string_builder_result(owner,method);
         result->location=location;
         result->arguments=std::move(args);
@@ -2286,6 +2287,13 @@ private:
         else if (name=="tostring") method=count==0?M::text:M::text_range;
         else if (name=="equals") method=M::equals;
         else if (name=="appendline") method=count==0?M::append_line:M::append_line_text;
+        else if (name=="copyto") method=M::copy_to;
+        else if (name=="replace") {
+            if (count!=2 && count!=4)
+                throw Error("E_TYPE",location,"No matching StringBuilder.Replace overload",
+                    "Нет подходящей перегрузки StringBuilder.Replace");
+            method=count==2?M::replace_char:M::replace_char_range;
+        }
         else if (name!="append")
             throw Error("E_UNSUPPORTED",location,"StringBuilder member is not ported yet","Член StringBuilder ещё не перенесён");
 
@@ -2293,14 +2301,27 @@ private:
         std::vector<std::unique_ptr<hir::Expr>> args;
         args.push_back(std::move(receiver.left));
         for (const auto& arg:source.arguments) args.push_back(expression(*arg));
+        auto payload=Type::invalid;
+        if (method==M::copy_to) payload=sequence_type(CompoundKind::array,Type::character);
         if (name=="append") {
-            if (count==1) method=args[1]->type==Type::character?M::append_char:M::append_text;
+            const auto first=count?args[1]->type:Type::invalid;
+            const auto chars=compound(first) && info(first,location).kind==CompoundKind::array
+                && info(first,location).rank==1 && info(first,location).element==Type::character;
+            const auto primitive=integer_type(first) || first==Type::real || first==Type::single || first==Type::boolean;
+            if (chars && (count==1 || count==3)) {
+                payload=first;
+                method=count==1?M::append_array:M::append_array_range;
+            } else if (primitive && count==1) {
+                payload=first;
+                method=M::append_scalar;
+            } else if (count==1 && is_string_builder(first)) method=M::append_builder;
+            else if (count==1) method=first==Type::character?M::append_char:M::append_text;
             else if (count==2) method=M::append_repeated;
             else if (count==3) method=M::append_slice;
             else throw Error("E_TYPE",location,"No matching StringBuilder.Append overload",
                 "Нет подходящей перегрузки StringBuilder.Append");
         }
-        return string_builder_expression(type,method,std::move(args),location);
+        return string_builder_expression(type,method,std::move(args),location,payload);
     }
     bool encoding_type_name(const SyntaxExpr& source) const {
         const auto hidden=[&](const Token& token) {
