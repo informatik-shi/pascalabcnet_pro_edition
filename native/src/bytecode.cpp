@@ -244,6 +244,7 @@ private:
         case hir::ExprKind::call:
         case hir::ExprKind::unary:
         case hir::ExprKind::pointer_call:
+        case hir::ExprKind::object_cast:
         case hir::ExprKind::binary: expression_part_8(node);break;
         }
     }
@@ -696,6 +697,13 @@ private:
             else reference(*node.left);
             emit(Op::pointer_call,node.operation_type,node.local,node.location);
             break;
+        case hir::ExprKind::object_cast: {
+            const bool unbox=node.left->type==node.operation_type;
+            const auto payload=unbox ? node.type : node.left->type;
+            expression(*node.left);
+            emit(Op::object_cast,node.operation_type,(static_cast<std::size_t>(payload)<<1U)|static_cast<std::size_t>(unbox),node.location);
+            break;
+        }
         case hir::ExprKind::binary: {
             expression(*node.left);
             if ((node.operation == "and" || node.operation == "or") && node.type==Type::boolean) {
@@ -1376,6 +1384,13 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if (!compound(type) || type_info(program,type).kind!=CompoundKind::typed_pointer
                 || instruction.operand>static_cast<std::size_t>(PointerMethod::reference)) invalid(instruction,"Invalid typed pointer operation");
             break;
+        case Op::object_cast: {
+            const auto payload=instruction.operand>>1U;
+            if (!compound(type) || type_info(program,type).kind!=CompoundKind::boxed_object
+                || payload>=static_cast<std::size_t>(Type::first_compound) || !scalar(static_cast<Type>(payload)))
+                invalid(instruction,"Invalid object conversion metadata");
+            break;
+        }
         case Op::store_index:
             if(!compound(type) || !indexed_sequence(type_info(program,type).kind) || instruction.operand)invalid(instruction,"Invalid deferred index store");break;
         case Op::store_field:
@@ -1876,6 +1891,13 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             }
             break;
         }
+        case Op::object_cast: {
+            const auto payload=static_cast<Type>(instruction.operand>>1U);
+            const bool unbox=(instruction.operand&1U)!=0;
+            require(unbox ? instruction.type : payload);
+            stack.push_back(unbox ? payload : instruction.type);
+            break;
+        }
         case Op::store_field:require(type_info(program,instruction.type).fields[instruction.operand].type);require(instruction.type);break;
         case Op::for_step_check: require(Type::integer);break;
         case Op::text_lines: require(Type::text_file);stack.push_back(instruction.type);break;
@@ -2122,6 +2144,9 @@ void verify(const Program& program) {
             if (type.name!="typed_pointer" || !type.fields.empty() || type.key!=Type::invalid || type.rank!=1)
                 throw Error("E_BYTECODE",{},"Invalid typed pointer metadata");
             prior(type.element);
+        } else if (type.kind==CompoundKind::boxed_object) {
+            if (type.name!="object" || !type.fields.empty() || type.key!=Type::invalid || type.element!=Type::invalid || type.rank!=1)
+                throw Error("E_BYTECODE",{},"Invalid object type metadata");
         } else if(type.kind==CompoundKind::binary_file) {
             if(type.name!="binaryfile"||!type.fields.empty()||type.rank!=1)throw Error("E_BYTECODE",{},"Invalid binary file metadata");
             prior(type.key);const auto& bytes=type_info(program,type.key);if(bytes.kind!=CompoundKind::array||bytes.rank!=1||bytes.element!=Type::byte)throw Error("E_BYTECODE",{},"Invalid binary file byte-array metadata");

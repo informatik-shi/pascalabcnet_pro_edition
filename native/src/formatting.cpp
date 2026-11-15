@@ -20,7 +20,7 @@ bool supports(const std::vector<TypeInfo>& types, Type type, unsigned depth) {
     if (index>=types.size()) return false;
     const auto& info=types[index];
     if(dictionary_enumerator_type(info) || collection_enumerator_type(info))return false;
-    if(info.kind==CompoundKind::empty_collection)return true;
+    if(info.kind==CompoundKind::empty_collection || info.kind==CompoundKind::boxed_object)return true;
     if(info.kind==CompoundKind::fixed_array)return supports(types,info.element,depth+1);
     if (school_ip_kind(info.kind) || info.kind==CompoundKind::enumeration) return true;
     if (info.kind==CompoundKind::record || info.kind==CompoundKind::tuple) {
@@ -43,17 +43,22 @@ class ObjectWriter {
         if (options.cancelled && options.cancelled()) throw runtime_error(RuntimeError::cancelled,location);
         if (!compound(type)) { append(type==Type::nil ? u"nil" : format_field(data,0,std::nullopt,location)); return; }
         if(enumeration(program,type)){append(enum_text(program,std::get<EnumValue>(data),location));return;}
-        if(program.types[static_cast<std::size_t>(type)-64U].kind==CompoundKind::new_set){
+        const auto& info=program.types[static_cast<std::size_t>(type)-static_cast<std::size_t>(Type::first_compound)];
+        if(info.kind==CompoundKind::new_set){
             const auto& set=std::get<NewSetValue>(data);const auto& hash=std::get<std::shared_ptr<Aggregate>>(set.storage->value);
             if(!hash || hash->nil)append(u"{}");else value(set.storage->value,set.storage->type);return;
         }
         const auto& object=std::get<std::shared_ptr<Aggregate>>(data);
         if (!object || object->nil) { append(u"nil"); return; }
-        if(program.types[static_cast<unsigned>(type)-64U].kind==CompoundKind::fixed_array){value(object->items[0]->value,program.types[static_cast<unsigned>(type)-64U].key);return;}
-        if(program.types[static_cast<std::size_t>(type)-64U].kind==CompoundKind::empty_collection){append(u"{}");return;}
+        if (info.kind==CompoundKind::boxed_object) {
+            if (object->items.empty()) append(u"()");
+            else value(object->items.front()->value,object->items.front()->type);
+            return;
+        }
+        if(info.kind==CompoundKind::fixed_array){value(object->items[0]->value,info.key);return;}
+        if(info.kind==CompoundKind::empty_collection){append(u"{}");return;}
         if (std::find(path.begin(),path.end(),object.get())!=path.end()) { append(u"(...)"); return; }
         path.push_back(object.get());
-        const auto& info=program.types[static_cast<std::size_t>(type)-static_cast<std::size_t>(Type::first_compound)];
         if(ordinal_range_type(info))append(ordinal_range_text(object));
         else if(real_interval_type(info))append(real_interval_text(object,location));
         else if (school_ip_kind(info.kind)) append(school_ip_text(program,object,location));

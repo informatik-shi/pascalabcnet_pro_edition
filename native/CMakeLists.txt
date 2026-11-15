@@ -814,6 +814,7 @@ if(BUILD_TESTING)
     endforeach()
     add_test(NAME original_shortstring1 COMMAND $<TARGET_FILE:abc> run "${CMAKE_CURRENT_SOURCE_DIR}/../TestSuite/shortstring1.pas")
     set_tests_properties(original_shortstring1 PROPERTIES RUN_SERIAL TRUE)
+    add_test(NAME original_dynarrays1 COMMAND $<TARGET_FILE:abc> run "${CMAKE_CURRENT_SOURCE_DIR}/../TestSuite/dynarrays1.pas")
     add_test(NAME typed_file_short_strings COMMAND ${CMAKE_COMMAND}
         -DABC_RUNNER=$<TARGET_FILE:abc> "-DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
         -DABC_FIXTURE_NAME=typed-file-short-strings -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")

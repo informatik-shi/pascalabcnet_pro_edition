@@ -625,7 +625,7 @@ private:
                 result->system_qualified=true; expect("."); result->kind=is("type") ? consume().text : name().text;
                 if(result->kind=="text") {expect(".");result->kind=name().text;if(result->kind!="encoding")throw Error("E_UNSUPPORTED",result->token.location,"Unknown or unsupported Encoding type");}
                 else if(result->kind=="collections"){expect(".");const auto generic=name();if(generic.text!="generic")throw Error("E_UNSUPPORTED",generic.location,"Unknown System.Collections namespace");expect(".");result->kind=name().text;if(result->kind!="dictionary" && result->kind!="keyvaluepair" && result->kind!="ienumerable" && result->kind!="ienumerator" && result->kind!="list" && result->kind!="hashset" && result->kind!="icomparer" && result->kind!="comparer" && result->kind!="iequalitycomparer" && result->kind!="equalitycomparer" && result->kind!="icollection" && result->kind!="ilist" && result->kind!="iset" && result->kind!="idictionary")throw Error("E_UNSUPPORTED",result->token.location,"Unknown generic collection type");}
-                else if (result->kind!="func" && result->kind!="action" && result->kind!="predicate" && result->kind!="type" && result->kind!="void" && result->kind!="single" && result->kind!="icomparable" && result->kind!="iequatable")
+                else if (result->kind!="func" && result->kind!="action" && result->kind!="predicate" && result->kind!="type" && result->kind!="void" && result->kind!="single" && result->kind!="object" && result->kind!="icomparable" && result->kind!="iequatable")
                     throw Error("E_UNSUPPORTED",result->token.location,"Unknown or unsupported type 'System."+result->kind+"'");
             }
             if (result->kind=="func" || result->kind=="func0" || result->kind=="func2" || result->kind=="func3"
@@ -2505,6 +2505,7 @@ private:
                 if(syntax.enum_flags){if(!enumeration(found->second))throw Error("E_TYPE",syntax.token.location,"FlagsAttribute requires an enumeration");module_.types[static_cast<unsigned>(found->second)-64U].enum_flags=true;}
                 return found->second;
             }
+        if (syntax.kind=="object" && syntax.named && syntax.unit.empty()) return object_type(syntax.token.location);
         if (syntax.kind=="shortstring" && syntax.named && syntax.unit.empty() && !syntax.system_qualified)
             return short_string_type(max_short_string_capacity);
         if (syntax.kind=="$short_string") {
@@ -2722,6 +2723,25 @@ private:
     ABC_PASCAL_NOINLINE std::unique_ptr<hir::Expr> interface_conversion(std::unique_ptr<hir::Expr> value,Type target,bool checked){
         auto node=std::make_unique<hir::Expr>();node->kind=hir::ExprKind::interface_cast;node->type=target;node->location=value->location;node->local=checked ? 1U : 0U;node->left=std::move(value);return node;
     }
+    Type object_type(SourceLocation location) {
+        for (std::size_t i=0;i<module_.types.size();++i)
+            if (module_.types[i].kind==CompoundKind::boxed_object) return static_cast<Type>(64+i);
+        if (module_.types.size()>=1024) throw Error("E_LIMIT",location,"Type limit exceeded");
+        module_.types.push_back({"object",CompoundKind::boxed_object,Type::invalid,{}});
+        return static_cast<Type>(63+module_.types.size());
+    }
+    bool boxed_object(Type type,SourceLocation location) const {
+        return compound(type) && info(type,location).kind==CompoundKind::boxed_object;
+    }
+    std::unique_ptr<hir::Expr> object_conversion(std::unique_ptr<hir::Expr> input,Type type,Type object) {
+        auto result=std::make_unique<hir::Expr>();
+        result->kind=hir::ExprKind::object_cast;
+        result->type=type;
+        result->location=input->location;
+        result->operation_type=object;
+        result->left=std::move(input);
+        return result;
+    }
     ABC_PASCAL_NOINLINE std::unique_ptr<hir::Expr> copy_expression(const hir::Expr& value){
         if(++callable_copy_nodes_>65536)throw Error("E_LIMIT",value.location,"Delegate conversion expression limit exceeded","Превышен предел выражения преобразования делегата");
         auto result=std::make_unique<hir::Expr>();result->kind=value.kind;result->type=value.type;result->location=value.location;result->value=value.value;result->local=value.local;result->operation=value.operation;result->operation_type=value.operation_type;result->temporaries=value.temporaries;result->getter=value.getter;result->setter=value.setter;
@@ -2738,6 +2758,10 @@ private:
             || (shape.kind==CompoundKind::array && shape.rank==1));
     }
     ABC_PASCAL_NOINLINE std::unique_ptr<hir::Expr> convert(std::unique_ptr<hir::Expr> expression, Type type,bool assignment=false,bool copy=true) {
+        if (scalar(expression->type) && boxed_object(type,expression->location)) {
+            if (short_string(expression->type)) expression=convert(std::move(expression),Type::string);
+            return object_conversion(std::move(expression),type,type);
+        }
         if (short_string(type) && can_widen(expression->type,type)) {
             const auto location=expression->location;
             if (expression->type==Type::nil) expression=convert(std::move(expression),Type::string);
@@ -4039,6 +4063,22 @@ private:
                 result->left=std::move(pointer);
                 result->arguments.clear();
                 break;
+            }
+            const auto cast_alias=aliases_.find(source.token.text);
+            const bool builtin_object=source.token.text=="object" && cast_alias==aliases_.end();
+            if (builtin_object || (cast_alias!=aliases_.end() && boxed_object(cast_alias->second,result->location))) {
+                if (result->arguments.size()!=1)
+                    throw Error("E_TYPE",result->location,"Object conversion requires one value","Для приведения к object нужно одно значение");
+                const auto target=builtin_object ? object_type(result->location) : cast_alias->second;
+                return convert(std::move(result->arguments.front()),target);
+            }
+            if (result->arguments.size()==1 && boxed_object(result->arguments.front()->type,result->location)) {
+                const auto cast=cast_alias!=aliases_.end() ? cast_alias->second : find_type(source.token.text).value_or(Type::invalid);
+                if (scalar(cast)) {
+                    const auto object=result->arguments.front()->type;
+                    auto unboxed=object_conversion(std::move(result->arguments.front()),short_string(cast) ? Type::string : cast,object);
+                    return short_string(cast) ? convert(std::move(unboxed),cast) : std::move(unboxed);
+                }
             }
             if (bind_print(*result,source.token.text)) break;
             if (bind_sequence_conversion(*result,source.token.text)) break;

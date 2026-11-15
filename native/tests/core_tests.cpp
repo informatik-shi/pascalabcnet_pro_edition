@@ -6093,6 +6093,26 @@ end.)","False False 0\nFalse [abc] 17\nTrue True\n");
     error([&]{abc::verify(invalid);},"E_BYTECODE");
 }
 
+void boxed_object_values() {
+    result(R"(type AnyScalar=System.Object;
+begin
+  var values:array of object := (1,byte(2),'three',nil);
+  Writeln(integer(values[0]),' ',byte(values[1]),' ',string(values[2]),' ',values[3]=nil);
+  Writeln(values[0].GetType.Name,' ',values[1].GetType.Name,' ',values[2].GetType.Name);
+  var s:string := nil;
+  var value:AnyScalar := s;
+  assert(value=nil);
+  assert(string(value)=nil);
+  value:=AnyScalar(7);
+  Writeln(integer(value),' ',typeof(AnyScalar).FullName);
+  values:=new object[2](true,3.5);
+  Writeln(boolean(values[0]),' ',real(values[1]));
+end.)","1 2 three True\nInt32 Byte String\n7 System.Object\nTrue 3.5\n");
+    runtime_error("begin var o:object:=byte(2); Writeln(integer(o)); end.","E_CAST");
+    runtime_error("begin var o:object:=nil; Writeln(integer(o)); end.","E_NIL");
+    compile_error("begin var o:object:=1; var n:integer:=o; end.","E_TYPE");
+}
+
 void global_routine_overloads() {
     result(R"(type ActionOnInteger = function(n: integer): integer;
 function Pick(n: integer): integer := n+10;
@@ -7885,6 +7905,7 @@ int main() {
     short_string_helpers();
     short_string_types();
     typed_pointers();
+    boxed_object_values();
     global_routine_overloads();
     integral_set_relations();
     subrange_types();

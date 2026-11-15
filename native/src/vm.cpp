@@ -1293,6 +1293,30 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
             else stack.push_back(target);
             break;
         }
+        case Op::object_cast: {
+            const auto payload=static_cast<Type>(instruction.operand>>1U);
+            auto value=pop();
+            if (instruction.operand&1U) {
+                const auto& object=std::get<std::shared_ptr<Aggregate>>(value);
+                if (object->nil) {
+                    if (payload!=Type::string) trap(instruction,RuntimeError::nil_reference);
+                    stack.emplace_back(NilString{});
+                    break;
+                }
+                if (object->items.empty() || object->items.front()->type!=payload)
+                    throw Error("E_CAST",instruction.location,"Object has a different boxed type","В object хранится значение другого типа");
+                stack.push_back(values.copy(object->items.front()->value));
+            } else if (std::holds_alternative<NilString>(value)) {
+                stack.push_back(values.zero(instruction.type));
+            } else {
+                if (!values.remaining) trap(instruction,RuntimeError::allocation_limit);
+                --values.remaining;
+                auto object=std::get<std::shared_ptr<Aggregate>>(values.zero(instruction.type,true));
+                object->items.push_back(values.cell(payload,std::move(value)));
+                stack.emplace_back(std::move(object));
+            }
+            break;
+        }
         case Op::comparable_call: {
             const auto method=static_cast<ComparableMethod>(instruction.operand);std::vector<Value> arguments(comparable_parameters(instruction.type,method).size());
             for(std::size_t i=arguments.size();i>0;--i)arguments[i-1]=pop();

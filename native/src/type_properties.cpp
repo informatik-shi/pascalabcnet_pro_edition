@@ -115,6 +115,7 @@ Definition definition(const Program& program,ReflectedType type,Work& work){
             result.arguments={info.fields[0].type,info.fields[1].type};arity(result);break;
         }
         switch(info.kind){
+        case CompoundKind::boxed_object:result.name=u"Object";break;
         case CompoundKind::record:case CompoundKind::object_class:case CompoundKind::enumeration:case CompoundKind::user_interface:{
             auto name=from_utf8(info.display_name.empty() ? info.name : info.display_name);
             if(name.empty() || name==u"record" || name.front()==u'$')unsupported(work.location);

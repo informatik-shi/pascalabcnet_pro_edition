@@ -37,7 +37,8 @@ std::u16string byref_name(const Program& program,Type type,Work& work){
     case Type::type_descriptor:name=u"Type";break;case Type::unit:name=u"Void";break;
     default:{
         const auto& info=type_info(program,type);std::size_t arity=1;
-        if(ordinal_range_type(info)){name=info.element==Type::character ? u"CharRange" : u"IntRange";arity=0;}
+        if(info.kind==CompoundKind::boxed_object){name=u"Object";arity=0;}
+        else if(ordinal_range_type(info)){name=info.element==Type::character ? u"CharRange" : u"IntRange";arity=0;}
         else if(real_interval_type(info)){name=u"RealRange";arity=0;}
         else if(key_value_pair_type(info)){name=u"KeyValuePair";arity=2;}
         else if(dictionary_enumerator_type(info)){name=u"Enumerator";arity=2;}
@@ -104,6 +105,10 @@ ReflectedType reflected_value_type(const Program& program,const Value& value,Typ
     for(std::size_t depth=0;depth<256;++depth){
         work.step();if(!current || current->nil)return {};
         const auto& info=type_info(program,current->type);
+        if (info.kind==CompoundKind::boxed_object) {
+            if (current->items.empty()) return {current->type};
+            return {current->items.front()->type};
+        }
         if(info.kind==CompoundKind::enumerator){
             if(!current->enumerator)throw runtime_error(RuntimeError::invalid_bytecode,location);const auto& state=*current->enumerator;
             if(state.boxed)return {state.boxed->type};
@@ -194,6 +199,7 @@ std::u16string reflected_type_name(const Program& program,const ReflectedType& t
         if(task.type==Type::type_descriptor){text(u"Type");continue;}
         if(!compound(task.type)){text(from_utf8(type_name(short_string(task.type) ? Type::string : task.type)));continue;}
         const auto& info=type_info(program,task.type);
+        if(info.kind==CompoundKind::boxed_object){text(u"object");continue;}
         if(ordinal_range_type(info)){text(info.element==Type::character ? u"CharRange" : u"IntRange");continue;}
         if(real_interval_type(info)){text(u"RealRange");continue;}
         if(collection_enumerator_type(info)){text(u">");child(info.element);text(u"Enumerator<");continue;}
