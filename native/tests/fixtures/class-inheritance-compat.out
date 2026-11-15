@@ -1,0 +1,17 @@
+root field
+implicit field
+implicit body 9
+root field
+root body ExplicitState 5
+explicit field
+explicit body 2
+ExplicitState 5 7
+5 2
+root field
+root body PlainState 21
+21 PlainState
+root field
+8 PlainState
+root field
+8 RootState
+EmptyRoot

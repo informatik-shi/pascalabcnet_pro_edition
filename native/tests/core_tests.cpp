@@ -440,7 +440,8 @@ void native_class_constructors_language() {
     }
     runtime_error("type C=class constructor(n:integer);begin Assert(False);end;end;begin var c:=new C(1);end.","E_ASSERT");
     runtime_error("type N=class next:N;constructor;begin next:=Self;Assert(False);end;end;begin var n:=new N;end.","E_ASSERT");
-    for(const auto source:{"type C=class constructor(n:integer);begin end;end;begin var c:=new C('abc');end.","type C=class constructor(n:integer);begin end;end;begin var c:=new C;end.","type C=class constructor Build;begin end;end;begin end.","type C=class constructor;begin Exit(1);end;end;begin end."})compile_error(source,"E_TYPE");
+    for(const auto source:{"type C=class constructor(n:integer);begin end;end;begin var c:=new C('abc');end.","type C=class constructor Build;begin end;end;begin end.","type C=class constructor;begin Exit(1);end;end;begin end."})compile_error(source,"E_TYPE");
+    result("type C=class value:integer:=3;constructor(n:integer);begin value:=n;end;end;begin var c:=new C;Writeln(c.value);end.","3\n");
     compile_error("type C=class constructor;begin end;constructor(n:integer);begin end;end;begin end.","E_DUPLICATE");
     compile_error("type C=class constructor;begin end;end;begin var c:=new C;c.Create();end.","E_UNSUPPORTED");
     abc::ExecutionOptions options;options.call_limit=2;error([&]{(void)run("type N=class next:N;constructor;begin next:=new N;end;end;begin var n:=new N;end.","",options);},"E_LIMIT");
@@ -515,7 +516,8 @@ void native_class_fields_language() {
     result("type A=class n:integer;end;B=A;begin var b:=new B;b.n:=4;Writeln(b.n);end.","4\n");
     result("type C=class end;begin var a:=new C;var b:=new C;Writeln(a=a,' ',a=b,' ',a<>nil);var f:=()->a=b;Writeln(f());end.","True False True\nFalse\n");
     for(const auto source:{"type C=class n:integer;end;begin var c:C;Writeln(c.n);end.","type C=class n:integer;end;begin var c:C;c.n:=1;end.","type C=class n:integer;end;procedure P(var n:integer);begin end;begin var c:C;P(c.n);end."})runtime_error(source,"E_NIL");
-    for(const auto source:{"type A=class end;B=class(A)end;begin end.","type C=class;begin end."})compile_error(source,"E_UNSUPPORTED");
+    compile_error("type C=class;begin end.","E_UNSUPPORTED");
+    result("type A=class n:integer;end;B=class(A)end;begin var b:=new B;var a:A:=b;a.n:=7;Writeln(b.n);end.","7\n");
     compile_error("type C=class property X[i:integer]:integer read n;end;begin end.","E_NAME");
     compile_error("type C=class n:integer;n:integer;end;begin end.","E_DUPLICATE");
     compile_error("type A=class end;B=class end;begin var a:=new A;var b:=new B;a:=b;end.","E_TYPE");

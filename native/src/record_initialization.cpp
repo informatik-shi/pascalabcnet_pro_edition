@@ -39,7 +39,7 @@ void initialize_class_fields(Values& values,const Value& instance,Type initializ
  const auto& types=values.program.types;
  std::vector<Type> classes;
  auto type=start==Type::invalid ? value_type(instance) : start;
- while(type!=initialized_through && class_parent(types,type)!=Type::invalid){
+ while(type!=initialized_through && compound(type) && type_info(values.program,type).kind==CompoundKind::object_class){
   classes.push_back(type);
   type=class_parent(types,type);
  }

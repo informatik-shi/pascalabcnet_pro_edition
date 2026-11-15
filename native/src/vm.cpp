@@ -1419,7 +1419,7 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
         case Op::make_default: {
             const bool constructed=(instruction.operand&3U)==1;
             auto value=initialized_default(values,instruction.type,constructed,(instruction.operand&3U)==2,instruction.operand>>2U);
-            if(constructed && class_parent(program.types,instruction.type)!=Type::invalid)
+            if(constructed && compound(instruction.type) && type_info(program,instruction.type).kind==CompoundKind::object_class)
                 initialize_class_fields(values,value);
             stack.push_back(std::move(value));
             break;
@@ -1593,6 +1593,12 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
         case Op::call_base_constructor:
             enter_routine(instruction.operand,instruction.location,{},class_parent(program.types,frame.routine->owner));
             break;
+        case Op::initialize_base_fields: {
+            const auto instance=pop();
+            const auto parent=class_parent(program.types,instruction.type);
+            if(parent!=Type::invalid)initialize_class_fields(values,instance,Type::invalid,parent);
+            break;
+        }
         case Op::return_user: {
             std::optional<Value> result;
             const auto constructor_owner=frame.routine->constructor ? frame.routine->owner : Type::invalid;

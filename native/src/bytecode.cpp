@@ -243,6 +243,7 @@ private:
         case hir::ExprKind::property_access: expression_part_7(node);break;
         case hir::ExprKind::user_call:
         case hir::ExprKind::base_constructor_call:
+        case hir::ExprKind::initialize_base_fields:
         case hir::ExprKind::list_add:
         case hir::ExprKind::list_remove:
         case hir::ExprKind::list_clear:
@@ -696,6 +697,10 @@ private:
     }
     ABC_BYTECODE_NOINLINE void expression_part_8(const hir::Expr& node) {
         switch(node.kind) {
+        case hir::ExprKind::initialize_base_fields:
+            expression(*node.left);
+            emit(Op::initialize_base_fields,node.operation_type,0,node.location);
+            break;
         case hir::ExprKind::user_call:
         case hir::ExprKind::base_constructor_call: {
             if(node.operation=="$static_init"){emit(Op::call_user,Type::unit,program_.static_classes.at(node.local).initializer,node.location);break;}
@@ -984,6 +989,23 @@ private:
 
 bool valid_type(Type type) { return scalar(type); }
 bool text_scalar(const Program& program,Type type){return scalar(type) || enumeration(program,type);}
+bool has_parameterless_constructor(const Program& program,Type owner){
+    for(std::size_t i=0;i<program.routines.size();++i){
+        const auto& routine=program.routines[i];
+        if(!routine.constructor || routine.owner!=owner)continue;
+        bool required=false;
+        for(std::size_t j=1;j<routine.parameters.size() && !required;++j){
+            const auto& parameter=routine.parameters[j];
+            if(parameter.variadic)continue;
+            const auto name="$default_"+std::to_string(i)+"_"+std::to_string(j);
+            required=std::none_of(program.routines.begin(),program.routines.end(),[&](const auto& helper){
+                return helper.name==name && helper.parameters.empty() && helper.result==parameter.type;
+            });
+        }
+        if(!required)return true;
+    }
+    return false;
+}
 bool value_transform(Op op) {
     return op==Op::sequence_select_value || op==Op::sequence_where_value || op==Op::sequence_flatmap_value
         || op==Op::sequence_takewhile_value || op==Op::sequence_skipwhile_value;
@@ -1485,7 +1507,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         case Op::make_default: case Op::store_ref: case Op::drop:
             if (!valid_value_type(program,type) || (instruction.op==Op::make_default && ((instruction.operand&3U)>2 || (instruction.operand>>2U)!=((instruction.operand&3U)==2?0:record_initializer_operand(program,type))))) invalid(instruction,"Invalid value type");
             if (instruction.op==Op::make_default && (instruction.operand&3U)==1 && compound(type) && type_info(program,type).kind==CompoundKind::object_class
-                && std::any_of(program.routines.begin(),program.routines.end(),[type](const auto& candidate){return candidate.constructor && candidate.owner==type;}))
+                    && has_parameterless_constructor(program,type))
                 invalid(instruction,"Class constructor cannot be bypassed");
             if(instruction.op==Op::make_default&&(instruction.operand&3U)==1&&compound(type)&&type_info(program,type).kind==CompoundKind::record
                 &&std::any_of(program.routines.begin(),program.routines.end(),[type](const auto& r){return r.constructor&&r.owner==type&&r.parameters.size()==1;}))
@@ -1526,6 +1548,11 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
                 || !program.routines[instruction.operand].constructor || !program.routines[instruction.operand].captures.empty()
                 || !class_reference_compatible(program.types,routine->owner,program.routines[instruction.operand].owner))
                 invalid(instruction,"Invalid base class constructor call");
+            break;
+        case Op::initialize_base_fields:
+            if(instruction.operand || !routine || !routine->constructor || routine->owner!=type
+                || !compound(type) || type_info(program,type).kind!=CompoundKind::object_class)
+                invalid(instruction,"Invalid base field initialization");
             break;
         case Op::return_user:
             if (!routine || type != routine->result) invalid(instruction,"Invalid return"); break;
@@ -2058,6 +2085,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
                 require(parameter->by_reference ? reference_type(parameter->type) : parameter->type);
             if (instruction.type != Type::unit) stack.push_back(instruction.type);
             break;
+        case Op::initialize_base_fields:require(instruction.type);break;
         case Op::return_user:
             if (!stack.empty()) invalid(instruction,"Nonempty stack at return");
             continue;
@@ -2303,8 +2331,8 @@ void verify(const Program& program) {
             if (type.name.empty() || type.element!=Type::invalid || type.fields.size()>256)
                 throw Error("E_BYTECODE",{},"Invalid native class metadata");
             if(type.key!=Type::invalid){
-                if(ini_ancestor(program.types,static_cast<Type>(64+i))==Type::invalid)
-                    throw Error("E_BYTECODE",{},"Invalid TIniFile base class metadata");
+                if(!valid_class_ancestry(program.types,static_cast<Type>(64+i)))
+                    throw Error("E_BYTECODE",{},"Invalid base class metadata");
                 const auto& inherited=type_info(program,type.key).fields;
                 if(inherited.size()>type.fields.size() || !std::equal(inherited.begin(),inherited.end(),type.fields.begin(),
                     [](const auto& a,const auto& b){return a.name==b.name && a.type==b.type && a.global==b.global && a.access==b.access;}))

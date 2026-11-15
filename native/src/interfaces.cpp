@@ -68,6 +68,24 @@ Type class_parent(const std::vector<TypeInfo>& types,Type type){
  const auto& shape=info(types,type);
  return shape.kind==CompoundKind::object_class ? shape.key : Type::invalid;
 }
+bool valid_class_ancestry(const std::vector<TypeInfo>& types,Type type){
+ for(std::size_t n=0;n<types.size();++n){
+  if(!valid(types,type))return false;
+  const auto& shape=info(types,type);
+  if(shape.kind==CompoundKind::ini_file)return true;
+  if(shape.kind!=CompoundKind::object_class)return false;
+  if(shape.key==Type::invalid)return true;
+  type=shape.key;
+ }
+ return false;
+}
+static const InterfaceImplementation* class_interface_implementation(const std::vector<TypeInfo>& types,Type type,Type target){
+ for(std::size_t n=0;n<types.size() && valid(types,type);++n){
+  if(const auto* result=implementation(info(types,type),target))return result;
+  type=class_parent(types,type);
+ }
+ return nullptr;
+}
 bool class_reference_compatible(const std::vector<TypeInfo>& types,Type from,Type to){
  if(!valid(types,to))return false;
  for(std::size_t n=0;n<types.size();++n){
@@ -82,7 +100,8 @@ bool interface_compatible(const std::vector<TypeInfo>& types,Type from,Type to){
  if(!valid(types,from) || !valid(types,to) || !interface_kind(info(types,to)))return false;
  if(from==to)return true;const auto& source=info(types,from);
  if(native_collection_type(types,from,to)||native_record_interface_type(types,from,to))return true;
- if(source.kind==CompoundKind::object_class||(source.kind==CompoundKind::record&&source.native_record==NativeRecord::none))return implementation(source,to)!=nullptr;
+ if(source.kind==CompoundKind::object_class)return class_interface_implementation(types,from,to)!=nullptr;
+ if(source.kind==CompoundKind::record && source.native_record==NativeRecord::none)return implementation(source,to)!=nullptr;
  if(source.kind==CompoundKind::equality_comparer)return info(types,to).kind==CompoundKind::equality_comparer_interface && source.element==info(types,to).element;
  if(source.kind==CompoundKind::comparer)return info(types,to).kind==CompoundKind::comparer_interface && source.element==info(types,to).element;
  if(!interface_kind(source))return false;
@@ -149,7 +168,11 @@ Value interface_cast(Values& values,Type from,Type to,bool checked,const Value& 
 std::size_t interface_target(Values& values,Type owner,std::size_t slot,const Value& receiver,const ExecutionOptions& options){
  if(!valid(values.program.types,owner) || !interface_kind(type_info(values.program,owner)))throw runtime_error(RuntimeError::invalid_bytecode,values.location);const auto contract=interface_contract(values.program.types,owner);if(slot>=contract.size())throw runtime_error(RuntimeError::invalid_bytecode,values.location);
  if(!options.instruction_limit)throw runtime_error(RuntimeError::instruction_limit,values.location);if(options.cancelled && options.cancelled())throw runtime_error(RuntimeError::cancelled,values.location);
- const auto object=std::get<std::shared_ptr<Aggregate>>(receiver);if(!object || object->nil)throw runtime_error(RuntimeError::nil_reference,values.location);const auto& type=type_info(values.program,object->type);const auto* table=implementation(type,owner);if((type.kind!=CompoundKind::object_class && !(type.kind==CompoundKind::record&&type.native_record==NativeRecord::none)) || !table || slot>=table->routines.size() )throw runtime_error(RuntimeError::invalid_bytecode,values.location);
+ const auto object=std::get<std::shared_ptr<Aggregate>>(receiver);if(!object || object->nil)throw runtime_error(RuntimeError::nil_reference,values.location);
+ const auto& type=type_info(values.program,object->type);
+ const auto* table=type.kind==CompoundKind::object_class ? class_interface_implementation(values.program.types,object->type,owner) : implementation(type,owner);
+ if((type.kind!=CompoundKind::object_class && !(type.kind==CompoundKind::record&&type.native_record==NativeRecord::none)) || !table || slot>=table->routines.size())
+  throw runtime_error(RuntimeError::invalid_bytecode,values.location);
  return table->routines[slot];
 }
 Value interface_invoke(Values& values,Type owner,std::size_t slot,const Value& receiver,std::span<const Value> arguments,const ExecutionOptions& options){

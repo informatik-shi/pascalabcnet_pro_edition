@@ -9,6 +9,7 @@ bool interface_property_match(const InterfaceMember&,const InterfaceMember&);
 bool interface_member_key_equal(const InterfaceMember&,const InterfaceMember&);
 bool interface_compatible(const std::vector<TypeInfo>&,Type from,Type to);
 Type class_parent(const std::vector<TypeInfo>&,Type);
+bool valid_class_ancestry(const std::vector<TypeInfo>&,Type);
 bool class_reference_compatible(const std::vector<TypeInfo>&,Type from,Type to);
 bool interface_cast_valid(const Program&,Type from,Type to,bool checked);
 void verify_interfaces(const Program&);

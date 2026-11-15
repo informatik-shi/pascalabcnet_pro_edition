@@ -343,7 +343,7 @@ bool reserved(std::string_view text) {
         "program", "begin", "end", "var", "if", "then", "else", "while", "do", "and", "or", "not",
         "div", "mod", "xor", "shl", "shr", "true", "false", "uses", "unit", "type", "const", "function", "procedure",
         "for", "to", "downto", "repeat", "until", "foreach", "in", "case", "of", "array", "record", "class", "nil",
-        "constructor", "property", "interface", "public", "private", "protected", "internal", "static",
+        "constructor", "inherited", "property", "interface", "public", "private", "protected", "internal", "static",
         "new", "default", "typeof", "out", "params", "set", "try", "except", "finally", "raise", "break", "continue", "exit", "writeln", "write", "readln", "read"};
     return words.contains(text);
 }
@@ -1395,7 +1395,7 @@ public:
             if (fields.size()>256) throw Error("E_LIMIT",name.location,"Class field limit exceeded");
             module_.types[static_cast<unsigned>(aliases_.at(name.text))-64].fields=std::move(fields);
         }
-        register_ini_class_bases(source);
+        register_class_bases(source);
         prepare_type_initializers(source);
         bind_static_constructor_definitions(source);
         prepare_static_fields(source);
@@ -1558,7 +1558,7 @@ private:
             inherited=&property->second;
         }return inherited;
     }
-    ABC_PASCAL_NOINLINE void register_ini_class_bases(const SyntaxStmt& source){
+    ABC_PASCAL_NOINLINE void register_class_bases(const SyntaxStmt& source){
         std::map<Type,Token> classes;
         for(const auto& [name,syntax]:source.type_declarations){
             if(syntax->kind!="class" || syntax->named)continue;
@@ -1580,9 +1580,9 @@ private:
             if(!ready.insert(type).second)return;
             const auto parent=class_parent(module_.types,type);
             if(parent==Type::invalid)return;
-            if(ini_ancestor(module_.types,type)==Type::invalid)
-                throw Error("E_UNSUPPORTED",classes.at(type).location,"Only TIniFile class inheritance is implemented",
-                    "Наследование классов реализовано для TIniFile");
+            if(!valid_class_ancestry(module_.types,type))
+                throw Error("E_TYPE",classes.at(type).location,"Cyclic or invalid class inheritance",
+                    "Цикл или недопустимый базовый класс в цепочке наследования");
             if(classes.contains(parent))layout(parent);
             auto& fields=module_.types[static_cast<unsigned>(type)-64].fields;
             auto inherited=info(parent,{}).fields;
@@ -1808,17 +1808,29 @@ private:
             throw Error("E_NAME",routine->name.location,"Declared class method has no implementation");
         for(const auto& routine:source.routines)if(routine->constructor){
             const auto& body=constructor_statements(*routine);
-            if(!body.empty() && body.front().expression && inherited_constructor_call(*body.front().expression))
+            if(!body.empty() && body.front().expression && inherited_constructor_call(*body.front().expression)){
                 inherited_constructor_calls_.insert(body.front().expression.get());
+            }else if(class_parent(module_.types,aliases_.at(routine->owner))!=Type::invalid){
+                SyntaxStmt base;
+                base.kind=SyntaxStmtKind::call;
+                base.token=routine->name;
+                auto receiver=make_expression(SyntaxExprKind::name,Token{TokenKind::name,"$inherited",routine->name.location});
+                base.expression=make_expression(SyntaxExprKind::member_call,Token{TokenKind::name,"create",routine->name.location},std::move(receiver));
+                inherited_constructor_calls_.insert(base.expression.get());
+                routine->body.statements.insert(routine->body.statements.begin(),std::move(base));
+            }
         }
         for (const auto& [name,type]:source.type_declarations) if (type->initializer) {
             for (const auto& method:type->methods) if (method->constructor) {
                 SyntaxStmt initialize;initialize.kind=SyntaxStmtKind::call;initialize.token=type->initializer->name;
                 initialize.expression=make_expression(SyntaxExprKind::call,type->initializer->name);
                 auto& body=constructor_statements(*method);
-                if(!body.empty() && body.front().expression && inherited_constructor_calls_.contains(body.front().expression.get()))
+                auto& statements=method->body.statements;
+                if(!statements.empty() && statements.front().expression && inherited_constructor_calls_.contains(statements.front().expression.get()))
+                    statements.insert(statements.begin()+1,std::move(initialize));
+                else if(!body.empty() && body.front().expression && inherited_constructor_calls_.contains(body.front().expression.get()))
                     body.insert(body.begin()+1,std::move(initialize));
-                else method->body.statements.insert(method->body.statements.begin(),std::move(initialize));
+                else statements.insert(statements.begin(),std::move(initialize));
             }
         }
     }
@@ -4552,18 +4564,21 @@ private:
                     for(const auto& argument:source.arguments)result->arguments.push_back(expression(*argument));
                     ini_expression(*result,type,IniMethod::construct);break;
                 }
-                if(ini_ancestor(module_.types,type)!=Type::invalid
-                    && (!class_constructors_.contains(type) || implicit_class_constructors_.contains(type))){
-                    if(const auto constructor=inherited_user_constructor(type,source.arguments.size())){
+                if(info(type,result->location).kind==CompoundKind::object_class){
+                    if(const auto constructor=find_user_constructor(type,source.arguments.size())){
                         bind_class_constructor(*result,source,type,*constructor);
-                    }else if(!source.arguments.empty()){
+                    }else if(!source.arguments.empty() && ini_ancestor(module_.types,type)!=Type::invalid){
                         for(const auto& argument:source.arguments)result->arguments.push_back(expression(*argument));
                         ini_expression(*result,type,IniMethod::construct);
-                    }else{
+                    }else if(source.arguments.empty()){
+                        if(implicit_class_constructors_.contains(type)){
+                            bind_class_constructor(*result,source,type);
+                            break;
+                        }
                         result->kind=hir::ExprKind::default_value;
                         result->type=type;
                         result->operation="new";
-                    }
+                    }else throw Error("E_TYPE",result->location,"No matching class constructor","Нет подходящего конструктора класса");
                     break;
                 }
                 if (info(type,result->location).kind==CompoundKind::sequence) throw Error("E_TYPE",result->location,"Sequences require a typed producer");
@@ -4586,9 +4601,11 @@ private:
                     for (std::size_t i=0;i<parameters.size();++i) result->arguments.push_back(convert(expression(*source.arguments[i],parameters[i]),parameters[i]));
                     break;
                 }
-                if ((info(type,result->location).kind==CompoundKind::object_class || (info(type,result->location).kind==CompoundKind::record && (!source.arguments.empty() || (class_constructors_.contains(type)&&module_.routines[class_constructors_.at(type)].signature.parameters.size()==1)))) && class_constructors_.contains(type)) { bind_class_constructor(*result,source,type);break; }
-                if (info(type,result->location).kind==CompoundKind::object_class && !source.arguments.empty())
-                    throw Error("E_TYPE",result->location,"Class has no declared constructor with arguments");
+                if(info(type,result->location).kind==CompoundKind::record && class_constructors_.contains(type)
+                    && (!source.arguments.empty() || module_.routines[class_constructors_.at(type)].signature.parameters.size()==1)){
+                    bind_class_constructor(*result,source,type);
+                    break;
+                }
                 if (info(type,result->location).kind==CompoundKind::list && !source.arguments.empty()) {
                     if (source.arguments.size()!=1) throw Error("E_TYPE",result->location,"List constructor requires zero or one argument");
                     auto argument=expression(*source.arguments[0]);
@@ -4690,7 +4707,9 @@ private:
     }
     ABC_PASCAL_NOINLINE std::unique_ptr<hir::Expr> bind_inherited_expression(const SyntaxExpr& source,Type expected,std::unique_ptr<hir::Expr> result){
         const auto parent=class_parent(module_.types,current_owner_);
-        if(parent==Type::invalid || current_static_initializer_)
+        const bool constructor=inherited_constructor_call(source);
+        if(current_owner_==Type::invalid || info(current_owner_,result->location).kind!=CompoundKind::object_class
+            || current_static_initializer_ || (parent==Type::invalid && !constructor))
             throw Error("E_TYPE",result->location,"Inherited member requires a base class and an instance",
                 "Для inherited нужны базовый класс и экземпляр");
         auto self=std::make_unique<hir::Expr>();
@@ -4699,7 +4718,7 @@ private:
         self->location=result->location;
         self->local=current_self_;
         capture_local(current_self_,result->location);
-        if(!inherited_constructor_call(source)){
+        if(!constructor){
             result->left=convert(std::move(self),parent);
             if(bind_inifile_member(*result,source))return result;
             return class_member(std::move(result),source,expected);
@@ -4708,15 +4727,24 @@ private:
             throw Error("E_TYPE",result->location,"Inherited constructor call must be first in the constructor body",
                 "Вызов унаследованного конструктора должен быть первым в теле конструктора");
         const auto ini=ini_ancestor(module_.types,parent);
-        if(const auto constructor=inherited_user_constructor(current_owner_,source.arguments.size())){
-            const auto& target=module_.routines[*constructor].signature;
+        if(const auto candidate=find_user_constructor(parent,source.arguments.size())){
+            const auto& target=module_.routines[*candidate].signature;
             result->kind=hir::ExprKind::base_constructor_call;
-            result->local=*constructor;
+            result->local=*candidate;
             result->type=Type::unit;
             result->arguments.push_back(convert(std::move(self),target.owner));
-            bind_constructor_arguments(*result,source,*constructor);
+            bind_constructor_arguments(*result,source,*candidate);
             return result;
         }
+        if(source.arguments.empty()){
+            result->kind=hir::ExprKind::initialize_base_fields;
+            result->type=Type::unit;
+            result->operation_type=current_owner_;
+            result->left=std::move(self);
+            return result;
+        }
+        if(ini==Type::invalid)
+            throw Error("E_TYPE",result->location,"No matching base constructor","Нет подходящего конструктора базового класса");
         result->arguments.push_back(convert(std::move(self),ini));
         for(const auto& argument:source.arguments)result->arguments.push_back(expression(*argument,Type::string));
         ini_expression(*result,ini,IniMethod::initialize);
@@ -7222,8 +7250,8 @@ private:
         for (auto& argument:result.arguments) argument=convert(std::move(argument),element);
         result.kind=hir::ExprKind::array_literal; result.type=sequence_type(CompoundKind::array,element);
     }
-    std::optional<std::size_t> inherited_user_constructor(Type type,std::size_t count)const{
-        for(auto parent=class_parent(module_.types,type);parent!=Type::invalid;parent=class_parent(module_.types,parent)){
+    std::optional<std::size_t> find_user_constructor(Type type,std::size_t count)const{
+        for(auto parent=type;parent!=Type::invalid;parent=class_parent(module_.types,parent)){
             const auto found=class_constructors_.find(parent);
             if(found==class_constructors_.end() || implicit_class_constructors_.contains(parent))continue;
             const auto id=found->second;
