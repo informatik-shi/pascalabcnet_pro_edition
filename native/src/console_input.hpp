@@ -9,6 +9,7 @@ public:
     Value read(Type type, SourceLocation location);
     std::u16string token(SourceLocation location);
     std::u16string read_line(SourceLocation location);
+    std::u16string read_short_string(std::int32_t capacity,SourceLocation location);
     void skip_line(SourceLocation location);
 private:
     bool ensure(SourceLocation location);

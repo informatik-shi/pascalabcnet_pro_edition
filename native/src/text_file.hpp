@@ -24,6 +24,7 @@ struct TextFile {
 TextFile& text_file(const Value& value, SourceLocation location);
 void text_write(TextFile& file, std::u16string_view value, SourceLocation location);
 Value text_read(TextFile& file, Type type, SourceLocation location);
+std::u16string text_read_short_string(TextFile& file,std::int32_t capacity,SourceLocation location);
 std::u16string text_word(TextFile& file, SourceLocation location);
 std::u16string text_name(const TextFile& file, bool full, SourceLocation location);
 std::u16string text_read_end(TextFile& file, SourceLocation location);

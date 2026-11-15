@@ -7523,12 +7523,18 @@ private:
     std::map<const SyntaxType*,Type> resolved_types_;
     bool bind_short_string_mutation(const SyntaxExpr& call,hir::Stmt& result){
         const auto& name=call.token.text;
-        if(name!="setlengthforshortstring" && name!="insertinshortstring")return false;
+        using stdlib::Function;
+        static constexpr std::array<std::pair<std::string_view,Function>,4> operations{{
+            {"setlengthforshortstring",Function::resize_short_string}, {"insertinshortstring",Function::insert_short_string},
+            {"readshortstring",Function::read_short_string}, {"readshortstringfromfile",Function::read_short_string_from_file}
+        }};
+        const auto operation=std::find_if(operations.begin(),operations.end(),[&](const auto& entry){return entry.first==name;});
+        if(operation==operations.end())return false;
+        const auto function=operation->second;
         const bool global=call.kind==SyntaxExprKind::call && !lookup(call.token) && !routine_names_.contains(name);
         const bool qualified=call.kind==SyntaxExprKind::member_call && call.left && call.left->kind==SyntaxExprKind::name
             && call.left->token.text=="pabcsystem" && !lookup(call.left->token);
         if((!global && !qualified) || !call.type_arguments.empty())return false;
-        const auto function=name=="setlengthforshortstring" ? stdlib::Function::resize_short_string : stdlib::Function::insert_short_string;
         const auto catalog=stdlib::signatures();
         const auto found=std::find_if(catalog.begin(),catalog.end(),[&](const auto& signature){return signature.function==function;});
         if(found==catalog.end())throw Error("E_HIR",result.location,"Missing short string mutation");

@@ -48,6 +48,20 @@ std::u16string ConsoleInput::read_line(SourceLocation location) {
     }
     return result;
 }
+std::u16string ConsoleInput::read_short_string(std::int32_t capacity,SourceLocation location){
+    check(location);
+    std::u16string result;
+    auto available=ensure(location);
+    for(std::int32_t count=0;count<capacity;++count){
+        const auto next=available ? line_[cursor_] : char16_t{65535};
+        if(next==u'\r' || next==u'\n')break;
+        if((count&255)==0)check(location);
+        if(result.size()==1'048'576)throw runtime_error(RuntimeError::input_limit,location);
+        result.push_back(next);
+        if(available){++cursor_;available=ensure(location);}
+    }
+    return result;
+}
 std::u16string ConsoleInput::token(SourceLocation location) {
     check(location);
     const auto space=[](char16_t c){return c==u' ' || c==u'\t' || c==u'\r' || c==u'\n';};

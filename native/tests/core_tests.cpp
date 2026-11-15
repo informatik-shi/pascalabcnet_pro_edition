@@ -5974,6 +5974,34 @@ end.)","Pas abc []\n3 99 0 0\naXc a []\n[abc ]\n[ab]\n[a123]\n[a123]\n");
     auto program=abc::compile("begin var s:='ab';SetLengthForShortString(s,3,3);end.");
     for(auto& op:program.code)if(op.op==abc::Op::mutate_string)op.op=abc::Op::call_builtin;
     error([&]{abc::verify(program);},"E_BYTECODE");
+    result(R"(begin
+  var s: string := 'old';
+  ReadShortString(s,-1); Writeln('[',s,']');
+  ReadShortString(s,2); Writeln('[',s,']');
+  PABCSystem.ReadShortString(s,9); Writeln('[',s,']');
+  ReadShortString(s,3); Writeln('[',s,']');
+  Readln;
+  ReadShortString(s,2); Writeln('[',s,']');
+  ReadShortString(s,3); Writeln(s.Length);
+  foreach var ch in s do Write(Ord(ch),' ');
+  Writeln;
+end.)","[]\n[ab]\n[cdef]\n[]\n[XY]\n3\n65535 65535 65535 \n","abcdef\r\nXY");
+    result(R"(begin
+  var t:Text;
+  var s:string;
+  Rewrite(t,'abc-short-string-read.txt');
+  Writeln(t,'abcdef'); Writeln(t,'XYZ'); Close(t); Reset(t);
+  ReadShortStringFromFile(t,s,2); Writeln('[',s,']');
+  PABCSystem.ReadShortStringFromFile(t,s,9); Writeln('[',s,']');
+  ReadShortStringFromFile(t,s,3); Writeln('[',s,']');
+  Readln(t);
+  ReadShortStringFromFile(t,s,0); Writeln('[',s,']');
+  ReadShortStringFromFile(t,s,9); Writeln('[',s,']');
+  Readln(t);
+  ReadShortStringFromFile(t,s,3); Writeln('[',s,']');
+  Close(t); Erase(t);
+end.)","[ab]\n[cdef]\n[]\n[]\n[XYZ]\n[]\n");
+    compile_error("begin var t:Text; ReadShortStringFromFile(t,'abc',2);end.","E_TYPE");
 }
 
 void global_routine_overloads() {

@@ -47,10 +47,10 @@ void readable(const TextFile& file, SourceLocation location) {
     assigned(file,location);
     if (!file.reader) throw runtime_error(RuntimeError::file_read_mode,location);
 }
-std::u16string read_remaining_line(TextFile& file,SourceLocation location) {
+std::u16string read_remaining_line(TextFile& file,SourceLocation location,std::size_t capacity=std::numeric_limits<std::size_t>::max()) {
     readable(file,location);std::u16string result;
     while(const auto next=file.reader->peek_character(location,file.options())) {
-        if(*next==u'\r' || *next==u'\n')break;
+        if(*next==u'\r' || *next==u'\n' || result.size()==capacity)break;
         result.push_back(*file.reader->read_character(location,file.options()));
     }
     return result;
@@ -80,6 +80,12 @@ TextFile& text_file(const Value& value, SourceLocation location) {
     const auto& file=std::get<std::shared_ptr<TextFile>>(value);
     if (!file) throw runtime_error(RuntimeError::nil_reference,location);
     return *file;
+}
+
+std::u16string text_read_short_string(TextFile& file,std::int32_t capacity,SourceLocation location){
+    auto result=read_remaining_line(file,location,capacity>0 ? static_cast<std::size_t>(capacity) : 0U);
+    if(capacity<0)throw runtime_error(RuntimeError::index_bounds,location);
+    return result;
 }
 void FileContext::prepare_text_open(const std::shared_ptr<TextFile>& file, SourceLocation location) {
     if (file->is_open()) return;

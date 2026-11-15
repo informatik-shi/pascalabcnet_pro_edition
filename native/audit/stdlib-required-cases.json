@@ -29,6 +29,7 @@
     {"id":"system-complex","module":"PABCSystem","source_line":116,"source":"begin var value:Complex; end."},
     {"id":"system-shortstring","module":"PABCSystem","source_line":119,"source":"begin var value:ShortString; end."},
     {"id":"system-short-string-helpers","module":"PABCSystem","source_line":3021,"source":"begin var s:=ClipShortString('abc',2);SetLengthForShortString(s,3,4);InsertInShortString('x',s,1,4);Writeln(GetCharInShortString(s,1,4));end."},
+    {"id":"system-short-string-input","module":"PABCSystem","source_line":1247,"source":"begin var t:Text;var s:string;ReadShortString(s,3);ReadShortStringFromFile(t,s,3);end."},
     {"id":"system-sortedset","module":"PABCSystem","source_line":139,"source":"begin var value:SortedSet<integer>; end."},
     {"id":"system-sorteddictionary","module":"PABCSystem","source_line":145,"source":"begin var value:SortedDictionary<integer,string>; end."},
     {"id":"system-sortedlist","module":"PABCSystem","source_line":148,"source":"begin var value:SortedList<integer,string>; end."},

@@ -1184,7 +1184,7 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
             std::vector<Value> arguments(signature.parameters.size());
             for (std::size_t i=arguments.size();i>0;--i) arguments[i-1]=pop();
             auto target=std::get<std::shared_ptr<Cell>>(arguments[ref]); arguments[ref]=target->value;
-            if(auto result=stdlib::mutate_text(signature.function,arguments,instruction.location))values.write(target,*result);
+            if(auto result=stdlib::mutate_text(signature.function,arguments,instruction.location,services))values.write(target,*result);
             break;
         }
         case Op::print_call: {

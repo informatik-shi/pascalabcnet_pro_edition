@@ -256,6 +256,8 @@ std::span<const Signature> signatures() {
         add("setcharinshortstring", {Type::string, Type::integer, Type::integer, Type::character}, Type::string, Function::set_short_string_char);
         add("$setlengthforshortstring", {Type::string, Type::integer, Type::integer}, Type::string, Function::resize_short_string);
         add("$insertinshortstring", {Type::string, Type::string, Type::integer, Type::integer}, Type::string, Function::insert_short_string);
+        add("$readshortstring", {Type::string, Type::integer}, Type::string, Function::read_short_string);
+        add("$readshortstringfromfile", {Type::text_file, Type::string, Type::integer}, Type::string, Function::read_short_string_from_file);
         for (auto [name,function]:{std::pair{"$string_padleft",Function::string_pad_left},{"$string_padright",Function::string_pad_right}}) {
             add(name,{Type::string,Type::integer},Type::string,function);
             add(name,{Type::string,Type::integer,Type::character},Type::string,function);

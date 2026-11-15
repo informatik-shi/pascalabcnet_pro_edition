@@ -1456,9 +1456,9 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         case Op::call_builtin:
             if (instruction.operand >= stdlib::signatures().size()
                 || type != stdlib::signatures()[instruction.operand].result) invalid(instruction, "Invalid standard function");
-            if (stdlib::signatures()[instruction.operand].function==stdlib::Function::resize_short_string
-                || stdlib::signatures()[instruction.operand].function==stdlib::Function::insert_short_string)
-                invalid(instruction,"Short string mutation requires a reference");
+            if(stdlib::signatures()[instruction.operand].function>=stdlib::Function::resize_short_string
+                && stdlib::string_mutation_reference(stdlib::signatures()[instruction.operand].function))
+                invalid(instruction,"Short string procedure requires a reference");
             break;
         case Op::type_operation:
             if(!type_operation_valid(program,type,static_cast<TypeOperation>(instruction.operand)))invalid(instruction,"Invalid type operation");break;

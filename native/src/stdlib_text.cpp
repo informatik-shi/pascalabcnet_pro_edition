@@ -3,6 +3,8 @@
 #include "number.hpp"
 #include "integer_values.hpp"
 #include "big_integer_runtime.hpp"
+#include "console_input.hpp"
+#include "text_file.hpp"
 
 #include <algorithm>
 #include <charconv>
@@ -396,7 +398,9 @@ std::optional<Value> invoke_text(Function function, std::span<const Value> argum
     }
 }
 
-std::optional<Value> mutate_text(Function function,std::span<const Value> arguments,SourceLocation location){
+std::optional<Value> mutate_text(Function function,std::span<const Value> arguments,SourceLocation location,Context& context){
+    if(function==Function::read_short_string)return context.console.read_short_string(std::get<std::int32_t>(arguments[1]),location);
+    if(function==Function::read_short_string_from_file)return text_read_short_string(text_file(arguments[0],location),std::get<std::int32_t>(arguments[2]),location);
     constexpr std::size_t limit=1'048'576;
     if(function==Function::resize_short_string){
         const auto requested=std::get<std::int32_t>(arguments[1]);
