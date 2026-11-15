@@ -28,6 +28,12 @@ bool relation_method(Method method){
 bool update_method(Method method){
     return method>=Method::union_with && method<=Method::symmetric_with;
 }
+bool binary_operator(Method method){
+    return method>=Method::equal_operator && method<=Method::remove_copy;
+}
+bool pair_operator(Method method){
+    return method>=Method::equal_operator && method<=Method::intersect_copy;
+}
 
 class OrderedSet {
     Values& values;
@@ -306,6 +312,52 @@ void update(Values& values,OrderedSet& order,const Object& left,const Object& in
         previous=cell.get();
     }
 }
+
+void require_set(const Object& set,SourceLocation location){
+    if(!set || set->nil)
+        throw Error("E_NIL",location,"SortedSet is nil","Упорядоченное множество равно nil");
+}
+
+Value apply_operator(Values& values,OrderedSet& order,Type owner,Method method,std::span<const Value> args,const ExecutionOptions& options){
+    const auto sequence_type=type_info(values.program,owner).key;
+    if(sorted_set_reference(method)){
+        // A var target may be assigned by the right operand before the call starts.
+        const auto reference=std::get<std::shared_ptr<Cell>>(args[0]);
+        if(!reference || reference->type!=owner)throw runtime_error(RuntimeError::invalid_bytecode,values.location);
+        const auto set=std::get<Object>(reference->value);
+        require_set(set,values.location);
+        if(method==Method::ref_add || method==Method::ref_remove)
+            (void)order.change(set,args[1],method==Method::ref_add);
+        else update(values,order,set,std::get<Object>(args[1]),method==Method::ref_union ? Method::union_with : Method::except_with,options);
+        return false;
+    }
+    const auto left=std::get<Object>(args[0]);
+    const auto right=pair_operator(method) ? std::get<Object>(args[1]) : Object{};
+    const bool left_nil=!left || left->nil;
+    const bool right_nil=!right || right->nil;
+    if(method==Method::equal_operator || method==Method::not_equal_operator){
+        const bool equal=left_nil || right_nil ? left_nil==right_nil
+            : relation(values,order,left,sequence_create(values,sequence_type,right,SequenceProvider::sorted_set),Method::set_equal,options);
+        return method==Method::equal_operator ? equal : !equal;
+    }
+    require_set(left,values.location);
+    if(pair_operator(method))require_set(right,values.location);
+    if(method<=Method::greater_equal_operator){
+        constexpr std::array<Method,4> methods{Method::proper_subset,Method::subset,Method::proper_superset,Method::superset};
+        const auto index=static_cast<unsigned>(method)-static_cast<unsigned>(Method::less_operator);
+        return relation(values,order,left,sequence_create(values,sequence_type,right,SequenceProvider::sorted_set),methods[index],options);
+    }
+    const std::array<Value,1> copy_source{sequence_create(values,sequence_type,left,SequenceProvider::sorted_set)};
+    const auto copy=std::get<Object>(sorted_set_invoke(values,owner,Method::construct_source,copy_source,options));
+    if(method==Method::add_copy || method==Method::remove_copy)
+        (void)order.change(copy,args[1],method==Method::add_copy);
+    else {
+        const auto operation=method==Method::union_copy ? Method::union_with
+            : method==Method::except_copy ? Method::except_with : Method::intersect_with;
+        update(values,order,copy,sequence_create(values,sequence_type,right,SequenceProvider::sorted_set),operation,options);
+    }
+    return copy;
+}
 }
 
 Type sorted_set_type_for(const std::vector<TypeInfo>& types,Type element,CompoundKind kind){
@@ -315,13 +367,16 @@ Type sorted_set_type_for(const std::vector<TypeInfo>& types,Type element,Compoun
 }
 
 bool sorted_set_signature(const Program& program,Type owner,SortedSetMethod method){
-    if(method>Method::symmetric_with || !compound(owner) || !valid_value_type(program,owner))return false;
+    if(method>Method::ref_except || !compound(owner) || !valid_value_type(program,owner))return false;
     const auto& shape=type_info(program,owner);
     return shape.kind==CompoundKind::sorted_set
         && sorted_set_type_for(program.types,shape.element,CompoundKind::comparer_interface)!=Type::invalid
         && sorted_set_type_for(program.types,shape.element,CompoundKind::comparer)!=Type::invalid
         && sorted_set_type_for(program.types,shape.element,CompoundKind::list)!=Type::invalid
         && (!copies_items(method) || sorted_set_type_for(program.types,shape.element,CompoundKind::array)!=Type::invalid);
+}
+bool sorted_set_reference(SortedSetMethod method){
+    return method>=Method::ref_add && method<=Method::ref_except;
 }
 
 std::vector<Type> sorted_set_parameters(const std::vector<TypeInfo>& types,Type owner,SortedSetMethod method){
@@ -333,6 +388,10 @@ std::vector<Type> sorted_set_parameters(const std::vector<TypeInfo>& types,Type 
         return parameters;
     }
     if(method==Method::membership)return {shape.element,owner};
+    if(sorted_set_reference(method))
+        return {reference_type(owner),method<=Method::ref_remove ? shape.element : shape.key};
+    if(pair_operator(method))return {owner,owner};
+    if(binary_operator(method))return {owner,shape.element};
     if(relation_method(method) || update_method(method))return {owner,shape.key};
     if(method==Method::try_get_value)return {owner,shape.element,reference_type(shape.element)};
     if(copies_items(method)){
@@ -347,7 +406,8 @@ std::vector<Type> sorted_set_parameters(const std::vector<TypeInfo>& types,Type 
 
 Type sorted_set_result(const std::vector<TypeInfo>& types,Type owner,SortedSetMethod method){
     if(method<=Method::construct_source_comparer || method==Method::copy)return owner;
-    if(update_method(method))return Type::unit;
+    if(method>=Method::union_copy && method<=Method::remove_copy)return owner;
+    if(update_method(method) || sorted_set_reference(method))return Type::unit;
     const auto& shape=types.at(static_cast<unsigned>(owner)-64U);
     const auto element=shape.element;
     switch(method){
@@ -397,7 +457,10 @@ Value sorted_set_invoke(Values& values,Type owner,SortedSetMethod method,std::sp
             }
             return result;
         }
+        if(binary_operator(method) || sorted_set_reference(method))
+            return apply_operator(values,order,owner,method,args,options);
         const auto receiver=std::get<Object>(args[method==Method::membership ? 1U : 0U]);
+        if(method==Method::membership)require_set(receiver,values.location);
         if(method==Method::copy && (!receiver || receiver->nil))return receiver;
         if(!receiver || receiver->nil)throw runtime_error(RuntimeError::nil_reference,values.location);
         auto& items=receiver->items;

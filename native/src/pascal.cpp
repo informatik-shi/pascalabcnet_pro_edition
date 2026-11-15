@@ -5792,6 +5792,27 @@ private:
                 }
                 std::vector<std::unique_ptr<hir::Expr>> arguments;arguments.push_back(std::move(result->left));arguments.push_back(std::move(result->right));return new_set_expression(operator_type,method,std::move(arguments),result->location);
             }
+            const auto is_sorted=[&](Type type){return compound(type) && info(type,result->location).kind==CompoundKind::sorted_set;};
+            if(is_sorted(left) || is_sorted(right)){
+                const auto owner=is_sorted(left) ? left : right;
+                using Method=SortedSetMethod;
+                Method method;
+                if(op=="=")method=Method::equal_operator;
+                else if(op=="<>")method=Method::not_equal_operator;
+                else if(op=="<")method=Method::less_operator;
+                else if(op=="<=")method=Method::less_equal_operator;
+                else if(op==">")method=Method::greater_operator;
+                else if(op==">=")method=Method::greater_equal_operator;
+                else if(op=="*")method=Method::intersect_copy;
+                else if(op=="+" || op=="-"){
+                    const bool pair=right==owner || right==Type::nil || (empty_kind(right) && info(owner,result->location).element!=right);
+                    if(pair)method=op=="+" ? Method::union_copy : Method::except_copy;
+                    else method=op=="+" ? Method::add_copy : Method::remove_copy;
+                }else throw Error("E_TYPE",result->location,"Unsupported SortedSet operator","Оператор SortedSet не поддерживается");
+                std::vector<std::unique_ptr<hir::Expr>> arguments;
+                arguments.push_back(std::move(result->left));arguments.push_back(std::move(result->right));
+                return sorted_set_expression(owner,method,std::move(arguments),result->location);
+            }
             const auto is_set=[&](Type type){return compound(type) && info(type,result->location).kind==CompoundKind::hash_set;};
             if(is_set(left) || is_set(right)){
                 const auto owner=is_set(left) ? left : right;HashSetMethod method;
@@ -6441,7 +6462,9 @@ private:
         result->operation_type=owner;
         result->local=static_cast<std::size_t>(method);
         for(std::size_t i=0;i<arguments.size();++i){
-            if(method==SortedSetMethod::try_get_value && i==2){
+            if(i==0 && sorted_set_reference(method)){
+                result->arguments.push_back(std::move(arguments[i]));
+            }else if(method==SortedSetMethod::try_get_value && i==2){
                 if(!lvalue(*arguments[i]) || arguments[i]->type!=info(owner,location).element)
                     throw Error("E_TYPE",location,"SortedSet.TryGetValue requires a writable value of the element type","SortedSet.TryGetValue требует изменяемую переменную типа элемента");
                 result->arguments.push_back(std::move(arguments[i]));
@@ -6535,6 +6558,23 @@ private:
             if(right->type==type)method=op=="+" ? NewSetMethod::union_assign : op=="-" ? NewSetMethod::except_assign : op=="*" ? NewSetMethod::intersect_assign : throw Error("E_TYPE",location,"Unsupported NewSet operator");
             else method=op=="+" ? NewSetMethod::item_add : op=="-" ? NewSetMethod::item_remove : throw Error("E_TYPE",location,"Unsupported NewSet operator");
             std::vector<std::unique_ptr<hir::Expr>> arguments;arguments.push_back(std::move(target));arguments.push_back(std::move(right));hir::Stmt result;result.kind=hir::StmtKind::call;result.location=location;result.expression=new_set_expression(type,method,std::move(arguments),location);return result;
+        }
+        if(compound(type) && info(type,location).kind==CompoundKind::sorted_set){
+            if(!lvalue(*target))
+                throw Error("E_TYPE",location,"SortedSet assignment target must be writable","Слева от оператора SortedSet нужна изменяемая переменная");
+            if(op!="+" && op!="-")
+                throw Error("E_TYPE",location,"SortedSet compound operator requires += or -=","Составной оператор SortedSet должен быть += или -=");
+            const auto element=info(type,location).element;
+            auto right=initial ? std::move(initial) : expression(*source.expression,element);
+            const bool single=right->type!=Type::nil && (right->type==element || can_widen(right->type,element));
+            const auto method=single ? (op=="+" ? SortedSetMethod::ref_add : SortedSetMethod::ref_remove)
+                : (op=="+" ? SortedSetMethod::ref_union : SortedSetMethod::ref_except);
+            std::vector<std::unique_ptr<hir::Expr>> arguments;
+            arguments.push_back(std::move(target));arguments.push_back(std::move(right));
+            hir::Stmt result;
+            result.kind=hir::StmtKind::call;result.location=location;
+            result.expression=sorted_set_expression(type,method,std::move(arguments),location);
+            return result;
         }
         if(compound(type) && info(type,location).kind==CompoundKind::hash_set){
             if(!lvalue(*target))throw Error("E_TYPE",location,"Assignment target must be assignable");

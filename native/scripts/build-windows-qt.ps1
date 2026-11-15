@@ -89,6 +89,7 @@ SortedSet<T> также поддерживает CopyTo, TryGetValue, GetEnumera
 Фабрики SSet, SSetInt, SSetStr, Copy и операции через ICollection<T> доступны для SortedSet<T>.
 SortedSet<T> проверяет равенство, включение и пересечение по сравнителю принимающего множества.
 UnionWith, IntersectWith, ExceptWith и SymmetricExceptWith доступны и через ISet<T>.
+Операторы SortedSet<T> работают с двумя множествами, отдельными элементами и присваиваниями += и -=.
 CopyTo, TryGetValue, RemoveWhere и TrimExcess: examples/hash-set-extra.pas.
 HSet/HSetInt/HSetStr, Copy и явные преобразования: examples/hash-set-factories.pas.
 Записи IntRange/CharRange, 1..5, CopyTo и преобразования: examples/ordinal-ranges.pas.

@@ -5164,6 +5164,8 @@ void array_operator_library() {
 }
 
 void compound_assignments() {
+    runtime_error("begin var s:=SSetStr('x');s+=nil;end.","E_NIL");
+    runtime_error("begin var s:=SSetStr('x');s-=nil;end.","E_NIL");
     result("begin var i:=5;i+=2;i-=1;i*=3;var r:=9.0;r/=2;r+=1;r-=0.5;r*=2;Writeln(i,' ',r);end.","18 10\n");
     for(const auto name:{"byte","shortint","smallint","word","integer","longword","int64","uint64"}) {
         result("begin var x:"+std::string(name)+":=2;x+=3;x*=4;x-=1;Writeln(x);end.","19\n");
