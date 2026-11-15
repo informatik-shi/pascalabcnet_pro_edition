@@ -3602,6 +3602,12 @@ private:
             if(bind_encoding_member(*result,source))break;
             if(binary(receiver)){
                 std::vector<std::unique_ptr<hir::Expr>> args;args.push_back(std::move(result->left));for(const auto& a:source.arguments)args.push_back(expression(*a));
+                if(source.token.text=="elementtype"){
+                    if(source.kind!=SyntaxExprKind::field || info(receiver,result->location).element==Type::invalid)
+                        throw Error("E_TYPE",result->location,"ElementType is a field of a typed file",
+                            "ElementType — поле типизированного файла");
+                    return binary_expression(receiver,BinaryMethod::element_type,std::move(args),result->location);
+                }
                 if(source.token.text=="write"||source.token.text=="writeln"){auto file=std::move(args[0]);args.erase(args.begin());return binary_write(std::move(file),std::move(args),source.token.text=="writeln",result->location);}
                 if(source.token.text=="position"&&source.kind!=SyntaxExprKind::field)throw Error("E_TYPE",result->location,"File position is a property");
                 result->arguments=std::move(args);if(!bind_binary_function(*result,source.token.text))throw Error("E_UNSUPPORTED",result->location,"Binary file member is not ported yet","Член двоичного файла ещё не перенесён");break;
@@ -7609,8 +7615,24 @@ private:
             break;
         }
         case SyntaxStmtKind::assignment:
-            if(source.target->kind==SyntaxExprKind::field&&source.target->token.text=="position"&&source.assignment_operator.text==":="){
-                auto file=expression(*source.target->left);if(binary(file->type)){const auto owner=file->type;std::vector<std::unique_ptr<hir::Expr>> args;args.push_back(std::move(file));args.push_back(expression(*source.expression));result.kind=hir::StmtKind::call;result.expression=binary_expression(owner,BinaryMethod::seek,std::move(args),result.location);break;}
+            if(source.target->kind==SyntaxExprKind::field&&source.assignment_operator.text==":="){
+                const auto member=source.target->token.text;
+                if(member=="position"||member=="elementtype"){
+                    auto file=expression(*source.target->left);
+                    if(binary(file->type)){
+                        const auto owner=file->type;
+                        const auto method=member=="position"?BinaryMethod::seek:BinaryMethod::set_element_type;
+                        if(method==BinaryMethod::set_element_type && info(owner,result.location).element==Type::invalid)
+                            throw Error("E_TYPE",result.location,"ElementType is a field of a typed file",
+                                "ElementType — поле типизированного файла");
+                        std::vector<std::unique_ptr<hir::Expr>> args;
+                        args.push_back(std::move(file));
+                        args.push_back(expression(*source.expression));
+                        result.kind=hir::StmtKind::call;
+                        result.expression=binary_expression(owner,method,std::move(args),result.location);
+                        break;
+                    }
+                }
             }
             if(!source.assignment_operator.text.empty() && source.assignment_operator.text!=":=") {
                 std::unique_ptr<hir::Expr> initial;

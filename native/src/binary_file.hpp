@@ -1,16 +1,18 @@
 #pragma once
 #include "abc/core.hpp"
 #include "binary_codec.hpp"
+#include <optional>
 #include <span>
 namespace abc {
 struct Values;class FileContext;
-enum class BinaryMethod:std::uint8_t {assign,reset,rewrite,reset_named,rewrite_named,reset_encoding,rewrite_encoding,reset_named_encoding,rewrite_named_encoding,close,truncate,eof,position,size,seek,name,full_name,to_string,erase,rename,read_data,write_one,write_many,read_bytes,write_bytes,writeln,writeln_data,write_empty,serialize,deserialize,serialize_named,deserialize_named};
+enum class BinaryMethod:std::uint8_t {assign,reset,rewrite,reset_named,rewrite_named,reset_encoding,rewrite_encoding,reset_named_encoding,rewrite_named_encoding,close,truncate,eof,position,size,seek,name,full_name,to_string,erase,rename,read_data,write_one,write_many,read_bytes,write_bytes,writeln,writeln_data,write_empty,serialize,deserialize,serialize_named,deserialize_named,element_type,set_element_type};
 struct BinaryFile {
     std::filesystem::path filename;
     std::unique_ptr<BinaryStream> stream;
     std::unique_ptr<BinaryCodec> codec;
     Type element=Type::invalid;
     std::int64_t element_size=1;
+    std::optional<ReflectedType> element_override;
     bool is_open() const noexcept{return stream&&stream->is_open();}
 };
 bool binary_value_supported(const std::vector<TypeInfo>&,Type,bool strings,bool arrays=false);

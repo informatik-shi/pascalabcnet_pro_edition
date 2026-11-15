@@ -7,9 +7,12 @@
 #include "encoding_metadata.hpp"
 #include "type_names.hpp"
 #include "fixed_array.hpp"
+#include "integer_values.hpp"
 #include "scalar_serialization.hpp"
+#include "single.hpp"
 #include <algorithm>
 #include <bit>
+#include <cmath>
 #include <limits>
 namespace abc {
 namespace {
@@ -48,6 +51,86 @@ void write_value(Values& values,BinaryFile& file,Type type,const Value& value,co
     std::uint64_t work=0;for(std::size_t n=0;n<data->items.size();++n){if(work++>=options.instruction_limit)throw runtime_error(RuntimeError::instruction_limit,values.location);if((n&255U)==0&&options.cancelled&&options.cancelled())throw runtime_error(RuntimeError::cancelled,values.location);
         const auto element=shape.kind==CompoundKind::array?shape.element:shape.fields.at(n).type;write_value(values,file,element,data->items[n]->value,options,depth+1);}
 }
+ReflectedType element_type(const BinaryFile& file) {
+    return file.element_override.value_or(ReflectedType{file.element});
+}
+Type selected_element(const Program& program,const BinaryFile& file,SourceLocation location) {
+    const auto type=element_type(file).target;
+    if (type==Type::invalid) throw runtime_error(RuntimeError::nil_reference,location);
+    if (!binary_value_supported(program.types,type,false))
+        throw Error("E_UNSUPPORTED",location,"Binary layout of the selected ElementType is not supported",
+            "Двоичный формат выбранного ElementType ещё не поддерживается");
+    return type;
+}
+Error element_cast_error(SourceLocation location) {
+    return Error("E_CAST",location,"The selected ElementType is incompatible with the file data value",
+        "Выбранный ElementType несовместим со значением элемента файла");
+}
+bool element_enum(const Program& program,Type type) {
+    return compound(type) && type_info(program,type).kind==CompoundKind::enumeration;
+}
+Value convert_element_scalar(Type type,const Value& value,SourceLocation location) {
+    const auto source=std::get_if<EnumValue>(&value);
+    const Value number=source?Value{source->value}:value;
+    if (type==Type::boolean || type==Type::single || type==Type::real) {
+        return std::visit([&](const auto& v)->Value {
+            using Number=std::decay_t<decltype(v)>;
+            if constexpr (std::is_arithmetic_v<Number> && !std::is_same_v<Number,char16_t>) {
+                if (type==Type::boolean) return v!=0;
+                if (type==Type::single) return static_cast<float>(v);
+                return static_cast<double>(v);
+            } else throw element_cast_error(location);
+        },number);
+    }
+    if (type==Type::character) {
+        if (!integer_type(value_type(number))) throw element_cast_error(location);
+        return static_cast<char16_t>(std::get<std::uint16_t>(
+            checked_small_integer(Type::word,integral_number(number,location,"char"),location)));
+    }
+    if (!integer_type(type)) throw element_cast_error(location);
+    if (const auto from=value_type(number); from==Type::single || from==Type::real) {
+        const auto real=from==Type::real?std::get<double>(number):static_cast<double>(std::get<float>(number));
+        double integral=0;
+        const auto fraction=std::modf(real,&integral);
+        if (std::abs(fraction)>0.5 || (std::abs(fraction)==0.5 && std::fmod(integral,2.0)!=0))
+            integral+=std::copysign(1.0,fraction);
+        return floating_integer_cast(type,Value{integral},location);
+    }
+    if (!integer_type(value_type(number)) && value_type(number)!=Type::boolean && value_type(number)!=Type::character)
+        throw element_cast_error(location);
+    if (wide_unsigned(type)) return checked_unsigned_integer(type,number,location);
+    if (small_integer(type)) return checked_small_integer(type,integral_number(number,location,type_name(type)),location);
+    return checked_signed_integer(type,number,location);
+}
+Value read_element(Values& values,BinaryFile& file,Type declared,const ExecutionOptions& options) {
+    if (!file.element_override) return read_value(values,file,declared,options,0);
+    const auto actual=selected_element(values.program,file,values.location);
+    auto result=read_value(values,file,actual,options,0);
+    if (actual==declared) return result;
+    if (const auto* enumerated=std::get_if<EnumValue>(&result)) {
+        if (declared==Type::integer) return enumerated->value;
+        if (element_enum(values.program,declared)) return EnumValue{declared,enumerated->value};
+    }
+    if (actual==Type::integer && element_enum(values.program,declared))
+        return EnumValue{declared,std::get<std::int32_t>(result)};
+    throw element_cast_error(values.location);
+}
+void write_element(Values& values,BinaryFile& file,Type type,const Value& value,const ExecutionOptions& options) {
+    if (!file.element_override || (compound(type) && type_info(values.program,type).kind==CompoundKind::array)) {
+        write_value(values,file,type,value,options,0);
+        return;
+    }
+    const auto actual=selected_element(values.program,file,values.location);
+    if (actual==type) {
+        write_value(values,file,type,value,options,0);
+        return;
+    }
+    const auto location=values.location;
+    Value converted=element_enum(values.program,actual)
+        ? Value{EnumValue{actual,std::get<std::int32_t>(convert_element_scalar(Type::integer,value,location))}}
+        : convert_element_scalar(actual,value,location);
+    write_value(values,file,actual,converted,options,0);
+}
 }
 bool binary_value_supported(const std::vector<TypeInfo>& types,Type type,bool strings,bool arrays){
     const auto walk=[&](auto&& self,Type t,unsigned depth)->bool{if(depth>64)return false;
@@ -83,6 +166,7 @@ std::vector<Type> binary_parameters(const std::vector<TypeInfo>& types,Type owne
     case BinaryMethod::reset_encoding:case BinaryMethod::rewrite_encoding:return {owner,encoding};
     case BinaryMethod::reset_named_encoding:case BinaryMethod::rewrite_named_encoding:return {owner,Type::string,encoding};
     case BinaryMethod::seek:return {owner,Type::int64};case BinaryMethod::read_bytes:return {owner,Type::integer};
+    case BinaryMethod::set_element_type:return {owner,Type::type_descriptor};
     case BinaryMethod::write_bytes:return {owner,shape.key};case BinaryMethod::write_one:case BinaryMethod::write_many:return {owner,payload(operand)};
     case BinaryMethod::writeln_data:return {owner,payload(operand)};
     case BinaryMethod::serialize:return {owner,payload(operand)};
@@ -92,6 +176,7 @@ std::vector<Type> binary_parameters(const std::vector<TypeInfo>& types,Type owne
 }
 Type binary_result(const std::vector<TypeInfo>& types,Type owner,std::size_t operand){
     switch(method(operand)){case BinaryMethod::eof:return Type::boolean;case BinaryMethod::position:case BinaryMethod::size:return Type::int64;
+    case BinaryMethod::element_type:return Type::type_descriptor;
     case BinaryMethod::name:case BinaryMethod::full_name:case BinaryMethod::to_string:return Type::string;
     case BinaryMethod::read_data:case BinaryMethod::deserialize:case BinaryMethod::deserialize_named:return payload(operand);
     case BinaryMethod::read_bytes:return info(types,owner).key;
@@ -99,8 +184,10 @@ Type binary_result(const std::vector<TypeInfo>& types,Type owner,std::size_t ope
 }
 bool binary_signature_valid(const Program& program,Type owner,std::size_t operand){
     if(!compound(owner)||static_cast<unsigned>(owner)-64U>=program.types.size())return false;const auto& shape=type_info(program,owner);
-    if(shape.kind!=CompoundKind::binary_file||method(operand)>BinaryMethod::deserialize_named)return false;
+    if(shape.kind!=CompoundKind::binary_file||method(operand)>BinaryMethod::set_element_type)return false;
     const auto code=method(operand);const auto t=payload(operand);
+    if (code==BinaryMethod::element_type || code==BinaryMethod::set_element_type)
+        return shape.element!=Type::invalid && t==Type::integer;
     if (code>=BinaryMethod::serialize)
         return shape.element==Type::invalid && compound(t) && valid_value_type(program,t)
             && type_info(program,t).kind==CompoundKind::boxed_object;
@@ -126,7 +213,7 @@ void FileContext::prepare_binary_open(const std::shared_ptr<BinaryFile>& file,So
 Value binary_invoke(Values& values,FileContext& files,Type owner,std::size_t operand,std::span<const Value> args){
     const auto code=method(operand);const auto location=values.location;if(code==BinaryMethod::writeln||code==BinaryMethod::writeln_data)throw runtime_error(RuntimeError::binary_writeln,location);
     const ExecutionOptions defaults;const auto& options=files.execution_options?*files.execution_options:defaults;
-    if (code>=BinaryMethod::serialize) {
+    if (code>=BinaryMethod::serialize && code<=BinaryMethod::deserialize_named) {
         const bool writing=code==BinaryMethod::serialize || code==BinaryMethod::serialize_named;
         std::shared_ptr<BinaryFile> temporary;
         BinaryFile* target=nullptr;
@@ -152,6 +239,8 @@ Value binary_invoke(Values& values,FileContext& files,Type owner,std::size_t ope
         return values.box_value(payload(operand),stored.type,std::move(stored.value));
     }
     auto& file=file_value(args[0],location);
+    if(code==BinaryMethod::element_type)return element_type(file);
+    if(code==BinaryMethod::set_element_type){file.element_override=std::get<ReflectedType>(args[1]);return false;}
     if(code==BinaryMethod::assign){assign(files,file,args[1],location);return false;}
     if(code>=BinaryMethod::reset&&code<=BinaryMethod::rewrite_named_encoding){
         const auto n=static_cast<unsigned>(code)-static_cast<unsigned>(BinaryMethod::reset);const bool create=(n&1U)!=0,named=(n==2||n==3||n==6||n==7),explicit_encoding=n>=4;
@@ -159,7 +248,14 @@ Value binary_invoke(Values& values,FileContext& files,Type owner,std::size_t ope
         const auto selected=explicit_encoding?&encoding_value(args.back(),location):files.encoding(location);
         open(files,std::get<std::shared_ptr<Aggregate>>(args[0])->binary,create,selected?*selected:TextEncoding{},location);return false;
     }
-    if(code==BinaryMethod::to_string)return file.element==Type::invalid?std::u16string(u"file"):u"file of "+std::get<std::u16string>(reflected_type_property(values.program,{file.element},TypeOperation::full_name,location,options));
+    if(code==BinaryMethod::to_string){
+        if(file.element==Type::invalid)return std::u16string(u"file");
+        auto name=std::u16string(u"file of ");
+        const auto element=element_type(file);
+        if(element.target!=Type::invalid)
+            name+=std::get<std::u16string>(reflected_type_property(values.program,element,TypeOperation::full_name,location,options));
+        return name;
+    }
     if(code==BinaryMethod::name||code==BinaryMethod::full_name){if(file.filename.empty())throw runtime_error(RuntimeError::nil_reference,location);return code==BinaryMethod::name?file.filename.filename().u16string():file.filename.u16string();}
     assigned(file,location);
     if(code==BinaryMethod::erase){if(!delete_file(files,file.filename.u16string())&&file_exists(files,file.filename.u16string()))throw runtime_error(RuntimeError::file_erase,location);return false;}
@@ -172,9 +268,9 @@ Value binary_invoke(Values& values,FileContext& files,Type owner,std::size_t ope
     case BinaryMethod::size:{const auto length=file.stream->length(location);if(!file.element_size)throw runtime_error(RuntimeError::division_zero,location);if(length%file.element_size)throw runtime_error(RuntimeError::typed_file_size,location);return length/file.element_size;}
     case BinaryMethod::position:if(!file.element_size)throw runtime_error(RuntimeError::division_zero,location);return file.stream->position(location)/file.element_size;
     case BinaryMethod::seek:{const auto index=std::get<std::int64_t>(args[1]);const auto product=static_cast<std::uint64_t>(index)*static_cast<std::uint64_t>(file.element_size);file.stream->seek(std::bit_cast<std::int64_t>(product),location);return false;}
-    case BinaryMethod::read_data:return read_value(values,file,payload(operand),options,0);
-    case BinaryMethod::write_one:write_value(values,file,payload(operand),args[1],options,0);return false;
-    case BinaryMethod::write_many:{const auto pack=std::get<std::shared_ptr<Aggregate>>(args[1]);const auto flatten=[&](auto&& self,Type t,const std::shared_ptr<Aggregate>& a,unsigned depth)->void{if(depth>64)throw runtime_error(RuntimeError::sequence_depth,location);const auto& shape=type_info(values.program,t);for(std::size_t n=0;n<shape.fields.size();++n){const auto field=shape.fields[n].type;if(compound(field)&&type_info(values.program,field).kind==CompoundKind::tuple)self(self,field,std::get<std::shared_ptr<Aggregate>>(a->items[n]->value),depth+1);else write_value(values,file,field,a->items[n]->value,options,0);}};flatten(flatten,payload(operand),pack,0);return false;}
+    case BinaryMethod::read_data:return read_element(values,file,payload(operand),options);
+    case BinaryMethod::write_one:write_element(values,file,payload(operand),args[1],options);return false;
+    case BinaryMethod::write_many:{const auto pack=std::get<std::shared_ptr<Aggregate>>(args[1]);const auto flatten=[&](auto&& self,Type t,const std::shared_ptr<Aggregate>& a,unsigned depth)->void{if(depth>64)throw runtime_error(RuntimeError::sequence_depth,location);const auto& shape=type_info(values.program,t);for(std::size_t n=0;n<shape.fields.size();++n){const auto field=shape.fields[n].type;if(compound(field)&&type_info(values.program,field).kind==CompoundKind::tuple)self(self,field,std::get<std::shared_ptr<Aggregate>>(a->items[n]->value),depth+1);else write_element(values,file,field,a->items[n]->value,options);}};flatten(flatten,payload(operand),pack,0);return false;}
     case BinaryMethod::read_bytes:{const auto count=std::get<std::int32_t>(args[1]);if(count<0)throw runtime_error(RuntimeError::binary_buffer_count,location);if(static_cast<std::uint32_t>(count)>values.remaining)throw runtime_error(RuntimeError::allocation_limit,location);std::string data(static_cast<std::size_t>(count),'\0');std::size_t done=0;while(done<data.size()){const auto n=file.stream->read(std::span<char>(data).subspan(done),location);if(!n)break;done+=n;}auto result=values.array(type_info(values.program,owner).key,done);for(std::size_t n=0;n<done;++n)result->items[n]->value=static_cast<std::uint8_t>(data[n]);return result;}
     case BinaryMethod::write_bytes:{const auto data=std::get<std::shared_ptr<Aggregate>>(args[1]);if(!data||data->nil)throw runtime_error(RuntimeError::nil_reference,location);std::string bytes;bytes.reserve(data->items.size());for(const auto& item:data->items)bytes+=static_cast<char>(std::get<std::uint8_t>(item->value));file.stream->write(bytes,location);return false;}
     case BinaryMethod::writeln:throw runtime_error(RuntimeError::binary_writeln,location);

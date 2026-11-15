@@ -433,6 +433,9 @@ if(BUILD_TESTING)
     endif()
     add_test(NAME binary_files COMMAND abc_binary_file_tests)
     add_test(NAME binary_files_example COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/examples/binary-files.pas")
+    add_test(NAME binary_element_type_compatibility COMMAND ${CMAKE_COMMAND}
+        -DABC_RUNNER=$<TARGET_FILE:abc> -DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures
+        -DABC_FIXTURE_NAME=binary-element-type-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")
     add_executable(abc_nested_routine_tests tests/nested_routine_tests.cpp)
     target_link_libraries(abc_nested_routine_tests PRIVATE abc_core)
     if(MSVC)

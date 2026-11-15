@@ -50,6 +50,11 @@ void semantics(){
  error(body("var f:file;Rewrite(f,'raw.tmp');Write(f,Chr(55296));"),"E_ARGUMENT");
  error(body(setup+"Reset(f,Encoding.UTF8);"),"E_IO");
  error(body(setup+"f.ReadBytes(1);"),"E_TYPE");error(body(setup+"f.ReadInteger;"),"E_TYPE");
+ error(body(setup+"f.ElementType:=typeof(byte);Write(f,256);"),"E_OVERFLOW");
+ error(body(setup+"f.ElementType:=typeof(byte);Write(f,42);FileSize(f);"),"E_IO");
+ error(body(setup+"f.ElementType:=typeof(byte);Write(f,42);Reset(f);var n:integer;Read(f,n);"),"E_CAST");
+ error(body(setup+"f.ElementType:=nil;Write(f,42);"),"E_NIL");
+ error(body("var f:file;f.ElementType:=typeof(byte);"),"E_TYPE");
  error(body("var f:file of string;"),"E_TYPE");error(body("var f:file of array of integer;"),"E_TYPE");
  error(body("var f:file;var a:array of integer;Read(f,a);"),"E_TYPE");
  error(body("var f:file;Rewrite(f,'raw.tmp');var g:file;Rewrite(g,'raw.tmp');"),"E_IO");
