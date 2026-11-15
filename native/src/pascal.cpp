@@ -10,6 +10,7 @@
 #include "encoding.hpp"
 #include "binary_file.hpp"
 #include "scalar_serialization.hpp"
+#include "string_builder.hpp"
 #include "fixed_array.hpp"
 #include "type_names.hpp"
 #include "callable_identity.hpp"
@@ -622,9 +623,23 @@ private:
                 result->unit="inifile";expect(".");result->kind=name().text;
                 if(result->kind!="tinifile")throw Error("E_UNSUPPORTED",result->token.location,"Unknown IniFile type");
             }
+            if (result->kind=="pabcsystem" && is(".") && [&]{
+                auto probe=lexer_;
+                const auto name=probe.next().text;
+                return name=="stringbuilder" || name=="faststring";
+            }()) {
+                result->unit="pabcsystem";
+                expect(".");
+                result->kind=name().text;
+            }
             if (result->kind=="system") {
                 result->system_qualified=true; expect("."); result->kind=is("type") ? consume().text : name().text;
-                if(result->kind=="text") {expect(".");result->kind=name().text;if(result->kind!="encoding")throw Error("E_UNSUPPORTED",result->token.location,"Unknown or unsupported Encoding type");}
+                if(result->kind=="text") {
+                    expect(".");
+                    result->kind=name().text;
+                    if(result->kind!="encoding" && result->kind!="stringbuilder")
+                        throw Error("E_UNSUPPORTED",result->token.location,"Unknown or unsupported System.Text type");
+                }
                 else if(result->kind=="collections"){expect(".");const auto generic=name();if(generic.text!="generic")throw Error("E_UNSUPPORTED",generic.location,"Unknown System.Collections namespace");expect(".");result->kind=name().text;if(result->kind!="dictionary" && result->kind!="keyvaluepair" && result->kind!="ienumerable" && result->kind!="ienumerator" && result->kind!="list" && result->kind!="hashset" && result->kind!="icomparer" && result->kind!="comparer" && result->kind!="iequalitycomparer" && result->kind!="equalitycomparer" && result->kind!="icollection" && result->kind!="ilist" && result->kind!="iset" && result->kind!="idictionary")throw Error("E_UNSUPPORTED",result->token.location,"Unknown generic collection type");}
                 else if (result->kind!="func" && result->kind!="action" && result->kind!="predicate" && result->kind!="type" && result->kind!="void" && result->kind!="single" && result->kind!="object" && result->kind!="icomparable" && result->kind!="iequatable")
                     throw Error("E_UNSUPPORTED",result->token.location,"Unknown or unsupported type 'System."+result->kind+"'");
@@ -2196,6 +2211,97 @@ private:
         if((method==BinaryMethod::read_bytes||method==BinaryMethod::write_bytes)&&info(owner,result.location).element!=Type::invalid)throw Error("E_TYPE",result.location,"Byte buffer methods require an untyped binary file","Методы буфера байтов требуют нетипизированный двоичный файл");
         result=std::move(*binary_expression(owner,method,std::move(result.arguments),result.location));return true;
     }
+    bool is_string_builder(Type type) const {
+        return compound(type) && info(type,{}).kind==CompoundKind::string_builder;
+    }
+    Type string_builder_type(SourceLocation location) {
+        for (std::size_t i=0;i<module_.types.size();++i)
+            if (module_.types[i].kind==CompoundKind::string_builder) return static_cast<Type>(64+i);
+        if (module_.types.size()>=1024) throw Error("E_LIMIT",location,"Type limit exceeded");
+        module_.types.push_back({"stringbuilder",CompoundKind::string_builder,Type::invalid,{}});
+        return static_cast<Type>(63+module_.types.size());
+    }
+    std::unique_ptr<hir::Expr> string_builder_expression(Type owner,StringBuilderMethod method,
+        std::vector<std::unique_ptr<hir::Expr>> args,SourceLocation location) {
+        const auto types=string_builder_parameters(owner,method);
+        if (types.size()!=args.size())
+            throw Error("E_TYPE",location,"Wrong StringBuilder argument count","Неверное число аргументов StringBuilder");
+        for (std::size_t i=0;i<types.size();++i) args[i]=convert(std::move(args[i]),types[i]);
+        auto result=std::make_unique<hir::Expr>();
+        result->kind=hir::ExprKind::encoding_call;
+        result->operation_type=owner;
+        result->local=static_cast<std::size_t>(method);
+        result->type=string_builder_result(owner,method);
+        result->location=location;
+        result->arguments=std::move(args);
+        return result;
+    }
+    std::unique_ptr<hir::Expr> make_string_builder(Type owner,const SyntaxExpr& source) {
+        using M=StringBuilderMethod;
+        std::vector<std::unique_ptr<hir::Expr>> args;
+        for (const auto& arg:source.arguments) args.push_back(expression(*arg));
+        M method;
+        switch (args.size()) {
+        case 0: method=M::create_empty; break;
+        case 1: method=integer_type(args[0]->type)?M::create_capacity:M::create_text; break;
+        case 2: method=integer_type(args[0]->type)?M::create_limited:M::create_text_capacity; break;
+        case 4: method=M::create_slice; break;
+        default:
+            throw Error("E_TYPE",source.token.location,"No matching StringBuilder constructor",
+                "Нет подходящего конструктора StringBuilder");
+        }
+        return string_builder_expression(owner,method,std::move(args),source.token.location);
+    }
+    Type string_builder_constructor_owner(const SyntaxExpr& target) {
+        if (target.kind==SyntaxExprKind::name && !lookup(target.token) && !routine_names_.contains(target.token.text)) {
+            if (const auto alias=aliases_.find(target.token.text); alias!=aliases_.end())
+                return is_string_builder(alias->second)?alias->second:Type::invalid;
+            if (target.token.text=="stringbuilder" || target.token.text=="faststring")
+                return string_builder_type(target.token.location);
+        }
+        if (target.kind==SyntaxExprKind::field && target.left && (target.token.text=="stringbuilder" || target.token.text=="faststring")) {
+            const auto& ns=*target.left;
+            if (ns.kind==SyntaxExprKind::name && ns.token.text=="pabcsystem" && !lookup(ns.token))
+                return string_builder_type(target.token.location);
+            if (target.token.text=="stringbuilder" && ns.kind==SyntaxExprKind::field && ns.token.text=="text" && ns.left
+                && ns.left->kind==SyntaxExprKind::name && ns.left->token.text=="system" && !lookup(ns.left->token))
+                return string_builder_type(target.token.location);
+        }
+        return Type::invalid;
+    }
+    std::unique_ptr<hir::Expr> bind_string_builder_member(hir::Expr& receiver,const SyntaxExpr& source) {
+        using M=StringBuilderMethod;
+        if (!is_string_builder(receiver.left->type)) return {};
+        const auto& name=source.token.text;
+        if (name=="gettype") return {};
+        auto method=M::text;
+        const auto count=source.arguments.size();
+        const auto location=receiver.location;
+        if (name=="length" || name=="capacity" || name=="maxcapacity") {
+            if (source.kind!=SyntaxExprKind::field)
+                throw Error("E_TYPE",location,"StringBuilder property is not callable","Свойство StringBuilder нельзя вызвать");
+            method=name=="length"?M::length:name=="capacity"?M::capacity:M::max_capacity;
+        } else if (name=="ensurecapacity") method=M::ensure_capacity;
+        else if (name=="clear") method=M::clear;
+        else if (name=="tostring") method=count==0?M::text:M::text_range;
+        else if (name=="equals") method=M::equals;
+        else if (name=="appendline") method=count==0?M::append_line:M::append_line_text;
+        else if (name!="append")
+            throw Error("E_UNSUPPORTED",location,"StringBuilder member is not ported yet","Член StringBuilder ещё не перенесён");
+
+        const auto type=receiver.left->type;
+        std::vector<std::unique_ptr<hir::Expr>> args;
+        args.push_back(std::move(receiver.left));
+        for (const auto& arg:source.arguments) args.push_back(expression(*arg));
+        if (name=="append") {
+            if (count==1) method=args[1]->type==Type::character?M::append_char:M::append_text;
+            else if (count==2) method=M::append_repeated;
+            else if (count==3) method=M::append_slice;
+            else throw Error("E_TYPE",location,"No matching StringBuilder.Append overload",
+                "Нет подходящей перегрузки StringBuilder.Append");
+        }
+        return string_builder_expression(type,method,std::move(args),location);
+    }
     bool encoding_type_name(const SyntaxExpr& source) const {
         const auto hidden=[&](const Token& token) {
             if(lookup(token) || routine_names_.contains(token.text))return true;
@@ -2702,6 +2808,9 @@ private:
         }
         if(syntax.kind=="emptycollection" && (syntax.unit.empty() || syntax.unit=="pabcsystem") && !aliases_.contains(syntax.kind))return empty_type();
         if(syntax.kind=="tinifile" && (syntax.unit=="inifile" || !aliases_.contains(syntax.kind)))return inifile_type(syntax.token.location);
+        if ((syntax.kind=="stringbuilder" || syntax.kind=="faststring") &&
+            (syntax.system_qualified || syntax.unit=="pabcsystem" || !aliases_.contains(syntax.kind)))
+            return string_builder_type(syntax.token.location);
         if (syntax.kind=="encoding" && (syntax.system_qualified || !aliases_.contains(syntax.kind))) return encoding_type();
         if (auto found = find_type(syntax.kind)) return *found;
         if (auto found = aliases_.find(syntax.kind); found != aliases_.end()) return found->second;
@@ -2810,6 +2919,12 @@ private:
             || (shape.kind==CompoundKind::array && shape.rank==1));
     }
     ABC_PASCAL_NOINLINE std::unique_ptr<hir::Expr> convert(std::unique_ptr<hir::Expr> expression, Type type,bool assignment=false,bool copy=true) {
+        if (is_string_builder(type) && (string_type(expression->type) || expression->type==Type::character)) {
+            const auto location=expression->location;
+            std::vector<std::unique_ptr<hir::Expr>> args;
+            args.push_back(std::move(expression));
+            return string_builder_expression(type,StringBuilderMethod::create_text,std::move(args),location);
+        }
         if (boxed_object(type,expression->location) && (scalar(expression->type) || nrbf_array_type(module_.types,expression->type))) {
             if (short_string(expression->type)) expression=convert(std::move(expression),Type::string);
             return object_conversion(std::move(expression),type,type);
@@ -3253,6 +3368,7 @@ private:
         do {
  {
             auto type = resolve_type(*source.constructed);
+            if (!source.array_construction && is_string_builder(type)) return make_string_builder(type,source);
             if(!source.array_construction && enumeration(type)) {if(!source.arguments.empty())throw Error("E_TYPE",result->location,"Enumeration constructor takes no arguments");result->kind=hir::ExprKind::default_value;result->type=type;break;}
             if(!source.array_construction && compound(type) && (info(type,result->location).kind==CompoundKind::comparer || info(type,result->location).kind==CompoundKind::comparable_interface || info(type,result->location).kind==CompoundKind::comparer_interface || info(type,result->location).kind==CompoundKind::equality_comparer || info(type,result->location).kind==CompoundKind::equatable_interface || info(type,result->location).kind==CompoundKind::equality_comparer_interface))throw Error("E_TYPE",result->location,"An interface or abstract Comparer cannot be constructed directly");
             if(!source.array_construction && compound(type) && info(type,result->location).kind==CompoundKind::encoding)throw Error("E_TYPE",result->location,"Encoding cannot be constructed directly");
@@ -3426,6 +3542,7 @@ private:
         std::vector<const SyntaxExpr*> chain;const auto* base=&source;
         while((base->kind==SyntaxExprKind::field || base->kind==SyntaxExprKind::member_call) && base->left){
             if(!base->type_arguments.empty())break;
+            if (base->token.text=="create" && string_builder_constructor_owner(*base->left)!=Type::invalid) break;
             if(base->left->kind==SyntaxExprKind::name && !lookup(base->left->token)
                 && (base->left->token.text=="pabcsystem" || imported_units_.contains(base->left->token.text)))break;
             chain.push_back(base);base=base->left.get();
@@ -3467,6 +3584,9 @@ private:
         do {
  {
             if(bind_inifile_static(*result,source))break;
+            if (source.token.text=="create")
+                if (const auto type=string_builder_constructor_owner(*source.left); type!=Type::invalid)
+                    return make_string_builder(type,source);
             if(bind_comparison_static(*result,source))break;
             if(bind_system_array_search(*result,source))break;
             if(bind_system_array_reverse(*result,source))break;
@@ -3599,6 +3719,7 @@ private:
             if(source.token.text=="contains" && source.arguments.size()==2 && !declared_member(receiver,"contains")){bool iterable=receiver==Type::string;if(compound(receiver)){const auto& shape=info(receiver,result->location);iterable=shape.kind==CompoundKind::sequence || enumerable_collection(shape);}if(iterable){result->arguments.push_back(std::move(result->left));for(const auto& argument:source.arguments)result->arguments.push_back(expression(*argument));if(bind_sequence_query(*result,"contains"))break;}}
             if(bind_dictionary_member(*result,source))break;
             if(bind_inifile_member(*result,source))break;
+            if (auto builder=bind_string_builder_member(*result,source)) return builder;
             if(bind_encoding_member(*result,source))break;
             if(binary(receiver)){
                 std::vector<std::unique_ptr<hir::Expr>> args;args.push_back(std::move(result->left));for(const auto& a:source.arguments)args.push_back(expression(*a));
@@ -4390,6 +4511,14 @@ private:
             }
             if(bind_property_indices(result->left,source))return std::move(result->left);
             const auto receiver_type = result->left->type;
+            if (is_string_builder(receiver_type)) {
+                if (!source.arguments.empty())
+                    throw Error("E_TYPE",result->location,"StringBuilder needs one index","Для StringBuilder нужен один индекс");
+                std::vector<std::unique_ptr<hir::Expr>> args;
+                args.push_back(std::move(result->left));
+                args.push_back(expression(*source.right,Type::integer));
+                return string_builder_expression(receiver_type,StringBuilderMethod::get_char,std::move(args),result->location);
+            }
             if(!string_type(receiver_type)&&!compound(receiver_type))throw Error("E_TYPE",result->location,"Value is not indexable","Значение не поддерживает индексацию");
             const auto rank=compound(receiver_type) && info(receiver_type,result->location).kind==CompoundKind::array ? info(receiver_type,result->location).rank : 1U;
             if (source.arguments.size()+1!=rank) throw Error("E_TYPE",result->location,"Wrong number of array indices");
@@ -4737,6 +4866,18 @@ private:
     }
     template<class F> hir::Stmt bind_assignment(std::unique_ptr<hir::Expr> target,F value,SourceLocation location,bool deferred=false,bool field_initialization=false) {
         hir::Stmt result;result.kind=hir::StmtKind::assign;result.location=location;result.target=std::move(target);result.deferred_write=deferred||(result.target->kind==hir::ExprKind::local&&result.target->left&&result.target->left->operation=="$static_init");
+        if (result.target->kind==hir::ExprKind::encoding_call && is_string_builder(result.target->operation_type)) {
+            using M=StringBuilderMethod;
+            const auto method=static_cast<M>(result.target->local);
+            if (method==M::length || method==M::capacity || method==M::get_char) {
+                auto property=std::move(result.target);
+                property->arguments.push_back(value(property->type));
+                const auto setter=method==M::length?M::set_length:method==M::capacity?M::set_capacity:M::set_char;
+                result.kind=hir::StmtKind::call;
+                result.expression=string_builder_expression(property->operation_type,setter,std::move(property->arguments),location);
+                return result;
+            }
+        }
             if (result.target->kind==hir::ExprKind::property_access) {
                 auto property=std::move(result.target);
                 if (!property->setter) throw Error("E_TYPE",property->location,"Property is read-only");
@@ -5252,6 +5393,19 @@ private:
         if(!stabilized&&target->kind==hir::ExprKind::property_access&&target->operation=="static"&&!target->arguments.empty()){hir::Stmt block;block.location=location;for(auto& index:target->arguments){const auto slot=module_.locals.size();module_.locals.push_back({"$property_index_"+std::to_string(slot),index->type,!in_routine_});hir::Stmt save;save.kind=hir::StmtKind::assign;save.location=location;save.local=slot;save.expression=std::move(index);block.statements.push_back(std::move(save));index=cached_read(slot,location);}block.statements.push_back(compound_assignment(source,std::move(target),std::move(initial),true));return block;}
         const auto op=source.assignment_operator.text.substr(0,1);
         if(constant_parameter_target(*target) || (target->kind==hir::ExprKind::local && for_controls_.contains(target->local)))throw Error("E_TYPE",location,"Assignment target must be assignable");
+        if (is_string_builder(type)) {
+            if (op!="+" || !lvalue(*target))
+                throw Error("E_TYPE",location,"StringBuilder += requires a writable target",
+                    "Оператор += для StringBuilder требует доступную для записи переменную");
+            std::vector<std::unique_ptr<hir::Expr>> args;
+            args.push_back(std::move(target));
+            args.push_back(initial?std::move(initial):expression(*source.expression,Type::string));
+            hir::Stmt result;
+            result.kind=hir::StmtKind::call;
+            result.location=location;
+            result.expression=string_builder_expression(type,StringBuilderMethod::append_text,std::move(args),location);
+            return result;
+        }
         if(callable_type(type))throw Error("E_UNSUPPORTED",location,"Multicast compound operators are not ported yet");
         if(target->kind==hir::ExprKind::property_access && !target->getter)throw Error("E_TYPE",location,"Property is write-only");
         if(compound_property(*target)) {

@@ -1,0 +1,42 @@
+begin
+  var empty: StringBuilder;
+  Writeln(empty = nil);
+  var b := new System.Text.StringBuilder(2, 7);
+  var alias := b;
+  Writeln(b.Length, ' ', b.Capacity, ' ', b.MaxCapacity);
+  b.Append('ab').Append('c');
+  Writeln(b.Length, ' ', b.Capacity, ' ', b.ToString);
+  b.Append('d').Append('e');
+  Writeln(b.Length, ' ', b.Capacity, ' ', b.ToString);
+  b.Append('f').Append('g').Append('h');
+  Writeln(b.Length, ' ', b.Capacity, ' ', b.ToString);
+  alias[0] := 'A';
+  Writeln(b[1], ' ', b.ToString(0,3), ' ', b.Equals(alias));
+  b.Length := 3;
+  Writeln(b.Length, ' ', b.Capacity);
+  b.Clear;
+  Writeln(b.Length, ' ', b.Capacity, ' ', b.GetType.FullName);
+  var text: faststring := 'Привет';
+  text += '!';
+  text[0] := 'п';
+  Writeln(text.ToString);
+  var slice := StringBuilder.Create('abcdef', 2, 3, 1);
+  slice.Append('z', 2);
+  Writeln(slice.ToString, ' ', slice.Capacity, ' ', slice.EnsureCapacity(24));
+  slice.Length := 7;
+  Writeln(Ord(slice[6]), ' ', slice.Length, ' ', slice.Capacity);
+  slice.Capacity := 8;
+  Writeln(slice.Capacity);
+  var niltext: string := nil;
+  slice.Append(niltext);
+  Writeln(slice.Length);
+
+  var qualified: PABCSystem.faststring := 'abc';
+  var lines := PABCSystem.StringBuilder.Create;
+  lines.AppendLine('x');
+  lines.AppendLine;
+  Writeln(qualified.ToString, ' ', lines[0], ' ', Ord(lines[lines.Length-1]));
+  lines.Clear;
+  lines.Append('abcdef', 2, 3);
+  Writeln(lines.ToString);
+end.

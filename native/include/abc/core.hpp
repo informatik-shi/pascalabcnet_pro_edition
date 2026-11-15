@@ -71,6 +71,7 @@ struct Cell;
 struct TextFile;
 struct TextEncoding;
 struct IniState;
+struct StringBuilderState;
 struct BinaryFile;
 struct HashSetState;
 struct HashSetCursor;
@@ -271,6 +272,7 @@ struct Aggregate {
     std::shared_ptr<Aggregate> delegate_source{}; // Target of a converted delegate's Invoke method.
     std::shared_ptr<const TextEncoding> encoding{};
     std::shared_ptr<IniState> ini{};
+    std::shared_ptr<StringBuilderState> builder{};
     std::shared_ptr<BinaryFile> binary{};
     std::shared_ptr<HashSetState> hash_set{};
     std::weak_ptr<Aggregate> dictionary_keys{},dictionary_values{};
@@ -388,7 +390,7 @@ struct Local {
     MemberAccess access=MemberAccess::public_member;
 };
 
-enum class CompoundKind { array, record, list, stack, queue, dynarray, simple_set, association, linked_node, linked_list, single_node, tuple, school_address, school_ip, sequence, callable, object_class, encoding, enumeration, ini_file, hash_set, new_set, empty_collection, dictionary, dictionary_keys, dictionary_values, enumerator, user_interface, comparable_interface, comparer_interface, comparer, equatable_interface, equality_comparer_interface, equality_comparer, collection_interface, list_interface, dictionary_interface, set_interface, binary_file, fixed_array, typed_pointer, boxed_object };
+enum class CompoundKind { array, record, list, stack, queue, dynarray, simple_set, association, linked_node, linked_list, single_node, tuple, school_address, school_ip, sequence, callable, object_class, encoding, enumeration, ini_file, hash_set, new_set, empty_collection, dictionary, dictionary_keys, dictionary_values, enumerator, user_interface, comparable_interface, comparer_interface, comparer, equatable_interface, equality_comparer_interface, equality_comparer, collection_interface, list_interface, dictionary_interface, set_interface, binary_file, fixed_array, typed_pointer, boxed_object, string_builder };
 enum class NativeRecord { none, ordinal_range, real_interval, key_value_pair, dictionary_enumerator, collection_enumerator };
 inline bool node_kind(CompoundKind kind) { return kind == CompoundKind::linked_node || kind == CompoundKind::single_node; }
 inline bool indexed_sequence(CompoundKind kind) { return kind == CompoundKind::array || kind == CompoundKind::list; }

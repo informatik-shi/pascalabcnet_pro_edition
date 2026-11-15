@@ -29,6 +29,7 @@ add_library(abc_core
     src/binary_stream.cpp
     src/binary_codec.cpp
     src/scalar_serialization.cpp
+    src/string_builder.cpp
     src/binary_file.cpp
     src/native_resource.cpp
     src/fixed_array.cpp
@@ -436,6 +437,9 @@ if(BUILD_TESTING)
     add_test(NAME binary_element_type_compatibility COMMAND ${CMAKE_COMMAND}
         -DABC_RUNNER=$<TARGET_FILE:abc> -DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures
         -DABC_FIXTURE_NAME=binary-element-type-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")
+    add_test(NAME string_builder_compatibility COMMAND ${CMAKE_COMMAND}
+        -DABC_RUNNER=$<TARGET_FILE:abc> -DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures
+        -DABC_FIXTURE_NAME=string-builder-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")
     add_executable(abc_nested_routine_tests tests/nested_routine_tests.cpp)
     target_link_libraries(abc_nested_routine_tests PRIVATE abc_core)
     if(MSVC)

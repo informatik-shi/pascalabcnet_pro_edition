@@ -1440,6 +1440,9 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if(instruction.op==Op::make_default&&(instruction.operand&3U)==1&&compound(type)&&type_info(program,type).kind==CompoundKind::record
                 &&std::any_of(program.routines.begin(),program.routines.end(),[type](const auto& r){return r.constructor&&r.owner==type&&r.parameters.size()==1;}))
                 invalid(instruction,"Record constructor cannot be bypassed");
+            if (instruction.op==Op::make_default && (instruction.operand&3U)==1 && compound(type)
+                && type_info(program,type).kind==CompoundKind::string_builder)
+                invalid(instruction,"StringBuilder constructor cannot be bypassed");
             if (instruction.op==Op::make_default && (instruction.operand&3U)==1 && compound(type) && (node_kind(type_info(program,type).kind) || type_info(program,type).kind==CompoundKind::tuple || type_info(program,type).kind==CompoundKind::sequence || type_info(program,type).kind==CompoundKind::enumerator || type_info(program,type).kind==CompoundKind::user_interface || type_info(program,type).kind==CompoundKind::collection_interface || type_info(program,type).kind==CompoundKind::list_interface || type_info(program,type).kind==CompoundKind::dictionary_interface || type_info(program,type).kind==CompoundKind::set_interface || type_info(program,type).kind==CompoundKind::equality_comparer || type_info(program,type).kind==CompoundKind::equatable_interface || type_info(program,type).kind==CompoundKind::equality_comparer_interface || type_info(program,type).kind==CompoundKind::comparer || type_info(program,type).kind==CompoundKind::comparable_interface || type_info(program,type).kind==CompoundKind::comparer_interface || type_info(program,type).kind==CompoundKind::callable || type_info(program,type).kind==CompoundKind::encoding || type_info(program,type).kind==CompoundKind::ini_file || type_info(program,type).kind==CompoundKind::hash_set || type_info(program,type).kind==CompoundKind::dictionary || type_info(program,type).kind==CompoundKind::dictionary_keys || type_info(program,type).kind==CompoundKind::dictionary_values || school_ip_kind(type_info(program,type).kind)))
                 invalid(instruction,"Nodes and tuples require the typed constructor");
             break;
@@ -2140,6 +2143,9 @@ void verify(const Program& program) {
             if(owner.kind!=CompoundKind::dictionary || (type.kind==CompoundKind::dictionary_keys ? owner.key : type_info(program,owner.element).fields.at(1).type)!=type.element)throw Error("E_BYTECODE",{},"Invalid Dictionary view owner");
         } else if(type.kind==CompoundKind::ini_file) {
             if(type.name!="tinifile" || type.element!=Type::invalid || type.key!=Type::invalid || !type.fields.empty())throw Error("E_BYTECODE",{},"Invalid TIniFile type metadata");
+        } else if (type.kind==CompoundKind::string_builder) {
+            if (type.name!="stringbuilder" || type.element!=Type::invalid || type.key!=Type::invalid || !type.fields.empty() || type.rank!=1)
+                throw Error("E_BYTECODE",{},"Invalid StringBuilder type metadata");
         } else if(type.kind==CompoundKind::fixed_array) {
             if(type.name!="fixed_array"||type.rank!=1||!type.fields.empty())throw Error("E_BYTECODE",{},"Invalid fixed array metadata");prior(type.element);prior(type.key);const auto& shape=fixed_array_shape(program,static_cast<Type>(64+i));prior(shape.index);
             if(shape.upper<shape.lower||static_cast<std::int64_t>(shape.upper)-shape.lower>=1'048'576)throw Error("E_BYTECODE",{},"Invalid fixed array bounds");const auto& view=type_info(program,type.key);if(view.kind!=CompoundKind::array||view.rank!=1||view.element!=type.element)throw Error("E_BYTECODE",{},"Invalid fixed array storage");

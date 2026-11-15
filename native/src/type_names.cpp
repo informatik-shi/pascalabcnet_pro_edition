@@ -59,6 +59,7 @@ std::u16string byref_name(const Program& program,Type type,Work& work){
         case CompoundKind::tuple:name=u"Tuple";arity=info.fields.size();break;
         case CompoundKind::callable:name=info.element==Type::unit ? u"Action" : u"Func";arity=info.parameters.size()+(info.element==Type::unit ? 0U : 1U);break;
         case CompoundKind::encoding:name=u"Encoding";arity=0;break;case CompoundKind::ini_file:name=u"TIniFile";arity=0;break;
+        case CompoundKind::string_builder:name=u"StringBuilder";arity=0;break;
         case CompoundKind::school_address:name=u"Addr32";arity=0;break;case CompoundKind::school_ip:name=u"CalcIP";arity=0;break;
         case CompoundKind::empty_collection:name=u"EmptyCollection";arity=0;break;
         default:throw runtime_error(RuntimeError::invalid_bytecode,work.location);
@@ -221,6 +222,7 @@ std::u16string reflected_type_name(const Program& program,const ReflectedType& t
             text(info.element==Type::unit ? u"procedure" : u"function");continue;
         }
         if(info.kind==CompoundKind::encoding){text(u"Encoding");continue;}
+        if(info.kind==CompoundKind::string_builder){text(u"StringBuilder");continue;}
         if(info.kind==CompoundKind::ini_file){text(u"TIniFile");continue;}
         if(info.kind==CompoundKind::empty_collection){text(u"EmptyCollection");continue;}
         if(info.kind==CompoundKind::school_address){text(u"Addr32");continue;}
