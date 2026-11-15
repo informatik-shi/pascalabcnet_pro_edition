@@ -1,0 +1,9 @@
+base InheritedSettings 17
+22 False 4
+base ExplicitSettings 17
+child ready
+28 ready 17
+0 17 4
+base ViaMiddle 17
+38 7
+ExplicitSettings True

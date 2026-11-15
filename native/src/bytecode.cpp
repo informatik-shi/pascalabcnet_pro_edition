@@ -242,6 +242,7 @@ private:
         case hir::ExprKind::class_construct:
         case hir::ExprKind::property_access: expression_part_7(node);break;
         case hir::ExprKind::user_call:
+        case hir::ExprKind::base_constructor_call:
         case hir::ExprKind::list_add:
         case hir::ExprKind::list_remove:
         case hir::ExprKind::list_clear:
@@ -695,13 +696,15 @@ private:
     }
     ABC_BYTECODE_NOINLINE void expression_part_8(const hir::Expr& node) {
         switch(node.kind) {
-        case hir::ExprKind::user_call: {
+        case hir::ExprKind::user_call:
+        case hir::ExprKind::base_constructor_call: {
             if(node.operation=="$static_init"){emit(Op::call_user,Type::unit,program_.static_classes.at(node.local).initializer,node.location);break;}
             const auto& signature = program_.routines[node.local];
             for (std::size_t n = 0; n < node.arguments.size(); ++n) {
                 if (signature.parameters[n].by_reference) reference(*node.arguments[n]); else expression(*node.arguments[n]);
             }
-            emit(Op::call_user,node.type,node.local,node.location); break;
+            emit(node.kind==hir::ExprKind::base_constructor_call ? Op::call_base_constructor : Op::call_user,
+                node.type,node.local,node.location); break;
         }
         case hir::ExprKind::list_add: case hir::ExprKind::list_remove: case hir::ExprKind::list_clear: case hir::ExprKind::list_contains:
             expression(*node.left);
@@ -1508,13 +1511,21 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         case Op::construct_user:
             if (instruction.operand>=program.routines.size() || !compound(type) || !valid_value_type(program,type)
                 || (type_info(program,type).kind!=CompoundKind::object_class && !(type_info(program,type).kind==CompoundKind::record&&type_info(program,type).native_record==NativeRecord::none)) || !program.routines[instruction.operand].constructor
-                || program.routines[instruction.operand].owner!=type || program.routines[instruction.operand].result!=Type::unit
+                || (program.routines[instruction.operand].owner!=type
+                    && !class_reference_compatible(program.types,type,program.routines[instruction.operand].owner))
+                || program.routines[instruction.operand].result!=Type::unit
                 || program.routines[instruction.operand].parameters.empty() || !program.routines[instruction.operand].captures.empty())
                 invalid(instruction,"Invalid class constructor target");
             break;
         case Op::call_user:
             if (instruction.operand >= program.routines.size() || program.routines[instruction.operand].constructor || type != program.routines[instruction.operand].result
                 || !program.routines[instruction.operand].captures.empty()) invalid(instruction,"Invalid user call");
+            break;
+        case Op::call_base_constructor:
+            if(type!=Type::unit || !routine || !routine->constructor || instruction.operand>=program.routines.size()
+                || !program.routines[instruction.operand].constructor || !program.routines[instruction.operand].captures.empty()
+                || !class_reference_compatible(program.types,routine->owner,program.routines[instruction.operand].owner))
+                invalid(instruction,"Invalid base class constructor call");
             break;
         case Op::return_user:
             if (!routine || type != routine->result) invalid(instruction,"Invalid return"); break;
@@ -2042,6 +2053,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             stack.push_back(instruction.type);break;
         }
         case Op::call_user:
+        case Op::call_base_constructor:
             for (auto parameter = program.routines[instruction.operand].parameters.rbegin(); parameter != program.routines[instruction.operand].parameters.rend(); ++parameter)
                 require(parameter->by_reference ? reference_type(parameter->type) : parameter->type);
             if (instruction.type != Type::unit) stack.push_back(instruction.type);

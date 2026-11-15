@@ -1,5 +1,6 @@
 #include "record_initialization.hpp"
 #include "fixed_array.hpp"
+#include "interfaces.hpp"
 #include "runtime_values.hpp"
 #include <array>
 namespace abc {
@@ -33,5 +34,27 @@ void initialize_record_array(Values& values,const std::shared_ptr<Aggregate>& ar
  if(compound(type_info(values.program,array->type).element)&&type_info(values.program,type_info(values.program,array->type).element).kind==CompoundKind::binary_file&&pascal_copy_type(values.program.types,type_info(values.program,type_info(values.program,array->type).element).element)){for(std::size_t n=first;n<array->items.size();++n)array->items[n]->value=initialized_default(values,type_info(values.program,array->type).element,false,false,0);return;}
  if(!initializer)return;
  for(std::size_t n=first;n<array->items.size();++n)initialize(values,array->items[n],initializer);
+}
+void initialize_class_fields(Values& values,const Value& instance,Type initialized_through,Type start){
+ const auto& types=values.program.types;
+ std::vector<Type> classes;
+ auto type=start==Type::invalid ? value_type(instance) : start;
+ while(type!=initialized_through && class_parent(types,type)!=Type::invalid){
+  classes.push_back(type);
+  type=class_parent(types,type);
+ }
+ for(auto current=classes.rbegin();current!=classes.rend();++current){
+  const auto name=type_info(values.program,*current).name+".$initialize_fields";
+  for(std::size_t id=0;id<values.program.routines.size();++id){
+   const auto& routine=values.program.routines[id];
+   if(routine.owner!=*current || routine.name!=name)continue;
+   if(!values.invoke || routine.constructor || routine.result!=Type::unit || routine.parameters.size()!=1
+      || routine.parameters.front().type!=*current || routine.parameters.front().by_reference || !routine.captures.empty())
+    throw runtime_error(RuntimeError::invalid_bytecode,values.location);
+   const std::array<Value,1> argument{instance};
+   (void)values.invoke(id,argument);
+   break;
+  }
+ }
 }
 }

@@ -334,6 +334,7 @@ struct SyntaxRoutine {
     std::string owner{};
     bool constructor=false, declaration_only=false, function_header=false, explicit_parameters=false;
     bool static_member=false;
+    bool implicit_constructor=false;
     MemberAccess access=MemberAccess::public_member;
 };
 
@@ -394,7 +395,7 @@ public:
                     if ((type->kind=="class" || type->kind=="record") && !type->named && type->initializer) {
                         type->methods.push_back(type->initializer);
                         if (type->kind=="class" && std::none_of(type->methods.begin(),type->methods.end(),[](const auto& method){return method->constructor;})) {
-                            auto constructor=std::make_shared<SyntaxRoutine>();constructor->name={TokenKind::name,"create",type_name.location};constructor->constructor=true;
+                            auto constructor=std::make_shared<SyntaxRoutine>();constructor->name={TokenKind::name,"create",type_name.location};constructor->constructor=true;constructor->implicit_constructor=true;
                             type->methods.push_back(std::move(constructor));
                         }
                     }
@@ -1411,7 +1412,10 @@ public:
                 const auto owner=aliases_.at(routine->owner);if(!routine->static_member)body.signature.owner=owner;
                 for (const auto& field:info(owner,routine->name.location).fields) if (explicit_target==Type::invalid&&field.name==routine->name.text)
                     throw Error("E_DUPLICATE",routine->name.location,"Class method conflicts with a field");
-                if (routine->constructor) class_constructors_[body.signature.owner]=module_.routines.size();
+                if(routine->constructor){
+                    class_constructors_[body.signature.owner]=module_.routines.size();
+                    if(routine->implicit_constructor)implicit_class_constructors_.insert(owner);
+                }
                 else if(!routine->static_member&&explicit_target==Type::invalid)class_methods_[body.signature.owner].try_emplace(routine->name.text,module_.routines.size());
             }
             body.signature.result = routine->result ? resolve_type(*routine->result) : Type::unit;
@@ -1734,6 +1738,12 @@ private:
         result->left=static_initializer_expression(owner,token.location);return result;
     }
     ABC_PASCAL_NOINLINE void prepare_type_initializers(SyntaxStmt& source){
+        const auto unused_constructor=[&](const auto& routine){
+            return routine->implicit_constructor && class_parent(module_.types,aliases_.at(routine->owner))!=Type::invalid;
+        };
+        std::erase_if(source.routines,unused_constructor);
+        for(auto& [name,type]:source.type_declarations)
+            std::erase_if(type->methods,unused_constructor);
         std::map<Type,SyntaxType*> declarations;std::map<Type,Token> names;
         for(auto& [name,type]:source.type_declarations)if(!type->named&&(type->kind=="record"||type->kind=="class")){declarations[aliases_.at(name.text)]=type.get();names[aliases_.at(name.text)]=name;}
         std::map<Type,bool> needed;std::set<Type> active;
@@ -1745,7 +1755,14 @@ private:
             std::map<std::string,SyntaxStmt> explicit_fields;for(auto& step:type->initializer->body.statements)explicit_fields.emplace(step.target->token.text,std::move(step));type->initializer->body.statements.clear();
             const auto inherited=info(owner,{}).fields.size()-type->fields.size();
             for(std::size_t n=0;n<type->fields.size();++n){const auto& field=type->fields[n].first;const auto value_type=info(owner,field.location).fields[inherited+n].type;if(explicit_fields.contains(field.text)){type->initializer->body.statements.push_back(std::move(explicit_fields.at(field.text)));continue;}if(!compound(value_type)||!needs(value_type))continue;SyntaxStmt step;step.kind=SyntaxStmtKind::assignment;step.token=field;step.target=make_expression(SyntaxExprKind::field,field,make_expression(SyntaxExprKind::name,Token{TokenKind::name,"self",field.location}));step.expression=make_expression(SyntaxExprKind::initialized_default,field);type->initializer->body.statements.push_back(std::move(step));}
-            if(type->kind=="class"&&std::none_of(type->methods.begin(),type->methods.end(),[](const auto& method){return method->constructor;})){auto constructor=std::make_shared<SyntaxRoutine>();constructor->name={TokenKind::name,"create",names.at(owner).location};constructor->constructor=true;lift(constructor);}
+            if(type->kind=="class" && class_parent(module_.types,owner)==Type::invalid
+                && std::none_of(type->methods.begin(),type->methods.end(),[](const auto& method){return method->constructor;})){
+                auto constructor=std::make_shared<SyntaxRoutine>();
+                constructor->name={TokenKind::name,"create",names.at(owner).location};
+                constructor->constructor=true;
+                constructor->implicit_constructor=true;
+                lift(constructor);
+            }
         }
     }
     static bool inherited_constructor_call(const SyntaxExpr& expression){
@@ -4535,10 +4552,18 @@ private:
                     for(const auto& argument:source.arguments)result->arguments.push_back(expression(*argument));
                     ini_expression(*result,type,IniMethod::construct);break;
                 }
-                if(ini_ancestor(module_.types,type)!=Type::invalid && !class_constructors_.contains(type)
-                    && !source.arguments.empty()){
-                    for(const auto& argument:source.arguments)result->arguments.push_back(expression(*argument));
-                    ini_expression(*result,type,IniMethod::construct);
+                if(ini_ancestor(module_.types,type)!=Type::invalid
+                    && (!class_constructors_.contains(type) || implicit_class_constructors_.contains(type))){
+                    if(const auto constructor=inherited_user_constructor(type,source.arguments.size())){
+                        bind_class_constructor(*result,source,type,*constructor);
+                    }else if(!source.arguments.empty()){
+                        for(const auto& argument:source.arguments)result->arguments.push_back(expression(*argument));
+                        ini_expression(*result,type,IniMethod::construct);
+                    }else{
+                        result->kind=hir::ExprKind::default_value;
+                        result->type=type;
+                        result->operation="new";
+                    }
                     break;
                 }
                 if (info(type,result->location).kind==CompoundKind::sequence) throw Error("E_TYPE",result->location,"Sequences require a typed producer");
@@ -4683,10 +4708,14 @@ private:
             throw Error("E_TYPE",result->location,"Inherited constructor call must be first in the constructor body",
                 "Вызов унаследованного конструктора должен быть первым в теле конструктора");
         const auto ini=ini_ancestor(module_.types,parent);
-        for(auto type=parent;type!=ini;type=class_parent(module_.types,type)){
-            if(class_constructors_.contains(type))
-                throw Error("E_UNSUPPORTED",result->location,"Calling a user-defined base constructor requires additional support",
-                    "Вызов пользовательского конструктора базового класса ещё не поддерживается");
+        if(const auto constructor=inherited_user_constructor(current_owner_,source.arguments.size())){
+            const auto& target=module_.routines[*constructor].signature;
+            result->kind=hir::ExprKind::base_constructor_call;
+            result->local=*constructor;
+            result->type=Type::unit;
+            result->arguments.push_back(convert(std::move(self),target.owner));
+            bind_constructor_arguments(*result,source,*constructor);
+            return result;
         }
         result->arguments.push_back(convert(std::move(self),ini));
         for(const auto& argument:source.arguments)result->arguments.push_back(expression(*argument,Type::string));
@@ -7193,11 +7222,22 @@ private:
         for (auto& argument:result.arguments) argument=convert(std::move(argument),element);
         result.kind=hir::ExprKind::array_literal; result.type=sequence_type(CompoundKind::array,element);
     }
-    void bind_class_constructor(hir::Expr& result,const SyntaxExpr& source,Type owner) {
-        const auto id=class_constructors_.at(owner);const auto signature=module_.routines[id].signature;
-        result.kind=hir::ExprKind::class_construct;result.type=owner;result.local=id;
-        auto self=std::make_unique<hir::Expr>();self->kind=hir::ExprKind::default_value;self->type=owner;self->location=result.location;
-        result.arguments.push_back(std::move(self));
+    std::optional<std::size_t> inherited_user_constructor(Type type,std::size_t count)const{
+        for(auto parent=class_parent(module_.types,type);parent!=Type::invalid;parent=class_parent(module_.types,parent)){
+            const auto found=class_constructors_.find(parent);
+            if(found==class_constructors_.end() || implicit_class_constructors_.contains(parent))continue;
+            const auto id=found->second;
+            const auto& parameters=module_.routines[id].signature.parameters;
+            auto required=parameters.size()-1;
+            const bool variadic=parameters.back().variadic;
+            if(variadic)--required;
+            while(required && id<parameter_defaults_.size() && parameter_defaults_[id][required])--required;
+            if(count>=required && (variadic || count+1<=parameters.size()))return id;
+        }
+        return std::nullopt;
+    }
+    void bind_constructor_arguments(hir::Expr& result,const SyntaxExpr& source,std::size_t id){
+        const auto signature=module_.routines[id].signature;
         for (std::size_t i=0;i<source.arguments.size();++i) {
             auto context=i+1<signature.parameters.size() ? signature.parameters[i+1].type : Type::invalid;
             if (signature.parameters.back().variadic && i+2>=signature.parameters.size())
@@ -7212,8 +7252,22 @@ private:
                     throw Error("E_TYPE",result.location,"var argument requires an assignable value of exactly the parameter type");
             } else result.arguments[i]=convert(std::move(result.arguments[i]),parameter.type);
         }
-        // Self is allocated by construct_user only after all explicit/default arguments.
+    }
+    void bind_class_constructor(hir::Expr& result,const SyntaxExpr& source,Type owner,std::size_t id){
+        result.kind=hir::ExprKind::class_construct;
+        result.type=owner;
+        result.local=id;
+        auto self=std::make_unique<hir::Expr>();
+        self->kind=hir::ExprKind::default_value;
+        self->type=module_.routines[id].signature.owner;
+        self->location=result.location;
+        result.arguments.push_back(std::move(self));
+        bind_constructor_arguments(result,source,id);
+        // The VM allocates Self after argument evaluation.
         result.arguments.erase(result.arguments.begin());
+    }
+    void bind_class_constructor(hir::Expr& result,const SyntaxExpr& source,Type owner){
+        bind_class_constructor(result,source,owner,class_constructors_.at(owner));
     }
     ABC_PASCAL_NOINLINE std::unique_ptr<hir::Expr> array_library_operation(std::string_view name,Type element,std::vector<std::unique_ptr<hir::Expr>> arguments,SourceLocation location) {
         const bool fill=name=="fillbyvalue",sort=name=="sort"||name=="sortdescending",matrix=name=="writematrix";
@@ -9493,6 +9547,7 @@ private:
     std::map<Type,std::map<std::string,std::vector<std::size_t>>> class_method_overloads_;
     std::map<Type,std::map<Type,std::map<std::string,std::vector<std::size_t>>>> class_explicit_methods_;
     std::map<Type,std::size_t> class_constructors_;
+    std::set<Type> implicit_class_constructors_;
     std::set<const SyntaxExpr*> inherited_constructor_calls_;
     std::map<std::size_t,std::size_t> builtin_routines_;
     std::map<std::pair<std::string,Type>,std::size_t> array_library_routines_;

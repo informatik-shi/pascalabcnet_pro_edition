@@ -266,6 +266,7 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
         std::vector<std::shared_ptr<Cell>> locals;
         std::size_t pc = 0, base = 0;
         std::vector<std::shared_ptr<Aggregate>> cursors{};
+        Type base_constructor_start=Type::invalid;
     };
     std::deque<Frame> frames{{&program.code,nullptr,globals,0,0}};
     std::vector<Value> stack;
@@ -303,7 +304,7 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
         write(text,instruction);
     },delimiter_value,options,school,values,timing,environment};
     values.invoke_builtin=[&](std::size_t id,std::span<const Value> arguments){return stdlib::invoke(id,arguments,values.location,services);};
-    const auto enter_routine=[&](std::size_t id,SourceLocation location,std::span<const std::shared_ptr<Cell>> captured={}) {
+    const auto enter_routine=[&](std::size_t id,SourceLocation location,std::span<const std::shared_ptr<Cell>> captured={},Type base_constructor_start=Type::invalid) {
         if (id>=program.routines.size()) throw runtime_error(RuntimeError::invalid_bytecode,location);
         if (frames.size()>options.call_limit) throw runtime_error(RuntimeError::call_limit,location);
         const auto& routine=program.routines[id];
@@ -314,6 +315,7 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
             if (!self || self->nil) throw runtime_error(RuntimeError::nil_reference,location);
         }
         Frame next{&routine.code,&routine,std::vector<std::shared_ptr<Cell>>(program.locals.size()),0,stack.size()-routine.parameters.size()};
+        next.base_constructor_start=base_constructor_start;
         for (auto index:routine.locals) next.locals[index]=values.cell(program.locals[index].type,values.zero(program.locals[index].type));
         for (std::size_t i=routine.parameters.size();i>0;--i) {
             const auto& parameter=routine.parameters[i-1]; auto value=pop();
@@ -1303,6 +1305,10 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
             const auto method=static_cast<IniMethod>(instruction.operand);std::vector<Value> arguments(ini_parameters(instruction.type,method).size());
             for(std::size_t i=arguments.size();i>0;--i)arguments[i-1]=pop();
             auto result=ini_invoke(values,files,instruction.type,method,arguments,options);
+            if(method==IniMethod::construct && class_parent(program.types,instruction.type)!=Type::invalid)
+                initialize_class_fields(values,result);
+            if(method==IniMethod::initialize)
+                initialize_class_fields(values,arguments.front(),instruction.type,class_parent(program.types,frame.routine->owner));
             if(ini_result(instruction.type,method)!=Type::unit)stack.push_back(std::move(result));break;
         }
         case Op::pointer_call: {
@@ -1410,7 +1416,14 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
             if (sequence->nil) trap(instruction,RuntimeError::nil_reference);
             for (const auto& item:sequence->items) values.write(item,value); break;
         }
-        case Op::make_default: stack.push_back(initialized_default(values,instruction.type,(instruction.operand&3U)==1,(instruction.operand&3U)==2,instruction.operand>>2U)); break;
+        case Op::make_default: {
+            const bool constructed=(instruction.operand&3U)==1;
+            auto value=initialized_default(values,instruction.type,constructed,(instruction.operand&3U)==2,instruction.operand>>2U);
+            if(constructed && class_parent(program.types,instruction.type)!=Type::invalid)
+                initialize_class_fields(values,value);
+            stack.push_back(std::move(value));
+            break;
+        }
         case Op::load_global: stack.push_back(typed_value_copy(values,instruction.type,globals[instruction.operand]->value)); break;
         case Op::store_global: values.write(globals[instruction.operand],pop()); break;
         case Op::ref_local: stack.emplace_back(locals[instruction.operand]); break;
@@ -1577,13 +1590,23 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
             enter_routine(instruction.operand,instruction.location);break;
         }
         case Op::call_user: enter_routine(instruction.operand,instruction.location); break;
+        case Op::call_base_constructor:
+            enter_routine(instruction.operand,instruction.location,{},class_parent(program.types,frame.routine->owner));
+            break;
         case Op::return_user: {
             std::optional<Value> result;
-            if (frame.routine->constructor) result=frame.locals[frame.routine->parameters.front().local]->value;
+            const auto constructor_owner=frame.routine->constructor ? frame.routine->owner : Type::invalid;
+            const auto base_constructor_start=frame.base_constructor_start;
+            if (constructor_owner!=Type::invalid)result=frame.locals[frame.routine->parameters.front().local]->value;
             else if (frame.routine->result != Type::unit) result = values.copy(frame.locals[frame.routine->result_local]->value);
             while(!frame.cursors.empty()){auto cursor=std::move(frame.cursors.back());frame.cursors.pop_back();sequence_dispose(values,cursor,options);}
             stack.resize(frame.base); frames.pop_back();
-            if (result) stack.push_back(std::move(*result)); break;
+            if(result){
+                if(constructor_owner!=Type::invalid)
+                    initialize_class_fields(values,*result,constructor_owner,base_constructor_start);
+                if(base_constructor_start==Type::invalid)stack.push_back(std::move(*result));
+            }
+            break;
         }
         case Op::call_builtin: {
             const auto count = stdlib::signatures()[instruction.operand].parameters.size();
