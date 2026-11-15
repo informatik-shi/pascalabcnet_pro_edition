@@ -169,6 +169,7 @@ DefaultEncoding изначально CP1251. Его смена и явные Enc
 StringBuilder и faststring поддерживают Append, +=, индексацию с нуля, Length, Capacity, Clear и ToString.
 StringBuilder.Append принимает числа и массивы символов, а CopyTo записывает диапазон в массив символов.
 StringBuilder.Insert вставляет текст, числа и массивы символов. Remove удаляет диапазон.
+StringBuilder.Replace меняет символы и подстроки, в том числе в указанном диапазоне.
 Статические массивы, независимые копии, двумерные индексы и file of массив: examples/fixed-arrays.pas.
 Инициализаторы динамических массивов, записи и более семи элементов: examples/array-literals.pas.
 Константы-массивы, известные границы типов и постоянные локальные таблицы: examples/array-constants.pas.

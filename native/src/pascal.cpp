@@ -2303,6 +2303,8 @@ private:
         std::vector<std::unique_ptr<hir::Expr>> args;
         args.push_back(std::move(receiver.left));
         for (const auto& arg:source.arguments) args.push_back(expression(*arg));
+        if (name=="replace" && (args[1]->type!=Type::character || args[2]->type!=Type::character))
+            method=count==2?M::replace_text:M::replace_text_range;
         auto payload=Type::invalid;
         if (method==M::copy_to) payload=sequence_type(CompoundKind::array,Type::character);
         const auto char_array=[&](Type type) {

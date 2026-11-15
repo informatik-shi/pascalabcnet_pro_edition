@@ -94,18 +94,18 @@ void set_capacity(StringBuilderState& builder,std::size_t capacity,SourceLocatio
     builder.chunks.back().capacity=capacity-builder.text.size()+builder.chunks.back().length;
 }
 struct Position {std::size_t chunk,offset;};
-Position locate(const StringBuilderState& builder,std::size_t index) {
-    auto offset=builder.text.size();
-    auto chunk=builder.chunks.size();
+Position locate(const std::vector<StringBuilderState::Chunk>& chunks,std::size_t length,std::size_t index) {
+    auto offset=length;
+    auto chunk=chunks.size();
     do {
         --chunk;
-        offset-=builder.chunks[chunk].length;
+        offset-=chunks[chunk].length;
     } while (offset>index);
     return {chunk,offset};
 }
 void shrink(StringBuilderState& builder,std::size_t length) {
     const auto capacity=builder.capacity();
-    const auto position=locate(builder,length);
+    const auto position=locate(builder.chunks,builder.text.size(),length);
     builder.chunks.resize(position.chunk+1);
     builder.chunks.back()={length-position.offset,capacity-position.offset};
     builder.text.resize(length);
@@ -118,7 +118,7 @@ void insert_text(StringBuilderState& builder,std::size_t index,std::u16string_vi
         throw runtime_error(RuntimeError::string_limit,location);
     const auto count=text.size()*repetitions;
     if (builder.text.size()+count>builder.max_capacity) throw out_of_range(location);
-    const auto position=locate(builder,index);
+    const auto position=locate(builder.chunks,builder.text.size(),index);
     const auto chunk=builder.chunks[position.chunk];
     const auto in_place=chunk.length<=32 && count<=chunk.capacity-chunk.length;
     if (!in_place) builder.chunks.reserve(builder.chunks.size()+1);
@@ -133,6 +133,18 @@ void insert_text(StringBuilderState& builder,std::size_t index,std::u16string_vi
     else builder.chunks.insert(builder.chunks.begin()+static_cast<std::ptrdiff_t>(position.chunk),
         {count,std::max(count,default_capacity)});
 }
+void remove_chunks(std::vector<StringBuilderState::Chunk>& chunks,std::size_t length,std::size_t index,std::size_t count) {
+    const auto first=locate(chunks,length,index);
+    const auto last=locate(chunks,length,index+count);
+    if (first.chunk==last.chunk) chunks[first.chunk].length-=count;
+    else {
+        chunks[first.chunk].length=index-first.offset;
+        chunks[last.chunk].length-=index+count-last.offset;
+        const auto erase_from=first.chunk+(chunks[first.chunk].length!=0);
+        chunks.erase(chunks.begin()+static_cast<std::ptrdiff_t>(erase_from),
+            chunks.begin()+static_cast<std::ptrdiff_t>(last.chunk));
+    }
+}
 void remove_text(StringBuilderState& builder,std::size_t index,std::size_t count,SourceLocation location) {
     (void)slice(builder.text,index,count,location);
     if (!count) return;
@@ -140,17 +152,82 @@ void remove_text(StringBuilderState& builder,std::size_t index,std::size_t count
         shrink(builder,0);
         return;
     }
-    const auto first=locate(builder,index);
-    const auto last=locate(builder,index+count);
-    if (first.chunk==last.chunk) builder.chunks[first.chunk].length-=count;
-    else {
-        builder.chunks[first.chunk].length=index-first.offset;
-        builder.chunks[last.chunk].length-=index+count-last.offset;
-        const auto erase_from=first.chunk+(builder.chunks[first.chunk].length!=0);
-        builder.chunks.erase(builder.chunks.begin()+static_cast<std::ptrdiff_t>(erase_from),
-            builder.chunks.begin()+static_cast<std::ptrdiff_t>(last.chunk));
-    }
+    remove_chunks(builder.chunks,builder.text.size(),index,count);
     builder.text.erase(index,count);
+}
+std::vector<std::size_t> matching_spans(std::u16string_view text,std::u16string_view needle) {
+    if (needle.size()>text.size()) return {};
+    std::vector<std::size_t> prefix(needle.size());
+    for (std::size_t i=1,j=0;i<needle.size();++i) {
+        while (j && needle[i]!=needle[j]) j=prefix[j-1];
+        if (needle[i]==needle[j]) ++j;
+        prefix[i]=j;
+    }
+    std::vector<std::size_t> spans;
+    for (std::size_t i=0,j=0;i<text.size();++i) {
+        while (j && text[i]!=needle[j]) j=prefix[j-1];
+        if (text[i]==needle[j]) ++j;
+        if (j==needle.size()) {
+            spans.push_back(i+1-j);
+            j=0;
+        }
+    }
+    return spans;
+}
+void replace_text(StringBuilderState& builder,std::size_t start,std::size_t count,
+    const Value& old_value,std::u16string_view replacement,SourceLocation location) {
+    const auto& text=builder.text;
+    const auto region=slice(text,start,count,location);
+    if (std::holds_alternative<NilString>(old_value)) throw runtime_error(RuntimeError::nil_reference,location);
+    const auto& needle=string_text(old_value);
+    if (needle.empty())
+        throw Error("E_ARGUMENT",location,"The substring to replace must not be empty",
+            "Подстрока для замены должна быть непустой");
+    const auto positions=matching_spans(region,needle);
+    if (positions.empty()) return;
+
+    auto chunks=builder.chunks;
+    auto length=text.size();
+    const auto grows=replacement.size()>needle.size();
+    const auto width=grows?replacement.size()-needle.size():needle.size()-replacement.size();
+    // Matches beginning in the same chunk change its layout as one edit.
+    for (std::size_t batch=0;width && batch<positions.size();) {
+        const auto adjust=[&](std::size_t index) {
+            return grows?index+(length-text.size()):index-(text.size()-length);
+        };
+        const auto first=adjust(start+positions[batch]);
+        const auto position=locate(chunks,length,first);
+        const auto end=position.offset+chunks[position.chunk].length;
+        auto next=batch+1;
+        while (next<positions.size() && adjust(start+positions[next])<end) ++next;
+        const auto matches=next-batch;
+        if (grows) {
+            if (matches>(text_limit-length)/width) throw runtime_error(RuntimeError::string_limit,location);
+            const auto extra=matches*width;
+            if (length+extra>builder.max_capacity) throw out_of_range(location);
+            chunks.insert(chunks.begin()+static_cast<std::ptrdiff_t>(position.chunk),
+                {extra,std::max(extra,default_capacity)});
+            length+=extra;
+        } else {
+            const auto removed=matches*width;
+            const auto tail=adjust(start+positions[next-1])+needle.size();
+            remove_chunks(chunks,length,tail-removed,removed);
+            length-=removed;
+        }
+        batch=next;
+    }
+    std::u16string result;
+    result.reserve(length);
+    std::size_t copied=0;
+    for (const auto relative:positions) {
+        const auto position=start+relative;
+        result.append(text,copied,position-copied);
+        result.append(replacement);
+        copied=position+needle.size();
+    }
+    result.append(text,copied);
+    builder.text=std::move(result);
+    builder.chunks=std::move(chunks);
 }
 StringBuilderState& state(const std::shared_ptr<Aggregate>& value,SourceLocation location) {
     if (!value || value->nil) throw runtime_error(RuntimeError::nil_reference,location);
@@ -207,7 +284,7 @@ bool string_builder_signature(const Program& program,Type owner,std::size_t oper
         const auto& shape=type_info(program,payload);
         return shape.kind==CompoundKind::array && shape.rank==1 && shape.element==Type::character;
     }
-    return method<=M::remove && (operation>>8U)==0;
+    return method<=M::replace_text_range && (operation>>8U)==0;
 }
 std::vector<Type> string_builder_parameters(Type owner,StringBuilderMethod method,Type payload) {
     using M=StringBuilderMethod;
@@ -237,6 +314,8 @@ std::vector<Type> string_builder_parameters(Type owner,StringBuilderMethod metho
     case M::insert_scalar: case M::insert_array: return {owner,Type::integer,payload};
     case M::insert_array_range: return {owner,Type::integer,payload,Type::integer,Type::integer};
     case M::remove: return {owner,Type::integer,Type::integer};
+    case M::replace_text: return {owner,Type::string,Type::string};
+    case M::replace_text_range: return {owner,Type::string,Type::string,Type::integer,Type::integer};
     default: return {owner};
     }
 }
@@ -341,6 +420,12 @@ Value string_builder_invoke(Values& values,Type owner,StringBuilderMethod method
     case M::remove:
         remove_text(builder,number(1),number(2),location);
         break;
+    case M::replace_text: case M::replace_text_range: {
+        const auto start=method==M::replace_text?0U:number(3);
+        const auto count=method==M::replace_text?length:number(4);
+        replace_text(builder,start,count,args[1],string_text(args[2]),location);
+        break;
+    }
     case M::append_line: case M::append_line_text:
         if (method==M::append_line_text) append_text(builder,string_text(args[1]),location);
 #ifdef _WIN32
