@@ -1299,15 +1299,15 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
             if (instruction.operand&1U) {
                 const auto& object=std::get<std::shared_ptr<Aggregate>>(value);
                 if (object->nil) {
-                    if (payload!=Type::string) trap(instruction,RuntimeError::nil_reference);
-                    stack.emplace_back(NilString{});
+                    if (payload!=Type::string && !compound(payload)) trap(instruction,RuntimeError::nil_reference);
+                    stack.push_back(values.zero(payload,false,true));
                     break;
                 }
                 if (object->items.empty() || object->items.front()->type!=payload)
                     throw Error("E_CAST",instruction.location,"Object has a different boxed type","В object хранится значение другого типа");
                 stack.push_back(values.copy(object->items.front()->value));
             } else {
-                stack.push_back(values.box_scalar(instruction.type,payload,std::move(value)));
+                stack.push_back(values.box_value(instruction.type,payload,std::move(value)));
             }
             break;
         }

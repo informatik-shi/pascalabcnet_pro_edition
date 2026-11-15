@@ -123,8 +123,10 @@ struct Values {
         }
         }
     }
-    Value box_scalar(Type object_type,Type payload,Value value) {
+    Value box_value(Type object_type,Type payload,Value value) {
         if (std::holds_alternative<NilString>(value)) return zero(object_type);
+        if (const auto* array=std::get_if<std::shared_ptr<Aggregate>>(&value);array && (!*array || (*array)->nil))
+            return zero(object_type);
         if (!remaining) throw runtime_error(RuntimeError::allocation_limit,location);
         --remaining;
         auto object=std::get<std::shared_ptr<Aggregate>>(zero(object_type,true));
@@ -166,6 +168,12 @@ struct Values {
                 && (collection_sequence((*a)->sequence->provider) || (*a)->sequence->provider==SequenceProvider::hash_set || dictionary_provider((*a)->sequence->provider)) && (collection_sequence(b->sequence->provider) || b->sequence->provider==SequenceProvider::hash_set || dictionary_provider(b->sequence->provider)))
                 return (*a)->sequence->source==b->sequence->source;
             if (kind==CompoundKind::callable) return callable_equal(**a,*b);
+            if (kind==CompoundKind::boxed_object && !(*a)->items.empty() && !b->items.empty()) {
+                const auto& first=*(*a)->items.front();
+                const auto& second=*b->items.front();
+                if (first.type==second.type && compound(first.type))
+                    return std::get<std::shared_ptr<Aggregate>>(first.value)==std::get<std::shared_ptr<Aggregate>>(second.value);
+            }
             if (kind!=CompoundKind::record && kind!=CompoundKind::tuple) return ((*a)->nil && b->nil) || *a == b;
             if ((*a)->nil || b->nil) return (*a)->nil && b->nil;
             for (std::size_t i = 0; i < (*a)->items.size(); ++i)

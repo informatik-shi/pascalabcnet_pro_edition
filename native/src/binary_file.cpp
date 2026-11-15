@@ -142,14 +142,14 @@ Value binary_invoke(Values& values,FileContext& files,Type owner,std::size_t ope
         if (writing) {
             const auto& object=std::get<std::shared_ptr<Aggregate>>(args.back());
             if (object->nil || object->items.size()!=1)
-                throw Error("E_FORMAT",location,"Serialization requires a supported boxed scalar",
-                    "Для сериализации требуется поддерживаемое скалярное значение в object");
+                throw Error("E_FORMAT",location,"Serialization requires a supported boxed value",
+                    "Для сериализации требуется поддерживаемое значение в object");
             const auto& item=*object->items.front();
-            serialize_scalar(*target->stream,item.type,item.value,location,options);
+            serialize_value(*target->stream,values.program,item.type,item.value,location,options);
             return false;
         }
-        auto scalar=deserialize_scalar(*target->stream,location,options);
-        return values.box_scalar(payload(operand),scalar.type,std::move(scalar.value));
+        auto stored=deserialize_value(*target->stream,values,location,options);
+        return values.box_value(payload(operand),stored.type,std::move(stored.value));
     }
     auto& file=file_value(args[0],location);
     if(code==BinaryMethod::assign){assign(files,file,args[1],location);return false;}
