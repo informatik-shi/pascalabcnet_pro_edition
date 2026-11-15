@@ -163,7 +163,7 @@ public:
         if ((symbol == ":" && peek() == '=') || (symbol == "<" && (peek() == '=' || peek() == '>'))
             || (symbol == ">" && peek() == '=') || (symbol=="." && peek()=='.') || (symbol == "-" && peek() == '>')
             || ((symbol=="+" || symbol=="-" || symbol=="*" || symbol=="/") && peek()=='=')) symbol += take();
-        if (std::string_view(";:,.()[]+-*/=<>? ").find(symbol.front()) == std::string_view::npos)
+        if (std::string_view(";:,.()[]+-*/=<>?^ ").find(symbol.front()) == std::string_view::npos)
             throw Error("E_SYNTAX", start, "Unsupported character in source");
         return {TokenKind::symbol, std::move(symbol), start};
     }
@@ -519,6 +519,9 @@ private:
                 result->enum_values.push_back(std::move(value));
             } while (accept(","));
             expect(")");
+        } else if (accept("^")) {
+            result->kind="typed_pointer";
+            result->element=type_syntax(false,false);
         } else if(accept("set")){result->kind="newset";expect("of");result->element=type_syntax();
         } else if(accept("file")){
             result->kind="binaryfile";if(accept("of"))result->element=type_syntax(false,allow_arrow);
@@ -887,6 +890,9 @@ private:
                 } while (accept(","));
                 expect(")");
             }
+        } else if (pointer_allocation_statement()) {
+            result.kind=SyntaxStmtKind::call;
+            result.expression=postfix(make_expression(SyntaxExprKind::name,consume()));
         } else if(comparison_reference()){
             result.kind=SyntaxStmtKind::call;result.expression=prefix();
         } else if (current_.kind == TokenKind::name && (current_.escaped || !reserved(current_.text) || is("array"))) {
@@ -932,6 +938,22 @@ private:
             throw Error("E_UNSUPPORTED", current_.location, "Statement is not supported: '" + current_.text + "'");
         }
         return result;
+    }
+    bool pointer_allocation_statement() const {
+        if (!is("new")) return false;
+        auto probe=lexer_;
+        if (probe.next().text!="(") return false;
+        // A parenthesized type can also start a constructor, as in new (integer, string)[2].
+        unsigned depth=1;
+        while (depth) {
+            const auto token=probe.next();
+            if (token.kind==TokenKind::eof) return false;
+            if (token.kind!=TokenKind::symbol) continue;
+            if (token.text=="(") ++depth;
+            if (token.text==")") --depth;
+        }
+        const auto next=probe.next();
+        return next.text!="[" && next.text!="(" && next.text!=".";
     }
     static int precedence(std::string_view op) {
         if (op == "=" || op == "<>" || op == "<" || op == "<=" || op == ">" || op == ">=" || op=="in" || op=="not") return 1;
@@ -1169,6 +1191,9 @@ private:
                 } while (accept(","));
                 expect(">");
                 if (!is("(")) result->kind=result->kind==SyntaxExprKind::name ? SyntaxExprKind::call : SyntaxExprKind::member_call;
+            } else if (is("^")) {
+                const auto op=consume();
+                result=make_expression(SyntaxExprKind::unary,op,std::move(result));
             } else if (accept("[")) {
                 auto index = expression();
                 const auto token = result->token;
@@ -2496,6 +2521,19 @@ private:
             resolved_types_[&syntax]=type;
             return type;
         }
+        if (syntax.kind=="typed_pointer") {
+            const auto pointee=resolve_type(*syntax.element);
+            if (pointee==Type::unit || pointee==Type::invalid)
+                throw Error("E_TYPE",syntax.token.location,"Pointer target requires a known data type","Для указателя нужен известный тип данных");
+            for (std::size_t i=0;i<module_.types.size();++i) {
+                const auto& candidate=module_.types[i];
+                if (candidate.kind==CompoundKind::typed_pointer && candidate.element==pointee)
+                    return static_cast<Type>(64+i);
+            }
+            if (module_.types.size()>=1024) throw Error("E_LIMIT",syntax.token.location,"Type limit exceeded");
+            module_.types.push_back({"typed_pointer",CompoundKind::typed_pointer,pointee,{}});
+            return static_cast<Type>(63+module_.types.size());
+        }
         if(syntax.kind=="binaryfile")return binary_type(syntax.element?resolve_type(*syntax.element):Type::invalid,syntax.token.location);
         if (syntax.kind=="subrange") {
             const auto base=resolve_subrange(syntax);
@@ -2640,6 +2678,8 @@ private:
     bool lvalue(const hir::Expr& expression) const {
         if(constant_array_target(expression))return false;
         if (constant_parameter_target(expression)) return false;
+        if (expression.kind==hir::ExprKind::pointer_call)
+            return expression.local==static_cast<std::size_t>(PointerMethod::load);
         if(expression.kind==hir::ExprKind::new_set_hash)return new_set_addressable(*expression.left);
         if (expression.kind==hir::ExprKind::index && string_type(expression.left->type)) return false;
         if (expression.kind==hir::ExprKind::field && compound(expression.left->type) && info(expression.left->type,expression.location).kind==CompoundKind::object_class) return true;
@@ -3986,6 +4026,20 @@ private:
                 break;
             }
             for (const auto& argument : source.arguments) result->arguments.push_back(expression(*argument));
+            if (source.token.text=="new" || source.token.text=="dispose") {
+                if (result->arguments.size()!=1)
+                    throw Error("E_TYPE",result->location,"New and Dispose require one pointer variable","New и Dispose требуют одну переменную-указатель");
+                auto pointer=std::move(result->arguments.front());
+                if (!compound(pointer->type) || info(pointer->type,pointer->location).kind!=CompoundKind::typed_pointer || !lvalue(*pointer))
+                    throw Error("E_TYPE",pointer->location,"Expected a writable typed pointer","Ожидался изменяемый типизированный указатель");
+                result->kind=hir::ExprKind::pointer_call;
+                result->local=static_cast<std::size_t>(source.token.text=="new" ? PointerMethod::allocate : PointerMethod::release);
+                result->operation_type=pointer->type;
+                result->type=Type::unit;
+                result->left=std::move(pointer);
+                result->arguments.clear();
+                break;
+            }
             if (bind_print(*result,source.token.text)) break;
             if (bind_sequence_conversion(*result,source.token.text)) break;
             if (bind_new_set_factory(*result,source.token.text)) break;
@@ -4223,6 +4277,16 @@ private:
         case SyntaxExprKind::unary:
             result->kind = hir::ExprKind::unary;
             result->left = expression(*source.left);
+            if (source.token.text=="^") {
+                const auto owner=result->left->type;
+                if (!compound(owner) || info(owner,result->location).kind!=CompoundKind::typed_pointer)
+                    throw Error("E_TYPE",result->location,"Dereference requires a typed pointer","Для разыменования нужен типизированный указатель");
+                result->kind=hir::ExprKind::pointer_call;
+                result->operation_type=owner;
+                result->type=info(owner,result->location).element;
+                result->local=static_cast<std::size_t>(PointerMethod::load);
+                break;
+            }
             if (source.token.text=="not" && compound(result->left->type) && info(result->left->type,result->location).kind==CompoundKind::school_address) {
                 const auto owner=result->left->type; result->arguments.push_back(std::move(result->left));
                 bind_school_ip(*result,owner,SchoolIPMethod::address_not); break;

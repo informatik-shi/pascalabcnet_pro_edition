@@ -1265,6 +1265,34 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
             auto result=ini_invoke(values,files,instruction.type,method,arguments,options);
             if(ini_result(instruction.type,method)!=Type::unit)stack.push_back(std::move(result));break;
         }
+        case Op::pointer_call: {
+            const auto method=static_cast<PointerMethod>(instruction.operand);
+            if (method==PointerMethod::allocate || method==PointerMethod::release) {
+                auto target=std::get<std::shared_ptr<Cell>>(pop());
+                if (method==PointerMethod::allocate) {
+                    if (!values.remaining) trap(instruction,RuntimeError::allocation_limit);
+                    --values.remaining;
+                    const auto pointee=type_info(program,instruction.type).element;
+                    auto fresh=std::get<std::shared_ptr<Aggregate>>(values.zero(instruction.type,true));
+                    auto initial=initialized_default(values,pointee,false,false,record_initializer_operand(program,pointee));
+                    fresh->items.push_back(values.cell(pointee,std::move(initial)));
+                    values.write(target,fresh);
+                } else {
+                    auto previous=std::get<std::shared_ptr<Aggregate>>(target->value);
+                    previous->items.clear();
+                    values.write(target,values.zero(instruction.type));
+                }
+                break;
+            }
+            const auto pointer=std::get<std::shared_ptr<Aggregate>>(pop());
+            if (pointer->nil) trap(instruction,RuntimeError::nil_reference);
+            if (pointer->items.empty())
+                throw Error("E_NIL",instruction.location,"Cannot dereference a disposed pointer","Нельзя разыменовать освобождённый указатель");
+            const auto& target=pointer->items.front();
+            if (method==PointerMethod::load) stack.push_back(values.copy(target->value));
+            else stack.push_back(target);
+            break;
+        }
         case Op::comparable_call: {
             const auto method=static_cast<ComparableMethod>(instruction.operand);std::vector<Value> arguments(comparable_parameters(instruction.type,method).size());
             for(std::size_t i=arguments.size();i>0;--i)arguments[i-1]=pop();

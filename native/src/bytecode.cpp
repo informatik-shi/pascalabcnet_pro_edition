@@ -115,6 +115,10 @@ private:
             if (type_info(program_,node.left->type).kind==CompoundKind::object_class) expression(*node.left);else reference(*node.left);
             emit(Op::ref_field,node.left->type,node.local,node.location);
         } else if(node.kind==hir::ExprKind::new_set_hash){reference(*node.left);emit(Op::new_set_call,node.left->type,static_cast<std::size_t>(NewSetMethod::raw_reference)|128U,node.location);}
+        else if (node.kind==hir::ExprKind::pointer_call && node.local==static_cast<std::size_t>(PointerMethod::load)) {
+            expression(*node.left);
+            emit(Op::pointer_call,node.operation_type,static_cast<std::size_t>(PointerMethod::reference),node.location);
+        }
         else throw Error("E_HIR",node.location,"Expression is not assignable");
     }
     ABC_BYTECODE_NOINLINE void interface_expression(const hir::Expr& node) {
@@ -239,6 +243,7 @@ private:
         case hir::ExprKind::convert:
         case hir::ExprKind::call:
         case hir::ExprKind::unary:
+        case hir::ExprKind::pointer_call:
         case hir::ExprKind::binary: expression_part_8(node);break;
         }
     }
@@ -685,6 +690,11 @@ private:
             expression(*node.left);
             if (node.operation != "+") emit(node.operation == "not" ? node.type==Type::boolean ? Op::logical_not : Op::bit_not : Op::negate,
                 node.type, 0, node.location);
+            break;
+        case hir::ExprKind::pointer_call:
+            if (node.local==static_cast<std::size_t>(PointerMethod::load)) expression(*node.left);
+            else reference(*node.left);
+            emit(Op::pointer_call,node.operation_type,node.local,node.location);
             break;
         case hir::ExprKind::binary: {
             expression(*node.left);
@@ -1362,6 +1372,10 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if(instruction.operand>static_cast<std::size_t>(RealIntervalMethod::membership) || !real_interval_signature(program,type,static_cast<RealIntervalMethod>(instruction.operand)))invalid(instruction,"Invalid RealRange call metadata");break;
         case Op::compound_call:
             if(instruction.operand>static_cast<std::size_t>(CompoundMethod::matrix_in) || !compound_signature(program,type,static_cast<CompoundMethod>(instruction.operand)))invalid(instruction,"Invalid compound call metadata");break;
+        case Op::pointer_call:
+            if (!compound(type) || type_info(program,type).kind!=CompoundKind::typed_pointer
+                || instruction.operand>static_cast<std::size_t>(PointerMethod::reference)) invalid(instruction,"Invalid typed pointer operation");
+            break;
         case Op::store_index:
             if(!compound(type) || !indexed_sequence(type_info(program,type).kind) || instruction.operand)invalid(instruction,"Invalid deferred index store");break;
         case Op::store_field:
@@ -1851,6 +1865,17 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         }
         case Op::store_index:
             require(type_info(program,instruction.type).element);for(unsigned i=0;i<type_info(program,instruction.type).rank;++i)require(Type::integer);require(instruction.type);break;
+        case Op::pointer_call: {
+            const auto method=static_cast<PointerMethod>(instruction.operand);
+            if (method==PointerMethod::allocate || method==PointerMethod::release) {
+                require(reference_type(instruction.type));
+            } else {
+                require(instruction.type);
+                const auto pointee=type_info(program,instruction.type).element;
+                stack.push_back(method==PointerMethod::load ? pointee : reference_type(pointee));
+            }
+            break;
+        }
         case Op::store_field:require(type_info(program,instruction.type).fields[instruction.operand].type);require(instruction.type);break;
         case Op::for_step_check: require(Type::integer);break;
         case Op::text_lines: require(Type::text_file);stack.push_back(instruction.type);break;
@@ -2093,6 +2118,10 @@ void verify(const Program& program) {
         } else if(type.kind==CompoundKind::fixed_array) {
             if(type.name!="fixed_array"||type.rank!=1||!type.fields.empty())throw Error("E_BYTECODE",{},"Invalid fixed array metadata");prior(type.element);prior(type.key);const auto& shape=fixed_array_shape(program,static_cast<Type>(64+i));prior(shape.index);
             if(shape.upper<shape.lower||static_cast<std::int64_t>(shape.upper)-shape.lower>=1'048'576)throw Error("E_BYTECODE",{},"Invalid fixed array bounds");const auto& view=type_info(program,type.key);if(view.kind!=CompoundKind::array||view.rank!=1||view.element!=type.element)throw Error("E_BYTECODE",{},"Invalid fixed array storage");
+        } else if (type.kind==CompoundKind::typed_pointer) {
+            if (type.name!="typed_pointer" || !type.fields.empty() || type.key!=Type::invalid || type.rank!=1)
+                throw Error("E_BYTECODE",{},"Invalid typed pointer metadata");
+            prior(type.element);
         } else if(type.kind==CompoundKind::binary_file) {
             if(type.name!="binaryfile"||!type.fields.empty()||type.rank!=1)throw Error("E_BYTECODE",{},"Invalid binary file metadata");
             prior(type.key);const auto& bytes=type_info(program,type.key);if(bytes.kind!=CompoundKind::array||bytes.rank!=1||bytes.element!=Type::byte)throw Error("E_BYTECODE",{},"Invalid binary file byte-array metadata");

@@ -6051,6 +6051,48 @@ end.)","[ab]\n[cd]\n[xy]\n");
     runtime_error("begin var s:string[2]:='a'; s[0]:='x'; end.","E_BOUNDS");
 }
 
+void typed_pointers() {
+    result(R"(type Tiny=string[3];
+type Row=record s:Tiny; unbounded:string; n:integer; end;
+type RowPointer=^Row;
+procedure Edit(var r:Row);
+begin
+  r.s:='abcdef';
+  r.n:=17;
+end;
+function IsNil(s:string):boolean := s=nil;
+begin
+  var p:RowPointer;
+  Dispose(p);
+  assert(p=nil);
+  New(p);
+  Writeln(IsNil(p^.s),' ',IsNil(p^.unbounded),' ',p^.n);
+  Edit(p^);
+  var alias:=p;
+  New(p);
+  Writeln(IsNil(p^.s),' [',alias^.s,'] ',alias^.n);
+  Dispose(p);
+  assert(alias<>nil);
+  Dispose(alias);
+  Writeln(p=nil,' ',alias=nil);
+end.)","False False 0\nFalse [abc] 17\nTrue True\n");
+    result("begin var p:^^integer; New(p); New(p^); p^^:=42; Writeln(p^^); Dispose(p^); Dispose(p); end.","42\n");
+    runtime_error("begin var p:^integer; Writeln(p^); end.","E_NIL");
+    try {
+        (void)run("begin var p:^integer; New(p); var alias:=p; Dispose(p); Writeln(alias^); end.");
+        require(false,"Dereferencing an alias after Dispose must fail");
+    } catch (const abc::Error& diagnostic) {
+        require(diagnostic.code=="E_NIL" && std::string_view(diagnostic.what())=="Cannot dereference a disposed pointer"
+            && diagnostic.russian=="Нельзя разыменовать освобождённый указатель","Disposed pointer diagnostic is bilingual");
+    }
+    compile_error("begin var x:=1; New(x); end.","E_TYPE");
+    compile_error("begin var p:^integer; var q:^real; p:=q; end.","E_TYPE");
+    auto invalid=abc::compile("begin var p:^integer; New(p); end.");
+    for (auto& instruction:invalid.code)
+        if (instruction.op==abc::Op::pointer_call) instruction.type=abc::Type::integer;
+    error([&]{abc::verify(invalid);},"E_BYTECODE");
+}
+
 void global_routine_overloads() {
     result(R"(type ActionOnInteger = function(n: integer): integer;
 function Pick(n: integer): integer := n+10;
@@ -7842,6 +7884,7 @@ int main() {
     case_statements();
     short_string_helpers();
     short_string_types();
+    typed_pointers();
     global_routine_overloads();
     integral_set_relations();
     subrange_types();

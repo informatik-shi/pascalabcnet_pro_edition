@@ -175,6 +175,7 @@ DefaultEncoding изначально CP1251. Его смена и явные Enc
 Ветвление по списку значений и диапазонам: examples/case-statement.pas.
 Именованные поддиапазоны и границы массивов: examples/subranges.pas.
 Короткие строки string[N] и ShortString поддерживают ввод, индексацию и хранение в типизированных файлах.
+Типизированные указатели ^T поддерживают New, Dispose и разыменование p^.
 Типизированные файлы открываются в однобайтовых кодировках. Сериализация объектов ещё в работе.
 Для сохранения всех Unicode-символов выберите Encoding.UTF8/Unicode; полный API Encoding ещё переносится.
 ReadAllLines/WriteAllLines с Encoding и WriteLines для последовательностей: examples/file-lines.pas.
