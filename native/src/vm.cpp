@@ -284,7 +284,7 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
         return scalar_text(value,instruction);
     };
     const auto output_object=[&](const Value& value,Type type,const Instruction& instruction) {
-        return object_text(program,value,type,instruction.location,options,&pabc_number_settings(values));
+        return object_text(values,value,type,instruction.location,options,&pabc_number_settings(values));
     };
     auto pop = [&]() { auto value = std::move(stack.back()); stack.pop_back(); return value; };
     auto account_number=[&](const Value& result,std::span<const Value> inputs={}) {
@@ -717,8 +717,8 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
             else {if(descriptor.target==Type::invalid)trap(instruction,RuntimeError::nil_reference);stack.emplace_back(descriptor);}break;
         }
         case Op::object_text: {
-            if(instruction.operand==static_cast<unsigned>(ObjectTextMode::class_to_string)){
-                stack.push_back(class_object_to_string(values,pop(),options));
+            if(instruction.operand==static_cast<unsigned>(ObjectTextMode::virtual_to_string)){
+                stack.push_back(object_method_to_string(values,pop(),options));
                 break;
             }
             if(instruction.operand==static_cast<unsigned>(ObjectTextMode::framework)){
@@ -1353,15 +1353,20 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
             auto value=pop();
             if (instruction.operand&1U) {
                 const auto& object=std::get<std::shared_ptr<Aggregate>>(value);
+                const bool class_reference=valid_class_ancestry(program.types,payload);
                 if (object->nil) {
-                    if (payload!=Type::string && (!compound(payload) || type_info(program,payload).kind!=CompoundKind::array))
+                    if (!class_reference && payload!=Type::string
+                        && (!compound(payload) || type_info(program,payload).kind!=CompoundKind::array))
                         trap(instruction,RuntimeError::nil_reference);
                     stack.push_back(values.zero(payload,false,true));
                     break;
                 }
-                if (object->items.empty() || object->items.front()->type!=payload)
-                    throw Error("E_CAST",instruction.location,"Object has a different boxed type","В object хранится значение другого типа");
-                stack.push_back(values.copy(object->items.front()->value));
+                const auto item=object->items.empty() ? std::shared_ptr<Cell>{} : object->items.front();
+                if (!item || (item->type!=payload
+                    && (!class_reference || !class_reference_compatible(program.types,item->type,payload))))
+                    throw Error("E_CAST",instruction.location,"Object cannot be converted to the requested type",
+                        "Нельзя привести object к запрошенному типу");
+                stack.push_back(values.copy(item->value));
             } else {
                 stack.push_back(values.box_value(instruction.type,payload,std::move(value)));
             }

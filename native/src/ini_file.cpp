@@ -137,6 +137,9 @@ public:
     }
 };
 }
+Value ini_file_name(const Aggregate& object) {
+    return object.ini ? object.ini->filename : Value{std::u16string{}};
+}
 Value ini_invoke(Values& values,FileContext& files,Type type,IniMethod method,std::span<const Value> arguments,const ExecutionOptions& options) {
     if(!ini_signature(values.program,type,method) || arguments.size()!=ini_parameters(type,method).size())throw runtime_error(RuntimeError::invalid_bytecode,values.location);
     try {
@@ -163,7 +166,7 @@ Value ini_invoke(Values& values,FileContext& files,Type type,IniMethod method,st
             ValueHashWork work{values,options};
             return std::bit_cast<std::int32_t>(static_cast<std::uint32_t>(value_hash(work,arguments[0])));
         }
-        case IniMethod::file_name:return object->ini ? object->ini->filename : Value{std::u16string{}};
+        case IniMethod::file_name:return ini_file_name(*object);
         default:break;
         }
         if(!object->ini)throw runtime_error(RuntimeError::nil_reference,values.location);

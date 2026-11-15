@@ -598,7 +598,7 @@ Value dictionary_invoke(Values& values,Type owner,Type payload,DictionaryMethod 
   if(m==DictionaryMethod::pair_to_string){
    const auto& pair=std::get<Object>(args[0]);std::u16string text=u"[";
    for(std::size_t i=0;i<2;++i){if(i)text+=u", ";const auto& value=pair->items[i]->value;
-    const auto part=nil(value) ? std::u16string{} : object_text(values.program,value,pair->items[i]->type,values.location,options);
+    const auto part=nil(value) ? std::u16string{} : object_text(values,value,pair->items[i]->type,values.location,options);
     if(part.size()>1'048'576-text.size())throw runtime_error(RuntimeError::string_limit,values.location);text+=part;
    }
    if(text.size()>=1'048'576)throw runtime_error(RuntimeError::string_limit,values.location);text+=u"]";return text;

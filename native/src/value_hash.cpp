@@ -40,6 +40,11 @@ std::size_t value_hash(ValueHashWork& work,const Value& value){
         else if constexpr(std::is_same_v<T,std::shared_ptr<Aggregate>>){
             if(record_box_identity(v.get())!=v.get())return value_hash(work,Value{v->sequence->source});
             if(!v || v->nil)return 0;const auto& shape=type_info(work.values.program,v->type);const auto kind=shape.kind;
+            if(kind==CompoundKind::boxed_object && !v->items.empty()){
+                const auto& item=*v->items.front();
+                if(const auto* object=std::get_if<std::shared_ptr<Aggregate>>(&item.value))
+                    return std::hash<const void*>{}(object->get());
+            }
             if(ordinal_range_type(shape))return static_cast<std::uint32_t>(ordinal_range_hash(v));
             if(real_interval_type(shape))return static_cast<std::uint32_t>(real_interval_hash(v));
             if(decimal_type(shape))return static_cast<std::uint32_t>(decimal_hash_code(value));

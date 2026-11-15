@@ -253,7 +253,7 @@ Value new_set_invoke(Values& values,Type owner,NewSetMethod m,bool reference,std
             if(m==NewSetMethod::to_hash){auto boxed=std::get<NewSetValue>(values.copy(Value{self}));const std::array<Value,1> args{new_set_sequence(values,sequence,std::move(boxed))};return call(HashSetMethod::construct_sequence,args);}
             auto result=std::get<NewSetValue>(values.zero(owner));update(new_set_hash(values,result),seq_hash(object),HashSetMethod::union_with);return result;
         }
-        if(m==NewSetMethod::to_string)return object_text(values.program,Value{object},hash,values.location,options);
+        if(m==NewSetMethod::to_string)return object_text(values,Value{object},hash,values.location,options);
         if(m==NewSetMethod::include || m==NewSetMethod::exclude){const std::array<Value,2> args{object,arguments[1]};(void)call(m==NewSetMethod::include ? HashSetMethod::add : HashSetMethod::remove,args);return false;}
         if(m==NewSetMethod::count){const std::array<Value,1> args{object};return call(HashSetMethod::count,args);}
         if(m==NewSetMethod::add || m==NewSetMethod::remove || m==NewSetMethod::contains || m==NewSetMethod::item_add || m==NewSetMethod::item_remove){

@@ -11,5 +11,6 @@ bool ini_signature(const Program& program,Type type,IniMethod method);
 Type ini_ancestor(const std::vector<TypeInfo>&,Type);
 std::vector<Type> ini_parameters(Type type,IniMethod method);
 Type ini_result(Type type,IniMethod method);
+Value ini_file_name(const Aggregate&);
 Value ini_invoke(Values& values,FileContext& files,Type type,IniMethod method,std::span<const Value> arguments,const ExecutionOptions& options);
 } // namespace abc

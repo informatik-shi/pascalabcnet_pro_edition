@@ -1,0 +1,10 @@
+True ClassObjectRefs.LabelWidget label
+label label
+17 label
+True True
+ClassObjectRefs.Config cfg cfg
+<(missing.ini)>
+<widget>
+(5,(...))
+[label,(missing.ini),(5,(...))]
+117

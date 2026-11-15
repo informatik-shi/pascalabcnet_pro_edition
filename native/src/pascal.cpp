@@ -4022,6 +4022,7 @@ private:
         }
         if (boxed_object(type,expression->location)
             && (scalar(expression->type) || nrbf_array_type(module_.types,expression->type)
+                || valid_class_ancestry(module_.types,expression->type)
                 || is_complex(expression->type) || is_calendar(expression->type) || is_decimal(expression->type))) {
             if (short_string(expression->type)) expression=convert(std::move(expression),Type::string);
             return object_conversion(std::move(expression),type,type);
@@ -4407,7 +4408,7 @@ private:
                 && source.arguments.empty() && !callable_type(expected)){
                 if(!dynamic_dispatch)return class_default_text(std::move(result));
                 result->kind=hir::ExprKind::object_text;
-                result->local=static_cast<unsigned>(ObjectTextMode::class_to_string);
+                result->local=static_cast<unsigned>(ObjectTextMode::virtual_to_string);
                 result->type=Type::string;
                 return result;
             }
@@ -5014,6 +5015,14 @@ private:
                     result->kind=hir::ExprKind::type_operation;result->operation_type=receiver;result->local=static_cast<unsigned>(operation);result->type=Type::string;break;
                 }
             }
+            if(source.token.text=="tostring" && boxed_object(receiver,result->location)){
+                if(!source.arguments.empty())throw Error("E_TYPE",result->location,
+                    "Object.ToString takes no arguments","Метод Object.ToString не принимает аргументы");
+                result->kind=hir::ExprKind::object_text;
+                result->type=Type::string;
+                result->local=static_cast<unsigned>(ObjectTextMode::virtual_to_string);
+                break;
+            }
             if(source.token.text=="gettype"){
                 const bool own=compound(receiver) && info(receiver,result->location).kind==CompoundKind::object_class
                     && ((class_methods_.contains(receiver) && class_methods_.at(receiver).contains("gettype"))
@@ -5598,12 +5607,27 @@ private:
         return result;
     }
     ABC_PASCAL_NOINLINE bool bind_callable_cast(hir::Expr& result,const SyntaxExpr& source){
-        if(routine_names_.contains(source.token.text))return false;Type cast=Type::invalid;
-        if(const auto alias=aliases_.find(source.token.text);alias!=aliases_.end()){if(callable_type(alias->second) || (compound(alias->second) && (interface_kind(info(alias->second,result.location)) || info(alias->second,result.location).kind==CompoundKind::sequence || info(alias->second,result.location).kind==CompoundKind::object_class || info(alias->second,result.location).kind==CompoundKind::record)))cast=alias->second;}else if(source.token.text=="realrange")cast=real_interval_record();else if(source.token.text=="intrange"||source.token.text=="charrange")cast=ordinal_range_record(source.token.text=="intrange"?Type::integer:Type::character);else if(source.token.text=="action0")cast=function_type(Type::unit,{},result.location);
+        if(routine_names_.contains(source.token.text))return false;
+        Type cast=Type::invalid;
+        if(const auto alias=aliases_.find(source.token.text);alias!=aliases_.end()){
+            const auto type=alias->second;
+            if(compound(type)){
+                const auto& shape=info(type,result.location);
+                if(interface_kind(shape) || shape.kind==CompoundKind::callable || shape.kind==CompoundKind::sequence
+                    || shape.kind==CompoundKind::record || valid_class_ancestry(module_.types,type))cast=type;
+            }
+        }else if(source.token.text=="realrange")cast=real_interval_record();
+        else if(source.token.text=="intrange" || source.token.text=="charrange")
+            cast=ordinal_range_record(source.token.text=="intrange" ? Type::integer : Type::character);
+        else if(source.token.text=="action0")cast=function_type(Type::unit,{},result.location);
+        else if(source.token.text=="tinifile" && imported_units_.contains("inifile"))cast=inifile_type(result.location);
         if(cast==Type::invalid)return false;
         if(source.arguments.size()!=1)throw Error("E_TYPE",result.location,callable_type(cast) ? "Callable constructor requires one matching routine value" : "Interface conversion requires one value");
         auto input=expression(*source.arguments[0],cast);
-        if(class_reference_compatible(module_.types,cast,input->type)){
+        if(boxed_object(input->type,result.location) && valid_class_ancestry(module_.types,cast)){
+            const auto object=input->type;
+            input=object_conversion(std::move(input),cast,object);
+        }else if(class_reference_compatible(module_.types,cast,input->type)){
             input=interface_conversion(std::move(input),cast,true);
         }else if(compound(cast) && (interface_kind(info(cast,result.location)) || info(cast,result.location).kind==CompoundKind::object_class || info(cast,result.location).kind==CompoundKind::record) && compound(input->type) && interface_kind(info(input->type,result.location)) && input->type!=cast){
             if((info(cast,result.location).kind==CompoundKind::object_class||info(cast,result.location).kind==CompoundKind::record) && !interface_compatible(module_.types,cast,input->type))

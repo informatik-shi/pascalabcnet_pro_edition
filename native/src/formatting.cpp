@@ -13,6 +13,7 @@
 #include "number_format.hpp"
 #include "runtime_values.hpp"
 #include "interfaces.hpp"
+#include "ini_file.hpp"
 #include "string_builder.hpp"
 #include "type_names.hpp"
 #include <array>
@@ -22,6 +23,18 @@
 
 namespace abc {
 namespace {
+std::optional<Value> class_to_string_override(Values& values,const Value& value,Type type) {
+    for(;type!=Type::invalid;type=class_parent(values.program.types,type)){
+        for(std::size_t id=0;id<values.program.routines.size();++id){
+            const auto& method=values.program.routines[id];
+            if(method.owner!=type || !method.object_to_string_override)continue;
+            if(!values.invoke)throw runtime_error(RuntimeError::invalid_bytecode,values.location);
+            const std::array<Value,1> arguments{value};
+            return values.invoke(id,arguments);
+        }
+    }
+    return {};
+}
 bool supports(const std::vector<TypeInfo>& types, Type type, unsigned depth) {
     if (scalar(type) || type==Type::nil) return true;
     if (!compound(type) || depth>32) return false;
@@ -29,7 +42,8 @@ bool supports(const std::vector<TypeInfo>& types, Type type, unsigned depth) {
     if (index>=types.size()) return false;
     const auto& info=types[index];
     if(dictionary_enumerator_type(info) || collection_enumerator_type(info))return false;
-    if(info.kind==CompoundKind::empty_collection || info.kind==CompoundKind::boxed_object)return true;
+    if(info.kind==CompoundKind::empty_collection || info.kind==CompoundKind::boxed_object
+        || info.kind==CompoundKind::object_class || info.kind==CompoundKind::ini_file)return true;
     if(info.kind==CompoundKind::fixed_array)return supports(types,info.element,depth+1);
     if (school_ip_kind(info.kind) || info.kind==CompoundKind::enumeration) return true;
     if (info.kind==CompoundKind::record || info.kind==CompoundKind::tuple) {
@@ -39,6 +53,7 @@ bool supports(const std::vector<TypeInfo>& types, Type type, unsigned depth) {
     return (info.kind==CompoundKind::array || info.kind==CompoundKind::list || info.kind==CompoundKind::hash_set || info.kind==CompoundKind::new_set || info.kind==CompoundKind::dictionary || info.kind==CompoundKind::dictionary_keys || info.kind==CompoundKind::dictionary_values) && supports(types,info.element,depth+1);
 }
 class ObjectWriter {
+    Values& values;
     const Program& program;
     SourceLocation location;
     const ExecutionOptions& options;
@@ -49,6 +64,30 @@ class ObjectWriter {
         if (part.size()>1'048'576-text.size()) throw runtime_error(RuntimeError::string_limit,location);
         text+=part;
     }
+    void class_contents(const std::shared_ptr<Aggregate>& object,const TypeInfo& shape) {
+        append(u"(");
+        bool has_value=false;
+        for(std::size_t i=0;i<shape.fields.size();++i) {
+            const auto& field=shape.fields[i];
+            if(field.access!=MemberAccess::public_member)continue;
+            if(has_value)append(u",");
+            has_value=true;
+            if(!supports(program.types,field.type,0))
+                throw Error("E_UNSUPPORTED",location,"Cannot format this public field type",
+                    "Форматирование типа этого открытого поля пока не поддерживается");
+            value(object->items[i]->value,field.type);
+        }
+        if(ini_ancestor(program.types,object->type)!=Type::invalid) {
+            if(has_value)append(u",");
+            value(ini_file_name(*object),Type::string);
+        }
+        append(u")");
+    }
+    void check_collection_version(const Aggregate& source,std::uint64_t version,std::size_t seen,std::size_t size) {
+        // The original prefetches MoveNext before rendering Current.
+        if(seen<size && version!=source.version)
+            throw runtime_error(RuntimeError::collection_changed,location);
+    }
     void value(const Value& data, Type type) {
         if (options.cancelled && options.cancelled()) throw runtime_error(RuntimeError::cancelled,location);
         if (!compound(type)) { append(type==Type::nil ? u"nil" : format_field(data,0,std::nullopt,location)); return; }
@@ -58,7 +97,7 @@ class ObjectWriter {
             const auto& set=std::get<NewSetValue>(data);const auto& hash=std::get<std::shared_ptr<Aggregate>>(set.storage->value);
             if(!hash || hash->nil)append(u"{}");else value(set.storage->value,set.storage->type);return;
         }
-        const auto& object=std::get<std::shared_ptr<Aggregate>>(data);
+        const auto object=std::get<std::shared_ptr<Aggregate>>(data);
         if (!object || object->nil) { append(u"nil"); return; }
         if (info.kind==CompoundKind::boxed_object) {
             if (object->items.empty()) append(u"()");
@@ -69,7 +108,13 @@ class ObjectWriter {
         if(info.kind==CompoundKind::empty_collection){append(u"{}");return;}
         if (std::find(path.begin(),path.end(),object.get())!=path.end()) { append(u"(...)"); return; }
         path.push_back(object.get());
-        if(ordinal_range_type(info))append(ordinal_range_text(object));
+        if(info.kind==CompoundKind::object_class || info.kind==CompoundKind::ini_file){
+            const auto& actual=type_info(program,object->type);
+            if(const auto rendered=class_to_string_override(values,Value{object},object->type))
+                append(string_text(*rendered));
+            else class_contents(object,actual);
+        }
+        else if(ordinal_range_type(info))append(ordinal_range_text(object));
         else if(real_interval_type(info))append(real_interval_text(object,location));
         else if(complex_number_type(info))append(complex_pascal_text(data,settings,location));
         else if(calendar_record(info))append(calendar_text(data,{},location));
@@ -92,14 +137,25 @@ class ObjectWriter {
             });
         } else if(info.kind==CompoundKind::dictionary || info.kind==CompoundKind::dictionary_keys || info.kind==CompoundKind::dictionary_values){
             const bool dictionary=info.kind==CompoundKind::dictionary;const auto owner=dictionary ? object : object->items.size()==1 ? std::get<std::shared_ptr<Aggregate>>(object->items[0]->value) : std::shared_ptr<Aggregate>{};if(!owner || owner->nil)throw runtime_error(RuntimeError::invalid_bytecode,location);
-            append(dictionary ? u"{" : u"[");const auto count=owner->count>101 ? 100 : owner->count;std::size_t shown=0;
-            for(std::size_t i=0;i<owner->items.size() && shown<count;++i){if(i>=options.instruction_limit)throw runtime_error(RuntimeError::instruction_limit,location);if((i&255U)==0 && options.cancelled && options.cancelled())throw runtime_error(RuntimeError::cancelled,location);const auto& cell=owner->items[i];if(!cell)continue;if(shown++)append(u",");if(dictionary)value(cell->value,info.element);else value(std::get<std::shared_ptr<Aggregate>>(cell->value)->items[info.kind==CompoundKind::dictionary_keys ? 0U : 1U]->value,info.element);}
-            if(owner->count>101)append(u",...");append(dictionary ? u"}" : u"]");
+            const auto size=owner->count;
+            const auto version=owner->version;
+            append(dictionary ? u"{" : u"[");const auto count=size>101 ? 100 : size;std::size_t shown=0;
+            for(std::size_t i=0;i<owner->items.size() && shown<count;++i){if(i>=options.instruction_limit)throw runtime_error(RuntimeError::instruction_limit,location);if((i&255U)==0 && options.cancelled && options.cancelled())throw runtime_error(RuntimeError::cancelled,location);const auto cell=owner->items[i];if(!cell)continue;if(shown++)append(u",");if(dictionary)value(cell->value,info.element);else value(std::get<std::shared_ptr<Aggregate>>(cell->value)->items[info.kind==CompoundKind::dictionary_keys ? 0U : 1U]->value,info.element);check_collection_version(*owner,version,shown,size);}
+            if(size>101)append(u",...");append(dictionary ? u"}" : u"]");
         } else if(info.kind==CompoundKind::hash_set){
-            append(u"{");const auto count=object->count>101 ? 100 : object->count;std::size_t shown=0;
-            for(std::size_t i=0;i<object->items.size() && shown<count;++i){if(i>=options.instruction_limit)throw runtime_error(RuntimeError::instruction_limit,location);if((i&255U)==0 && options.cancelled && options.cancelled())throw runtime_error(RuntimeError::cancelled,location);if(object->items[i]){if(shown++)append(u",");value(object->items[i]->value,info.element);}}
-            if(object->count>101)append(u",...");append(u"}");
-        } else sequence(object->items.size(),info.kind==CompoundKind::list ? 100 : 99,
+            const auto size=object->count;
+            const auto version=object->version;
+            append(u"{");const auto count=size>101 ? 100 : size;std::size_t shown=0;
+            for(std::size_t i=0;i<object->items.size() && shown<count;++i){if(i>=options.instruction_limit)throw runtime_error(RuntimeError::instruction_limit,location);if((i&255U)==0 && options.cancelled && options.cancelled())throw runtime_error(RuntimeError::cancelled,location);const auto cell=object->items[i];if(cell){if(shown++)append(u",");value(cell->value,info.element);check_collection_version(*object,version,shown,size);}}
+            if(size>101)append(u",...");append(u"}");
+        } else if(info.kind==CompoundKind::list){
+            const auto size=object->items.size();
+            const auto version=object->version;
+            sequence(size,100,[&](std::size_t i) {
+                value(object->items[i]->value,info.element);
+                check_collection_version(*object,version,i+1,size);
+            });
+        } else sequence(object->items.size(),99,
             [&](std::size_t i) { value(object->items[i]->value,info.element); });
         path.pop_back();
     }
@@ -112,29 +168,33 @@ class ObjectWriter {
         append(u"]");
     }
 public:
-    ObjectWriter(const Program& p, SourceLocation l, const ExecutionOptions& o,const NumberFormatSettings* format)
-        :program(p),location(l),options(o),settings(format) {}
+    ObjectWriter(Values& state, SourceLocation l, const ExecutionOptions& o,const NumberFormatSettings* format)
+        :values(state),program(state.program),location(l),options(o),settings(format) {}
     std::u16string render(const Value& data, Type type) { value(data,type); return std::move(text); }
 };
 }
 bool object_text_supported(const std::vector<TypeInfo>& types, Type type) { return supports(types,type,0); }
-std::u16string object_text(const Program& program, const Value& value, Type type, SourceLocation location,
+std::u16string object_text(Values& values, const Value& value, Type type, SourceLocation location,
     const ExecutionOptions& options,const NumberFormatSettings* settings) {
-    return ObjectWriter(program,location,options,settings).render(value,type);
+    return ObjectWriter(values,location,options,settings).render(value,type);
 }
 Value class_object_to_string(Values& values,const Value& value,const ExecutionOptions& options){
     const auto& object=std::get<std::shared_ptr<Aggregate>>(value);
     if(!object || object->nil)throw runtime_error(RuntimeError::nil_reference,values.location);
-    for(auto type=object->type;type!=Type::invalid;type=class_parent(values.program.types,type)){
-        for(std::size_t id=0;id<values.program.routines.size();++id){
-            const auto& method=values.program.routines[id];
-            if(method.owner!=type || !method.object_to_string_override)continue;
-            if(!values.invoke)throw runtime_error(RuntimeError::invalid_bytecode,values.location);
-            const std::array<Value,1> arguments{value};
-            return values.invoke(id,arguments);
-        }
-    }
+    if(auto rendered=class_to_string_override(values,value,object->type))return std::move(*rendered);
     return reflected_type_property(values.program,{object->type},TypeOperation::full_name,values.location,options);
+}
+Value object_method_to_string(Values& values,const Value& value,const ExecutionOptions& options){
+    const auto& object=std::get<std::shared_ptr<Aggregate>>(value);
+    if(!object || object->nil)throw runtime_error(RuntimeError::nil_reference,values.location);
+    if(type_info(values.program,object->type).kind!=CompoundKind::boxed_object)
+        return class_object_to_string(values,value,options);
+    if(!object->items.empty()){
+        const auto& item=*object->items.front();
+        if(valid_class_ancestry(values.program.types,item.type))
+            return class_object_to_string(values,item.value,options);
+    }
+    return framework_object_text(values,value,object->type,options);
 }
 namespace {
 class FrameworkWriter {

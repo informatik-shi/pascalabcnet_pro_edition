@@ -33,7 +33,7 @@ Value print_invoke(Values& values,Type self,PrintMethod method,Type callback,std
     if(!print_signature(values.program,self,method,callback) || args.size()!=print_parameters(self,method,callback).size())throw runtime_error(RuntimeError::invalid_bytecode,values.location);
     std::uint64_t used=0;const auto step=[&]{if(used>=options.instruction_limit)throw runtime_error(RuntimeError::instruction_limit,values.location);if((used++&255U)==0 && options.cancelled && options.cancelled())throw runtime_error(RuntimeError::cancelled,values.location);};
     const auto text=[&](const Value& value,Type type){
-        return object_text(values.program,value,type,values.location,options,&pabc_number_settings(values));
+        return object_text(values,value,type,values.location,options,&pabc_number_settings(values));
     };
     const auto separator=[&](const Value& value){if(std::holds_alternative<NilString>(value) || !string_text(value).empty())emit(text(value,Type::string));};
     step();

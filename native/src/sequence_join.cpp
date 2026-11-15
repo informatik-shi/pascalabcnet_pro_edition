@@ -24,7 +24,7 @@ std::u16string sequence_join(Values& values,const std::shared_ptr<Aggregate>& so
         const auto value=sequence_at(values,cursor,static_cast<std::int64_t>(i),options);
         if (!first) append(string_text(delimiter));
         // Convert.ToString(null) is empty; ObjectToString(null) is the text nil.
-        if (!std::holds_alternative<NilString>(value)) append(object_text(values.program,value,element,values.location,options));
+        if (!std::holds_alternative<NilString>(value)) append(object_text(values,value,element,values.location,options));
         first=false;
     }
     return result;

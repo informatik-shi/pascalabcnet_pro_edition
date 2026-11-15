@@ -126,8 +126,11 @@ struct Values {
     }
     Value box_value(Type object_type,Type payload,Value value) {
         if (std::holds_alternative<NilString>(value)) return zero(object_type);
-        if (const auto* array=std::get_if<std::shared_ptr<Aggregate>>(&value);array && (!*array || (*array)->nil))
-            return zero(object_type);
+        if (const auto* aggregate=std::get_if<std::shared_ptr<Aggregate>>(&value)) {
+            if (!*aggregate || (*aggregate)->nil) return zero(object_type);
+            const auto kind=type_info(program,payload).kind;
+            if(kind==CompoundKind::object_class || kind==CompoundKind::ini_file)payload=(*aggregate)->type;
+        }
         if (!remaining) throw runtime_error(RuntimeError::allocation_limit,location);
         --remaining;
         auto object=std::get<std::shared_ptr<Aggregate>>(zero(object_type,true));

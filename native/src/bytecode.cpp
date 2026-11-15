@@ -1330,9 +1330,9 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if (type!=Type::unit || instruction.operand/4>16 || instruction.operand%4<2) invalid(instruction,"Invalid Print output");
             break;
         case Op::object_text:
-            if(instruction.operand==static_cast<unsigned>(ObjectTextMode::class_to_string)){
+            if(instruction.operand==static_cast<unsigned>(ObjectTextMode::virtual_to_string)){
                 if(!compound(type) || !valid_value_type(program,type)
-                    || (type_info(program,type).kind!=CompoundKind::object_class && type_info(program,type).kind!=CompoundKind::ini_file))
+                    || (type_info(program,type).kind!=CompoundKind::boxed_object && !valid_class_ancestry(program.types,type)))
                     invalid(instruction,"Invalid native Object.ToString receiver");
             }else if(instruction.operand==static_cast<unsigned>(ObjectTextMode::framework)){
                 if(!valid_value_type(program,type))invalid(instruction,"Invalid object formatting type");
@@ -1474,7 +1474,8 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             const bool native_value=compound(value) && static_cast<unsigned>(value)-64U<program.types.size()
                 && (complex_number_type(type_info(program,value)) || calendar_record(type_info(program,value))
                     || decimal_type(type_info(program,value)));
-            if ((!scalar(value) || short_string(value)) && !nrbf_array_type(program.types,value) && !native_value)
+            if ((!scalar(value) || short_string(value)) && !nrbf_array_type(program.types,value)
+                && !native_value && !valid_class_ancestry(program.types,value))
                 invalid(instruction,"Invalid object conversion metadata");
             break;
         }
