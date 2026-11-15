@@ -48,17 +48,17 @@ void arity(Definition& result){
 }
 void dictionary(Definition& result,const Program& program,Type owner){
     const auto& info=type_info(program,owner);
-    const auto& base=(info.kind==CompoundKind::dictionary || info.kind==CompoundKind::sorted_dictionary) ? info : type_info(program,info.key);
-    const bool sorted=base.kind==CompoundKind::sorted_dictionary;
-    result.name=sorted ? u"SortedDictionary`2" : u"Dictionary`2";result.name_space=u"System.Collections.Generic";
+    const auto& base=dictionary_kind(info.kind) ? info : type_info(program,info.key);
+    const bool sorted=ordered_dictionary_kind(base.kind);
+    result.name=base.kind==CompoundKind::sorted_list ? u"SortedList`2" : sorted ? u"SortedDictionary`2" : u"Dictionary`2";result.name_space=u"System.Collections.Generic";
     if(sorted)result.assembly=u"System";
     result.arguments={base.key,type_info(program,base.element).fields[1].type};
-    if(info.kind==CompoundKind::dictionary_keys)result.name+=u"+KeyCollection";
-    if(info.kind==CompoundKind::dictionary_values)result.name+=u"+ValueCollection";
+    if(info.kind==CompoundKind::dictionary_keys)result.name+=base.kind==CompoundKind::sorted_list ? u"+KeyList" : u"+KeyCollection";
+    if(info.kind==CompoundKind::dictionary_values)result.name+=base.kind==CompoundKind::sorted_list ? u"+ValueList" : u"+ValueCollection";
 }
 void collection_iterator(Definition& result,const Program& program,Type owner){
     const auto& info=type_info(program,owner);
-    if(info.kind==CompoundKind::dictionary || info.kind==CompoundKind::sorted_dictionary || info.kind==CompoundKind::dictionary_keys || info.kind==CompoundKind::dictionary_values)dictionary(result,program,owner);
+    if(dictionary_kind(info.kind) || info.kind==CompoundKind::dictionary_keys || info.kind==CompoundKind::dictionary_values)dictionary(result,program,owner);
     else if(info.kind==CompoundKind::list || info.kind==CompoundKind::hash_set || info.kind==CompoundKind::sorted_set){
         result.name=info.kind==CompoundKind::list ? u"List`1" : info.kind==CompoundKind::hash_set ? u"HashSet`1" : u"SortedSet`1";
         result.name_space=u"System.Collections.Generic";result.arguments={info.element};
@@ -141,7 +141,7 @@ Definition definition(const Program& program,ReflectedType type,Work& work){
             const auto dot=name.rfind(u'.');result.name=dot==name.npos ? name : name.substr(dot+1);
             result.name_space=dot==name.npos ? from_utf8(source_namespace) : name.substr(0,dot);result.source=true;break;
         }
-        case CompoundKind::dictionary:case CompoundKind::sorted_dictionary:case CompoundKind::dictionary_keys:case CompoundKind::dictionary_values:dictionary(result,program,type.target);break;
+        case CompoundKind::dictionary:case CompoundKind::sorted_dictionary:case CompoundKind::sorted_list:case CompoundKind::dictionary_keys:case CompoundKind::dictionary_values:dictionary(result,program,type.target);break;
         case CompoundKind::tuple:
             result.name=u"Tuple";for(const auto& field:info.fields)result.arguments.push_back(field.type);arity(result);break;
         case CompoundKind::callable:

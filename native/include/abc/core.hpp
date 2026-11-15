@@ -395,11 +395,17 @@ struct Local {
     MemberAccess access=MemberAccess::public_member;
 };
 
-enum class CompoundKind { array, record, list, stack, queue, dynarray, simple_set, association, linked_node, linked_list, single_node, tuple, school_address, school_ip, sequence, callable, object_class, encoding, enumeration, ini_file, hash_set, new_set, empty_collection, dictionary, dictionary_keys, dictionary_values, enumerator, user_interface, comparable_interface, comparer_interface, comparer, equatable_interface, equality_comparer_interface, equality_comparer, collection_interface, list_interface, dictionary_interface, set_interface, binary_file, fixed_array, typed_pointer, boxed_object, string_builder, number_format, sorted_set, sorted_dictionary };
+enum class CompoundKind { array, record, list, stack, queue, dynarray, simple_set, association, linked_node, linked_list, single_node, tuple, school_address, school_ip, sequence, callable, object_class, encoding, enumeration, ini_file, hash_set, new_set, empty_collection, dictionary, dictionary_keys, dictionary_values, enumerator, user_interface, comparable_interface, comparer_interface, comparer, equatable_interface, equality_comparer_interface, equality_comparer, collection_interface, list_interface, dictionary_interface, set_interface, binary_file, fixed_array, typed_pointer, boxed_object, string_builder, number_format, sorted_set, sorted_dictionary, sorted_list };
+inline bool ordered_dictionary_kind(CompoundKind kind) {
+    return kind==CompoundKind::sorted_dictionary || kind==CompoundKind::sorted_list;
+}
+inline bool dictionary_kind(CompoundKind kind) {
+    return kind==CompoundKind::dictionary || ordered_dictionary_kind(kind);
+}
 enum class NativeRecord { none, ordinal_range, real_interval, key_value_pair, dictionary_enumerator, collection_enumerator, complex, date_time, time_span, decimal_value };
 inline bool node_kind(CompoundKind kind) { return kind == CompoundKind::linked_node || kind == CompoundKind::single_node; }
 inline bool indexed_sequence(CompoundKind kind) { return kind == CompoundKind::array || kind == CompoundKind::list; }
-inline bool enumerable_collection(CompoundKind kind) { return indexed_sequence(kind) || kind==CompoundKind::sorted_set || kind==CompoundKind::sorted_dictionary || kind==CompoundKind::hash_set || kind==CompoundKind::new_set || kind==CompoundKind::dictionary || kind==CompoundKind::dictionary_keys || kind==CompoundKind::dictionary_values; }
+inline bool enumerable_collection(CompoundKind kind) { return indexed_sequence(kind) || kind==CompoundKind::sorted_set || kind==CompoundKind::hash_set || kind==CompoundKind::new_set || dictionary_kind(kind) || kind==CompoundKind::dictionary_keys || kind==CompoundKind::dictionary_values; }
 inline bool endpoint_collection(CompoundKind kind) { return kind == CompoundKind::stack || kind == CompoundKind::queue; }
 inline bool buffer_collection(CompoundKind kind) { return kind == CompoundKind::dynarray || kind == CompoundKind::simple_set; }
 enum class BufferMethod { construct, add, insert, remove, find, contains, reserve, resize, count, capacity, get, set, to_string, print, println };

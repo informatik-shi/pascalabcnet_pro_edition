@@ -1482,7 +1482,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if (instruction.op==Op::make_default && (instruction.operand&3U)==1 && compound(type)
                 && type_info(program,type).kind==CompoundKind::number_format)
                 invalid(instruction,"NumberFormatInfo constructor cannot be bypassed");
-            if (instruction.op==Op::make_default && (instruction.operand&3U)==1 && compound(type) && (node_kind(type_info(program,type).kind) || type_info(program,type).kind==CompoundKind::tuple || type_info(program,type).kind==CompoundKind::sequence || type_info(program,type).kind==CompoundKind::enumerator || type_info(program,type).kind==CompoundKind::user_interface || type_info(program,type).kind==CompoundKind::collection_interface || type_info(program,type).kind==CompoundKind::list_interface || type_info(program,type).kind==CompoundKind::dictionary_interface || type_info(program,type).kind==CompoundKind::set_interface || type_info(program,type).kind==CompoundKind::equality_comparer || type_info(program,type).kind==CompoundKind::equatable_interface || type_info(program,type).kind==CompoundKind::equality_comparer_interface || type_info(program,type).kind==CompoundKind::comparer || type_info(program,type).kind==CompoundKind::comparable_interface || type_info(program,type).kind==CompoundKind::comparer_interface || type_info(program,type).kind==CompoundKind::callable || type_info(program,type).kind==CompoundKind::encoding || type_info(program,type).kind==CompoundKind::ini_file || type_info(program,type).kind==CompoundKind::hash_set || type_info(program,type).kind==CompoundKind::sorted_set || type_info(program,type).kind==CompoundKind::dictionary || type_info(program,type).kind==CompoundKind::sorted_dictionary || type_info(program,type).kind==CompoundKind::dictionary_keys || type_info(program,type).kind==CompoundKind::dictionary_values || school_ip_kind(type_info(program,type).kind)))
+            if (instruction.op==Op::make_default && (instruction.operand&3U)==1 && compound(type) && (node_kind(type_info(program,type).kind) || type_info(program,type).kind==CompoundKind::tuple || type_info(program,type).kind==CompoundKind::sequence || type_info(program,type).kind==CompoundKind::enumerator || type_info(program,type).kind==CompoundKind::user_interface || type_info(program,type).kind==CompoundKind::collection_interface || type_info(program,type).kind==CompoundKind::list_interface || type_info(program,type).kind==CompoundKind::dictionary_interface || type_info(program,type).kind==CompoundKind::set_interface || type_info(program,type).kind==CompoundKind::equality_comparer || type_info(program,type).kind==CompoundKind::equatable_interface || type_info(program,type).kind==CompoundKind::equality_comparer_interface || type_info(program,type).kind==CompoundKind::comparer || type_info(program,type).kind==CompoundKind::comparable_interface || type_info(program,type).kind==CompoundKind::comparer_interface || type_info(program,type).kind==CompoundKind::callable || type_info(program,type).kind==CompoundKind::encoding || type_info(program,type).kind==CompoundKind::ini_file || type_info(program,type).kind==CompoundKind::hash_set || type_info(program,type).kind==CompoundKind::sorted_set || dictionary_kind(type_info(program,type).kind) || type_info(program,type).kind==CompoundKind::dictionary_keys || type_info(program,type).kind==CompoundKind::dictionary_values || school_ip_kind(type_info(program,type).kind)))
                 invalid(instruction,"Nodes and tuples require the typed constructor");
             break;
         case Op::routine_value:
@@ -2182,9 +2182,10 @@ void verify(const Program& program) {
         } else if(type.kind==CompoundKind::hash_set) {
             if(type.name!="hashset" || !type.fields.empty())throw Error("E_BYTECODE",{},"Invalid HashSet type metadata");prior(type.element);prior(type.key);
             if(!compound(type.key) || type_info(program,type.key).kind!=CompoundKind::sequence || type_info(program,type.key).element!=type.element)throw Error("E_BYTECODE",{},"Invalid HashSet sequence type");
-        } else if(type.kind==CompoundKind::dictionary || type.kind==CompoundKind::sorted_dictionary) {
-            const bool sorted=type.kind==CompoundKind::sorted_dictionary;
-            if(type.name!=(sorted ? "sorteddictionary" : "dictionary") || !type.fields.empty() || (sorted && type.rank!=1))
+        } else if(dictionary_kind(type.kind)) {
+            const bool sorted=ordered_dictionary_kind(type.kind);
+            const auto name=type.kind==CompoundKind::sorted_list ? "sortedlist" : sorted ? "sorteddictionary" : "dictionary";
+            if(type.name!=name || !type.fields.empty() || (sorted && type.rank!=1))
                 throw Error("E_BYTECODE",{},"Invalid Dictionary type metadata");
             prior(type.key);prior(type.element);
             const auto& pair=type_info(program,type.element);
@@ -2195,7 +2196,7 @@ void verify(const Program& program) {
         } else if(type.kind==CompoundKind::dictionary_keys || type.kind==CompoundKind::dictionary_values) {
             if(type.name!=(type.kind==CompoundKind::dictionary_keys ? "dictionarykeys" : "dictionaryvalues") || !type.fields.empty())throw Error("E_BYTECODE",{},"Invalid Dictionary view metadata");prior(type.key);prior(type.element);
             const auto& owner=type_info(program,type.key);
-            if((owner.kind!=CompoundKind::dictionary && owner.kind!=CompoundKind::sorted_dictionary) || (type.kind==CompoundKind::dictionary_keys ? owner.key : type_info(program,owner.element).fields.at(1).type)!=type.element)throw Error("E_BYTECODE",{},"Invalid Dictionary view owner");
+            if(!dictionary_kind(owner.kind) || (type.kind==CompoundKind::dictionary_keys ? owner.key : type_info(program,owner.element).fields.at(1).type)!=type.element)throw Error("E_BYTECODE",{},"Invalid Dictionary view owner");
         } else if(type.kind==CompoundKind::sorted_set) {
             if(type.name!="sortedset" || type.rank!=1 || !type.fields.empty() || !compound(type.key))
                 throw Error("E_BYTECODE",{},"Invalid SortedSet type metadata");

@@ -79,7 +79,7 @@ bool interface_cast_valid(const Program& p,Type from,Type to,bool checked){
  if(callable_compatible(p.types,from,to))return true;
  if(interface_compatible(p.types,from,to))return true;
  if(!checked || !valid(p.types,from) || !valid(p.types,to) || !interface_kind(info(p.types,from)))return false;
- return interface_kind(info(p.types,to)) || ((info(p.types,to).kind==CompoundKind::object_class || info(p.types,to).kind==CompoundKind::record || info(p.types,to).kind==CompoundKind::array || info(p.types,to).kind==CompoundKind::list || info(p.types,to).kind==CompoundKind::hash_set || info(p.types,to).kind==CompoundKind::sorted_set || info(p.types,to).kind==CompoundKind::dictionary || info(p.types,to).kind==CompoundKind::sorted_dictionary || info(p.types,to).kind==CompoundKind::dictionary_keys || info(p.types,to).kind==CompoundKind::dictionary_values) && interface_compatible(p.types,to,from));
+ return interface_kind(info(p.types,to)) || ((info(p.types,to).kind==CompoundKind::object_class || info(p.types,to).kind==CompoundKind::record || info(p.types,to).kind==CompoundKind::array || info(p.types,to).kind==CompoundKind::list || info(p.types,to).kind==CompoundKind::hash_set || info(p.types,to).kind==CompoundKind::sorted_set || dictionary_kind(info(p.types,to).kind) || info(p.types,to).kind==CompoundKind::dictionary_keys || info(p.types,to).kind==CompoundKind::dictionary_values) && interface_compatible(p.types,to,from));
 }
 void verify_interfaces(const Program& p){
  std::size_t names=0;

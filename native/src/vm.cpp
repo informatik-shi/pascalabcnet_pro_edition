@@ -491,7 +491,7 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
                 stack.emplace_back(sequence_create(values,static_cast<Type>(instruction.operand),source,SequenceProvider::sorted_set));
                 break;
             }
-            if(type_info(program,instruction.type).kind==CompoundKind::sorted_dictionary){
+            if(ordered_dictionary_kind(type_info(program,instruction.type).kind)){
                 stack.emplace_back(sequence_create(values,static_cast<Type>(instruction.operand),source,SequenceProvider::sorted_dictionary));
                 break;
             }

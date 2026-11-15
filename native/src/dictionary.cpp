@@ -30,12 +30,12 @@ Type dictionary_value_type(const std::vector<TypeInfo>& types,Type owner){return
 bool dictionary_enumerator_metadata(const Program& p,Type iterator){
  if(!valid(p,iterator))return false;const auto& e=type_info(p,iterator);
  if(!dictionary_enumerator_type(e) || e.kind!=CompoundKind::record || e.name!="dictionaryenumerator" || !valid(p,e.key) || e.fields.size()!=4)return false;
- const auto& source=type_info(p,e.key);const bool dictionary=source.kind==CompoundKind::dictionary || source.kind==CompoundKind::sorted_dictionary;
+ const auto& source=type_info(p,e.key);const bool dictionary=dictionary_kind(source.kind);
  if(!dictionary && source.kind!=CompoundKind::dictionary_keys && source.kind!=CompoundKind::dictionary_values)return false;
  const auto root=dictionary ? e.key : source.key;
  if(!valid(p,root) || e.element!=source.element)return false;
  const auto kind=type_info(p,root).kind;
- if(kind!=CompoundKind::dictionary && kind!=CompoundKind::sorted_dictionary)return false;
+ if(!dictionary_kind(kind))return false;
  auto index=Type::integer;
  if(kind==CompoundKind::sorted_dictionary){
   index=e.fields[2].type;
@@ -48,13 +48,15 @@ bool dictionary_enumerator_metadata(const Program& p,Type iterator){
  return true;
 }
 bool dictionary_signature(const Program& p,Type owner,Type payload,DictionaryMethod m){
- if(m>DictionaryMethod::pair_copy_to || !valid(p,owner))return false;const auto& d=type_info(p,owner);
+ if(m>DictionaryMethod::remove_at || !valid(p,owner))return false;const auto& d=type_info(p,owner);
  if(m==DictionaryMethod::get_enumerator)return dictionary_enumerator_metadata(p,payload) && type_info(p,payload).key==owner;
- if(d.kind==CompoundKind::sorted_dictionary){
+ if(ordered_dictionary_kind(d.kind)){
   if(!valid(p,d.element))return false;
   const auto& pair=type_info(p,d.element);
   if(pair.fields.size()!=2 || !pair_shape(p,d.element,d.key,pair.fields[1].type,false))return false;
-  if(m==DictionaryMethod::construct_comparer || m==DictionaryMethod::comparer)
+  const bool sorted_list=d.kind==CompoundKind::sorted_list;
+  if(m==DictionaryMethod::construct_comparer || m==DictionaryMethod::comparer
+     || (sorted_list && m==DictionaryMethod::construct_capacity_comparer))
    return valid(p,payload) && type_info(p,payload).kind==CompoundKind::comparer_interface
        && type_info(p,payload).element==d.key;
   if(m==DictionaryMethod::construct_copy || m==DictionaryMethod::construct_copy_comparer)
@@ -69,6 +71,7 @@ bool dictionary_signature(const Program& p,Type owner,Type payload,DictionaryMet
   if(m==DictionaryMethod::pair_copy_to)
    return valid(p,payload) && type_info(p,payload).kind==CompoundKind::array
        && type_info(p,payload).rank==1 && type_info(p,payload).element==d.element;
+  if(sorted_list && (m==DictionaryMethod::construct_capacity || m>=DictionaryMethod::capacity))return payload==Type::invalid;
   return payload==Type::invalid && (m==DictionaryMethod::construct || (m>=DictionaryMethod::count && m<=DictionaryMethod::clear)
       || m==DictionaryMethod::membership || m==DictionaryMethod::pair_contains);
  }
@@ -78,11 +81,11 @@ bool dictionary_signature(const Program& p,Type owner,Type payload,DictionaryMet
  if(m==DictionaryMethod::view_count || m==DictionaryMethod::view_contains || m==DictionaryMethod::view_copy_to){
   if((d.kind!=CompoundKind::dictionary_keys && d.kind!=CompoundKind::dictionary_values) || !valid(p,d.key))return false;
   const auto kind=type_info(p,d.key).kind;
-  if(kind!=CompoundKind::dictionary && kind!=CompoundKind::sorted_dictionary)return false;
+  if(!dictionary_kind(kind))return false;
   if(m!=DictionaryMethod::view_copy_to)return payload==Type::invalid;
   return valid(p,payload) && type_info(p,payload).kind==CompoundKind::array && type_info(p,payload).rank==1 && type_info(p,payload).element==d.element;
  }
- if(d.kind!=CompoundKind::dictionary || !valid(p,d.element))return false;
+ if(d.kind!=CompoundKind::dictionary || m>=DictionaryMethod::capacity || !valid(p,d.element))return false;
  const auto& pair=type_info(p,d.element);if(pair.fields.size()!=2 || !pair_shape(p,d.element,d.key,pair.fields[1].type,false))return false;
  const auto value=pair.fields[1].type;
  if(m==DictionaryMethod::pair_contains)return payload==Type::invalid;
@@ -114,7 +117,7 @@ bool dictionary_signature(const Program& p,Type owner,Type payload,DictionaryMet
 }
 std::vector<Type> dictionary_parameters(const std::vector<TypeInfo>& types,Type owner,Type payload,DictionaryMethod m){
  if((m==DictionaryMethod::construct_copy || m==DictionaryMethod::construct_copy_comparer)
-     && info(types,owner).kind==CompoundKind::sorted_dictionary){
+     && ordered_dictionary_kind(info(types,owner).kind)){
   if(m==DictionaryMethod::construct_copy)return {payload};
   return {payload,find_element_type(types,info(types,owner).key,CompoundKind::comparer_interface)};
  }
@@ -131,6 +134,9 @@ std::vector<Type> dictionary_parameters(const std::vector<TypeInfo>& types,Type 
  if(m==DictionaryMethod::construct_capacity_comparer)return {Type::integer,payload};
  if(m==DictionaryMethod::construct_copy_comparer)return {owner,payload};
  if(m==DictionaryMethod::comparer)return {owner};
+ if(m==DictionaryMethod::capacity || m==DictionaryMethod::trim_excess)return {owner};
+ if(m==DictionaryMethod::set_capacity || m==DictionaryMethod::remove_at)return {owner,Type::integer};
+ if(m==DictionaryMethod::index_of_value)return {owner,dictionary_value_type(types,owner)};
  if(m==DictionaryMethod::construct)return {};
  if(m==DictionaryMethod::construct_capacity)return {Type::integer};
  if(m==DictionaryMethod::construct_copy || m==DictionaryMethod::copy_value)return {owner};
@@ -165,6 +171,7 @@ Type dictionary_result(const std::vector<TypeInfo>& types,Type owner,Type payloa
  if(m==DictionaryMethod::each_count || m==DictionaryMethod::each || m==DictionaryMethod::to_dictionary || m==DictionaryMethod::to_dictionary_elements)return owner;
  if(m<=DictionaryMethod::from_sequences || m==DictionaryMethod::copy_value || m==DictionaryMethod::merge || m==DictionaryMethod::without_key || m==DictionaryMethod::without_keys || m==DictionaryMethod::pair_construct)return owner;
  if(m==DictionaryMethod::view_count)return Type::integer;
+ if(m==DictionaryMethod::capacity || m==DictionaryMethod::index_of_key || m==DictionaryMethod::index_of_value)return Type::integer;
  if(m==DictionaryMethod::view_contains)return Type::boolean;
  if(m==DictionaryMethod::pair_to_string)return Type::string;
  if(m==DictionaryMethod::keys || m==DictionaryMethod::values)return payload;
@@ -289,11 +296,13 @@ class OrderedDictionary {
     const ExecutionOptions& options;
     Type policy;
     const Object& entries;
+    bool sorted_list;
     ValueHashWork work;
 
 public:
     OrderedDictionary(Values& values,const ExecutionOptions& options,Type policy,const Object& entries)
-        : values(values),options(options),policy(policy),entries(entries),work{values,options}{}
+        : values(values),options(options),policy(policy),entries(entries),
+          sorted_list(type_info(values.program,entries->type).kind==CompoundKind::sorted_list),work{values,options}{}
 
     void step(){work.step();}
 
@@ -307,31 +316,48 @@ public:
         std::size_t first=0,last=entries->items.size();
         while(first<last){
             step();
-            const auto middle=first+(last-first)/2;
+            const auto middle=first+(last-first-(sorted_list ? 1U : 0U))/2;
             const auto version=entries->version;
-            const std::array<Value,2> args{key,entry(entries,middle)->items[0]->value};
+            const auto& stored=entry(entries,middle)->items[0]->value;
+            const std::array<Value,2> args=sorted_list ? std::array<Value,2>{stored,key} : std::array<Value,2>{key,stored};
             const auto cmp=std::get<std::int32_t>(comparer_invoke(values,policy,entries->ordering,args,options));
             if(entries->version!=version)throw runtime_error(RuntimeError::collection_changed,values.location);
             if(cmp==0)return {middle,true};
-            if(cmp<0)last=middle;
+            if(sorted_list ? cmp>0 : cmp<0)last=middle;
             else first=middle+1;
         }
         return {first,false};
     }
 
-    void insert(Type pair_type,const Value& key,const Value& value){
-        if(!entries->items.empty())++entries->version;
-        const auto [index,found]=find(key);
-        if(found)throw runtime_error(RuntimeError::dictionary_duplicate_key,values.location);
+    void set_capacity(std::size_t capacity){
+        if(capacity<entries->items.size())throw runtime_error(RuntimeError::list_capacity,values.location);
+        if(capacity==entries->list_capacity)return;
+        if(capacity>values.list_storage_remaining)throw runtime_error(RuntimeError::allocation_limit,values.location);
+        values.list_storage_remaining-=capacity;
+        entries->list_capacity=capacity;
+    }
+
+    void insert_at(std::size_t index,Type pair_type,const Value& key,const Value& value,bool reserve_capacity){
         if(entries->items.size()>=INT32_MAX)throw runtime_error(RuntimeError::integer_overflow,values.location);
         shift(entries->items.size()-index);
+        if(reserve_capacity && entries->items.size()==entries->list_capacity){
+            const auto capacity=entries->list_capacity;
+            set_capacity(capacity ? std::min<std::size_t>(INT32_MAX,capacity*2) : 4);
+        }
         auto pair=std::get<Object>(values.zero(pair_type,false,true));
         values.write(pair->items[0],key);
         values.write(pair->items[1],value);
         auto cell=values.cell(pair_type,std::move(pair));
         const bool was_empty=entries->items.empty();
         entries->items.insert(entries->items.begin()+static_cast<std::ptrdiff_t>(index),std::move(cell));
-        if(was_empty)++entries->version;
+        if(sorted_list || was_empty)++entries->version;
+    }
+
+    void insert(Type pair_type,const Value& key,const Value& value,bool reserve_capacity=true){
+        if(!sorted_list && !entries->items.empty())++entries->version;
+        const auto [index,found]=find(key);
+        if(found)throw runtime_error(RuntimeError::dictionary_duplicate_key,values.location);
+        insert_at(index,pair_type,key,value,sorted_list && reserve_capacity);
     }
 
     bool values_equal(Type type,Value a,const Value& b){
@@ -342,31 +368,40 @@ public:
     }
 };
 
-Value sorted_dictionary_invoke(Values& values,Type owner,DictionaryMethod method,std::span<const Value> args,const ExecutionOptions& options){
+Value ordered_dictionary_invoke(Values& values,Type owner,DictionaryMethod method,std::span<const Value> args,const ExecutionOptions& options){
     using Method=DictionaryMethod;
     const auto& shape=type_info(values.program,owner);
     const auto policy=find_element_type(values.program.types,shape.key,CompoundKind::comparer_interface);
+    const bool sorted_list=shape.kind==CompoundKind::sorted_list;
     const bool copying=method==Method::construct_copy || method==Method::construct_copy_comparer;
-    if(method==Method::construct || method==Method::construct_comparer || copying){
+    const bool with_capacity=method==Method::construct_capacity || method==Method::construct_capacity_comparer;
+    if(method==Method::construct || method==Method::construct_comparer || copying || with_capacity){
         const auto source=copying ? std::get<Object>(args.front()) : Object{};
         if(copying && (!source || source->nil))throw runtime_error(RuntimeError::dictionary_nil_copy,values.location);
         auto result=std::get<Object>(values.zero(owner,true));
-        if(method==Method::construct_comparer || method==Method::construct_copy_comparer)
+        if(method==Method::construct_comparer || method==Method::construct_copy_comparer || method==Method::construct_capacity_comparer)
             result->ordering=std::get<Object>(args.back());
         if(!result->ordering || result->ordering->nil){
             const auto factory=find_element_type(values.program.types,shape.key,CompoundKind::comparer);
             result->ordering=std::get<Object>(comparer_create(values,factory,nullptr,options));
         }
+        OrderedDictionary order(values,options,policy,result);
+        if(with_capacity){
+            const auto capacity=std::get<std::int32_t>(args.front());
+            if(capacity<0)throw runtime_error(RuntimeError::dictionary_capacity,values.location);
+            order.set_capacity(static_cast<std::size_t>(capacity));
+        }
         if(copying){
-            OrderedDictionary order(values,options,policy,result);
             const auto iterator=sequence_begin(values,source,options);
             sequence_finally(values,iterator,options,[&]{
                 for(std::uint64_t i=0;sequence_resume(values,iterator,i,options);++i){
                     order.step();
                     const auto pair=std::get<Object>(sequence_at(values,iterator,static_cast<std::int64_t>(i),options));
-                    order.insert(shape.element,pair->items[0]->value,pair->items[1]->value);
+                    if(sorted_list)require_key(pair->items[0]->value,values.location);
+                    order.insert(shape.element,pair->items[0]->value,pair->items[1]->value,false);
                 }
             });
+            if(sorted_list)order.set_capacity(result->items.size());
         }
         return result;
     }
@@ -378,6 +413,26 @@ Value sorted_dictionary_invoke(Values& values,Type owner,DictionaryMethod method
     order.step();
     if(method==Method::count)return static_cast<std::int32_t>(rows.size());
     if(method==Method::comparer)return receiver->ordering;
+    if(method==Method::capacity)return static_cast<std::int32_t>(receiver->list_capacity);
+    if(method==Method::set_capacity){
+        const auto capacity=std::get<std::int32_t>(args[1]);
+        if(capacity<0)throw runtime_error(RuntimeError::list_capacity,values.location);
+        order.set_capacity(static_cast<std::size_t>(capacity));
+        return false;
+    }
+    if(method==Method::trim_excess){
+        const auto threshold=static_cast<std::size_t>(static_cast<double>(receiver->list_capacity)*0.9);
+        if(rows.size()<threshold)order.set_capacity(rows.size());
+        return false;
+    }
+    if(method==Method::remove_at){
+        const auto index=std::get<std::int32_t>(args[1]);
+        if(index<0 || static_cast<std::size_t>(index)>=rows.size())throw runtime_error(RuntimeError::list_index,values.location);
+        order.shift(rows.size()-static_cast<std::size_t>(index));
+        rows.erase(rows.begin()+index);
+        ++receiver->version;
+        return false;
+    }
     if(method==Method::clear){order.shift(rows.size());rows.clear();++receiver->version;return false;}
     if(method==Method::pair_copy_to){
         const auto array=std::get<Object>(args[1]);
@@ -390,30 +445,36 @@ Value sorted_dictionary_invoke(Values& values,Type owner,DictionaryMethod method
         for(std::size_t i=0;i<rows.size();++i){order.step();values.write(array->items[start+i],rows[i]->value);}
         return false;
     }
-    if(method==Method::contains_value){
-        for(const auto& row:rows){
+    if(method==Method::contains_value || method==Method::index_of_value){
+        for(std::size_t index=0;index<rows.size();++index){
             order.step();
-            const auto item=std::get<Object>(row->value);
-            if(order.values_equal(value_type,item->items[1]->value,args[1]))return true;
+            const auto item=entry(receiver,index);
+            if(order.values_equal(value_type,item->items[1]->value,args[1]))
+                return method==Method::contains_value ? Value{true} : Value{static_cast<std::int32_t>(index)};
         }
-        return false;
+        return method==Method::contains_value ? Value{false} : Value{std::int32_t{-1}};
     }
     if(method==Method::pair_contains){
         const auto pair=std::get<Object>(args[1]);
+        if(sorted_list)require_key(pair->items[0]->value,values.location);
         const auto [index,found]=order.find(pair->items[0]->value);
         return found && order.values_equal(value_type,entry(receiver,index)->items[1]->value,pair->items[1]->value);
     }
     const auto& key=args[method==Method::membership ? 0U : 1U];
     require_key(key,values.location);
     if(method==Method::add){order.insert(shape.element,key,args[2]);return false;}
-    if(method==Method::remove && !rows.empty())++receiver->version;
+    if(method==Method::remove && !sorted_list && !rows.empty())++receiver->version;
     const auto [index,found]=order.find(key);
+    if(method==Method::index_of_key)return found ? static_cast<std::int32_t>(index) : std::int32_t{-1};
     if(method==Method::get_item){
         if(!found)throw runtime_error(RuntimeError::dictionary_missing_key,values.location);
         return values.copy(entry(receiver,index)->items[1]->value);
     }
     if(method==Method::set_item){
-        if(!found)order.insert(shape.element,key,args[2]);
+        if(!found){
+            if(sorted_list)order.insert_at(index,shape.element,key,args[2],true);
+            else order.insert(shape.element,key,args[2]);
+        }
         else{
             values.write(entry(receiver,index)->items[1],args[2]);
             ++receiver->version;
@@ -428,6 +489,7 @@ Value sorted_dictionary_invoke(Values& values,Type owner,DictionaryMethod method
     if(method==Method::remove && found){
         order.shift(rows.size()-index);
         rows.erase(rows.begin()+static_cast<std::ptrdiff_t>(index));
+        if(sorted_list)++receiver->version;
     }
     return found;
 }
@@ -455,8 +517,14 @@ Value dictionary_invoke(Values& values,Type owner,Type payload,DictionaryMethod 
     : std::get<Object>(m==DictionaryMethod::enumerator_move_copy ? values.copy(args[0]) : args[0]);
    if(!iterator || iterator->nil || iterator->items.size()!=4)throw runtime_error(RuntimeError::invalid_bytecode,values.location);
    if(m==DictionaryMethod::enumerator_current)return values.copy(iterator->items[3]->value);
-   // Framework dictionary enumerators keep both their position and Current after Dispose.
-   if(m==DictionaryMethod::enumerator_dispose)return false;
+   if(m==DictionaryMethod::enumerator_dispose){
+    const auto root=type_info(values.program,owner).fields[0].type;
+    if(type_info(values.program,root).kind==CompoundKind::sorted_list){
+     values.write(iterator->items[2],std::int32_t{0});
+     values.write(iterator->items[3],values.zero(type_info(values.program,owner).element,false,true));
+    }
+    return false;
+   }
    const auto d=std::get<Object>(iterator->items[0]->value);require_dictionary_data(d,values.location);
    if(std::get<std::uint64_t>(iterator->items[1]->value)!=d->version)throw runtime_error(RuntimeError::collection_changed,values.location);
    auto position=iterator->items[2];
@@ -471,7 +539,7 @@ Value dictionary_invoke(Values& values,Type owner,Type payload,DictionaryMethod 
    while(index<d->items.size()){
     work.step();const auto cell=d->items[index++];
     if(cell){const auto& pair=std::get<Object>(cell->value);
-     const auto pair_entry=source==CompoundKind::dictionary || source==CompoundKind::sorted_dictionary;
+     const auto pair_entry=dictionary_kind(source);
      values.write(iterator->items[3],pair_entry ? cell->value : pair->items[source==CompoundKind::dictionary_keys ? 0U : 1U]->value);
      values.write(position,static_cast<std::int32_t>(index));return true;
     }
@@ -486,9 +554,9 @@ Value dictionary_invoke(Values& values,Type owner,Type payload,DictionaryMethod 
    const bool keys=type_info(values.program,owner).kind==CompoundKind::dictionary_keys;
    if(m==DictionaryMethod::view_count)return static_cast<std::int32_t>(dictionary_count(*d));
    if(m==DictionaryMethod::view_contains){
-    if(type_info(values.program,d->type).kind==CompoundKind::sorted_dictionary){
+    if(ordered_dictionary_kind(type_info(values.program,d->type).kind)){
      const std::array<Value,2> input{d,args[1]};
-     return sorted_dictionary_invoke(values,d->type,keys ? DictionaryMethod::contains_key : DictionaryMethod::contains_value,input,options);
+     return ordered_dictionary_invoke(values,d->type,keys ? DictionaryMethod::contains_key : DictionaryMethod::contains_value,input,options);
     }
     return keys ? find(work,d,args[1])!=missing : contains_value(work,d,args[1]);
    }
@@ -505,8 +573,8 @@ Value dictionary_invoke(Values& values,Type owner,Type payload,DictionaryMethod 
    auto view=std::get<Object>(values.zero(payload,true));
    view->items.push_back(values.cell(owner,dictionary));cached=view;return view;
   }
-  if(type_info(values.program,owner).kind==CompoundKind::sorted_dictionary)
-   return sorted_dictionary_invoke(values,owner,m,args,options);
+  if(ordered_dictionary_kind(type_info(values.program,owner).kind))
+   return ordered_dictionary_invoke(values,owner,m,args,options);
   if(m==DictionaryMethod::pair_construct)return make_pair(values,owner,args[0],args[1]);
   if(m==DictionaryMethod::pair_to_string){
    const auto& pair=std::get<Object>(args[0]);std::u16string text=u"[";

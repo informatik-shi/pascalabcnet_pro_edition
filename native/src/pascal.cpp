@@ -663,7 +663,7 @@ private:
                     if(result->kind!="complex")
                         throw Error("E_UNSUPPORTED",result->token.location,"Unknown or unsupported System.Numerics type");
                 }
-                else if(result->kind=="collections"){expect(".");const auto generic=name();if(generic.text!="generic")throw Error("E_UNSUPPORTED",generic.location,"Unknown System.Collections namespace");expect(".");result->kind=name().text;if(result->kind!="dictionary" && result->kind!="sorteddictionary" && result->kind!="keyvaluepair" && result->kind!="ienumerable" && result->kind!="ienumerator" && result->kind!="list" && result->kind!="hashset" && result->kind!="sortedset" && result->kind!="icomparer" && result->kind!="comparer" && result->kind!="iequalitycomparer" && result->kind!="equalitycomparer" && result->kind!="icollection" && result->kind!="ilist" && result->kind!="iset" && result->kind!="idictionary")throw Error("E_UNSUPPORTED",result->token.location,"Unknown generic collection type");}
+                else if(result->kind=="collections"){expect(".");const auto generic=name();if(generic.text!="generic")throw Error("E_UNSUPPORTED",generic.location,"Unknown System.Collections namespace");expect(".");result->kind=name().text;if(result->kind!="dictionary" && result->kind!="sorteddictionary" && result->kind!="sortedlist" && result->kind!="keyvaluepair" && result->kind!="ienumerable" && result->kind!="ienumerator" && result->kind!="list" && result->kind!="hashset" && result->kind!="sortedset" && result->kind!="icomparer" && result->kind!="comparer" && result->kind!="iequalitycomparer" && result->kind!="equalitycomparer" && result->kind!="icollection" && result->kind!="ilist" && result->kind!="iset" && result->kind!="idictionary")throw Error("E_UNSUPPORTED",result->token.location,"Unknown generic collection type");}
                 else if (result->kind!="func" && result->kind!="action" && result->kind!="predicate" && result->kind!="type" && result->kind!="void" && result->kind!="single" && result->kind!="object" && result->kind!="icomparable" && result->kind!="iequatable"
                     && result->kind!="datetime" && result->kind!="timespan" && result->kind!="datetimekind" && result->kind!="dayofweek"
                     && result->kind!="decimal" && result->kind!="midpointrounding")
@@ -682,7 +682,7 @@ private:
                     } while (accept(","));
                     expect(">");
                 }
-            } else if ((result->kind == "assocarray" || result->kind=="dictionary" || result->kind=="sorteddictionary" || result->kind=="keyvaluepair" || result->kind=="idictionary") && accept("<")) {
+            } else if ((result->kind == "assocarray" || result->kind=="dictionary" || result->kind=="sorteddictionary" || result->kind=="sortedlist" || result->kind=="keyvaluepair" || result->kind=="idictionary") && accept("<")) {
                 result->named=false; result->key = type_syntax(); expect(","); result->element = type_syntax(); expect(">");
                 if(allow_type_members && result->kind=="dictionary" && is(".") && [&]{auto probe=lexer_;const auto next=probe.next();return next.text=="enumerator" || next.text=="keycollection" || next.text=="valuecollection";}()){
                     expect(".");
@@ -3446,10 +3446,11 @@ private:
         for(std::size_t i=0;i<module_.types.size();++i)
             if(module_.types[i].kind==kind && module_.types[i].key==key && module_.types[i].element==pair)
                 return static_cast<Type>(64+i);
-        const bool sorted=kind==CompoundKind::sorted_dictionary;
+        const bool sorted=ordered_dictionary_kind(kind);
         (void)comparison_type(sorted ? CompoundKind::comparer : CompoundKind::equality_comparer,key);
         if(module_.types.size()>=1024)throw Error("E_LIMIT",{},"Type limit exceeded");
-        module_.types.push_back({sorted ? "sorteddictionary" : "dictionary",kind,pair,{},key});
+        const auto name=kind==CompoundKind::sorted_list ? "sortedlist" : sorted ? "sorteddictionary" : "dictionary";
+        module_.types.push_back({name,kind,pair,{},key});
         const auto result=static_cast<Type>(63+module_.types.size());
         (void)sequence_type(CompoundKind::sequence,pair);
         (void)dictionary_enumerator(result);
@@ -3473,7 +3474,7 @@ private:
     ABC_PASCAL_NOINLINE Type dictionary_enumerator(Type source){
         for(std::size_t i=0;i<module_.types.size();++i){const auto& t=module_.types[i];if(dictionary_enumerator_type(t) && t.key==source)return static_cast<Type>(64+i);}
         const auto s=info(source,{});
-        const auto dictionary=(s.kind==CompoundKind::dictionary || s.kind==CompoundKind::sorted_dictionary) ? source : s.key;
+        const auto dictionary=dictionary_kind(s.kind) ? source : s.key;
         const auto index=info(dictionary,{}).kind==CompoundKind::sorted_dictionary ? sequence_type(CompoundKind::array,Type::integer) : Type::integer;
         if(module_.types.size()>=1024)throw Error("E_LIMIT",{},"Type limit exceeded");
         TypeInfo iterator{"dictionaryenumerator",CompoundKind::record,s.element,{{"$source",dictionary,false},{"$version",Type::uint64,false},{"$index",index,false},{"$current",s.element,false}},source};
@@ -3493,7 +3494,7 @@ private:
         if(!base_only && !syntax.nested.empty()){
             auto type=resolve_type(syntax,true);for(const auto& member:syntax.nested){if(!compound(type))throw Error("E_TYPE",syntax.token.location,"Unknown collection nested type");const auto shape=info(type,syntax.token.location);
                 if(member=="enumerator" && (shape.kind==CompoundKind::list || shape.kind==CompoundKind::hash_set || shape.kind==CompoundKind::sorted_set))type=collection_enumerator(type);
-                else if(member=="enumerator" && (shape.kind==CompoundKind::dictionary || shape.kind==CompoundKind::sorted_dictionary || shape.kind==CompoundKind::dictionary_keys || shape.kind==CompoundKind::dictionary_values))type=dictionary_enumerator(type);
+                else if(member=="enumerator" && (dictionary_kind(shape.kind) || shape.kind==CompoundKind::dictionary_keys || shape.kind==CompoundKind::dictionary_values))type=dictionary_enumerator(type);
                 else if((member=="keycollection" || member=="valuecollection") && (shape.kind==CompoundKind::dictionary || shape.kind==CompoundKind::sorted_dictionary))type=dictionary_view_type(type,member=="keycollection");
                 else throw Error("E_TYPE",syntax.token.location,"Unknown collection nested type");
             }return type;
@@ -3605,9 +3606,9 @@ private:
             const auto source=syntax.kind=="dictionary_enumerator" ? dictionary : dictionary_view_type(dictionary,keys);
             return syntax.kind.ends_with("enumerator") ? dictionary_enumerator(source) : source;
         }
-        if(syntax.kind=="sorteddictionary" && syntax.key && syntax.element){
+        if((syntax.kind=="sorteddictionary" || syntax.kind=="sortedlist") && syntax.key && syntax.element){
             const auto key=resolve_type(*syntax.key),value=resolve_type(*syntax.element);
-            return dictionary_type(key,value,CompoundKind::sorted_dictionary);
+            return dictionary_type(key,value,syntax.kind=="sortedlist" ? CompoundKind::sorted_list : CompoundKind::sorted_dictionary);
         }
         if((syntax.kind=="dictionary" || syntax.kind=="keyvaluepair" || syntax.kind=="idictionary") && syntax.key && syntax.element){const auto key=resolve_type(*syntax.key),value=resolve_type(*syntax.element);return syntax.kind=="dictionary" ? dictionary_type(key,value) : syntax.kind=="idictionary" ? dictionary_interface_type(key,value) : pair_type(key,value);}
         if (syntax.kind == "assocarray" && syntax.key && syntax.element) {
@@ -4356,7 +4357,7 @@ private:
                     else for(const auto& argument:source.arguments)array->arguments.push_back(convert(expression(*argument,element),element));
                     arguments.push_back(std::move(array));return new_set_expression(type,NewSetMethod::construct_array,std::move(arguments),result->location);
                 }
-                if(info(type,result->location).kind==CompoundKind::sorted_dictionary){
+                if(ordered_dictionary_kind(info(type,result->location).kind)){
                     if(source.arguments.empty())return dictionary_expression(type,DictionaryMethod::construct,{},result->location);
                     if(source.arguments.size()>2)
                         throw Error("E_TYPE",result->location,"Wrong SortedDictionary constructor argument count","Неверное число аргументов конструктора SortedDictionary");
@@ -4369,11 +4370,16 @@ private:
                     const bool source_map=compound(from) && [&]{
                         const auto& input=info(from,result->location);
                         return input.element==shape.element && input.key==shape.key
-                            && (input.kind==CompoundKind::dictionary || input.kind==CompoundKind::sorted_dictionary
-                                || input.kind==CompoundKind::dictionary_interface);
+                            && (dictionary_kind(input.kind) || input.kind==CompoundKind::dictionary_interface);
                     }();
                     std::vector<std::unique_ptr<hir::Expr>> arguments;
                     arguments.push_back(std::move(first));
+                    if(shape.kind==CompoundKind::sorted_list && can_widen(from,Type::integer)){
+                        if(source.arguments.size()==1)
+                            return dictionary_expression(type,DictionaryMethod::construct_capacity,std::move(arguments),result->location);
+                        arguments.push_back(expression(*source.arguments[1],policy));
+                        return dictionary_expression(type,DictionaryMethod::construct_capacity_comparer,std::move(arguments),result->location,policy);
+                    }
                     if(source_map || source.arguments.size()==2){
                         if(!source_map && from!=Type::nil)
                             throw Error("E_TYPE",result->location,"SortedDictionary requires a dictionary with matching key and value types","SortedDictionary требует словарь с совпадающими типами ключа и значения");
@@ -5625,7 +5631,7 @@ private:
                 result->type=Type::character; result->kind=hir::ExprKind::index; return fold_constant_array_index(std::move(result));
             }
             const auto kind = info(receiver_type,result->location).kind;
-            if(kind==CompoundKind::dictionary || kind==CompoundKind::sorted_dictionary){std::vector<std::unique_ptr<hir::Expr>> args;args.push_back(std::move(result->left));args.push_back(expression(*source.right,info(receiver_type,result->location).key));return dictionary_expression(receiver_type,DictionaryMethod::get_item,std::move(args),result->location);}
+            if(dictionary_kind(kind)){std::vector<std::unique_ptr<hir::Expr>> args;args.push_back(std::move(result->left));args.push_back(expression(*source.right,info(receiver_type,result->location).key));return dictionary_expression(receiver_type,DictionaryMethod::get_item,std::move(args),result->location);}
             if (kind == CompoundKind::association) {
                 const auto key = info(receiver_type,result->location).key, element = info(receiver_type,result->location).element;
                 result->kind = hir::ExprKind::association_call; result->type = element;
@@ -5779,7 +5785,7 @@ private:
                 }
                 if(compound(right) && info(right,result->location).kind==CompoundKind::empty_collection && left!=Type::nil && left!=Type::unit){const auto owner=new_set_type(left);result->right=convert(std::move(result->right),owner);right=owner;}
                 if(compound(right) && info(right,result->location).kind==CompoundKind::new_set){std::vector<std::unique_ptr<hir::Expr>> arguments;arguments.push_back(std::move(result->left));arguments.push_back(std::move(result->right));return new_set_expression(right,NewSetMethod::membership,std::move(arguments),result->location);}
-                if(compound(right) && (info(right,result->location).kind==CompoundKind::dictionary || info(right,result->location).kind==CompoundKind::sorted_dictionary)){std::vector<std::unique_ptr<hir::Expr>> args;args.push_back(std::move(result->left));args.push_back(std::move(result->right));return dictionary_expression(right,DictionaryMethod::membership,std::move(args),result->location);}
+                if(compound(right) && dictionary_kind(info(right,result->location).kind)){std::vector<std::unique_ptr<hir::Expr>> args;args.push_back(std::move(result->left));args.push_back(std::move(result->right));return dictionary_expression(right,DictionaryMethod::membership,std::move(args),result->location);}
                 if(compound(right) && info(right,result->location).kind==CompoundKind::sorted_set){
                     std::vector<std::unique_ptr<hir::Expr>> arguments;
                     arguments.push_back(std::move(result->left));arguments.push_back(std::move(result->right));
@@ -5890,7 +5896,7 @@ private:
             if(op=="*" && (is_list(left) || is_list(right)))
                 return compound_expression(is_list(left) ? left : right,is_list(left) ? CompoundMethod::list_repeat : CompoundMethod::list_repeat_reverse,std::move(result->left),std::move(result->right),result->location);
             if(op=="+"){
-                const auto adapt=[&](std::unique_ptr<hir::Expr>& value,Type& type){if(compound(type)){const auto shape=info(type,result->location);if(shape.kind==CompoundKind::dictionary || shape.kind==CompoundKind::sorted_dictionary || shape.kind==CompoundKind::dictionary_keys || shape.kind==CompoundKind::dictionary_values){const auto sequence=sequence_type(CompoundKind::sequence,shape.element);value=convert(std::move(value),sequence);type=sequence;}}};adapt(result->left,left);adapt(result->right,right);
+                const auto adapt=[&](std::unique_ptr<hir::Expr>& value,Type& type){if(compound(type)){const auto shape=info(type,result->location);if(dictionary_kind(shape.kind) || shape.kind==CompoundKind::dictionary_keys || shape.kind==CompoundKind::dictionary_values){const auto sequence=sequence_type(CompoundKind::sequence,shape.element);value=convert(std::move(value),sequence);type=sequence;}}};adapt(result->left,left);adapt(result->right,right);
             }
             const auto is_sequence=[&](Type type) { return compound(type) && info(type,result->location).kind==CompoundKind::sequence; };
             if (op=="+" && (is_sequence(left) || is_sequence(right))) {
@@ -6069,6 +6075,15 @@ private:
                 setter->arguments.push_back(convert(value(setter->type),setter->type));
                 setter->local = static_cast<std::size_t>(LinkedMethod::set_value); setter->type = Type::unit;
                 result.kind = hir::StmtKind::call; result.expression = std::move(setter); return result;
+            }
+            if(result.target->kind==hir::ExprKind::dictionary_call && (result.target->local&255U)==static_cast<std::size_t>(DictionaryMethod::capacity)){
+                auto setter=std::move(result.target);
+                setter->arguments.push_back(convert(value(Type::integer),Type::integer));
+                setter->local=(setter->local&~std::size_t{255})|static_cast<std::size_t>(DictionaryMethod::set_capacity);
+                setter->type=Type::unit;
+                result.kind=hir::StmtKind::call;
+                result.expression=std::move(setter);
+                return result;
             }
             if(result.target->kind==hir::ExprKind::dictionary_call && (result.target->local&255U)==static_cast<std::size_t>(DictionaryMethod::get_item)){
                 auto setter=std::move(result.target);setter->arguments.push_back(convert(value(setter->type),setter->type));setter->local=(setter->local&~std::size_t{255})|static_cast<std::size_t>(DictionaryMethod::set_item);setter->type=Type::unit;result.kind=hir::StmtKind::call;result.expression=std::move(setter);return result;
@@ -6268,7 +6283,7 @@ private:
             if(method==EnumeratorMethod::collection_current && source.kind==SyntaxExprKind::member_call)throw Error("E_TYPE",result.location,"Enumerator property is not callable");
             auto bound=enumerator_expression(method,std::move(result.left));bound->location=result.location;result=std::move(*bound);return true;
         }
-        if((shape.kind==CompoundKind::sequence || shape.kind==CompoundKind::new_set || ordinal_range_type(shape)) && name=="getenumerator"){
+        if((shape.kind==CompoundKind::sequence || shape.kind==CompoundKind::new_set || shape.kind==CompoundKind::sorted_list || ordinal_range_type(shape)) && name=="getenumerator"){
             if(!source.arguments.empty())throw Error("E_TYPE",result.location,"Wrong enumerator argument count");
             (void)sequence_type(CompoundKind::array,shape.element);const auto target=enumerator_type(shape.element);
             auto receiver=std::move(result.left);if(shape.kind!=CompoundKind::sequence)receiver=convert(std::move(receiver),sequence_type(CompoundKind::sequence,shape.element));
@@ -6284,7 +6299,7 @@ private:
     ABC_PASCAL_NOINLINE bool bind_dictionary_member(hir::Expr& result,const SyntaxExpr& source,bool global=false){
         const auto offset=global ? 1U : 0U;const auto owner=result.left->type;if(!compound(owner))return false;
         const auto shape=info(owner,result.location);const auto& name=source.token.text;
-        if(!global && (dictionary_enumerator_type(shape) || ((shape.kind==CompoundKind::dictionary || shape.kind==CompoundKind::sorted_dictionary || shape.kind==CompoundKind::dictionary_keys || shape.kind==CompoundKind::dictionary_values) && name=="getenumerator"))){
+        if(!global && (dictionary_enumerator_type(shape) || ((dictionary_kind(shape.kind) || shape.kind==CompoundKind::dictionary_keys || shape.kind==CompoundKind::dictionary_values) && name=="getenumerator"))){
             DictionaryMethod method;Type payload=Type::invalid;
             if(!dictionary_enumerator_type(shape)){method=DictionaryMethod::get_enumerator;payload=dictionary_enumerator(owner);}
             else if(name=="movenext")method=new_set_addressable(*result.left) ? DictionaryMethod::enumerator_move : DictionaryMethod::enumerator_move_copy;
@@ -6307,8 +6322,30 @@ private:
             const auto payload=method==DictionaryMethod::view_copy_to ? sequence_type(CompoundKind::array,shape.element) : Type::invalid;
             result=std::move(*dictionary_expression(owner,method,std::move(args),result.location,payload));return true;
         }
-        const bool sorted=shape.kind==CompoundKind::sorted_dictionary;
-        if(shape.kind!=CompoundKind::dictionary && !sorted)return false;
+        if(!dictionary_kind(shape.kind))return false;
+        const bool sorted=ordered_dictionary_kind(shape.kind);
+        if(shape.kind==CompoundKind::sorted_list && !global){
+            static const std::map<std::string,DictionaryMethod> list_methods{
+                {"capacity",DictionaryMethod::capacity},{"trimexcess",DictionaryMethod::trim_excess},
+                {"indexofkey",DictionaryMethod::index_of_key},{"indexofvalue",DictionaryMethod::index_of_value},
+                {"removeat",DictionaryMethod::remove_at}
+            };
+            const auto selected=list_methods.find(name);
+            if(selected!=list_methods.end()){
+                const auto method=selected->second;
+                if(method==DictionaryMethod::capacity && source.kind==SyntaxExprKind::member_call)
+                    throw Error("E_TYPE",result.location,"Capacity is a property","Capacity — это свойство");
+                std::vector<std::unique_ptr<hir::Expr>> arguments;
+                arguments.push_back(std::move(result.left));
+                const auto parameters=dictionary_parameters(module_.types,owner,Type::invalid,method);
+                if(source.arguments.size()+1!=parameters.size())
+                    throw Error("E_TYPE",result.location,"Wrong SortedList argument count","Неверное число аргументов SortedList");
+                for(std::size_t i=0;i<source.arguments.size();++i)arguments.push_back(expression(*source.arguments[i],parameters[i+1]));
+                result=std::move(*dictionary_expression(owner,method,std::move(arguments),result.location));
+                return true;
+            }
+            if(name=="keys" || name=="values")return false;
+        }
         if(name=="comparer"){if(source.kind==SyntaxExprKind::member_call)throw Error("E_TYPE",result.location,"Dictionary property is not callable");std::vector<std::unique_ptr<hir::Expr>> args;args.push_back(std::move(result.left));const auto policy=comparison_type(sorted ? CompoundKind::comparer_interface : CompoundKind::equality_comparer_interface,shape.key);result=std::move(*dictionary_expression(owner,DictionaryMethod::comparer,std::move(args),result.location,policy));return true;}
         if(sorted && name=="copyto"){
             const auto array=sequence_type(CompoundKind::array,shape.element);
@@ -6571,7 +6608,10 @@ private:
         if(source.left)result->left=clone_expression(*source.left);if(source.right)result->right=clone_expression(*source.right);for(const auto& argument:source.arguments)result->arguments.push_back(clone_expression(*argument));return result;
     }
     bool compound_property(const hir::Expr& target) const {
-        if(target.kind==hir::ExprKind::dictionary_call && (target.local&255U)==static_cast<std::size_t>(DictionaryMethod::get_item))return true;
+        if(target.kind==hir::ExprKind::dictionary_call){
+            const auto method=static_cast<DictionaryMethod>(target.local&255U);
+            return method==DictionaryMethod::get_item || method==DictionaryMethod::capacity;
+        }
         if(target.kind==hir::ExprKind::property_access || target.kind==hir::ExprKind::list_capacity || target.kind==hir::ExprKind::school_ip
             || target.kind==hir::ExprKind::buffer_call || target.kind==hir::ExprKind::association_call)return true;
         if(target.kind==hir::ExprKind::index)return string_type(target.left->type) || (compound(target.left->type) && info(target.left->type,target.location).kind==CompoundKind::list);
@@ -9040,7 +9080,7 @@ private:
             if (short_string(result.expression->type)) result.expression=convert(std::move(result.expression),Type::string);
             if(fixed(result.expression->type))result.expression=fixed_view(std::move(result.expression));
             if(const auto protocol=enumerable_contract(result.expression->type,result.location);protocol!=Type::invalid && protocol!=result.expression->type)result.expression=convert(std::move(result.expression),protocol);
-            if(compound(result.expression->type)){const auto shape=info(result.expression->type,result.location);if(shape.kind==CompoundKind::hash_set || shape.kind==CompoundKind::sorted_set || shape.kind==CompoundKind::new_set || ordinal_range_type(shape) || shape.kind==CompoundKind::dictionary || shape.kind==CompoundKind::sorted_dictionary || shape.kind==CompoundKind::dictionary_keys || shape.kind==CompoundKind::dictionary_values){const auto target=shape.kind==CompoundKind::dictionary || shape.kind==CompoundKind::sorted_dictionary || shape.kind==CompoundKind::dictionary_keys || shape.kind==CompoundKind::dictionary_values ? sequence_type(CompoundKind::sequence,shape.element) : shape.kind==CompoundKind::new_set ? info(shape.key,result.location).key : shape.key;result.expression=convert(std::move(result.expression),target);}}
+            if(compound(result.expression->type)){const auto shape=info(result.expression->type,result.location);if(shape.kind==CompoundKind::hash_set || shape.kind==CompoundKind::sorted_set || shape.kind==CompoundKind::new_set || ordinal_range_type(shape) || dictionary_kind(shape.kind) || shape.kind==CompoundKind::dictionary_keys || shape.kind==CompoundKind::dictionary_values){const auto target=dictionary_kind(shape.kind) || shape.kind==CompoundKind::dictionary_keys || shape.kind==CompoundKind::dictionary_values ? sequence_type(CompoundKind::sequence,shape.element) : shape.kind==CompoundKind::new_set ? info(shape.key,result.location).key : shape.key;result.expression=convert(std::move(result.expression),target);}}
             const auto sequence=result.expression->type;
             const bool lazy=compound(sequence) && info(sequence,result.location).kind==CompoundKind::sequence;
             if (sequence!=Type::string && (!compound(sequence) || (!indexed_sequence(info(sequence,result.location).kind) && !lazy)))

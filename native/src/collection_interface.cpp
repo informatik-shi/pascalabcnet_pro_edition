@@ -12,12 +12,12 @@
 namespace abc {
 namespace {
 using Object=std::shared_ptr<Aggregate>;
-bool native_kind(const TypeInfo& type){return (type.kind==CompoundKind::array&&type.rank==1)||type.kind==CompoundKind::list||type.kind==CompoundKind::hash_set||type.kind==CompoundKind::sorted_set||type.kind==CompoundKind::dictionary||type.kind==CompoundKind::sorted_dictionary||type.kind==CompoundKind::dictionary_keys||type.kind==CompoundKind::dictionary_values;}
+bool native_kind(const TypeInfo& type){return (type.kind==CompoundKind::array&&type.rank==1)||type.kind==CompoundKind::list||type.kind==CompoundKind::hash_set||type.kind==CompoundKind::sorted_set||dictionary_kind(type.kind)||type.kind==CompoundKind::dictionary_keys||type.kind==CompoundKind::dictionary_values;}
 void checkpoint(Values& values,const ExecutionOptions& options,std::uint64_t& work){if(work>=options.instruction_limit)throw runtime_error(RuntimeError::instruction_limit,values.location);if((work++&255U)==0&&options.cancelled&&options.cancelled())throw runtime_error(RuntimeError::cancelled,values.location);}
 }
 bool native_collection_type(const std::vector<TypeInfo>& types,Type from,Type to){
  if(!compound(from)||!compound(to)||static_cast<unsigned>(from)-64U>=types.size()||static_cast<unsigned>(to)-64U>=types.size())return false;
- const auto& source=types[static_cast<unsigned>(from)-64U];const auto& target=types[static_cast<unsigned>(to)-64U];return source.element==target.element&&((target.kind==CompoundKind::collection_interface&&native_kind(source))||(target.kind==CompoundKind::list_interface&&((source.kind==CompoundKind::array&&source.rank==1)||source.kind==CompoundKind::list))||(target.kind==CompoundKind::set_interface&&(source.kind==CompoundKind::hash_set||source.kind==CompoundKind::sorted_set))||(target.kind==CompoundKind::dictionary_interface&&(source.kind==CompoundKind::dictionary||source.kind==CompoundKind::sorted_dictionary)&&source.key==target.key));
+ const auto& source=types[static_cast<unsigned>(from)-64U];const auto& target=types[static_cast<unsigned>(to)-64U];return source.element==target.element&&((target.kind==CompoundKind::collection_interface&&native_kind(source))||(target.kind==CompoundKind::list_interface&&((source.kind==CompoundKind::array&&source.rank==1)||source.kind==CompoundKind::list))||(target.kind==CompoundKind::set_interface&&(source.kind==CompoundKind::hash_set||source.kind==CompoundKind::sorted_set))||(target.kind==CompoundKind::dictionary_interface&&dictionary_kind(source.kind)&&source.key==target.key));
 }
 bool native_enumerable_type(const std::vector<TypeInfo>& types,Type from,Type to){
  if(!compound(from)||!compound(to)||static_cast<unsigned>(from)-64U>=types.size()||static_cast<unsigned>(to)-64U>=types.size())return false;
@@ -35,7 +35,7 @@ std::shared_ptr<Aggregate> native_collection_sequence(Values& values,Type target
  if(ordinal_range_type(type_info(values.program,source->type)))return sequence_create(values,target,source,SequenceProvider::ordinal_range);
  const auto kind=type_info(values.program,source->type).kind;
  if(kind==CompoundKind::sorted_set)return sequence_create(values,target,source,SequenceProvider::sorted_set);
- if(kind==CompoundKind::sorted_dictionary)return sequence_create(values,target,source,SequenceProvider::sorted_dictionary);
+ if(ordered_dictionary_kind(kind))return sequence_create(values,target,source,SequenceProvider::sorted_dictionary);
  const auto provider=kind==CompoundKind::array?SequenceProvider::array:kind==CompoundKind::list?SequenceProvider::list:kind==CompoundKind::hash_set?SequenceProvider::hash_set:kind==CompoundKind::dictionary?SequenceProvider::dictionary_entries:kind==CompoundKind::dictionary_keys?SequenceProvider::dictionary_keys:SequenceProvider::dictionary_values;
  return sequence_create(values,target,source,provider);
 }
@@ -106,7 +106,7 @@ Value native_collection_invoke(Values& values,Type owner,std::size_t slot,const 
   return sorted_set_invoke(values,object->type,method,input,options);
  }
  if(view){const auto method=slot==0?DictionaryMethod::view_count:slot==4?DictionaryMethod::view_contains:DictionaryMethod::view_copy_to;return dictionary_invoke(values,object->type,slot==5?interface_contract(values.program.types,owner)[5].parameters[0].type:Type::invalid,method,input,options);}
- if(kind==CompoundKind::dictionary || kind==CompoundKind::sorted_dictionary){
+ if(dictionary_kind(kind)){
   if(slot==2){const auto pair=std::get<Object>(arguments[0]);const std::array<Value,3> add{receiver,pair->items[0]->value,pair->items[1]->value};return dictionary_invoke(values,object->type,Type::invalid,DictionaryMethod::add,add,options);}
   if(slot==6){if(!std::get<bool>(dictionary_invoke(values,object->type,Type::invalid,DictionaryMethod::pair_contains,input,options)))return false;const auto pair=std::get<Object>(arguments[0]);const std::array<Value,2> remove{receiver,pair->items[0]->value};(void)dictionary_invoke(values,object->type,Type::invalid,DictionaryMethod::remove,remove,options);return true;}
   const auto method=slot==0?DictionaryMethod::count:slot==3?DictionaryMethod::clear:slot==4?DictionaryMethod::pair_contains:DictionaryMethod::pair_copy_to;
