@@ -2132,7 +2132,22 @@ private:
         const bool many=items.size()>1;auto data=binary_pack(std::move(items),location);const auto type=data->type;args.push_back(std::move(data));return binary_expression(owner,newline?BinaryMethod::writeln_data:many?BinaryMethod::write_many:BinaryMethod::write_one,std::move(args),location,type);
     }
     bool bind_binary_function(hir::Expr& result,std::string_view name,std::string_view unit={}){
-        if((!unit.empty()&&unit!="pabcsystem")||result.arguments.empty()||!binary(result.arguments[0]->type))return false;
+        if (!unit.empty() && unit!="pabcsystem") return false;
+        const bool receiver=!result.arguments.empty() && binary(result.arguments.front()->type);
+        if (name=="serialize" || name=="deserialize") {
+            const auto location=result.location;
+            const auto owner=receiver ? result.arguments.front()->type : binary_type(Type::invalid,location);
+            if (info(owner,location).element!=Type::invalid)
+                throw Error("E_TYPE",location,"Serialization methods require an untyped binary file",
+                    "Методы сериализации требуют нетипизированный двоичный файл");
+            const bool write=name=="serialize";
+            const auto method=receiver ? (write ? BinaryMethod::serialize : BinaryMethod::deserialize)
+                : (write ? BinaryMethod::serialize_named : BinaryMethod::deserialize_named);
+            const auto object=object_type(location);
+            result=std::move(*binary_expression(owner,method,std::move(result.arguments),location,object));
+            return true;
+        }
+        if (!receiver) return false;
         BinaryMethod method;const auto owner=result.arguments[0]->type;const auto count=result.arguments.size();
         if(name=="assign"||name=="assignfile")method=BinaryMethod::assign;
         else if(name=="reset"||name=="rewrite"){(void)default_encoding();const bool create=name=="rewrite";if(count==1)method=create?BinaryMethod::rewrite:BinaryMethod::reset;else if(count==2){const bool text=string_type(result.arguments[1]->type)||result.arguments[1]->type==Type::character||result.arguments[1]->type==Type::nil;method=text?(create?BinaryMethod::rewrite_named:BinaryMethod::reset_named):(create?BinaryMethod::rewrite_encoding:BinaryMethod::reset_encoding);}else method=create?BinaryMethod::rewrite_named_encoding:BinaryMethod::reset_named_encoding;}

@@ -1306,14 +1306,8 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
                 if (object->items.empty() || object->items.front()->type!=payload)
                     throw Error("E_CAST",instruction.location,"Object has a different boxed type","В object хранится значение другого типа");
                 stack.push_back(values.copy(object->items.front()->value));
-            } else if (std::holds_alternative<NilString>(value)) {
-                stack.push_back(values.zero(instruction.type));
             } else {
-                if (!values.remaining) trap(instruction,RuntimeError::allocation_limit);
-                --values.remaining;
-                auto object=std::get<std::shared_ptr<Aggregate>>(values.zero(instruction.type,true));
-                object->items.push_back(values.cell(payload,std::move(value)));
-                stack.emplace_back(std::move(object));
+                stack.push_back(values.box_scalar(instruction.type,payload,std::move(value)));
             }
             break;
         }

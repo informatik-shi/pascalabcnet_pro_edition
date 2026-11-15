@@ -123,6 +123,14 @@ struct Values {
         }
         }
     }
+    Value box_scalar(Type object_type,Type payload,Value value) {
+        if (std::holds_alternative<NilString>(value)) return zero(object_type);
+        if (!remaining) throw runtime_error(RuntimeError::allocation_limit,location);
+        --remaining;
+        auto object=std::get<std::shared_ptr<Aggregate>>(zero(object_type,true));
+        object->items.push_back(cell(payload,std::move(value)));
+        return object;
+    }
     Value copy(const Value& value) {
         if(const auto* set=std::get_if<NewSetValue>(&value)){if(!set->storage)throw runtime_error(RuntimeError::invalid_bytecode,location);return NewSetValue{set->type,cell(set->storage->type,set->storage->value)};}
         if (const auto* aggregate = std::get_if<std::shared_ptr<Aggregate>>(&value);

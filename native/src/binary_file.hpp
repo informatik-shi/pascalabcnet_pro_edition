@@ -4,7 +4,7 @@
 #include <span>
 namespace abc {
 struct Values;class FileContext;
-enum class BinaryMethod:std::uint8_t {assign,reset,rewrite,reset_named,rewrite_named,reset_encoding,rewrite_encoding,reset_named_encoding,rewrite_named_encoding,close,truncate,eof,position,size,seek,name,full_name,to_string,erase,rename,read_data,write_one,write_many,read_bytes,write_bytes,writeln,writeln_data,write_empty};
+enum class BinaryMethod:std::uint8_t {assign,reset,rewrite,reset_named,rewrite_named,reset_encoding,rewrite_encoding,reset_named_encoding,rewrite_named_encoding,close,truncate,eof,position,size,seek,name,full_name,to_string,erase,rename,read_data,write_one,write_many,read_bytes,write_bytes,writeln,writeln_data,write_empty,serialize,deserialize,serialize_named,deserialize_named};
 struct BinaryFile {
     std::filesystem::path filename;
     std::unique_ptr<BinaryStream> stream;

@@ -7,6 +7,7 @@
 #include "encoding_metadata.hpp"
 #include "type_names.hpp"
 #include "fixed_array.hpp"
+#include "scalar_serialization.hpp"
 #include <algorithm>
 #include <bit>
 #include <limits>
@@ -84,18 +85,25 @@ std::vector<Type> binary_parameters(const std::vector<TypeInfo>& types,Type owne
     case BinaryMethod::seek:return {owner,Type::int64};case BinaryMethod::read_bytes:return {owner,Type::integer};
     case BinaryMethod::write_bytes:return {owner,shape.key};case BinaryMethod::write_one:case BinaryMethod::write_many:return {owner,payload(operand)};
     case BinaryMethod::writeln_data:return {owner,payload(operand)};
+    case BinaryMethod::serialize:return {owner,payload(operand)};
+    case BinaryMethod::serialize_named:return {Type::string,payload(operand)};
+    case BinaryMethod::deserialize_named:return {Type::string};
     default:return {owner};}
 }
 Type binary_result(const std::vector<TypeInfo>& types,Type owner,std::size_t operand){
     switch(method(operand)){case BinaryMethod::eof:return Type::boolean;case BinaryMethod::position:case BinaryMethod::size:return Type::int64;
     case BinaryMethod::name:case BinaryMethod::full_name:case BinaryMethod::to_string:return Type::string;
-    case BinaryMethod::read_data:return payload(operand);case BinaryMethod::read_bytes:return info(types,owner).key;
+    case BinaryMethod::read_data:case BinaryMethod::deserialize:case BinaryMethod::deserialize_named:return payload(operand);
+    case BinaryMethod::read_bytes:return info(types,owner).key;
     default:return Type::unit;}
 }
 bool binary_signature_valid(const Program& program,Type owner,std::size_t operand){
     if(!compound(owner)||static_cast<unsigned>(owner)-64U>=program.types.size())return false;const auto& shape=type_info(program,owner);
-    if(shape.kind!=CompoundKind::binary_file||method(operand)>BinaryMethod::write_empty)return false;
+    if(shape.kind!=CompoundKind::binary_file||method(operand)>BinaryMethod::deserialize_named)return false;
     const auto code=method(operand);const auto t=payload(operand);
+    if (code>=BinaryMethod::serialize)
+        return shape.element==Type::invalid && compound(t) && valid_value_type(program,t)
+            && type_info(program,t).kind==CompoundKind::boxed_object;
     if(code==BinaryMethod::read_data)return binary_value_supported(program.types,t,shape.element==Type::invalid)&& (shape.element==Type::invalid||shape.element==t);
     const auto writable=[&](Type value){return binary_value_supported(program.types,value,true,true)&&(shape.element==Type::invalid||value==shape.element||(compound(value)&&type_info(program,value).kind==CompoundKind::array));};
     if(code==BinaryMethod::write_one)return writable(t);
@@ -117,7 +125,33 @@ void FileContext::prepare_binary_open(const std::shared_ptr<BinaryFile>& file,So
 }
 Value binary_invoke(Values& values,FileContext& files,Type owner,std::size_t operand,std::span<const Value> args){
     const auto code=method(operand);const auto location=values.location;if(code==BinaryMethod::writeln||code==BinaryMethod::writeln_data)throw runtime_error(RuntimeError::binary_writeln,location);
-    auto& file=file_value(args[0],location);const ExecutionOptions defaults;const auto& options=files.execution_options?*files.execution_options:defaults;
+    const ExecutionOptions defaults;const auto& options=files.execution_options?*files.execution_options:defaults;
+    if (code>=BinaryMethod::serialize) {
+        const bool writing=code==BinaryMethod::serialize || code==BinaryMethod::serialize_named;
+        std::shared_ptr<BinaryFile> temporary;
+        BinaryFile* target=nullptr;
+        if (code==BinaryMethod::serialize_named || code==BinaryMethod::deserialize_named) {
+            temporary=std::make_shared<BinaryFile>();
+            assign(files,*temporary,args.front(),location);
+            open(files,temporary,writing,{TextEncodingKind::utf8,false,true},location);
+            target=temporary.get();
+        } else {
+            target=&file_value(args.front(),location);
+            opened(*target,location);
+        }
+        if (writing) {
+            const auto& object=std::get<std::shared_ptr<Aggregate>>(args.back());
+            if (object->nil || object->items.size()!=1)
+                throw Error("E_FORMAT",location,"Serialization requires a supported boxed scalar",
+                    "Для сериализации требуется поддерживаемое скалярное значение в object");
+            const auto& item=*object->items.front();
+            serialize_scalar(*target->stream,item.type,item.value,location,options);
+            return false;
+        }
+        auto scalar=deserialize_scalar(*target->stream,location,options);
+        return values.box_scalar(payload(operand),scalar.type,std::move(scalar.value));
+    }
+    auto& file=file_value(args[0],location);
     if(code==BinaryMethod::assign){assign(files,file,args[1],location);return false;}
     if(code>=BinaryMethod::reset&&code<=BinaryMethod::rewrite_named_encoding){
         const auto n=static_cast<unsigned>(code)-static_cast<unsigned>(BinaryMethod::reset);const bool create=(n&1U)!=0,named=(n==2||n==3||n==6||n==7),explicit_encoding=n>=4;
