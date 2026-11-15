@@ -322,6 +322,7 @@ struct SyntaxStmt {
     bool declares_control = false, descending = false;
     Token assignment_operator{};
     bool field_initialization=false;
+    std::vector<Token> tuple_bindings{};
 };
 
 struct SyntaxParameter { Token name; std::shared_ptr<SyntaxType> type; bool by_reference; std::shared_ptr<SyntaxExpr> default_value; bool read_only=false,variadic=false; };
@@ -908,9 +909,21 @@ private:
             result.kind=SyntaxStmtKind::continue_stmt;
         } else if (accept("foreach")) {
             result.kind=SyntaxStmtKind::foreach_loop; result.declares_control=accept("var");
-            if (is("(")) throw Error("E_UNSUPPORTED",current_.location,"Foreach tuple deconstruction is not ported yet");
-            result.names.push_back(name());
-            if (accept(":")) { result.annotation=type_syntax(); result.declares_control=true; }
+            if(accept("(")){
+                if(!result.declares_control)fail("Expected var before foreach tuple bindings");
+                result.names.push_back({TokenKind::name,"$foreach_tuple",result.token.location});
+                do {
+                    auto binding=name();
+                    if(binding.text=="_" && !binding.escaped)
+                        throw Error("E_SYNTAX",binding.location,"Expected a foreach binding identifier",
+                            "Ожидалось имя переменной foreach");
+                    result.tuple_bindings.push_back(std::move(binding));
+                } while(accept(","));
+                expect(")");
+            }else{
+                result.names.push_back(name());
+                if (accept(":")) { result.annotation=type_syntax(); result.declares_control=true; }
+            }
             expect("in"); result.expression=expression();
             if (accept("index")) result.names.push_back(name());
             expect("do"); result.body=std::make_unique<SyntaxStmt>(statement());
@@ -9602,6 +9615,45 @@ private:
             result.sequence_local=temporary(sequence); result.index_local=temporary(lazy ? Type::int64 : Type::integer); result.version_local=temporary(Type::int64);
             result.target=std::make_unique<hir::Expr>(); result.target->kind=hir::ExprKind::local;
             result.target->local=control; result.target->type=type; result.target->location=name.location;
+            std::vector<hir::Stmt> tuple_assignments;
+            if(!source.tuple_bindings.empty()){
+                const auto location=source.tuple_bindings.front().location;
+                if(!compound(element) || (info(element,location).kind!=CompoundKind::tuple
+                    && !key_value_pair_type(info(element,location))))
+                    throw Error("E_TYPE",location,"Foreach bindings require tuple or dictionary pair elements",
+                        "Для распаковки foreach требуются элементы-кортежи или пары словаря");
+                const auto& fields=info(element,location).fields;
+                if(source.tuple_bindings.size()>fields.size())
+                    throw Error("E_TYPE",location,"Too many foreach bindings for the element",
+                        "Слишком много переменных для распаковки элемента foreach");
+                for(std::size_t n=0;n<source.tuple_bindings.size();++n){
+                    const auto& binding=source.tuple_bindings[n];
+                    if(lookup(binding))throw Error("E_DUPLICATE",binding.location,"Foreach binding name is already declared",
+                        "Имя переменной распаковки foreach уже объявлено");
+                    const auto slot=module_.locals.size();
+                    const auto component=fields[n].type;
+                    module_.locals.push_back({binding.text,component,!in_routine_});
+                    scopes_.back().emplace(binding.text,slot);
+                    if(!in_routine_)lexical_globals_.insert(slot);
+
+                    hir::Stmt assignment;
+                    assignment.kind=hir::StmtKind::assign;
+                    assignment.location=binding.location;
+                    assignment.local=slot;
+                    assignment.declaration=true;
+                    assignment.expression=std::make_unique<hir::Expr>();
+                    assignment.expression->kind=hir::ExprKind::field;
+                    assignment.expression->type=component;
+                    assignment.expression->local=n;
+                    assignment.expression->location=binding.location;
+                    assignment.expression->left=std::make_unique<hir::Expr>();
+                    assignment.expression->left->kind=hir::ExprKind::local;
+                    assignment.expression->left->type=element;
+                    assignment.expression->left->location=binding.location;
+                    assignment.expression->left->local=control;
+                    tuple_assignments.push_back(std::move(assignment));
+                }
+            }
             std::optional<std::size_t> index_control;
             if(source.names.size()==2){
                 const auto& index=source.names[1];
@@ -9615,6 +9667,14 @@ private:
             for_controls_.insert(control); ++loop_depth_;
             result.body=std::make_unique<hir::Stmt>(scoped_statement(*source.body));
             --loop_depth_; for_controls_.erase(control); scopes_.pop_back();
+            if(!tuple_assignments.empty()){
+                auto body=std::make_unique<hir::Stmt>();
+                body->kind=hir::StmtKind::block;
+                body->location=result.body->location;
+                body->statements=std::move(tuple_assignments);
+                body->statements.push_back(std::move(*result.body));
+                result.body=std::move(body);
+            }
             if(index_control){
                 for_controls_.erase(*index_control);
                 const auto location=source.names[1].location;

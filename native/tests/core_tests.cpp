@@ -5708,8 +5708,9 @@ void foreach_loops() {
     for (const auto* source:{"begin foreach var x in 1 do Write(x); end.",
         "begin foreach var x in nil do Write(x); end.",
         "uses Collections; begin foreach var x in new Stack<integer> do Write(x); end.",
-        "uses Collections; begin foreach var x in new DynArray<integer> do Write(x); end.",
-        "begin foreach var (x,y) in Arr(1) do Write(x); end."}) compile_error(source,"E_UNSUPPORTED");
+        "uses Collections; begin foreach var x in new DynArray<integer> do Write(x); end."}) compile_error(source,"E_UNSUPPORTED");
+    compile_error("begin foreach var (x,y) in Arr(1) do Write(x); end.","E_TYPE");
+    compile_error("begin foreach var (x,y,z) in Arr((1,2)) do Write(x); end.","E_TYPE");
     compile_error("begin foreach var x in Arr(1) index i do i:=5; end.","E_TYPE");
     compile_error("begin foreach var x in Arr(1) index i do Write(x); Write(i); end.","E_NAME");
     abc::ExecutionOptions limits; limits.instruction_limit=60;
