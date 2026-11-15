@@ -101,10 +101,22 @@ bool virtual_signature_matches(const Routine& a,const Routine& b){
   return x.type==y.type && x.by_reference==y.by_reference && x.variadic==y.variadic && x.read_only==y.read_only;
  });
 }
+bool has_abstract_methods(const std::vector<TypeInfo>& types,const std::vector<Routine>& routines,Type owner){
+ std::set<std::size_t> slots;
+ for(;owner!=Type::invalid;owner=class_parent(types,owner)){
+  for(const auto& method:routines){
+   if(method.owner!=owner || !method.virtual_root || !slots.insert(*method.virtual_root).second)continue;
+   if(method.abstract_method)return true;
+  }
+ }
+ return false;
+}
 void verify_virtual_methods(const Program& program){
  std::set<std::pair<Type,std::size_t>> slots;
  for(std::size_t id=0;id<program.routines.size();++id){
   const auto& method=program.routines[id];
+  if(method.abstract_method && (!method.virtual_root || !method.code.empty()))
+   throw Error("E_BYTECODE",{},"Invalid abstract method metadata");
   if(!method.virtual_root)continue;
   const auto root=*method.virtual_root;
   if(root>=program.routines.size() || !valid(program.types,method.owner)
@@ -117,6 +129,12 @@ void verify_virtual_methods(const Program& program){
   if(declaration.virtual_root!=root || !virtual_signature_matches(method,declaration) || suffix(method)!=suffix(declaration)
      || (root!=id && !class_reference_compatible(program.types,method.owner,declaration.owner)))
    throw Error("E_BYTECODE",{},"Invalid virtual method declaration or override");
+ }
+ for(std::size_t i=0;i<program.types.size();++i){
+  const auto& type=program.types[i];
+  if(type.kind==CompoundKind::object_class && !type.abstract_class
+     && has_abstract_methods(program.types,program.routines,static_cast<Type>(64+i)))
+   throw Error("E_BYTECODE",{},"Concrete class has unresolved abstract methods");
  }
 }
 std::size_t virtual_method_target(const Program& program,std::size_t id,Type receiver,SourceLocation location){

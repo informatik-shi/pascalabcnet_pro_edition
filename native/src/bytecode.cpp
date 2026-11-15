@@ -79,6 +79,7 @@ public:
         }
         code_ = &program_.code; statement(module.body); emit(Op::halt,Type::invalid,0,module.body.location);
         for (std::size_t i = 0; i < module.routines.size(); ++i) {
+            if(program_.routines[i].abstract_method)continue;
             routine_ = i; code_ = &program_.routines[i].code;
             if((compound(program_.routines[i].result)&&type_info(program_,program_.routines[i].result).kind==CompoundKind::fixed_array)||(!program_.routines[i].name.starts_with('$')&&record_initializer_operand(program_,program_.routines[i].result))){
                 emit(Op::make_default,program_.routines[i].result,record_initializer_operand(program_,program_.routines[i].result)<<2U,{});local(Op::store,program_.routines[i].result_local,{});
@@ -696,6 +697,8 @@ private:
             for(const auto& index:node.arguments)expression(*index);
             const auto op=interface ? Op::interface_call
                 : program_.routines.at(*node.getter).virtual_root && node.operation!="$inherited" ? Op::call_virtual : Op::call_user;
+            if(op==Op::call_user && program_.routines.at(*node.getter).abstract_method)
+                throw Error("E_TYPE",node.location,"Cannot call an abstract base member","Нельзя вызвать абстрактный метод базового класса");
             emit(op,interface ? node.operation_type : node.type,*node.getter,node.location);
             break;
         }
@@ -1481,6 +1484,8 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if(instruction.operand==static_cast<std::size_t>(IniMethod::initialize)
                 && (!routine || !routine->constructor || !class_reference_compatible(program.types,routine->owner,type)))
                 invalid(instruction,"Invalid inherited TIniFile constructor");
+            if(instruction.operand==static_cast<std::size_t>(IniMethod::construct) && type_info(program,type).abstract_class)
+                invalid(instruction,"Cannot construct an abstract class");
             break;
         case Op::sort_call: if(!sort_signature(program,type,instruction.operand))invalid(instruction,"Invalid typed sort metadata");break;
         case Op::comparer_create:
@@ -1517,7 +1522,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         case Op::make_default: case Op::store_ref: case Op::drop:
             if (!valid_value_type(program,type) || (instruction.op==Op::make_default && ((instruction.operand&3U)>2 || (instruction.operand>>2U)!=((instruction.operand&3U)==2?0:record_initializer_operand(program,type))))) invalid(instruction,"Invalid value type");
             if (instruction.op==Op::make_default && (instruction.operand&3U)==1 && compound(type) && type_info(program,type).kind==CompoundKind::object_class
-                    && has_parameterless_constructor(program,type))
+                    && (type_info(program,type).abstract_class || has_parameterless_constructor(program,type)))
                 invalid(instruction,"Class constructor cannot be bypassed");
             if(instruction.op==Op::make_default&&(instruction.operand&3U)==1&&compound(type)&&type_info(program,type).kind==CompoundKind::record
                 &&std::any_of(program.routines.begin(),program.routines.end(),[type](const auto& r){return r.constructor&&r.owner==type&&r.parameters.size()==1;}))
@@ -1546,6 +1551,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
                 || (program.routines[instruction.operand].owner!=type
                     && !class_reference_compatible(program.types,type,program.routines[instruction.operand].owner))
                 || program.routines[instruction.operand].result!=Type::unit
+                || type_info(program,type).abstract_class
                 || program.routines[instruction.operand].parameters.empty() || !program.routines[instruction.operand].captures.empty())
                 invalid(instruction,"Invalid class constructor target");
             break;
@@ -1553,6 +1559,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         case Op::call_virtual:
             if (instruction.operand >= program.routines.size() || program.routines[instruction.operand].constructor || type != program.routines[instruction.operand].result
                 || !program.routines[instruction.operand].captures.empty()
+                || (instruction.op==Op::call_user && program.routines[instruction.operand].abstract_method)
                 || (instruction.op==Op::call_virtual && !program.routines[instruction.operand].virtual_root)) invalid(instruction,"Invalid user call");
             break;
         case Op::call_base_constructor:
@@ -2198,6 +2205,8 @@ void verify(const Program& program) {
     if(fixed_owners.size()!=static_cast<std::size_t>(std::count_if(program.types.begin(),program.types.end(),[](const auto& t){return t.kind==CompoundKind::fixed_array;})))throw Error("E_BYTECODE",{},"Missing fixed array shape");
     for (std::size_t i = 0; i < program.types.size(); ++i) {
         const auto& type = program.types[i]; unsigned level = 1;
+        if(type.abstract_class && type.kind!=CompoundKind::object_class)
+            throw Error("E_BYTECODE",{},"Abstract class flag on a non-class type");
         if(type.native_record!=NativeRecord::none && ((type.native_record!=NativeRecord::ordinal_range && type.native_record!=NativeRecord::real_interval && type.native_record!=NativeRecord::key_value_pair && type.native_record!=NativeRecord::dictionary_enumerator && type.native_record!=NativeRecord::collection_enumerator && !complex_number_type(type) && !calendar_record(type) && !decimal_type(type)) || type.kind!=CompoundKind::record))throw Error("E_BYTECODE",{},"Invalid native record metadata");
         for (const auto& field:type.fields) if (!valid_member_access(field.access)
             || (type.kind!=CompoundKind::object_class && !(type.kind==CompoundKind::record&&type.native_record==NativeRecord::none) && field.access!=MemberAccess::public_member))
@@ -2448,7 +2457,7 @@ void verify(const Program& program) {
             if (!owned.contains(parameter.local) || program.locals[parameter.local].type != parameter.type
                 || !parameters.insert(parameter.local).second || (routine.result!=Type::unit && parameter.local==routine.result_local))
                 throw Error("E_BYTECODE",{},"Invalid parameter");
-        verify_body(program,routine.code,&routine);
+        if(!routine.abstract_method)verify_body(program,routine.code,&routine);
     }
     verify_body(program,program.code,nullptr);
     std::optional<Type> school_cache_type;

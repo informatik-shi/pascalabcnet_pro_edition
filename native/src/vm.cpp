@@ -308,6 +308,8 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
         if (id>=program.routines.size()) throw runtime_error(RuntimeError::invalid_bytecode,location);
         if (frames.size()>options.call_limit) throw runtime_error(RuntimeError::call_limit,location);
         const auto& routine=program.routines[id];
+        if(routine.abstract_method)
+            throw Error("E_ABSTRACT",location,"Abstract method has no implementation","У абстрактного метода нет реализации");
         if (captured.size()!=routine.captures.size()) throw runtime_error(RuntimeError::invalid_bytecode,location);
         if (routine.owner!=Type::invalid) {
             if(type_info(program,routine.owner).kind==CompoundKind::record)stack[stack.size()-routine.parameters.size()]=method_receiver_reference(values,routine.owner,stack[stack.size()-routine.parameters.size()]);

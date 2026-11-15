@@ -257,6 +257,7 @@ struct SyntaxType {
     std::vector<bool> references{}, variadics{};
     bool system_qualified=false;
     bool enum_flags=false;
+    bool abstract_class=false;
     std::vector<std::unique_ptr<SyntaxExpr>> enum_values{};
     bool named=false;
     bool modern_callable=false;
@@ -337,6 +338,7 @@ struct SyntaxRoutine {
     bool static_member=false;
     bool implicit_constructor=false;
     MethodDispatch dispatch=MethodDispatch::ordinary;
+    bool abstract_method=false;
     MemberAccess access=MemberAccess::public_member;
 };
 
@@ -345,7 +347,7 @@ bool reserved(std::string_view text) {
         "program", "begin", "end", "var", "if", "then", "else", "while", "do", "and", "or", "not",
         "div", "mod", "xor", "shl", "shr", "true", "false", "uses", "unit", "type", "const", "function", "procedure",
         "for", "to", "downto", "repeat", "until", "foreach", "in", "case", "of", "array", "record", "class", "nil",
-        "constructor", "inherited", "property", "interface", "public", "private", "protected", "internal", "static", "virtual", "override",
+        "constructor", "inherited", "property", "interface", "public", "private", "protected", "internal", "static", "virtual", "override", "abstract",
         "new", "default", "typeof", "out", "params", "set", "try", "except", "finally", "raise", "break", "continue", "exit", "writeln", "write", "readln", "read"};
     return words.contains(text);
 }
@@ -562,8 +564,11 @@ private:
                 if(result->methods.size()+result->properties.size()>256)throw Error("E_LIMIT",current_.location,"Interface member limit exceeded");
             }expect("end");
         }
-        else if (is("record") || is("class")) {
-            const bool object=accept("class");if (!object) expect("record");
+        else if (is("record") || is("class") || is("abstract")) {
+            result->abstract_class=accept("abstract");
+            const bool object=accept("class");
+            if(result->abstract_class && !object)fail("Expected class after abstract");
+            if(!object)expect("record");
             result->kind=object ? "class" : "record";
             if(accept("(")){do{if(result->parents.size()>=16)throw Error("E_LIMIT",current_.location,"Interface parent limit exceeded");result->parents.push_back(type_syntax());}while(accept(","));expect(")");}
             if (object && is(";")) throw Error("E_UNSUPPORTED",current_.location,"Forward class declarations are not ported yet");
@@ -789,14 +794,25 @@ private:
             expect(";");return result;
         }
         expect(";");
-        while(is("overload") || is("virtual") || is("override")){
+        while(is("overload") || is("virtual") || is("override") || is("abstract")){
             const auto modifier=consume();
-            if(modifier.text!="overload"){
+            if(modifier.text=="abstract"){
+                if(!in_class || result->abstract_method)
+                    throw Error("E_TYPE",modifier.location,"Invalid abstract method modifier","Недопустимый модификатор абстрактного метода");
+                result->abstract_method=true;
+            }else if(modifier.text!="overload"){
                 if(!in_class || result->dispatch!=MethodDispatch::ordinary)
                     throw Error("E_TYPE",modifier.location,"Invalid virtual method modifier","Недопустимый модификатор виртуального метода");
                 result->dispatch=modifier.text=="virtual" ? MethodDispatch::virtual_method : MethodDispatch::override_method;
             }
             expect(";");
+        }
+        if(result->abstract_method){
+            if(result->dispatch==MethodDispatch::ordinary)result->dispatch=MethodDispatch::virtual_method;
+            if(is("begin") || is("var") || is("const"))
+                throw Error("E_TYPE",result->name.location,"Abstract method cannot have a body","У абстрактного метода не может быть тела");
+            result->declaration_only=true;
+            return result;
         }
         if (in_class && !is("begin") && !is("var") && !is("const")) { result->declaration_only=true;return result; }
         while (is("var") || is("const") || is("function") || is("procedure")) {
@@ -1385,6 +1401,7 @@ public:
                 const auto type=static_cast<Type>(64+module_.types.size());
                 module_.types.push_back({name.text,syntax->kind=="interface" ? CompoundKind::user_interface : CompoundKind::object_class,Type::invalid,{}});
                 module_.types.back().display_name=name.spelling.empty() ? name.text : name.spelling;
+                module_.types.back().abstract_class=syntax->abstract_class;
                 aliases_[name.text]=type;resolved_types_[syntax.get()]=type;
             }
         }
@@ -1797,6 +1814,8 @@ private:
             if(std::find_if(found+1,source.routines.end(),matches)!=source.routines.end())throw Error("E_TYPE",definition->name.location,"Ambiguous method definition");
             auto& declared=**found;
             if (!declared.declaration_only) throw Error("E_DUPLICATE",definition->name.location,"Class method already has a body");
+            if(declared.abstract_method)
+                throw Error("E_TYPE",definition->name.location,"Abstract method cannot have a body","У абстрактного метода не может быть тела");
             if ((definition->static_member&&!declared.static_member) || declared.constructor!=definition->constructor || declared.function_header!=definition->function_header
                 || (definition->result && resolve_type(*definition->result)!=resolve_type(*declared.result)))
                 throw Error("E_TYPE",definition->name.location,"Method definition does not match its declared signature");
@@ -1815,7 +1834,7 @@ private:
             }
             declared.body=std::move(definition->body);declared.declaration_only=false;
         }
-        for (const auto& routine:source.routines) if (routine->declaration_only)
+        for (const auto& routine:source.routines) if (routine->declaration_only && !routine->abstract_method)
             throw Error("E_NAME",routine->name.location,"Declared class method has no implementation");
         for(const auto& routine:source.routines)if(routine->constructor){
             const auto& body=constructor_statements(*routine);
@@ -1855,6 +1874,7 @@ private:
                 || method.constructor || syntax.explicit_interface)
                 throw Error("E_TYPE",syntax.name.location,"Virtual methods require an instance class method",
                     "Виртуальный метод должен быть методом экземпляра класса");
+            method.abstract_method=syntax.abstract_method;
             if(syntax.dispatch==MethodDispatch::virtual_method){
                 method.virtual_root=id;
                 return;
@@ -1878,6 +1898,16 @@ private:
                 "У базового класса нет виртуального метода с такой сигнатурой");
         };
         for(std::size_t i=0;i<source.routines.size();++i)bind(i);
+        if(std::any_of(source.routines.begin(),source.routines.end(),[](const auto& routine){return routine->abstract_method;})){
+            std::vector<Routine> signatures;
+            signatures.reserve(module_.routines.size());
+            for(const auto& routine:module_.routines)signatures.push_back(routine.signature);
+            for(std::size_t i=0;i<module_.types.size();++i){
+                auto& type=module_.types[i];
+                if(type.kind==CompoundKind::object_class && !type.abstract_class)
+                    type.abstract_class=has_abstract_methods(module_.types,signatures,static_cast<Type>(64+i));
+            }
+        }
     }
     std::size_t field_property_accessor(Type owner,Type type,std::size_t field,bool write,SourceLocation location) {
         if (module_.routines.size()>=256) throw Error("E_LIMIT",location,"Routine limit exceeded");
@@ -4374,6 +4404,8 @@ private:
         const auto& overloads=class_method_overloads_.at(receiver).at(source.token.text);
         if(overloads.size()>1){std::vector<MethodOverload> candidates;for(auto candidate:overloads){const auto& signature=module_.routines[candidate].signature;std::vector<CallableParameter> parameters;for(std::size_t n=1;n<signature.parameters.size();++n)parameters.push_back({signature.parameters[n].type,signature.parameters[n].by_reference,signature.parameters[n].variadic});auto required=parameters.size()-(parameters.size()&&parameters.back().variadic?1U:0U);while(required&&candidate<parameter_defaults_.size()&&required<parameter_defaults_[candidate].size()&&parameter_defaults_[candidate][required])--required;candidates.push_back({candidate,std::move(parameters),required});}id=choose_method_overload(std::move(candidates),source,bound_arguments);}
         const auto signature=module_.routines[id].signature;
+        if(!dynamic_dispatch && signature.abstract_method)
+            throw Error("E_TYPE",result->location,"Cannot call an abstract base member","Нельзя вызвать абстрактный метод базового класса");
         const bool bare=source.kind==SyntaxExprKind::field || source.kind==SyntaxExprKind::name;
         if (bare && callable_type(expected)) {
             const auto& wanted=info(expected,result->location);
@@ -4461,6 +4493,9 @@ private:
         do {
  {
             auto type = resolve_type(*source.constructed);
+            if(!source.array_construction && compound(type) && info(type,result->location).abstract_class)
+                throw Error("E_TYPE",result->location,"Cannot create an instance of the abstract class '"+info(type,result->location).display_name+"'",
+                    "Нельзя создать экземпляр абстрактного класса '"+info(type,result->location).display_name+"'");
             if (!source.array_construction && is_decimal(type)) return make_decimal_object(type,source,result->location);
             if (!source.array_construction && is_calendar(type)) return make_calendar_object(type,source,result->location);
             if (!source.array_construction && is_complex(type)) {
@@ -6324,7 +6359,11 @@ private:
                 if (!property->setter) throw Error("E_TYPE",property->location,"Property is read-only");
                 const auto indices=property->operation=="interface"?interface_contract(module_.types,property->operation_type).at(*property->setter).parameters.size()-1:module_.routines.at(*property->setter).signature.parameters.size()-(property->operation=="static"?1U:2U);if(property->arguments.size()!=indices)throw Error("E_TYPE",property->location,"Indexed property requires indices","Для индексируемого свойства нужны индексы");
                 auto setter=std::make_unique<hir::Expr>();setter->kind=hir::ExprKind::user_call;setter->type=Type::unit;setter->location=property->location;setter->local=*property->setter;
-                if(property->operation=="$inherited")setter->operation="$inherited";
+                if(property->operation=="$inherited"){
+                    if(module_.routines.at(setter->local).signature.abstract_method)
+                        throw Error("E_TYPE",property->location,"Cannot call an abstract base member","Нельзя вызвать абстрактный метод базового класса");
+                    setter->operation="$inherited";
+                }
                 if(property->operation=="interface"){setter->kind=hir::ExprKind::interface_call;setter->operation_type=property->operation_type;setter->left=std::move(property->left);}else if(property->operation!="static")setter->arguments.push_back(std::move(property->left));for(auto& index:property->arguments)setter->arguments.push_back(std::move(index));setter->arguments.push_back(convert(value(property->type),property->type));
                 result.kind=hir::StmtKind::call;result.expression=std::move(setter);return result;
             }

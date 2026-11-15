@@ -12,6 +12,7 @@ Type class_parent(const std::vector<TypeInfo>&,Type);
 bool valid_class_ancestry(const std::vector<TypeInfo>&,Type);
 bool class_reference_compatible(const std::vector<TypeInfo>&,Type from,Type to);
 bool virtual_signature_matches(const Routine&,const Routine&);
+bool has_abstract_methods(const std::vector<TypeInfo>&,const std::vector<Routine>&,Type);
 void verify_virtual_methods(const Program&);
 std::size_t virtual_method_target(const Program&,std::size_t,Type,SourceLocation);
 bool interface_cast_valid(const Program&,Type from,Type to,bool checked);

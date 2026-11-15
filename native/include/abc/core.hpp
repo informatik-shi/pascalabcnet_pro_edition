@@ -477,6 +477,7 @@ struct TypeInfo {
     NativeRecord native_record=NativeRecord::none;
     std::string display_name{}; // Original declaration spelling, independent of lookup folding.
     InterfaceStorage interfaces{};
+    bool abstract_class=false;
 };
 inline bool ordinal_range_type(const TypeInfo& type){return type.native_record==NativeRecord::ordinal_range;}
 inline bool real_interval_type(const TypeInfo& type){return type.native_record==NativeRecord::real_interval;}
@@ -539,6 +540,7 @@ struct Routine {
     bool constructor=false;
     MemberAccess access=MemberAccess::public_member;
     std::optional<std::size_t> virtual_root;
+    bool abstract_method=false;
 };
 
 inline bool callable_matches(const TypeInfo& type, const Routine& routine) {
