@@ -2366,7 +2366,17 @@ private:
         std::vector<std::unique_ptr<hir::Expr>> args;
         args.push_back(std::move(receiver.left));
         for (const auto& arg:source.arguments) args.push_back(expression(*arg));
-        return decimal_expression(type,method,std::move(args),location);
+        auto payload=Type::integer;
+        if (method==M::to_string && args.size()==2) {
+            if (is_number_format(args[1]->type)) {
+                method=M::to_string_provider;
+                payload=args[1]->type;
+            } else method=M::to_string_specifier;
+        } else if (method==M::to_string && args.size()==3) {
+            method=M::to_string_specifier_provider;
+            payload=number_format_type(location);
+        }
+        return decimal_expression(type,method,std::move(args),location,payload);
     }
     std::unique_ptr<hir::Expr> bind_decimal_binary(hir::Expr& result,Type owner) {
         using M=DecimalMethod;
@@ -2995,8 +3005,8 @@ private:
             const auto& shape=info(type,location);
             return shape.kind==CompoundKind::array && shape.rank==1 && shape.element==Type::character;
         };
-        const auto primitive=[](Type type) {
-            return integer_type(type) || type==Type::real || type==Type::single || type==Type::boolean;
+        const auto primitive=[&](Type type) {
+            return integer_type(type) || type==Type::real || type==Type::single || type==Type::boolean || is_decimal(type);
         };
         if (name=="append") {
             const auto first=count?args[1]->type:Type::invalid;
@@ -3686,7 +3696,7 @@ private:
         }
         if (boxed_object(type,expression->location)
             && (scalar(expression->type) || nrbf_array_type(module_.types,expression->type)
-                || is_complex(expression->type) || is_calendar(expression->type))) {
+                || is_complex(expression->type) || is_calendar(expression->type) || is_decimal(expression->type))) {
             if (short_string(expression->type)) expression=convert(std::move(expression),Type::string);
             return object_conversion(std::move(expression),type,type);
         }
@@ -5103,7 +5113,12 @@ private:
                     throw Error("E_TYPE",result->location,"Decimal conversion requires one argument",
                         "Для приведения к Decimal нужен один аргумент");
                 const auto type=decimal_record_type(result->location);
-                return convert_decimal(expression(*source.arguments.front()),type,true);
+                auto argument=expression(*source.arguments.front());
+                if (boxed_object(argument->type,result->location)) {
+                    const auto object=argument->type;
+                    return object_conversion(std::move(argument),type,object);
+                }
+                return convert_decimal(std::move(argument),type,true);
             }
             const bool complex_cast=native_alias!=aliases_.end()?is_complex(native_alias->second):source.token.text=="complex";
             const bool calendar_cast=native_alias!=aliases_.end()?is_calendar(native_alias->second)

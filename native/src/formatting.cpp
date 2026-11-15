@@ -69,8 +69,8 @@ class ObjectWriter {
         else if(complex_number_type(info))append(complex_pascal_text(data,settings,location));
         else if(calendar_record(info))append(calendar_text(data,{},location));
         else if(decimal_type(info)) {
-            const auto text=decimal_text(data);
-            append(settings?localize_number(text,*settings,location):text);
+            const auto rendered=decimal_text(data);
+            append(settings?localize_number(rendered,*settings,location):rendered);
         }
         else if (school_ip_kind(info.kind)) append(school_ip_text(program,object,location));
         else if (info.kind==CompoundKind::record || info.kind==CompoundKind::tuple) {

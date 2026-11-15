@@ -1,6 +1,7 @@
 #include "composite_format.hpp"
 #include "calendar.hpp"
 #include "complex_number.hpp"
+#include "decimal.hpp"
 #include "diagnostics.hpp"
 #include "formatting.hpp"
 #include "number_format.hpp"
@@ -45,6 +46,37 @@ struct DecimalDigits {
     int point=1;
     bool negative=false;
 };
+struct NumericFormat {
+    char16_t symbol;
+    char16_t letter;
+    int precision;
+};
+NumericFormat numeric_format(std::u16string_view specifier,SourceLocation location) {
+    const auto symbol=specifier.front();
+    const auto letter=static_cast<char16_t>(symbol>=u'a' && symbol<=u'z'?symbol-u'a'+u'A':symbol);
+    int precision=-1;
+    if (specifier.size()>1) {
+        precision=0;
+        for (const auto digit:specifier.substr(1)) {
+            if (digit<u'0' || digit>u'9' || precision>=10) throw unsupported_number(location);
+            precision=precision*10+(digit-u'0');
+        }
+    }
+    return {symbol,letter,precision};
+}
+DecimalDigits exact_decimal_digits(std::u16string_view text) {
+    DecimalDigits result;
+    result.negative=text.starts_with(u'-');
+    if (result.negative) text.remove_prefix(1);
+    const auto point=text.find(u'.');
+    result.point=static_cast<int>(point==text.npos?text.size():point);
+    for (const auto digit:text) if (digit!=u'.') result.digits.push_back(static_cast<char>(digit));
+    const auto leading_zeros=result.digits.find_first_not_of('0');
+    if (leading_zeros==result.digits.npos) return {"0",1,false};
+    result.digits.erase(0,leading_zeros);
+    result.point-=static_cast<int>(leading_zeros);
+    return result;
+}
 DecimalDigits decimal_digits(const Value& value,SourceLocation location) {
     DecimalDigits result;
     if (!floating(value)) {
@@ -198,6 +230,7 @@ std::u16string render_argument(const Program& program,const Value& argument,std:
             return std::get<std::u16string>(reflected_type_property(program,{item.type},TypeOperation::full_name,location,{}));
         if (complex_number_type(shape)) return complex_dotnet_text(value,specifier,format,location);
         if (calendar_record(shape)) return calendar_text(value,specifier,location);
+        if (decimal_type(shape)) return format_decimal(value,specifier,format,location);
     }
     if (!scalar(item.type))
         throw Error("E_UNSUPPORTED",location,"Formatting this object type is not supported",
@@ -211,16 +244,7 @@ bool digit(char16_t ch) { return ch>=u'0' && ch<=u'9'; }
 std::u16string format_number(const Value& value,Type type,std::u16string_view specifier,
     const NumberFormatSettings& format,SourceLocation location) {
     if (specifier.empty()) return localize_number(format_scalar(value,location),format,location);
-    const auto symbol=specifier.front();
-    const auto letter=static_cast<char16_t>(symbol>=u'a' && symbol<=u'z'?symbol-u'a'+u'A':symbol);
-    int precision=-1;
-    if (specifier.size()>1) {
-        precision=0;
-        for (const auto digit:specifier.substr(1)) {
-            if (digit<u'0' || digit>u'9' || precision>=10) throw unsupported_number(location);
-            precision=precision*10+(digit-u'0');
-        }
-    }
+    const auto [symbol,letter,precision]=numeric_format(specifier,location);
     if (letter==u'D') {
         if (!integer_type(type)) throw invalid_format(location);
         auto text=format_scalar(value,location);
@@ -247,6 +271,30 @@ std::u16string format_number(const Value& value,Type type,std::u16string_view sp
     return fixed_number(number,precision<0?format.digits:precision,letter==u'N',format,location);
 }
 
+std::u16string format_decimal(const Value& value,std::u16string_view specifier,
+    const NumberFormatSettings& format,SourceLocation location) {
+    const auto text=decimal_text(value);
+    if (specifier.empty()) return localize_number(text,format,location);
+    const auto [symbol,letter,precision]=numeric_format(specifier,location);
+    if (letter==u'D' || letter==u'X') throw invalid_format(location);
+    if (letter==u'G' && precision<=0) return localize_number(text,format,location);
+    const auto number=exact_decimal_digits(text);
+    if (letter==u'E') return localize_number(scientific_number(number,precision<0?6:precision,symbol),format,location);
+    if (letter==u'F' || letter==u'N')
+        return fixed_number(number,precision<0?format.digits:precision,letter==u'N',format,location);
+    if (letter!=u'G') throw unsupported_number(location);
+
+    auto rounded=number;
+    rounded.digits=rounded_digits(number.digits,precision);
+    if (rounded.digits.size()>static_cast<std::size_t>(precision)) {
+        rounded.digits.pop_back();
+        ++rounded.point;
+    }
+    if (rounded.point>precision || rounded.point<-3)
+        return localize_number(scientific_number(number,precision-1,symbol==u'g'?u'e':u'E',true),format,location);
+    while (rounded.digits.size()>1 && rounded.digits.back()=='0') rounded.digits.pop_back();
+    return fixed_number(rounded,std::max(0,static_cast<int>(rounded.digits.size())-rounded.point),false,format,location);
+}
 std::u16string format_scalar(const Value& value,SourceLocation location) {
     if (floating(value)) return general_float(value,0,'E',location);
     return format_field(value,0,std::nullopt,location);

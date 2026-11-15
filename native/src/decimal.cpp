@@ -306,12 +306,14 @@ bool decimal_signature(std::span<const TypeInfo> types,Type owner,std::size_t op
     if (!compound(owner) || static_cast<unsigned>(owner)-64U>=types.size()
         || !decimal_record_shape(types[static_cast<unsigned>(owner)-64U])) return false;
     const auto call=method(operation);
-    if (call>M::ceiling) return false;
-    if (call!=M::from_bits && call!=M::get_bits) return (operation>>8U)==0;
+    if (call>M::to_string_specifier_provider) return false;
+    const bool provider=call==M::to_string_provider || call==M::to_string_specifier_provider;
+    if (!provider && call!=M::from_bits && call!=M::get_bits) return (operation>>8U)==0;
     if ((operation>>8U)>65535U) return false;
     const auto array=payload(operation);
     if (!compound(array) || static_cast<unsigned>(array)-64U>=types.size()) return false;
     const auto& shape=types[static_cast<unsigned>(array)-64U];
+    if (provider) return shape.kind==CompoundKind::number_format;
     return shape.kind==CompoundKind::array && shape.rank==1 && shape.element==Type::integer;
 }
 std::vector<Type> decimal_parameters(Type owner,std::size_t operation) {
@@ -325,6 +327,9 @@ std::vector<Type> decimal_parameters(Type owner,std::size_t operation) {
     case M::from_bits: return {payload(operation)};
     case M::parse: return {Type::string};
     case M::try_parse: return {Type::string,reference_type(owner)};
+    case M::to_string_specifier: return {owner,Type::string};
+    case M::to_string_provider: return {owner,payload(operation)};
+    case M::to_string_specifier_provider: return {owner,Type::string,payload(operation)};
     case M::round_scale: return {owner,Type::integer};
     case M::add: case M::subtract: case M::multiply: case M::equal: case M::unequal:
     case M::less: case M::less_equal: case M::greater: case M::greater_equal: case M::compare:
@@ -336,7 +341,8 @@ std::vector<Type> decimal_parameters(Type owner,std::size_t operation) {
 Type decimal_result(Type owner,std::size_t operation) {
     switch (method(operation)) {
     case M::get_bits: return payload(operation);
-    case M::to_string: return Type::string;
+    case M::to_string: case M::to_string_specifier: case M::to_string_provider: case M::to_string_specifier_provider:
+        return Type::string;
     case M::to_int32: case M::compare: return Type::integer;
     case M::to_int64: return Type::int64;
     case M::to_uint32: return Type::longword;
@@ -401,8 +407,13 @@ Value decimal_invoke(Values& values,Type owner,std::size_t operation,std::span<c
             values.write(std::get<std::shared_ptr<Cell>>(args[1]),build(result));
             return success;
         }
-        case M::to_string:
-            return localize_number(decimal_text(args[0]),number_settings(values),location);
+        case M::to_string: case M::to_string_specifier: case M::to_string_provider:
+        case M::to_string_specifier_provider: {
+            const bool specifier=call==M::to_string_specifier || call==M::to_string_specifier_provider;
+            const bool provider=call==M::to_string_provider || call==M::to_string_specifier_provider;
+            return format_decimal(args[0],specifier?std::u16string_view(string_text(args[1])):std::u16string_view{},
+                number_settings(values,provider?&args.back():nullptr),location);
+        }
         case M::to_single: return static_cast<float>(to_real(words(args[0])));
         case M::to_real: return to_real(words(args[0]));
         case M::negate: {

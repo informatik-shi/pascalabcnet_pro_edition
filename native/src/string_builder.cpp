@@ -1,5 +1,6 @@
 #include "string_builder.hpp"
 #include "composite_format.hpp"
+#include "decimal.hpp"
 #include "number_format.hpp"
 #include "runtime_values.hpp"
 #include <algorithm>
@@ -262,7 +263,9 @@ bool string_builder_signature(const Program& program,Type owner,std::size_t oper
     const auto method=static_cast<M>(operation&255U);
     const auto payload=static_cast<Type>(operation>>8U);
     if (method==M::append_scalar || method==M::insert_scalar)
-        return integer_type(payload) || payload==Type::single || payload==Type::real || payload==Type::boolean;
+        return integer_type(payload) || payload==Type::single || payload==Type::real || payload==Type::boolean
+            || (compound(payload) && static_cast<unsigned>(payload)-64U<program.types.size()
+                && decimal_type(type_info(program,payload)));
     if (method==M::append_array || method==M::append_array_range || method==M::copy_to
         || method==M::insert_array || method==M::insert_array_range) {
         if (!compound(payload) || static_cast<unsigned>(payload)-64U>=program.types.size()) return false;
@@ -330,6 +333,11 @@ Value string_builder_invoke(Values& values,Type owner,StringBuilderMethod method
     using M=StringBuilderMethod;
     if (method<=M::create_slice) return construct(values,owner,method,args);
     const auto location=values.location;
+    const auto number_text=[&](const Value& value) {
+        const auto& settings=number_settings(values);
+        if (compound(value_type(value))) return format_decimal(value,{},settings,location);
+        return localize_number(format_scalar(value,location),settings,location);
+    };
     if (method==M::format) {
         std::u16string text;
         composite_format(values.program,args[0],args[1],pabc_number_settings(values),location,[&](std::u16string_view part) {
@@ -378,7 +386,7 @@ Value string_builder_invoke(Values& values,Type owner,StringBuilderMethod method
         append_text(builder,slice(string_text(args[1]),number(2),number(3),location),location);
         break;
     case M::append_scalar:
-        append_text(builder,localize_number(format_scalar(args[1],location),number_settings(values),location),location);
+        append_text(builder,number_text(args[1]),location);
         break;
     case M::append_array: append_text(builder,array_text(args[1],0,std::nullopt,location),location); break;
     case M::append_array_range: append_text(builder,array_text(args[1],number(2),number(3),location),location); break;
@@ -415,7 +423,7 @@ Value string_builder_invoke(Values& values,Type owner,StringBuilderMethod method
         insert_text(builder,number(1),string_text(args[2]),method==M::insert_text?1U:number(3),location);
         break;
     case M::insert_scalar:
-        insert_text(builder,number(1),localize_number(format_scalar(args[2],location),number_settings(values),location),1,location);
+        insert_text(builder,number(1),number_text(args[2]),1,location);
         break;
     case M::insert_array:
         insert_text(builder,number(1),array_text(args[2],0,std::nullopt,location),1,location);
