@@ -768,10 +768,11 @@
         "TIniFile.ReadBoolean",
         "TIniFile.ToString",
         "TIniFile.Equals",
-        "TIniFile.GetHashCode"
+        "TIniFile.GetHashCode",
+        "Derived classes with inherited construction, fields, methods and checked reference conversions"
       ],
       "remaining": [
-        "Class inheritance and the remaining System.Object API",
+        "Explicit inherited constructor calls, inherited initialization and the remaining System.Object API",
         "General source-unit interoperability and complete platform error parity"
       ]
     },

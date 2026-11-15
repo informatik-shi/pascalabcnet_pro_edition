@@ -2,6 +2,7 @@
 // Original copyright (c) Ivan Bondarev, Stanislav Mikhalkovich.
 // GNU LGPL; see doc/license.txt and doc/copyright.txt.
 #include "ini_file.hpp"
+#include "interfaces.hpp"
 #include "comparable.hpp"
 #include "runtime_values.hpp"
 #include "files.hpp"
@@ -15,9 +16,16 @@ namespace abc {
 struct IniEntry {std::u16string name;Value value;};
 struct IniSection {std::u16string name;std::vector<IniEntry> entries;};
 struct IniState {Value filename;std::vector<IniSection> sections;};
+Type ini_ancestor(const std::vector<TypeInfo>& types,Type type){
+    for(std::size_t n=0;n<types.size();++n){
+        if(!compound(type) || static_cast<unsigned>(type)-64U>=types.size())break;
+        if(types[static_cast<unsigned>(type)-64U].kind==CompoundKind::ini_file)return type;
+        type=class_parent(types,type);
+    }
+    return Type::invalid;
+}
 bool ini_signature(const Program& program,Type type,IniMethod method) {
-    return compound(type) && static_cast<unsigned>(type)-64U<program.types.size()
-        && program.types[static_cast<unsigned>(type)-64U].kind==CompoundKind::ini_file && method<=IniMethod::get_hash_code;
+    return ini_ancestor(program.types,type)!=Type::invalid && method<=IniMethod::get_hash_code;
 }
 std::vector<Type> ini_parameters(Type type,IniMethod method) {
     switch(method) {
@@ -133,18 +141,23 @@ Value ini_invoke(Values& values,FileContext& files,Type type,IniMethod method,st
         IniCall call(values,files,options);if(method==IniMethod::construct)return call.construct(type,arguments[0]);
         const auto& object=std::get<std::shared_ptr<Aggregate>>(arguments[0]);
         if(!object || object->nil)throw runtime_error(RuntimeError::nil_reference,values.location);
-        if(object->type!=type || !object->ini)throw runtime_error(RuntimeError::invalid_bytecode,values.location);
-        auto& state=*object->ini;
+        if(object->type!=type && !class_reference_compatible(values.program.types,object->type,type))
+            throw runtime_error(RuntimeError::invalid_bytecode,values.location);
         switch(method) {
         case IniMethod::to_string:
-            return reflected_type_property(values.program,{type},TypeOperation::full_name,values.location,options);
+            return reflected_type_property(values.program,{object->type},TypeOperation::full_name,values.location,options);
         case IniMethod::equals:
             return object==std::get<std::shared_ptr<Aggregate>>(arguments[1]);
         case IniMethod::get_hash_code: {
             ValueHashWork work{values,options};
             return std::bit_cast<std::int32_t>(static_cast<std::uint32_t>(value_hash(work,arguments[0])));
         }
-        case IniMethod::file_name:return state.filename;
+        case IniMethod::file_name:return object->ini ? object->ini->filename : Value{std::u16string{}};
+        default:break;
+        }
+        if(!object->ini)throw runtime_error(RuntimeError::nil_reference,values.location);
+        auto& state=*object->ini;
+        switch(method) {
         case IniMethod::save:call.save(state);return false;
         case IniMethod::write_string:call.write(state,arguments[1],arguments[2],arguments[3]);return false;
         case IniMethod::write_integer:call.write(state,arguments[1],arguments[2],from_utf8(std::to_string(std::get<std::int32_t>(arguments[3]))));return false;

@@ -586,6 +586,9 @@ private:
             emit(Op::compound_call,node.operation_type,node.local,node.location);break;
         case hir::ExprKind::ini_call:
             for(const auto& argument:node.arguments)expression(*argument);
+            if(node.local==static_cast<unsigned>(IniMethod::construct))
+                for(const auto& type:program_.static_classes)
+                    if(type.owner==node.operation_type)emit(Op::call_user,Type::unit,type.initializer,node.location);
             emit(Op::ini_call,node.operation_type,node.local,node.location);break;
         case hir::ExprKind::comparer_create:
             for(const auto& argument:node.arguments)expression(*argument);emit(Op::comparer_create,node.type,node.local,node.location);break;
@@ -2280,8 +2283,16 @@ void verify(const Program& program) {
             if (!address && (!compound(type.fields[0].type) || type_info(program,type.fields[0].type).kind!=CompoundKind::school_address))
                 throw Error("E_BYTECODE",{},"CalcIP requires Addr32 fields");
         } else if (type.kind==CompoundKind::object_class) {
-            if (type.name.empty() || type.element!=Type::invalid || type.key!=Type::invalid || type.fields.size()>256)
+            if (type.name.empty() || type.element!=Type::invalid || type.fields.size()>256)
                 throw Error("E_BYTECODE",{},"Invalid native class metadata");
+            if(type.key!=Type::invalid){
+                if(ini_ancestor(program.types,static_cast<Type>(64+i))==Type::invalid)
+                    throw Error("E_BYTECODE",{},"Invalid TIniFile base class metadata");
+                const auto& inherited=type_info(program,type.key).fields;
+                if(inherited.size()>type.fields.size() || !std::equal(inherited.begin(),inherited.end(),type.fields.begin(),
+                    [](const auto& a,const auto& b){return a.name==b.name && a.type==b.type && a.global==b.global && a.access==b.access;}))
+                    throw Error("E_BYTECODE",{},"Invalid inherited field layout");
+            }
             std::set<std::string> names;
             for (const auto& field:type.fields) {
                 // References break value initialization cycles, including mutually recursive classes.

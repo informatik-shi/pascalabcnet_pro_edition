@@ -1386,6 +1386,7 @@ public:
             if (fields.size()>256) throw Error("E_LIMIT",name.location,"Class field limit exceeded");
             module_.types[static_cast<unsigned>(aliases_.at(name.text))-64].fields=std::move(fields);
         }
+        register_ini_class_bases(source);
         prepare_type_initializers(source);
         bind_static_constructor_definitions(source);
         prepare_static_fields(source);
@@ -1545,9 +1546,51 @@ private:
             inherited=&property->second;
         }return inherited;
     }
+    ABC_PASCAL_NOINLINE void register_ini_class_bases(const SyntaxStmt& source){
+        std::map<Type,Token> classes;
+        for(const auto& [name,syntax]:source.type_declarations){
+            if(syntax->kind!="class" || syntax->named)continue;
+            const auto owner=aliases_.at(name.text);
+            classes.emplace(owner,name);
+            for(const auto& declaration:syntax->parents){
+                const auto candidate=resolve_type(*declaration);
+                if(!compound(candidate))continue;
+                const auto kind=info(candidate,declaration->token.location).kind;
+                if(kind!=CompoundKind::ini_file && kind!=CompoundKind::object_class)continue;
+                auto& parent=module_.types[static_cast<unsigned>(owner)-64].key;
+                if(parent!=Type::invalid)
+                    throw Error("E_TYPE",declaration->token.location,"A class can have only one base class","У класса может быть только один базовый класс");
+                parent=candidate;
+            }
+        }
+        std::set<Type> ready;
+        std::function<void(Type)> layout=[&](Type type){
+            if(!ready.insert(type).second)return;
+            const auto parent=class_parent(module_.types,type);
+            if(parent==Type::invalid)return;
+            if(ini_ancestor(module_.types,type)==Type::invalid)
+                throw Error("E_UNSUPPORTED",classes.at(type).location,"Only TIniFile class inheritance is implemented",
+                    "Наследование классов реализовано для TIniFile");
+            if(classes.contains(parent))layout(parent);
+            auto& fields=module_.types[static_cast<unsigned>(type)-64].fields;
+            auto inherited=info(parent,{}).fields;
+            if(inherited.size()+fields.size()>256)
+                throw Error("E_LIMIT",classes.at(type).location,"Class field limit exceeded","Превышен предел полей класса");
+            for(const auto& field:fields){
+                if(std::any_of(inherited.begin(),inherited.end(),[&](const auto& item){return item.name==field.name;}))
+                    throw Error("E_DUPLICATE",classes.at(type).location,"A class field duplicates an inherited name",
+                        "Поле класса повторяет унаследованное имя");
+                inherited.push_back(field);
+            }
+            fields=std::move(inherited);
+        };
+        for(const auto& entry:classes)layout(entry.first);
+    }
     ABC_PASCAL_NOINLINE void register_interface_implementations(const SyntaxStmt& source){
         for(const auto& [name,syntax]:source.type_declarations)if((syntax->kind=="class" || syntax->kind=="record") && !syntax->named){const auto owner=aliases_.at(name.text);std::vector<Type> targets;
-            std::function<void(Type)> add=[&](Type target){if(!compound(target))throw Error("E_TYPE",name.location,"Class parent must be an interface");const auto shape=info(target,name.location);if(shape.kind==CompoundKind::sequence)(void)enumerator_type(shape.element);if(!interface_kind(shape))throw Error("E_UNSUPPORTED",name.location,"Class inheritance is not ported yet");if(std::find(targets.begin(),targets.end(),target)!=targets.end())return;if(targets.size()>=64)throw Error("E_LIMIT",name.location,"Interface implementation limit exceeded");targets.push_back(target);for(auto parent:shape.interfaces.read().parents)add(parent);};for(const auto& parent:syntax->parents)add(resolve_type(*parent));
+            std::function<void(Type)> add=[&](Type target){if(!compound(target))throw Error("E_TYPE",name.location,"Class parent must be an interface");const auto shape=info(target,name.location);if(shape.kind==CompoundKind::sequence)(void)enumerator_type(shape.element);if(!interface_kind(shape))throw Error("E_UNSUPPORTED",name.location,"Class inheritance is not ported yet");if(std::find(targets.begin(),targets.end(),target)!=targets.end())return;if(targets.size()>=64)throw Error("E_LIMIT",name.location,"Interface implementation limit exceeded");targets.push_back(target);for(auto parent:shape.interfaces.read().parents)add(parent);};
+            const auto base=class_parent(module_.types,owner);
+            for(const auto& parent:syntax->parents){const auto target=resolve_type(*parent);if(target!=base || base==Type::invalid)add(target);}
             if(const auto explicit_methods=class_explicit_methods_.find(owner);explicit_methods!=class_explicit_methods_.end())for(const auto& [qualifier,methods]:explicit_methods->second){
                 if(std::find(targets.begin(),targets.end(),qualifier)==targets.end())throw Error("E_TYPE",name.location,"Explicit method interface is not implemented by the class","Класс не реализует интерфейс явно указанного метода");
                 const auto contract=interface_contract(module_.types,qualifier);
@@ -1692,7 +1735,8 @@ private:
             const auto lift=[&](const std::shared_ptr<SyntaxRoutine>& method){method->owner=names.at(owner).text;auto self=std::make_shared<SyntaxType>();self->token=names.at(owner);self->kind=names.at(owner).text;self->named=true;const bool record=type->kind=="record";method->parameters.insert(method->parameters.begin(),SyntaxParameter{Token{TokenKind::name,"self",method->name.location},self,record,{},!record,false});type->methods.push_back(method);source.routines.push_back(method);};
             if(!type->initializer){type->initializer=std::make_shared<SyntaxRoutine>();type->initializer->name={TokenKind::name,"$initialize_fields",names.at(owner).location};type->initializer->access=MemberAccess::private_member;lift(type->initializer);}
             std::map<std::string,SyntaxStmt> explicit_fields;for(auto& step:type->initializer->body.statements)explicit_fields.emplace(step.target->token.text,std::move(step));type->initializer->body.statements.clear();
-            for(std::size_t n=0;n<type->fields.size();++n){const auto& field=type->fields[n].first;const auto value_type=info(owner,field.location).fields[n].type;if(explicit_fields.contains(field.text)){type->initializer->body.statements.push_back(std::move(explicit_fields.at(field.text)));continue;}if(!compound(value_type)||!needs(value_type))continue;SyntaxStmt step;step.kind=SyntaxStmtKind::assignment;step.token=field;step.target=make_expression(SyntaxExprKind::field,field,make_expression(SyntaxExprKind::name,Token{TokenKind::name,"self",field.location}));step.expression=make_expression(SyntaxExprKind::initialized_default,field);type->initializer->body.statements.push_back(std::move(step));}
+            const auto inherited=info(owner,{}).fields.size()-type->fields.size();
+            for(std::size_t n=0;n<type->fields.size();++n){const auto& field=type->fields[n].first;const auto value_type=info(owner,field.location).fields[inherited+n].type;if(explicit_fields.contains(field.text)){type->initializer->body.statements.push_back(std::move(explicit_fields.at(field.text)));continue;}if(!compound(value_type)||!needs(value_type))continue;SyntaxStmt step;step.kind=SyntaxStmtKind::assignment;step.token=field;step.target=make_expression(SyntaxExprKind::field,field,make_expression(SyntaxExprKind::name,Token{TokenKind::name,"self",field.location}));step.expression=make_expression(SyntaxExprKind::initialized_default,field);type->initializer->body.statements.push_back(std::move(step));}
             if(type->kind=="class"&&std::none_of(type->methods.begin(),type->methods.end(),[](const auto& method){return method->constructor;})){auto constructor=std::make_shared<SyntaxRoutine>();constructor->name={TokenKind::name,"create",names.at(owner).location};constructor->constructor=true;lift(constructor);}
         }
     }
@@ -2050,7 +2094,8 @@ private:
         if(result.arguments.size()!=parameters.size())throw Error("E_TYPE",result.location,"Wrong TIniFile argument count");
         if (method==IniMethod::equals) {
             auto& argument=result.arguments[1];
-            if (argument->type!=owner && argument->type!=Type::nil) {
+            if (argument->type!=owner && argument->type!=Type::nil
+                && !class_reference_compatible(module_.types,argument->type,owner)) {
                 const auto location=argument->location;
                 if (argument->type==Type::unit)
                     throw Error("E_TYPE",location,"Equals requires a value","Для Equals требуется значение");
@@ -2076,25 +2121,28 @@ private:
         for(const auto& argument:source.arguments)result.arguments.push_back(expression(*argument));
         ini_expression(result,inifile_type(result.location),IniMethod::construct);return true;
     }
+    static std::optional<IniMethod> ini_instance_method(std::string_view name){
+        static const std::map<std::string_view,IniMethod> methods{
+            {"filename",IniMethod::file_name},{"save",IniMethod::save},
+            {"tostring",IniMethod::to_string},{"equals",IniMethod::equals},{"gethashcode",IniMethod::get_hash_code},
+            {"writestring",IniMethod::write_string},{"readstring",IniMethod::read_string},
+            {"writeinteger",IniMethod::write_integer},{"readinteger",IniMethod::read_integer},
+            {"writeboolean",IniMethod::write_boolean},{"readboolean",IniMethod::read_boolean}
+        };
+        const auto found=methods.find(name);
+        return found==methods.end() ? std::nullopt : std::optional{found->second};
+    }
     bool bind_inifile_member(hir::Expr& result,const SyntaxExpr& source) {
         const auto owner=result.left->type;
         if(!compound(owner) || info(owner,result.location).kind!=CompoundKind::ini_file)return false;
-        const auto& name=source.token.text;IniMethod method;
+        const auto& name=source.token.text;
         if(name=="fname" || name=="sl" || name=="indexofsection" || name=="indexofident")throw Error("E_ACCESS",result.location,"TIniFile member is private");
-        if(name=="filename") {if(source.kind!=SyntaxExprKind::field)throw Error("E_TYPE",result.location,"TIniFile property is not callable");method=IniMethod::file_name;}
-        else if(name=="save")method=IniMethod::save;
-        else if(name=="tostring")method=IniMethod::to_string;
-        else if(name=="equals")method=IniMethod::equals;
-        else if(name=="gethashcode")method=IniMethod::get_hash_code;
-        else if(name=="writestring")method=IniMethod::write_string;
-        else if(name=="readstring")method=IniMethod::read_string;
-        else if(name=="writeinteger")method=IniMethod::write_integer;
-        else if(name=="readinteger")method=IniMethod::read_integer;
-        else if(name=="writeboolean")method=IniMethod::write_boolean;
-        else if(name=="readboolean")method=IniMethod::read_boolean;
-        else throw Error("E_NAME",result.location,"Unknown TIniFile member");
+        const auto method=ini_instance_method(name);
+        if(!method)throw Error("E_NAME",result.location,"Unknown TIniFile member");
+        if(*method==IniMethod::file_name && (source.kind==SyntaxExprKind::member_call || source.kind==SyntaxExprKind::call))
+            throw Error("E_TYPE",result.location,"TIniFile property is not callable");
         result.arguments.push_back(std::move(result.left));for(const auto& argument:source.arguments)result.arguments.push_back(expression(*argument));
-        ini_expression(result,owner,method);return true;
+        ini_expression(result,owner,*method);return true;
     }
     Type encoding_type() {
         for(std::size_t i=0;i<module_.types.size();++i)if(module_.types[i].kind==CompoundKind::encoding)return static_cast<Type>(64+i);
@@ -4199,6 +4247,12 @@ private:
         if (source.token.text=="create" && class_constructors_.contains(receiver)) throw Error("E_UNSUPPORTED",result->location,"Constructors require new ClassName(...)");
         const auto methods=class_methods_.find(receiver);
         if (methods==class_methods_.end() || !methods->second.contains(source.token.text)){
+            const auto parent=class_parent(module_.types,receiver);
+            if(parent!=Type::invalid){
+                result->left=convert(std::move(result->left),parent);
+                if(bind_inifile_member(*result,source))return result;
+                return class_member(std::move(result),source,expected);
+            }
             if(source.token.text=="tostring" && info(receiver,result->location).kind==CompoundKind::object_class
                 && source.arguments.empty() && !callable_type(expected)){
                 result->kind=hir::ExprKind::type_operation;
@@ -4277,12 +4331,20 @@ private:
         if(static_properties_.contains(current_owner_)&&static_properties_.at(current_owner_).contains(source.token.text)){if(const auto local=lookup(source.token);local&&!module_.locals[*local].global)return {};return static_property_member(current_owner_,source);}
         if(static_methods_.contains(current_owner_)&&static_methods_.at(current_owner_).contains(source.token.text)){if(const auto local=lookup(source.token);local&&!module_.locals[*local].global&&!(source.kind==SyntaxExprKind::call&&module_.locals[*local].name=="result"))return {};return static_method_expression(current_owner_,source,expected);}
         if(auto field=static_field_expression(current_owner_,source.token)){if(const auto local=lookup(source.token);local&&!module_.locals[*local].global)return {};if(source.kind==SyntaxExprKind::call){auto call=std::make_unique<hir::Expr>();call->location=source.token.location;call->left=std::move(field);bind_value_call(*call,source.arguments);return call;}return field;}
-        const auto methods=class_methods_.find(current_owner_);
-        const bool method=methods!=class_methods_.end() && methods->second.contains(source.token.text);
+        bool method=false,property=false;
+        for(auto owner=current_owner_;owner!=Type::invalid;owner=class_parent(module_.types,owner)){
+            if(const auto methods=class_methods_.find(owner);methods!=class_methods_.end())
+                method|=methods->second.contains(source.token.text);
+            if(const auto properties=class_properties_.find(owner);properties!=class_properties_.end())
+                property|=properties->second.contains(source.token.text);
+            if(info(owner,source.token.location).kind==CompoundKind::ini_file){
+                const auto inherited=ini_instance_method(source.token.text);
+                property|=inherited==IniMethod::file_name;
+                method|=inherited.has_value() && inherited!=IniMethod::file_name;
+            }
+        }
         const auto& fields=info(current_owner_,source.token.location).fields;
         const bool field=std::any_of(fields.begin(),fields.end(),[&](const auto& item){return item.name==source.token.text;});
-        const auto properties=class_properties_.find(current_owner_);
-        const bool property=properties!=class_properties_.end() && properties->second.contains(source.token.text);
         const bool constructor=source.token.text=="create" && class_constructors_.contains(current_owner_);
         if (!method && !field && !property && !constructor) return {};
         if (const auto local=lookup(source.token);local && !module_.locals[*local].global
@@ -4447,6 +4509,12 @@ private:
                 if(info(type,result->location).kind==CompoundKind::ini_file) {
                     for(const auto& argument:source.arguments)result->arguments.push_back(expression(*argument));
                     ini_expression(*result,type,IniMethod::construct);break;
+                }
+                if(ini_ancestor(module_.types,type)!=Type::invalid && !class_constructors_.contains(type)
+                    && !source.arguments.empty()){
+                    for(const auto& argument:source.arguments)result->arguments.push_back(expression(*argument));
+                    ini_expression(*result,type,IniMethod::construct);
+                    break;
                 }
                 if (info(type,result->location).kind==CompoundKind::sequence) throw Error("E_TYPE",result->location,"Sequences require a typed producer");
                 if (school_ip_kind(info(type,result->location).kind)) {
@@ -5318,7 +5386,18 @@ private:
     ABC_PASCAL_NOINLINE bool bind_callable_cast(hir::Expr& result,const SyntaxExpr& source){
         if(routine_names_.contains(source.token.text))return false;Type cast=Type::invalid;
         if(const auto alias=aliases_.find(source.token.text);alias!=aliases_.end()){if(callable_type(alias->second) || (compound(alias->second) && (interface_kind(info(alias->second,result.location)) || info(alias->second,result.location).kind==CompoundKind::sequence || info(alias->second,result.location).kind==CompoundKind::object_class || info(alias->second,result.location).kind==CompoundKind::record)))cast=alias->second;}else if(source.token.text=="realrange")cast=real_interval_record();else if(source.token.text=="intrange"||source.token.text=="charrange")cast=ordinal_range_record(source.token.text=="intrange"?Type::integer:Type::character);else if(source.token.text=="action0")cast=function_type(Type::unit,{},result.location);
-        if(cast==Type::invalid)return false;if(source.arguments.size()!=1)throw Error("E_TYPE",result.location,callable_type(cast) ? "Callable constructor requires one matching routine value" : "Interface conversion requires one value");auto input=expression(*source.arguments[0],cast);if(compound(cast) && (interface_kind(info(cast,result.location)) || info(cast,result.location).kind==CompoundKind::object_class || info(cast,result.location).kind==CompoundKind::record) && compound(input->type) && interface_kind(info(input->type,result.location)) && input->type!=cast){if((info(cast,result.location).kind==CompoundKind::object_class||info(cast,result.location).kind==CompoundKind::record) && !interface_compatible(module_.types,cast,input->type))throw Error("E_TYPE",result.location,"The target type must implement the source interface for this conversion","Тип назначения должен реализовывать исходный интерфейс для этого преобразования");input=interface_conversion(std::move(input),cast,true);}else input=convert(std::move(input),cast);result=std::move(*input);return true;
+        if(cast==Type::invalid)return false;
+        if(source.arguments.size()!=1)throw Error("E_TYPE",result.location,callable_type(cast) ? "Callable constructor requires one matching routine value" : "Interface conversion requires one value");
+        auto input=expression(*source.arguments[0],cast);
+        if(class_reference_compatible(module_.types,cast,input->type)){
+            input=interface_conversion(std::move(input),cast,true);
+        }else if(compound(cast) && (interface_kind(info(cast,result.location)) || info(cast,result.location).kind==CompoundKind::object_class || info(cast,result.location).kind==CompoundKind::record) && compound(input->type) && interface_kind(info(input->type,result.location)) && input->type!=cast){
+            if((info(cast,result.location).kind==CompoundKind::object_class||info(cast,result.location).kind==CompoundKind::record) && !interface_compatible(module_.types,cast,input->type))
+                throw Error("E_TYPE",result.location,"The target type must implement the source interface for this conversion","Тип назначения должен реализовывать исходный интерфейс для этого преобразования");
+            input=interface_conversion(std::move(input),cast,true);
+        }else input=convert(std::move(input),cast);
+        result=std::move(*input);
+        return true;
     }
     ABC_PASCAL_NOINLINE std::unique_ptr<hir::Expr> bind_call_expression(const SyntaxExpr& source,Type expected,std::unique_ptr<hir::Expr> result) {
         if((source.token.text=="low"||source.token.text=="high")&&source.arguments.size()==1&&source.arguments[0]->kind==SyntaxExprKind::name&&!lookup(source.arguments[0]->token)){const auto found=aliases_.find(source.arguments[0]->token.text);if(found!=aliases_.end()&&fixed(found->second)){const auto& shape=fixed_shape(found->second);result->kind=hir::ExprKind::literal;result->type=Type::integer;result->value=source.token.text=="low"?shape.lower:shape.upper;return result;}}

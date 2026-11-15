@@ -1,0 +1,7 @@
+ini-derived-fixture.ini 80
+ServerSettings IniDerived.ServerSettings True
+443 True local
+443 ini-derived-fixture.ini Settings
+ServerSettings False
+443 ServerSettings False
+41 41 42

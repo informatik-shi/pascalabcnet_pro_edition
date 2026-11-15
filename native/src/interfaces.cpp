@@ -63,7 +63,22 @@ std::vector<InterfaceMember> interface_contract(const std::vector<TypeInfo>& typ
  if(t.kind==CompoundKind::enumerator)return {{"movenext",Type::boolean,{},InterfaceMemberKind::method},{"current",t.element,{},InterfaceMemberKind::get},{"dispose",Type::unit,{},InterfaceMemberKind::method},{"reset",Type::unit,{},InterfaceMemberKind::method}};
  return {};
 }
+Type class_parent(const std::vector<TypeInfo>& types,Type type){
+ if(!valid(types,type))return Type::invalid;
+ const auto& shape=info(types,type);
+ return shape.kind==CompoundKind::object_class ? shape.key : Type::invalid;
+}
+bool class_reference_compatible(const std::vector<TypeInfo>& types,Type from,Type to){
+ if(!valid(types,to))return false;
+ for(std::size_t n=0;n<types.size();++n){
+  from=class_parent(types,from);
+  if(from==Type::invalid)return false;
+  if(from==to)return true;
+ }
+ return false;
+}
 bool interface_compatible(const std::vector<TypeInfo>& types,Type from,Type to){
+ if(class_reference_compatible(types,from,to))return true;
  if(!valid(types,from) || !valid(types,to) || !interface_kind(info(types,to)))return false;
  if(from==to)return true;const auto& source=info(types,from);
  if(native_collection_type(types,from,to)||native_record_interface_type(types,from,to))return true;
@@ -78,6 +93,7 @@ bool interface_compatible(const std::vector<TypeInfo>& types,Type from,Type to){
 bool interface_cast_valid(const Program& p,Type from,Type to,bool checked){
  if(callable_compatible(p.types,from,to))return true;
  if(interface_compatible(p.types,from,to))return true;
+ if(checked && class_reference_compatible(p.types,to,from))return true;
  if(!checked || !valid(p.types,from) || !valid(p.types,to) || !interface_kind(info(p.types,from)))return false;
  return interface_kind(info(p.types,to)) || ((info(p.types,to).kind==CompoundKind::object_class || info(p.types,to).kind==CompoundKind::record || info(p.types,to).kind==CompoundKind::array || info(p.types,to).kind==CompoundKind::list || info(p.types,to).kind==CompoundKind::hash_set || info(p.types,to).kind==CompoundKind::sorted_set || dictionary_kind(info(p.types,to).kind) || info(p.types,to).kind==CompoundKind::dictionary_keys || info(p.types,to).kind==CompoundKind::dictionary_values) && interface_compatible(p.types,to,from));
 }
@@ -126,7 +142,8 @@ Value interface_cast(Values& values,Type from,Type to,bool checked,const Value& 
   if(type_info(values.program,to).kind==CompoundKind::sequence){const auto key=std::make_pair(reinterpret_cast<std::uintptr_t>(object.get()),to);auto found=values.user_enumerables.find(key);if(found!=values.user_enumerables.end())if(auto cached=found->second.lock())return cached;
    auto result=(type_info(values.program,object->type).kind==CompoundKind::object_class||(type_info(values.program,object->type).kind==CompoundKind::record&&type_info(values.program,object->type).native_record==NativeRecord::none))?sequence_create(values,to,object,SequenceProvider::user_source):native_collection_sequence(values,to,object);values.user_enumerables[key]=result;return result;}return object;
  }
- if(type_info(values.program,to).kind==CompoundKind::object_class)throw Error("E_CAST",values.location,"Value cannot be converted to the requested class","Нельзя преобразовать значение к заданному классу");
+ if(type_info(values.program,to).kind==CompoundKind::object_class || type_info(values.program,to).kind==CompoundKind::ini_file)
+  throw Error("E_CAST",values.location,"Value cannot be converted to the requested class","Нельзя преобразовать значение к заданному классу");
  throw Error("E_CAST",values.location,"Value does not implement the requested interface","Значение не реализует требуемый интерфейс");
 }
 std::size_t interface_target(Values& values,Type owner,std::size_t slot,const Value& receiver,const ExecutionOptions& options){
