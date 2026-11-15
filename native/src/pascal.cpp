@@ -912,7 +912,7 @@ private:
             result.names.push_back(name());
             if (accept(":")) { result.annotation=type_syntax(); result.declares_control=true; }
             expect("in"); result.expression=expression();
-            if (is("index")) throw Error("E_UNSUPPORTED",current_.location,"Foreach index is not ported yet");
+            if (accept("index")) result.names.push_back(name());
             expect("do"); result.body=std::make_unique<SyntaxStmt>(statement());
         } else if (accept("for")) {
             result.kind=SyntaxStmtKind::for_loop; result.declares_control=accept("var");
@@ -9602,9 +9602,59 @@ private:
             result.sequence_local=temporary(sequence); result.index_local=temporary(lazy ? Type::int64 : Type::integer); result.version_local=temporary(Type::int64);
             result.target=std::make_unique<hir::Expr>(); result.target->kind=hir::ExprKind::local;
             result.target->local=control; result.target->type=type; result.target->location=name.location;
+            std::optional<std::size_t> index_control;
+            if(source.names.size()==2){
+                const auto& index=source.names[1];
+                if(lookup(index))throw Error("E_DUPLICATE",index.location,"Foreach index name is already declared",
+                    "Имя индекса foreach уже объявлено");
+                index_control=temporary(Type::integer);
+                scopes_.back().emplace(index.text,*index_control);
+                if(!in_routine_)lexical_globals_.insert(*index_control);
+                for_controls_.insert(*index_control);
+            }
             for_controls_.insert(control); ++loop_depth_;
             result.body=std::make_unique<hir::Stmt>(scoped_statement(*source.body));
-            --loop_depth_; for_controls_.erase(control); scopes_.pop_back(); break;
+            --loop_depth_; for_controls_.erase(control); scopes_.pop_back();
+            if(index_control){
+                for_controls_.erase(*index_control);
+                const auto location=source.names[1].location;
+                const auto number=[location](std::int32_t value){
+                    auto expr=std::make_unique<hir::Expr>();
+                    expr->kind=hir::ExprKind::literal;
+                    expr->type=Type::integer;
+                    expr->location=location;
+                    expr->value=value;
+                    return expr;
+                };
+                hir::Stmt advance;
+                advance.kind=hir::StmtKind::increment;
+                advance.location=location;
+                advance.target=std::make_unique<hir::Expr>();
+                advance.target->kind=hir::ExprKind::local;
+                advance.target->type=Type::integer;
+                advance.target->location=location;
+                advance.target->local=*index_control;
+                advance.expression=number(1);
+                auto body=std::make_unique<hir::Stmt>();
+                body->kind=hir::StmtKind::block;
+                body->location=location;
+                body->statements.push_back(std::move(advance));
+                body->statements.push_back(std::move(*result.body));
+                result.body=std::move(body);
+
+                hir::Stmt initialize;
+                initialize.kind=hir::StmtKind::assign;
+                initialize.location=location;
+                initialize.local=*index_control;
+                initialize.expression=number(-1);
+                hir::Stmt block;
+                block.kind=hir::StmtKind::block;
+                block.location=result.location;
+                block.statements.push_back(std::move(initialize));
+                block.statements.push_back(std::move(result));
+                result=std::move(block);
+            }
+            break;
         }
         case SyntaxStmtKind::for_loop: {
             if(source.arguments.size()==2){result=stepped_for_statement(source);break;}

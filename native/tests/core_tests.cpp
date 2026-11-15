@@ -5709,8 +5709,9 @@ void foreach_loops() {
         "begin foreach var x in nil do Write(x); end.",
         "uses Collections; begin foreach var x in new Stack<integer> do Write(x); end.",
         "uses Collections; begin foreach var x in new DynArray<integer> do Write(x); end.",
-        "begin foreach var (x,y) in Arr(1) do Write(x); end.",
-        "begin foreach var x in Arr(1) index i do Write(x); end."}) compile_error(source,"E_UNSUPPORTED");
+        "begin foreach var (x,y) in Arr(1) do Write(x); end."}) compile_error(source,"E_UNSUPPORTED");
+    compile_error("begin foreach var x in Arr(1) index i do i:=5; end.","E_TYPE");
+    compile_error("begin foreach var x in Arr(1) index i do Write(x); Write(i); end.","E_NAME");
     abc::ExecutionOptions limits; limits.instruction_limit=60;
     error([&]{(void)run("begin foreach var x in new integer[100] do continue; end.","",limits);},"E_LIMIT");
     limits={}; int polls=0; limits.cancelled=[&]{return ++polls>30;};
