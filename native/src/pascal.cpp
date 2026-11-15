@@ -4580,7 +4580,7 @@ private:
                 if (bind_print(*result,source.token.text,source.left->token.text)) break;
                 if (bind_sequence_conversion(*result,source.token.text,source.left->token.text)) break;
                 if (bind_new_set_factory(*result,source.token.text,source.left->token.text)) break;
-                if (bind_hash_set_factory(*result,source.token.text,source.left->token.text)) break;
+                if (bind_set_factory(*result,source.token.text,source.left->token.text)) break;
                 if (bind_pair_factory(*result,source.token.text,source.left->token.text)) break;
                 if (bind_dictionary_factory(*result,source.token.text,source.left->token.text)) break;
                 if (bind_ordinal_range_factory(*result,source.token.text,source.left->token.text)) break;
@@ -5358,7 +5358,7 @@ private:
                 if (auto complex=bind_complex_builtin(*result,source.token.text)) return complex;
             if (bind_sequence_conversion(*result,source.token.text)) break;
             if (bind_new_set_factory(*result,source.token.text)) break;
-            if (bind_hash_set_factory(*result,source.token.text)) break;
+            if (bind_set_factory(*result,source.token.text)) break;
             if (bind_pair_factory(*result,source.token.text)) break;
             if (bind_dictionary_factory(*result,source.token.text)) break;
             if (bind_ordinal_range_factory(*result,source.token.text)) break;
@@ -6352,9 +6352,11 @@ private:
         }
         return hash_set_expression(owner,method,std::move(arguments),result.location,payload);
     }
-    ABC_PASCAL_NOINLINE bool bind_hash_set_factory(hir::Expr& result,std::string_view name,std::string_view unit={},Type explicit_element=Type::invalid){
-        if((name!="hset" && name!="hsetint" && name!="hsetstr") || (!unit.empty() && unit!="pabcsystem"))return false;
-        const auto element=explicit_element!=Type::invalid ? explicit_element : name=="hsetint" ? Type::integer : name=="hsetstr" ? Type::string : Type::invalid;
+    ABC_PASCAL_NOINLINE bool bind_set_factory(hir::Expr& result,std::string_view name,std::string_view unit={},Type explicit_element=Type::invalid){
+        const bool sorted=name=="sset" || name=="ssetint" || name=="ssetstr";
+        if((!sorted && name!="hset" && name!="hsetint" && name!="hsetstr") || (!unit.empty() && unit!="pabcsystem"))return false;
+        const auto element=explicit_element!=Type::invalid ? explicit_element
+            : name=="hsetint" || name=="ssetint" ? Type::integer : name=="hsetstr" || name=="ssetstr" ? Type::string : Type::invalid;
         std::unique_ptr<hir::Expr> input;
         if(result.arguments.size()==1){
             const auto type=result.arguments[0]->type;
@@ -6363,7 +6365,7 @@ private:
             else if(compound(type)){
                 const auto source=info(type,result.location);
                 const bool array=source.kind==CompoundKind::array && source.rank==1;
-                const bool sequence=name=="hset" && (source.kind==CompoundKind::sequence || ordinal_range_type(source)
+                const bool sequence=(name=="hset" || name=="sset") && (source.kind==CompoundKind::sequence || (name=="hset" && ordinal_range_type(source))
                     || (explicit_element!=Type::invalid && enumerable_collection(source) && source.rank==1 && source.element==element && type!=element));
                 if((array || sequence) && (element==Type::invalid || source.element==element))input=std::move(result.arguments[0]);
             }else if(explicit_element==Type::character && type==Type::string)input=std::move(result.arguments[0]);
@@ -6374,8 +6376,13 @@ private:
             else{input->kind=hir::ExprKind::array_literal;input->type=sequence_type(CompoundKind::array,element);for(auto& argument:input->arguments)argument=convert(std::move(argument),element);}
         }
         const auto item=input->type==Type::string ? Type::character : info(input->type,result.location).element;
-        const auto owner=sequence_type(CompoundKind::hash_set,item);std::vector<std::unique_ptr<hir::Expr>> arguments;arguments.push_back(std::move(input));
-        result=std::move(*hash_set_expression(owner,HashSetMethod::construct_sequence,std::move(arguments),result.location));return true;
+        const auto owner=sequence_type(sorted ? CompoundKind::sorted_set : CompoundKind::hash_set,item);
+        std::vector<std::unique_ptr<hir::Expr>> arguments;
+        arguments.push_back(std::move(input));
+        auto constructed=sorted ? sorted_set_expression(owner,SortedSetMethod::construct_source,std::move(arguments),result.location)
+            : hash_set_expression(owner,HashSetMethod::construct_sequence,std::move(arguments),result.location);
+        result=std::move(*constructed);
+        return true;
     }
     ABC_PASCAL_NOINLINE std::unique_ptr<hir::Expr> dictionary_removal(Type owner,std::unique_ptr<hir::Expr> dictionary,std::unique_ptr<hir::Expr> right,SourceLocation location,bool copy){
         const auto key=info(owner,location).key;const bool single=right->type==key || can_widen(right->type,key);Type payload=Type::invalid;auto method=copy ? DictionaryMethod::without_key : DictionaryMethod::remove;
@@ -6704,6 +6711,10 @@ private:
         if (!unit.empty() && !(unit=="pabcsystem" && !fill) && !(unit=="arrays" && (sort || fill))) return false;
         const auto sequence=result.arguments[0]->type; const auto& type=info(sequence,result.location);
         if(name=="copy" && type.kind==CompoundKind::dictionary){result=std::move(*dictionary_expression(sequence,DictionaryMethod::copy_value,std::move(result.arguments),result.location));return true;}
+        if(name=="copy" && type.kind==CompoundKind::sorted_set){
+            result=std::move(*sorted_set_expression(sequence,SortedSetMethod::copy,std::move(result.arguments),result.location));
+            return true;
+        }
         if(name=="copy" && type.kind==CompoundKind::hash_set){
             if(result.arguments.size()!=1)throw Error("E_TYPE",result.location,"Wrong sequence arguments");
             result=std::move(*hash_set_expression(sequence,HashSetMethod::copy_value,std::move(result.arguments),result.location));return true;
@@ -6951,11 +6962,11 @@ private:
             for(const auto& argument:source.arguments)result->arguments.push_back(expression(*argument));
             if(name=="kv" || name=="pair")(void)bind_pair_factory(*result,name,{},key,value);else if(name=="dict")(void)bind_dictionary_factory(*result,name,{},key,value);else{if(result->arguments.size()!=1)throw Error("E_TYPE",result->location,"Dictionary type conversion requires one value");return convert(std::move(result->arguments[0]),dictionary_type(key,value));}return result;
         }
-        if(name=="hset" && standard_call){
-            if(source.type_arguments.size()!=1)throw Error("E_TYPE",source.token.location,"HSet requires exactly one explicit element type");
+        if((name=="hset" || name=="sset") && standard_call){
+            if(source.type_arguments.size()!=1)throw Error("E_TYPE",source.token.location,"Set factory requires exactly one explicit element type","Фабрике множества нужен ровно один явный тип элемента");
             const auto element=resolve_type(*source.type_arguments[0]);auto result=std::make_unique<hir::Expr>();result->location=source.token.location;
             for(const auto& argument:source.arguments)result->arguments.push_back(expression(*argument,element));
-            (void)bind_hash_set_factory(*result,name,{},element);return result;
+            (void)bind_set_factory(*result,name,{},element);return result;
         }
         if((name=="hashset" || name=="newset") && standard_call){
             if(source.type_arguments.size()!=1 || source.arguments.size()!=1)throw Error("E_TYPE",source.token.location,"Set type conversion requires one explicit element type and one value");
@@ -6966,7 +6977,7 @@ private:
             if(source.type_arguments.size()!=1 || source.arguments.size()!=1)throw Error("E_TYPE",source.token.location,"Copy requires one explicit element type and one collection");
             const auto element=resolve_type(*source.type_arguments[0]);auto result=std::make_unique<hir::Expr>();result->location=source.token.location;
             result->arguments.push_back(expression(*source.arguments[0]));const auto input=result->arguments[0]->type;
-            if(!compound(input) || (info(input,result->location).kind!=CompoundKind::hash_set && info(input,result->location).kind!=CompoundKind::list) || info(input,result->location).element!=element)
+            if(!compound(input) || (info(input,result->location).kind!=CompoundKind::hash_set && info(input,result->location).kind!=CompoundKind::sorted_set && info(input,result->location).kind!=CompoundKind::list) || info(input,result->location).element!=element)
                 throw Error("E_TYPE",result->location,"Copy explicit element type must match the collection");
             (void)bind_sequence_library(*result,name);return result;
         }

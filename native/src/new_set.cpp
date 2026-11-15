@@ -1,4 +1,5 @@
 #include "new_set.hpp"
+#include "sorted_set.hpp"
 #include "hash_set.hpp"
 #include "runtime_values.hpp"
 #include "sequences.hpp"
@@ -85,6 +86,7 @@ bool empty_signature(const Program& p,Type target,EmptyMethod method){
     if(!compound(target))return false;const auto& type=type_info(p,target);
     if(method==EmptyMethod::singleton || method==EmptyMethod::binary)return type.kind==CompoundKind::empty_collection;
     if(method==EmptyMethod::to_set)return type.kind==CompoundKind::new_set;
+    if(type.kind==CompoundKind::sorted_set)return sorted_set_signature(p,target,SortedSetMethod::construct);
     return type.kind==CompoundKind::new_set || type.kind==CompoundKind::hash_set || type.kind==CompoundKind::list || (type.kind==CompoundKind::array && type.rank==1) || (type.kind==CompoundKind::sequence && array_type(p.types,type.element)!=Type::invalid);
 }
 std::vector<Type> empty_parameters(const std::vector<TypeInfo>& types,EmptyMethod method){const auto empty=empty_collection_type(types);if(method==EmptyMethod::singleton)return {};if(method==EmptyMethod::binary)return {empty,empty};return {empty};}
@@ -94,6 +96,8 @@ Value empty_invoke(Values& values,Type target,EmptyMethod method,std::span<const
     if(method==EmptyMethod::singleton){if(!values.empty_collection)values.empty_collection=std::get<std::shared_ptr<Aggregate>>(values.zero(target,true));return values.empty_collection;}
     if(method==EmptyMethod::to_string || method==EmptyMethod::to_set){const auto object=std::get<std::shared_ptr<Aggregate>>(arguments[0]);if(!object || object->nil)throw runtime_error(RuntimeError::nil_reference,values.location);if(method==EmptyMethod::to_string)return std::u16string{u"{}"};}
     const auto& type=type_info(values.program,target);
+    if(type.kind==CompoundKind::sorted_set)
+        return sorted_set_invoke(values,target,SortedSetMethod::construct,{},options);
     if(type.kind==CompoundKind::array)return values.array(target,0,true);
     if(type.kind==CompoundKind::sequence){const auto array=array_type(values.program.types,type.element);return sequence_create(values,target,values.array(array,0,true),SequenceProvider::array);}
     return values.zero(target,true);

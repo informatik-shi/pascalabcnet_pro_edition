@@ -1,0 +1,36 @@
+uses System;
+begin
+  var a:=SSet(4,2,3,2);
+  var empty:=SSet&<integer>();
+  var literalEmpty: SortedSet<integer> := [];
+  var b:=SSetInt(5,2,5);
+  var c:=SSetStr('c','a','b');
+  var seq: sequence of integer := Seq(2,4,1,2);
+  var q:=PABCSystem.SSet(seq);
+  var list:=Lst(3,1,2);
+  var oneList:=SSet(list);
+  var oneRange:=SSet(2..4);
+  var rangeElements:=SSet&<integer>(2..4);
+  Writeln(a.Count,' ',empty.Count,' ',literalEmpty.Count,' ',b.Count,' ',c.Min,' ',q.Min,' ',q.Max);
+  Writeln(oneList.Count,' ',oneRange.Count,' ',rangeElements.Count);
+  var reverse:=System.Collections.Generic.Comparer&<integer>.Create((a,b) -> b-a);
+  var reversed:=new SortedSet<integer>(Arr(1,3,4),reverse);
+  var copied:=PABCSystem.Copy(reversed);
+  copied.Remove(4);
+  var blank: SortedSet<integer>;
+  var other:=Copy&<integer>(blank);
+  Writeln(reversed.Min,' ',reversed.Max,' ',copied.Min,' ',copied.Max,' ',other=nil);
+  var ordered:=SSetInt(3,1,3,4);
+  var collection: System.Collections.Generic.ICollection<integer> := ordered;
+  collection.Add(2);
+  Writeln(collection.Contains(3),' ',collection.Remove(1),' ',collection.IsReadOnly,' ',collection.Count);
+  var target:=ArrFill(6,-1);
+  collection.CopyTo(target,1);
+  foreach var item in target do Write(item,' ');
+  Writeln('|');
+  var source: sequence of integer:=collection;
+  foreach var item in source do Write(item,' ');
+  Writeln('|');
+  collection.Clear;
+  Writeln(ordered.Count);
+end.

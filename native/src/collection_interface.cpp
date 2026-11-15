@@ -7,11 +7,12 @@
 #include "list_operations.hpp"
 #include "dictionary.hpp"
 #include "ordinal_range.hpp"
+#include "sorted_set.hpp"
 #include <array>
 namespace abc {
 namespace {
 using Object=std::shared_ptr<Aggregate>;
-bool native_kind(const TypeInfo& type){return (type.kind==CompoundKind::array&&type.rank==1)||type.kind==CompoundKind::list||type.kind==CompoundKind::hash_set||type.kind==CompoundKind::dictionary||type.kind==CompoundKind::dictionary_keys||type.kind==CompoundKind::dictionary_values;}
+bool native_kind(const TypeInfo& type){return (type.kind==CompoundKind::array&&type.rank==1)||type.kind==CompoundKind::list||type.kind==CompoundKind::hash_set||type.kind==CompoundKind::sorted_set||type.kind==CompoundKind::dictionary||type.kind==CompoundKind::dictionary_keys||type.kind==CompoundKind::dictionary_values;}
 void checkpoint(Values& values,const ExecutionOptions& options,std::uint64_t& work){if(work>=options.instruction_limit)throw runtime_error(RuntimeError::instruction_limit,values.location);if((work++&255U)==0&&options.cancelled&&options.cancelled())throw runtime_error(RuntimeError::cancelled,values.location);}
 }
 bool native_collection_type(const std::vector<TypeInfo>& types,Type from,Type to){
@@ -33,6 +34,7 @@ bool native_collection_target(const Program& program,Type owner,const Value& val
 std::shared_ptr<Aggregate> native_collection_sequence(Values& values,Type target,const Object& source){
  if(ordinal_range_type(type_info(values.program,source->type)))return sequence_create(values,target,source,SequenceProvider::ordinal_range);
  const auto kind=type_info(values.program,source->type).kind;
+ if(kind==CompoundKind::sorted_set)return sequence_create(values,target,source,SequenceProvider::sorted_set);
  const auto provider=kind==CompoundKind::array?SequenceProvider::array:kind==CompoundKind::list?SequenceProvider::list:kind==CompoundKind::hash_set?SequenceProvider::hash_set:kind==CompoundKind::dictionary?SequenceProvider::dictionary_entries:kind==CompoundKind::dictionary_keys?SequenceProvider::dictionary_keys:SequenceProvider::dictionary_values;
  return sequence_create(values,target,source,provider);
 }
@@ -87,6 +89,10 @@ Value native_collection_invoke(Values& values,Type owner,std::size_t slot,const 
  if(kind==CompoundKind::hash_set){
   const auto method=slot==0?HashSetMethod::count:slot==2?HashSetMethod::add:slot==3?HashSetMethod::clear:slot==4?HashSetMethod::contains:slot==5?HashSetMethod::copy_index:HashSetMethod::remove;
   return hash_set_invoke(values,object->type,Type::invalid,method,input,options);
+ }
+ if(kind==CompoundKind::sorted_set){
+  const auto method=slot==0?SortedSetMethod::count:slot==2?SortedSetMethod::add:slot==3?SortedSetMethod::clear:slot==4?SortedSetMethod::contains:slot==5?SortedSetMethod::copy_index:SortedSetMethod::remove;
+  return sorted_set_invoke(values,object->type,method,input,options);
  }
  if(view){const auto method=slot==0?DictionaryMethod::view_count:slot==4?DictionaryMethod::view_contains:DictionaryMethod::view_copy_to;return dictionary_invoke(values,object->type,slot==5?interface_contract(values.program.types,owner)[5].parameters[0].type:Type::invalid,method,input,options);}
  if(kind==CompoundKind::dictionary){

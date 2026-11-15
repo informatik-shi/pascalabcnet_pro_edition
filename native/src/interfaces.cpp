@@ -79,7 +79,7 @@ bool interface_cast_valid(const Program& p,Type from,Type to,bool checked){
  if(callable_compatible(p.types,from,to))return true;
  if(interface_compatible(p.types,from,to))return true;
  if(!checked || !valid(p.types,from) || !valid(p.types,to) || !interface_kind(info(p.types,from)))return false;
- return interface_kind(info(p.types,to)) || ((info(p.types,to).kind==CompoundKind::object_class || info(p.types,to).kind==CompoundKind::record || info(p.types,to).kind==CompoundKind::array || info(p.types,to).kind==CompoundKind::list || info(p.types,to).kind==CompoundKind::hash_set || info(p.types,to).kind==CompoundKind::dictionary || info(p.types,to).kind==CompoundKind::dictionary_keys || info(p.types,to).kind==CompoundKind::dictionary_values) && interface_compatible(p.types,to,from));
+ return interface_kind(info(p.types,to)) || ((info(p.types,to).kind==CompoundKind::object_class || info(p.types,to).kind==CompoundKind::record || info(p.types,to).kind==CompoundKind::array || info(p.types,to).kind==CompoundKind::list || info(p.types,to).kind==CompoundKind::hash_set || info(p.types,to).kind==CompoundKind::sorted_set || info(p.types,to).kind==CompoundKind::dictionary || info(p.types,to).kind==CompoundKind::dictionary_keys || info(p.types,to).kind==CompoundKind::dictionary_values) && interface_compatible(p.types,to,from));
 }
 void verify_interfaces(const Program& p){
  std::size_t names=0;
@@ -119,7 +119,7 @@ Value interface_cast(Values& values,Type from,Type to,bool checked,const Value& 
  auto object=std::get<std::shared_ptr<Aggregate>>(value);if(!object || object->nil){if(type_info(values.program,to).kind==CompoundKind::record)throw runtime_error(RuntimeError::nil_reference,values.location);return values.zero(to);}
  if(object->type==to&&type_info(values.program,to).kind!=CompoundKind::record)return object;
  if(record_box_identity(object.get())!=object.get())object=object->sequence->source;
- if(object->sequence && object->sequence->source && (object->sequence->provider==SequenceProvider::user_source||object->sequence->provider==SequenceProvider::array||object->sequence->provider==SequenceProvider::list||object->sequence->provider==SequenceProvider::hash_set||dictionary_provider(object->sequence->provider)))object=object->sequence->source;
+ if(object->sequence && object->sequence->source && (object->sequence->provider==SequenceProvider::user_source||object->sequence->provider==SequenceProvider::array||object->sequence->provider==SequenceProvider::list||object->sequence->provider==SequenceProvider::hash_set||object->sequence->provider==SequenceProvider::sorted_set||dictionary_provider(object->sequence->provider)))object=object->sequence->source;
  if(type_info(values.program,to).kind==CompoundKind::record){if(object->boxed&&object->type==to)return record_interface_copy(values,object,false);throw Error("E_CAST",values.location,"Value cannot be unboxed to the requested record","Нельзя распаковать значение в заданный тип записи");}
  if(object && !object->nil && (object->type==to || interface_compatible(values.program.types,object->type,to) || native_enumerable_type(values.program.types,object->type,to))){
   if(!object->boxed&&type_info(values.program,object->type).kind==CompoundKind::record)object=record_interface_copy(values,object,true);

@@ -67,7 +67,7 @@ Type sorted_set_type_for(const std::vector<TypeInfo>& types,Type element,Compoun
 }
 
 bool sorted_set_signature(const Program& program,Type owner,SortedSetMethod method){
-    if(method>Method::reverse || !compound(owner) || !valid_value_type(program,owner))return false;
+    if(method>Method::copy || !compound(owner) || !valid_value_type(program,owner))return false;
     const auto& shape=type_info(program,owner);
     return shape.kind==CompoundKind::sorted_set
         && sorted_set_type_for(program.types,shape.element,CompoundKind::comparer_interface)!=Type::invalid
@@ -97,7 +97,7 @@ std::vector<Type> sorted_set_parameters(const std::vector<TypeInfo>& types,Type 
 }
 
 Type sorted_set_result(const std::vector<TypeInfo>& types,Type owner,SortedSetMethod method){
-    if(method<=Method::construct_source_comparer)return owner;
+    if(method<=Method::construct_source_comparer || method==Method::copy)return owner;
     const auto& shape=types.at(static_cast<unsigned>(owner)-64U);
     const auto element=shape.element;
     switch(method){
@@ -149,8 +149,14 @@ Value sorted_set_invoke(Values& values,Type owner,SortedSetMethod method,std::sp
             return result;
         }
         const auto receiver=std::get<Object>(args[method==Method::membership ? 1U : 0U]);
+        if(method==Method::copy && (!receiver || receiver->nil))return receiver;
         if(!receiver || receiver->nil)throw runtime_error(RuntimeError::nil_reference,values.location);
         auto& items=receiver->items;
+        if(method==Method::copy){
+            const auto source=sequence_create(values,shape.key,receiver,SequenceProvider::sorted_set);
+            const std::array<Value,2> input{source,receiver->ordering};
+            return sorted_set_invoke(values,owner,Method::construct_source_comparer,input,options);
+        }
         if(method==Method::count)return static_cast<std::int32_t>(items.size());
         if(method==Method::minimum || method==Method::maximum)
             return items.empty() ? values.zero(shape.element,false,true)
