@@ -388,9 +388,7 @@ Value decimal_invoke(Values& values,Type owner,std::size_t operation,std::span<c
             if (array->items.size()!=data.size()) throw invalid_bits(location);
             for (std::size_t i=0;i<data.size();++i)
                 data[i]=std::bit_cast<std::uint32_t>(std::get<std::int32_t>(array->items[i]->value));
-            if ((data[3]&~(sign_mask|scale_mask)) || (data[3]&scale_mask)>(scale_limit<<16U))
-                throw invalid_bits(location);
-            return build_words(data);
+            return decimal_from_bits(values,owner,data);
         }
         case M::get_bits: return bits_array(values,payload(operation),words(args[0]));
         case M::parse:
@@ -463,5 +461,14 @@ Value decimal_invoke(Values& values,Type owner,std::size_t operation,std::span<c
 std::u16string decimal_text(const Value& value) {
     const auto text=ascii_text(parts(value));
     return std::u16string(text.begin(),text.end());
+}
+std::array<std::uint32_t,4> decimal_bits(const Value& value) {
+    return words(value);
+}
+Value decimal_from_bits(Values& values,Type owner,const std::array<std::uint32_t,4>& data) {
+    const auto flags=data[3];
+    if ((flags&~(sign_mask|scale_mask)) || (flags&scale_mask)>(scale_limit<<16U))
+        throw invalid_bits(values.location);
+    return make_decimal(values,owner,data);
 }
 }

@@ -181,6 +181,7 @@ DateTime разбирает ISO со смещением и преобразуе�
 Decimal хранит 96-битный коэффициент и поддерживает Parse, TryParse, GetBits, сложение, вычитание и умножение.
 Decimal также поддерживает деление, остаток, Round, Truncate, Floor и Ceiling.
 Форматы Decimal F, N, E и G доступны в ToString, Format и AppendFormat.
+Файлы с Decimal, TimeSpan и Complex используют проверенный двоичный формат PascalABC.NET.
 WriteFormat и WritelnFormat выводят результат Format в консоль или файл Text.
 Статические массивы, независимые копии, двумерные индексы и file of массив: examples/fixed-arrays.pas.
 Инициализаторы динамических массивов, записи и более семи элементов: examples/array-literals.pas.

@@ -1,5 +1,6 @@
 #pragma once
 #include "abc/core.hpp"
+#include <array>
 #include <span>
 
 namespace abc {
@@ -19,4 +20,8 @@ std::vector<Type> decimal_parameters(Type,std::size_t);
 Type decimal_result(Type,std::size_t);
 Value decimal_invoke(Values&,Type,std::size_t,std::span<const Value>);
 std::u16string decimal_text(const Value&);
+// Decimal fields are ordered by reflection in files written by PascalABC.NET.
+inline constexpr std::array<std::size_t,4> decimal_file_order{3,2,0,1};
+std::array<std::uint32_t,4> decimal_bits(const Value&);
+Value decimal_from_bits(Values&,Type,const std::array<std::uint32_t,4>&);
 }

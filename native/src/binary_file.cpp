@@ -1,4 +1,5 @@
 #include "binary_file.hpp"
+#include "decimal.hpp"
 #include "runtime_values.hpp"
 #include "files.hpp"
 #include "file_reader.hpp"
@@ -37,6 +38,12 @@ Value read_value(Values& values,BinaryFile& file,Type type,const ExecutionOption
     if(!compound(type))return file.codec->read(type,values.location,options);
     const auto& shape=type_info(values.program,type);
     if(shape.kind==CompoundKind::enumeration)return EnumValue{type,std::get<std::int32_t>(file.codec->read(Type::integer,values.location,options))};
+    if (decimal_type(shape)) {
+        std::array<std::uint32_t,4> words{};
+        for (const auto index:decimal_file_order)
+            words[index]=std::get<std::uint32_t>(file.codec->read(Type::longword,values.location,options));
+        return decimal_from_bits(values,type,words);
+    }
     if(shape.kind==CompoundKind::fixed_array){auto result=fixed_array_construct(values,type);const auto wrapper=std::get<std::shared_ptr<Aggregate>>(result),data=std::get<std::shared_ptr<Aggregate>>(wrapper->items[0]->value);for(const auto& item:data->items)values.write(item,read_value(values,file,shape.element,options,depth+1));return result;}
     auto result=std::get<std::shared_ptr<Aggregate>>(values.zero(type,false,true));
     for(std::size_t n=0;n<shape.fields.size();++n)values.write(result->items[n],read_value(values,file,shape.fields[n].type,options,depth+1));return result;
@@ -47,6 +54,11 @@ void write_value(Values& values,BinaryFile& file,Type type,const Value& value,co
     const auto& shape=type_info(values.program,type);
     if(shape.kind==CompoundKind::enumeration){file.codec->write(Type::integer,std::get<EnumValue>(value).value,values.location,options);return;}
     const auto data=std::get<std::shared_ptr<Aggregate>>(value);if(!data||data->nil)throw runtime_error(RuntimeError::nil_reference,values.location);
+    if (decimal_type(shape)) {
+        const auto words=decimal_bits(value);
+        for (const auto index:decimal_file_order) file.codec->write(Type::longword,words[index],values.location,options);
+        return;
+    }
     if(shape.kind==CompoundKind::fixed_array){const auto storage=std::get<std::shared_ptr<Aggregate>>(data->items[0]->value);for(const auto& item:storage->items)write_value(values,file,shape.element,item->value,options,depth+1);return;}
     std::uint64_t work=0;for(std::size_t n=0;n<data->items.size();++n){if(work++>=options.instruction_limit)throw runtime_error(RuntimeError::instruction_limit,values.location);if((n&255U)==0&&options.cancelled&&options.cancelled())throw runtime_error(RuntimeError::cancelled,values.location);
         const auto element=shape.kind==CompoundKind::array?shape.element:shape.fields.at(n).type;write_value(values,file,element,data->items[n]->value,options,depth+1);}
@@ -136,6 +148,7 @@ bool binary_value_supported(const std::vector<TypeInfo>& types,Type type,bool st
     const auto walk=[&](auto&& self,Type t,unsigned depth)->bool{if(depth>64)return false;
         if(t==Type::string)return strings;if(t==Type::big_integer)return false;if(scalar(t))return true;
         if(!compound(t)||static_cast<unsigned>(t)-64U>=types.size())return false;const auto& shape=info(types,t);
+        if(shape.native_record==NativeRecord::date_time)return false;
         if(shape.kind==CompoundKind::enumeration)return true;
         if(shape.kind==CompoundKind::fixed_array)return self(self,shape.element,depth+1);
         if(shape.kind==CompoundKind::array)return arrays&&self(self,shape.element,depth+1);
