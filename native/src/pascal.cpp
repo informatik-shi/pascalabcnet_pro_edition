@@ -2288,6 +2288,8 @@ private:
         else if (name=="equals") method=M::equals;
         else if (name=="appendline") method=count==0?M::append_line:M::append_line_text;
         else if (name=="copyto") method=M::copy_to;
+        else if (name=="insert") method=M::insert_text;
+        else if (name=="remove") method=M::remove;
         else if (name=="replace") {
             if (count!=2 && count!=4)
                 throw Error("E_TYPE",location,"No matching StringBuilder.Replace overload",
@@ -2303,15 +2305,20 @@ private:
         for (const auto& arg:source.arguments) args.push_back(expression(*arg));
         auto payload=Type::invalid;
         if (method==M::copy_to) payload=sequence_type(CompoundKind::array,Type::character);
+        const auto char_array=[&](Type type) {
+            if (!compound(type)) return false;
+            const auto& shape=info(type,location);
+            return shape.kind==CompoundKind::array && shape.rank==1 && shape.element==Type::character;
+        };
+        const auto primitive=[](Type type) {
+            return integer_type(type) || type==Type::real || type==Type::single || type==Type::boolean;
+        };
         if (name=="append") {
             const auto first=count?args[1]->type:Type::invalid;
-            const auto chars=compound(first) && info(first,location).kind==CompoundKind::array
-                && info(first,location).rank==1 && info(first,location).element==Type::character;
-            const auto primitive=integer_type(first) || first==Type::real || first==Type::single || first==Type::boolean;
-            if (chars && (count==1 || count==3)) {
+            if (char_array(first) && (count==1 || count==3)) {
                 payload=first;
                 method=count==1?M::append_array:M::append_array_range;
-            } else if (primitive && count==1) {
+            } else if (primitive(first) && count==1) {
                 payload=first;
                 method=M::append_scalar;
             } else if (count==1 && is_string_builder(first)) method=M::append_builder;
@@ -2320,6 +2327,17 @@ private:
             else if (count==3) method=M::append_slice;
             else throw Error("E_TYPE",location,"No matching StringBuilder.Append overload",
                 "Нет подходящей перегрузки StringBuilder.Append");
+        } else if (name=="insert") {
+            const auto value=count>=2?args[2]->type:Type::invalid;
+            if (char_array(value) && (count==2 || count==4)) {
+                method=count==2?M::insert_array:M::insert_array_range;
+                payload=value;
+            } else if (count==2 && primitive(value)) {
+                method=M::insert_scalar;
+                payload=value;
+            } else if (count==3) method=M::insert_repeated;
+            else if (count!=2) throw Error("E_TYPE",location,"No matching StringBuilder.Insert overload",
+                "Нет подходящей перегрузки StringBuilder.Insert");
         }
         return string_builder_expression(type,method,std::move(args),location,payload);
     }

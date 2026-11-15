@@ -8,9 +8,14 @@
 
 namespace abc {
 struct StringBuilderState {
+    struct Chunk {std::size_t length,capacity;};
     std::u16string text;
-    std::size_t capacity=16;
-    std::size_t max_capacity=std::numeric_limits<std::int32_t>::max();
+    std::vector<Chunk> chunks;
+    std::size_t max_capacity;
+
+    std::size_t capacity() const {
+        return text.size()-chunks.back().length+chunks.back().capacity;
+    }
 };
 namespace {
 constexpr std::size_t text_limit=1'048'576;
@@ -47,40 +52,105 @@ std::u16string scalar_text(const Value& value,SourceLocation location) {
 std::size_t appended_capacity(const StringBuilderState& builder,std::size_t count,SourceLocation location) {
     if (count>text_limit-builder.text.size()) throw runtime_error(RuntimeError::string_limit,location);
     const auto length=builder.text.size()+count;
-    if (length<=builder.capacity) return builder.capacity;
+    const auto capacity=builder.capacity();
+    if (length<=capacity) return capacity;
     if (length>builder.max_capacity) throw out_of_range(location);
-    return builder.capacity+std::max(length-builder.capacity,std::min(builder.capacity,growth_limit));
+    return capacity+std::max(length-capacity,std::min(capacity,growth_limit));
+}
+template<class Append>
+void extend(StringBuilderState& builder,std::size_t amount,SourceLocation location,Append append) {
+    const auto capacity=builder.capacity();
+    const auto next_capacity=appended_capacity(builder,amount,location);
+    const auto current=std::min(amount,capacity-builder.text.size());
+    if (next_capacity!=capacity) builder.chunks.reserve(builder.chunks.size()+1);
+    append();
+    builder.chunks.back().length+=current;
+    if (next_capacity!=capacity) builder.chunks.push_back({amount-current,next_capacity-capacity});
 }
 void append_text(StringBuilderState& builder,std::u16string_view text,SourceLocation location) {
-    const auto capacity=appended_capacity(builder,text.size(),location);
-    builder.text.append(text);
-    builder.capacity=capacity;
+    extend(builder,text.size(),location,[&]{builder.text.append(text);});
 }
 void append_repeated(StringBuilderState& builder,char16_t character,std::size_t count,SourceLocation location) {
-    const auto capacity=appended_capacity(builder,count,location);
-    builder.text.append(count,character);
-    builder.capacity=capacity;
+    extend(builder,count,location,[&]{builder.text.append(count,character);});
 }
-void append_array(StringBuilderState& builder,const Value& argument,std::size_t start,
-    std::optional<std::size_t> count,SourceLocation location) {
+std::u16string array_text(const Value& argument,std::size_t start,std::optional<std::size_t> count,
+    SourceLocation location) {
     const auto& array=std::get<std::shared_ptr<Aggregate>>(argument);
     if (!array || array->nil) {
         if (start || count.value_or(0)) throw runtime_error(RuntimeError::nil_reference,location);
-        return;
+        return {};
     }
     const auto size=array->items.size();
     if (start>size || count.value_or(size)>size-start) throw out_of_range(location);
     const auto amount=count.value_or(size);
-    const auto capacity=appended_capacity(builder,amount,location);
-    builder.text.reserve(builder.text.size()+amount);
-    for (std::size_t i=0;i<amount;++i)
-        builder.text.push_back(std::get<char16_t>(array->items[start+i]->value));
-    builder.capacity=capacity;
+    if (amount>text_limit) throw runtime_error(RuntimeError::string_limit,location);
+    std::u16string text(amount,0);
+    for (std::size_t i=0;i<amount;++i) text[i]=std::get<char16_t>(array->items[start+i]->value);
+    return text;
 }
 void set_capacity(StringBuilderState& builder,std::size_t capacity,SourceLocation location) {
     if (capacity<builder.text.size() || capacity>builder.max_capacity) throw out_of_range(location);
     if (capacity>text_limit) throw runtime_error(RuntimeError::string_limit,location);
-    builder.capacity=capacity;
+    builder.chunks.back().capacity=capacity-builder.text.size()+builder.chunks.back().length;
+}
+struct Position {std::size_t chunk,offset;};
+Position locate(const StringBuilderState& builder,std::size_t index) {
+    auto offset=builder.text.size();
+    auto chunk=builder.chunks.size();
+    do {
+        --chunk;
+        offset-=builder.chunks[chunk].length;
+    } while (offset>index);
+    return {chunk,offset};
+}
+void shrink(StringBuilderState& builder,std::size_t length) {
+    const auto capacity=builder.capacity();
+    const auto position=locate(builder,length);
+    builder.chunks.resize(position.chunk+1);
+    builder.chunks.back()={length-position.offset,capacity-position.offset};
+    builder.text.resize(length);
+}
+void insert_text(StringBuilderState& builder,std::size_t index,std::u16string_view text,
+    std::size_t repetitions,SourceLocation location) {
+    if (index>builder.text.size()) throw out_of_range(location);
+    if (text.empty() || !repetitions) return;
+    if (repetitions>(text_limit-builder.text.size())/text.size())
+        throw runtime_error(RuntimeError::string_limit,location);
+    const auto count=text.size()*repetitions;
+    if (builder.text.size()+count>builder.max_capacity) throw out_of_range(location);
+    const auto position=locate(builder,index);
+    const auto chunk=builder.chunks[position.chunk];
+    const auto in_place=chunk.length<=32 && count<=chunk.capacity-chunk.length;
+    if (!in_place) builder.chunks.reserve(builder.chunks.size()+1);
+    if (repetitions==1) builder.text.insert(index,text);
+    else {
+        std::u16string repeated;
+        repeated.reserve(count);
+        for (std::size_t n=0;n<repetitions;++n) repeated.append(text);
+        builder.text.insert(index,repeated);
+    }
+    if (in_place) builder.chunks[position.chunk].length+=count;
+    else builder.chunks.insert(builder.chunks.begin()+static_cast<std::ptrdiff_t>(position.chunk),
+        {count,std::max(count,default_capacity)});
+}
+void remove_text(StringBuilderState& builder,std::size_t index,std::size_t count,SourceLocation location) {
+    (void)slice(builder.text,index,count,location);
+    if (!count) return;
+    if (count==builder.text.size()) {
+        shrink(builder,0);
+        return;
+    }
+    const auto first=locate(builder,index);
+    const auto last=locate(builder,index+count);
+    if (first.chunk==last.chunk) builder.chunks[first.chunk].length-=count;
+    else {
+        builder.chunks[first.chunk].length=index-first.offset;
+        builder.chunks[last.chunk].length-=index+count-last.offset;
+        const auto erase_from=first.chunk+(builder.chunks[first.chunk].length!=0);
+        builder.chunks.erase(builder.chunks.begin()+static_cast<std::ptrdiff_t>(erase_from),
+            builder.chunks.begin()+static_cast<std::ptrdiff_t>(last.chunk));
+    }
+    builder.text.erase(index,count);
 }
 StringBuilderState& state(const std::shared_ptr<Aggregate>& value,SourceLocation location) {
     if (!value || value->nil) throw runtime_error(RuntimeError::nil_reference,location);
@@ -116,7 +186,7 @@ Value construct(Values& values,Type owner,StringBuilderMethod method,std::span<c
     if (!values.remaining) throw runtime_error(RuntimeError::allocation_limit,location);
     auto object=std::make_shared<Aggregate>();
     object->type=owner;
-    object->builder=std::make_shared<StringBuilderState>(StringBuilderState{std::u16string(text),capacity,maximum});
+    object->builder=std::make_shared<StringBuilderState>(StringBuilderState{std::u16string(text),{{text.size(),capacity}},maximum});
     --values.remaining;
     return object;
 }
@@ -129,14 +199,15 @@ bool string_builder_signature(const Program& program,Type owner,std::size_t oper
         || (operation>>8U)>std::numeric_limits<std::uint16_t>::max()) return false;
     const auto method=static_cast<M>(operation&255U);
     const auto payload=static_cast<Type>(operation>>8U);
-    if (method==M::append_scalar)
+    if (method==M::append_scalar || method==M::insert_scalar)
         return integer_type(payload) || payload==Type::single || payload==Type::real || payload==Type::boolean;
-    if (method==M::append_array || method==M::append_array_range || method==M::copy_to) {
+    if (method==M::append_array || method==M::append_array_range || method==M::copy_to
+        || method==M::insert_array || method==M::insert_array_range) {
         if (!compound(payload) || static_cast<unsigned>(payload)-64U>=program.types.size()) return false;
         const auto& shape=type_info(program,payload);
         return shape.kind==CompoundKind::array && shape.rank==1 && shape.element==Type::character;
     }
-    return method<=M::replace_char_range && (operation>>8U)==0;
+    return method<=M::remove && (operation>>8U)==0;
 }
 std::vector<Type> string_builder_parameters(Type owner,StringBuilderMethod method,Type payload) {
     using M=StringBuilderMethod;
@@ -161,6 +232,11 @@ std::vector<Type> string_builder_parameters(Type owner,StringBuilderMethod metho
     case M::copy_to: return {owner,Type::integer,payload,Type::integer,Type::integer};
     case M::replace_char: return {owner,Type::character,Type::character};
     case M::replace_char_range: return {owner,Type::character,Type::character,Type::integer,Type::integer};
+    case M::insert_text: return {owner,Type::integer,Type::string};
+    case M::insert_repeated: return {owner,Type::integer,Type::string,Type::integer};
+    case M::insert_scalar: case M::insert_array: return {owner,Type::integer,payload};
+    case M::insert_array_range: return {owner,Type::integer,payload,Type::integer,Type::integer};
+    case M::remove: return {owner,Type::integer,Type::integer};
     default: return {owner};
     }
 }
@@ -184,17 +260,17 @@ Value string_builder_invoke(Values& values,Type owner,StringBuilderMethod method
     const auto length=builder.text.size();
     switch (method) {
     case M::length: return static_cast<std::int32_t>(length);
-    case M::capacity: return static_cast<std::int32_t>(builder.capacity);
+    case M::capacity: return static_cast<std::int32_t>(builder.capacity());
     case M::max_capacity: return static_cast<std::int32_t>(builder.max_capacity);
     case M::ensure_capacity:
-        if (const auto requested=number(1); requested>builder.capacity) set_capacity(builder,requested,location);
-        return static_cast<std::int32_t>(builder.capacity);
+        if (const auto requested=number(1); requested>builder.capacity()) set_capacity(builder,requested,location);
+        return static_cast<std::int32_t>(builder.capacity());
     case M::set_capacity: set_capacity(builder,number(1),location); return false;
     case M::set_length: {
         const auto proposed=number(1);
         if (proposed>builder.max_capacity) throw out_of_range(location);
         if (proposed>length) append_repeated(builder,0,proposed-length,location);
-        else builder.text.resize(proposed);
+        else shrink(builder,proposed);
         return false;
     }
     case M::get_char: {
@@ -209,7 +285,7 @@ Value string_builder_invoke(Values& values,Type owner,StringBuilderMethod method
         builder.text[index]=std::get<char16_t>(args[2]);
         return false;
     }
-    case M::clear: builder.text.clear(); break;
+    case M::clear: shrink(builder,0); break;
     case M::text: return builder.text;
     case M::text_range: return std::u16string(slice(builder.text,number(1),number(2),location));
     case M::append_text: append_text(builder,string_text(args[1]),location); break;
@@ -219,8 +295,8 @@ Value string_builder_invoke(Values& values,Type owner,StringBuilderMethod method
         append_text(builder,slice(string_text(args[1]),number(2),number(3),location),location);
         break;
     case M::append_scalar: append_text(builder,scalar_text(args[1],location),location); break;
-    case M::append_array: append_array(builder,args[1],0,std::nullopt,location); break;
-    case M::append_array_range: append_array(builder,args[1],number(2),number(3),location); break;
+    case M::append_array: append_text(builder,array_text(args[1],0,std::nullopt,location),location); break;
+    case M::append_array_range: append_text(builder,array_text(args[1],number(2),number(3),location),location); break;
     case M::append_builder: {
         const auto& other=std::get<std::shared_ptr<Aggregate>>(args[1]);
         if (other && !other->nil) {
@@ -250,6 +326,21 @@ Value string_builder_invoke(Values& values,Type owner,StringBuilderMethod method
             std::get<char16_t>(args[1]),std::get<char16_t>(args[2]));
         break;
     }
+    case M::insert_text: case M::insert_repeated:
+        insert_text(builder,number(1),string_text(args[2]),method==M::insert_text?1U:number(3),location);
+        break;
+    case M::insert_scalar:
+        insert_text(builder,number(1),scalar_text(args[2],location),1,location);
+        break;
+    case M::insert_array:
+        insert_text(builder,number(1),array_text(args[2],0,std::nullopt,location),1,location);
+        break;
+    case M::insert_array_range:
+        insert_text(builder,number(1),array_text(args[2],number(3),number(4),location),1,location);
+        break;
+    case M::remove:
+        remove_text(builder,number(1),number(2),location);
+        break;
     case M::append_line: case M::append_line_text:
         if (method==M::append_line_text) append_text(builder,string_text(args[1]),location);
 #ifdef _WIN32
@@ -262,7 +353,7 @@ Value string_builder_invoke(Values& values,Type owner,StringBuilderMethod method
         const auto& other=std::get<std::shared_ptr<Aggregate>>(args[1]);
         if (!other || other->nil) return false;
         const auto& compared=state(other,location);
-        return builder.capacity==compared.capacity && builder.max_capacity==compared.max_capacity && builder.text==compared.text;
+        return builder.capacity()==compared.capacity() && builder.max_capacity==compared.max_capacity && builder.text==compared.text;
     }
     default: throw runtime_error(RuntimeError::invalid_bytecode,location);
     }
