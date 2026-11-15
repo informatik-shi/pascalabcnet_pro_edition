@@ -115,7 +115,7 @@ Value enumerator_invoke(Values& values,Type owner,Type payload,EnumeratorMethod 
    if(!source || source->nil)throw runtime_error(RuntimeError::nil_reference,values.location);
    for(std::size_t i=0;i<values.program.types.size();++i){work.step();const auto& type=values.program.types[i];if(collection_enumerator_type(type) && type.key==source->type){const auto record=static_cast<Type>(64+i);auto iterator=enumerator_invoke(values,source->type,record,EnumeratorMethod::get_collection,source,options);return enumerator_invoke(values,record,payload,EnumeratorMethod::box_collection,iterator,options);}}
   }
-  if(object->sequence && dictionary_provider(object->sequence->provider)){
+  if(object->sequence && (dictionary_provider(object->sequence->provider) || object->sequence->provider==SequenceProvider::sorted_dictionary)){
    const auto source=object->sequence->source;if(!source || source->nil)throw runtime_error(RuntimeError::nil_reference,values.location);
    for(std::size_t i=0;i<values.program.types.size();++i){work.step();const auto& t=values.program.types[i];if(dictionary_enumerator_type(t) && t.key==source->type){
     const auto record=static_cast<Type>(64+i);const std::array<Value,1> input{source};auto iterator=dictionary_invoke(values,source->type,record,DictionaryMethod::get_enumerator,input,options);

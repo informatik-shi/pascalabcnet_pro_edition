@@ -199,7 +199,7 @@ std::optional<std::int32_t> collection_count(Values& values,const Object& input,
     if(state.provider==SequenceProvider::sorted_set)sorted_set_refresh(values,state.source,options);
     if(collection_sequence(state.provider))return static_cast<std::int32_t>(state.source->items.size());
     if(dictionary_provider(state.provider))
-        return static_cast<std::int32_t>(dictionary_sequence_source(state,values.location)->count);
+        return static_cast<std::int32_t>(dictionary_count(*dictionary_sequence_source(state,values.location)));
     if(!generic)return std::nullopt;
     if(state.provider==SequenceProvider::hash_set)return static_cast<std::int32_t>(state.source->count);
     if(const auto contract=sequence_collection_owner(values.program,input);contract!=Type::invalid)

@@ -2195,7 +2195,7 @@ void verify(const Program& program) {
         } else if(type.kind==CompoundKind::dictionary_keys || type.kind==CompoundKind::dictionary_values) {
             if(type.name!=(type.kind==CompoundKind::dictionary_keys ? "dictionarykeys" : "dictionaryvalues") || !type.fields.empty())throw Error("E_BYTECODE",{},"Invalid Dictionary view metadata");prior(type.key);prior(type.element);
             const auto& owner=type_info(program,type.key);
-            if(owner.kind!=CompoundKind::dictionary || (type.kind==CompoundKind::dictionary_keys ? owner.key : type_info(program,owner.element).fields.at(1).type)!=type.element)throw Error("E_BYTECODE",{},"Invalid Dictionary view owner");
+            if((owner.kind!=CompoundKind::dictionary && owner.kind!=CompoundKind::sorted_dictionary) || (type.kind==CompoundKind::dictionary_keys ? owner.key : type_info(program,owner.element).fields.at(1).type)!=type.element)throw Error("E_BYTECODE",{},"Invalid Dictionary view owner");
         } else if(type.kind==CompoundKind::sorted_set) {
             if(type.name!="sortedset" || type.rank!=1 || !type.fields.empty() || !compound(type.key))
                 throw Error("E_BYTECODE",{},"Invalid SortedSet type metadata");

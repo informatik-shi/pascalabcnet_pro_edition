@@ -19,7 +19,7 @@ struct Work {
     }
 };
 std::u16string named(const TypeInfo& type){return from_utf8(type.display_name.empty() ? type.name : type.display_name);}
-const TypeInfo& enumerator_pair(const Program& program,const TypeInfo& iterator){const auto& source=type_info(program,iterator.key);const auto& dictionary=source.kind==CompoundKind::dictionary ? source : type_info(program,source.key);return type_info(program,dictionary.element);}
+const TypeInfo& enumerator_pair(const Program& program,const TypeInfo& iterator){const auto& source=type_info(program,iterator.key);const auto& dictionary=(source.kind==CompoundKind::dictionary || source.kind==CompoundKind::sorted_dictionary) ? source : type_info(program,source.key);return type_info(program,dictionary.element);}
 std::u16string byref_name(const Program& program,Type type,Work& work){
     std::u16string suffix;
     while(compound(type) && type_info(program,type).kind==CompoundKind::array){

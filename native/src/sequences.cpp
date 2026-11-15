@@ -214,7 +214,7 @@ std::shared_ptr<Aggregate> sequence_begin(Values& values,const std::shared_ptr<A
     require(state.source,values.location);
     if(state.provider==SequenceProvider::sorted_set)sorted_set_refresh(values,state.source,options);
     if(state.provider==SequenceProvider::hash_set || state.provider==SequenceProvider::new_set){reserve_state(values);state.count=state.source->count;state.version=state.source->version;state.hash_cursor=std::make_shared<HashSetCursor>();}
-    else if(dictionary_provider(state.provider)){const auto owner=dictionary_sequence_source(state,values.location);reserve_state(values);state.count=owner->count;state.version=owner->version;state.hash_cursor=std::make_shared<HashSetCursor>();}
+    else if(dictionary_provider(state.provider)){const auto owner=dictionary_sequence_source(state,values.location);reserve_state(values);state.count=dictionary_count(*owner);state.version=owner->version;state.hash_cursor=std::make_shared<HashSetCursor>();}
     else if (collection_sequence(state.provider)) { state.count=state.source->items.size(); state.version=state.source->version; }
     else school_ip_sequence_start(state,values.location);
     return cursor_lease(std::move(result));

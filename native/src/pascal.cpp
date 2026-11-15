@@ -3452,8 +3452,12 @@ private:
         module_.types.push_back({sorted ? "sorteddictionary" : "dictionary",kind,pair,{},key});
         const auto result=static_cast<Type>(63+module_.types.size());
         (void)sequence_type(CompoundKind::sequence,pair);
-        if(sorted)(void)enumerator_type(pair);
-        else (void)dictionary_enumerator(result);
+        (void)dictionary_enumerator(result);
+        if(sorted){
+            (void)enumerator_type(pair);
+            (void)dictionary_view_type(result,true);
+            (void)dictionary_view_type(result,false);
+        }
         return result;
     }
     ABC_PASCAL_NOINLINE Type dictionary_view_type(Type owner,bool keys){
@@ -3468,9 +3472,11 @@ private:
     }
     ABC_PASCAL_NOINLINE Type dictionary_enumerator(Type source){
         for(std::size_t i=0;i<module_.types.size();++i){const auto& t=module_.types[i];if(dictionary_enumerator_type(t) && t.key==source)return static_cast<Type>(64+i);}
-        const auto s=info(source,{});const auto dictionary=s.kind==CompoundKind::dictionary ? source : s.key;
+        const auto s=info(source,{});
+        const auto dictionary=(s.kind==CompoundKind::dictionary || s.kind==CompoundKind::sorted_dictionary) ? source : s.key;
+        const auto index=info(dictionary,{}).kind==CompoundKind::sorted_dictionary ? sequence_type(CompoundKind::array,Type::integer) : Type::integer;
         if(module_.types.size()>=1024)throw Error("E_LIMIT",{},"Type limit exceeded");
-        TypeInfo iterator{"dictionaryenumerator",CompoundKind::record,s.element,{{"$source",dictionary,false},{"$version",Type::uint64,false},{"$index",Type::integer,false},{"$current",s.element,false}},source};
+        TypeInfo iterator{"dictionaryenumerator",CompoundKind::record,s.element,{{"$source",dictionary,false},{"$version",Type::uint64,false},{"$index",index,false},{"$current",s.element,false}},source};
         iterator.native_record=NativeRecord::dictionary_enumerator;module_.types.push_back(std::move(iterator));return static_cast<Type>(63+module_.types.size());
     }
     Type association_type(Type key, Type element) {
@@ -3487,8 +3493,8 @@ private:
         if(!base_only && !syntax.nested.empty()){
             auto type=resolve_type(syntax,true);for(const auto& member:syntax.nested){if(!compound(type))throw Error("E_TYPE",syntax.token.location,"Unknown collection nested type");const auto shape=info(type,syntax.token.location);
                 if(member=="enumerator" && (shape.kind==CompoundKind::list || shape.kind==CompoundKind::hash_set || shape.kind==CompoundKind::sorted_set))type=collection_enumerator(type);
-                else if(member=="enumerator" && (shape.kind==CompoundKind::dictionary || shape.kind==CompoundKind::dictionary_keys || shape.kind==CompoundKind::dictionary_values))type=dictionary_enumerator(type);
-                else if((member=="keycollection" || member=="valuecollection") && shape.kind==CompoundKind::dictionary)type=dictionary_view_type(type,member=="keycollection");
+                else if(member=="enumerator" && (shape.kind==CompoundKind::dictionary || shape.kind==CompoundKind::sorted_dictionary || shape.kind==CompoundKind::dictionary_keys || shape.kind==CompoundKind::dictionary_values))type=dictionary_enumerator(type);
+                else if((member=="keycollection" || member=="valuecollection") && (shape.kind==CompoundKind::dictionary || shape.kind==CompoundKind::sorted_dictionary))type=dictionary_view_type(type,member=="keycollection");
                 else throw Error("E_TYPE",syntax.token.location,"Unknown collection nested type");
             }return type;
         }
@@ -5884,7 +5890,7 @@ private:
             if(op=="*" && (is_list(left) || is_list(right)))
                 return compound_expression(is_list(left) ? left : right,is_list(left) ? CompoundMethod::list_repeat : CompoundMethod::list_repeat_reverse,std::move(result->left),std::move(result->right),result->location);
             if(op=="+"){
-                const auto adapt=[&](std::unique_ptr<hir::Expr>& value,Type& type){if(compound(type)){const auto shape=info(type,result->location);if(shape.kind==CompoundKind::dictionary || shape.kind==CompoundKind::dictionary_keys || shape.kind==CompoundKind::dictionary_values){const auto sequence=sequence_type(CompoundKind::sequence,shape.element);value=convert(std::move(value),sequence);type=sequence;}}};adapt(result->left,left);adapt(result->right,right);
+                const auto adapt=[&](std::unique_ptr<hir::Expr>& value,Type& type){if(compound(type)){const auto shape=info(type,result->location);if(shape.kind==CompoundKind::dictionary || shape.kind==CompoundKind::sorted_dictionary || shape.kind==CompoundKind::dictionary_keys || shape.kind==CompoundKind::dictionary_values){const auto sequence=sequence_type(CompoundKind::sequence,shape.element);value=convert(std::move(value),sequence);type=sequence;}}};adapt(result->left,left);adapt(result->right,right);
             }
             const auto is_sequence=[&](Type type) { return compound(type) && info(type,result->location).kind==CompoundKind::sequence; };
             if (op=="+" && (is_sequence(left) || is_sequence(right))) {
@@ -6278,7 +6284,7 @@ private:
     ABC_PASCAL_NOINLINE bool bind_dictionary_member(hir::Expr& result,const SyntaxExpr& source,bool global=false){
         const auto offset=global ? 1U : 0U;const auto owner=result.left->type;if(!compound(owner))return false;
         const auto shape=info(owner,result.location);const auto& name=source.token.text;
-        if(!global && (dictionary_enumerator_type(shape) || ((shape.kind==CompoundKind::dictionary || shape.kind==CompoundKind::dictionary_keys || shape.kind==CompoundKind::dictionary_values) && name=="getenumerator"))){
+        if(!global && (dictionary_enumerator_type(shape) || ((shape.kind==CompoundKind::dictionary || shape.kind==CompoundKind::sorted_dictionary || shape.kind==CompoundKind::dictionary_keys || shape.kind==CompoundKind::dictionary_values) && name=="getenumerator"))){
             DictionaryMethod method;Type payload=Type::invalid;
             if(!dictionary_enumerator_type(shape)){method=DictionaryMethod::get_enumerator;payload=dictionary_enumerator(owner);}
             else if(name=="movenext")method=new_set_addressable(*result.left) ? DictionaryMethod::enumerator_move : DictionaryMethod::enumerator_move_copy;
@@ -6317,7 +6323,7 @@ private:
         static const std::map<std::string,DictionaryMethod> methods{{"count",DictionaryMethod::count},{"add",DictionaryMethod::add},{"containskey",DictionaryMethod::contains_key},{"containsvalue",DictionaryMethod::contains_value},{"trygetvalue",DictionaryMethod::try_get_value},{"remove",DictionaryMethod::remove},{"clear",DictionaryMethod::clear},{"get",DictionaryMethod::get_default},{"getoradd",DictionaryMethod::get_or_add_value},{"keys",DictionaryMethod::keys},{"values",DictionaryMethod::values},{"update",DictionaryMethod::update}};
         const auto found=methods.find(name);if(found==methods.end())return false;
         auto method=found->second;const auto value=dictionary_value_type(module_.types,owner);
-        if(sorted && (global || method<DictionaryMethod::count || method>DictionaryMethod::clear))return false;
+        if(sorted && (global || ((method<DictionaryMethod::count || method>DictionaryMethod::clear) && method!=DictionaryMethod::keys && method!=DictionaryMethod::values)))return false;
         if((method==DictionaryMethod::count || method==DictionaryMethod::keys || method==DictionaryMethod::values) && source.kind==SyntaxExprKind::member_call)throw Error("E_TYPE",result.location,"Dictionary property is not callable");
         Type payload=Type::invalid;
         if(method==DictionaryMethod::keys || method==DictionaryMethod::values)payload=dictionary_view_type(owner,method==DictionaryMethod::keys);

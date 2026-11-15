@@ -12,6 +12,7 @@ enum class DictionaryMethod {
  construct_comparer,construct_capacity_comparer,construct_copy_comparer,comparer,pair_contains,pair_copy_to
 };
 std::shared_ptr<Aggregate> dictionary_sequence_source(const SequenceState& state,SourceLocation location);
+std::size_t dictionary_count(const Aggregate&);
 bool dictionary_sequence_resume(Values& values,const std::shared_ptr<Aggregate>& cursor,std::uint64_t index,const ExecutionOptions& options);
 bool dictionary_enumerator_metadata(const Program& program,Type iterator);
 Type dictionary_value_type(const std::vector<TypeInfo>& types,Type owner);

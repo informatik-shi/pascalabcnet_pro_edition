@@ -1,0 +1,34 @@
+uses System;
+type Named = System.Collections.Generic.SortedDictionary<integer,string>;
+begin
+  var desc:=System.Collections.Generic.Comparer&<integer>.Create((a,b) -> b-a);
+  var d:=new Named(desc);
+  d.Add(2,'two');
+  d.Add(4,'four');
+  var keys:=d.Keys;
+  var vals:=d.Values;
+  d.Add(1,'one');
+  Writeln(keys.Count,' ',vals.Count,' ',keys.Contains(2),' ',vals.Contains('one'));
+  Writeln(keys.ToArray.JoinIntoString(','),' ',vals.ToArray.JoinIntoString(','));
+  d[2]:='changed';
+  Writeln(vals.Contains('two'),' ',vals.Contains('changed'));
+  var keyArray:=ArrFill(5,-1);
+  var valArray:=ArrFill(5,'__');
+  keys.CopyTo(keyArray,1);
+  vals.CopyTo(valArray,1);
+  Writeln(keyArray.JoinIntoString(','),' ',valArray.JoinIntoString(','));
+  var api: System.Collections.Generic.IDictionary<integer,string> := d;
+  api.Add(5,'five');
+  api[4]:='four-updated';
+  Writeln(api.Count,' ',api[4],' ',api.Keys.ToArray.JoinIntoString(','));
+  var i:=d.GetEnumerator;
+  var twin:=i;
+  Writeln(i.MoveNext,' ',i.Current.Key,' ',twin.Current.Key);
+  Writeln(twin.MoveNext,' ',i.Current.Key,' ',twin.Current.Key);
+  var k:=keys.GetEnumerator;
+  var another:=k;
+  Writeln(k.MoveNext,' ',k.Current,' ',another.Current);
+  Writeln(another.MoveNext,' ',k.Current,' ',another.Current);
+  api.Remove(1);
+  Writeln(keys.ToArray.JoinIntoString(','));
+end.

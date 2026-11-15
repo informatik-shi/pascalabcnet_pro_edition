@@ -48,8 +48,8 @@ void arity(Definition& result){
 }
 void dictionary(Definition& result,const Program& program,Type owner){
     const auto& info=type_info(program,owner);
-    const bool sorted=info.kind==CompoundKind::sorted_dictionary;
-    const auto& base=info.kind==CompoundKind::dictionary || sorted ? info : type_info(program,info.key);
+    const auto& base=(info.kind==CompoundKind::dictionary || info.kind==CompoundKind::sorted_dictionary) ? info : type_info(program,info.key);
+    const bool sorted=base.kind==CompoundKind::sorted_dictionary;
     result.name=sorted ? u"SortedDictionary`2" : u"Dictionary`2";result.name_space=u"System.Collections.Generic";
     if(sorted)result.assembly=u"System";
     result.arguments={base.key,type_info(program,base.element).fields[1].type};
@@ -58,7 +58,7 @@ void dictionary(Definition& result,const Program& program,Type owner){
 }
 void collection_iterator(Definition& result,const Program& program,Type owner){
     const auto& info=type_info(program,owner);
-    if(info.kind==CompoundKind::dictionary || info.kind==CompoundKind::dictionary_keys || info.kind==CompoundKind::dictionary_values)dictionary(result,program,owner);
+    if(info.kind==CompoundKind::dictionary || info.kind==CompoundKind::sorted_dictionary || info.kind==CompoundKind::dictionary_keys || info.kind==CompoundKind::dictionary_values)dictionary(result,program,owner);
     else if(info.kind==CompoundKind::list || info.kind==CompoundKind::hash_set || info.kind==CompoundKind::sorted_set){
         result.name=info.kind==CompoundKind::list ? u"List`1" : info.kind==CompoundKind::hash_set ? u"HashSet`1" : u"SortedSet`1";
         result.name_space=u"System.Collections.Generic";result.arguments={info.element};
