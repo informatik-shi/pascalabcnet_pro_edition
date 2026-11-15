@@ -2264,9 +2264,13 @@ private:
         return result;
     }
     std::unique_ptr<hir::Expr> make_number_format(const SyntaxExpr& source,SourceLocation location) {
+        using M=NumberFormatMethod;
+        const auto& operation=source.token.text;
+        const auto method=operation=="setnumberformat"?M::set_format:
+            operation=="setdecimalseparator"?M::set_decimal:M::factory;
         std::vector<std::unique_ptr<hir::Expr>> args;
         for (const auto& argument:source.arguments) args.push_back(expression(*argument,Type::string));
-        while (args.size()<2) {
+        while (method!=M::set_decimal && args.size()<2) {
             auto value=std::make_unique<hir::Expr>();
             value->kind=hir::ExprKind::literal;
             value->type=Type::string;
@@ -2274,7 +2278,7 @@ private:
             value->value=std::u16string(1,args.empty()?u'.':u',');
             args.push_back(std::move(value));
         }
-        return number_format_expression(number_format_type(location),NumberFormatMethod::factory,std::move(args),location);
+        return number_format_expression(number_format_type(location),method,std::move(args),location);
     }
     std::unique_ptr<hir::Expr> bind_number_format_static(const SyntaxExpr& source) {
         using M=NumberFormatMethod;
@@ -3816,18 +3820,22 @@ private:
                 break;
             }
             if (source.left->kind==SyntaxExprKind::name && !lookup(source.left->token) && imported_units_.contains(source.left->token.text)) {
-                if (source.left->token.text=="pabcsystem" && source.token.text=="numberformat")
+                const auto& name=source.token.text;
+                if (source.left->token.text=="pabcsystem" &&
+                    (name=="numberformat" || name=="setnumberformat" || name=="setdecimalseparator"))
                     return make_number_format(source,result->location);
-                if (source.left->token.text=="pabcsystem" && source.token.text=="floattostr" && source.arguments.size()==2) {
+                if (source.left->token.text=="pabcsystem" && (name=="floattostr" || name=="strtofloat" || name=="strtoreal")
+                    && source.arguments.size()==2) {
                     std::vector<std::unique_ptr<hir::Expr>> args;
                     for (const auto& arg:source.arguments) args.push_back(expression(*arg));
                     const auto type=args[1]->type;
                     if (is_number_format(type) || type==Type::nil)
-                        return number_format_expression(number_format_type(result->location),NumberFormatMethod::float_text,
+                        return number_format_expression(number_format_type(result->location),
+                            name=="floattostr"?NumberFormatMethod::float_text:NumberFormatMethod::parse_real,
                             std::move(args),result->location);
                     result->kind=hir::ExprKind::call;
                     result->arguments=std::move(args);
-                    bind_builtin(*result,"floattostr","pabcsystem");
+                    bind_builtin(*result,name,"pabcsystem");
                     break;
                 }
                 if (source.left->token.text=="pabcsystem" && source.token.text=="format") {
@@ -4432,7 +4440,7 @@ private:
                 result->kind = hir::ExprKind::literal;
                 result->value = *value;
                 result->type = value_type(*value);
-            } else if (source.token.text=="numberformat" || source.token.text=="arrrandom" || source.token.text=="arrrandominteger" || source.token.text=="arrrandomreal" || source.token.text=="matrrandom" || source.token.text=="matrrandominteger" || source.token.text=="matrrandomreal") {
+            } else if (source.token.text=="numberformat" || source.token.text=="setnumberformat" || source.token.text=="arrrandom" || source.token.text=="arrrandominteger" || source.token.text=="arrrandomreal" || source.token.text=="matrrandom" || source.token.text=="matrrandominteger" || source.token.text=="matrrandomreal") {
                 SyntaxExpr call{SyntaxExprKind::call,source.token,{},{},1,{},{}};
                 return expression(call);
             } else if (std::any_of(stdlib::signatures().begin(),stdlib::signatures().end(),[&](const stdlib::Signature& signature) {
@@ -4474,7 +4482,8 @@ private:
                 return bind_composite_format(string_builder_type(result->location),StringBuilderMethod::format,
                     std::move(args),result->location);
             }
-            if (source.token.text=="numberformat" && !routine_names_.contains(source.token.text))
+            if ((source.token.text=="numberformat" || source.token.text=="setnumberformat" || source.token.text=="setdecimalseparator")
+                && !routine_names_.contains(source.token.text))
                 return make_number_format(source,result->location);
             result->kind = hir::ExprKind::call;
             if (!lookup(source.token) && subrange_aliases_.contains(source.token.text)) {
@@ -4577,9 +4586,11 @@ private:
                 bind_school_ip_constructor(*result,school_ip_type(source.token.text=="addr32" ? CompoundKind::school_address : CompoundKind::school_ip)); break;
             }
             if (bind_try_read(*result,source.token.text)) break;
-            if (source.token.text=="floattostr" && result->arguments.size()==2 && !routine_names_.contains(source.token.text)
+            if ((source.token.text=="floattostr" || source.token.text=="strtofloat" || source.token.text=="strtoreal")
+                && result->arguments.size()==2 && !routine_names_.contains(source.token.text)
                 && (is_number_format(result->arguments[1]->type) || result->arguments[1]->type==Type::nil))
-                return number_format_expression(number_format_type(result->location),NumberFormatMethod::float_text,
+                return number_format_expression(number_format_type(result->location),
+                    source.token.text=="floattostr"?NumberFormatMethod::float_text:NumberFormatMethod::parse_real,
                     std::move(result->arguments),result->location);
             if (bind_number_conversion(*result,source.token.text)) break;
             if (bind_school_text(*result,source.token.text)) break;

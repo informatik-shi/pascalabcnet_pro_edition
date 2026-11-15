@@ -1,6 +1,7 @@
 #include "number_format.hpp"
 #include "composite_format.hpp"
 #include "runtime_values.hpp"
+#include "stdlib.hpp"
 #include <array>
 
 namespace abc {
@@ -53,6 +54,14 @@ std::shared_ptr<Aggregate> culture_format(Values& values,Type owner,bool invaria
     }
     return cached;
 }
+NumberFormatState& writable_pabc_format(Values& values,Type owner) {
+    if (!values.pabc_number_format) {
+        NumberFormatState initial;
+        initial.group=u".";
+        values.pabc_number_format=create(values,owner,std::move(initial));
+    }
+    return *values.pabc_number_format->number_format;
+}
 Value property_value(Values& values,const NumberFormatState& format,Type owner,F member) {
     if (member<F::decimal_digits) return format.*string_fields[static_cast<std::size_t>(member)];
     if (member==F::decimal_digits) return format.digits;
@@ -95,7 +104,7 @@ bool number_format_signature(const Program& program,Type owner,std::size_t opera
         || type_info(program,owner).kind!=CompoundKind::number_format) return false;
     const auto call=method(operation);
     if (call==M::get || call==M::set) return (operation>>8U)<=static_cast<unsigned>(F::group_sizes);
-    return call<=M::float_text && (operation>>8U)==0;
+    return call<=M::set_format && (operation>>8U)==0;
 }
 Type known_number_format_type(const Program& program) {
     for (std::size_t i=0;i<program.types.size();++i)
@@ -112,19 +121,31 @@ const NumberFormatSettings& number_settings(const Values& values,const Value* pr
     static const NumberFormatSettings en_us;
     return en_us;
 }
+const NumberFormatSettings& pabc_number_settings(const Values& values) {
+    if (values.pabc_number_format) return *values.pabc_number_format->number_format;
+    static const auto defaults=[] {
+        NumberFormatSettings settings;
+        settings.group=u".";
+        return settings;
+    }();
+    return defaults;
+}
 std::vector<Type> number_format_parameters(Type owner,Type groups,std::size_t operation) {
     switch (method(operation)) {
     case M::create: case M::invariant: case M::current: return {};
-    case M::factory: return {Type::string,Type::string};
+    case M::factory: case M::set_format: return {Type::string,Type::string};
+    case M::set_decimal: return {Type::string};
     case M::set: return {owner,field_type(field(operation),groups)};
     case M::float_text: return {Type::real,owner};
+    case M::parse_real: return {Type::string,owner};
     default: return {owner};
     }
 }
 Type number_format_result(Type owner,Type groups,std::size_t operation) {
     switch (method(operation)) {
     case M::get: return field_type(field(operation),groups);
-    case M::set: return Type::unit;
+    case M::set: case M::set_decimal: case M::set_format: return Type::unit;
+    case M::parse_real: return Type::real;
     case M::is_readonly: return Type::boolean;
     case M::to_string: case M::float_text: return Type::string;
     default: return owner;
@@ -142,6 +163,14 @@ Value number_format_invoke(Values& values,Type owner,std::size_t operation,std::
         return create(values,owner,std::move(format));
     }
     case M::invariant: case M::current: return culture_format(values,owner,call==M::invariant);
+    case M::parse_real:
+        return stdlib::parse_provider_real(args[0],number_settings(values,&args[1]),location);
+    case M::set_decimal: case M::set_format: {
+        auto& format=writable_pabc_format(values,owner);
+        set_property(format,F::decimal_separator,args[0],location);
+        if (call==M::set_format) set_property(format,F::group_separator,args[1],location);
+        return false;
+    }
     case M::float_text: {
         const auto& object=std::get<std::shared_ptr<Aggregate>>(args[1]);
         const auto provider=object && !object->nil?args[1]:Value{culture_format(values,owner,false)};

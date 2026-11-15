@@ -331,13 +331,8 @@ Value string_builder_invoke(Values& values,Type owner,StringBuilderMethod method
     if (method<=M::create_slice) return construct(values,owner,method,args);
     const auto location=values.location;
     if (method==M::format) {
-        static const auto pabc=[] {
-            NumberFormatSettings settings;
-            settings.group=u".";
-            return settings;
-        }();
         std::u16string text;
-        composite_format(values.program,args[0],args[1],pabc,location,[&](std::u16string_view part) {
+        composite_format(values.program,args[0],args[1],pabc_number_settings(values),location,[&](std::u16string_view part) {
             if (part.size()>text_limit-text.size()) throw runtime_error(RuntimeError::string_limit,location);
             text.append(part);
         });

@@ -5780,6 +5780,11 @@ var/out-параметры и Self записи и могут менять Resul
 В числовых полях шаблона учитываются размеры групп, отрицательный шаблон,
 знаки и разделители. Вызовы `AppendFormat` без провайдера и числовые
 `Append` и `Insert` используют `CurrentInfo`.
+`StrToFloat` и `StrToReal` принимают явный `NumberFormatInfo`, включая
+многосимвольные знаки и разделители. `SetNumberFormat` и
+`SetDecimalSeparator` меняют настройки `PABCSystem` на время запуска.
+Эти настройки применяются в `Format`, `FloatToStr`, `StrToReal`,
+`StrToFloat` и обычном выводе вещественных чисел.
 Валютные и процентные свойства и остальные перегрузки ещё
 переносятся. [Справочник NumberFormatInfo](https://learn.microsoft.com/en-us/dotnet/api/system.globalization.numberformatinfo?view=netframework-4.8.1)
 

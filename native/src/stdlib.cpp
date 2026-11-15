@@ -15,6 +15,8 @@
 #include "random.hpp"
 #include "console_input.hpp"
 #include "formatting.hpp"
+#include "composite_format.hpp"
+#include "number_format.hpp"
 #include "school.hpp"
 #include "unicode.hpp"
 #include "big_integer_runtime.hpp"
@@ -399,6 +401,13 @@ Value invoke(std::size_t id, std::span<const Value> arguments, SourceLocation lo
     auto& files=context.files; auto& random=context.random;
     const auto& signature = signatures()[id]; // Verified before execution.
     const auto function = signature.function;
+    if (context.values.pabc_number_format) {
+        const auto& format=pabc_number_settings(context.values);
+        if (function==Function::float_to_str)
+            return localize_number(format_scalar(arguments[0],location),format,location);
+        if (function==Function::str_to_real && arguments.size()==1)
+            return parse_provider_real(arguments[0],format,location);
+    }
     if(function==Function::terminate_program)throw ProgramTermination{arguments.empty() ? std::int32_t{0} : std::get<std::int32_t>(arguments[0])};
     if(function==Function::command_line_count)return context.environment.count(location);
     if(function==Function::command_line_parameter)return context.environment.parameter(std::get<std::int32_t>(arguments[0]),location);

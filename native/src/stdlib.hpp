@@ -2,7 +2,7 @@
 #include "abc/core.hpp"
 #include <span>
 
-namespace abc { class FileContext; class RandomContext; class ConsoleInput; class TimeContext; class ProgramEnvironment; struct SchoolContext; struct Values; }
+namespace abc { class FileContext; class RandomContext; class ConsoleInput; class TimeContext; class ProgramEnvironment; struct SchoolContext; struct Values; struct NumberFormatSettings; }
 namespace abc::stdlib {
 enum class Function {
     abs, sqr, sign, minimum, maximum, sin, sinh, cos, cosh, tan, tanh,
@@ -60,6 +60,7 @@ Value invoke(std::size_t id, std::span<const Value> arguments, SourceLocation lo
 std::optional<Value> invoke_text(Function function, std::span<const Value> arguments, SourceLocation location);
 std::optional<Value> mutate_text(Function function, std::span<const Value> arguments, SourceLocation location,Context& context);
 std::optional<Value> try_parse_number(Type type, const Value& source, SourceLocation location,bool single_groups=false,bool single_nil_zero=false);
+double parse_provider_real(const Value&,const NumberFormatSettings&,SourceLocation);
 bool unicode_whitespace(char16_t character);
 std::pair<std::u16string,std::int32_t> read_string_word(const Value& source, std::int32_t position,
     SourceLocation location, const ExecutionOptions& options, bool skip_only=false);

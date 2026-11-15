@@ -173,6 +173,7 @@ StringBuilder.Replace меняет символы и подстроки, в то
 Format и StringBuilder.AppendFormat поддерживают позиционные поля, выравнивание и числовые форматы D, X, F, N, G, E.
 NumberFormatInfo и NumberFormat задают числовые разделители, знаки и размеры групп. FloatToStr принимает эти настройки.
 AppendFormat принимает NumberFormatInfo перед шаблоном. Без провайдера используется CurrentInfo.
+SetNumberFormat и SetDecimalSeparator меняют числовой формат программы. StrToFloat и StrToReal принимают NumberFormatInfo.
 Статические массивы, независимые копии, двумерные индексы и file of массив: examples/fixed-arrays.pas.
 Инициализаторы динамических массивов, записи и более семи элементов: examples/array-literals.pas.
 Константы-массивы, известные границы типов и постоянные локальные таблицы: examples/array-constants.pas.

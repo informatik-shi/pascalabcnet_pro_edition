@@ -14,6 +14,8 @@
 #include "console_input.hpp"
 #include "console_output.hpp"
 #include "formatting.hpp"
+#include "composite_format.hpp"
+#include "number_format.hpp"
 #include "string_arrays.hpp"
 #include "school.hpp"
 #include "school_ip.hpp"
@@ -264,6 +266,11 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
     ConsoleOutput console_output(output,options);
     auto write = [&](std::u16string_view text, const Instruction& instruction) {
         console_output.write(text,instruction.location);
+    };
+    const auto output_scalar=[&](const Value& value,const Instruction& instruction) {
+        if (values.pabc_number_format && (std::holds_alternative<float>(value) || std::holds_alternative<double>(value)))
+            return localize_number(format_scalar(value,instruction.location),pabc_number_settings(values),instruction.location);
+        return scalar_text(value,instruction);
     };
     auto pop = [&]() { auto value = std::move(stack.back()); stack.pop_back(); return value; };
     auto account_number=[&](const Value& result,std::span<const Value> inputs={}) {
@@ -661,10 +668,10 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
             const auto message=pop(); const auto target=std::get<std::shared_ptr<Cell>>(pop());
             try {
                 if (std::holds_alternative<NilString>(message) || !string_text(message).empty()) {
-                    write(scalar_text(message,instruction),instruction);
+                    write(output_scalar(message,instruction),instruction);
                     const auto& delimiter=delimiter_value();
                     if (std::holds_alternative<NilString>(delimiter) || !string_text(delimiter).empty())
-                        write(scalar_text(delimiter,instruction),instruction);
+                        write(output_scalar(delimiter,instruction),instruction);
                 }
                 const auto value=console.read(instruction.type,instruction.location); account_number(value); values.write(target,value);
                 stack.emplace_back(true);
@@ -726,7 +733,7 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
             std::vector<Value> arguments(instruction.operand/2);
             for (auto i=arguments.size();i>0;--i) arguments[i-1]=pop();
             for (const auto& value:arguments) write(compound(value_type(value))
-                ? object_text(program,value,value_type(value),instruction.location,options) : scalar_text(value,instruction),instruction);
+                ? object_text(program,value,value_type(value),instruction.location,options) : output_scalar(value,instruction),instruction);
             if (instruction.operand&1U) write(u"\n",instruction);
             break;
         }
@@ -812,7 +819,7 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
                     for (std::size_t c=0;c<sequence->columns;++c) {
                         if ((c&255U)==0 && options.cancelled && options.cancelled()) trap(instruction,RuntimeError::cancelled);
                         write(object_text(program,sequence->items[r*sequence->columns+c]->value,type_info(program,instruction.type).element,instruction.location,options),instruction);
-                        write(scalar_text(delimiter,instruction),instruction);
+                        write(output_scalar(delimiter,instruction),instruction);
                     }
                     write(u"\n",instruction);
                 }
@@ -821,7 +828,7 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
             }
             for (std::size_t i=0;i<sequence->items.size();++i) {
                 if ((i&255U)==0 && options.cancelled && options.cancelled()) trap(instruction,RuntimeError::cancelled);
-                if (i) write(scalar_text(delimiter,instruction),instruction);
+                if (i) write(output_scalar(delimiter,instruction),instruction);
                 write(object_text(program,sequence->items[i]->value,type_info(program,instruction.type).element,instruction.location,options),instruction);
             }
             if (instruction.operand&1U) write(u"\n",instruction);
@@ -1137,7 +1144,7 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
         }
         case Op::file_print: {
             const auto value=pop(); auto& file=text_file(stack.back(),instruction.location);
-            text_write(file,scalar_text(value,instruction),instruction.location); break;
+            text_write(file,output_scalar(value,instruction),instruction.location); break;
         }
         case Op::print_output: case Op::file_output: {
             std::vector<Value> arguments(instruction.operand/4);
@@ -1153,11 +1160,11 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
             if (arguments.empty() && (method==TextOutput::write || method==TextOutput::print)) break;
             for (std::size_t n=0;n<arguments.size();++n) {
                 emit_text(compound(value_type(arguments[n]))
-                    ? object_text(program,arguments[n],value_type(arguments[n]),instruction.location,options) : scalar_text(arguments[n],instruction));
+                    ? object_text(program,arguments[n],value_type(arguments[n]),instruction.location,options) : output_scalar(arguments[n],instruction));
                 if (method==TextOutput::print || (method==TextOutput::println && n+1<arguments.size())) {
                     const auto& delimiter=delimiter_value();
                     if (std::holds_alternative<NilString>(delimiter) || !string_text(delimiter).empty())
-                        emit_text(scalar_text(delimiter,instruction));
+                        emit_text(output_scalar(delimiter,instruction));
                 }
             }
             if (method==TextOutput::writeln || method==TextOutput::println) emit_text(file ? file_newline : u"\n");
@@ -1675,7 +1682,7 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
         }
         case Op::jump: frame.pc = instruction.operand; break;
         case Op::jump_false: if (!std::get<bool>(pop())) frame.pc = instruction.operand; break;
-        case Op::print: write(scalar_text(pop(), instruction), instruction); break;
+        case Op::print: write(output_scalar(pop(), instruction), instruction); break;
         case Op::newline: write(u"\n", instruction); break;
         case Op::read_line: {
             const auto value=console.read(instruction.type,instruction.location); account_number(value);

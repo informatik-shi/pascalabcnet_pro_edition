@@ -1,6 +1,7 @@
 #include "stdlib.hpp"
 #include "diagnostics.hpp"
 #include "number.hpp"
+#include "number_format.hpp"
 #include "integer_values.hpp"
 #include "big_integer_runtime.hpp"
 #include "console_input.hpp"
@@ -53,14 +54,27 @@ template<class T> Value parse_integer(std::u16string_view text, SourceLocation l
     return static_cast<T>(negative ? -static_cast<T>(magnitude) : static_cast<T>(magnitude));
 }
 
-template<class Float=double> Float parse_decimal(std::u16string_view source, std::u16string_view separator, char16_t group, SourceLocation location, bool allow_group=true) {
+template<class Float=double> Float parse_decimal(std::u16string_view source, std::u16string_view separator,
+    char16_t group, SourceLocation location,bool allow_group=true,const NumberFormatSettings* provider=nullptr) {
     if (separator.empty()) throw runtime_error(RuntimeError::decimal_separator, location);
     const auto text = number_text(source, false);
     std::string normalized;
     normalized.reserve(text.size());
     std::size_t position = 0;
-    if (position < text.size() && (text[position] == u'+' || text[position] == u'-'))
-        normalized += static_cast<char>(text[position++]);
+    const auto grouping=provider?std::u16string_view(provider->group):std::u16string_view(&group,1);
+    const auto positive_sign=provider?std::u16string_view(provider->positive):u"+";
+    const auto negative_sign=provider?std::u16string_view(provider->negative):u"-";
+    const auto take_sign=[&] {
+        const auto rest=text.substr(position);
+        if (!positive_sign.empty() && rest.starts_with(positive_sign)) {
+            position+=positive_sign.size();
+            normalized.push_back('+');
+        } else if (!negative_sign.empty() && rest.starts_with(negative_sign)) {
+            position+=negative_sign.size();
+            normalized.push_back('-');
+        }
+    };
+    take_sign();
     bool digit = false, decimal = false, exponent = false, exponent_digit = false;
     while (position < text.size()) {
         const auto c = text[position];
@@ -71,11 +85,10 @@ template<class Float=double> Float parse_decimal(std::u16string_view source, std
             normalized += '.'; position += separator.size(); decimal = true;
         } else if (!exponent && digit && (c == u'e' || c == u'E')) {
             normalized += 'e'; ++position; exponent = true;
-            if (position < text.size() && (text[position] == u'+' || text[position] == u'-'))
-                normalized += static_cast<char>(text[position++]);
-        } else if (allow_group && !exponent && !decimal && digit && c == group) {
-            // Global nfi uses '.', while NumberFormat(separator) uses ','.
-            ++position;
+            take_sign();
+        } else if (allow_group && !exponent && !decimal && digit && !grouping.empty()
+            && text.substr(position).starts_with(grouping)) {
+            position+=grouping.size();
         } else throw runtime_error(RuntimeError::number_text, location, (std::is_same_v<Float,float> ? "single" : "real"));
     }
     if (!digit || (exponent && !exponent_digit)) throw runtime_error(RuntimeError::number_text, location, (std::is_same_v<Float,float> ? "single" : "real"));
@@ -145,6 +158,20 @@ std::u16string format_number(const Value& value, SourceLocation location) {
 } // namespace
 
 bool unicode_whitespace(char16_t character) { return unicode_space(character); }
+double parse_provider_real(const Value& input,const NumberFormatSettings& format,SourceLocation location) {
+    if (std::holds_alternative<NilString>(input)) return 0.0;
+    const auto& text=string_text(input);
+    const auto trimmed=number_text(text,false);
+    try {
+        return parse_decimal(text,format.decimal,0,location,true,&format);
+    } catch (const Error& error) {
+        if (error.code!="E_FORMAT") throw;
+        if (trimmed==format.nan) return std::numeric_limits<double>::quiet_NaN();
+        if (trimmed==format.positive_infinity) return std::numeric_limits<double>::infinity();
+        if (trimmed==format.negative_infinity) return -std::numeric_limits<double>::infinity();
+        throw;
+    }
+}
 
 std::optional<Value> try_parse_number(Type type, const Value& source, SourceLocation location,bool single_groups,bool single_nil_zero) {
     if (std::holds_alternative<NilString>(source)) {

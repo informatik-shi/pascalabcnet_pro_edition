@@ -52,7 +52,7 @@ struct Values {
     std::function<Value(const std::shared_ptr<Aggregate>&,std::span<const Value>)> invoke_closure{};
     std::function<void(const std::shared_ptr<Aggregate>&)> observe_object{};
     std::function<Value(std::size_t,std::span<const Value>)> invoke_builtin{};
-    std::shared_ptr<Aggregate> invariant_number_format{},current_number_format{};
+    std::shared_ptr<Aggregate> invariant_number_format{},current_number_format{},pabc_number_format{};
     std::size_t callable_target(const std::shared_ptr<Aggregate>& callable) const {
         if (!callable || callable->nil) throw runtime_error(RuntimeError::nil_reference,location);
         if (!callable->routine || *callable->routine>=program.routines.size()
