@@ -6,6 +6,7 @@
 #include "enumeration.hpp"
 #include "ordinal_range.hpp"
 #include "real_interval.hpp"
+#include "complex_number.hpp"
 #include <array>
 #include <charconv>
 #include <type_traits>
@@ -61,6 +62,7 @@ class ObjectWriter {
         path.push_back(object.get());
         if(ordinal_range_type(info))append(ordinal_range_text(object));
         else if(real_interval_type(info))append(real_interval_text(object,location));
+        else if(complex_number_type(info))append(complex_pascal_text(data,location));
         else if (school_ip_kind(info.kind)) append(school_ip_text(program,object,location));
         else if (info.kind==CompoundKind::record || info.kind==CompoundKind::tuple) {
             append(u"(");

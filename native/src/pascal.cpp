@@ -12,6 +12,7 @@
 #include "scalar_serialization.hpp"
 #include "string_builder.hpp"
 #include "number_format.hpp"
+#include "complex_number.hpp"
 #include "fixed_array.hpp"
 #include "type_names.hpp"
 #include "callable_identity.hpp"
@@ -165,6 +166,7 @@ public:
         std::string symbol(1, take());
         if ((symbol == ":" && peek() == '=') || (symbol == "<" && (peek() == '=' || peek() == '>'))
             || (symbol == ">" && peek() == '=') || (symbol=="." && peek()=='.') || (symbol == "-" && peek() == '>')
+            || (symbol=="*" && peek()=='*')
             || ((symbol=="+" || symbol=="-" || symbol=="*" || symbol=="/") && peek()=='=')) symbol += take();
         if (std::string_view(";:,.()[]+-*/=<>?^ ").find(symbol.front()) == std::string_view::npos)
             throw Error("E_SYNTAX", start, "Unsupported character in source");
@@ -361,7 +363,7 @@ public:
             do {
                 auto module = name();while(accept("."))module.text+="."+name().text;
                 if (module.text != "pabcsystem" && module.text != "arrays" && module.text != "collections"
-                    && module.text != "filesoperations" && module.text != "events" && module.text != "pointrect" && module.text != "school" && module.text != "system.text" && module.text != "inifile")
+                    && module.text != "filesoperations" && module.text != "events" && module.text != "pointrect" && module.text != "school" && module.text != "system.text" && module.text != "system.numerics" && module.text != "inifile")
                     throw Error("E_UNSUPPORTED", module.location, "Unit is not ported yet: '" + module.text + "'");
                 if (module.text == "collections") root.collections_imported = true;
                 root.imported_units.insert(module.text);
@@ -627,7 +629,7 @@ private:
             if (result->kind=="pabcsystem" && is(".") && [&]{
                 auto probe=lexer_;
                 const auto name=probe.next().text;
-                return name=="stringbuilder" || name=="faststring" || name=="numberformatinfo";
+                return name=="stringbuilder" || name=="faststring" || name=="numberformatinfo" || name=="complex";
             }()) {
                 result->unit="pabcsystem";
                 expect(".");
@@ -646,6 +648,12 @@ private:
                     result->kind=name().text;
                     if(result->kind!="numberformatinfo")
                         throw Error("E_UNSUPPORTED",result->token.location,"Unknown or unsupported System.Globalization type");
+                }
+                else if(result->kind=="numerics") {
+                    expect(".");
+                    result->kind=name().text;
+                    if(result->kind!="complex")
+                        throw Error("E_UNSUPPORTED",result->token.location,"Unknown or unsupported System.Numerics type");
                 }
                 else if(result->kind=="collections"){expect(".");const auto generic=name();if(generic.text!="generic")throw Error("E_UNSUPPORTED",generic.location,"Unknown System.Collections namespace");expect(".");result->kind=name().text;if(result->kind!="dictionary" && result->kind!="keyvaluepair" && result->kind!="ienumerable" && result->kind!="ienumerator" && result->kind!="list" && result->kind!="hashset" && result->kind!="icomparer" && result->kind!="comparer" && result->kind!="iequalitycomparer" && result->kind!="equalitycomparer" && result->kind!="icollection" && result->kind!="ilist" && result->kind!="iset" && result->kind!="idictionary")throw Error("E_UNSUPPORTED",result->token.location,"Unknown generic collection type");}
                 else if (result->kind!="func" && result->kind!="action" && result->kind!="predicate" && result->kind!="type" && result->kind!="void" && result->kind!="single" && result->kind!="object" && result->kind!="icomparable" && result->kind!="iequatable")
@@ -983,6 +991,7 @@ private:
         if(op=="..")return 2;
         if (op == "+" || op == "-" || op == "or" || op == "xor") return 3;
         if (op == "*" || op == "/" || op == "div" || op == "mod" || op == "and" || op=="shl" || op=="shr") return 4;
+        if (op=="**") return 5;
         return 0;
     }
     std::shared_ptr<SyntaxRoutine> lambda_head(Token token,bool function=false,bool procedure=false) {
@@ -1040,7 +1049,7 @@ private:
         while (current_.kind != TokenKind::text && !current_.escaped && precedence(current_.text) >= minimum) {
             auto op = consume();const bool negated=op.text=="not";const auto original=op;
             if(negated){expect("in");op.text="in";}
-            auto right = expression(precedence(op.text) + 1);
+            auto right = expression(precedence(op.text) + (op.text=="**"?0:1));
             left = make_expression(SyntaxExprKind::binary, op, std::move(left), std::move(right));
             if(negated)left=make_expression(SyntaxExprKind::unary,original,std::move(left));
         }
@@ -1135,14 +1144,16 @@ private:
         DepthGuard guard(depth_, current_.location);
         if (is("-") || is("+") || is("not")) {
             auto op = consume();
+            const bool sign=op.text=="-" || op.text=="+";
             // Parse the signed literal together so -2147483648 has type integer.
-            if ((op.text == "-" || op.text == "+") && current_.kind == TokenKind::number && !current_.text.starts_with('$')) {
+            auto following=lexer_;
+            if (sign && current_.kind==TokenKind::number && !current_.text.starts_with('$') && following.next().text!="**") {
                 auto token = consume();
                 if (op.text == "-") token.text.insert(token.text.begin(), '-');
                 token.location = op.location;
                 auto result=make_expression(SyntaxExprKind::literal,token);result->signed_literal=true;return result;
             }
-            auto operand=prefix();
+            auto operand=sign?expression(precedence("**")):prefix();
             if(op.text=="-" && operand->kind==SyntaxExprKind::literal && operand->token.kind==TokenKind::number && !operand->token.text.ends_with("bi")) {
                 const auto value=literal(operand->token);
                 const auto* wide=std::get_if<std::uint64_t>(&value);
@@ -2218,6 +2229,128 @@ private:
         if((method==BinaryMethod::read_bytes||method==BinaryMethod::write_bytes)&&info(owner,result.location).element!=Type::invalid)throw Error("E_TYPE",result.location,"Byte buffer methods require an untyped binary file","Методы буфера байтов требуют нетипизированный двоичный файл");
         result=std::move(*binary_expression(owner,method,std::move(result.arguments),result.location));return true;
     }
+    bool is_complex(Type type) const {
+        return compound(type) && complex_number_type(info(type,{}));
+    }
+    Type complex_type(SourceLocation location) {
+        for (std::size_t i=0;i<module_.types.size();++i)
+            if (complex_number_type(module_.types[i])) return static_cast<Type>(64+i);
+        if (module_.types.size()>=1024) throw Error("E_LIMIT",location,"Type limit exceeded");
+        TypeInfo type{"complex",CompoundKind::record,Type::invalid,
+            {{"_real",Type::real,false},{"_imaginary",Type::real,false}}};
+        type.native_record=NativeRecord::complex;
+        module_.types.push_back(std::move(type));
+        return static_cast<Type>(63+module_.types.size());
+    }
+    Type complex_type_name(const SyntaxExpr& target) {
+        if (target.kind==SyntaxExprKind::name && !lookup(target.token)) {
+            if (const auto alias=aliases_.find(target.token.text); alias!=aliases_.end())
+                return is_complex(alias->second)?alias->second:Type::invalid;
+            if (target.token.text=="complex") return complex_type(target.token.location);
+        }
+        if (target.kind==SyntaxExprKind::field && target.token.text=="complex" && target.left) {
+            const auto& ns=*target.left;
+            if (ns.kind==SyntaxExprKind::name && ns.token.text=="pabcsystem" && !lookup(ns.token))
+                return complex_type(target.token.location);
+            if (ns.kind==SyntaxExprKind::field && ns.token.text=="numerics" && ns.left
+                && ns.left->kind==SyntaxExprKind::name && ns.left->token.text=="system" && !lookup(ns.left->token))
+                return complex_type(target.token.location);
+        }
+        return Type::invalid;
+    }
+    std::unique_ptr<hir::Expr> complex_expression(Type owner,ComplexMethod method,
+        std::vector<std::unique_ptr<hir::Expr>> args,SourceLocation location,Type tuple=Type::integer) {
+        const auto operation=static_cast<std::size_t>(method)|(static_cast<std::size_t>(tuple)<<8U);
+        const auto parameters=complex_parameters(owner,operation);
+        if (parameters.size()!=args.size())
+            throw Error("E_TYPE",location,"Wrong Complex argument count","Неверное число аргументов Complex");
+        for (std::size_t i=0;i<parameters.size();++i) args[i]=convert(std::move(args[i]),parameters[i]);
+        auto result=std::make_unique<hir::Expr>();
+        result->kind=hir::ExprKind::encoding_call;
+        result->type=complex_result(owner,operation);
+        result->operation_type=owner;
+        result->local=operation;
+        result->location=location;
+        result->arguments=std::move(args);
+        return result;
+    }
+    std::optional<ComplexMethod> complex_math(std::string_view name,std::size_t count) const {
+        using M=ComplexMethod;
+        if (name=="log") return count==2?M::logarithm_base:M::logarithm;
+        static constexpr std::pair<std::string_view,M> methods[]{
+            {"abs",M::magnitude},{"sqrt",M::square_root},{"conjugate",M::conjugate},{"exp",M::exponential},
+            {"ln",M::logarithm},{"log10",M::logarithm10},{"power",M::power},{"pow",M::power},{"sin",M::sine},{"cos",M::cosine},
+            {"add",M::add},{"subtract",M::subtract},{"multiply",M::multiply},{"divide",M::divide},
+            {"negate",M::negate},{"reciprocal",M::reciprocal},{"frompolarcoordinates",M::from_polar}
+        };
+        for (const auto& [member,method]:methods) if (member==name) return method;
+        return {};
+    }
+    std::unique_ptr<hir::Expr> bind_complex_static(const SyntaxExpr& source) {
+        using M=ComplexMethod;
+        const auto& name=source.token.text;
+        auto method=complex_math(name,source.arguments.size());
+        const bool member=name=="zero" || name=="one" || name=="imaginaryone";
+        if (member) method=name=="zero"?M::zero:name=="one"?M::one:M::imaginary_one;
+        if (name=="create") method=M::construct;
+        if (!method) return {};
+        const auto type=complex_type_name(*source.left);
+        if (type==Type::invalid) return {};
+        if (member && source.kind!=SyntaxExprKind::field)
+            throw Error("E_TYPE",source.token.location,"Complex constant is not callable","Константу Complex нельзя вызвать");
+        std::vector<std::unique_ptr<hir::Expr>> args;
+        for (const auto& arg:source.arguments) args.push_back(expression(*arg));
+        return complex_expression(type,*method,std::move(args),source.token.location);
+    }
+    std::unique_ptr<hir::Expr> bind_complex_member(hir::Expr& receiver,const SyntaxExpr& source) {
+        using M=ComplexMethod;
+        const auto type=receiver.left->type;
+        if (!is_complex(type) || source.token.text=="gettype") return {};
+        const auto& name=source.token.text;
+        const auto location=receiver.location;
+        auto method=M::real_part;
+        if (name=="real" || name=="imaginary" || name=="magnitude" || name=="phase") {
+            if (source.kind!=SyntaxExprKind::field)
+                throw Error("E_TYPE",location,"Complex property is not callable","Свойство Complex нельзя вызвать");
+            if (name=="imaginary") method=M::imaginary_part;
+            else if (name=="magnitude") method=M::magnitude;
+            else if (name=="phase") method=M::phase;
+        } else if (name=="conjugate") method=M::conjugate;
+        else if (name=="equals") method=M::equals;
+        else if (name=="tostring") method=M::to_string;
+        else throw Error("E_UNSUPPORTED",location,"Complex member is not ported yet","Член Complex ещё не перенесён");
+        std::vector<std::unique_ptr<hir::Expr>> args;
+        args.push_back(std::move(receiver.left));
+        for (const auto& arg:source.arguments) args.push_back(expression(*arg));
+        return complex_expression(type,method,std::move(args),location);
+    }
+    std::unique_ptr<hir::Expr> bind_complex_builtin(hir::Expr& result,std::string_view name) {
+        using M=ComplexMethod;
+        const auto location=result.location;
+        const auto has_complex=std::any_of(result.arguments.begin(),result.arguments.end(),
+            [&](const auto& arg){return is_complex(arg->type);});
+        if (name=="cplx" || name=="cplxfrompolar")
+            return complex_expression(complex_type(location),name=="cplx"?M::construct:M::from_polar,
+                std::move(result.arguments),location);
+        if (!has_complex || (name!="abs" && name!="sqrt" && name!="conjugate" && name!="exp" && name!="ln"
+            && name!="log" && name!="log10" && name!="power" && name!="sin" && name!="cos")) return {};
+        const auto method=*complex_math(name,result.arguments.size());
+        return complex_expression(complex_type(location),method,std::move(result.arguments),location);
+    }
+    std::unique_ptr<hir::Expr> bind_complex_binary(hir::Expr& result,Type owner) {
+        using M=ComplexMethod;
+        static constexpr std::pair<std::string_view,M> operations[]{
+            {"+",M::add},{"-",M::subtract},{"*",M::multiply},{"/",M::divide},{"**",M::power},
+            {"=",M::equal},{"<>",M::not_equal}
+        };
+        for (const auto& [op,method]:operations) if (op==result.operation) {
+            std::vector<std::unique_ptr<hir::Expr>> args;
+            args.push_back(std::move(result.left));
+            args.push_back(std::move(result.right));
+            return complex_expression(owner,method,std::move(args),result.location);
+        }
+        throw Error("E_TYPE",result.location,"Operator is not defined for Complex","Оператор не определён для Complex");
+    }
     bool is_number_format(Type type) const {
         return compound(type) && info(type,{}).kind==CompoundKind::number_format;
     }
@@ -2989,6 +3122,9 @@ private:
         }
         if(syntax.kind=="emptycollection" && (syntax.unit.empty() || syntax.unit=="pabcsystem") && !aliases_.contains(syntax.kind))return empty_type();
         if(syntax.kind=="tinifile" && (syntax.unit=="inifile" || !aliases_.contains(syntax.kind)))return inifile_type(syntax.token.location);
+        if (syntax.kind=="complex" &&
+            (syntax.system_qualified || syntax.unit=="pabcsystem" || !aliases_.contains(syntax.kind)))
+            return complex_type(syntax.token.location);
         if (syntax.kind=="numberformatinfo" &&
             (syntax.system_qualified || syntax.unit=="pabcsystem" || !aliases_.contains(syntax.kind)))
             return number_format_type(syntax.token.location);
@@ -3103,6 +3239,27 @@ private:
             || (shape.kind==CompoundKind::array && shape.rank==1));
     }
     ABC_PASCAL_NOINLINE std::unique_ptr<hir::Expr> convert(std::unique_ptr<hir::Expr> expression, Type type,bool assignment=false,bool copy=true) {
+        if (is_complex(type) && expression->type!=type) {
+            const auto location=expression->location;
+            const auto from=expression->type;
+            auto method=ComplexMethod::from_real;
+            auto tuple=Type::integer;
+            if (compound(from)) {
+                const auto& shape=info(from,location);
+                const auto supported=[](const auto& field){return field.type==Type::real || field.type==Type::integer;};
+                if (shape.kind!=CompoundKind::tuple || shape.fields.size()!=2
+                    || !supported(shape.fields[0]) || !supported(shape.fields[1]))
+                    throw Error("E_TYPE",location,"Complex requires a numeric value or a pair of real and integer values",
+                        "Для Complex нужно число или пара вещественных и целых чисел");
+                method=ComplexMethod::from_tuple;
+                tuple=from;
+            } else if (!can_widen(from,Type::real)) {
+                throw Error("E_TYPE",location,"Cannot convert this type to Complex","Этот тип нельзя преобразовать в Complex");
+            }
+            std::vector<std::unique_ptr<hir::Expr>> args;
+            args.push_back(std::move(expression));
+            return complex_expression(type,method,std::move(args),location,tuple);
+        }
         if (is_string_builder(type) && (string_type(expression->type) || expression->type==Type::character)) {
             const auto location=expression->location;
             std::vector<std::unique_ptr<hir::Expr>> args;
@@ -3552,6 +3709,12 @@ private:
         do {
  {
             auto type = resolve_type(*source.constructed);
+            if (!source.array_construction && is_complex(type)) {
+                std::vector<std::unique_ptr<hir::Expr>> args;
+                for (const auto& arg:source.arguments) args.push_back(expression(*arg));
+                const auto method=args.empty()?ComplexMethod::zero:ComplexMethod::construct;
+                return complex_expression(type,method,std::move(args),result->location);
+            }
             if (!source.array_construction && is_number_format(type)) {
                 std::vector<std::unique_ptr<hir::Expr>> args;
                 for (const auto& argument:source.arguments) args.push_back(expression(*argument));
@@ -3732,6 +3895,7 @@ private:
         while((base->kind==SyntaxExprKind::field || base->kind==SyntaxExprKind::member_call) && base->left){
             if(!base->type_arguments.empty())break;
             if (base->token.text=="create" && string_builder_constructor_owner(*base->left)!=Type::invalid) break;
+            if (complex_type_name(*base->left)!=Type::invalid) break;
             if ((base->token.text=="create" || base->token.text=="invariantinfo" || base->token.text=="currentinfo"
                 || base->token.text=="readonly") && number_format_type_name(*base->left)!=Type::invalid) break;
             if(base->left->kind==SyntaxExprKind::name && !lookup(base->left->token)
@@ -3776,6 +3940,7 @@ private:
  {
             if(bind_inifile_static(*result,source))break;
             if (auto number_format=bind_number_format_static(source)) return number_format;
+            if (auto complex=bind_complex_static(source)) return complex;
             if (source.token.text=="create")
                 if (const auto type=string_builder_constructor_owner(*source.left); type!=Type::invalid)
                     return make_string_builder(type,source);
@@ -3899,6 +4064,8 @@ private:
                 if (bind_array_length(*result,source.token.text,source.left->token.text)) break;
                 if (bind_sequence_library(*result,source.token.text,source.left->token.text)) break;
                 if (bind_object_text(*result,source.token.text,source.left->token.text)) break;
+                if (source.left->token.text=="pabcsystem")
+                    if (auto complex=bind_complex_builtin(*result,source.token.text)) return complex;
                 bind_builtin(*result,source.token.text,source.left->token.text); break;
             }
             if(enum_static_member(*result,source))break;
@@ -3936,6 +4103,7 @@ private:
             if(bind_dictionary_member(*result,source))break;
             if(bind_inifile_member(*result,source))break;
             if (auto number_format=bind_number_format_member(*result,source)) return number_format;
+            if (auto complex=bind_complex_member(*result,source)) return complex;
             if (auto builder=bind_string_builder_member(*result,source)) return builder;
             if(bind_encoding_member(*result,source))break;
             if(binary(receiver)){
@@ -4569,6 +4737,8 @@ private:
                 }
             }
             if (bind_print(*result,source.token.text)) break;
+            if (!routine_names_.contains(source.token.text))
+                if (auto complex=bind_complex_builtin(*result,source.token.text)) return complex;
             if (bind_sequence_conversion(*result,source.token.text)) break;
             if (bind_new_set_factory(*result,source.token.text)) break;
             if (bind_hash_set_factory(*result,source.token.text)) break;
@@ -4819,6 +4989,12 @@ private:
         case SyntaxExprKind::unary:
             result->kind = hir::ExprKind::unary;
             result->left = expression(*source.left);
+            if (source.token.text=="-" && is_complex(result->left->type)) {
+                const auto owner=result->left->type;
+                std::vector<std::unique_ptr<hir::Expr>> args;
+                args.push_back(std::move(result->left));
+                return complex_expression(owner,ComplexMethod::negate,std::move(args),result->location);
+            }
             if (source.token.text=="^") {
                 const auto owner=result->left->type;
                 if (!compound(owner) || info(owner,result->location).kind!=CompoundKind::typed_pointer)
@@ -4861,6 +5037,15 @@ private:
             auto left = result->left->type;
             auto right = result->right->type;
             const auto& op = result->operation;
+            if (is_complex(left)||is_complex(right)) return bind_complex_binary(*result,is_complex(left)?left:right);
+            if (op=="**") {
+                if (left!=Type::big_integer) result->left=convert(std::move(result->left),Type::real);
+                result->kind=hir::ExprKind::call;
+                result->arguments.push_back(std::move(result->left));
+                result->arguments.push_back(std::move(result->right));
+                bind_builtin(*result,"power","pabcsystem");
+                return result;
+            }
             if((op=="=" || op=="<>") && left!=right){if(interface_compatible(module_.types,left,right)){result->left=convert(std::move(result->left),right);left=right;}else if(interface_compatible(module_.types,right,left)){result->right=convert(std::move(result->right),left);right=left;}}
             if(op==".."){
                 if(left==Type::real || right==Type::real || ((left==Type::int64 || right==Type::int64) && can_widen(left,Type::real) && can_widen(right,Type::real))){
@@ -5700,7 +5885,7 @@ private:
             hir::Stmt result;result.kind=hir::StmtKind::call;result.location=location;
             result.expression=compound_expression(type,method,std::move(target),std::move(right),location);return result;
         }
-        if(!numeric(type))throw Error("E_TYPE",location,"Compound arithmetic requires a numeric target");
+        if(!numeric(type) && !is_complex(type))throw Error("E_TYPE",location,"Compound arithmetic requires a numeric target");
         if(!lvalue(*target))throw Error("E_TYPE",location,"Assignment target must be assignable");
         if(op=="/" && integer_type(type))throw Error("E_TYPE",location,"Integer division assignment is not allowed in Pascal");
         auto right=checked_compound_cast(initial ? std::move(initial) : expression(*source.expression),type,location);
@@ -5714,6 +5899,7 @@ private:
         }
         auto value=std::make_unique<hir::Expr>();value->kind=hir::ExprKind::binary;value->location=location;value->operation=op;
         value->type=small_integer(type) ? Type::integer : type==Type::longword ? Type::int64 : type;value->left=convert(std::move(old),value->type);value->right=convert(std::move(right),value->type);
+        if (is_complex(type)) value=bind_complex_binary(*value,type);
         value=checked_compound_cast(std::move(value),type,location);
         return bind_assignment(std::move(target),[&](Type){return std::move(value);},location,true);
     }

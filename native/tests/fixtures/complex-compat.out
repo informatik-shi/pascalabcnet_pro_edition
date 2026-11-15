@@ -1,0 +1,14 @@
+3 4 5 5
+(3, 4) 3+4i System.Numerics.Complex
+3+4i 4+2i 6+2i 2+2i -4-2i
+8+4i 2+1i 3.5+0.5i
+3+4i 4-2i
+0+0i 1+0i 0+1i
+1+2i 2+1i 0+0i 0
+True True True
+0+2.5i 2+0i
+True
+True True
+1+0i 0+0i
+True True
+-4 512 0.25 64

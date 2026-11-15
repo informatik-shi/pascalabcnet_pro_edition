@@ -105,6 +105,9 @@ Definition definition(const Program& program,ReflectedType type,Work& work){
     case Type::text_file:result.name=u"Text";result.name_space=u"PABCSystem";result.source=true;break;
     default:{
         const auto& info=type_info(program,type.target);
+        if (complex_number_type(info)) {
+            result.name=u"Complex";result.name_space=u"System.Numerics";result.assembly=u"System.Numerics";break;
+        }
         if(ordinal_range_type(info) || real_interval_type(info)){
             result.name=real_interval_type(info) ? u"RealRange" : info.element==Type::character ? u"CharRange" : u"IntRange";
             result.name_space=u"PABCSystem";result.source=true;break;

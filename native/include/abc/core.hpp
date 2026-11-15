@@ -393,7 +393,7 @@ struct Local {
 };
 
 enum class CompoundKind { array, record, list, stack, queue, dynarray, simple_set, association, linked_node, linked_list, single_node, tuple, school_address, school_ip, sequence, callable, object_class, encoding, enumeration, ini_file, hash_set, new_set, empty_collection, dictionary, dictionary_keys, dictionary_values, enumerator, user_interface, comparable_interface, comparer_interface, comparer, equatable_interface, equality_comparer_interface, equality_comparer, collection_interface, list_interface, dictionary_interface, set_interface, binary_file, fixed_array, typed_pointer, boxed_object, string_builder, number_format };
-enum class NativeRecord { none, ordinal_range, real_interval, key_value_pair, dictionary_enumerator, collection_enumerator };
+enum class NativeRecord { none, ordinal_range, real_interval, key_value_pair, dictionary_enumerator, collection_enumerator, complex };
 inline bool node_kind(CompoundKind kind) { return kind == CompoundKind::linked_node || kind == CompoundKind::single_node; }
 inline bool indexed_sequence(CompoundKind kind) { return kind == CompoundKind::array || kind == CompoundKind::list; }
 inline bool enumerable_collection(CompoundKind kind) { return indexed_sequence(kind) || kind==CompoundKind::hash_set || kind==CompoundKind::new_set || kind==CompoundKind::dictionary || kind==CompoundKind::dictionary_keys || kind==CompoundKind::dictionary_values; }
@@ -470,6 +470,7 @@ struct TypeInfo {
 };
 inline bool ordinal_range_type(const TypeInfo& type){return type.native_record==NativeRecord::ordinal_range;}
 inline bool real_interval_type(const TypeInfo& type){return type.native_record==NativeRecord::real_interval;}
+inline bool complex_number_type(const TypeInfo& type){return type.native_record==NativeRecord::complex;}
 inline bool key_value_pair_type(const TypeInfo& type){return type.native_record==NativeRecord::key_value_pair;}
 inline bool dictionary_enumerator_type(const TypeInfo& type){return type.native_record==NativeRecord::dictionary_enumerator;}
 inline bool collection_enumerator_type(const TypeInfo& type){return type.native_record==NativeRecord::collection_enumerator;}

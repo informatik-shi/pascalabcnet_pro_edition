@@ -5788,6 +5788,18 @@ var/out-параметры и Self записи и могут менять Resul
 Валютные и процентные свойства и остальные перегрузки ещё
 переносятся. [Справочник NumberFormatInfo](https://learn.microsoft.com/en-us/dotnet/api/system.globalization.numberformatinfo?view=netframework-4.8.1)
 
+### Complex
+
+`Complex` и `System.Numerics.Complex` хранят действительную и мнимую части
+типа `real`. Начальное значение равно нулю, присваивание копирует обе части.
+Работают `Cplx`, `CplxFromPolar`, конструкторы и преобразования из числа
+или пары `integer` и `real`. Поддержаны арифметические операции, сравнение,
+сопряжение и функции `Abs`, `Sqrt`, `Ln`, `Log`, `Log10`, `Exp`,
+`Power`, `Sin` и `Cos`. При обычном выводе используется запись
+`3+4i`, а `ToString` возвращает `(3, 4)`.
+Остальные методы и сериализация сложных объектов ещё переносятся.
+[Исходная реализация Complex](https://github.com/microsoft/referencesource/blob/main/System.Numerics/System/Numerics/Complex.cs)
+
 
 ### Статические массивы и типизированные файлы
 
