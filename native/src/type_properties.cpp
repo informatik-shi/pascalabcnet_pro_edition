@@ -138,6 +138,7 @@ Definition definition(const Program& program,ReflectedType type,Work& work){
             if(info.name!="predicate" && info.element!=Type::unit)result.arguments.push_back(info.element);arity(result);break;
         case CompoundKind::encoding:result.name=u"Encoding";result.name_space=u"System.Text";break;
         case CompoundKind::string_builder:result.name=u"StringBuilder";result.name_space=u"System.Text";break;
+        case CompoundKind::number_format:result.name=u"NumberFormatInfo";result.name_space=u"System.Globalization";break;
         case CompoundKind::ini_file:result.name=u"TIniFile";result.name_space=u"IniFile";result.source=true;break;
         case CompoundKind::school_address:result.name=u"Addr32";result.name_space=u"School";result.source=true;break;
         case CompoundKind::school_ip:result.name=u"CalcIP";result.name_space=u"School";result.source=true;break;

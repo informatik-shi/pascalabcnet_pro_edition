@@ -5765,6 +5765,20 @@ var/out-параметры и Self записи и могут менять Resul
 
 [Справочник StringBuilder](https://learn.microsoft.com/en-gb/dotnet/api/system.text.stringbuilder?view=netframework-4.8)
 
+### NumberFormatInfo
+
+`NumberFormatInfo` и `System.Globalization.NumberFormatInfo` доступны как
+ссылочные типы. `NumberFormat` создаёт экземпляр с заданными десятичным
+разделителем и разделителем групп. Можно читать и менять размеры групп,
+число десятичных знаков, шаблон отрицательного числа, знаки и обозначения
+`NaN` и бесконечности. Массив размеров групп копируется при чтении и записи.
+`InvariantInfo` доступен для чтения, а `ReadOnly` создаёт защищённую копию.
+
+`FloatToStr` принимает `NumberFormatInfo` и использует его разделитель,
+знаки и специальные обозначения. `CurrentInfo` возвращает настройки текущего
+запуска. Валютные и процентные свойства и остальные перегрузки ещё
+переносятся. [Справочник NumberFormatInfo](https://learn.microsoft.com/en-us/dotnet/api/system.globalization.numberformatinfo?view=netframework-4.8.1)
+
 
 ### Статические массивы и типизированные файлы
 

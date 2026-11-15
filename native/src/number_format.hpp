@@ -1,0 +1,18 @@
+#pragma once
+#include "abc/core.hpp"
+#include <span>
+
+namespace abc {
+struct Values;
+enum class NumberFormatMethod : std::uint8_t {
+    create, factory, invariant, current, readonly_copy, is_readonly, get, set, to_string, float_text
+};
+enum class NumberFormatField : std::uint8_t {
+    decimal_separator, group_separator, positive_sign, negative_sign, nan_symbol,
+    positive_infinity, negative_infinity, decimal_digits, negative_pattern, group_sizes
+};
+bool number_format_signature(const Program&,Type,std::size_t);
+std::vector<Type> number_format_parameters(Type,Type,std::size_t);
+Type number_format_result(Type,Type,std::size_t);
+Value number_format_invoke(Values&,Type,std::size_t,std::span<const Value>);
+}

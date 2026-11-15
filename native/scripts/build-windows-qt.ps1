@@ -171,6 +171,7 @@ StringBuilder.Append принимает числа и массивы симво�
 StringBuilder.Insert вставляет текст, числа и массивы символов. Remove удаляет диапазон.
 StringBuilder.Replace меняет символы и подстроки, в том числе в указанном диапазоне.
 Format и StringBuilder.AppendFormat поддерживают позиционные поля, выравнивание и числовые форматы D, X, F, N, G, E.
+NumberFormatInfo и NumberFormat задают числовые разделители, знаки и размеры групп. FloatToStr принимает эти настройки.
 Статические массивы, независимые копии, двумерные индексы и file of массив: examples/fixed-arrays.pas.
 Инициализаторы динамических массивов, записи и более семи элементов: examples/array-literals.pas.
 Константы-массивы, известные границы типов и постоянные локальные таблицы: examples/array-constants.pas.

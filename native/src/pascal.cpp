@@ -11,6 +11,7 @@
 #include "binary_file.hpp"
 #include "scalar_serialization.hpp"
 #include "string_builder.hpp"
+#include "number_format.hpp"
 #include "fixed_array.hpp"
 #include "type_names.hpp"
 #include "callable_identity.hpp"
@@ -626,7 +627,7 @@ private:
             if (result->kind=="pabcsystem" && is(".") && [&]{
                 auto probe=lexer_;
                 const auto name=probe.next().text;
-                return name=="stringbuilder" || name=="faststring";
+                return name=="stringbuilder" || name=="faststring" || name=="numberformatinfo";
             }()) {
                 result->unit="pabcsystem";
                 expect(".");
@@ -639,6 +640,12 @@ private:
                     result->kind=name().text;
                     if(result->kind!="encoding" && result->kind!="stringbuilder")
                         throw Error("E_UNSUPPORTED",result->token.location,"Unknown or unsupported System.Text type");
+                }
+                else if(result->kind=="globalization") {
+                    expect(".");
+                    result->kind=name().text;
+                    if(result->kind!="numberformatinfo")
+                        throw Error("E_UNSUPPORTED",result->token.location,"Unknown or unsupported System.Globalization type");
                 }
                 else if(result->kind=="collections"){expect(".");const auto generic=name();if(generic.text!="generic")throw Error("E_UNSUPPORTED",generic.location,"Unknown System.Collections namespace");expect(".");result->kind=name().text;if(result->kind!="dictionary" && result->kind!="keyvaluepair" && result->kind!="ienumerable" && result->kind!="ienumerator" && result->kind!="list" && result->kind!="hashset" && result->kind!="icomparer" && result->kind!="comparer" && result->kind!="iequalitycomparer" && result->kind!="equalitycomparer" && result->kind!="icollection" && result->kind!="ilist" && result->kind!="iset" && result->kind!="idictionary")throw Error("E_UNSUPPORTED",result->token.location,"Unknown generic collection type");}
                 else if (result->kind!="func" && result->kind!="action" && result->kind!="predicate" && result->kind!="type" && result->kind!="void" && result->kind!="single" && result->kind!="object" && result->kind!="icomparable" && result->kind!="iequatable")
@@ -2211,6 +2218,107 @@ private:
         if((method==BinaryMethod::read_bytes||method==BinaryMethod::write_bytes)&&info(owner,result.location).element!=Type::invalid)throw Error("E_TYPE",result.location,"Byte buffer methods require an untyped binary file","Методы буфера байтов требуют нетипизированный двоичный файл");
         result=std::move(*binary_expression(owner,method,std::move(result.arguments),result.location));return true;
     }
+    bool is_number_format(Type type) const {
+        return compound(type) && info(type,{}).kind==CompoundKind::number_format;
+    }
+    Type number_format_type(SourceLocation location) {
+        for (std::size_t i=0;i<module_.types.size();++i)
+            if (module_.types[i].kind==CompoundKind::number_format) return static_cast<Type>(64+i);
+        const auto groups=sequence_type(CompoundKind::array,Type::integer);
+        if (module_.types.size()>=1024) throw Error("E_LIMIT",location,"Type limit exceeded");
+        module_.types.push_back({"numberformatinfo",CompoundKind::number_format,Type::invalid,{},groups});
+        return static_cast<Type>(63+module_.types.size());
+    }
+    Type number_format_type_name(const SyntaxExpr& target) {
+        if (target.kind==SyntaxExprKind::name && !lookup(target.token)) {
+            if (const auto alias=aliases_.find(target.token.text); alias!=aliases_.end())
+                return is_number_format(alias->second)?alias->second:Type::invalid;
+            if (target.token.text=="numberformatinfo") return number_format_type(target.token.location);
+        }
+        if (target.kind==SyntaxExprKind::field && target.token.text=="numberformatinfo" && target.left) {
+            const auto& ns=*target.left;
+            if (ns.kind==SyntaxExprKind::name && ns.token.text=="pabcsystem" && !lookup(ns.token))
+                return number_format_type(target.token.location);
+            if (ns.kind==SyntaxExprKind::field && ns.token.text=="globalization" && ns.left
+                && ns.left->kind==SyntaxExprKind::name && ns.left->token.text=="system" && !lookup(ns.left->token))
+                return number_format_type(target.token.location);
+        }
+        return Type::invalid;
+    }
+    std::unique_ptr<hir::Expr> number_format_expression(Type owner,NumberFormatMethod method,
+        std::vector<std::unique_ptr<hir::Expr>> args,SourceLocation location,
+        NumberFormatField field=NumberFormatField::decimal_separator) {
+        const auto operation=static_cast<std::size_t>(method)|(static_cast<std::size_t>(field)<<8U);
+        const auto groups=info(owner,location).key;
+        const auto types=number_format_parameters(owner,groups,operation);
+        if (args.size()!=types.size())
+            throw Error("E_TYPE",location,"Wrong NumberFormatInfo argument count","Неверное число аргументов NumberFormatInfo");
+        for (std::size_t i=0;i<types.size();++i) args[i]=convert(std::move(args[i]),types[i]);
+        auto result=std::make_unique<hir::Expr>();
+        result->kind=hir::ExprKind::encoding_call;
+        result->type=number_format_result(owner,groups,operation);
+        result->operation_type=owner;
+        result->local=operation;
+        result->location=location;
+        result->arguments=std::move(args);
+        return result;
+    }
+    std::unique_ptr<hir::Expr> make_number_format(const SyntaxExpr& source,SourceLocation location) {
+        std::vector<std::unique_ptr<hir::Expr>> args;
+        for (const auto& argument:source.arguments) args.push_back(expression(*argument,Type::string));
+        while (args.size()<2) {
+            auto value=std::make_unique<hir::Expr>();
+            value->kind=hir::ExprKind::literal;
+            value->type=Type::string;
+            value->location=location;
+            value->value=std::u16string(1,args.empty()?u'.':u',');
+            args.push_back(std::move(value));
+        }
+        return number_format_expression(number_format_type(location),NumberFormatMethod::factory,std::move(args),location);
+    }
+    std::unique_ptr<hir::Expr> bind_number_format_static(const SyntaxExpr& source) {
+        using M=NumberFormatMethod;
+        const auto& name=source.token.text;
+        if (name!="invariantinfo" && name!="currentinfo" && name!="readonly" && name!="create") return {};
+        const auto type=number_format_type_name(*source.left);
+        if (type==Type::invalid) return {};
+        const auto method=name=="invariantinfo"?M::invariant:name=="currentinfo"?M::current:name=="readonly"?M::readonly_copy:M::create;
+        if ((method==M::invariant || method==M::current) && source.kind!=SyntaxExprKind::field)
+            throw Error("E_TYPE",source.token.location,"Format information property is not callable",
+                "Свойство настроек формата нельзя вызвать");
+        std::vector<std::unique_ptr<hir::Expr>> args;
+        for (const auto& argument:source.arguments) args.push_back(expression(*argument,type));
+        return number_format_expression(type,method,std::move(args),source.token.location);
+    }
+    std::unique_ptr<hir::Expr> bind_number_format_member(hir::Expr& receiver,const SyntaxExpr& source) {
+        using M=NumberFormatMethod;
+        using F=NumberFormatField;
+        const auto type=receiver.left->type;
+        if (!is_number_format(type) || source.token.text=="gettype") return {};
+        static constexpr std::pair<std::string_view,F> properties[]{
+            {"numberdecimalseparator",F::decimal_separator},{"numbergroupseparator",F::group_separator},
+            {"positivesign",F::positive_sign},{"negativesign",F::negative_sign},{"nansymbol",F::nan_symbol},
+            {"positiveinfinitysymbol",F::positive_infinity},{"negativeinfinitysymbol",F::negative_infinity},
+            {"numberdecimaldigits",F::decimal_digits},{"numbernegativepattern",F::negative_pattern},
+            {"numbergroupsizes",F::group_sizes}
+        };
+        const auto location=receiver.location;
+        const auto& name=source.token.text;
+        const auto property=std::find_if(std::begin(properties),std::end(properties),
+            [&](const auto& item){return item.first==name;});
+        if (property==std::end(properties) && name!="isreadonly" && name!="tostring")
+            throw Error("E_UNSUPPORTED",location,"NumberFormatInfo member is not ported yet",
+                "Член NumberFormatInfo ещё не перенесён");
+        if (name!="tostring" && source.kind!=SyntaxExprKind::field)
+            throw Error("E_TYPE",location,"NumberFormatInfo property is not callable",
+                "Свойство NumberFormatInfo нельзя вызвать");
+        std::vector<std::unique_ptr<hir::Expr>> args;
+        args.push_back(std::move(receiver.left));
+        for (const auto& argument:source.arguments) args.push_back(expression(*argument));
+        if (property!=std::end(properties))
+            return number_format_expression(type,M::get,std::move(args),location,property->second);
+        return number_format_expression(type,name=="isreadonly"?M::is_readonly:M::to_string,std::move(args),location);
+    }
     bool is_string_builder(Type type) const {
         return compound(type) && info(type,{}).kind==CompoundKind::string_builder;
     }
@@ -2872,6 +2980,9 @@ private:
         }
         if(syntax.kind=="emptycollection" && (syntax.unit.empty() || syntax.unit=="pabcsystem") && !aliases_.contains(syntax.kind))return empty_type();
         if(syntax.kind=="tinifile" && (syntax.unit=="inifile" || !aliases_.contains(syntax.kind)))return inifile_type(syntax.token.location);
+        if (syntax.kind=="numberformatinfo" &&
+            (syntax.system_qualified || syntax.unit=="pabcsystem" || !aliases_.contains(syntax.kind)))
+            return number_format_type(syntax.token.location);
         if ((syntax.kind=="stringbuilder" || syntax.kind=="faststring") &&
             (syntax.system_qualified || syntax.unit=="pabcsystem" || !aliases_.contains(syntax.kind)))
             return string_builder_type(syntax.token.location);
@@ -3432,6 +3543,11 @@ private:
         do {
  {
             auto type = resolve_type(*source.constructed);
+            if (!source.array_construction && is_number_format(type)) {
+                std::vector<std::unique_ptr<hir::Expr>> args;
+                for (const auto& argument:source.arguments) args.push_back(expression(*argument));
+                return number_format_expression(type,NumberFormatMethod::create,std::move(args),result->location);
+            }
             if (!source.array_construction && is_string_builder(type)) return make_string_builder(type,source);
             if(!source.array_construction && enumeration(type)) {if(!source.arguments.empty())throw Error("E_TYPE",result->location,"Enumeration constructor takes no arguments");result->kind=hir::ExprKind::default_value;result->type=type;break;}
             if(!source.array_construction && compound(type) && (info(type,result->location).kind==CompoundKind::comparer || info(type,result->location).kind==CompoundKind::comparable_interface || info(type,result->location).kind==CompoundKind::comparer_interface || info(type,result->location).kind==CompoundKind::equality_comparer || info(type,result->location).kind==CompoundKind::equatable_interface || info(type,result->location).kind==CompoundKind::equality_comparer_interface))throw Error("E_TYPE",result->location,"An interface or abstract Comparer cannot be constructed directly");
@@ -3607,6 +3723,8 @@ private:
         while((base->kind==SyntaxExprKind::field || base->kind==SyntaxExprKind::member_call) && base->left){
             if(!base->type_arguments.empty())break;
             if (base->token.text=="create" && string_builder_constructor_owner(*base->left)!=Type::invalid) break;
+            if ((base->token.text=="create" || base->token.text=="invariantinfo" || base->token.text=="currentinfo"
+                || base->token.text=="readonly") && number_format_type_name(*base->left)!=Type::invalid) break;
             if(base->left->kind==SyntaxExprKind::name && !lookup(base->left->token)
                 && (base->left->token.text=="pabcsystem" || imported_units_.contains(base->left->token.text)))break;
             chain.push_back(base);base=base->left.get();
@@ -3648,6 +3766,7 @@ private:
         do {
  {
             if(bind_inifile_static(*result,source))break;
+            if (auto number_format=bind_number_format_static(source)) return number_format;
             if (source.token.text=="create")
                 if (const auto type=string_builder_constructor_owner(*source.left); type!=Type::invalid)
                     return make_string_builder(type,source);
@@ -3692,6 +3811,20 @@ private:
                 break;
             }
             if (source.left->kind==SyntaxExprKind::name && !lookup(source.left->token) && imported_units_.contains(source.left->token.text)) {
+                if (source.left->token.text=="pabcsystem" && source.token.text=="numberformat")
+                    return make_number_format(source,result->location);
+                if (source.left->token.text=="pabcsystem" && source.token.text=="floattostr" && source.arguments.size()==2) {
+                    std::vector<std::unique_ptr<hir::Expr>> args;
+                    for (const auto& arg:source.arguments) args.push_back(expression(*arg));
+                    const auto type=args[1]->type;
+                    if (is_number_format(type) || type==Type::nil)
+                        return number_format_expression(number_format_type(result->location),NumberFormatMethod::float_text,
+                            std::move(args),result->location);
+                    result->kind=hir::ExprKind::call;
+                    result->arguments=std::move(args);
+                    bind_builtin(*result,"floattostr","pabcsystem");
+                    break;
+                }
                 if (source.left->token.text=="pabcsystem" && source.token.text=="format") {
                     std::vector<std::unique_ptr<hir::Expr>> args;
                     for (const auto& arg:source.arguments) args.push_back(expression(*arg));
@@ -3789,6 +3922,7 @@ private:
             if(source.token.text=="contains" && source.arguments.size()==2 && !declared_member(receiver,"contains")){bool iterable=receiver==Type::string;if(compound(receiver)){const auto& shape=info(receiver,result->location);iterable=shape.kind==CompoundKind::sequence || enumerable_collection(shape);}if(iterable){result->arguments.push_back(std::move(result->left));for(const auto& argument:source.arguments)result->arguments.push_back(expression(*argument));if(bind_sequence_query(*result,"contains"))break;}}
             if(bind_dictionary_member(*result,source))break;
             if(bind_inifile_member(*result,source))break;
+            if (auto number_format=bind_number_format_member(*result,source)) return number_format;
             if (auto builder=bind_string_builder_member(*result,source)) return builder;
             if(bind_encoding_member(*result,source))break;
             if(binary(receiver)){
@@ -4293,7 +4427,7 @@ private:
                 result->kind = hir::ExprKind::literal;
                 result->value = *value;
                 result->type = value_type(*value);
-            } else if (source.token.text=="arrrandom" || source.token.text=="arrrandominteger" || source.token.text=="arrrandomreal" || source.token.text=="matrrandom" || source.token.text=="matrrandominteger" || source.token.text=="matrrandomreal") {
+            } else if (source.token.text=="numberformat" || source.token.text=="arrrandom" || source.token.text=="arrrandominteger" || source.token.text=="arrrandomreal" || source.token.text=="matrrandom" || source.token.text=="matrrandominteger" || source.token.text=="matrrandomreal") {
                 SyntaxExpr call{SyntaxExprKind::call,source.token,{},{},1,{},{}};
                 return expression(call);
             } else if (std::any_of(stdlib::signatures().begin(),stdlib::signatures().end(),[&](const stdlib::Signature& signature) {
@@ -4335,6 +4469,8 @@ private:
                 return bind_composite_format(string_builder_type(result->location),StringBuilderMethod::format,
                     std::move(args),result->location);
             }
+            if (source.token.text=="numberformat" && !routine_names_.contains(source.token.text))
+                return make_number_format(source,result->location);
             result->kind = hir::ExprKind::call;
             if (!lookup(source.token) && subrange_aliases_.contains(source.token.text)) {
                 if (source.arguments.size()!=1)throw Error("E_TYPE",result->location,"Subrange conversion requires one value","Преобразование в поддиапазон требует одного значения");
@@ -4436,6 +4572,10 @@ private:
                 bind_school_ip_constructor(*result,school_ip_type(source.token.text=="addr32" ? CompoundKind::school_address : CompoundKind::school_ip)); break;
             }
             if (bind_try_read(*result,source.token.text)) break;
+            if (source.token.text=="floattostr" && result->arguments.size()==2 && !routine_names_.contains(source.token.text)
+                && (is_number_format(result->arguments[1]->type) || result->arguments[1]->type==Type::nil))
+                return number_format_expression(number_format_type(result->location),NumberFormatMethod::float_text,
+                    std::move(result->arguments),result->location);
             if (bind_number_conversion(*result,source.token.text)) break;
             if (bind_school_text(*result,source.token.text)) break;
             if (bind_school_fold(*result,source.token.text)) break;
@@ -4942,6 +5082,15 @@ private:
     }
     template<class F> hir::Stmt bind_assignment(std::unique_ptr<hir::Expr> target,F value,SourceLocation location,bool deferred=false,bool field_initialization=false) {
         hir::Stmt result;result.kind=hir::StmtKind::assign;result.location=location;result.target=std::move(target);result.deferred_write=deferred||(result.target->kind==hir::ExprKind::local&&result.target->left&&result.target->left->operation=="$static_init");
+        if (result.target->kind==hir::ExprKind::encoding_call && is_number_format(result.target->operation_type)
+            && (result.target->local&255U)==static_cast<std::size_t>(NumberFormatMethod::get)) {
+            auto property=std::move(result.target);
+            property->arguments.push_back(value(property->type));
+            result.kind=hir::StmtKind::call;
+            result.expression=number_format_expression(property->operation_type,NumberFormatMethod::set,
+                std::move(property->arguments),location,static_cast<NumberFormatField>(property->local>>8U));
+            return result;
+        }
         if (result.target->kind==hir::ExprKind::encoding_call && is_string_builder(result.target->operation_type)) {
             using M=StringBuilderMethod;
             const auto method=static_cast<M>(result.target->local);

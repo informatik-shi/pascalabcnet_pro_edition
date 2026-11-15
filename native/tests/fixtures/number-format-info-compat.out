@@ -1,0 +1,11 @@
+True
+True False True
+, _ 2
+4 2 0
+True False True
+, :: System.Globalization.NumberFormatInfo
+123,75 123::75 123.75
+. , 1
+minus1.25
+2 False True
+2~5 2.5
