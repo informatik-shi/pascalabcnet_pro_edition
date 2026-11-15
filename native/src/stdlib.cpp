@@ -251,6 +251,11 @@ std::span<const Signature> signatures() {
         add("$setlength", {Type::string, Type::integer}, Type::string, Function::resize_string);
         add("$insert", {Type::string, Type::string, Type::integer}, Type::string, Function::insert_string);
         add("$delete", {Type::string, Type::integer, Type::integer}, Type::string, Function::delete_string);
+        add("clipshortstring", {Type::string, Type::integer}, Type::string, Function::clip_short_string);
+        add("getcharinshortstring", {Type::string, Type::integer, Type::integer}, Type::character, Function::get_short_string_char);
+        add("setcharinshortstring", {Type::string, Type::integer, Type::integer, Type::character}, Type::string, Function::set_short_string_char);
+        add("$setlengthforshortstring", {Type::string, Type::integer, Type::integer}, Type::string, Function::resize_short_string);
+        add("$insertinshortstring", {Type::string, Type::string, Type::integer, Type::integer}, Type::string, Function::insert_short_string);
         for (auto [name,function]:{std::pair{"$string_padleft",Function::string_pad_left},{"$string_padright",Function::string_pad_right}}) {
             add(name,{Type::string,Type::integer},Type::string,function);
             add(name,{Type::string,Type::integer,Type::character},Type::string,function);

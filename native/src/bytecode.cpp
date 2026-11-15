@@ -763,7 +763,7 @@ private:
             break;
         case hir::StmtKind::string_mutation: {
             const auto& signature=stdlib::signatures()[node.local];
-            const std::size_t ref=signature.function==stdlib::Function::insert_string ? 1 : 0;
+            const auto ref=stdlib::string_mutation_reference(signature.function).value();
             for (std::size_t i=0;i<node.arguments.size();++i) {
                 if (i==ref) reference(*node.arguments[i]); else expression(*node.arguments[i]);
             }
@@ -1329,7 +1329,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if (type!=Type::string || instruction.operand>=stdlib::signatures().size()) invalid(instruction,"Invalid string mutation");
             {
                 const auto function=stdlib::signatures()[instruction.operand].function;
-                if (function!=stdlib::Function::resize_string && function!=stdlib::Function::insert_string && function!=stdlib::Function::delete_string) invalid(instruction,"Invalid mutation intrinsic");
+                if (!stdlib::string_mutation_reference(function))invalid(instruction,"Invalid mutation intrinsic");
             }
             break;
         case Op::encoding_call:
@@ -1456,6 +1456,9 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         case Op::call_builtin:
             if (instruction.operand >= stdlib::signatures().size()
                 || type != stdlib::signatures()[instruction.operand].result) invalid(instruction, "Invalid standard function");
+            if (stdlib::signatures()[instruction.operand].function==stdlib::Function::resize_short_string
+                || stdlib::signatures()[instruction.operand].function==stdlib::Function::insert_short_string)
+                invalid(instruction,"Short string mutation requires a reference");
             break;
         case Op::type_operation:
             if(!type_operation_valid(program,type,static_cast<TypeOperation>(instruction.operand)))invalid(instruction,"Invalid type operation");break;
@@ -1779,7 +1782,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             require(reference_type(instruction.type)); break;
         case Op::mutate_string: {
             const auto& signature=stdlib::signatures()[instruction.operand];
-            const std::size_t ref=signature.function==stdlib::Function::insert_string ? 1 : 0;
+            const auto ref=stdlib::string_mutation_reference(signature.function).value();
             for (std::size_t i=signature.parameters.size();i>0;--i)
                 require(i-1==ref ? reference_type(Type::string) : signature.parameters[i-1]);
             break;

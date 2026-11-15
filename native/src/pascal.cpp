@@ -7339,6 +7339,7 @@ private:
             result.target = expression(*source.target);
             return bind_assignment(std::move(result.target),[&](Type context){return expression(*source.expression,context);},result.location,false,source.field_initialization);
         case SyntaxStmtKind::call:
+            if(bind_short_string_mutation(*source.expression,result))break;
             result.kind = hir::StmtKind::call; result.expression = expression(*source.expression);
             if (callable_type(result.expression->type) && result.expression->kind!=hir::ExprKind::user_call && result.expression->kind!=hir::ExprKind::value_call) {
                 auto call=std::make_unique<hir::Expr>(); call->location=result.location; call->left=std::move(result.expression);
@@ -7520,6 +7521,31 @@ private:
     std::map<Type,std::size_t> enum_ready_members_;
     bool enum_initializing_=false;
     std::map<const SyntaxType*,Type> resolved_types_;
+    bool bind_short_string_mutation(const SyntaxExpr& call,hir::Stmt& result){
+        const auto& name=call.token.text;
+        if(name!="setlengthforshortstring" && name!="insertinshortstring")return false;
+        const bool global=call.kind==SyntaxExprKind::call && !lookup(call.token) && !routine_names_.contains(name);
+        const bool qualified=call.kind==SyntaxExprKind::member_call && call.left && call.left->kind==SyntaxExprKind::name
+            && call.left->token.text=="pabcsystem" && !lookup(call.left->token);
+        if((!global && !qualified) || !call.type_arguments.empty())return false;
+        const auto function=name=="setlengthforshortstring" ? stdlib::Function::resize_short_string : stdlib::Function::insert_short_string;
+        const auto catalog=stdlib::signatures();
+        const auto found=std::find_if(catalog.begin(),catalog.end(),[&](const auto& signature){return signature.function==function;});
+        if(found==catalog.end())throw Error("E_HIR",result.location,"Missing short string mutation");
+        if(call.arguments.size()!=found->parameters.size())throw Error("E_TYPE",result.location,
+            "Wrong number of short string procedure arguments","Неверное число аргументов процедуры коротких строк");
+        const auto reference=stdlib::string_mutation_reference(function).value();
+        result.kind=hir::StmtKind::string_mutation;
+        result.local=static_cast<std::size_t>(found-catalog.begin());
+        for(std::size_t i=0;i<call.arguments.size();++i){
+            auto argument=expression(*call.arguments[i],found->parameters[i]);
+            if(i==reference && (argument->type!=Type::string || !lvalue(*argument)))throw Error("E_TYPE",argument->location,
+                "Short string procedure requires an assignable string argument","Процедуре коротких строк нужна строка, которой можно присвоить значение");
+            result.arguments.push_back(i==reference ? std::move(argument) : convert(std::move(argument),found->parameters[i]));
+        }
+        return true;
+    }
+
     std::map<std::string,std::size_t> routine_names_;
     std::map<std::string,std::vector<std::size_t>> global_overloads_;
     std::map<Type,std::map<std::string,std::size_t>> class_methods_;

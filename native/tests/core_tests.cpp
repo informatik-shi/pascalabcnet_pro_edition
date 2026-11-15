@@ -5948,6 +5948,34 @@ void mutable_strings() {
     error([&] { abc::verify(program); }, "E_BYTECODE");
 }
 
+void short_string_helpers() {
+    result(R"(begin
+  var missing: string := nil;
+  Writeln(ClipShortString('Pascal',3),' ',PABCSystem.ClipShortString('abc',9),' [',ClipShortString(missing,-1),']');
+  Writeln(Ord(GetCharInShortString('abc',0,1)),' ',Ord(GetCharInShortString('abc',3,1)),
+    ' ',Ord(GetCharInShortString('a',3,4)),' ',Ord(GetCharInShortString(missing,2,4)));
+  Writeln(SetCharInShortString('abc',2,4,'X'),' ',SetCharInShortString('a',3,4,'X'),
+    ' [',SetCharInShortString(missing,3,4,'X'),']');
+  var s: string := 'abc';
+  PABCSystem.SetLengthForShortString(s,6,4); Writeln('[',s,']');
+  SetLengthForShortString(s,2,4); Writeln('[',s,']');
+  InsertInShortString('123',s,2,4); Writeln('[',s,']');
+  s:='a'; PABCSystem.InsertInShortString('12345',s,4,4); Writeln('[',s,']');
+end.)","Pas abc []\n3 99 0 0\naXc a []\n[abc ]\n[ab]\n[a123]\n[a123]\n");
+    result("begin var a:=Arr('ab');SetLengthForShortString(a[0],3,4);InsertInShortString('X',a[0],0,4);Writeln('[',a[0],']');end.","[Xab ]\n");
+    result("begin var s:string:=nil;InsertInShortString(nil,s,2,1);assert(s=nil);SetLengthForShortString(s,0,-1);assert(s='');end.","");
+    for(const auto source:{"begin Writeln(ClipShortString('ab',-1));end.",
+        "begin Writeln(GetCharInShortString('a',3,2));end.",
+        "begin Writeln(SetCharInShortString('a',0,3,'x'));end."})runtime_error(source,"E_BOUNDS");
+    runtime_error("begin var s:string:='ab';SetLengthForShortString(s,3,1);end.","E_RANGE");
+    runtime_error("begin var s:string:=nil;SetLengthForShortString(s,1,3);end.","E_NIL");
+    runtime_error("begin var s:string:='a';InsertInShortString(nil,s,1,3);end.","E_NIL");
+    compile_error("begin SetLengthForShortString('ab',2,3);end.","E_TYPE");
+    auto program=abc::compile("begin var s:='ab';SetLengthForShortString(s,3,3);end.");
+    for(auto& op:program.code)if(op.op==abc::Op::mutate_string)op.op=abc::Op::call_builtin;
+    error([&]{abc::verify(program);},"E_BYTECODE");
+}
+
 void global_routine_overloads() {
     result(R"(type ActionOnInteger = function(n: integer): integer;
 function Pick(n: integer): integer := n+10;
@@ -7737,6 +7765,7 @@ int main() {
     nullable_strings();
     language_foundations();
     case_statements();
+    short_string_helpers();
     global_routine_overloads();
     integral_set_relations();
     subrange_types();

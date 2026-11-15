@@ -221,6 +221,33 @@ std::pair<std::int32_t,std::int32_t> read_string_integer(const Value& source, st
 
 std::optional<Value> invoke_text(Function function, std::span<const Value> arguments, SourceLocation location) {
     switch (function) {
+    case Function::clip_short_string: {
+        if(std::holds_alternative<NilString>(arguments[0]))return std::u16string{};
+        const auto length=std::get<std::int32_t>(arguments[1]);
+        if(length<0)throw runtime_error(RuntimeError::index_bounds,location);
+        return string_text(arguments[0]).substr(0,static_cast<std::size_t>(length));
+    }
+    case Function::get_short_string_char: {
+        const auto index=std::get<std::int32_t>(arguments[1]),capacity=std::get<std::int32_t>(arguments[2]);
+        const auto& text=string_text(arguments[0]);
+        if(index<0)throw runtime_error(RuntimeError::index_bounds,location);
+        const auto position=static_cast<std::size_t>(index);
+        if(position>0 && position<=text.size())return text[position-1];
+        if(index==0 || index>capacity){
+            if(std::holds_alternative<NilString>(arguments[0]))throw runtime_error(RuntimeError::nil_reference,location);
+            if(index==0)return static_cast<char16_t>(text.size());
+            throw runtime_error(RuntimeError::index_bounds,location);
+        }
+        return char16_t{};
+    }
+    case Function::set_short_string_char: {
+        const auto index=std::get<std::int32_t>(arguments[1]),capacity=std::get<std::int32_t>(arguments[2]);
+        if(index<=0 || index>capacity)throw runtime_error(RuntimeError::index_bounds,location);
+        auto text=string_text(arguments[0]);
+        const auto position=static_cast<std::size_t>(index-1);
+        if(position<text.size())text[position]=std::get<char16_t>(arguments[3]);
+        return text;
+    }
     case Function::string_pad_left: case Function::string_pad_right:
     case Function::string_substring: case Function::string_insert_at: case Function::string_remove_at: {
         if (std::holds_alternative<NilString>(arguments[0])) throw runtime_error(RuntimeError::nil_reference,location);
@@ -367,5 +394,46 @@ std::optional<Value> invoke_text(Function function, std::span<const Value> argum
     }
     default: return std::nullopt;
     }
+}
+
+std::optional<Value> mutate_text(Function function,std::span<const Value> arguments,SourceLocation location){
+    constexpr std::size_t limit=1'048'576;
+    if(function==Function::resize_short_string){
+        const auto requested=std::get<std::int32_t>(arguments[1]);
+        if(requested<0)throw runtime_error(RuntimeError::string_length,location);
+        if(requested==0)return std::u16string{};
+        if(std::holds_alternative<NilString>(arguments[0]))throw runtime_error(RuntimeError::nil_reference,location);
+        const auto& original=string_text(arguments[0]);
+        const auto length=static_cast<std::size_t>(requested);
+        if(length<original.size())return original.substr(0,length);
+        if(length==original.size())return {};
+        const auto target=std::min(requested,std::get<std::int32_t>(arguments[2]));
+        if(target<0 || static_cast<std::size_t>(target)<original.size())throw runtime_error(RuntimeError::string_length,location);
+        if(static_cast<std::size_t>(target)>limit)throw runtime_error(RuntimeError::string_limit,location);
+        auto result=original;
+        result.resize(static_cast<std::size_t>(target),u' ');
+        return result;
+    }
+    if(function==Function::insert_short_string){
+        const auto index=std::max(1,std::get<std::int32_t>(arguments[2]));
+        const auto capacity=std::get<std::int32_t>(arguments[3]);
+        if(index>capacity)return {};
+        if(std::holds_alternative<NilString>(arguments[0]) || std::holds_alternative<NilString>(arguments[1]))
+            throw runtime_error(RuntimeError::nil_reference,location);
+        const auto& insert=string_text(arguments[0]);
+        const auto& text=string_text(arguments[1]);
+        const auto position=std::min(text.size(),static_cast<std::size_t>(index-1));
+        const auto length=std::min(static_cast<std::size_t>(capacity),text.size()+insert.size());
+        if(length>limit)throw runtime_error(RuntimeError::string_limit,location);
+        std::u16string result;
+        result.reserve(length);
+        const auto append=[&](std::u16string_view part){result.append(part.substr(0,length-result.size()));};
+        const std::u16string_view original=text;
+        append(original.substr(0,position));
+        append(insert);
+        append(original.substr(position));
+        return result;
+    }
+    return invoke_text(function,arguments,location);
 }
 } // namespace abc::stdlib
