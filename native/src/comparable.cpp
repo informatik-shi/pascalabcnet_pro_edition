@@ -30,25 +30,35 @@ bool comparable_signature(const Program& program,Type type,ComparableMethod meth
     if(method==ComparableMethod::clamp_top || method==ComparableMethod::clamp_bottom)return type==Type::integer || type==Type::real;
     return true;
 }
-int compare_culture_strings(std::u16string_view a,std::u16string_view b,SourceLocation location,const ExecutionOptions& options) {
+int compare_culture_strings(std::u16string_view a,std::u16string_view b,SourceLocation location,
+    const ExecutionOptions& options,bool ignore_case) {
     big_work((a.size()+b.size())/64+1,location,options);
     if(a.size()>INT32_MAX || b.size()>INT32_MAX)throw runtime_error(RuntimeError::string_limit,location);
 #ifdef _WIN32
     static_assert(sizeof(wchar_t)==sizeof(char16_t));
-    const auto result=CompareStringEx(L"en-US",NORM_LINGUISTIC_CASING,reinterpret_cast<LPCWCH>(a.data()),static_cast<int>(a.size()),reinterpret_cast<LPCWCH>(b.data()),static_cast<int>(b.size()),nullptr,nullptr,0);
+    const DWORD flags=NORM_LINGUISTIC_CASING | (ignore_case ? NORM_IGNORECASE|NORM_IGNOREKANATYPE|NORM_IGNOREWIDTH : 0);
+    const auto result=CompareStringEx(L"en-US",flags,reinterpret_cast<LPCWCH>(a.data()),static_cast<int>(a.size()),reinterpret_cast<LPCWCH>(b.data()),static_cast<int>(b.size()),nullptr,nullptr,0);
     if(!result)throw runtime_error(RuntimeError::collation_unavailable,location);
     return result-CSTR_EQUAL;
 #else
     struct Collator {
         UCollator* value=nullptr;
-        Collator(){UErrorCode status=U_ZERO_ERROR;value=ucol_open("en_US",&status);if(U_FAILURE(status)){if(value)ucol_close(value);value=nullptr;}}
+        explicit Collator(bool ignore_case){
+            UErrorCode status=U_ZERO_ERROR;
+            value=ucol_open("en_US",&status);
+            if(U_FAILURE(status)){if(value)ucol_close(value);value=nullptr;}
+            if(value && ignore_case)ucol_setStrength(value,UCOL_SECONDARY);
+        }
         ~Collator(){if(value)ucol_close(value);}
         Collator(const Collator&)=delete;Collator& operator=(const Collator&)=delete;
     };
-    thread_local Collator collator;
-    if(!collator.value)throw runtime_error(RuntimeError::collation_unavailable,location);
+    const auto selected=[ignore_case]{
+        if(ignore_case){thread_local Collator folded(true);return folded.value;}
+        thread_local Collator original(false);return original.value;
+    }();
+    if(!selected)throw runtime_error(RuntimeError::collation_unavailable,location);
     static_assert(sizeof(UChar)==sizeof(char16_t));
-    return static_cast<int>(ucol_strcoll(collator.value,reinterpret_cast<const UChar*>(a.data()),static_cast<int32_t>(a.size()),reinterpret_cast<const UChar*>(b.data()),static_cast<int32_t>(b.size())));
+    return static_cast<int>(ucol_strcoll(selected,reinterpret_cast<const UChar*>(a.data()),static_cast<int32_t>(a.size()),reinterpret_cast<const UChar*>(b.data()),static_cast<int32_t>(b.size())));
 #endif
 }
 Value comparable_invoke(const Program& program,Type type,ComparableMethod method,std::span<const Value> arguments,SourceLocation location,const ExecutionOptions& options) {

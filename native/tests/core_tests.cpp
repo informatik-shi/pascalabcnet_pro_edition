@@ -692,6 +692,11 @@ void timing_library() {
     compile_error("begin Benchmark(procedure -> begin end);end.","E_NAME");
     compile_error("uses Utils;begin Benchmark(()->1,1);end.","E_TYPE");
     error([&]{(void)run("uses Utils;begin Benchmark(nil,1);end.");},"E_NIL");
+    compile_error("begin Writeln(EvalInt('1'));end.","E_NAME");
+    compile_error("uses Utils;begin Writeln(EvalInt(True));end.","E_TYPE");
+    error([&]{(void)run("uses Utils;begin Writeln(EvalInt('NULL'));end.");},"E_TYPE");
+    error([&]{(void)run("uses Utils;begin Writeln(EvalBool('''1'''));end.");},"E_FORMAT");
+    error([&]{(void)run("uses Utils;begin Writeln(EvalReal('1.0/0'));end.");},"E_DIV_ZERO");
 }
 
 void sequence_text_and_flatten() {

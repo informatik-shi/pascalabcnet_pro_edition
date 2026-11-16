@@ -3127,7 +3127,8 @@ UTF-32LE/BE. Ограничение входного размера 1 МиБ, н
 прервать остановкой программы. Ошибки сокетов отображаются на русском и
 английском. [Тест Sockets](tests/fixtures/sockets-compat.pas) сверяет
 обмен по TCP с результатом PascalABC.NET на Windows. Нативный тест также
-прошёл на Ubuntu 22.04. Проверка macOS и сетевых ошибок продолжается.
+прошёл на Ubuntu 22.04 и macOS ARM64. Проверка сетевых ошибок и macOS Intel
+продолжается. [Проверки ядра](https://github.com/informatik-shi/pascalabcnet_pro_edition/actions/runs/43783437687).
 
 ## ClientServer
 
@@ -3156,7 +3157,8 @@ ClientServer, в том числе ответ, полученный нескол
 Сверка с исходным PascalABC.NET выполнена через IPv4 на Windows. Нативный
 тест прошёл на Ubuntu 22.04. Отдельная проверка на Ubuntu сверила три
 IPv6-кадра с данными исходного теста, включая ответ, разделённый посередине
-символа UTF-8. Проверка macOS и соответствия сетевых ошибок продолжается.
+символа UTF-8. Сетевой тест ядра прошёл на macOS ARM64. Проверка macOS
+Intel и соответствия сетевых ошибок продолжается.
 
 ## Замер времени в Utils
 
@@ -3169,7 +3171,21 @@ IPv6-кадра с данными исходного теста, включая 
 прервать остановкой программы.
 [Тест Benchmark](tests/fixtures/utils-benchmark-compat.pas) сверяет число
 вызовов, параметр по умолчанию и результат для граничных значений с
-PascalABC.NET. Остальные функции `Utils` остаются в работе.
+PascalABC.NET.
+
+`EvalInt`, `EvalReal`, `EvalBool` и `EvalStr` принимают `String` и возвращают
+соответственно `Integer`, `Real`, `Boolean` и `String`. В простых выражениях
+доступны арифметика с `Integer`, `Int64`, `Decimal` и `Real`, скобки,
+конкатенация строк, сравнения, логические операции и `IS NULL`. `EvalInt`
+округляет значения посередине к ближайшему чётному. Пустое выражение или
+`NULL` даёт пустую строку в `EvalStr`; числовые и логический вызовы
+выдают двуязычную ошибку. [Правила DataColumn.Expression](https://learn.microsoft.com/en-us/dotnet/fundamentals/runtime-libraries/system-data-datacolumn-expression).
+
+[Тест Eval](tests/fixtures/utils-scalar-eval-compat.pas) и ещё 258
+выражений совпали с оригиналом в сборках Windows и Ubuntu 22.04. Для
+Windows результат также проверен из распакованного ZIP. Именованные
+функции выражений, даты, агрегаты и `Eval`, возвращающий `Object`, остаются
+в работе.
 
 ## Символы Windows-1251
 

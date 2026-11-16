@@ -1,4 +1,5 @@
 #include "stdlib.hpp"
+#include "utils_eval.hpp"
 #include <bit>
 #include "diagnostics.hpp"
 #include "files.hpp"
@@ -81,6 +82,10 @@ std::span<const Signature> signatures() {
         add("closesocket",{Type::integer},Type::unit,Function::socket_close,"sockets");
         add("sendcommand",{Type::string},Type::unit,Function::send_command,"clientserver");
         add("sendcommandandreceiveanswer",{Type::string},Type::string,Function::request_command,"clientserver");
+        add("evalint",{Type::string},Type::integer,Function::eval_int,"utils");
+        add("evalreal",{Type::string},Type::real,Function::eval_real,"utils");
+        add("evalbool",{Type::string},Type::boolean,Function::eval_boolean,"utils");
+        add("evalstr",{Type::string},Type::string,Function::eval_string,"utils");
         for (const auto& [name,function]:{std::pair<std::string_view,Function>{"bin",Function::school_bin},{"oct",Function::school_oct},{"hex",Function::school_hex}})
             add(name,{Type::int64},Type::string,function,"school");
         add("dec",{Type::string,Type::integer},Type::int64,Function::school_dec,"school");
@@ -412,6 +417,7 @@ Value invoke(std::size_t id, std::span<const Value> arguments, SourceLocation lo
     auto& files=context.files; auto& random=context.random;
     const auto& signature = signatures()[id]; // Verified before execution.
     const auto function = signature.function;
+    if(typed_utils_eval(function))return utils_eval(context.values,arguments[0],signature.result,context.options);
     switch(function){
     case Function::socket_server:return context.sockets.create_server(std::get<std::int32_t>(arguments[0]),location);
     case Function::socket_client:return context.sockets.create_client(location);

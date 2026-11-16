@@ -27,8 +27,11 @@ enum class Function {
     subrange_integer_cast, clip_short_string, get_short_string_char, set_short_string_char, resize_short_string, insert_short_string,
     read_short_string, read_short_string_from_file,
     socket_server, socket_client, socket_accept, socket_connect, socket_send, socket_receive, socket_close,
-    send_command, request_command
+    send_command, request_command, eval_int, eval_real, eval_boolean, eval_string
 };
+inline bool typed_utils_eval(Function function) {
+    return function>=Function::eval_int && function<=Function::eval_string;
+}
 inline std::optional<std::size_t> string_mutation_reference(Function function) {
     switch(function) {
     case Function::resize_string: case Function::delete_string: case Function::resize_short_string: case Function::read_short_string: return 0;

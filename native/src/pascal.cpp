@@ -2360,6 +2360,7 @@ private:
         }
         if(!chosen)return {};
         const auto id=*chosen;const auto& signature=catalog[id];
+        if(stdlib::typed_utils_eval(signature.function))(void)decimal_record_type(source.token.location);
         auto found=builtin_routines_.find(id);
         if (found==builtin_routines_.end()) {
             if (module_.routines.size()>=256) throw Error("E_LIMIT",source.token.location,"Routine limit exceeded");
@@ -9307,6 +9308,7 @@ private:
         }
         if (!chosen) throw Error("E_TYPE",result.location,"No matching overload for '"+std::string(name)+"'");
         const auto& signature=catalog[*chosen]; result.local=*chosen; result.type=signature.result;
+        if(stdlib::typed_utils_eval(signature.function))(void)decimal_record_type(result.location);
         for (std::size_t n=0;n<result.arguments.size();++n)
             if(signature.reference_index!=n)result.arguments[n]=convert(std::move(result.arguments[n]),signature.parameters[n]);
     }

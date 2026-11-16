@@ -1632,6 +1632,9 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
                 || type != stdlib::signatures()[instruction.operand].result) invalid(instruction, "Invalid standard function");
             if(stdlib::signatures()[instruction.operand].unit=="clientserver" && !program.client_server)
                 invalid(instruction,"Missing ClientServer globals");
+            if(stdlib::typed_utils_eval(stdlib::signatures()[instruction.operand].function)
+                && std::none_of(program.types.begin(),program.types.end(),decimal_type))
+                invalid(instruction,"Missing Decimal type for Utils evaluation");
             if(stdlib::signatures()[instruction.operand].function>=stdlib::Function::resize_short_string
                 && stdlib::string_mutation_reference(stdlib::signatures()[instruction.operand].function))
                 invalid(instruction,"Short string procedure requires a reference");
