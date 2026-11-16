@@ -182,6 +182,9 @@ private:
         case hir::ExprKind::utils_eval_object:
             expression(*node.arguments.front());
             emit(Op::utils_eval_object,node.type,node.local,node.location);break;
+        case hir::ExprKind::utils_record_bytes:
+            expression(*node.arguments.front());
+            emit(Op::utils_record_bytes,node.type,node.local,node.location);break;
         case hir::ExprKind::database_null:
             emit(Op::database_null,node.type,0,node.location);break;
         case hir::ExprKind::tuple_literal:
@@ -1327,6 +1330,15 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
                 invalid(instruction,"Invalid Utils.Eval type metadata");
             break;
         }
+        case Op::utils_record_bytes: {
+            const auto argument=static_cast<Type>(instruction.operand);
+            if(!compound(type) || type_info(program,type).kind!=CompoundKind::array
+                || type_info(program,type).rank!=1 || type_info(program,type).element!=Type::byte
+                || static_cast<std::size_t>(argument)!=instruction.operand || !valid_value_type(program,argument)
+                || !compound(argument) || type_info(program,argument).kind!=CompoundKind::boxed_object)
+                invalid(instruction,"Invalid RecordToByteArray type metadata");
+            break;
+        }
         case Op::school_table_print: case Op::school_table_new:
             if (!compound(type) || type_info(program,type).kind!=CompoundKind::array || type_info(program,type).rank!=2
                 || type_info(program,type).element!=Type::boolean || instruction.operand) invalid(instruction,"Invalid School truth-table output");
@@ -1520,11 +1532,8 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if (!compound(type) || type_info(program,type).kind!=CompoundKind::boxed_object
                 || payload>65535U) invalid(instruction,"Invalid object conversion metadata");
             const auto value=static_cast<Type>(payload);
-            const bool native_value=compound(value) && static_cast<unsigned>(value)-64U<program.types.size()
-                && (complex_number_type(type_info(program,value)) || calendar_record(type_info(program,value))
-                    || decimal_type(type_info(program,value)));
             if ((!scalar(value) || short_string(value)) && !nrbf_array_type(program.types,value)
-                && !native_value && !valid_class_ancestry(program.types,value))
+                && !object_structure_type(program.types,value) && !valid_class_ancestry(program.types,value))
                 invalid(instruction,"Invalid object conversion metadata");
             break;
         }
@@ -1939,6 +1948,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         case Op::client_server_run: require(instruction.type); break;
         case Op::utils_benchmark: require(Type::integer); require(instruction.type); stack.push_back(Type::real); break;
         case Op::database_null: stack.push_back(instruction.type); break;
+        case Op::utils_record_bytes: require(static_cast<Type>(instruction.operand)); stack.push_back(instruction.type); break;
         case Op::utils_eval_object: require(Type::string); stack.push_back(instruction.type); break;
         case Op::school_table_new: require(Type::integer); stack.push_back(instruction.type); break;
         case Op::tuple_literal: case Op::school_pair:

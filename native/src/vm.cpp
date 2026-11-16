@@ -7,6 +7,7 @@
 #include "sockets.hpp"
 #include "runtime_values.hpp"
 #include "utils_eval.hpp"
+#include "utils_marshal.hpp"
 #include "record_initialization.hpp"
 #include "files.hpp"
 #include "linked.hpp"
@@ -611,6 +612,11 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
         case Op::utils_eval_object: {
             const auto expression=pop();
             stack.push_back(utils_eval_object(values,expression,instruction.type,static_cast<Type>(instruction.operand),options));
+            break;
+        }
+        case Op::utils_record_bytes: {
+            const auto object=pop();
+            stack.push_back(utils_record_to_bytes(values,instruction.type,object,options));
             break;
         }
         case Op::utils_benchmark: {

@@ -29,6 +29,7 @@ Type calendar_result(std::span<const TypeInfo>,Type,std::size_t);
 Value calendar_invoke(Values&,Type,std::size_t,std::span<const Value>);
 std::u16string calendar_text(const Value&,std::u16string_view,SourceLocation);
 int compare_calendar_values(const Value&,const Value&);
+double calendar_ole_date(const Value&,SourceLocation);
 std::int32_t calendar_hash_code(const Value&);
 inline constexpr std::uint64_t date_time_ticks_mask=(std::uint64_t{1}<<62U)-1;
 std::uint64_t date_time_binary_bits(const Value&);

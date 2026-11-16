@@ -762,6 +762,20 @@ void timing_library() {
     require(dialogs==std::vector<std::pair<std::u16string,std::u16string>>{
         {u"Первое",u"Сообщение"},{u"😀",u"local title"},{u"",u"Сообщение"}},
         "Both typed ShowMessage overloads support callable values and preserve title and message order");
+    compile_error("begin Writeln(RecordToByteArray(128).Length);end.","E_NAME");
+    compile_error("uses Utils;begin Writeln(RecordToByteArray().Length);end.","E_TYPE");
+    error([&]{(void)run("uses Utils;begin Writeln(RecordToByteArray(nil).Length);end.");},"E_NIL");
+    for(const auto* source:{"uses Utils;begin Writeln(RecordToByteArray('text').Length);end.",
+        "uses Utils;type K=(A,B);begin Writeln(RecordToByteArray(B).Length);end.",
+        "uses Utils;begin Writeln(RecordToByteArray(DateTime.Today).Length);end.",
+        "uses Utils;type R=record v:string;end;begin var r:R;Writeln(RecordToByteArray(r).Length);end."})
+        error([&]{(void)run(source);},"E_TYPE",source);
+    error([&]{(void)run("uses Utils;type R=record d:DateTime;end;begin var r:R;r.d:=new DateTime(99,12,31);"
+        "Writeln(RecordToByteArray(r).Length);end.");},"E_OVERFLOW");
+    auto marshal=abc::compile("uses Utils;begin Writeln(RecordToByteArray(128).Length);end.");
+    for(auto& instruction:marshal.code)if(instruction.op==abc::Op::utils_record_bytes)
+        instruction.operand=static_cast<std::size_t>(abc::Type::integer);
+    error([&]{abc::verify(marshal);},"E_BYTECODE");
 }
 
 void sequence_text_and_flatten() {

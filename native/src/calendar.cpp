@@ -846,6 +846,21 @@ int compare_calendar_values(const Value& left,const Value& right) {
     const auto a=calendar_value(left).ticks,b=calendar_value(right).ticks;
     return (a>b)-(a<b);
 }
+double calendar_ole_date(const Value& value,SourceLocation location) {
+    using namespace std::chrono;
+    constexpr auto offset_days=(sys_days{year{1899}/December/30}-epoch).count();
+    constexpr auto minimum_days=(sys_days{year{100}/January/1}-epoch).count();
+    constexpr auto millis_per_day=ticks_per_day/ticks_per_millisecond;
+    const auto ticks=calendar_value(value).ticks;
+    if(ticks>=ticks_per_day && ticks<minimum_days*ticks_per_day)
+        throw Error("E_OVERFLOW",location,"DateTime is outside the OLE Automation date range",
+            "Дата DateTime выходит за диапазон дат OLE Automation");
+    const auto millis=(ticks<ticks_per_day ? ticks : ticks-offset_days*ticks_per_day)/ticks_per_millisecond;
+    const auto day=(millis<0 ? millis-millis_per_day+1 : millis)/millis_per_day;
+    const auto time=millis-day*millis_per_day;
+    const auto encoded=day*millis_per_day+(day<0 ? -time : time);
+    return static_cast<double>(encoded)/static_cast<double>(millis_per_day);
+}
 std::int32_t calendar_hash_code(const Value& value) {
     const auto bits=std::bit_cast<std::uint64_t>(calendar_value(value).ticks);
     return std::bit_cast<std::int32_t>(static_cast<std::uint32_t>(bits^(bits>>32)));

@@ -2334,6 +2334,8 @@ private:
             return utils_benchmark_value(source.token.location,expected);
         if(source.token.text=="eval" && hints.empty() && imported_units_.contains("utils") && (unit.empty() || unit=="utils"))
             return utils_eval_value(source.token.location,expected);
+        if(source.token.text=="recordtobytearray" && hints.empty() && imported_units_.contains("utils") && (unit.empty() || unit=="utils"))
+            return utils_record_bytes_value(source.token.location,expected);
         const auto context=callable_type(expected) ? std::optional<TypeInfo>{info(expected,source.token.location)} : std::nullopt;
         const auto catalog=stdlib::signatures();
         const auto visible=[&](const auto& signature){
@@ -4225,7 +4227,7 @@ private:
         if (boxed_object(type,expression->location)
             && (scalar(expression->type) || nrbf_array_type(module_.types,expression->type)
                 || valid_class_ancestry(module_.types,expression->type)
-                || is_complex(expression->type) || is_calendar(expression->type) || is_decimal(expression->type))) {
+                || object_structure_type(module_.types,expression->type))) {
             if (short_string(expression->type)) expression=convert(std::move(expression),Type::string);
             return object_conversion(std::move(expression),type,type);
         }
@@ -5173,6 +5175,7 @@ private:
                 if (bind_client_server_run(*result,source,source.left->token.text)) break;
                 if (bind_utils_benchmark(*result,source,source.left->token.text)) break;
                 if (bind_utils_object_eval(*result,source,source.left->token.text)) break;
+                if (bind_utils_record_bytes(*result,source,source.left->token.text)) break;
                 if (bind_dictionary_query(*result,source,source.left->token.text)) break;
                 if (bind_sequence_zip(*result,source,source.left->token.text)) break;
                 if (bind_sequence_numeric_selector(*result,source,source.left->token.text)) break;
@@ -5848,7 +5851,8 @@ private:
         if(cast==Type::invalid)return false;
         if(source.arguments.size()!=1)throw Error("E_TYPE",result.location,callable_type(cast) ? "Callable constructor requires one matching routine value" : "Interface conversion requires one value");
         auto input=expression(*source.arguments[0],cast);
-        if(boxed_object(input->type,result.location) && valid_class_ancestry(module_.types,cast)){
+        if(boxed_object(input->type,result.location)
+            && (valid_class_ancestry(module_.types,cast) || object_structure_type(module_.types,cast))){
             const auto object=input->type;
             input=object_conversion(std::move(input),cast,object);
         }else if(class_reference_compatible(module_.types,cast,input->type)){
@@ -5940,6 +5944,7 @@ private:
             if (!routine_names_.contains(source.token.text) && bind_client_server_run(*result,source)) break;
             if (!routine_names_.contains(source.token.text) && bind_utils_benchmark(*result,source)) break;
             if (!routine_names_.contains(source.token.text) && bind_utils_object_eval(*result,source)) break;
+            if (!routine_names_.contains(source.token.text) && bind_utils_record_bytes(*result,source)) break;
             if (!routine_names_.contains(source.token.text) && bind_dictionary_query(*result,source)) break;
             if (!routine_names_.contains(source.token.text) && bind_sequence_zip(*result,source)) break;
             if (!routine_names_.contains(source.token.text) && bind_sequence_numeric_selector(*result,source)) break;
@@ -6014,7 +6019,7 @@ private:
             }
             if (result->arguments.size()==1 && boxed_object(result->arguments.front()->type,result->location)) {
                 const auto cast=cast_alias!=aliases_.end() ? cast_alias->second : find_type(source.token.text).value_or(Type::invalid);
-                if (scalar(cast) || nrbf_array_type(module_.types,cast)) {
+                if (scalar(cast) || nrbf_array_type(module_.types,cast) || object_structure_type(module_.types,cast)) {
                     const auto object=result->arguments.front()->type;
                     auto unboxed=object_conversion(std::move(result->arguments.front()),short_string(cast) ? Type::string : cast,object);
                     return short_string(cast) ? convert(std::move(unboxed),cast) : std::move(unboxed);
@@ -8129,6 +8134,31 @@ private:
         result.type=object_type(result.location);
         result.local=static_cast<std::size_t>(dbnull_type(result.location));
         result.arguments.push_back(convert(expression(*source.arguments.front(),Type::string),Type::string));
+        return true;
+    }
+    std::unique_ptr<hir::Expr> utils_record_bytes_value(SourceLocation location,Type expected) {
+        const auto bytes=sequence_type(CompoundKind::array,Type::byte);
+        const auto object=object_type(location);
+        const CallableParameter parameter{object,false,false};
+        if(expected==Type::invalid)expected=function_type(bytes,{parameter},location);
+        if(!callable_type(expected))
+            throw Error("E_TYPE",location,"RecordToByteArray requires a function type","Для RecordToByteArray нужен тип функции");
+        const auto& signature=info(expected,location);
+        if(signature.element!=bytes || signature.parameters.size()!=1 || signature.parameters[0]!=parameter)
+            throw Error("E_TYPE",location,"RecordToByteArray accepts Object and returns array of Byte",
+                "RecordToByteArray принимает Object и возвращает array of Byte");
+        return native_operation_value(hir::ExprKind::utils_record_bytes,expected,location,"$record_bytes",
+            record_bytes_routines_,static_cast<std::size_t>(object));
+    }
+    bool bind_utils_record_bytes(hir::Expr& result,const SyntaxExpr& source,std::string_view unit={}) {
+        if(source.token.text!="recordtobytearray" || (!unit.empty() && unit!="utils") || !imported_units_.contains("utils"))return false;
+        if(source.arguments.size()!=1)
+            throw Error("E_TYPE",result.location,"RecordToByteArray takes one Object","RecordToByteArray принимает один Object");
+        const auto object=object_type(result.location);
+        result.kind=hir::ExprKind::utils_record_bytes;
+        result.type=sequence_type(CompoundKind::array,Type::byte);
+        result.local=static_cast<std::size_t>(object);
+        result.arguments.push_back(convert(expression(*source.arguments.front(),object),object));
         return true;
     }
     bool bind_generators(hir::Expr& result,const SyntaxExpr& source,std::string_view unit={},bool member=false) {
@@ -10330,6 +10360,7 @@ private:
     std::map<Type,std::size_t> client_server_routines_;
     std::map<Type,std::size_t> benchmark_routines_;
     std::map<Type,std::size_t> eval_routines_;
+    std::map<Type,std::size_t> record_bytes_routines_;
     std::array<std::optional<std::size_t>,4> oberon_print_routines_{};
     std::map<std::pair<std::string,Type>,std::size_t> array_library_routines_;
     struct ClassProperty { Type type;std::optional<std::size_t> getter,setter;std::vector<Type> indices{};bool default_indexer=false; };

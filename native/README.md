@@ -3241,6 +3241,15 @@ ZIP.
 используется для запуска без графики и выводит двуязычную ошибку `E_UI`,
 если программа вызывает `ShowMessage`.
 
+`RecordToByteArray(o: Object): array of Byte` воспроизводит последовательное
+расположение простых и вложенных записей. Выравнивание и нулевые байты
+между полями входят в результат. `Boolean` занимает четыре байта, `Char`
+кодируется по Windows‑1251 с заменой, а поле `DateTime` хранится как число
+OLE Automation. Присваивание записи переменной `Object` сохраняет снимок её
+значения. Поля, в которых оригинал возвращает адреса строк и массивов,
+остаются в работе. [Тест RecordToByteArray](tests/fixtures/utils-record-layout-compat.pas),
+[формат даты OLE Automation](https://learn.microsoft.com/en-us/dotnet/api/system.datetime.tooadate?view=netframework-4.8.1).
+
 ## Символы Windows-1251
 
 ChrWindows(byte):char и OrdWindows(char):byte перенесены вместе с устаревшими
