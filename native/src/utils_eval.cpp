@@ -21,7 +21,8 @@ enum class Symbol {
     end, literal, number, date_literal, name, parent, child, dot, open, close, comma, plus, minus, multiply, divide, modulus,
     equal, unequal, less, less_equal, greater, greater_equal, conjunction,
     disjunction, negate, is, null_value, true_value, false_value, is_null, is_not_null,
-    length, trim, substring, choose, replace_null, absolute, membership, like, conversion
+    length, trim, substring, choose, replace_null, absolute, membership, membership_arguments, like, conversion,
+    grouped, invalid_is, between, bit_and, bit_or, bit_xor, bit_not
 };
 
 struct Token {
@@ -44,6 +45,12 @@ struct Node {
     std::size_t third=0;
     std::vector<std::size_t> members{};
     Type conversion_type=Type::invalid;
+};
+
+struct PendingOperator {
+    Symbol kind;
+    unsigned priority;
+    unsigned arity;
 };
 
 bool digit(char16_t ch) { return ch>=u'0' && ch<=u'9'; }
@@ -97,13 +104,28 @@ unsigned argument_count(Symbol kind) {
 }
 unsigned precedence(Symbol kind) {
     switch(kind) {
-    case Symbol::disjunction:return 1;
-    case Symbol::conjunction:return 2;
+    case Symbol::bit_xor:return 1;
+    case Symbol::disjunction:case Symbol::bit_or:return 2;
+    case Symbol::conjunction:case Symbol::bit_and:return 3;
+    case Symbol::bit_not:return 4;
+    case Symbol::is:return 5;
+    case Symbol::membership:case Symbol::between:case Symbol::like:return 6;
     case Symbol::equal:case Symbol::unequal:case Symbol::less:case Symbol::less_equal:
-    case Symbol::greater:case Symbol::greater_equal:case Symbol::is:case Symbol::membership:case Symbol::like:return 3;
-    case Symbol::plus:case Symbol::minus:return 4;
-    case Symbol::multiply:case Symbol::divide:case Symbol::modulus:return 5;
+    case Symbol::greater:case Symbol::greater_equal:return 7;
+    case Symbol::plus:case Symbol::minus:return 8;
+    case Symbol::modulus:return 9;
+    case Symbol::multiply:case Symbol::divide:return 10;
     default:return 0;
+    }
+}
+std::string_view unsupported_operator(Symbol kind) {
+    switch(kind){
+    case Symbol::between:return "BETWEEN";
+    case Symbol::bit_and:return "&";
+    case Symbol::bit_or:return "|";
+    case Symbol::bit_xor:return "^";
+    case Symbol::bit_not:return "~";
+    default:return {};
     }
 }
 
@@ -120,7 +142,6 @@ class Evaluation {
     std::vector<Node> nodes_;
     Token token_{Symbol::end,{}};
     std::optional<BindingError> binding_error_;
-    bool invalid_is_test_=false;
 
     [[noreturn]] void syntax() const {
         throw Error("E_FORMAT",location_,"Invalid Utils evaluation expression","Некорректное выражение Utils");
@@ -188,6 +209,10 @@ class Evaluation {
         case u'*':return {Symbol::multiply,{}};
         case u'/':return {Symbol::divide,{}};
         case u'%':return {Symbol::modulus,{}};
+        case u'&':return {Symbol::bit_and,{}};
+        case u'|':return {Symbol::bit_or,{}};
+        case u'^':return {Symbol::bit_xor,{}};
+        case u'~':return {Symbol::bit_not,{}};
         case u'=':return {Symbol::equal,{}};
         case u'[':case u'`':{
             const auto close=ch==u'[' ? u']' : ch;
@@ -250,6 +275,7 @@ class Evaluation {
             if(word==u"false")return {Symbol::false_value,{}};
             if(word==u"in")return {Symbol::membership,{}};
             if(word==u"like")return {Symbol::like,{}};
+            if(word==u"between")return {Symbol::between,{}};
             if(word==u"parent")return {Symbol::parent,{}};
             if(word==u"child")return {Symbol::child,{}};
             return {Symbol::name,std::u16string(spelling)};
@@ -373,7 +399,7 @@ class Evaluation {
         for(unsigned n=0;n<count;++n){
             if(token_.kind==Symbol::close)wrong_argument_count(name);
             if(n!=0 && advance()!=Symbol::comma)syntax();
-            arguments[n]=parse(1,depth+1);
+            arguments[n]=parse(depth+1);
         }
         if(token_.kind==Symbol::comma)wrong_argument_count(name);
         if(advance()!=Symbol::close)syntax();
@@ -438,13 +464,13 @@ class Evaluation {
         throw Error("E_NAME",location_,"Unknown function "+called+" in Utils expression",
             "Неизвестная функция "+called+" в выражении Utils");
     }
-    std::size_t parse_membership(std::size_t value,unsigned depth) {
+    std::size_t parse_membership_arguments(unsigned depth) {
         if(advance()!=Symbol::open)syntax();
-        Node test{Symbol::membership,NilString{},value};
-        test.members.push_back(parse(1,depth+1));
+        Node test{Symbol::membership_arguments};
+        test.members.push_back(parse(depth+1));
         while(token_.kind==Symbol::comma){
             advance();
-            test.members.push_back(parse(1,depth+1));
+            test.members.push_back(parse(depth+1));
         }
         if(advance()!=Symbol::close)syntax();
         return add(std::move(test));
@@ -474,7 +500,7 @@ class Evaluation {
     }
     std::size_t parse_conversion(unsigned depth) {
         if(advance()!=Symbol::open)syntax();
-        const auto value=parse(1,depth+1);
+        const auto value=parse(depth+1);
         if(advance()!=Symbol::comma)syntax();
         if(token_.kind!=Symbol::literal && token_.kind!=Symbol::name)syntax();
         const bool quoted=token_.kind==Symbol::literal;
@@ -486,56 +512,97 @@ class Evaluation {
         conversion.conversion_type=conversion_type(name);
         return add(std::move(conversion));
     }
-    std::size_t parse(unsigned minimum,unsigned depth) {
-        step(depth);
+    std::size_t parse_atom(unsigned depth) {
         auto initial=std::move(token_);
         advance();
-        std::size_t left;
         switch(initial.kind){
-        case Symbol::number:left=add({initial.kind,number(std::move(initial.text)),0,0,true});break;
-        case Symbol::date_literal:left=add({initial.kind,date_value(Value{std::move(initial.text)}),0,0,true});break;
-        case Symbol::literal:left=add({initial.kind,std::move(initial.text),0,0,true});break;
-        case Symbol::null_value:left=add({initial.kind,NilString{},0,0,true});break;
-        case Symbol::true_value:case Symbol::false_value:
-            left=add({initial.kind,initial.kind==Symbol::true_value,0,0,true});break;
-        case Symbol::open:
-            left=parse(1,depth+1);
+        case Symbol::number:return add({initial.kind,number(std::move(initial.text)),0,0,true});
+        case Symbol::date_literal:return add({initial.kind,date_value(Value{std::move(initial.text)}),0,0,true});
+        case Symbol::literal:return add({initial.kind,std::move(initial.text),0,0,true});
+        case Symbol::open:{
+            const auto value=parse(depth+1);
             if(advance()!=Symbol::close)syntax();
-            break;
-        case Symbol::plus:case Symbol::minus:case Symbol::negate:
-            left=add({initial.kind,NilString{},parse(initial.kind==Symbol::negate ? 3U : 6U,depth+1),0,false});
-            break;
-        case Symbol::name:left=parse_name(std::move(initial.text),depth);break;
+            return add({Symbol::grouped,NilString{},value});
+        }
+        case Symbol::name:return parse_name(std::move(initial.text),depth);
         case Symbol::parent:{
             auto relation=relation_column(true).first;
-            left=relation.empty() ? unresolved(MissingBinding::default_parent)
+            return relation.empty() ? unresolved(MissingBinding::default_parent)
                 : unresolved(MissingBinding::parent_relation,std::move(relation));
-            break;
         }
         default:syntax();
         }
-        while(precedence(token_.kind)>=minimum || (minimum<=3 && token_.kind==Symbol::negate)) {
-            const bool negate_match=token_.kind==Symbol::negate;
-            if(negate_match){
-                advance();
-                if(token_.kind!=Symbol::membership && token_.kind!=Symbol::like)syntax();
-            }
-            const auto kind=advance();
-            if(kind==Symbol::is){
-                const bool negate=token_.kind==Symbol::negate;
-                if(negate)advance();
-                const auto right=parse(precedence(kind)+1,depth+1);
-                if(nodes_[right].kind!=Symbol::null_value)invalid_is_test_=true;
-                left=add({negate ? Symbol::is_not_null : Symbol::is_null,NilString{},left,0,false});
-            } else if(kind==Symbol::membership) {
-                left=parse_membership(left,depth);
-            } else {
-                const auto right=parse(precedence(kind)+1,depth+1);
-                left=add({kind,NilString{},left,right,false});
-            }
-            if(negate_match)left=add({Symbol::negate,NilString{},left});
+    }
+    std::size_t binary_node(Symbol kind,std::size_t left,std::size_t right) {
+        if(const auto name=unsupported_operator(kind);!name.empty())
+            throw Error("E_UNSUPPORTED",location_,"Unsupported Utils operator "+std::string(name),
+                "В выражении Utils не поддерживается оператор "+std::string(name));
+        if(kind==Symbol::is){
+            const bool negative=nodes_[right].kind==Symbol::negate;
+            const auto tested=negative ? nodes_[right].left : right;
+            if(nodes_[tested].kind!=Symbol::null_value)return add({Symbol::invalid_is,NilString{},left});
+            return add({negative ? Symbol::is_not_null : Symbol::is_null,NilString{},left});
         }
-        return left;
+        Node node{kind,NilString{},left,right};
+        if(kind==Symbol::membership && nodes_[right].kind==Symbol::membership_arguments)
+            node.members=std::move(nodes_[right].members);
+        return add(std::move(node));
+    }
+    void reduce(std::vector<PendingOperator>& operators,std::vector<std::size_t>& operands,unsigned priority) {
+        while(!operators.empty() && operators.back().priority>=priority){
+            step();
+            const auto operation=operators.back();
+            operators.pop_back();
+            if(operands.size()<operation.arity)
+                throw Error("E_RANGE",location_,"Utils operator has no value to apply to",
+                    "В выражении Utils оператору недостаёт значения");
+            if(operation.arity==0){
+                const auto value=operation.kind==Symbol::null_value ? Value{NilString{}}
+                    : Value{operation.kind==Symbol::true_value};
+                operands.push_back(add({operation.kind,value,0,0,true}));
+            }else if(operation.arity==1){
+                operands.back()=add({operation.kind,NilString{},operands.back()});
+            }else{
+                const auto right=operands.back();
+                operands.pop_back();
+                operands.back()=binary_node(operation.kind,operands.back(),right);
+            }
+        }
+    }
+    std::size_t parse(unsigned depth) {
+        step(depth);
+        std::vector<PendingOperator> operators;
+        std::vector<std::size_t> operands;
+        bool needs_operand=true;
+        while(token_.kind!=Symbol::end && token_.kind!=Symbol::close && token_.kind!=Symbol::comma){
+            const auto kind=token_.kind;
+            const bool sign=kind==Symbol::plus || kind==Symbol::minus;
+            if(kind==Symbol::negate || (needs_operand && sign)){
+                operators.push_back({advance(),kind==Symbol::negate ? 4U : 11U,1});
+                continue;
+            }
+            if(const auto priority=precedence(kind);priority){
+                if(needs_operand)syntax();
+                reduce(operators,operands,priority);
+                operators.push_back({advance(),priority,2});
+                needs_operand=true;
+                if(kind==Symbol::membership && token_.kind!=Symbol::parent){
+                    operands.push_back(parse_membership_arguments(depth));
+                    needs_operand=false;
+                }
+                continue;
+            }
+            if(!needs_operand)syntax();
+            // These three constants are emitted when operators are reduced, including a following NOT.
+            if(kind==Symbol::null_value || kind==Symbol::true_value || kind==Symbol::false_value)
+                operators.push_back({advance(),12,0});
+            else operands.push_back(parse_atom(depth));
+            needs_operand=false;
+        }
+        if(needs_operand)syntax();
+        reduce(operators,operands,0);
+        if(operands.size()!=1)syntax();
+        return operands.front();
     }
     Type kind(const Value& value) const {
         if(const auto* object=std::get_if<std::shared_ptr<Aggregate>>(&value))return (*object)->type;
@@ -777,6 +844,11 @@ class Evaluation {
     }
     Value evaluate_membership(const Node& node,unsigned depth) {
         const auto left=evaluate(node.left,depth);
+        if(node.members.empty()){
+            (void)evaluate(node.right,depth);
+            throw Error("E_UNSUPPORTED",location_,"IN requires an expression list as its right operand",
+                "Правая часть IN должна быть списком выражений");
+        }
         std::vector<Value> candidates;
         candidates.reserve(node.members.size());
         for(const auto member:node.members)candidates.push_back(evaluate(member,depth));
@@ -887,13 +959,20 @@ class Evaluation {
         step(depth);
         const auto& node=nodes_[index];
         if(node.literal)return node.value;
+        if(node.kind==Symbol::membership_arguments)
+            throw Error("E_UNSUPPORTED",location_,"An IN list cannot be evaluated as a standalone value",
+                "Список IN нельзя вычислить как самостоятельное значение");
         if(argument_count(node.kind))return function(node,depth+1);
         if(node.kind==Symbol::membership)return evaluate_membership(node,depth+1);
         auto left=evaluate(node.left,depth+1);
+        if(node.kind==Symbol::grouped)return left;
+        if(node.kind==Symbol::invalid_is)
+            throw Error("E_FORMAT",location_,"IS requires NULL or NOT NULL in a Utils expression",
+                "Оператор IS требует NULL или NOT NULL в выражении Utils");
         if(node.kind==Symbol::conversion)return evaluate_conversion(std::move(left),node.conversion_type);
         if(node.kind==Symbol::is_null)return null(left);
         if(node.kind==Symbol::is_not_null)return !null(left);
-        if(node.kind==Symbol::negate)return null(left) ? left : Value{!boolean(left)};
+        if(node.kind==Symbol::negate)return null(left) ? left : Value{!expression_boolean(left)};
         if(node.right==0){
             if(null(left))return left;
             if(!numeric_rank(kind(left)))operands();
@@ -934,12 +1013,9 @@ public:
         advance();
         Value value=NilString{};
         if(token_.kind!=Symbol::end){
-            const auto root=parse(1,0);
+            const auto root=parse(0);
             if(token_.kind!=Symbol::end)syntax();
             check_binding();
-            if(invalid_is_test_)
-                throw Error("E_FORMAT",location_,"IS requires NULL or NOT NULL in a Utils expression",
-                    "Оператор IS требует NULL или NOT NULL в выражении Utils");
             value=evaluate(root,0);
         }
         return value;

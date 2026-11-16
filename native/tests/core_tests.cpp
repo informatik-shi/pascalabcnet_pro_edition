@@ -796,6 +796,15 @@ void timing_library() {
     compile_error("begin var n:=0; Writeln(Guid.TryParseExact('x','N',n));end.","E_TYPE");
     error([&]{(void)run("begin Writeln(Guid.ParseExact('00000000000000000000000000000000','D'));end.");},"E_FORMAT");
     error([&]{(void)run("begin Writeln(Guid.ParseExact('00000000000000000000000000000000',nil));end.");},"E_NIL");
+    const std::pair<const char*,const char*> operator_errors[]{
+        {"-1 NOT IN (1)","E_TYPE"},{"2+1 NOT IN (3,5)","E_TYPE"},{"NULL NOT IN (1.0/0)","E_RANGE"},
+        {"(NULL) NOT IN (1.0/0)","E_DIV_ZERO"},{"TRUE NOT","E_RANGE"},{"1 IN (1) = TRUE","E_UNSUPPORTED"},
+        {"1 IS (NULL)","E_FORMAT"},{"1 IS NULL = NULL","E_FORMAT"},{"1 BETWEEN 0 AND 2","E_UNSUPPORTED"},
+        {"1 & 1","E_UNSUPPORTED"},{"10%7/2","E_TYPE"}};
+    for(const auto& [text,code]:operator_errors){
+        const auto source="uses Utils;begin Writeln(EvalStr('"+std::string(text)+"'));end.";
+        error([&]{(void)run(source);},code,text);
+    }
 }
 
 void sequence_text_and_flatten() {
