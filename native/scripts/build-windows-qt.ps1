@@ -194,6 +194,7 @@ var (a,b) := value и foreach var (a,b) поддерживают типизир�
 ClientServer.RunServer принимает типизированную процедуру или функцию и обрабатывает по одному TCP-соединению.
 Utils.Benchmark измеряет среднее время типизированной процедуры. По умолчанию она запускается 100 раз.
 Utils.EvalInt, EvalReal, EvalBool и EvalStr вычисляют скалярные выражения. Тип результата известен при компиляции.
+Выражения Utils поддерживают LEN, TRIM, SUBSTRING, IIF, ISNULL и ABS.
 Текстовые файлы с BOM читаются как UTF-8, UTF-16LE/BE или UTF-32LE/BE.
 Символы CP1251 и ANSI-алиасы: examples/windows-characters.pas.
 Encoding, CP1251/ASCII/Unicode и выбор кодировки ReadAllText/WriteAllText: examples/text-encodings.pas.

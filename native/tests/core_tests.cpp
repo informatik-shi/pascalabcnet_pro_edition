@@ -697,6 +697,12 @@ void timing_library() {
     error([&]{(void)run("uses Utils;begin Writeln(EvalInt('NULL'));end.");},"E_TYPE");
     error([&]{(void)run("uses Utils;begin Writeln(EvalBool('''1'''));end.");},"E_FORMAT");
     error([&]{(void)run("uses Utils;begin Writeln(EvalReal('1.0/0'));end.");},"E_DIV_ZERO");
+    error([&]{(void)run("uses Utils;begin Writeln(EvalInt('IIF(TRUE,1,1.0/0)'));end.");},"E_DIV_ZERO");
+    error([&]{(void)run("uses Utils;begin Writeln(EvalInt('ISNULL(1,1.0/0)'));end.");},"E_DIV_ZERO");
+    error([&]{(void)run("uses Utils;begin Writeln(EvalBool('false and (1.0/0=0)'));end.");},"E_DIV_ZERO");
+    error([&]{(void)run("uses Utils;begin Writeln(EvalStr('SUBSTRING(''abc'',0,2)'));end.");},"E_RANGE");
+    error([&]{(void)run("uses Utils;begin Writeln(EvalStr('SUBSTRING(''abc'',2.0,2)'));end.");},"E_TYPE");
+    error([&]{(void)run("uses Utils;begin Writeln(EvalInt('IIF(0,7,8)'));end.");},"E_TYPE");
 }
 
 void sequence_text_and_flatten() {

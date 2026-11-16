@@ -15,9 +15,10 @@
 namespace abc {
 namespace {
 enum class Symbol {
-    end, literal, number, open, close, plus, minus, multiply, divide, modulus,
+    end, literal, number, open, close, comma, plus, minus, multiply, divide, modulus,
     equal, unequal, less, less_equal, greater, greater_equal, conjunction,
-    disjunction, negate, is, null_value, true_value, false_value, is_null, is_not_null
+    disjunction, negate, is, null_value, true_value, false_value, is_null, is_not_null,
+    length, trim, substring, choose, replace_null, absolute
 };
 
 struct Token {
@@ -30,6 +31,7 @@ struct Node {
     Value value=NilString{};
     std::size_t left=0, right=0;
     bool literal=false;
+    std::size_t third=0;
 };
 
 bool digit(char16_t ch) { return ch>=u'0' && ch<=u'9'; }
@@ -45,6 +47,21 @@ std::u16string_view comparison_text(std::u16string_view text) {
     return text;
 }
 bool null(const Value& value) { return std::holds_alternative<NilString>(value); }
+std::optional<bool> boolean_text(std::u16string_view text) {
+    auto lower=std::u16string(trim(text));
+    for(auto& ch:lower)ch=lower_ascii(ch);
+    if(lower==u"true")return true;
+    if(lower==u"false")return false;
+    return {};
+}
+unsigned argument_count(Symbol kind) {
+    switch(kind) {
+    case Symbol::length:case Symbol::trim:case Symbol::absolute:return 1;
+    case Symbol::replace_null:return 2;
+    case Symbol::substring:case Symbol::choose:return 3;
+    default:return 0;
+    }
+}
 unsigned precedence(Symbol kind) {
     switch(kind) {
     case Symbol::disjunction:return 1;
@@ -92,6 +109,7 @@ class Evaluation {
         switch(ch) {
         case u'(':return {Symbol::open,{}};
         case u')':return {Symbol::close,{}};
+        case u',':return {Symbol::comma,{}};
         case u'+':return {Symbol::plus,{}};
         case u'-':return {Symbol::minus,{}};
         case u'*':return {Symbol::multiply,{}};
@@ -134,6 +152,12 @@ class Evaluation {
             if(word==u"null")return {Symbol::null_value,{}};
             if(word==u"true")return {Symbol::true_value,{}};
             if(word==u"false")return {Symbol::false_value,{}};
+            if(word==u"len")return {Symbol::length,{}};
+            if(word==u"trim")return {Symbol::trim,{}};
+            if(word==u"substring")return {Symbol::substring,{}};
+            if(word==u"iif")return {Symbol::choose,{}};
+            if(word==u"isnull")return {Symbol::replace_null,{}};
+            if(word==u"abs")return {Symbol::absolute,{}};
             throw Error("E_UNSUPPORTED",location_,"This name or function is unavailable in Utils evaluation",
                 "Это имя или функция недоступны в вычислениях Utils");
         }
@@ -178,6 +202,17 @@ class Evaluation {
         }
         return real_text(Value{std::move(text)});
     }
+    std::size_t parse_function(Symbol kind,unsigned depth) {
+        if(advance()!=Symbol::open)syntax();
+        std::array<std::size_t,3> arguments{};
+        const auto count=argument_count(kind);
+        for(unsigned n=0;n<count;++n){
+            if(n!=0 && advance()!=Symbol::comma)syntax();
+            arguments[n]=parse(1,depth+1);
+        }
+        if(advance()!=Symbol::close)syntax();
+        return add({kind,NilString{},arguments[0],arguments[1],false,arguments[2]});
+    }
     std::size_t parse(unsigned minimum,unsigned depth) {
         step(depth);
         auto initial=std::move(token_);
@@ -195,6 +230,10 @@ class Evaluation {
             break;
         case Symbol::plus:case Symbol::minus:case Symbol::negate:
             left=add({initial.kind,NilString{},parse(initial.kind==Symbol::negate ? 3U : 6U,depth+1),0,false});
+            break;
+        case Symbol::length:case Symbol::trim:case Symbol::substring:
+        case Symbol::choose:case Symbol::replace_null:case Symbol::absolute:
+            left=parse_function(initial.kind,depth);
             break;
         default:syntax();
         }
@@ -316,10 +355,45 @@ class Evaluation {
         if(const auto* logical=std::get_if<bool>(&value))return *logical;
         operands();
     }
+    Value function(const Node& node,unsigned depth) {
+        const auto count=argument_count(node.kind);
+        const auto first=evaluate(node.left,depth);
+        const auto second=count>=2 ? evaluate(node.right,depth) : Value{NilString{}};
+        const auto third=count==3 ? evaluate(node.third,depth) : Value{NilString{}};
+        if(node.kind==Symbol::absolute)return NilString{};
+        if(node.kind==Symbol::replace_null)return null(first) ? second : first;
+        if(node.kind==Symbol::choose){
+            if(null(first))return third;
+            if(const auto* text=std::get_if<std::u16string>(&first)){
+                if(const auto condition=boolean_text(*text))return *condition ? second : third;
+                operands();
+            }
+            return boolean(first) ? second : third;
+        }
+        if(null(first))return first;
+        const auto* text=std::get_if<std::u16string>(&first);
+        if(!text)operands();
+        if(node.kind==Symbol::length)return static_cast<std::int32_t>(text->size());
+        if(node.kind==Symbol::trim)return std::u16string(trim(*text));
+        if(null(second) || null(third))return NilString{};
+        const auto index=[&](const Value& argument){
+            if(kind(argument)!=Type::integer && kind(argument)!=Type::int64)operands();
+            return std::get<std::int32_t>(checked_signed_integer(Type::integer,argument,location_));
+        };
+        const auto start=index(second),length=index(third);
+        if(start<1 || length<0)
+            throw Error("E_RANGE",location_,"SUBSTRING requires a positive start and a nonnegative length",
+                "SUBSTRING требует положительную начальную позицию и неотрицательную длину");
+        if(length==0)return std::u16string{};
+        const auto offset=static_cast<std::size_t>(start-1);
+        if(offset>text->size())return NilString{};
+        return text->substr(offset,static_cast<std::size_t>(length));
+    }
     Value evaluate(std::size_t index,unsigned depth) {
         step(depth);
         const auto& node=nodes_[index];
         if(node.literal)return node.value;
+        if(argument_count(node.kind))return function(node,depth+1);
         auto left=evaluate(node.left,depth+1);
         if(node.kind==Symbol::is_null)return null(left);
         if(node.kind==Symbol::is_not_null)return !null(left);
@@ -332,11 +406,16 @@ class Evaluation {
             if(kind(left)==decimal_)return decimal_call(DecimalMethod::negate,left);
             return arithmetic(Symbol::minus,Value{std::int32_t{0}},left);
         }
-        if(node.kind==Symbol::conjunction && (null(left) || !boolean(left)))return left;
-        if(node.kind==Symbol::disjunction && !null(left) && boolean(left))return left;
         auto right=evaluate(node.right,depth+1);
-        if(node.kind==Symbol::conjunction)return null(right) ? right : Value{boolean(right)};
-        if(node.kind==Symbol::disjunction)return null(right) ? left : Value{boolean(right)};
+        if(node.kind==Symbol::conjunction){
+            if(null(left) || !boolean(left))return left;
+            return null(right) ? right : Value{boolean(right)};
+        }
+        if(node.kind==Symbol::disjunction){
+            if(null(left))return right;
+            if(boolean(left) || null(right))return left;
+            return boolean(right);
+        }
         if(null(left) || null(right))return NilString{};
         switch(node.kind){
         case Symbol::equal:return compare(left,right)==0;
@@ -366,9 +445,7 @@ public:
         const auto type=kind(value);
         if(result==Type::boolean){
             if(type==Type::string){
-                auto input=std::u16string(trim(std::get<std::u16string>(value)));
-                for(auto& ch:input)ch=lower_ascii(ch);
-                if(input==u"true" || input==u"false")return input==u"true";
+                if(const auto converted=boolean_text(std::get<std::u16string>(value)))return *converted;
                 throw runtime_error(RuntimeError::number_text,location_,"boolean");
             }
             if(type==Type::boolean)return value;
