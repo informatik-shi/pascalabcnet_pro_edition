@@ -2,7 +2,7 @@
 #include "abc/core.hpp"
 #include <span>
 
-namespace abc { class FileContext; class RandomContext; class ConsoleInput; class TimeContext; class ProgramEnvironment; struct SchoolContext; struct Values; struct NumberFormatSettings; }
+namespace abc { class FileContext; class RandomContext; class ConsoleInput; class TimeContext; class ProgramEnvironment; class SocketContext; struct SchoolContext; struct Values; struct NumberFormatSettings; }
 namespace abc::stdlib {
 enum class Function {
     abs, sqr, sign, minimum, maximum, sin, sinh, cos, cosh, tan, tanh,
@@ -25,7 +25,8 @@ enum class Function {
     text_read, text_read_line, text_read_word, text_skip_line, text_name, text_full_name, text_read_end, text_erase, text_rename,
     windows_character, windows_ordinal, regex_is_match, regex_match_value, assertion, milliseconds, milliseconds_delta, sleep, extract_file_name, extract_file_ext, extract_file_path, extract_file_dir, extract_file_drive, expand_file_name, command_line_count, command_line_parameter, executable_name, pascal_version, disk_free, disk_size, terminate_program, reflected_type_name, single_cast, str_to_single,
     subrange_integer_cast, clip_short_string, get_short_string_char, set_short_string_char, resize_short_string, insert_short_string,
-    read_short_string, read_short_string_from_file
+    read_short_string, read_short_string_from_file,
+    socket_server, socket_client, socket_accept, socket_connect, socket_send, socket_receive, socket_close
 };
 inline std::optional<std::size_t> string_mutation_reference(Function function) {
     switch(function) {
@@ -40,6 +41,7 @@ struct Signature {
     Type result;
     Function function;
     std::string_view unit = {}; // Empty means implicit PABCSystem; other units require uses.
+    std::optional<std::size_t> reference_index{};
 };
 struct Context {
     FileContext& files;
@@ -52,6 +54,7 @@ struct Context {
     Values& values;
     TimeContext& timing;
     ProgramEnvironment& environment;
+    SocketContext& sockets;
 };
 // One catalog is shared by the type checker, bytecode verifier and VM.
 std::span<const Signature> signatures();

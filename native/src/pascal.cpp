@@ -378,7 +378,7 @@ public:
             do {
                 auto module = name();while(accept("."))module.text+="."+name().text;
                 if (module.text != "pabcsystem" && module.text != "arrays" && module.text != "collections"
-                    && module.text != "filesoperations" && module.text != "events" && module.text != "pointrect" && module.text != "school" && module.text != "system" && module.text != "system.text" && module.text != "system.numerics" && module.text != "inifile" && module.text != "oberon00system")
+                    && module.text != "filesoperations" && module.text != "events" && module.text != "pointrect" && module.text != "school" && module.text != "system" && module.text != "system.text" && module.text != "system.numerics" && module.text != "inifile" && module.text != "oberon00system" && module.text != "sockets")
                     throw Error("E_UNSUPPORTED", module.location, "Unit is not ported yet: '" + module.text + "'");
                 if (module.text == "collections") root.collections_imported = true;
                 root.imported_units.insert(module.text);
@@ -2321,11 +2321,12 @@ private:
                 if (context->element!=signature.result || context->parameters.size()!=signature.parameters.size()) continue;
                 bool matches=true;
                 for(std::size_t n=0;n<signature.parameters.size();++n)
-                    if(context->parameters[n].by_reference || context->parameters[n].variadic || context->parameters[n].type!=signature.parameters[n])matches=false;
+                    if(context->parameters[n].by_reference!=(signature.reference_index==n)
+                        || context->parameters[n].variadic || context->parameters[n].type!=signature.parameters[n])matches=false;
                 if(!matches)continue;
             } else if (!hints.empty()) {
                 // Hints also offer optional index arguments; callbacks consume a nonempty prefix.
-                if(signature.parameters.empty() || hints.size()<signature.parameters.size()
+                if(signature.reference_index || signature.parameters.empty() || hints.size()<signature.parameters.size()
                     || !std::equal(signature.parameters.begin(),signature.parameters.end(),hints.begin()))continue;
             }
             if(chosen)throw Error("E_TYPE",source.token.location,"Ambiguous overload for '"+source.token.text+"'");
@@ -2341,8 +2342,10 @@ private:
                 const auto n=module_.locals.size();module_.locals.push_back({std::move(name),type,false});body.signature.locals.push_back(n);lambda_locals_.insert(n);return n;
             };
             auto call=std::make_unique<hir::Expr>();call->kind=hir::ExprKind::call;call->type=signature.result;call->local=id;call->location=source.token.location;
-            for(const auto type:signature.parameters){
-                const auto argument=local("$argument",type);body.signature.parameters.push_back({argument,type});
+            for(std::size_t n=0;n<signature.parameters.size();++n){
+                const auto type=signature.parameters[n];
+                const auto argument=local("$argument",type);
+                body.signature.parameters.push_back({argument,type,signature.reference_index==n});
                 auto value=std::make_unique<hir::Expr>();value->kind=hir::ExprKind::local;value->type=type;value->local=argument;value->location=source.token.location;call->arguments.push_back(std::move(value));
             }
             if(signature.result!=Type::unit)body.signature.result_local=local("$result",signature.result);
@@ -9115,8 +9118,12 @@ private:
             known=true;
             if (signature.parameters.size()!=result.arguments.size()) continue;
             bool compatible=true;
-            for (std::size_t n=0;n<signature.parameters.size();++n)
-                if (!can_widen(result.arguments[n]->type,signature.parameters[n])) compatible=false;
+            for (std::size_t n=0;n<signature.parameters.size();++n) {
+                const auto& argument=*result.arguments[n];
+                if(signature.reference_index==n){
+                    if(argument.type!=signature.parameters[n] || !lvalue(argument))compatible=false;
+                }else if(!can_widen(argument.type,signature.parameters[n]))compatible=false;
+            }
             if (compatible) candidates.push_back(i);
         }
         if (!known) throw Error("E_NAME",result.location,"Unknown function '"+std::string(name)+"'");
@@ -9145,7 +9152,7 @@ private:
         if (!chosen) throw Error("E_TYPE",result.location,"No matching overload for '"+std::string(name)+"'");
         const auto& signature=catalog[*chosen]; result.local=*chosen; result.type=signature.result;
         for (std::size_t n=0;n<result.arguments.size();++n)
-            result.arguments[n]=convert(std::move(result.arguments[n]),signature.parameters[n]);
+            if(signature.reference_index!=n)result.arguments[n]=convert(std::move(result.arguments[n]),signature.parameters[n]);
     }
     bool constant_array_type(Type type,unsigned depth=0)const{
         if(depth>64)return false;if(scalar(type)||enumeration(type))return true;

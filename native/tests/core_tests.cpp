@@ -4254,7 +4254,11 @@ void builtin_callable_library() {
         const auto unit=signature.unit.empty() ? std::string("PABCSystem") : std::string(signature.unit);
         std::string source=signature.unit.empty() ? "" : "uses "+unit+";";
         source+="type CallbackType=";source+=signature.result==abc::Type::unit ? "procedure(" : "function(";
-        for(std::size_t n=0;n<signature.parameters.size();++n){if(n)source+=";";source+="a"+std::to_string(n)+":"+std::string(abc::type_name(signature.parameters[n]));}
+        for(std::size_t n=0;n<signature.parameters.size();++n){
+            if(n)source+=";";
+            if(signature.reference_index==n)source+="var ";
+            source+="a"+std::to_string(n)+":"+std::string(abc::type_name(signature.parameters[n]));
+        }
         source+=")";if(signature.result!=abc::Type::unit)source+=":"+std::string(abc::type_name(signature.result));
         source+=";begin var callback:CallbackType:="+unit+"."+std::string(signature.name)+";end.";
         result(source,"");++public_signatures;

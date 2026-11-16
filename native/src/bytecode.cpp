@@ -733,10 +733,15 @@ private:
             expression(*node.left);
             emit(Op::convert, node.type, 0, node.location);
             break;
-        case hir::ExprKind::call:
-            for (const auto& argument : node.arguments) expression(*argument);
+        case hir::ExprKind::call: {
+            const auto& signature=stdlib::signatures()[node.local];
+            for(std::size_t n=0;n<node.arguments.size();++n){
+                if(signature.reference_index==n)reference(*node.arguments[n]);
+                else expression(*node.arguments[n]);
+            }
             emit(Op::call_builtin, node.type, node.local, node.location);
             break;
+        }
         case hir::ExprKind::unary:
             expression(*node.left);
             if (node.operation != "+") emit(node.operation == "not" ? node.type==Type::boolean ? Op::logical_not : Op::bit_not : Op::negate,
@@ -2121,8 +2126,11 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         case Op::list_clear: require(instruction.type); break;
         case Op::call_builtin: {
             const auto& signature = stdlib::signatures()[instruction.operand];
-            for (auto parameter = signature.parameters.rbegin(); parameter != signature.parameters.rend(); ++parameter)
-                require(*parameter);
+            for(std::size_t n=signature.parameters.size();n>0;){
+                --n;
+                const auto type=signature.parameters[n];
+                require(signature.reference_index==n ? reference_type(type) : type);
+            }
             if (signature.result != Type::unit) stack.push_back(signature.result);
             break;
         }

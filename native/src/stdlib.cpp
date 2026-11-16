@@ -11,6 +11,7 @@
 #include "disk_space.hpp"
 #include "text_file.hpp"
 #include "file_operations.hpp"
+#include "sockets.hpp"
 #include "integer_values.hpp"
 #include "random.hpp"
 #include "console_input.hpp"
@@ -35,8 +36,9 @@ namespace abc::stdlib {
 std::span<const Signature> signatures() {
     static const auto catalog = [] {
         std::vector<Signature> entries;
-        auto add = [&](std::string_view name, std::vector<Type> parameters, Type result, Function function, std::string_view unit = {}) {
-            entries.push_back({name, std::move(parameters), result, function,unit});
+        auto add = [&](std::string_view name, std::vector<Type> parameters, Type result, Function function,
+                std::string_view unit = {},std::optional<std::size_t> reference = {}) {
+            entries.push_back({name,std::move(parameters),result,function,unit,reference});
         };
         add("milliseconds",{},Type::integer,Function::milliseconds);
         add("millisecondsdelta",{},Type::integer,Function::milliseconds_delta);
@@ -70,6 +72,13 @@ std::span<const Signature> signatures() {
         add("lcm",{Type::big_integer,Type::big_integer},Type::big_integer,Function::lcm);
         add("readfiletoend",{Type::string},Type::string,Function::files_read_to_end,"filesoperations");
         add("writestringtofile",{Type::string,Type::string},Type::unit,Function::files_write_string,"filesoperations");
+        add("createserversocket",{Type::integer},Type::integer,Function::socket_server,"sockets");
+        add("createclientsocket",{},Type::integer,Function::socket_client,"sockets");
+        add("accept",{Type::integer},Type::integer,Function::socket_accept,"sockets");
+        add("connect",{Type::integer,Type::string,Type::integer},Type::boolean,Function::socket_connect,"sockets");
+        add("sendstring",{Type::integer,Type::string},Type::unit,Function::socket_send,"sockets");
+        add("receivestring",{Type::integer,Type::string},Type::unit,Function::socket_receive,"sockets",1);
+        add("closesocket",{Type::integer},Type::unit,Function::socket_close,"sockets");
         for (const auto& [name,function]:{std::pair<std::string_view,Function>{"bin",Function::school_bin},{"oct",Function::school_oct},{"hex",Function::school_hex}})
             add(name,{Type::int64},Type::string,function,"school");
         add("dec",{Type::string,Type::integer},Type::int64,Function::school_dec,"school");
@@ -401,6 +410,29 @@ Value invoke(std::size_t id, std::span<const Value> arguments, SourceLocation lo
     auto& files=context.files; auto& random=context.random;
     const auto& signature = signatures()[id]; // Verified before execution.
     const auto function = signature.function;
+    switch(function){
+    case Function::socket_server:return context.sockets.create_server(std::get<std::int32_t>(arguments[0]),location);
+    case Function::socket_client:return context.sockets.create_client(location);
+    case Function::socket_accept:return context.sockets.accept(std::get<std::int32_t>(arguments[0]),location,context.options);
+    case Function::socket_connect:
+        if(std::holds_alternative<NilString>(arguments[1]))throw runtime_error(RuntimeError::nil_reference,location);
+        return context.sockets.connect(std::get<std::int32_t>(arguments[0]),string_text(arguments[1]),
+            std::get<std::int32_t>(arguments[2]),location,context.options);
+    case Function::socket_send:
+        if(std::holds_alternative<NilString>(arguments[1]))throw runtime_error(RuntimeError::nil_reference,location);
+        context.sockets.send(std::get<std::int32_t>(arguments[0]),string_text(arguments[1]),location,context.options);
+        return false;
+    case Function::socket_receive: {
+        const auto& target=std::get<std::shared_ptr<Cell>>(arguments[1]);
+        auto value=context.sockets.receive(std::get<std::int32_t>(arguments[0]),location,context.options);
+        context.values.write(target,Value{std::move(value)});
+        return false;
+    }
+    case Function::socket_close:
+        context.sockets.close(std::get<std::int32_t>(arguments[0]));
+        return false;
+    default:break;
+    }
     if (context.values.pabc_number_format) {
         const auto& format=pabc_number_settings(context.values);
         if (function==Function::float_to_str)

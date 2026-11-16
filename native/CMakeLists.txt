@@ -59,6 +59,7 @@ add_library(abc_core
     src/ini_file.cpp
     src/compound.cpp
     src/tuple_assignments.cpp
+    src/sockets.cpp
     src/hash_set.cpp
     src/value_hash.cpp
     src/dictionary.cpp
@@ -118,6 +119,9 @@ add_library(abc_core
     src/vm.cpp)
 target_include_directories(abc_core PUBLIC include)
 target_link_libraries(abc_core PRIVATE abc_math abc_regex Threads::Threads)
+if(WIN32)
+    target_link_libraries(abc_core PRIVATE ws2_32)
+endif()
 if(NOT WIN32)
     find_package(ICU 60 REQUIRED COMPONENTS i18n uc data)
     target_link_libraries(abc_core PRIVATE ICU::i18n ICU::uc ICU::data)
@@ -265,6 +269,13 @@ if(BUILD_TESTING)
         target_compile_options(abc_file_operations_tests PRIVATE /utf-8)
     endif()
     add_test(NAME file_operations_reference COMMAND abc_file_operations_tests)
+    add_executable(abc_sockets_tests tests/sockets_tests.cpp)
+    target_link_libraries(abc_sockets_tests PRIVATE abc_core)
+    if(MSVC)
+        target_compile_options(abc_sockets_tests PRIVATE /utf-8)
+    endif()
+    add_test(NAME sockets_reference COMMAND abc_sockets_tests)
+    set_tests_properties(sockets_reference PROPERTIES TIMEOUT 15)
     add_test(NAME file_streams_example COMMAND abc run "${CMAKE_CURRENT_SOURCE_DIR}/examples/file-streams.pas")
     add_executable(abc_array_generics_tests tests/array_generics_tests.cpp)
     target_link_libraries(abc_array_generics_tests PRIVATE abc_core)
