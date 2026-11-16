@@ -724,6 +724,24 @@ void timing_library() {
     error([&]{(void)run("uses Utils;begin Writeln(EvalStr('##'));end.");},"E_FORMAT");
     error([&]{(void)run("uses Utils;begin Writeln(Eval('CONVERT(1,System.DateTime)'));end.");},"E_TYPE");
     error([&]{(void)run("uses Utils;begin Writeln(EvalStr('#2024-01-02#-#2024-01-01#'));end.");},"E_TYPE");
+    for(const auto* text:{"SUM(1)","COUNT(*)","Avg(Parent.x)","Min(x+y)","SUM(x.y)","Max(Child)","Child.x","missing+","1 IS 2"}){
+        const auto source="uses Utils;begin Writeln(EvalStr('"+std::string(text)+"'));end.";
+        error([&]{(void)run(source);},"E_FORMAT",text);
+    }
+    for(const auto* text:{"SUM(x)","AVG([a b])","Min(`x`)","Max(Child.x)","Count(Child(Rel).X)","StDev(x)",
+        "Var(x)","Parent.x","Parent([R n]).x","IIF(FALSE,missing,4)","1.0/0+missing","Unknown(missing)","X.[Y]","[True]","1 IS NOT x"}){
+        const auto source="uses Utils;begin Writeln(EvalStr('"+std::string(text)+"'));end.";
+        error([&]{(void)run(source);},"E_NAME",text);
+    }
+    error([&]{(void)run("uses Utils;begin Writeln(EvalStr('LEN(missing,1)'));end.");},"E_TYPE");
+    error([&]{(void)run("uses Utils;begin Writeln(EvalStr('LEN()'));end.");},"E_TYPE");
+    try{
+        (void)run(R"(uses Utils;begin Writeln(EvalStr('[данные\]1]'));end.)");
+        require(false,"Expected a missing column");
+    }catch(const abc::Error& e){
+        require(e.code=="E_NAME" && std::string_view(e.what()).find("[данные]1]")!=std::string_view::npos
+            && e.russian.find("[данные]1]")!=std::string::npos,"Escaped Unicode column name appears in both languages");
+    }
     auto evaluation=abc::compile("uses Utils;begin Writeln(Eval('1').GetType.Name);end.");
     for(auto& instruction:evaluation.code)if(instruction.op==abc::Op::utils_eval_object)
         instruction.operand=static_cast<std::size_t>(abc::Type::boolean);

@@ -17,7 +17,7 @@
 namespace abc {
 namespace {
 enum class Symbol {
-    end, literal, number, date_literal, name, open, close, comma, plus, minus, multiply, divide, modulus,
+    end, literal, number, date_literal, name, parent, child, dot, open, close, comma, plus, minus, multiply, divide, modulus,
     equal, unequal, less, less_equal, greater, greater_equal, conjunction,
     disjunction, negate, is, null_value, true_value, false_value, is_null, is_not_null,
     length, trim, substring, choose, replace_null, absolute, membership, like, conversion
@@ -26,6 +26,13 @@ enum class Symbol {
 struct Token {
     Symbol kind;
     std::u16string text;
+};
+
+enum class MissingBinding { column, parent_relation, default_parent, default_child };
+
+struct BindingError {
+    MissingBinding kind;
+    std::u16string name;
 };
 
 struct Node {
@@ -40,7 +47,15 @@ struct Node {
 
 bool digit(char16_t ch) { return ch>=u'0' && ch<=u'9'; }
 bool letter(char16_t ch) { return (ch>=u'a' && ch<=u'z') || (ch>=u'A' && ch<=u'Z') || ch==u'_'; }
+bool name_character(char16_t ch) {
+    return letter(ch) || ch==u'$' || (ch>=0x80 && !stdlib::unicode_whitespace(ch));
+}
 char16_t lower_ascii(char16_t ch) { return ch>=u'A' && ch<=u'Z' ? static_cast<char16_t>(ch+32) : ch; }
+std::u16string lowercase(std::u16string_view text) {
+    std::u16string result(text);
+    for(auto& ch:result)ch=lower_ascii(ch);
+    return result;
+}
 std::u16string_view trim(std::u16string_view text) {
     while(!text.empty() && stdlib::unicode_whitespace(text.front()))text.remove_prefix(1);
     while(!text.empty() && stdlib::unicode_whitespace(text.back()))text.remove_suffix(1);
@@ -101,12 +116,49 @@ class Evaluation {
     std::size_t cursor_=0, work_=0;
     std::vector<Node> nodes_;
     Token token_{Symbol::end,{}};
+    std::optional<BindingError> binding_error_;
+    bool invalid_is_test_=false;
 
     [[noreturn]] void syntax() const {
         throw Error("E_FORMAT",location_,"Invalid Utils evaluation expression","Некорректное выражение Utils");
     }
     [[noreturn]] void operands() const {
         throw Error("E_TYPE",location_,"Unsupported operand types in Utils expression","Несовместимые типы операндов в выражении Utils");
+    }
+    [[noreturn]] void aggregate_syntax() const {
+        throw Error("E_FORMAT",location_,"A Utils aggregate requires one column, optionally qualified by Child",
+            "Агрегат Utils требует один столбец, возможно с квалификатором Child");
+    }
+    [[noreturn]] void parent_syntax() const {
+        throw Error("E_FORMAT",location_,"Expected Parent[(relation)].column in Utils expression",
+            "В выражении Utils ожидается Parent[(отношение)].столбец");
+    }
+    [[noreturn]] void wrong_argument_count(std::u16string_view function) const {
+        const auto name=to_utf8(function)+"()";
+        throw Error("E_TYPE",location_,"Wrong number of arguments to "+name,
+            "Недопустимое число аргументов функции "+name);
+    }
+    std::size_t unresolved(MissingBinding kind, std::u16string name={}) {
+        if(!binding_error_)binding_error_=BindingError{kind,std::move(name)};
+        return add({Symbol::name,NilString{},0,0,true});
+    }
+    void check_binding() const {
+        if(!binding_error_)return;
+        const auto name=to_utf8(binding_error_->name);
+        switch(binding_error_->kind){
+        case MissingBinding::column:
+            throw Error("E_NAME",location_,"Cannot find column ["+name+"] in Utils expression",
+                "В выражении Utils не найден столбец ["+name+"]");
+        case MissingBinding::parent_relation:
+            throw Error("E_NAME",location_,"Cannot find parent relation '"+name+"' in Utils expression",
+                "В выражении Utils не найдено родительское отношение '"+name+"'");
+        case MissingBinding::default_parent:
+            throw Error("E_NAME",location_,"Cannot find the default parent relation in Utils expression",
+                "В выражении Utils не найдено родительское отношение по умолчанию");
+        case MissingBinding::default_child:
+            throw Error("E_NAME",location_,"Cannot bind an aggregate to a child relation in Utils expression",
+                "Не удалось связать агрегат с дочерним отношением в выражении Utils");
+        }
     }
     void step(unsigned depth=0) {
         if(depth>128 || work_>=options_.instruction_limit || nodes_.size()>4096)
@@ -134,6 +186,21 @@ class Evaluation {
         case u'/':return {Symbol::divide,{}};
         case u'%':return {Symbol::modulus,{}};
         case u'=':return {Symbol::equal,{}};
+        case u'[':case u'`':{
+            const auto close=ch==u'[' ? u']' : ch;
+            std::u16string name;
+            while(cursor_<source_.size()){
+                auto unit=source_[cursor_++];
+                if(unit==close){
+                    if(name.empty())syntax();
+                    return {Symbol::name,std::move(name)};
+                }
+                if(ch==u'[' && unit==u'\\' && cursor_<source_.size()
+                    && (source_[cursor_]==close || source_[cursor_]==u'\\'))unit=source_[cursor_++];
+                name.push_back(unit);
+            }
+            syntax();
+        }
         case u'#':{
             const auto end=source_.find(u'#',cursor_);
             if(end==source_.npos || end==cursor_)syntax();
@@ -166,11 +233,11 @@ class Evaluation {
             }
             return {Symbol::number,std::u16string(source_.substr(begin,cursor_-begin))};
         }
-        if(letter(ch)){
-            while(cursor_<source_.size() && (letter(source_[cursor_]) || digit(source_[cursor_]) || source_[cursor_]==u'.'))++cursor_;
+        if(ch==u'.')return {Symbol::dot,{}};
+        if(name_character(ch)){
+            while(cursor_<source_.size() && (name_character(source_[cursor_]) || digit(source_[cursor_])))++cursor_;
             const auto spelling=source_.substr(begin,cursor_-begin);
-            std::u16string word(spelling);
-            for(auto& unit:word)unit=lower_ascii(unit);
+            const auto word=lowercase(spelling);
             if(word==u"and")return {Symbol::conjunction,{}};
             if(word==u"or")return {Symbol::disjunction,{}};
             if(word==u"not")return {Symbol::negate,{}};
@@ -178,15 +245,10 @@ class Evaluation {
             if(word==u"null")return {Symbol::null_value,{}};
             if(word==u"true")return {Symbol::true_value,{}};
             if(word==u"false")return {Symbol::false_value,{}};
-            if(word==u"len")return {Symbol::length,{}};
-            if(word==u"trim")return {Symbol::trim,{}};
-            if(word==u"substring")return {Symbol::substring,{}};
-            if(word==u"iif")return {Symbol::choose,{}};
-            if(word==u"isnull")return {Symbol::replace_null,{}};
-            if(word==u"abs")return {Symbol::absolute,{}};
             if(word==u"in")return {Symbol::membership,{}};
             if(word==u"like")return {Symbol::like,{}};
-            if(word==u"convert")return {Symbol::conversion,{}};
+            if(word==u"parent")return {Symbol::parent,{}};
+            if(word==u"child")return {Symbol::child,{}};
             return {Symbol::name,std::u16string(spelling)};
         }
         syntax();
@@ -291,16 +353,77 @@ class Evaluation {
         }
         return real_text(Value{std::move(text)});
     }
-    std::size_t parse_function(Symbol kind,unsigned depth) {
+    std::size_t parse_function(Symbol kind,std::u16string_view name,unsigned depth) {
         if(advance()!=Symbol::open)syntax();
         std::array<std::size_t,3> arguments{};
         const auto count=argument_count(kind);
         for(unsigned n=0;n<count;++n){
+            if(token_.kind==Symbol::close)wrong_argument_count(name);
             if(n!=0 && advance()!=Symbol::comma)syntax();
             arguments[n]=parse(1,depth+1);
         }
+        if(token_.kind==Symbol::comma)wrong_argument_count(name);
         if(advance()!=Symbol::close)syntax();
         return add({kind,NilString{},arguments[0],arguments[1],false,arguments[2]});
+    }
+    std::u16string dotted_name(std::u16string name) {
+        while(token_.kind==Symbol::dot){
+            advance();
+            if(token_.kind!=Symbol::name)syntax();
+            name.push_back(u'.');
+            name+=token_.text;
+            advance();
+        }
+        return name;
+    }
+    std::pair<std::u16string,std::u16string> relation_column(bool parent) {
+        const auto bad_syntax=[&]{if(parent)parent_syntax();aggregate_syntax();};
+        std::u16string relation;
+        if(token_.kind==Symbol::open){
+            advance();
+            if(token_.kind!=Symbol::name)bad_syntax();
+            relation=std::move(token_.text);
+            advance();
+            if(advance()!=Symbol::close)bad_syntax();
+        }
+        if(advance()!=Symbol::dot || token_.kind!=Symbol::name)bad_syntax();
+        auto column=std::move(token_.text);
+        advance();
+        return {std::move(relation),std::move(column)};
+    }
+    std::size_t parse_aggregate() {
+        advance();
+        std::u16string relation;
+        std::u16string column;
+        const bool child=token_.kind==Symbol::child;
+        if(child){
+            advance();
+            auto names=relation_column(false);
+            relation=std::move(names.first);
+            column=std::move(names.second);
+        }else{
+            if(token_.kind!=Symbol::name)aggregate_syntax();
+            column=std::move(token_.text);
+            advance();
+        }
+        if(advance()!=Symbol::close)aggregate_syntax();
+        if(child && relation.empty())return unresolved(MissingBinding::default_child);
+        return unresolved(MissingBinding::column,std::move(column));
+    }
+    std::size_t parse_name(std::u16string name,unsigned depth) {
+        if(token_.kind!=Symbol::open)return unresolved(MissingBinding::column,dotted_name(std::move(name)));
+        const auto word=lowercase(name);
+        const std::pair<std::u16string_view,Symbol> functions[]{
+            {u"len",Symbol::length},{u"trim",Symbol::trim},{u"substring",Symbol::substring},
+            {u"iif",Symbol::choose},{u"isnull",Symbol::replace_null},{u"abs",Symbol::absolute}};
+        for(const auto& [spelling,kind]:functions)
+            if(word==spelling)return parse_function(kind,name,depth);
+        if(word==u"convert")return parse_conversion(depth);
+        constexpr std::u16string_view aggregates[]{u"sum",u"avg",u"min",u"max",u"count",u"stdev",u"var"};
+        if(std::find(std::begin(aggregates),std::end(aggregates),word)!=std::end(aggregates))return parse_aggregate();
+        const auto called=to_utf8(name)+"()";
+        throw Error("E_NAME",location_,"Unknown function "+called+" in Utils expression",
+            "Неизвестная функция "+called+" в выражении Utils");
     }
     std::size_t parse_membership(std::size_t value,unsigned depth) {
         if(advance()!=Symbol::open)syntax();
@@ -338,11 +461,13 @@ class Evaluation {
         const auto value=parse(1,depth+1);
         if(advance()!=Symbol::comma)syntax();
         if(token_.kind!=Symbol::literal && token_.kind!=Symbol::name)syntax();
-        const auto target=conversion_type(token_.text);
+        const bool quoted=token_.kind==Symbol::literal;
+        auto name=std::move(token_.text);
         advance();
+        if(!quoted)name=dotted_name(std::move(name));
         if(advance()!=Symbol::close)syntax();
         Node conversion{Symbol::conversion,NilString{},value};
-        conversion.conversion_type=target;
+        conversion.conversion_type=conversion_type(name);
         return add(std::move(conversion));
     }
     std::size_t parse(unsigned minimum,unsigned depth) {
@@ -364,14 +489,13 @@ class Evaluation {
         case Symbol::plus:case Symbol::minus:case Symbol::negate:
             left=add({initial.kind,NilString{},parse(initial.kind==Symbol::negate ? 3U : 6U,depth+1),0,false});
             break;
-        case Symbol::length:case Symbol::trim:case Symbol::substring:
-        case Symbol::choose:case Symbol::replace_null:case Symbol::absolute:
-            left=parse_function(initial.kind,depth);
+        case Symbol::name:left=parse_name(std::move(initial.text),depth);break;
+        case Symbol::parent:{
+            auto relation=relation_column(true).first;
+            left=relation.empty() ? unresolved(MissingBinding::default_parent)
+                : unresolved(MissingBinding::parent_relation,std::move(relation));
             break;
-        case Symbol::conversion:left=parse_conversion(depth);break;
-        case Symbol::name:
-            throw Error("E_UNSUPPORTED",location_,"This name or function is unavailable in Utils evaluation",
-                "Это имя или функция недоступны в вычислениях Utils");
+        }
         default:syntax();
         }
         while(precedence(token_.kind)>=minimum || (minimum<=3 && token_.kind==Symbol::negate)) {
@@ -384,7 +508,8 @@ class Evaluation {
             if(kind==Symbol::is){
                 const bool negate=token_.kind==Symbol::negate;
                 if(negate)advance();
-                if(advance()!=Symbol::null_value)syntax();
+                const auto right=parse(precedence(kind)+1,depth+1);
+                if(nodes_[right].kind!=Symbol::null_value)invalid_is_test_=true;
                 left=add({negate ? Symbol::is_not_null : Symbol::is_null,NilString{},left,0,false});
             } else if(kind==Symbol::membership) {
                 left=parse_membership(left,depth);
@@ -776,6 +901,10 @@ public:
         if(token_.kind!=Symbol::end){
             const auto root=parse(1,0);
             if(token_.kind!=Symbol::end)syntax();
+            check_binding();
+            if(invalid_is_test_)
+                throw Error("E_FORMAT",location_,"IS requires NULL or NOT NULL in a Utils expression",
+                    "Оператор IS требует NULL или NOT NULL в выражении Utils");
             value=evaluate(root,0);
         }
         return value;

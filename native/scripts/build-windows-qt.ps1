@@ -200,6 +200,7 @@ CONVERT преобразует основные скалярные типы в �
 CONVERT поддерживает узкие и беззнаковые числа и Single с проверкой разрядности.
 Utils.Eval возвращает Object, который сохраняет исходный тип значения. Для NULL возвращается DBNull.Value.
 Utils.Eval распознаёт литералы дат #...# и CONVERT в System.DateTime.
+Utils.Eval разбирает экранированные имена и выдаёт двуязычные ошибки при обращении к столбцам пустой таблицы.
 Текстовые файлы с BOM читаются как UTF-8, UTF-16LE/BE или UTF-32LE/BE.
 Символы CP1251 и ANSI-алиасы: examples/windows-characters.pas.
 Encoding, CP1251/ASCII/Unicode и выбор кодировки ReadAllText/WriteAllText: examples/text-encodings.pas.
