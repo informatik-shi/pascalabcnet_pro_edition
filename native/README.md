@@ -3240,6 +3240,12 @@ ZIP.
 Также доступны `Guid.Empty`, `CompareTo` и типизированный `Equals`.
 [Тест Guid](tests/fixtures/utils-guid-compat.pas).
 
+`Guid.NewGuid` создаёт идентификатор версии 4. `ParseExact` проверяет
+указанный формат, а `TryParse` и `TryParseExact` записывают `Guid.Empty`
+при неудаче. `GetHashCode` совпадает с исходной реализацией. `Guid` можно
+сортировать и использовать как ключ `Dictionary` или элемент `HashSet`.
+[Тест методов Guid и коллекций](tests/fixtures/guid-methods-compat.pas).
+
 Имена в квадратных скобках и обратных кавычках сохраняются при разборе
 `Eval`. Для `SUM`, `AVG`, `MIN`, `MAX`, `COUNT`, `STDEV` и `VAR` проверяется
 форма аргумента с именем столбца и необязательным `Child`. В таблице, с

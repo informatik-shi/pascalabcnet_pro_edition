@@ -2924,7 +2924,13 @@ private:
         const auto parameters=guid_parameters(owner,bytes,method);
         if(arguments.size()!=parameters.size())
             throw Error("E_TYPE",location,"Wrong number of Guid arguments","Неверное число аргументов Guid");
-        for(std::size_t i=0;i<parameters.size();++i)arguments[i]=convert(std::move(arguments[i]),parameters[i]);
+        for(std::size_t i=0;i<parameters.size();++i){
+            if(parameters[i]==reference_type(owner)){
+                if(arguments[i]->type!=owner || !lvalue(*arguments[i]))
+                    throw Error("E_TYPE",arguments[i]->location,"Guid parsing requires a writable Guid result",
+                        "Для разбора Guid нужен изменяемый результат типа Guid");
+            }else arguments[i]=convert(std::move(arguments[i]),parameters[i]);
+        }
         auto result=std::make_unique<hir::Expr>();
         result->kind=hir::ExprKind::guid_call;
         result->type=guid_result(owner,bytes,method);
@@ -2952,14 +2958,23 @@ private:
         return guid_expression(owner,method,std::move(arguments),location);
     }
     std::unique_ptr<hir::Expr> bind_guid_static(const SyntaxExpr& source) {
-        if(source.token.text!="parse" && source.token.text!="empty")return {};
+        using M=GuidMethod;
+        const auto& name=source.token.text;
+        constexpr std::pair<std::string_view,M> methods[]{
+            {"parse",M::parse},{"parseexact",M::parse_exact},{"tryparse",M::try_parse},
+            {"tryparseexact",M::try_parse_exact},{"newguid",M::new_guid}};
+        const auto method=std::find_if(std::begin(methods),std::end(methods),[&](const auto& pair){return pair.first==name;});
+        if(name!="empty" && method==std::end(methods))return {};
         const auto owner=guid_owner(*source.left);
         if(owner==Type::invalid)return {};
-        if(source.token.text=="empty" && source.kind==SyntaxExprKind::field)return default_guid(owner,source.token.location);
-        if(source.token.text!="parse")return {};
+        if(name=="empty"){
+            if(source.kind!=SyntaxExprKind::field)
+                throw Error("E_TYPE",source.token.location,"Guid.Empty is not callable","Guid.Empty нельзя вызвать");
+            return default_guid(owner,source.token.location);
+        }
         std::vector<std::unique_ptr<hir::Expr>> arguments;
         for(const auto& argument:source.arguments)arguments.push_back(expression(*argument));
-        return guid_expression(owner,GuidMethod::parse,std::move(arguments),source.token.location);
+        return guid_expression(owner,method->second,std::move(arguments),source.token.location);
     }
     std::unique_ptr<hir::Expr> bind_guid_member(hir::Expr& receiver,const SyntaxExpr& source) {
         const auto owner=receiver.left->type;
@@ -2970,6 +2985,7 @@ private:
         if(source.token.text=="tobytearray")method=M::to_bytes;
         if(source.token.text=="compareto")method=M::compare_to;
         if(source.token.text=="equals")method=M::equals;
+        if(source.token.text=="gethashcode")method=M::hash_code;
         if(!method)
             throw Error("E_NAME",source.token.location,"Unknown Guid member","Неизвестный член Guid");
         std::vector<std::unique_ptr<hir::Expr>> arguments;

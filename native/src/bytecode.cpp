@@ -186,9 +186,15 @@ private:
         case hir::ExprKind::utils_record_bytes:
             expression(*node.arguments.front());
             emit(Op::utils_record_bytes,node.type,node.local,node.location);break;
-        case hir::ExprKind::guid_call:
-            for(const auto& argument:node.arguments)expression(*argument);
+        case hir::ExprKind::guid_call: {
+            const auto method=static_cast<GuidMethod>(node.local);
+            const bool output=method==GuidMethod::try_parse || method==GuidMethod::try_parse_exact;
+            for(std::size_t i=0;i<node.arguments.size();++i){
+                if(output && i+1==node.arguments.size())reference(*node.arguments[i]);
+                else expression(*node.arguments[i]);
+            }
             emit(Op::guid_call,node.operation_type,node.local,node.location);break;
+        }
         case hir::ExprKind::database_null:
             emit(Op::database_null,node.type,0,node.location);break;
         case hir::ExprKind::tuple_literal:
@@ -1346,7 +1352,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         }
         case Op::guid_call:
             if(!compound(type) || !guid_record_type(type_info(program,type))
-                || instruction.operand>static_cast<std::size_t>(GuidMethod::equals))
+                || instruction.operand>static_cast<std::size_t>(GuidMethod::hash_code))
                 invalid(instruction,"Invalid Guid call metadata");
             break;
         case Op::school_table_print: case Op::school_table_new:

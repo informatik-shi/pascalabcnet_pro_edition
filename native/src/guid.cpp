@@ -1,7 +1,9 @@
 #include "guid.hpp"
 #include "runtime_values.hpp"
 #include "stdlib.hpp"
+#include <bit>
 #include <compare>
+#include <random>
 
 namespace abc {
 namespace {
@@ -73,18 +75,33 @@ GuidParts parse_hex_tuple(std::u16string_view input,SourceLocation location) {
     if(!remaining.empty())throw invalid_guid(location);
     return result;
 }
-GuidParts parse_guid(std::u16string_view input,SourceLocation location) {
+char16_t guid_style(std::u16string_view format,SourceLocation location) {
+    auto style=format.size()==1 ? format.front() : char16_t{};
+    if(style>=u'A' && style<=u'Z')style=static_cast<char16_t>(style+32);
+    if(std::u16string_view(u"ndbpx").find(style)==std::u16string_view::npos)
+        throw Error("E_FORMAT",location,"Invalid Guid format","Недопустимый формат Guid");
+    return style;
+}
+GuidParts parse_guid(std::u16string_view input,SourceLocation location,char16_t expected={}) {
     auto text=trim(input);
-    if(text.starts_with(u'{') && text.find(u',')!=text.npos)return parse_hex_tuple(text,location);
+    const auto check_style=[&](char16_t style){if(expected && expected!=style)throw invalid_guid(location);};
+    if(text.starts_with(u'{') && text.find(u',')!=text.npos){
+        check_style(u'x');
+        return parse_hex_tuple(text,location);
+    }
     const bool wrapped=text.starts_with(u'{') || text.starts_with(u'(');
     if(wrapped){
         if(text.size()!=38 || (text.front()==u'{' ? text.back()!=u'}' : text.back()!=u')'))throw invalid_guid(location);
+        check_style(text.front()==u'{' ? u'b' : u'p');
         text=text.substr(1,36);
     }
-    if(text.size()==32 && !wrapped)
+    if(text.size()==32 && !wrapped){
+        check_style(u'n');
         return {static_cast<std::uint32_t>(hex(text.substr(0,8),location)),
             static_cast<std::uint16_t>(hex(text.substr(8,4),location)),static_cast<std::uint16_t>(hex(text.substr(12,4),location)),
             hex(text.substr(16),location)};
+    }
+    if(!wrapped)check_style(u'd');
     if(text.size()!=36 || text[8]!=u'-' || text[13]!=u'-' || text[18]!=u'-' || text[23]!=u'-')throw invalid_guid(location);
     return {static_cast<std::uint32_t>(hex(text.substr(0,8),location)),
         static_cast<std::uint16_t>(hex(text.substr(9,4),location)),static_cast<std::uint16_t>(hex(text.substr(14,4),location)),
@@ -102,6 +119,32 @@ Value make_guid(Values& values,Type type,GuidParts data) {
     record->items[2]->value=data.third;
     record->items[3]->value=data.tail;
     return record;
+}
+GuidParts new_guid(SourceLocation location) {
+    try{
+        std::random_device entropy;
+        std::uniform_int_distribution<std::uint32_t> word;
+        const auto first=word(entropy),middle=word(entropy),tail_high=word(entropy),tail_low=word(entropy);
+        const auto third=static_cast<std::uint16_t>((middle&0x0fffU)|0x4000U);
+        const auto variant=(static_cast<std::uint64_t>(tail_high&0x3fffffffU)|0x80000000ULL)<<32;
+        return {first,static_cast<std::uint16_t>(middle>>16),third,variant|tail_low};
+    }catch(const std::exception&){
+        throw Error("E_RANDOM",location,"Could not generate a Guid","Не удалось сгенерировать Guid");
+    }
+}
+bool try_parse_guid(Values& values,Type type,std::span<const Value> arguments,bool exact) {
+    const auto output=std::get<std::shared_ptr<Cell>>(arguments[exact ? 2 : 1]);
+    std::optional<GuidParts> data;
+    try{
+        if(!std::holds_alternative<NilString>(arguments[0])){
+            const auto style=exact ? guid_style(string_text(arguments[1]),values.location) : char16_t{};
+            data=parse_guid(string_text(arguments[0]),values.location,style);
+        }
+    }catch(const Error& error){
+        if(error.code!="E_FORMAT" && error.code!="E_OVERFLOW")throw;
+    }
+    values.write(output,make_guid(values,type,data.value_or(GuidParts{})));
+    return data.has_value();
 }
 GuidParts from_bytes(const Value& value,SourceLocation location) {
     const auto& data=*std::get<std::shared_ptr<Aggregate>>(value);
@@ -139,7 +182,11 @@ bool guid_record_shape(std::span<const TypeInfo> types,const TypeInfo& shape) {
 }
 std::vector<Type> guid_parameters(Type owner,Type byte_array,GuidMethod method) {
     switch(method){
+    case GuidMethod::new_guid:return {};
     case GuidMethod::parse:return {Type::string};
+    case GuidMethod::parse_exact:return {Type::string,Type::string};
+    case GuidMethod::try_parse:return {Type::string,reference_type(owner)};
+    case GuidMethod::try_parse_exact:return {Type::string,Type::string,reference_type(owner)};
     case GuidMethod::from_bytes:return {byte_array};
     case GuidMethod::compare_to:case GuidMethod::equals:return {owner,owner};
     case GuidMethod::to_string_format:return {owner,Type::string};
@@ -148,9 +195,9 @@ std::vector<Type> guid_parameters(Type owner,Type byte_array,GuidMethod method) 
 }
 Type guid_result(Type owner,Type byte_array,GuidMethod method) {
     switch(method){
-    case GuidMethod::parse:case GuidMethod::from_bytes:return owner;
-    case GuidMethod::compare_to:return Type::integer;
-    case GuidMethod::equals:return Type::boolean;
+    case GuidMethod::parse:case GuidMethod::parse_exact:case GuidMethod::from_bytes:case GuidMethod::new_guid:return owner;
+    case GuidMethod::compare_to:case GuidMethod::hash_code:return Type::integer;
+    case GuidMethod::equals:case GuidMethod::try_parse:case GuidMethod::try_parse_exact:return Type::boolean;
     case GuidMethod::to_bytes:return byte_array;
     default:return Type::string;
     }
@@ -158,6 +205,12 @@ Type guid_result(Type owner,Type byte_array,GuidMethod method) {
 int compare_guid(const Value& left,const Value& right) {
     const auto result=parts(left)<=>parts(right);
     return (result>0)-(result<0);
+}
+std::int32_t guid_hash_code(const Value& value) {
+    const auto data=parts(value);
+    const auto fields=(static_cast<std::uint32_t>(data.second)<<16)|data.third;
+    const auto tail=static_cast<std::uint32_t>(((data.tail>>40)&0xff)<<24)|(static_cast<std::uint32_t>(data.tail)&0xff);
+    return std::bit_cast<std::int32_t>(data.first^fields^tail);
 }
 std::array<std::uint8_t,16> guid_bytes(const Value& value) {
     const auto data=parts(value);
@@ -172,10 +225,7 @@ std::array<std::uint8_t,16> guid_bytes(const Value& value) {
     return bytes;
 }
 std::u16string guid_text(const Value& value,std::u16string_view format,SourceLocation location) {
-    auto style=format.empty() ? u'd' : format.front();
-    if(style>=u'A' && style<=u'Z')style=static_cast<char16_t>(style+32);
-    if(format.size()>1 || std::u16string_view(u"ndbpx").find(style)==std::u16string_view::npos)
-        throw Error("E_FORMAT",location,"Invalid Guid format","Недопустимый формат Guid");
+    const auto style=format.empty() ? u'd' : guid_style(format,location);
     const auto data=parts(value);
     std::u16string text;
     if(style==u'x'){
@@ -204,9 +254,16 @@ std::u16string guid_text(const Value& value,std::u16string_view format,SourceLoc
 Value guid_invoke(Values& values,Type type,GuidMethod method,std::span<const Value> arguments) {
     using M=GuidMethod;
     switch(method){
-    case M::parse:
+    case M::parse:case M::parse_exact:{
         if(std::holds_alternative<NilString>(arguments[0]))throw runtime_error(RuntimeError::nil_reference,values.location);
-        return make_guid(values,type,parse_guid(string_text(arguments[0]),values.location));
+        if(method==M::parse_exact && std::holds_alternative<NilString>(arguments[1]))
+            throw runtime_error(RuntimeError::nil_reference,values.location);
+        const auto style=method==M::parse_exact ? guid_style(string_text(arguments[1]),values.location) : char16_t{};
+        return make_guid(values,type,parse_guid(string_text(arguments[0]),values.location,style));
+    }
+    case M::try_parse:case M::try_parse_exact:return try_parse_guid(values,type,arguments,method==M::try_parse_exact);
+    case M::new_guid:return make_guid(values,type,new_guid(values.location));
+    case M::hash_code:return guid_hash_code(arguments[0]);
     case M::from_bytes:return make_guid(values,type,from_bytes(arguments[0],values.location));
     case M::to_string:return guid_text(arguments[0],{},values.location);
     case M::to_string_format:return guid_text(arguments[0],string_text(arguments[1]),values.location);

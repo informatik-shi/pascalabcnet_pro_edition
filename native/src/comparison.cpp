@@ -5,6 +5,7 @@
 #include "enumeration.hpp"
 #include "big_integer_runtime.hpp"
 #include "calendar.hpp"
+#include "guid.hpp"
 #include "decimal.hpp"
 #include <array>
 #include <cmath>
@@ -20,7 +21,7 @@ bool default_comparable(const std::vector<TypeInfo>& types,Type element){
  if(scalar(element) || enumeration(types,element))return true;
  if(compound(element) && static_cast<unsigned>(element)-64U<types.size()){
   const auto& shape=types[static_cast<unsigned>(element)-64U];
-  if(decimal_type(shape) || calendar_record(shape))return true;
+  if(decimal_type(shape) || calendar_record(shape) || guid_record_type(shape))return true;
  }
  const auto target=comparable_contract(types,element);return target!=Type::invalid && interface_compatible(types,element,target);
 }
@@ -32,6 +33,7 @@ int comparison_value(Values& values,Type type,const Value& a,const Value& b,bool
   const auto& shape=type_info(values.program,type);
   if(decimal_type(shape))return compare_decimal_values(a,b,values.location);
   if(calendar_record(shape))return compare_calendar_values(a,b);
+  if(guid_record_type(shape))return compare_guid(a,b);
   const auto target=comparable_contract(values.program.types,type);
   if(target!=Type::invalid && interface_compatible(values.program.types,type,target)){if(an)throw runtime_error(RuntimeError::nil_reference,values.location);const std::array<Value,1> arguments{b};return std::get<std::int32_t>(interface_invoke(values,target,0,a,arguments,options));}
   if(null_safe && shape.kind!=CompoundKind::record && std::get<Object>(a)==std::get<Object>(b))return 0;

@@ -1,0 +1,42 @@
+program GuidCoreMethodsReference;
+uses System;
+const Canonical='f1020304-f506-f708-9a0b-0c0d0e0f1011';
+procedure ParseStatus(value,format:string);
+begin
+  var g:=Guid.Empty;
+  var direct:=Guid.TryParse(value,g);
+  Write(direct,'|',g.ToString,'|');
+  g:=Guid.Parse(Canonical);
+  var exact:=Guid.TryParseExact(value,format,g);
+  Writeln(exact,'|',g.ToString);
+end;
+begin
+  var g:=Guid.Parse(Canonical);
+  Writeln(g.GetHashCode,' ',Guid.Empty.GetHashCode);
+  Writeln(Guid.Parse('00000000-0000-0000-f012-1234567890fe').GetHashCode);
+  Writeln(Guid.Parse('00000000-0000-0000-0000-ffffffffffff').GetHashCode);
+  ParseStatus(Canonical,'d');
+  ParseStatus(' '+Canonical+' ','D');
+  ParseStatus(g.ToString('N'),'D');
+  ParseStatus(g.ToString('N'),'N');
+  ParseStatus(g.ToString('B'),'B');
+  ParseStatus(g.ToString('X'),'X');
+  ParseStatus(g.ToString('P'),'p');
+  ParseStatus('invalid','D');
+  ParseStatus(nil,'D');
+  ParseStatus(Canonical,' D ');
+  ParseStatus(Canonical,nil);
+  Writeln(Guid.ParseExact(g.ToString('X'),'x').Equals(g));
+  var r:=Guid.NewGuid;
+  var t:=r.ToString;
+  Writeln(t.Length,' ',t[15]='4',' ',(t[20]='8') or (t[20]='9') or (t[20]='a') or (t[20]='b'));
+  var v:=Arr(g,Guid.Empty,Guid.Parse('00000001-0000-0000-0000-000000000000'));
+  Sort(v);
+  Writeln(v[0],' ',v[1],' ',v[2]);
+  var index:=new Dictionary<Guid,integer>;
+  index[g]:=11;
+  var alias:=Guid.Parse(Canonical.ToUpper);
+  Writeln(index.ContainsKey(alias),' ',index[alias]);
+  var seen:=new HashSet<Guid>;
+  Writeln(seen.Add(alias),' ',seen.Add(g),' ',seen.Contains(Guid.Empty));
+end.

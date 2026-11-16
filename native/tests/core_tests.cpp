@@ -792,6 +792,10 @@ void timing_library() {
     auto guid=abc::compile("begin Writeln(Guid.Parse('00000000000000000000000000000000'));end.");
     for(auto& instruction:guid.code)if(instruction.op==abc::Op::guid_call)instruction.operand=32768;
     error([&]{abc::verify(guid);},"E_BYTECODE");
+    compile_error("begin Writeln(Guid.TryParse('x',Guid.Empty));end.","E_TYPE");
+    compile_error("begin var n:=0; Writeln(Guid.TryParseExact('x','N',n));end.","E_TYPE");
+    error([&]{(void)run("begin Writeln(Guid.ParseExact('00000000000000000000000000000000','D'));end.");},"E_FORMAT");
+    error([&]{(void)run("begin Writeln(Guid.ParseExact('00000000000000000000000000000000',nil));end.");},"E_NIL");
 }
 
 void sequence_text_and_flatten() {
