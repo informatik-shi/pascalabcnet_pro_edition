@@ -823,6 +823,15 @@ void timing_library() {
     auto date_offset=abc::compile("begin Writeln(DateTimeOffset.Parse('2024-02-29T12:00Z'));end.");
     for(auto& instruction:date_offset.code)if(instruction.op==abc::Op::date_offset_call)instruction.operand=32768;
     error([&]{abc::verify(date_offset);},"E_BYTECODE");
+    error([&]{(void)run("uses System.Data.SqlTypes;begin Writeln(SqlInt32.Null.Value);end.");},"E_NIL","SQL Null");
+    error([&]{(void)run("uses Utils;begin Writeln(EvalStr('CONVERT(5,System.Data.SqlTypes.SqlByte)'));end.");},"E_TYPE");
+    error([&]{(void)run("uses Utils;begin Writeln(EvalStr('CONVERT(CONVERT(5,System.Data.SqlTypes.SqlInt32),System.String)'));end.");},
+        "E_TYPE");
+    error([&]{(void)run("uses Utils;begin Writeln(EvalStr('CONVERT(NULL,''System.Data.SqlTypes.SqlInt32, System.Data'')'));end.");},
+        "E_UNSUPPORTED");
+    auto sql_scalar=abc::compile("uses System.Data.SqlTypes;begin Writeln(SqlInt32.MinValue.Value);end.");
+    for(auto& instruction:sql_scalar.code)if(instruction.op==abc::Op::sql_scalar_call)instruction.operand=32768;
+    error([&]{abc::verify(sql_scalar);},"E_BYTECODE");
 }
 
 void sequence_text_and_flatten() {

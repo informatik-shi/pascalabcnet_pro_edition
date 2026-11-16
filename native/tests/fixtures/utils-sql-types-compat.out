@@ -1,0 +1,16 @@
+System.Data.SqlTypes.SqlInt32 42 42
+System.Data.SqlTypes.SqlInt32, System.Data, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089
+True Null True
+-2147483648 0 2147483647
+0 255 9223372036854775807
+True True False
+True False True
+привет
+255
+-32768
+4294967295
+5
+0.125
+False
+0
+System.DBNull

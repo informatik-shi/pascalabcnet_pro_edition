@@ -15,6 +15,7 @@
 #include "complex_number.hpp"
 #include "calendar.hpp"
 #include "guid.hpp"
+#include "sql_scalar.hpp"
 #include "decimal.hpp"
 #include "fixed_array.hpp"
 #include "type_names.hpp"
@@ -379,7 +380,7 @@ public:
             do {
                 auto module = name();while(accept("."))module.text+="."+name().text;
                 if (module.text != "pabcsystem" && module.text != "arrays" && module.text != "collections"
-                    && module.text != "filesoperations" && module.text != "events" && module.text != "pointrect" && module.text != "school" && module.text != "system" && module.text != "system.text" && module.text != "system.numerics" && module.text != "inifile" && module.text != "oberon00system" && module.text != "sockets" && module.text != "clientserver" && module.text != "utils")
+                    && module.text != "filesoperations" && module.text != "events" && module.text != "pointrect" && module.text != "school" && module.text != "system" && module.text != "system.text" && module.text != "system.numerics" && module.text != "system.data.sqltypes" && module.text != "inifile" && module.text != "oberon00system" && module.text != "sockets" && module.text != "clientserver" && module.text != "utils")
                     throw Error("E_UNSUPPORTED", module.location, "Unit is not ported yet: '" + module.text + "'");
                 if (module.text == "collections") root.collections_imported = true;
                 root.imported_units.insert(module.text);
@@ -671,6 +672,17 @@ private:
                     result->kind=name().text;
                     if(result->kind!="encoding" && result->kind!="stringbuilder")
                         throw Error("E_UNSUPPORTED",result->token.location,"Unknown or unsupported System.Text type");
+                }
+                else if(result->kind=="data") {
+                    expect(".");
+                    const auto ns=name();
+                    if(ns.text!="sqltypes")
+                        throw Error("E_UNSUPPORTED",ns.location,"Unknown System.Data namespace","Неизвестное пространство имён System.Data");
+                    expect(".");
+                    result->kind=name().text;
+                    if(!sql_scalar_type(result->kind))
+                        throw Error("E_UNSUPPORTED",result->token.location,"Unknown or unsupported SQL value type",
+                            "Неизвестный или неподдерживаемый тип значения SQL");
                 }
                 else if(result->kind=="globalization") {
                     expect(".");
@@ -1398,8 +1410,9 @@ private:
                 }
                 expect("]");
             } else if (accept(".")) {
-                // These standard Text methods also have statement keyword spellings.
-                const auto field = is("write") || is("writeln") || is("readln") || is("foreach") || is("default") || is("array") || is("except") ? consume() : name();
+                // Some standard members share spellings with Pascal keywords.
+                const auto field = is("write") || is("writeln") || is("readln") || is("foreach") || is("default")
+                    || is("array") || is("except") || is("true") || is("false") ? consume() : name();
                 result = make_expression(SyntaxExprKind::field, field, std::move(result));
             } else if (accept("(")) {
                 if (result->kind==SyntaxExprKind::name) result->kind=SyntaxExprKind::call;
@@ -2997,6 +3010,106 @@ private:
     bool is_date_offset(Type type) const {
         return compound(type) && date_offset_record(info(type,{}));
     }
+    bool is_sql_scalar(Type type) const {
+        return compound(type) && sql_scalar_record(info(type,{}));
+    }
+    Type declare_sql_scalar(const SqlScalarType& description,SourceLocation location) {
+        for(std::size_t i=0;i<module_.types.size();++i)
+            if(sql_scalar_record(module_.types[i]) && module_.types[i].name==description.name)return static_cast<Type>(64+i);
+        if(module_.types.size()>=1024)throw Error("E_LIMIT",location,"Type limit exceeded");
+        TypeInfo shape{std::string(description.name),CompoundKind::record,description.underlying,
+            {{"_defined",Type::boolean,false},{"_value",description.underlying,false}}};
+        shape.native_record=NativeRecord::sql_scalar;
+        module_.types.push_back(std::move(shape));
+        return static_cast<Type>(63+module_.types.size());
+    }
+    Type sql_scalar_owner(const SyntaxExpr& target) {
+        if(target.kind==SyntaxExprKind::name && !lookup(target.token)){
+            if(const auto alias=aliases_.find(target.token.text);alias!=aliases_.end())
+                return is_sql_scalar(alias->second) ? alias->second : Type::invalid;
+            if(imported_units_.contains("system.data.sqltypes"))
+                if(const auto* type=sql_scalar_type(target.token.text))return declare_sql_scalar(*type,target.token.location);
+        }
+        const auto* type=sql_scalar_type(target.token.text);
+        if(!type || (target.kind!=SyntaxExprKind::field && target.kind!=SyntaxExprKind::member_call) || !target.left)
+            return Type::invalid;
+        const auto* ns=target.left.get();
+        for(const auto name:{"sqltypes","data"}){
+            if(ns->kind!=SyntaxExprKind::field || ns->token.text!=name || !ns->left)return Type::invalid;
+            ns=ns->left.get();
+        }
+        if(ns->kind!=SyntaxExprKind::name || ns->token.text!="system" || lookup(ns->token))return Type::invalid;
+        return declare_sql_scalar(*type,target.token.location);
+    }
+    std::unique_ptr<hir::Expr> sql_expression(Type owner,SqlScalarMethod method,
+        std::vector<std::unique_ptr<hir::Expr>> arguments,SourceLocation location) {
+        const auto underlying=info(owner,location).element;
+        const auto parameters=sql_scalar_parameters(owner,underlying,method);
+        if(!sql_scalar_method(underlying,method) || arguments.size()!=parameters.size())
+            throw Error("E_TYPE",location,"Invalid SQL value member or argument count",
+                "Недопустимый член значения SQL или число аргументов");
+        for(std::size_t i=0;i<parameters.size();++i)arguments[i]=convert(std::move(arguments[i]),parameters[i]);
+        auto result=std::make_unique<hir::Expr>();
+        result->kind=hir::ExprKind::sql_scalar_call;
+        result->type=sql_scalar_result(owner,underlying,method);
+        result->operation_type=owner;
+        result->local=static_cast<std::size_t>(method);
+        result->location=location;
+        result->arguments=std::move(arguments);
+        return result;
+    }
+    std::unique_ptr<hir::Expr> make_sql_scalar(Type owner,const SyntaxExpr& source,SourceLocation location) {
+        using M=SqlScalarMethod;
+        std::vector<std::unique_ptr<hir::Expr>> arguments;
+        for(const auto& argument:source.arguments)arguments.push_back(expression(*argument));
+        const auto method=arguments.empty() ? M::null_value : M::create;
+        return sql_expression(owner,method,std::move(arguments),location);
+    }
+    std::unique_ptr<hir::Expr> bind_sql_cast(Type owner,const SyntaxExpr& source) {
+        const auto location=source.token.location;
+        if(source.arguments.size()!=1)
+            throw Error("E_TYPE",location,"SQL value conversion requires one argument",
+                "Для приведения к типу SQL нужен один аргумент");
+        auto input=expression(*source.arguments.front());
+        if(boxed_object(input->type,location)){
+            const auto object=input->type;
+            return object_conversion(std::move(input),owner,object);
+        }
+        if(input->type==owner)return input;
+        std::vector<std::unique_ptr<hir::Expr>> arguments;
+        arguments.push_back(std::move(input));
+        return sql_expression(owner,SqlScalarMethod::create,std::move(arguments),location);
+    }
+    std::unique_ptr<hir::Expr> bind_sql_static(const SyntaxExpr& source) {
+        if(source.kind==SyntaxExprKind::member_call)
+            if(const auto owner=sql_scalar_owner(source);owner!=Type::invalid)return bind_sql_cast(owner,source);
+        const auto owner=sql_scalar_owner(*source.left);
+        if(owner==Type::invalid)return {};
+        using M=SqlScalarMethod;
+        constexpr std::pair<std::string_view,M> members[]{
+            {"null",M::null_value},{"false",M::false_value},{"true",M::true_value},
+            {"zero",M::zero},{"minvalue",M::minimum},{"maxvalue",M::maximum}};
+        const auto member=std::find_if(std::begin(members),std::end(members),
+            [&](const auto& candidate){return candidate.first==source.token.text;});
+        if(member==std::end(members) || source.kind!=SyntaxExprKind::field)
+            throw Error("E_NAME",source.token.location,"Unknown static SQL value member","Неизвестный статический член значения SQL");
+        return sql_expression(owner,member->second,{},source.token.location);
+    }
+    std::unique_ptr<hir::Expr> bind_sql_member(hir::Expr& receiver,const SyntaxExpr& source) {
+        const auto owner=receiver.left->type;
+        if(!is_sql_scalar(owner) || source.token.text=="gettype")return {};
+        using M=SqlScalarMethod;
+        constexpr std::pair<std::string_view,M> members[]{
+            {"value",M::value},{"isnull",M::is_null},{"tostring",M::to_string},{"isfalse",M::is_false},{"istrue",M::is_true}};
+        const auto member=std::find_if(std::begin(members),std::end(members),
+            [&](const auto& candidate){return candidate.first==source.token.text;});
+        if(member==std::end(members))
+            throw Error("E_NAME",source.token.location,"Unknown SQL value member","Неизвестный член значения SQL");
+        std::vector<std::unique_ptr<hir::Expr>> arguments;
+        arguments.push_back(std::move(receiver.left));
+        for(const auto& argument:source.arguments)arguments.push_back(expression(*argument));
+        return sql_expression(owner,member->second,std::move(arguments),source.token.location);
+    }
     Type date_offset_type(SourceLocation location) {
         for(std::size_t i=0;i<module_.types.size();++i)
             if(date_offset_record(module_.types[i]))return static_cast<Type>(64+i);
@@ -4270,6 +4383,8 @@ private:
             return guid_type(syntax.token.location);
         if(syntax.kind=="datetimeoffset" && (syntax.system_qualified || !aliases_.contains(syntax.kind)))
             return date_offset_type(syntax.token.location);
+        if(syntax.system_qualified || (imported_units_.contains("system.data.sqltypes") && !aliases_.contains(syntax.kind)))
+            if(const auto* type=sql_scalar_type(syntax.kind))return declare_sql_scalar(*type,syntax.token.location);
         if (syntax.kind=="midpointrounding" && (syntax.system_qualified || !aliases_.contains(syntax.kind)))
             return midpoint_rounding_type(syntax.token.location);
         if (syntax.kind=="numberformatinfo" &&
@@ -4931,6 +5046,7 @@ private:
             if (!source.array_construction && is_calendar(type)) return make_calendar_object(type,source,result->location);
             if (!source.array_construction && is_guid(type)) return make_guid_object(type,source,result->location);
             if (!source.array_construction && is_date_offset(type)) return make_date_offset_object(type,source,result->location);
+            if (!source.array_construction && is_sql_scalar(type)) return make_sql_scalar(type,source,result->location);
             if (!source.array_construction && is_complex(type)) {
                 std::vector<std::unique_ptr<hir::Expr>> args;
                 for (const auto& arg:source.arguments) args.push_back(expression(*arg));
@@ -5185,6 +5301,7 @@ private:
             if(base->token.text=="value" && dbnull_name(*base->left))break;
             if(guid_owner(*base->left)!=Type::invalid)break;
             if(date_offset_owner(*base->left)!=Type::invalid)break;
+            if(sql_scalar_owner(*base->left)!=Type::invalid)break;
             if (base->token.text=="create" && string_builder_constructor_owner(*base->left)!=Type::invalid) break;
             if (complex_type_name(*base->left)!=Type::invalid) break;
             if ((base->token.text=="create" || base->token.text=="invariantinfo" || base->token.text=="currentinfo"
@@ -5294,6 +5411,7 @@ private:
             if (auto calendar=bind_calendar_static(source)) return calendar;
             if (auto guid=bind_guid_static(source)) return guid;
             if (auto offset=bind_offset_static(source)) return offset;
+            if (auto sql=bind_sql_static(source)) return sql;
             if (auto complex=bind_complex_static(source)) return complex;
             if (source.token.text=="create")
                 if (const auto type=string_builder_constructor_owner(*source.left); type!=Type::invalid)
@@ -5486,6 +5604,7 @@ private:
             if (auto calendar=bind_calendar_member(*result,source)) return calendar;
             if (auto guid=bind_guid_member(*result,source)) return guid;
             if (auto offset=bind_offset_member(*result,source)) return offset;
+            if (auto sql=bind_sql_member(*result,source)) return sql;
             if (auto complex=bind_complex_member(*result,source)) return complex;
             if (auto builder=bind_string_builder_member(*result,source)) return builder;
             if(bind_encoding_member(*result,source))break;
@@ -6123,6 +6242,12 @@ private:
             const auto native_alias=aliases_.find(source.token.text);
             const bool guid_cast=native_alias!=aliases_.end() ? is_guid(native_alias->second) : source.token.text=="guid";
             const bool offset_cast=native_alias!=aliases_.end() ? is_date_offset(native_alias->second) : source.token.text=="datetimeoffset";
+            const auto* sql_description=imported_units_.contains("system.data.sqltypes") ? sql_scalar_type(source.token.text) : nullptr;
+            const bool sql_cast=native_alias!=aliases_.end() ? is_sql_scalar(native_alias->second) : sql_description!=nullptr;
+            if(sql_cast && !routine_names_.contains(source.token.text)){
+                const auto type=native_alias==aliases_.end() ? declare_sql_scalar(*sql_description,result->location) : native_alias->second;
+                return bind_sql_cast(type,source);
+            }
             if((guid_cast || offset_cast) && !routine_names_.contains(source.token.text)){
                 const auto name=std::string_view(guid_cast ? "Guid" : "DateTimeOffset");
                 if(source.arguments.size()!=1)
@@ -8345,6 +8470,7 @@ private:
         (void)calendar_type("datetime",location);
         (void)guid_type(location);
         (void)date_offset_type(location);
+        for(const auto& type:sql_scalar_types())(void)declare_sql_scalar(type,location);
     }
     std::unique_ptr<hir::Expr> utils_eval_value(SourceLocation location,Type expected) {
         const auto object=object_type(location);

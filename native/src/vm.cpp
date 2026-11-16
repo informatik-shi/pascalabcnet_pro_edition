@@ -9,6 +9,7 @@
 #include "utils_eval.hpp"
 #include "utils_marshal.hpp"
 #include "guid.hpp"
+#include "sql_scalar.hpp"
 #include "calendar.hpp"
 #include "record_initialization.hpp"
 #include "files.hpp"
@@ -634,6 +635,14 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
             std::vector<Value> arguments(offset_parameters(program.types,instruction.type,method).size());
             for(std::size_t i=arguments.size();i>0;--i)arguments[i-1]=pop();
             stack.push_back(offset_invoke(values,instruction.type,method,arguments));
+            break;
+        }
+        case Op::sql_scalar_call: {
+            const auto method=static_cast<SqlScalarMethod>(instruction.operand);
+            const auto underlying=type_info(program,instruction.type).element;
+            std::vector<Value> arguments(sql_scalar_parameters(instruction.type,underlying,method).size());
+            for(std::size_t i=arguments.size();i>0;--i)arguments[i-1]=pop();
+            stack.push_back(sql_scalar_invoke(values,instruction.type,method,arguments));
             break;
         }
         case Op::utils_benchmark: {

@@ -5,6 +5,7 @@
 #include "composite_format.hpp"
 #include "decimal.hpp"
 #include "guid.hpp"
+#include "sql_scalar.hpp"
 #include "integer_values.hpp"
 #include "number_format.hpp"
 #include "runtime_values.hpp"
@@ -544,7 +545,21 @@ class Evaluation {
         if(name==u"System.String")return Type::string;
         return {};
     }
+    bool sql_value(Type type) const {
+        return compound(type) && sql_scalar_record(type_info(values_.program,type));
+    }
     Type conversion_type(std::u16string_view source) {
+        constexpr std::u16string_view prefix=u"System.Data.SqlTypes.";
+        if(source.starts_with(prefix)){
+            const auto name=source.substr(prefix.size());
+            const auto types=sql_scalar_types();
+            const auto sql=std::ranges::find(types,name,&SqlScalarType::framework_name);
+            if(sql!=types.end())
+                for(std::size_t i=0;i<values_.program.types.size();++i){
+                    const auto& shape=values_.program.types[i];
+                    if(sql_scalar_record(shape) && shape.name==sql->name)return static_cast<Type>(64+i);
+                }
+        }
         if(const auto name=framework_type_name(source)){
             if(const auto base=conversion_base_name(*name)){
                 if(const auto type=simple_conversion_type(*base))
@@ -700,6 +715,7 @@ class Evaluation {
         if(type==date_ || type==interval_)return calendar_text(value,{},location_);
         if(type==guid_)return guid_text(value,{},location_);
         if(type==offset_date_)return date_offset_text(value,{},location_);
+        if(sql_value(type))return sql_scalar_text(value,location_);
         if(type==Type::real || type==Type::single || integer_type(type))
             return format_number(value,type,{},format,location_);
         return format_scalar(value,location_);
@@ -986,6 +1002,9 @@ class Evaluation {
     }
     Value evaluate_conversion(Value value,Type target) {
         if(null(value) || target==Type::invalid)return value;
+        const auto source=kind(value);
+        if(sql_value(target))return sql_scalar_convert(values_,target,source,value);
+        if(sql_value(source))operands();
         if(target==Type::nil)operands();
         if(target==Type::string)return kind(value)==interval_ ? calendar_xml_duration(value) : text(value);
         if(target==Type::integer || target==Type::int64)return signed_integer(value,target);

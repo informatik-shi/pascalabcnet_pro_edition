@@ -9,6 +9,7 @@
 #include "complex_number.hpp"
 #include "calendar.hpp"
 #include "guid.hpp"
+#include "sql_scalar.hpp"
 #include "composite_format.hpp"
 #include "decimal.hpp"
 #include "number_format.hpp"
@@ -122,6 +123,7 @@ class ObjectWriter {
         else if(calendar_record(info))append(calendar_text(data,{},location));
         else if(guid_record_type(info))append(guid_text(data,{},location));
         else if(date_offset_record(info))append(date_offset_text(data,{},location));
+        else if(sql_scalar_record(info))append(sql_scalar_text(data,location));
         else if(decimal_type(info)) {
             const auto rendered=decimal_text(data);
             append(settings?localize_number(rendered,*settings,location):rendered);
@@ -246,6 +248,7 @@ class FrameworkWriter {
             if(calendar_record(shape)){append(calendar_text(value,{},location));return;}
             if(guid_record_type(shape)){append(guid_text(value,{},location));return;}
             if(date_offset_record(shape)){append(date_offset_text(value,{},location));return;}
+            if(sql_scalar_record(shape)){append(sql_scalar_text(value,location));return;}
             if(decimal_type(shape)){append(format_decimal(value,{},format,location));return;}
             if(complex_number_type(shape)){append(complex_dotnet_text(value,{},format,location));return;}
             if(ordinal_range_type(shape)){append(ordinal_range_text(object));return;}

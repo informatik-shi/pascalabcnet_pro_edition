@@ -4,6 +4,7 @@
 #include "native_resource.hpp"
 #include "calendar.hpp"
 #include "guid.hpp"
+#include "sql_scalar.hpp"
 #include "decimal.hpp"
 #include "binary_file.hpp"
 #include "scalar_serialization.hpp"
@@ -198,6 +199,9 @@ private:
         case hir::ExprKind::date_offset_call:
             for(const auto& argument:node.arguments)expression(*argument);
             emit(Op::date_offset_call,node.operation_type,node.local,node.location);break;
+        case hir::ExprKind::sql_scalar_call:
+            for(const auto& argument:node.arguments)expression(*argument);
+            emit(Op::sql_scalar_call,node.operation_type,node.local,node.location);break;
         case hir::ExprKind::database_null:
             emit(Op::database_null,node.type,0,node.location);break;
         case hir::ExprKind::tuple_literal:
@@ -1038,7 +1042,12 @@ bool valid_utils_eval_types(const Program& program) {
             return type.kind==CompoundKind::record && type.native_record==NativeRecord::date_time;
         })
         && std::any_of(program.types.begin(),program.types.end(),guid_record_type)
-        && std::any_of(program.types.begin(),program.types.end(),date_offset_record);
+        && std::any_of(program.types.begin(),program.types.end(),date_offset_record)
+        && std::ranges::all_of(sql_scalar_types(),[&](const auto& sql){
+            return std::ranges::any_of(program.types,[&](const auto& shape){
+                return shape.name==sql.name && sql_scalar_shape(shape);
+            });
+        });
 }
 bool text_scalar(const Program& program,Type type){return scalar(type) || enumeration(program,type);}
 bool has_parameterless_constructor(const Program& program,Type owner){
@@ -1364,6 +1373,12 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
                 || instruction.operand>static_cast<std::size_t>(OffsetMethod::hash_code))
                 invalid(instruction,"Invalid DateTimeOffset operation");
             break;
+        case Op::sql_scalar_call:
+            if(!compound(type) || !sql_scalar_shape(type_info(program,type))
+                || instruction.operand>static_cast<std::size_t>(SqlScalarMethod::maximum)
+                || !sql_scalar_method(type_info(program,type).element,static_cast<SqlScalarMethod>(instruction.operand)))
+                invalid(instruction,"Invalid SQL value operation");
+            break;
         case Op::school_table_print: case Op::school_table_new:
             if (!compound(type) || type_info(program,type).kind!=CompoundKind::array || type_info(program,type).rank!=2
                 || type_info(program,type).element!=Type::boolean || instruction.operand) invalid(instruction,"Invalid School truth-table output");
@@ -1682,7 +1697,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             break;
         case Op::get_field: case Op::ref_field:
             if (!compound(type) || (type_info(program,type).kind!=CompoundKind::record && type_info(program,type).kind!=CompoundKind::object_class && !(instruction.op==Op::get_field && type_info(program,type).kind==CompoundKind::tuple))
-                || collection_enumerator_type(type_info(program,type)) || dictionary_enumerator_type(type_info(program,type)) || ordinal_range_type(type_info(program,type)) || real_interval_type(type_info(program,type)) || complex_number_type(type_info(program,type)) || calendar_record(type_info(program,type)) || decimal_type(type_info(program,type)) || guid_record_type(type_info(program,type)) || date_offset_record(type_info(program,type)) || (instruction.op==Op::ref_field && key_value_pair_type(type_info(program,type))) || instruction.operand>=type_info(program,type).fields.size()) invalid(instruction,"Invalid or writable tuple/record access");
+                || collection_enumerator_type(type_info(program,type)) || dictionary_enumerator_type(type_info(program,type)) || ordinal_range_type(type_info(program,type)) || real_interval_type(type_info(program,type)) || complex_number_type(type_info(program,type)) || calendar_record(type_info(program,type)) || decimal_type(type_info(program,type)) || guid_record_type(type_info(program,type)) || date_offset_record(type_info(program,type)) || sql_scalar_record(type_info(program,type)) || (instruction.op==Op::ref_field && key_value_pair_type(type_info(program,type))) || instruction.operand>=type_info(program,type).fields.size()) invalid(instruction,"Invalid or writable tuple/record access");
             break;
         case Op::list_add: case Op::list_remove: case Op::list_clear: case Op::list_contains:
             if (!compound(type) || type_info(program,type).kind != CompoundKind::list) invalid(instruction,"Invalid list instruction"); break;
@@ -1987,6 +2002,14 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             const auto parameters=offset_parameters(program.types,instruction.type,method);
             for(auto parameter=parameters.rbegin();parameter!=parameters.rend();++parameter)require(*parameter);
             stack.push_back(offset_result(program.types,instruction.type,method));
+            break;
+        }
+        case Op::sql_scalar_call: {
+            const auto method=static_cast<SqlScalarMethod>(instruction.operand);
+            const auto underlying=type_info(program,instruction.type).element;
+            const auto parameters=sql_scalar_parameters(instruction.type,underlying,method);
+            for(auto parameter=parameters.rbegin();parameter!=parameters.rend();++parameter)require(*parameter);
+            stack.push_back(sql_scalar_result(instruction.type,underlying,method));
             break;
         }
         case Op::utils_eval_object: require(Type::string); stack.push_back(instruction.type); break;
@@ -2334,7 +2357,7 @@ void verify(const Program& program) {
             throw Error("E_BYTECODE",{},"Invalid DBNull type metadata","Недопустимое описание типа DBNull");
         if(type.abstract_class && type.kind!=CompoundKind::object_class)
             throw Error("E_BYTECODE",{},"Abstract class flag on a non-class type");
-        if(type.native_record!=NativeRecord::none && ((type.native_record!=NativeRecord::ordinal_range && type.native_record!=NativeRecord::real_interval && type.native_record!=NativeRecord::key_value_pair && type.native_record!=NativeRecord::dictionary_enumerator && type.native_record!=NativeRecord::collection_enumerator && !complex_number_type(type) && !calendar_record(type) && !decimal_type(type) && !guid_record_type(type) && !date_offset_record(type)) || type.kind!=CompoundKind::record))throw Error("E_BYTECODE",{},"Invalid native record metadata");
+        if(type.native_record!=NativeRecord::none && ((type.native_record!=NativeRecord::ordinal_range && type.native_record!=NativeRecord::real_interval && type.native_record!=NativeRecord::key_value_pair && type.native_record!=NativeRecord::dictionary_enumerator && type.native_record!=NativeRecord::collection_enumerator && !complex_number_type(type) && !calendar_record(type) && !decimal_type(type) && !guid_record_type(type) && !date_offset_record(type) && !sql_scalar_record(type)) || type.kind!=CompoundKind::record))throw Error("E_BYTECODE",{},"Invalid native record metadata");
         for (const auto& field:type.fields) if (!valid_member_access(field.access)
             || (type.kind!=CompoundKind::object_class && !(type.kind==CompoundKind::record&&type.native_record==NativeRecord::none) && field.access!=MemberAccess::public_member))
             throw Error("E_BYTECODE",{},"Invalid class member visibility metadata");
@@ -2506,6 +2529,8 @@ void verify(const Program& program) {
                 if(!date_offset_shape(program.types,type))throw Error("E_BYTECODE",{},"Invalid DateTimeOffset record fields");
                 prior(type.element);
             }
+            if(sql_scalar_record(type) && !sql_scalar_shape(type))
+                throw Error("E_BYTECODE",{},"Invalid SQL value record fields");
             if (calendar_record(type)) {
                 if (!calendar_record_shape(program.types,type)) throw Error("E_BYTECODE",{},"Invalid calendar record fields");
                 if (type.native_record==NativeRecord::date_time) {prior(type.element);prior(type.key);}

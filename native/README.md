@@ -3250,6 +3250,15 @@ ZIP.
 преобразований между часовыми поясами ещё в работе.
 [Тест DateTimeOffset](tests/fixtures/utils-date-offset-compat.pas).
 
+В `System.Data.SqlTypes` доступны `SqlBoolean`, `SqlByte`, `SqlInt16`,
+`SqlInt32`, `SqlInt64`, `SqlSingle`, `SqlDouble` и `SqlString`.
+У каждого значения есть типизированное свойство `Value` и проверка
+`IsNull`. `Utils.Eval` сохраняет конкретный SQL-тип при `CONVERT`,
+а литерал `NULL` в выражении остаётся `DBNull.Value`. Уменьшение
+разрядности и чтение `Value` у SQL `Null` дают двуязычные ошибки.
+Операторы выражений и остальные типы SQL ещё в работе.
+[Тест преобразований SQL](tests/fixtures/utils-sql-types-compat.pas).
+
 `System.Guid` доступен в объявлении типа и как результат `CONVERT` в `Eval`.
 `Guid.Parse` и `ToString` принимают форматы `D`, `N`, `B`, `P` и `X`.
 Конструктор поддерживает строку и массив из 16 байтов. `ToByteArray`
