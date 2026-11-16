@@ -302,7 +302,7 @@ std::unique_ptr<SyntaxExpr> make_conditional(Token token,std::unique_ptr<SyntaxE
 }
 
 enum class SyntaxStmtKind { block, declaration, constant_declaration, assignment, print, read, conditional, loop, increment, string_mutation, call, return_stmt,
-    for_loop, repeat_loop, break_stmt, continue_stmt, foreach_loop, local_routines, case_selection };
+    for_loop, repeat_loop, break_stmt, continue_stmt, foreach_loop, local_routines, case_selection, tuple_declaration };
 struct SyntaxRoutine;
 struct SyntaxStmt {
     SyntaxStmtKind kind = SyntaxStmtKind::block;
@@ -414,8 +414,14 @@ public:
                     root.type_declarations.emplace_back(type_name, std::move(type)); expect(";");
                 } while (is("[") || (current_.kind == TokenKind::name && (current_.escaped || !reserved(current_.text))));
             } else if (accept("var")) {
-                do { root.statements.push_back(declaration()); expect(";"); }
-                while (current_.kind == TokenKind::name && (current_.escaped || !reserved(current_.text)));
+                do {
+                    auto declared=declaration();
+                    if(declared.kind==SyntaxStmtKind::tuple_declaration && !declared.expression){
+                        for(auto& item:declared.statements)root.statements.push_back(std::move(item));
+                    }else root.statements.push_back(std::move(declared));
+                    expect(";");
+                }
+                while (is("(") || (current_.kind == TokenKind::name && (current_.escaped || !reserved(current_.text))));
             } else if (accept("const")) {
                 do { root.statements.push_back(constant_declaration()); expect(";"); }
                 while (current_.kind==TokenKind::name && (current_.escaped || !reserved(current_.text)));
@@ -835,10 +841,48 @@ private:
         if (accept(":")) result.annotation=type_syntax();
         expect("="); result.expression=expression(); return result;
     }
+    std::vector<Token> unpack_names() {
+        std::vector<Token> names;
+        do {
+            auto token=name();
+            if(token.text=="_" && !token.escaped)
+                throw Error("E_SYNTAX",token.location,"Expected an unpacking variable name",
+                    "Ожидалось имя переменной для распаковки");
+            names.push_back(std::move(token));
+        } while(accept(","));
+        expect(")");
+        return names;
+    }
     SyntaxStmt declaration() {
         SyntaxStmt result;
         result.kind = SyntaxStmtKind::declaration;
         result.token = current_;
+        if(accept("(")){
+            result.kind=SyntaxStmtKind::tuple_declaration;
+            result.tuple_bindings=unpack_names();
+            if(result.tuple_bindings.size()<2)
+                throw Error("E_SYNTAX",result.token.location,"Unpacking declaration needs at least two names",
+                    "В объявлении с распаковкой нужны хотя бы два имени");
+            expect(":=");
+            result.expression=expression();
+            if(result.expression->kind==SyntaxExprKind::tuple){
+                auto& parts=result.expression->arguments;
+                if(result.tuple_bindings.size()>parts.size())
+                    throw Error("E_TYPE",result.token.location,"Too many names to unpack this tuple",
+                        "Слишком много имён для распаковки кортежа");
+                // A literal expands to individual declarations in the source language.
+                for(std::size_t n=0;n<result.tuple_bindings.size();++n){
+                    SyntaxStmt item;
+                    item.kind=SyntaxStmtKind::declaration;
+                    item.token=result.tuple_bindings[n];
+                    item.names.push_back(std::move(result.tuple_bindings[n]));
+                    item.expression=std::move(parts[n]);
+                    result.statements.push_back(std::move(item));
+                }
+                result.expression.reset();
+            }
+            return result;
+        }
         result.names.push_back(name());
         while (accept(",")) result.names.push_back(name());
         if (accept(":")) result.annotation = type_syntax();
@@ -912,14 +956,7 @@ private:
             if(accept("(")){
                 if(!result.declares_control)fail("Expected var before foreach tuple bindings");
                 result.names.push_back({TokenKind::name,"$foreach_tuple",result.token.location});
-                do {
-                    auto binding=name();
-                    if(binding.text=="_" && !binding.escaped)
-                        throw Error("E_SYNTAX",binding.location,"Expected a foreach binding identifier",
-                            "Ожидалось имя переменной foreach");
-                    result.tuple_bindings.push_back(std::move(binding));
-                } while(accept(","));
-                expect(")");
+                result.tuple_bindings=unpack_names();
             }else{
                 result.names.push_back(name());
                 if (accept(":")) { result.annotation=type_syntax(); result.declares_control=true; }
@@ -9268,7 +9305,8 @@ private:
                     arm.arguments.push_back(binary("and",std::move(lower),std::move(upper),at));
                 } else arm.arguments.push_back(binary("=",selector_read(at),std::move(first),at));
             }
-            if (syntax_arm.body->kind==SyntaxStmtKind::declaration || syntax_arm.body->kind==SyntaxStmtKind::constant_declaration)
+            if (syntax_arm.body->kind==SyntaxStmtKind::declaration || syntax_arm.body->kind==SyntaxStmtKind::constant_declaration
+                || syntax_arm.body->kind==SyntaxStmtKind::tuple_declaration)
                 throw Error("E_SYNTAX",syntax_arm.body->token.location,"Case arm declarations require begin/end","Для объявлений в ветви case нужен блок begin/end");
             arm.body=std::make_unique<hir::Stmt>(scoped_statement(*syntax_arm.body));
             result.statements.push_back(std::move(arm));
@@ -9366,6 +9404,61 @@ private:
         --loop_depth_;for_controls_.erase(counter);
         output.statements.push_back(std::move(loop));scopes_.pop_back();return output;
     }
+    std::vector<hir::Stmt> unpack_variables(std::size_t source,Type source_type,const std::vector<Token>& names) {
+        if(names.empty())return {};
+        const auto location=names.front().location;
+        const auto shape=compound(source_type) ? std::optional<TypeInfo>{info(source_type,location)} : std::nullopt;
+        const bool fields=shape && (shape->kind==CompoundKind::tuple || key_value_pair_type(*shape));
+        if(fields && names.size()>shape->fields.size())
+            throw Error("E_TYPE",location,"Too many names to unpack this value",
+                "Слишком много имён для распаковки значения");
+        std::vector<hir::Stmt> assignments;
+        for(std::size_t n=0;n<names.size();++n){
+            const auto& name=names[n];
+            if(lookup(name))throw Error("E_DUPLICATE",name.location,"Unpacking variable name is already declared",
+                "Имя переменной распаковки уже объявлено");
+            auto receiver=std::make_unique<hir::Expr>();
+            receiver->kind=hir::ExprKind::local;
+            receiver->type=source_type;
+            receiver->location=name.location;
+            receiver->local=source;
+            auto item=std::make_unique<hir::Expr>();
+            item->location=name.location;
+            if(fields){
+                item->kind=hir::ExprKind::field;
+                item->type=shape->fields[n].type;
+                item->local=n;
+                item->left=std::move(receiver);
+            }else{
+                if(short_string(receiver->type))receiver=convert(std::move(receiver),Type::string);
+                if(fixed(receiver->type))receiver=fixed_view(std::move(receiver));
+                auto index=std::make_unique<hir::Expr>();
+                index->kind=hir::ExprKind::literal;
+                index->type=Type::integer;
+                index->location=name.location;
+                index->value=static_cast<std::int32_t>(n);
+                item->arguments.push_back(std::move(receiver));
+                item->arguments.push_back(std::move(index));
+                (void)bind_sequence_query(*item,"elementat");
+            }
+            if(module_.locals.size()>=4096)throw Error("E_LIMIT",name.location,"Local limit exceeded");
+            const auto slot=module_.locals.size();
+            const auto component=item->type;
+            module_.locals.push_back({name.text,component,!in_routine_});
+            scopes_.back().emplace(name.text,slot);
+            if(!in_routine_ && scopes_.size()>1)lexical_globals_.insert(slot);
+            if(compound(component) && info(component,name.location).kind==CompoundKind::new_set)
+                item=new_set_copy(std::move(item),name.location);
+            hir::Stmt assign;
+            assign.kind=hir::StmtKind::assign;
+            assign.location=name.location;
+            assign.local=slot;
+            assign.declaration=true;
+            assign.expression=std::move(item);
+            assignments.push_back(std::move(assign));
+        }
+        return assignments;
+    }
     hir::Stmt statement(const SyntaxStmt& source) {
         if (source.kind==SyntaxStmtKind::case_selection) return bind_case_statement(source);
         hir::Stmt result;
@@ -9429,6 +9522,26 @@ private:
                 if(array&&initialize.expression->kind==hir::ExprKind::array_initialized&&initialize.expression->operation=="initialize"){initialize.expression->right=std::make_unique<hir::Expr>();initialize.expression->right->kind=hir::ExprKind::local;initialize.expression->right->type=type;initialize.expression->right->location=name.location;initialize.expression->right->local=local;}
                 constant_initializers_.push_back(std::move(initialize));
             }
+            break;
+        }
+        case SyntaxStmtKind::tuple_declaration: {
+            if(!source.expression){
+                for(const auto& item:source.statements)result.statements.push_back(statement(item));
+                break;
+            }
+            auto value=expression(*source.expression);
+            const auto type=value->type;
+            if(module_.locals.size()>=4096)throw Error("E_LIMIT",result.location,"Local limit exceeded");
+            const auto temporary=module_.locals.size();
+            module_.locals.push_back({"$unpack_"+std::to_string(temporary),type,!in_routine_});
+            hir::Stmt initialize;
+            initialize.kind=hir::StmtKind::assign;
+            initialize.location=result.location;
+            initialize.local=temporary;
+            initialize.expression=std::move(value);
+            result.statements.push_back(std::move(initialize));
+            for(auto& binding:unpack_variables(temporary,type,source.tuple_bindings))
+                result.statements.push_back(std::move(binding));
             break;
         }
         case SyntaxStmtKind::declaration: {
@@ -9615,45 +9728,7 @@ private:
             result.sequence_local=temporary(sequence); result.index_local=temporary(lazy ? Type::int64 : Type::integer); result.version_local=temporary(Type::int64);
             result.target=std::make_unique<hir::Expr>(); result.target->kind=hir::ExprKind::local;
             result.target->local=control; result.target->type=type; result.target->location=name.location;
-            std::vector<hir::Stmt> tuple_assignments;
-            if(!source.tuple_bindings.empty()){
-                const auto location=source.tuple_bindings.front().location;
-                if(!compound(element) || (info(element,location).kind!=CompoundKind::tuple
-                    && !key_value_pair_type(info(element,location))))
-                    throw Error("E_TYPE",location,"Foreach bindings require tuple or dictionary pair elements",
-                        "Для распаковки foreach требуются элементы-кортежи или пары словаря");
-                const auto& fields=info(element,location).fields;
-                if(source.tuple_bindings.size()>fields.size())
-                    throw Error("E_TYPE",location,"Too many foreach bindings for the element",
-                        "Слишком много переменных для распаковки элемента foreach");
-                for(std::size_t n=0;n<source.tuple_bindings.size();++n){
-                    const auto& binding=source.tuple_bindings[n];
-                    if(lookup(binding))throw Error("E_DUPLICATE",binding.location,"Foreach binding name is already declared",
-                        "Имя переменной распаковки foreach уже объявлено");
-                    const auto slot=module_.locals.size();
-                    const auto component=fields[n].type;
-                    module_.locals.push_back({binding.text,component,!in_routine_});
-                    scopes_.back().emplace(binding.text,slot);
-                    if(!in_routine_)lexical_globals_.insert(slot);
-
-                    hir::Stmt assignment;
-                    assignment.kind=hir::StmtKind::assign;
-                    assignment.location=binding.location;
-                    assignment.local=slot;
-                    assignment.declaration=true;
-                    assignment.expression=std::make_unique<hir::Expr>();
-                    assignment.expression->kind=hir::ExprKind::field;
-                    assignment.expression->type=component;
-                    assignment.expression->local=n;
-                    assignment.expression->location=binding.location;
-                    assignment.expression->left=std::make_unique<hir::Expr>();
-                    assignment.expression->left->kind=hir::ExprKind::local;
-                    assignment.expression->left->type=element;
-                    assignment.expression->left->location=binding.location;
-                    assignment.expression->left->local=control;
-                    tuple_assignments.push_back(std::move(assignment));
-                }
-            }
+            auto tuple_assignments=unpack_variables(control,element,source.tuple_bindings);
             std::optional<std::size_t> index_control;
             if(source.names.size()==2){
                 const auto& index=source.names[1];

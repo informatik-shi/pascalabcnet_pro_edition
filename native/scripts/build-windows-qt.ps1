@@ -186,6 +186,7 @@ ReadAllText, ReadAllLines, ReadLines и Text.ReadToEnd используют те
 loop n do вычисляет целое n один раз и использует правила счётчика исходного PascalABC.NET.
 foreach ... index i предоставляет доступный для чтения индекс Integer с нуля внутри тела цикла.
 foreach var (a,b) распаковывает кортежи и пары словаря с известными типами полей.
+var (a,b) := value и foreach var (a,b) поддерживают типизированную распаковку последовательностей.
 Текстовые файлы с BOM читаются как UTF-8, UTF-16LE/BE или UTF-32LE/BE.
 Символы CP1251 и ANSI-алиасы: examples/windows-characters.pas.
 Encoding, CP1251/ASCII/Unicode и выбор кодировки ReadAllText/WriteAllText: examples/text-encodings.pas.
