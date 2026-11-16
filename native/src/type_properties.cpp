@@ -9,6 +9,7 @@
 #include "sql_date_time.hpp"
 #include "sql_guid.hpp"
 #include "sql_binary.hpp"
+#include "countries.hpp"
 #include <new>
 
 namespace abc {
@@ -148,6 +149,7 @@ Definition definition(const Program& program,ReflectedType type,Work& work){
             break;
         }
         if(database_null_type(info)){result.name=u"DBNull";break;}
+        if(info.name==system_attribute_name){result.name=u"Attribute";break;}
         if (info.kind==CompoundKind::enumeration && info.name=="system.midpointrounding") {
             result.name=u"MidpointRounding";result.name_space=u"System";break;
         }

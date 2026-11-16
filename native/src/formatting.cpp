@@ -15,6 +15,7 @@
 #include "sql_date_time.hpp"
 #include "sql_guid.hpp"
 #include "sql_binary.hpp"
+#include "countries.hpp"
 #include "composite_format.hpp"
 #include "decimal.hpp"
 #include "number_format.hpp"
@@ -38,6 +39,17 @@ std::optional<Value> class_to_string_override(Values& values,const Value& value,
             if(!values.invoke)throw runtime_error(RuntimeError::invalid_bytecode,values.location);
             const std::array<Value,1> arguments{value};
             return values.invoke(id,arguments);
+        }
+        if(type_info(values.program,type).name==country_class_name){
+            const auto& object=std::get<std::shared_ptr<Aggregate>>(value);
+            std::u16string text=u"(";
+            for(std::size_t i=0;i<4;++i){
+                const auto field=format_field(object->items[i]->value,0,std::nullopt,values.location);
+                if(field.size()>1'048'574-text.size())throw runtime_error(RuntimeError::string_limit,values.location);
+                if(i)text+=u',';
+                text+=field;
+            }
+            return text+u')';
         }
     }
     return {};
@@ -120,6 +132,7 @@ class ObjectWriter {
             const auto& actual=type_info(program,object->type);
             if(const auto rendered=class_to_string_override(values,Value{object},object->type))
                 append(string_text(*rendered));
+            else if(actual.name==country_attribute_name)append(u"(Countries.Att)");
             else class_contents(object,actual);
         }
         else if(ordinal_range_type(info))append(ordinal_range_text(object));

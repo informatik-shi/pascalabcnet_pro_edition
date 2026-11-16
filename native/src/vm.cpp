@@ -15,6 +15,7 @@
 #include "sql_date_time.hpp"
 #include "sql_guid.hpp"
 #include "sql_binary.hpp"
+#include "countries.hpp"
 #include "calendar.hpp"
 #include "record_initialization.hpp"
 #include "files.hpp"
@@ -617,6 +618,14 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
         case Op::database_null:
             stack.push_back(values.database_null(instruction.type));
             break;
+        case Op::countries_call: {
+            const auto method=static_cast<CountriesMethod>(instruction.operand);
+            const auto& shape=type_info(program,instruction.type);
+            std::vector<Value> arguments(countries_parameters(instruction.type,shape,method).size());
+            for(auto i=arguments.rbegin();i!=arguments.rend();++i)*i=pop();
+            stack.push_back(countries_invoke(values,files,options,instruction.type,method,arguments));
+            break;
+        }
         case Op::utils_eval_object: {
             const auto expression=pop();
             stack.push_back(utils_eval_object(values,expression,instruction.type,static_cast<Type>(instruction.operand),options));

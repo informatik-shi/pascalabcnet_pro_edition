@@ -10,6 +10,7 @@
 #include "sql_date_time.hpp"
 #include "sql_guid.hpp"
 #include "sql_binary.hpp"
+#include "countries.hpp"
 #include "decimal.hpp"
 #include "binary_file.hpp"
 #include "scalar_serialization.hpp"
@@ -222,6 +223,9 @@ private:
         case hir::ExprKind::sql_binary_call:
             for(const auto& argument:node.arguments)expression(*argument);
             emit(Op::sql_binary_call,node.operation_type,node.local,node.location);break;
+        case hir::ExprKind::countries_call:
+            for(const auto& argument:node.arguments)expression(*argument);
+            emit(Op::countries_call,node.operation_type,node.local,node.location);break;
         case hir::ExprKind::database_null:
             emit(Op::database_null,node.type,0,node.location);break;
         case hir::ExprKind::tuple_literal:
@@ -1369,6 +1373,11 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if(instruction.operand || !compound(type) || !database_null_type(type_info(program,type)))
                 invalid(instruction,"Invalid DBNull value");
             break;
+        case Op::countries_call:
+            if(instruction.operand>static_cast<std::size_t>(CountriesMethod::continent)
+                || !countries_method_valid(program.types,type,static_cast<CountriesMethod>(instruction.operand)))
+                invalid(instruction,"Invalid Countries call metadata");
+            break;
         case Op::utils_eval_object: {
             const auto missing=static_cast<Type>(instruction.operand);
             if(!compound(type) || type_info(program,type).kind!=CompoundKind::boxed_object
@@ -2038,6 +2047,13 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         case Op::client_server_run: require(instruction.type); break;
         case Op::utils_benchmark: require(Type::integer); require(instruction.type); stack.push_back(Type::real); break;
         case Op::database_null: stack.push_back(instruction.type); break;
+        case Op::countries_call: {
+            const auto method=static_cast<CountriesMethod>(instruction.operand);
+            const auto parameters=countries_parameters(instruction.type,type_info(program,instruction.type),method);
+            for(auto i=parameters.rbegin();i!=parameters.rend();++i)require(*i);
+            stack.push_back(countries_result(instruction.type,method));
+            break;
+        }
         case Op::utils_record_bytes: require(static_cast<Type>(instruction.operand)); stack.push_back(instruction.type); break;
         case Op::guid_call: {
             const auto bytes=type_info(program,instruction.type).element;
@@ -2445,6 +2461,10 @@ void verify(const Program& program) {
             || type.key!=Type::invalid || !type.fields.empty()
             || std::count_if(program.types.begin(),program.types.end(),database_null_type)!=1))
             throw Error("E_BYTECODE",{},"Invalid DBNull type metadata","Недопустимое описание типа DBNull");
+        if((type.name==country_class_name || type.name==country_attribute_name || type.name==system_attribute_name)
+            && (!countries_class_shape(program.types,type)
+                || std::ranges::count(program.types,type.name,&TypeInfo::name)!=1))
+            throw Error("E_BYTECODE",{},"Invalid Countries class metadata","Недопустимое описание класса из модуля Countries");
         if(type.abstract_class && type.kind!=CompoundKind::object_class)
             throw Error("E_BYTECODE",{},"Abstract class flag on a non-class type");
         if(type.native_record!=NativeRecord::none && ((type.native_record!=NativeRecord::ordinal_range && type.native_record!=NativeRecord::real_interval && type.native_record!=NativeRecord::key_value_pair && type.native_record!=NativeRecord::dictionary_enumerator && type.native_record!=NativeRecord::collection_enumerator && !complex_number_type(type) && !calendar_record(type) && !decimal_type(type) && !guid_record_type(type) && !date_offset_record(type) && !sql_scalar_record(type) && !sql_decimal_record(type) && !sql_money_record(type) && !sql_date_time_record(type) && !sql_guid_record(type) && !sql_binary_record(type)) || type.kind!=CompoundKind::record))throw Error("E_BYTECODE",{},"Invalid native record metadata");

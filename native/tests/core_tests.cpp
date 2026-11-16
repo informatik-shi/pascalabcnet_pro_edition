@@ -880,6 +880,18 @@ void timing_library() {
     error([&]{abc::verify(sql_binary);},"E_BYTECODE");
 }
 
+void countries_library() {
+    result("uses Countries;begin var c:=new Country(nil,'',-4,'a,b');Writeln(c.ToString);end.","(nil,,-4,a,b)\n");
+    compile_error("uses Countries;begin var c:Country;c.Население:=1;end.","E_TYPE");
+    compile_error("uses Countries;begin Writeln(ЗаполнитьМассивСтран(1));end.","E_TYPE");
+    compile_error("uses Countries;begin var c:=new Country('A','B','123','D');end.","E_TYPE");
+    compile_error("begin var c:Countries.Country;end.","E_TYPE");
+    runtime_error("uses Countries;begin var c:Country;Writeln(c.Название);end.","E_NIL");
+    auto program=abc::compile("uses Countries;begin Writeln(ЗаполнитьМассивСтран.Length);end.");
+    for(auto& instruction:program.code)if(instruction.op==abc::Op::countries_call)instruction.operand=32768;
+    error([&]{abc::verify(program);},"E_BYTECODE");
+}
+
 void sequence_text_and_flatten() {
     result("begin Writeln(Seq(1,2,3).JoinToString,'|',JoinToString(Arr(1,2,3),','));Writeln(PABCSystem.JoinIntoString(Seq(1,2),nil));Writeln('abc'.JoinToString,'|',Arr('a','b').JoinIntoString('-'));Writeln(Seq(True,False).JoinToString(':'));end.","1 2 3|1,2,3\n12\nabc|a-b\nTrue:False\n");
     result("begin var a:=Arr(nil,'abc','',nil);Writeln('[',a.JoinToString('|'),'] [',a.JoinToString,'] [',a.JoinToString(nil),']');Writeln(new integer[0].JoinToString.Length);var l:=new List<integer>;l.Add(4);l.Add(5);Writeln(l.JoinToString('/'));end.","[|abc||] [ abc  ] [abc]\n0\n4/5\n");
@@ -8033,6 +8045,7 @@ int main() {
     list_search_and_ranges();
     list_bulk_ranges();
     sequence_text_and_flatten();
+    countries_library();
     timing_library();
     list_capacity_library();
     list_factories_library();

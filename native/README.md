@@ -3355,6 +3355,18 @@ OLE Automation. Присваивание записи переменной `Obje
 остаются в работе. [Тест RecordToByteArray](tests/fixtures/utils-record-layout-compat.pas),
 [формат даты OLE Automation](https://learn.microsoft.com/en-us/dotnet/api/system.datetime.tooadate?view=netframework-4.8.1).
 
+## Countries
+
+`uses Countries` подключает ссылочные типы `Country` и `Att` и функцию
+`ЗаполнитьМассивСтран`. У `Country` четыре свойства только для чтения.
+`Название`, `Столица` и `Континент` имеют тип `string`, а `Население`
+имеет тип `integer`. У `Att` доступно поле `Num` типа `integer`.
+Функция читает штатный `Страны.csv` из папки `Files/Databases` рядом с
+интерпретатором. При отсутствии копии в поставке она ищет файл в `Databases`
+текущего каталога. Проверка сверяет все 196 записей с PascalABC.NET.
+Отражение атрибутов свойств остаётся в работе.
+[Тест Countries](tests/fixtures/countries-compat.pas).
+
 ## Символы Windows-1251
 
 ChrWindows(byte):char и OrdWindows(char):byte перенесены вместе с устаревшими

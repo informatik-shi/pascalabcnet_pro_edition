@@ -21,6 +21,7 @@
 #include "sql_date_time.hpp"
 #include "sql_guid.hpp"
 #include "sql_binary.hpp"
+#include "countries.hpp"
 #include "decimal.hpp"
 #include "fixed_array.hpp"
 #include "type_names.hpp"
@@ -385,7 +386,7 @@ public:
             do {
                 auto module = name();while(accept("."))module.text+="."+name().text;
                 if (module.text != "pabcsystem" && module.text != "arrays" && module.text != "collections"
-                    && module.text != "filesoperations" && module.text != "events" && module.text != "pointrect" && module.text != "school" && module.text != "system" && module.text != "system.text" && module.text != "system.numerics" && module.text != "system.data.sqltypes" && module.text != "inifile" && module.text != "oberon00system" && module.text != "sockets" && module.text != "clientserver" && module.text != "utils")
+                    && module.text != "filesoperations" && module.text != "events" && module.text != "pointrect" && module.text != "school" && module.text != "system" && module.text != "system.text" && module.text != "system.numerics" && module.text != "system.data.sqltypes" && module.text != "inifile" && module.text != "oberon00system" && module.text != "sockets" && module.text != "clientserver" && module.text != "utils" && module.text != "countries")
                     throw Error("E_UNSUPPORTED", module.location, "Unit is not ported yet: '" + module.text + "'");
                 if (module.text == "collections") root.collections_imported = true;
                 root.imported_units.insert(module.text);
@@ -661,6 +662,10 @@ private:
                 result->unit="oberon00system";
                 result->kind=name().text;
             }
+            if(result->kind=="countries" && accept(".")){
+                result->unit="countries";
+                result->kind=name().text;
+            }
             if (result->kind=="pabcsystem" && is(".") && [&]{
                 auto probe=lexer_;
                 const auto name=probe.next().text;
@@ -706,7 +711,7 @@ private:
                 else if (result->kind!="func" && result->kind!="action" && result->kind!="predicate" && result->kind!="type" && result->kind!="void" && result->kind!="single" && result->kind!="object" && result->kind!="icomparable" && result->kind!="iequatable"
                     && result->kind!="datetime" && result->kind!="timespan" && result->kind!="datetimekind" && result->kind!="dayofweek"
                     && result->kind!="decimal" && result->kind!="midpointrounding" && result->kind!="dbnull" && result->kind!="guid"
-                    && result->kind!="datetimeoffset")
+                    && result->kind!="datetimeoffset" && result->kind!="attribute")
                     throw Error("E_UNSUPPORTED",result->token.location,"Unknown or unsupported type 'System."+result->kind+"'");
             }
             if (result->kind=="comparer" || result->kind=="equalitycomparer") accept("&");
@@ -2408,6 +2413,40 @@ private:
             const auto routine=module_.routines.size();module_.routines.push_back(std::move(body));found=builtin_routines_.emplace(id,routine).first;
         }
         return routine_value(found->second,source.token.location,expected);
+    }
+    bool countries_object(Type type,SourceLocation location,std::string_view name) const {
+        return compound(type) && info(type,location).kind==CompoundKind::object_class && info(type,location).name==name;
+    }
+    Type countries_type(std::string_view name,SourceLocation location) {
+        for(std::size_t i=0;i<module_.types.size();++i)
+            if(module_.types[i].name==name)return static_cast<Type>(64+i);
+        const auto parent=name==country_attribute_name ? countries_type(system_attribute_name,location) : Type::invalid;
+        if(module_.types.size()>=1024)throw Error("E_LIMIT",location,"Type limit exceeded");
+        module_.types.push_back(countries_class(name,parent));
+        return static_cast<Type>(63+module_.types.size());
+    }
+    void countries_expression(hir::Expr& result,Type owner,CountriesMethod method) {
+        result.kind=hir::ExprKind::countries_call;
+        result.operation_type=owner;
+        result.type=countries_result(owner,method);
+        result.local=static_cast<std::size_t>(method);
+    }
+    bool bind_countries_load(hir::Expr& result,const SyntaxExpr& source,std::string_view unit={}) {
+        if(source.token.text!="заполнитьмассивстран" || (!unit.empty() && unit!="countries")
+            || !imported_units_.contains("countries"))return false;
+        if(!source.arguments.empty())throw Error("E_TYPE",result.location,"ЗаполнитьМассивСтран takes no arguments",
+            "Функция ЗаполнитьМассивСтран не принимает аргументы");
+        const auto country=countries_type(country_class_name,result.location);
+        countries_expression(result,sequence_type(CompoundKind::array,country),CountriesMethod::load);
+        return true;
+    }
+    void bind_countries_constructor(hir::Expr& result,const SyntaxExpr& source,Type owner) {
+        const auto parameters=countries_parameters(owner,info(owner,result.location),CountriesMethod::construct);
+        if(source.arguments.size()!=parameters.size())throw Error("E_TYPE",result.location,"Wrong Countries constructor argument count",
+            "Неверное число аргументов конструктора из модуля Countries");
+        for(std::size_t i=0;i<parameters.size();++i)
+            result.arguments.push_back(convert(expression(*source.arguments[i],parameters[i]),parameters[i]));
+        countries_expression(result,owner,CountriesMethod::construct);
     }
     Type inifile_type(SourceLocation location) {
         if(!imported_units_.contains("inifile"))throw Error("E_UNSUPPORTED",location,"TIniFile requires uses IniFile");
@@ -4591,6 +4630,15 @@ private:
             if(qualified)throw Error("E_TYPE",syntax.token.location,"Unknown Oberon00System type","Неизвестный тип Oberon00System");
         }
         if (syntax.kind=="object" && syntax.named && syntax.unit.empty()) return object_type(syntax.token.location);
+        if(syntax.named && !syntax.system_qualified && (syntax.unit=="countries" || syntax.unit.empty())){
+            const bool imported=imported_units_.contains("countries");
+            if(imported && syntax.kind=="country")return countries_type(country_class_name,syntax.token.location);
+            if(imported && syntax.kind=="att")return countries_type(country_attribute_name,syntax.token.location);
+            if(syntax.unit=="countries")throw Error("E_TYPE",syntax.token.location,"Unknown or unimported Countries type",
+                "Неизвестный тип из модуля Countries или модуль не подключён");
+        }
+        if(syntax.kind=="attribute" && (syntax.system_qualified || imported_units_.contains("system")))
+            return countries_type(system_attribute_name,syntax.token.location);
         if (syntax.kind=="shortstring" && syntax.named && syntax.unit.empty() && !syntax.system_qualified)
             return short_string_type(max_short_string_capacity);
         if (syntax.kind=="$short_string") {
@@ -5286,6 +5334,15 @@ private:
     }
     std::unique_ptr<hir::Expr> class_member(std::unique_ptr<hir::Expr> result,const SyntaxExpr& source,Type expected,bool dynamic_dispatch=true) {
         const auto receiver=result->left->type;
+        if(countries_object(receiver,result->location,country_class_name)){
+            if(const auto property=country_property(source.token.text)){
+                if(source.kind==SyntaxExprKind::member_call || source.kind==SyntaxExprKind::call)
+                    throw Error("E_TYPE",result->location,"A Country property cannot be called","Свойство Country нельзя вызвать как подпрограмму");
+                result->arguments.push_back(std::move(result->left));
+                countries_expression(*result,receiver,*property);
+                return result;
+            }
+        }
         const auto& fields=info(receiver,result->location).fields;
         for (std::size_t i=0;i<fields.size();++i) if (fields[i].name==source.token.text) {
             result->kind=hir::ExprKind::field;result->local=i;result->type=fields[i].type;
@@ -5437,6 +5494,11 @@ private:
                 return number_format_expression(type,NumberFormatMethod::create,std::move(args),result->location);
             }
             if (!source.array_construction && is_string_builder(type)) return make_string_builder(type,source);
+            if(!source.array_construction && (countries_object(type,result->location,country_class_name)
+                || countries_object(type,result->location,country_attribute_name))){
+                bind_countries_constructor(*result,source,type);
+                break;
+            }
             if(!source.array_construction && enumeration(type)) {if(!source.arguments.empty())throw Error("E_TYPE",result->location,"Enumeration constructor takes no arguments");result->kind=hir::ExprKind::default_value;result->type=type;break;}
             if(!source.array_construction && compound(type) && (info(type,result->location).kind==CompoundKind::comparer || info(type,result->location).kind==CompoundKind::comparable_interface || info(type,result->location).kind==CompoundKind::comparer_interface || info(type,result->location).kind==CompoundKind::equality_comparer || info(type,result->location).kind==CompoundKind::equatable_interface || info(type,result->location).kind==CompoundKind::equality_comparer_interface))throw Error("E_TYPE",result->location,"An interface or abstract Comparer cannot be constructed directly");
             if(!source.array_construction && compound(type) && info(type,result->location).kind==CompoundKind::encoding)throw Error("E_TYPE",result->location,"Encoding cannot be constructed directly");
@@ -5882,6 +5944,7 @@ private:
                 if (bind_generators(*result,source,source.left->token.text)) break;
                 if (bind_school_table(*result,source,source.left->token.text)) break;
                 if (bind_client_server_run(*result,source,source.left->token.text)) break;
+                if (bind_countries_load(*result,source,source.left->token.text)) break;
                 if (bind_utils_benchmark(*result,source,source.left->token.text)) break;
                 if (bind_utils_object_eval(*result,source,source.left->token.text)) break;
                 if (bind_utils_record_bytes(*result,source,source.left->token.text)) break;
@@ -6512,6 +6575,8 @@ private:
                 return builtin_value;
             } else if(bind_client_server_global(*result,source.token.text)) {
                 return result;
+            } else if(bind_countries_load(*result,source)) {
+                return result;
             } else if(source.token.text=="emptyset") {
                 return empty_expression(empty_type(),EmptyMethod::singleton,{},result->location);
             } else if(source.token.text=="defaultencoding") {
@@ -6674,6 +6739,7 @@ private:
             if (!routine_names_.contains(source.token.text) && bind_generators(*result,source)) break;
             if (!routine_names_.contains(source.token.text) && bind_school_table(*result,source)) break;
             if (!routine_names_.contains(source.token.text) && bind_client_server_run(*result,source)) break;
+            if (!routine_names_.contains(source.token.text) && bind_countries_load(*result,source)) break;
             if (!routine_names_.contains(source.token.text) && bind_utils_benchmark(*result,source)) break;
             if (!routine_names_.contains(source.token.text) && bind_utils_object_eval(*result,source)) break;
             if (!routine_names_.contains(source.token.text) && bind_utils_record_bytes(*result,source)) break;

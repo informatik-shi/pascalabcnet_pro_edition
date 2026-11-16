@@ -25,6 +25,7 @@ add_library(abc_core
     src/sql_date_time.cpp
     src/sql_guid.cpp
     src/sql_binary.cpp
+    src/countries.cpp
     src/random.cpp
     src/random_sequence.cpp
     src/console_input.cpp
@@ -884,6 +885,10 @@ if(BUILD_TESTING)
     add_test(NAME utils_sql_binary_compatibility COMMAND ${CMAKE_COMMAND}
         "-DABC_RUNNER=$<TARGET_FILE:abc>" "-DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
         -DABC_FIXTURE_NAME=utils-sql-binary-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")
+    add_test(NAME countries_compatibility COMMAND ${CMAKE_COMMAND}
+        "-DABC_RUNNER=$<TARGET_FILE:abc>" "-DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
+        "-DABC_FIXTURE_DATA=${CMAKE_CURRENT_SOURCE_DIR}/../ReleaseGenerators/Files/Databases/Страны.csv"
+        -DABC_FIXTURE_NAME=countries-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")
     add_test(NAME small_integer_compatibility COMMAND ${CMAKE_COMMAND}
         "-DABC_RUNNER=$<TARGET_FILE:abc>" "-DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
         -DABC_FIXTURE_NAME=small-integers-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")
@@ -1312,6 +1317,8 @@ if(BUILD_TESTING)
 endif()
 
 install(TARGETS abc RUNTIME DESTINATION bin)
+set(abc_countries_csv "${CMAKE_CURRENT_SOURCE_DIR}/../ReleaseGenerators/Files/Databases/Страны.csv")
+install(FILES "${abc_countries_csv}" DESTINATION bin/Files/Databases)
 install(DIRECTORY examples/ DESTINATION examples)
 install(FILES README.md DESTINATION .)
 install(FILES stdlib-status.json DESTINATION .)
@@ -1355,6 +1362,7 @@ if(ABC_BUILD_IDE)
             COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:abc-qt>" "$<TARGET_FILE_DIR:abc-ide>/abc-qt"
             VERBATIM)
         install(PROGRAMS "$<TARGET_FILE:abc-qt>" DESTINATION "$<TARGET_FILE_NAME:abc-ide>.app/Contents/MacOS")
+        install(FILES "${abc_countries_csv}" DESTINATION "$<TARGET_FILE_NAME:abc-ide>.app/Contents/Resources/Files/Databases")
     else()
         install(TARGETS abc-qt RUNTIME DESTINATION bin)
         if(UNIX)
