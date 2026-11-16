@@ -1016,6 +1016,12 @@ private:
 }
 
 bool valid_type(Type type) { return scalar(type); }
+bool valid_utils_eval_types(const Program& program) {
+    return std::any_of(program.types.begin(),program.types.end(),decimal_type)
+        && std::any_of(program.types.begin(),program.types.end(),[](const auto& type){
+            return type.kind==CompoundKind::record && type.native_record==NativeRecord::date_time;
+        });
+}
 bool text_scalar(const Program& program,Type type){return scalar(type) || enumeration(program,type);}
 bool has_parameterless_constructor(const Program& program,Type owner){
     for(std::size_t i=0;i<program.routines.size();++i){
@@ -1317,7 +1323,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
                 || static_cast<std::size_t>(missing)!=instruction.operand
                 || !valid_value_type(program,missing) || !compound(missing)
                 || !database_null_type(type_info(program,missing))
-                || std::none_of(program.types.begin(),program.types.end(),decimal_type))
+                || !valid_utils_eval_types(program))
                 invalid(instruction,"Invalid Utils.Eval type metadata");
             break;
         }
@@ -1652,8 +1658,8 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if(stdlib::signatures()[instruction.operand].unit=="clientserver" && !program.client_server)
                 invalid(instruction,"Missing ClientServer globals");
             if(stdlib::typed_utils_eval(stdlib::signatures()[instruction.operand].function)
-                && std::none_of(program.types.begin(),program.types.end(),decimal_type))
-                invalid(instruction,"Missing Decimal type for Utils evaluation");
+                && !valid_utils_eval_types(program))
+                invalid(instruction,"Missing value types for Utils evaluation");
             if(stdlib::signatures()[instruction.operand].function>=stdlib::Function::resize_short_string
                 && stdlib::string_mutation_reference(stdlib::signatures()[instruction.operand].function))
                 invalid(instruction,"Short string procedure requires a reference");

@@ -2364,7 +2364,7 @@ private:
         }
         if(!chosen)return {};
         const auto id=*chosen;const auto& signature=catalog[id];
-        if(stdlib::typed_utils_eval(signature.function))(void)decimal_record_type(source.token.location);
+        if(stdlib::typed_utils_eval(signature.function))register_utils_eval_types(source.token.location);
         auto found=builtin_routines_.find(id);
         if (found==builtin_routines_.end()) {
             if (module_.routines.size()>=256) throw Error("E_LIMIT",source.token.location,"Routine limit exceeded");
@@ -8103,6 +8103,10 @@ private:
         result.kind=hir::ExprKind::utils_benchmark;result.type=Type::real;
         return true;
     }
+    void register_utils_eval_types(SourceLocation location) {
+        (void)decimal_record_type(location);
+        (void)calendar_type("datetime",location);
+    }
     std::unique_ptr<hir::Expr> utils_eval_value(SourceLocation location,Type expected) {
         const auto object=object_type(location);
         if(expected==Type::invalid)expected=function_type(object,{{Type::string,false,false}},location);
@@ -8112,7 +8116,7 @@ private:
         if(signature.element!=object || signature.parameters.size()!=1
             || signature.parameters[0]!=CallableParameter{Type::string,false,false})
             throw Error("E_TYPE",location,"Eval accepts String and returns Object","Eval принимает String и возвращает Object");
-        (void)decimal_record_type(location);
+        register_utils_eval_types(location);
         return native_operation_value(hir::ExprKind::utils_eval_object,expected,location,"$eval",eval_routines_,
             static_cast<std::size_t>(dbnull_type(location)));
     }
@@ -8120,7 +8124,7 @@ private:
         if(source.token.text!="eval" || (!unit.empty() && unit!="utils") || !imported_units_.contains("utils"))return false;
         if(source.arguments.size()!=1)
             throw Error("E_TYPE",result.location,"Eval takes one String expression","Eval принимает одно выражение типа String");
-        (void)decimal_record_type(result.location);
+        register_utils_eval_types(result.location);
         result.kind=hir::ExprKind::utils_eval_object;
         result.type=object_type(result.location);
         result.local=static_cast<std::size_t>(dbnull_type(result.location));
@@ -9366,7 +9370,7 @@ private:
         }
         if (!chosen) throw Error("E_TYPE",result.location,"No matching overload for '"+std::string(name)+"'");
         const auto& signature=catalog[*chosen]; result.local=*chosen; result.type=signature.result;
-        if(stdlib::typed_utils_eval(signature.function))(void)decimal_record_type(result.location);
+        if(stdlib::typed_utils_eval(signature.function))register_utils_eval_types(result.location);
         for (std::size_t n=0;n<result.arguments.size();++n)
             if(signature.reference_index!=n)result.arguments[n]=convert(std::move(result.arguments[n]),signature.parameters[n]);
     }

@@ -720,6 +720,10 @@ void timing_library() {
     compile_error("uses Utils;begin var value:=Eval(1);end.","E_TYPE");
     compile_error("uses System;begin var value:=new DBNull;end.","E_TYPE");
     compile_error("uses System;type Derived=class(DBNull) end;begin end.","E_TYPE");
+    error([&]{(void)run("uses Utils;begin Writeln(EvalStr('#2023-02-29#'));end.");},"E_FORMAT");
+    error([&]{(void)run("uses Utils;begin Writeln(EvalStr('##'));end.");},"E_FORMAT");
+    error([&]{(void)run("uses Utils;begin Writeln(Eval('CONVERT(1,System.DateTime)'));end.");},"E_TYPE");
+    error([&]{(void)run("uses Utils;begin Writeln(EvalStr('#2024-01-02#-#2024-01-01#'));end.");},"E_TYPE");
     auto evaluation=abc::compile("uses Utils;begin Writeln(Eval('1').GetType.Name);end.");
     for(auto& instruction:evaluation.code)if(instruction.op==abc::Op::utils_eval_object)
         instruction.operand=static_cast<std::size_t>(abc::Type::boolean);

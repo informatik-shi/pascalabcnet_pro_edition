@@ -1,5 +1,6 @@
 #include "utils_eval.hpp"
 #include "big_integer_runtime.hpp"
+#include "calendar.hpp"
 #include "comparable.hpp"
 #include "composite_format.hpp"
 #include "decimal.hpp"
@@ -16,7 +17,7 @@
 namespace abc {
 namespace {
 enum class Symbol {
-    end, literal, number, name, open, close, comma, plus, minus, multiply, divide, modulus,
+    end, literal, number, date_literal, name, open, close, comma, plus, minus, multiply, divide, modulus,
     equal, unequal, less, less_equal, greater, greater_equal, conjunction,
     disjunction, negate, is, null_value, true_value, false_value, is_null, is_not_null,
     length, trim, substring, choose, replace_null, absolute, membership, like, conversion
@@ -95,6 +96,7 @@ class Evaluation {
     const ExecutionOptions& options_;
     SourceLocation location_;
     Type decimal_;
+    Type date_;
     std::u16string_view source_;
     std::size_t cursor_=0, work_=0;
     std::vector<Node> nodes_;
@@ -132,6 +134,13 @@ class Evaluation {
         case u'/':return {Symbol::divide,{}};
         case u'%':return {Symbol::modulus,{}};
         case u'=':return {Symbol::equal,{}};
+        case u'#':{
+            const auto end=source_.find(u'#',cursor_);
+            if(end==source_.npos || end==cursor_)syntax();
+            auto text=std::u16string(source_.substr(cursor_,end-cursor_));
+            cursor_=end+1;
+            return {Symbol::date_literal,std::move(text)};
+        }
         case u'<':return {take(u'=') ? Symbol::less_equal : take(u'>') ? Symbol::unequal : Symbol::less,{}};
         case u'>':return {take(u'=') ? Symbol::greater_equal : Symbol::greater,{}};
         case u'\'': {
@@ -204,6 +213,67 @@ class Evaluation {
         format.negative_infinity=u"-∞";
         return stdlib::parse_provider_real(value,format,location_);
     }
+    Value calendar_call(CalendarMethod method,std::span<const Value> arguments={}) {
+        if(date_==Type::invalid)throw runtime_error(RuntimeError::invalid_bytecode,location_);
+        return calendar_invoke(values_,date_,static_cast<std::size_t>(method),arguments);
+    }
+    unsigned month_name(std::u16string_view token) const {
+        constexpr std::array<std::u16string_view,12> names{
+            u"january",u"february",u"march",u"april",u"may",u"june",
+            u"july",u"august",u"september",u"october",u"november",u"december"};
+        if(!token.empty() && token.back()==u'.')token.remove_suffix(1);
+        std::u16string name(token);
+        for(auto& ch:name)ch=lower_ascii(ch);
+        for(std::size_t i=0;i<names.size();++i)
+            if(names[i]==name || (name.size()==3 && names[i].starts_with(name)))return static_cast<unsigned>(i+1);
+        return 0;
+    }
+    std::u16string normalized_date(std::u16string_view value) {
+        const auto text=trim(value);
+        const auto numeric=[](std::u16string_view part){return !part.empty() && std::all_of(part.begin(),part.end(),digit);};
+        const auto colon=text.find(u':');
+        if(colon!=text.npos && numeric(text.substr(0,colon))){
+            return calendar_text(calendar_call(CalendarMethod::today),u"yyyy-MM-dd",location_)+u" "+std::u16string(text);
+        }
+        const auto date_end=text.find_first_of(u" Tt");
+        const auto prefix=text.substr(0,date_end);
+        const auto slash=prefix.find(u'/');
+        if(slash!=prefix.npos && numeric(prefix.substr(0,slash)) && numeric(prefix.substr(slash+1))){
+            auto result=std::u16string(prefix)+u"/"+calendar_text(calendar_call(CalendarMethod::today),u"yyyy",location_);
+            if(date_end!=text.npos)result.append(text.substr(date_end));
+            return result;
+        }
+        if(std::any_of(text.begin(),text.end(),letter)){
+            std::array<std::u16string_view,3> words{};
+            auto remaining=text;
+            for(auto& word:words){
+                const auto end=remaining.find_first_of(u" ,");
+                word=remaining.substr(0,end);
+                remaining.remove_prefix(word.size());
+                while(!remaining.empty() && (remaining.front()==u' ' || remaining.front()==u','))remaining.remove_prefix(1);
+            }
+            auto month=month_name(words[0]);
+            auto day=words[1],year=words[2];
+            if(!month){
+                month=month_name(words[1]);
+                day=words[0];
+                if(day.size()==4)std::swap(day,year);
+            }
+            if(month && numeric(day) && numeric(year)){
+                auto result=from_utf8(std::to_string(month))+u"/"+std::u16string(day)+u"/"+std::u16string(year);
+                if(!remaining.empty()){result.push_back(u' ');result.append(remaining);}
+                return result;
+            }
+        }
+        return std::u16string(text);
+    }
+    Value date_value(const Value& value) {
+        if(kind(value)==date_)return value;
+        const auto* text=std::get_if<std::u16string>(&value);
+        if(!text)operands();
+        const std::array<Value,1> input{normalized_date(*text)};
+        return calendar_call(CalendarMethod::parse,input);
+    }
     Value number(std::u16string text) {
         if(text.find_first_of(u"eE")==std::u16string::npos){
             if(text.find(u'.')!=std::u16string::npos) {
@@ -258,6 +328,7 @@ class Evaluation {
         if(name==u"System.Single")return Type::single;
         if(name==u"System.Double")return Type::real;
         if(name==u"System.Decimal")return decimal_;
+        if(name==u"System.DateTime")return date_;
         if(name==u"System.String")return Type::string;
         throw Error("E_UNSUPPORTED",location_,"Unknown or unsupported CONVERT target type",
             "Неизвестный или неподдерживаемый тип результата CONVERT");
@@ -281,6 +352,7 @@ class Evaluation {
         std::size_t left;
         switch(initial.kind){
         case Symbol::number:left=add({initial.kind,number(std::move(initial.text)),0,0,true});break;
+        case Symbol::date_literal:left=add({initial.kind,date_value(Value{std::move(initial.text)}),0,0,true});break;
         case Symbol::literal:left=add({initial.kind,std::move(initial.text),0,0,true});break;
         case Symbol::null_value:left=add({initial.kind,NilString{},0,0,true});break;
         case Symbol::true_value:case Symbol::false_value:
@@ -363,6 +435,7 @@ class Evaluation {
         format.positive_infinity=u"∞";
         format.negative_infinity=u"-∞";
         if(type==decimal_)return format_decimal(value,{},format,location_);
+        if(type==date_)return calendar_text(value,{},location_);
         if(type==Type::real || type==Type::single || integer_type(type))
             return format_number(value,type,{},format,location_);
         return format_scalar(value,location_);
@@ -487,6 +560,7 @@ class Evaluation {
     }
     int compare(const Value& left,const Value& right,bool equality=true) {
         const auto a=kind(left),b=kind(right);
+        if(a==date_ || b==date_)return compare_calendar_values(date_value(left),date_value(right));
         if((a==Type::string && b==Type::character) || (a==Type::character && b==Type::string))
             return compare(Value{text(left)},Value{text(right)},equality);
         if(a==Type::character && b==Type::character){
@@ -564,6 +638,8 @@ class Evaluation {
             if(null(candidate))continue;
             if(type==Type::string){
                 if(compare(left,Value{text(candidate)})==0)return true;
+            }else if(type==date_){
+                if(compare_calendar_values(left,date_value(candidate))==0)return true;
             }else if(type==Type::real){
                 if(floating_order(real(left),real(candidate))==0)return true;
             }else if(type==Type::single){
@@ -633,6 +709,7 @@ class Evaluation {
         if(target==Type::real)return real(value);
         if(target==Type::single)return single(value);
         if(target==decimal_)return as_decimal(value);
+        if(target==date_)return date_value(value);
         if(target==Type::boolean)return convert_boolean(value,true);
         if(target!=Type::character)throw runtime_error(RuntimeError::invalid_bytecode,location_);
         if(kind(value)==Type::character)return value;
@@ -691,8 +768,8 @@ class Evaluation {
         }
     }
 public:
-    Evaluation(Values& values,const ExecutionOptions& options,Type decimal,std::u16string_view source)
-        :values_(values),options_(options),location_(values.location),decimal_(decimal),source_(source){}
+    Evaluation(Values& values,const ExecutionOptions& options,Type decimal,Type date,std::u16string_view source)
+        :values_(values),options_(options),location_(values.location),decimal_(decimal),date_(date),source_(source){}
     Value compute() {
         advance();
         Value value=NilString{};
@@ -714,18 +791,22 @@ public:
     }
 };
 
-Type evaluator_decimal(const Program& program) {
+Type evaluator_native_type(const Program& program,NativeRecord type) {
     for(std::size_t i=0;i<program.types.size();++i)
-        if(decimal_type(program.types[i]))return static_cast<Type>(64+i);
+        if(program.types[i].native_record==type)return static_cast<Type>(64+i);
     return Type::invalid;
+}
+Evaluation evaluate_text(Values& values,const Value& expression,const ExecutionOptions& options) {
+    return {values,options,evaluator_native_type(values.program,NativeRecord::decimal_value),
+        evaluator_native_type(values.program,NativeRecord::date_time),string_text(expression)};
 }
 }
 
 Value utils_eval(Values& values,const Value& expression,Type result,const ExecutionOptions& options) {
-    return Evaluation(values,options,evaluator_decimal(values.program),string_text(expression)).run(result);
+    return evaluate_text(values,expression,options).run(result);
 }
 Value utils_eval_object(Values& values,const Value& expression,Type object,Type missing,const ExecutionOptions& options) {
-    auto value=Evaluation(values,options,evaluator_decimal(values.program),string_text(expression)).compute();
+    auto value=evaluate_text(values,expression,options).compute();
     if(null(value))value=values.database_null(missing);
     const auto type=value_type(value);
     return values.box_value(object,type,std::move(value));
