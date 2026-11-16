@@ -1,0 +1,12 @@
+-1 1
+False True
+Null True -1 0
+1
+16 255 0
+ffffffff-ffff-ffff-ffff-000000000000 255
+00000000-0000-0000-0000-000000000001
+00112233-4455-6677-8899-aabbccddeeff
+ffffffff-ffff-ffff-ffff-000000000000
+sorted key
+System.Data.SqlTypes.SqlGuid 00000000-0000-0000-0000-000000000001
+True

@@ -866,6 +866,12 @@ void timing_library() {
     auto sql_date_time=abc::compile("uses System.Data.SqlTypes;begin Writeln(SqlDateTime.MaxValue.TimeTicks);end.");
     for(auto& instruction:sql_date_time.code)if(instruction.op==abc::Op::sql_date_time_call)instruction.operand=32768;
     error([&]{abc::verify(sql_date_time);},"E_BYTECODE");
+    error([&]{(void)run("uses System.Data.SqlTypes;begin Writeln(SqlGuid.Parse('NULL').ToString);end.");},"E_FORMAT");
+    error([&]{(void)run("uses System.Data.SqlTypes;begin Writeln(SqlGuid.Null.Value);end.");},"E_NIL","SQL Null");
+    error([&]{(void)run("uses System.Data.SqlTypes;begin Writeln(SqlGuid.Null.ToByteArray.Length);end.");},"E_NIL","SQL Null");
+    auto sql_guid=abc::compile("uses System.Data.SqlTypes;begin Writeln(SqlGuid.Null.GetHashCode);end.");
+    for(auto& instruction:sql_guid.code)if(instruction.op==abc::Op::sql_guid_call)instruction.operand=32768;
+    error([&]{abc::verify(sql_guid);},"E_BYTECODE");
 }
 
 void sequence_text_and_flatten() {

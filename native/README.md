@@ -3294,6 +3294,14 @@ ZIP.
 календарём. Дополнительные конструкторы и форматы ещё в работе.
 [Тест SqlDateTime](tests/fixtures/utils-sql-datetime-compat.pas).
 
+`SqlGuid` принимает `Guid`, строку или массив из 16 байтов.
+`ToByteArray` возвращает копию. `CompareTo` и сортировка используют
+порядок байтов SQL Server. `Equals` и `GetHashCode` поддерживают
+поиск значений в коллекциях. `CONVERT` в `Eval`
+принимает `Guid` и возвращает `SqlGuid`. Дополнительный
+конструктор по частям и перегрузки операторов ещё в работе.
+[Тест SqlGuid](tests/fixtures/utils-sql-guid-compat.pas).
+
 `System.Guid` доступен в объявлении типа и как результат `CONVERT` в `Eval`.
 `Guid.Parse` и `ToString` принимают форматы `D`, `N`, `B`, `P` и `X`.
 Конструктор поддерживает строку и массив из 16 байтов. `ToByteArray`

@@ -19,6 +19,7 @@
 #include "sql_decimal.hpp"
 #include "sql_money.hpp"
 #include "sql_date_time.hpp"
+#include "sql_guid.hpp"
 #include "decimal.hpp"
 #include "fixed_array.hpp"
 #include "type_names.hpp"
@@ -683,7 +684,8 @@ private:
                         throw Error("E_UNSUPPORTED",ns.location,"Unknown System.Data namespace","Неизвестное пространство имён System.Data");
                     expect(".");
                     result->kind=name().text;
-                    if(!sql_scalar_type(result->kind) && result->kind!="sqldecimal" && result->kind!="sqlmoney" && result->kind!="sqldatetime")
+                    if(!sql_scalar_type(result->kind) && result->kind!="sqldecimal" && result->kind!="sqlmoney"
+                        && result->kind!="sqldatetime" && result->kind!="sqlguid")
                         throw Error("E_UNSUPPORTED",result->token.location,"Unknown or unsupported SQL value type",
                             "Неизвестный или неподдерживаемый тип значения SQL");
                 }
@@ -3022,8 +3024,11 @@ private:
     bool is_sql_date_time(Type type) const {
         return compound(type) && sql_date_time_record(info(type,{}));
     }
+    bool is_sql_guid(Type type) const {
+        return compound(type) && sql_guid_record(info(type,{}));
+    }
     bool is_sql_value(Type type) const {
-        return is_sql_decimal(type) || is_sql_money(type) || is_sql_date_time(type)
+        return is_sql_decimal(type) || is_sql_money(type) || is_sql_date_time(type) || is_sql_guid(type)
             || (compound(type) && sql_scalar_record(info(type,{})));
     }
     Type declare_sql_scalar(const SqlScalarType& description,SourceLocation location) {
@@ -3073,10 +3078,23 @@ private:
         module_.types.push_back(std::move(shape));
         return static_cast<Type>(63+module_.types.size());
     }
+    Type sql_guid_type(SourceLocation location) {
+        for(std::size_t i=0;i<module_.types.size();++i)
+            if(sql_guid_record(module_.types[i]))return static_cast<Type>(64+i);
+        const auto guid=guid_type(location);
+        const auto bytes=info(guid,location).element;
+        if(module_.types.size()>=1024)throw Error("E_LIMIT",location,"Type limit exceeded");
+        TypeInfo shape{"sqlguid",CompoundKind::record,guid,{{"_defined",Type::boolean,false},{"_guid",guid,false}}};
+        shape.key=bytes;
+        shape.native_record=NativeRecord::sql_guid;
+        module_.types.push_back(std::move(shape));
+        return static_cast<Type>(63+module_.types.size());
+    }
     Type declare_sql_type(std::string_view name,SourceLocation location) {
         if(name=="sqldecimal")return sql_decimal_type(location);
         if(name=="sqlmoney")return sql_money_type(location);
         if(name=="sqldatetime")return sql_date_time_type(location);
+        if(name=="sqlguid")return sql_guid_type(location);
         if(const auto* type=sql_scalar_type(name))return declare_sql_scalar(*type,location);
         return Type::invalid;
     }
@@ -3087,7 +3105,8 @@ private:
             if(imported_units_.contains("system.data.sqltypes"))
                 return declare_sql_type(target.token.text,target.token.location);
         }
-        if((!sql_scalar_type(target.token.text) && target.token.text!="sqldecimal" && target.token.text!="sqlmoney" && target.token.text!="sqldatetime")
+        if((!sql_scalar_type(target.token.text) && target.token.text!="sqldecimal" && target.token.text!="sqlmoney"
+            && target.token.text!="sqldatetime" && target.token.text!="sqlguid")
             || (target.kind!=SyntaxExprKind::field && target.kind!=SyntaxExprKind::member_call) || !target.left)
             return Type::invalid;
         const auto* ns=target.left.get();
@@ -3182,6 +3201,31 @@ private:
         const auto method=arguments.size()==2 ? M::from_sql_ticks : M::from_date;
         return sql_date_time_expression(owner,method,std::move(arguments),location);
     }
+    std::unique_ptr<hir::Expr> sql_guid_expression(Type owner,SqlGuidMethod method,
+        std::vector<std::unique_ptr<hir::Expr>> arguments,SourceLocation location) {
+        const auto parameters=sql_guid_parameters(owner,info(owner,location),method);
+        if(arguments.size()!=parameters.size())
+            throw Error("E_TYPE",location,"Invalid SqlGuid argument count","Недопустимое число аргументов SqlGuid");
+        for(std::size_t i=0;i<parameters.size();++i)arguments[i]=convert(std::move(arguments[i]),parameters[i]);
+        auto result=std::make_unique<hir::Expr>();
+        result->kind=hir::ExprKind::sql_guid_call;
+        result->type=sql_guid_result(owner,info(owner,location),method);
+        result->operation_type=owner;
+        result->local=static_cast<std::size_t>(method);
+        result->location=location;
+        result->arguments=std::move(arguments);
+        return result;
+    }
+    std::unique_ptr<hir::Expr> construct_sql_guid(Type owner,
+        std::vector<std::unique_ptr<hir::Expr>> arguments,SourceLocation location) {
+        using M=SqlGuidMethod;
+        if(arguments.size()!=1)
+            throw Error("E_TYPE",location,"SqlGuid construction requires one argument","Конструктору SqlGuid нужен один аргумент");
+        const auto argument=arguments.front()->type;
+        const auto& shape=info(owner,location);
+        const auto method=argument==shape.key ? M::from_bytes : argument==Type::string ? M::from_text : M::from_guid;
+        return sql_guid_expression(owner,method,std::move(arguments),location);
+    }
     std::unique_ptr<hir::Expr> make_sql_value(Type owner,const SyntaxExpr& source,SourceLocation location) {
         using M=SqlScalarMethod;
         std::vector<std::unique_ptr<hir::Expr>> arguments;
@@ -3189,6 +3233,7 @@ private:
         if(is_sql_decimal(owner))return construct_sql_decimal(owner,std::move(arguments),location);
         if(is_sql_money(owner))return construct_sql_money(owner,std::move(arguments),location);
         if(is_sql_date_time(owner))return construct_sql_date_time(owner,std::move(arguments),location);
+        if(is_sql_guid(owner))return construct_sql_guid(owner,std::move(arguments),location);
         const auto method=arguments.empty() ? M::null_value : M::create;
         return sql_expression(owner,method,std::move(arguments),location);
     }
@@ -3208,6 +3253,7 @@ private:
         if(is_sql_decimal(owner))return construct_sql_decimal(owner,std::move(arguments),location);
         if(is_sql_money(owner))return construct_sql_money(owner,std::move(arguments),location);
         if(is_sql_date_time(owner))return construct_sql_date_time(owner,std::move(arguments),location);
+        if(is_sql_guid(owner))return construct_sql_guid(owner,std::move(arguments),location);
         return sql_expression(owner,SqlScalarMethod::create,std::move(arguments),location);
     }
     std::unique_ptr<hir::Expr> bind_sql_decimal_static(Type owner,const SyntaxExpr& source) {
@@ -3270,6 +3316,17 @@ private:
         }
         throw Error("E_NAME",location,"Unknown static SqlDateTime member","Неизвестный статический член SqlDateTime");
     }
+    std::unique_ptr<hir::Expr> bind_sql_guid_static(Type owner,const SyntaxExpr& source) {
+        const auto location=source.token.location;
+        if(source.token.text=="parse"){
+            std::vector<std::unique_ptr<hir::Expr>> arguments;
+            for(const auto& argument:source.arguments)arguments.push_back(expression(*argument));
+            return sql_guid_expression(owner,SqlGuidMethod::parse,std::move(arguments),location);
+        }
+        if(source.token.text=="null" && source.kind==SyntaxExprKind::field)
+            return sql_guid_expression(owner,SqlGuidMethod::null_value,{},location);
+        throw Error("E_NAME",location,"Unknown static SqlGuid member","Неизвестный статический член SqlGuid");
+    }
     std::unique_ptr<hir::Expr> bind_sql_static(const SyntaxExpr& source) {
         if(source.kind==SyntaxExprKind::member_call)
             if(const auto owner=sql_type_owner(source);owner!=Type::invalid)return bind_sql_cast(owner,source);
@@ -3278,6 +3335,7 @@ private:
         if(is_sql_decimal(owner))return bind_sql_decimal_static(owner,source);
         if(is_sql_money(owner))return bind_sql_money_static(owner,source);
         if(is_sql_date_time(owner))return bind_sql_date_time_static(owner,source);
+        if(is_sql_guid(owner))return bind_sql_guid_static(owner,source);
         using M=SqlScalarMethod;
         constexpr std::pair<std::string_view,M> members[]{
             {"null",M::null_value},{"false",M::false_value},{"true",M::true_value},
@@ -3333,12 +3391,28 @@ private:
         for(const auto& argument:source.arguments)arguments.push_back(expression(*argument));
         return sql_date_time_expression(owner,member->second,std::move(arguments),source.token.location);
     }
+    std::unique_ptr<hir::Expr> bind_sql_guid_member(hir::Expr& receiver,const SyntaxExpr& source) {
+        using M=SqlGuidMethod;
+        constexpr std::pair<std::string_view,M> members[]{
+            {"value",M::value},{"isnull",M::is_null},{"tostring",M::to_string},{"tobytearray",M::to_bytes},
+            {"compareto",M::compare},{"equals",M::equal},{"gethashcode",M::hash}};
+        const auto member=std::find_if(std::begin(members),std::end(members),
+            [&](const auto& candidate){return candidate.first==source.token.text;});
+        if(member==std::end(members))
+            throw Error("E_NAME",source.token.location,"Unknown SqlGuid member","Неизвестный член SqlGuid");
+        const auto owner=receiver.left->type;
+        std::vector<std::unique_ptr<hir::Expr>> arguments;
+        arguments.push_back(std::move(receiver.left));
+        for(const auto& argument:source.arguments)arguments.push_back(expression(*argument));
+        return sql_guid_expression(owner,member->second,std::move(arguments),source.token.location);
+    }
     std::unique_ptr<hir::Expr> bind_sql_member(hir::Expr& receiver,const SyntaxExpr& source) {
         const auto owner=receiver.left->type;
         if(!is_sql_value(owner) || source.token.text=="gettype")return {};
         if(is_sql_decimal(owner))return bind_sql_decimal_member(receiver,source);
         if(is_sql_money(owner))return bind_sql_money_member(receiver,source);
         if(is_sql_date_time(owner))return bind_sql_date_time_member(receiver,source);
+        if(is_sql_guid(owner))return bind_sql_guid_member(receiver,source);
         using M=SqlScalarMethod;
         constexpr std::pair<std::string_view,M> members[]{
             {"value",M::value},{"isnull",M::is_null},{"tostring",M::to_string},{"isfalse",M::is_false},{"istrue",M::is_true}};
@@ -8713,6 +8787,7 @@ private:
         (void)sql_decimal_type(location);
         (void)sql_money_type(location);
         (void)sql_date_time_type(location);
+        (void)sql_guid_type(location);
     }
     std::unique_ptr<hir::Expr> utils_eval_value(SourceLocation location,Type expected) {
         const auto object=object_type(location);

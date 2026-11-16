@@ -13,6 +13,7 @@
 #include "sql_decimal.hpp"
 #include "sql_money.hpp"
 #include "sql_date_time.hpp"
+#include "sql_guid.hpp"
 #include "calendar.hpp"
 #include "record_initialization.hpp"
 #include "files.hpp"
@@ -670,6 +671,14 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
             std::vector<Value> arguments(sql_date_time_parameters(instruction.type,shape,method).size());
             for(std::size_t i=arguments.size();i>0;--i)arguments[i-1]=pop();
             stack.push_back(sql_date_time_invoke(values,instruction.type,method,arguments));
+            break;
+        }
+        case Op::sql_guid_call: {
+            const auto method=static_cast<SqlGuidMethod>(instruction.operand);
+            const auto& shape=type_info(program,instruction.type);
+            std::vector<Value> arguments(sql_guid_parameters(instruction.type,shape,method).size());
+            for(std::size_t i=arguments.size();i>0;--i)arguments[i-1]=pop();
+            stack.push_back(sql_guid_invoke(values,instruction.type,method,arguments));
             break;
         }
         case Op::utils_benchmark: {

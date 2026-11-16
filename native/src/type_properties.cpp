@@ -7,6 +7,7 @@
 #include "sql_decimal.hpp"
 #include "sql_money.hpp"
 #include "sql_date_time.hpp"
+#include "sql_guid.hpp"
 #include <new>
 
 namespace abc {
@@ -135,8 +136,11 @@ Definition definition(const Program& program,ReflectedType type,Work& work){
             result.assembly=u"System.Data";
             break;
         }
-        if(sql_decimal_record(info) || sql_money_record(info) || sql_date_time_record(info)){
-            result.name=sql_decimal_record(info) ? u"SqlDecimal" : sql_money_record(info) ? u"SqlMoney" : u"SqlDateTime";
+        if(sql_decimal_record(info) || sql_money_record(info) || sql_date_time_record(info) || sql_guid_record(info)){
+            if(sql_decimal_record(info))result.name=u"SqlDecimal";
+            else if(sql_money_record(info))result.name=u"SqlMoney";
+            else if(sql_date_time_record(info))result.name=u"SqlDateTime";
+            else result.name=u"SqlGuid";
             result.name_space=u"System.Data.SqlTypes";
             result.assembly=u"System.Data";
             break;
