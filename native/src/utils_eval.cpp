@@ -18,7 +18,7 @@ enum class Symbol {
     end, literal, number, open, close, comma, plus, minus, multiply, divide, modulus,
     equal, unequal, less, less_equal, greater, greater_equal, conjunction,
     disjunction, negate, is, null_value, true_value, false_value, is_null, is_not_null,
-    length, trim, substring, choose, replace_null, absolute
+    length, trim, substring, choose, replace_null, absolute, membership, like
 };
 
 struct Token {
@@ -32,6 +32,7 @@ struct Node {
     std::size_t left=0, right=0;
     bool literal=false;
     std::size_t third=0;
+    std::vector<std::size_t> members{};
 };
 
 bool digit(char16_t ch) { return ch>=u'0' && ch<=u'9'; }
@@ -67,7 +68,7 @@ unsigned precedence(Symbol kind) {
     case Symbol::disjunction:return 1;
     case Symbol::conjunction:return 2;
     case Symbol::equal:case Symbol::unequal:case Symbol::less:case Symbol::less_equal:
-    case Symbol::greater:case Symbol::greater_equal:case Symbol::is:return 3;
+    case Symbol::greater:case Symbol::greater_equal:case Symbol::is:case Symbol::membership:case Symbol::like:return 3;
     case Symbol::plus:case Symbol::minus:return 4;
     case Symbol::multiply:case Symbol::divide:case Symbol::modulus:return 5;
     default:return 0;
@@ -158,6 +159,8 @@ class Evaluation {
             if(word==u"iif")return {Symbol::choose,{}};
             if(word==u"isnull")return {Symbol::replace_null,{}};
             if(word==u"abs")return {Symbol::absolute,{}};
+            if(word==u"in")return {Symbol::membership,{}};
+            if(word==u"like")return {Symbol::like,{}};
             throw Error("E_UNSUPPORTED",location_,"This name or function is unavailable in Utils evaluation",
                 "Это имя или функция недоступны в вычислениях Utils");
         }
@@ -213,6 +216,17 @@ class Evaluation {
         if(advance()!=Symbol::close)syntax();
         return add({kind,NilString{},arguments[0],arguments[1],false,arguments[2]});
     }
+    std::size_t parse_membership(std::size_t value,unsigned depth) {
+        if(advance()!=Symbol::open)syntax();
+        Node test{Symbol::membership,NilString{},value};
+        test.members.push_back(parse(1,depth+1));
+        while(token_.kind==Symbol::comma){
+            advance();
+            test.members.push_back(parse(1,depth+1));
+        }
+        if(advance()!=Symbol::close)syntax();
+        return add(std::move(test));
+    }
     std::size_t parse(unsigned minimum,unsigned depth) {
         step(depth);
         auto initial=std::move(token_);
@@ -237,17 +251,25 @@ class Evaluation {
             break;
         default:syntax();
         }
-        while(precedence(token_.kind)>=minimum) {
+        while(precedence(token_.kind)>=minimum || (minimum<=3 && token_.kind==Symbol::negate)) {
+            const bool negate_match=token_.kind==Symbol::negate;
+            if(negate_match){
+                advance();
+                if(token_.kind!=Symbol::membership && token_.kind!=Symbol::like)syntax();
+            }
             const auto kind=advance();
             if(kind==Symbol::is){
                 const bool negate=token_.kind==Symbol::negate;
                 if(negate)advance();
                 if(advance()!=Symbol::null_value)syntax();
                 left=add({negate ? Symbol::is_not_null : Symbol::is_null,NilString{},left,0,false});
+            } else if(kind==Symbol::membership) {
+                left=parse_membership(left,depth);
             } else {
                 const auto right=parse(precedence(kind)+1,depth+1);
                 left=add({kind,NilString{},left,right,false});
             }
+            if(negate_match)left=add({Symbol::negate,NilString{},left});
         }
         return left;
     }
@@ -278,7 +300,30 @@ class Evaluation {
     Value as_decimal(const Value& value) {
         if(kind(value)==decimal_)return value;
         if(kind(value)==Type::string)return decimal_call(DecimalMethod::parse,value);
+        if(kind(value)==Type::real)return decimal_call(DecimalMethod::from_real,value);
         return decimal_call(DecimalMethod::from_signed,Value{integral_number(value,location_)});
+    }
+    Value signed_integer(const Value& value,Type target) {
+        const auto type=kind(value);
+        if(type==Type::boolean || type==Type::integer || type==Type::int64)
+            return checked_signed_integer(target,value,location_);
+        if(type==decimal_)
+            return decimal_call(target==Type::integer ? DecimalMethod::to_int32 : DecimalMethod::to_int64,
+                decimal_call(DecimalMethod::round,value));
+        if(type==Type::string) {
+            const auto answer=stdlib::try_parse_number(target,value,location_);
+            if(!answer)throw runtime_error(RuntimeError::number_text,location_,type_name(target));
+            return *answer;
+        }
+        if(type!=Type::real)operands();
+        const auto input=std::get<double>(value);
+        const auto floor=std::floor(input);
+        const auto fraction=input-floor;
+        const auto rounded=fraction>0.5 || (fraction==0.5 && std::fmod(floor,2)!=0) ? floor+1 : floor;
+        constexpr double int64_limit=0x1p63;
+        if(!std::isfinite(rounded) || rounded< -int64_limit || rounded>=int64_limit)
+            throw runtime_error(RuntimeError::integer_overflow,location_);
+        return checked_signed_integer(target,Value{static_cast<std::int64_t>(rounded)},location_);
     }
     unsigned numeric_rank(Type type) const {
         if(type==Type::integer)return 1;
@@ -389,11 +434,73 @@ class Evaluation {
         if(offset>text->size())return NilString{};
         return text->substr(offset,static_cast<std::size_t>(length));
     }
+    Value evaluate_membership(const Node& node,unsigned depth) {
+        const auto left=evaluate(node.left,depth);
+        std::vector<Value> candidates;
+        candidates.reserve(node.members.size());
+        for(const auto member:node.members)candidates.push_back(evaluate(member,depth));
+        if(null(left))return left;
+        const auto type=kind(left);
+        for(const auto& candidate:candidates){
+            if(null(candidate))continue;
+            if(type==Type::string){
+                if(compare(left,Value{text(candidate)})==0)return true;
+            }else if(type==Type::integer || type==Type::int64){
+                if(compare(left,signed_integer(candidate,type))==0)return true;
+            }else if(type==Type::real){
+                if(compare(left,Value{real(candidate)})==0)return true;
+            }else if(type==decimal_){
+                if(compare_decimal_values(left,as_decimal(candidate),location_)==0)return true;
+            }else if(type==Type::boolean){
+                const auto* argument=std::get_if<std::u16string>(&candidate);
+                const auto converted=argument ? boolean_text(*argument) : std::optional<bool>{boolean(candidate)};
+                if(!converted)operands();
+                if(std::get<bool>(left)==*converted)return true;
+            }else operands();
+        }
+        return false;
+    }
+    Value evaluate_like(const Value& left,const Value& right) {
+        if(null(left))return left;
+        const auto* source=std::get_if<std::u16string>(&left);
+        const auto* pattern=std::get_if<std::u16string>(&right);
+        if(!source || !pattern)operands();
+        std::u16string literal;
+        bool leading=false,trailing=false;
+        const auto wildcard=[](char16_t ch){return ch==u'*' || ch==u'%';};
+        const auto invalid=[&]{
+            throw Error("E_FORMAT",location_,"Invalid LIKE pattern","Некорректный шаблон LIKE");
+        };
+        for(std::size_t i=0;i<pattern->size();){
+            const auto ch=(*pattern)[i];
+            if(wildcard(ch)){
+                const bool starts=i==0;
+                do{++i;}while(i<pattern->size() && wildcard((*pattern)[i]));
+                if(starts)leading=true;
+                else if(i==pattern->size())trailing=true;
+                else invalid();
+            }else if(ch==u'['){
+                if(i+2>=pattern->size() || (*pattern)[i+2]!=u']')invalid();
+                literal.push_back((*pattern)[i+1]);
+                i+=3;
+            }else{
+                literal.push_back(ch);
+                ++i;
+            }
+        }
+        const auto value=comparison_text(*source);
+        if(!leading && !trailing)
+            return compare_culture_strings(value,comparison_text(literal),location_,options_,true)==0;
+        if(leading && !trailing)
+            return find_culture_text(value,comparison_text(literal),TextSearch::suffix,location_,options_);
+        return find_culture_text(value,literal,leading ? TextSearch::anywhere : TextSearch::prefix,location_,options_);
+    }
     Value evaluate(std::size_t index,unsigned depth) {
         step(depth);
         const auto& node=nodes_[index];
         if(node.literal)return node.value;
         if(argument_count(node.kind))return function(node,depth+1);
+        if(node.kind==Symbol::membership)return evaluate_membership(node,depth+1);
         auto left=evaluate(node.left,depth+1);
         if(node.kind==Symbol::is_null)return null(left);
         if(node.kind==Symbol::is_not_null)return !null(left);
@@ -407,6 +514,7 @@ class Evaluation {
             return arithmetic(Symbol::minus,Value{std::int32_t{0}},left);
         }
         auto right=evaluate(node.right,depth+1);
+        if(node.kind==Symbol::like)return evaluate_like(left,right);
         if(node.kind==Symbol::conjunction){
             if(null(left) || !boolean(left))return left;
             return null(right) ? right : Value{boolean(right)};
@@ -452,22 +560,7 @@ public:
             if(type==decimal_)return compare_decimal_values(value,decimal_call(DecimalMethod::zero,std::array<Value,0>{}),location_)!=0;
             return real(value)!=0;
         }
-        if(type==Type::boolean || type==Type::integer || type==Type::int64)
-            return checked_signed_integer(Type::integer,value,location_);
-        if(type==decimal_)
-            return decimal_call(DecimalMethod::to_int32,decimal_call(DecimalMethod::round,value));
-        if(type==Type::string) {
-            const auto answer=stdlib::try_parse_number(Type::integer,value,location_);
-            if(!answer)throw runtime_error(RuntimeError::number_text,location_,"integer");
-            return *answer;
-        }
-        const auto input=std::get<double>(value);
-        const auto floor=std::floor(input);
-        const auto fraction=input-floor;
-        const auto rounded=fraction>0.5 || (fraction==0.5 && std::fmod(floor,2)!=0) ? floor+1 : floor;
-        if(!std::isfinite(rounded) || rounded<INT32_MIN || rounded>INT32_MAX)
-            throw runtime_error(RuntimeError::integer_overflow,location_);
-        return static_cast<std::int32_t>(rounded);
+        return signed_integer(value,Type::integer);
     }
 };
 }
