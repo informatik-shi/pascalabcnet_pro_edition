@@ -237,7 +237,7 @@ private:
     SourceLocation position_;
 };
 
-enum class SyntaxExprKind { literal, literal_group, initialized_default, name, unary, binary, call, index, field, member_call, construction, formatted, tuple, typed_default, type_literal, value_call, lambda, conditional, set_literal, type_reference };
+enum class SyntaxExprKind { literal, literal_group, initialized_default, name, unary, binary, call, index, field, member_call, construction, formatted, tuple, unpack_item, typed_default, type_literal, value_call, lambda, conditional, set_literal, type_reference };
 struct SyntaxRoutine;
 struct SyntaxProperty;
 struct SyntaxExpr;
@@ -935,6 +935,34 @@ private:
         expect("end");
         return result;
     }
+    SyntaxStmt unpacking_assignment(Token token,std::unique_ptr<SyntaxExpr> targets) {
+        SyntaxStmt result;
+        result.token=std::move(token);
+        expect(":=");
+        auto value=expression();
+        if(value->kind==SyntaxExprKind::tuple)
+            throw Error("E_UNSUPPORTED",value->token.location,"Assignment from a tuple literal is still being ported",
+                "Присваивание из литерала кортежа ещё переносится");
+        const Token temporary{TokenKind::name,"$unpack_"+std::to_string(result.token.location.offset),value->token.location};
+        SyntaxStmt initialize;
+        initialize.kind=SyntaxStmtKind::declaration;
+        initialize.token=temporary;
+        initialize.names.push_back(temporary);
+        initialize.expression=std::move(value);
+        result.statements.push_back(std::move(initialize));
+        for(std::size_t n=0;n<targets->arguments.size();++n){
+            SyntaxStmt assign;
+            assign.kind=SyntaxStmtKind::assignment;
+            assign.token=targets->arguments[n]->token;
+            assign.assignment_operator={TokenKind::symbol,":=",assign.token.location};
+            assign.target=std::move(targets->arguments[n]);
+            assign.expression=make_expression(SyntaxExprKind::unpack_item,
+                {TokenKind::number,std::to_string(n),temporary.location},
+                make_expression(SyntaxExprKind::name,temporary));
+            result.statements.push_back(std::move(assign));
+        }
+        return result;
+    }
     SyntaxStmt statement() {
         DepthGuard guard(depth_, current_.location);
         if (is(";")) return SyntaxStmt{};
@@ -1059,6 +1087,8 @@ private:
             }
         } else if (current_.kind==TokenKind::text || current_.kind==TokenKind::character_code || current_.kind==TokenKind::number || is("(") || is("new") || is("default") || is("true") || is("false") || is("nil") || is("[")) {
             auto target=expression();
+            if(target->kind==SyntaxExprKind::tuple && is(":="))
+                return unpacking_assignment(std::move(result.token),std::move(target));
             if (assignment_operator()) {
                 result.assignment_operator=consume();
                 result.kind=SyntaxStmtKind::assignment; result.target=std::move(target); result.expression=expression();
@@ -6052,6 +6082,8 @@ private:
             if(expected==Type::invalid)throw Error("E_TYPE",result->location,"Field default requires a known type","Для значения поля по умолчанию нужен известный тип");result->kind=hir::ExprKind::default_value;result->type=expected;result->operation="initialize";return result;
         case SyntaxExprKind::typed_default:
             result->kind=hir::ExprKind::default_value; result->type=resolve_type(*source.constructed); result->operation="default"; break;
+        case SyntaxExprKind::unpack_item:
+            return unpack_item(expression(*source.left),std::stoul(source.token.text),result->location);
         case SyntaxExprKind::tuple: {
             if(initializer_array(expected)){
                 const auto element=info(expected,result->location).element;std::vector<std::unique_ptr<hir::Expr>> arguments;
@@ -9404,14 +9436,35 @@ private:
         --loop_depth_;for_controls_.erase(counter);
         output.statements.push_back(std::move(loop));scopes_.pop_back();return output;
     }
+    std::unique_ptr<hir::Expr> unpack_item(std::unique_ptr<hir::Expr> receiver,std::size_t n,SourceLocation location) {
+        auto item=std::make_unique<hir::Expr>();
+        item->location=location;
+        if(compound(receiver->type)){
+            const auto& shape=info(receiver->type,location);
+            if(shape.kind==CompoundKind::tuple || key_value_pair_type(shape)){
+                if(n>=shape.fields.size())
+                    throw Error("E_TYPE",location,"Too many targets to unpack this value",
+                        "Слишком много целей для распаковки значения");
+                item->kind=hir::ExprKind::field;
+                item->type=shape.fields[n].type;
+                item->local=n;
+                item->left=std::move(receiver);
+                return item;
+            }
+        }
+        if(short_string(receiver->type))receiver=convert(std::move(receiver),Type::string);
+        if(fixed(receiver->type))receiver=fixed_view(std::move(receiver));
+        auto index=std::make_unique<hir::Expr>();
+        index->kind=hir::ExprKind::literal;
+        index->type=Type::integer;
+        index->location=location;
+        index->value=static_cast<std::int32_t>(n);
+        item->arguments.push_back(std::move(receiver));
+        item->arguments.push_back(std::move(index));
+        (void)bind_sequence_query(*item,"elementat");
+        return item;
+    }
     std::vector<hir::Stmt> unpack_variables(std::size_t source,Type source_type,const std::vector<Token>& names) {
-        if(names.empty())return {};
-        const auto location=names.front().location;
-        const auto shape=compound(source_type) ? std::optional<TypeInfo>{info(source_type,location)} : std::nullopt;
-        const bool fields=shape && (shape->kind==CompoundKind::tuple || key_value_pair_type(*shape));
-        if(fields && names.size()>shape->fields.size())
-            throw Error("E_TYPE",location,"Too many names to unpack this value",
-                "Слишком много имён для распаковки значения");
         std::vector<hir::Stmt> assignments;
         for(std::size_t n=0;n<names.size();++n){
             const auto& name=names[n];
@@ -9422,25 +9475,7 @@ private:
             receiver->type=source_type;
             receiver->location=name.location;
             receiver->local=source;
-            auto item=std::make_unique<hir::Expr>();
-            item->location=name.location;
-            if(fields){
-                item->kind=hir::ExprKind::field;
-                item->type=shape->fields[n].type;
-                item->local=n;
-                item->left=std::move(receiver);
-            }else{
-                if(short_string(receiver->type))receiver=convert(std::move(receiver),Type::string);
-                if(fixed(receiver->type))receiver=fixed_view(std::move(receiver));
-                auto index=std::make_unique<hir::Expr>();
-                index->kind=hir::ExprKind::literal;
-                index->type=Type::integer;
-                index->location=name.location;
-                index->value=static_cast<std::int32_t>(n);
-                item->arguments.push_back(std::move(receiver));
-                item->arguments.push_back(std::move(index));
-                (void)bind_sequence_query(*item,"elementat");
-            }
+            auto item=unpack_item(std::move(receiver),n,name.location);
             if(module_.locals.size()>=4096)throw Error("E_LIMIT",name.location,"Local limit exceeded");
             const auto slot=module_.locals.size();
             const auto component=item->type;
