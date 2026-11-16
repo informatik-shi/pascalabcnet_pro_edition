@@ -3226,6 +3226,13 @@ ZIP.
 текущий год. Windows и Ubuntu совпали с оригиналом на 144 выражениях.
 [Тест выражений с датами](tests/fixtures/utils-date-expression-compat.pas).
 
+`CONVERT` в `System.TimeSpan` принимает длительность XML или число тиков
+типа `Int32` либо `Int64`. `Eval` сохраняет тип `TimeSpan`, а `EvalStr`
+возвращает обычную запись интервала. Явный `CONVERT` из `TimeSpan` в
+`System.String` возвращает запись XML. `CONVERT(NULL,System.DBNull)`
+возвращает тот же `DBNull.Value`, что и литерал `NULL`.
+[Тест преобразований TimeSpan](tests/fixtures/utils-timespan-convert-compat.pas).
+
 Имена в квадратных скобках и обратных кавычках сохраняются при разборе
 `Eval`. Для `SUM`, `AVG`, `MIN`, `MAX`, `COUNT`, `STDEV` и `VAR` проверяется
 форма аргумента с именем столбца и необязательным `Child`. В таблице, с

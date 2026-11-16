@@ -112,6 +112,7 @@ class Evaluation {
     SourceLocation location_;
     Type decimal_;
     Type date_;
+    Type interval_;
     std::u16string_view source_;
     std::size_t cursor_=0, work_=0;
     std::vector<Node> nodes_;
@@ -336,6 +337,16 @@ class Evaluation {
         const std::array<Value,1> input{normalized_date(*text)};
         return calendar_call(CalendarMethod::parse,input);
     }
+    Value duration_value(const Value& value) {
+        const auto type=kind(value);
+        if(type==interval_)return value;
+        std::int64_t ticks;
+        if(const auto* text=std::get_if<std::u16string>(&value))ticks=parse_xml_duration(trim(*text),location_);
+        else if(type==Type::integer || type==Type::int64)ticks=integral_number(value,location_);
+        else operands();
+        const std::array<Value,1> arguments{ticks};
+        return calendar_invoke(values_,interval_,static_cast<std::size_t>(CalendarMethod::from_ticks),arguments);
+    }
     Value number(std::u16string text) {
         if(text.find_first_of(u"eE")==std::u16string::npos){
             if(text.find(u'.')!=std::u16string::npos) {
@@ -438,6 +449,7 @@ class Evaluation {
     }
     Type conversion_type(std::u16string_view name) {
         if(name==u"System.Object")return Type::invalid; // Object preserves the operand's scalar value.
+        if(name==u"System.DBNull")return Type::nil; // Only NULL converts to DBNull.
         if(name==u"System.Boolean")return Type::boolean;
         if(name==u"System.Char")return Type::character;
         if(name==u"System.SByte")return Type::shortint;
@@ -452,6 +464,7 @@ class Evaluation {
         if(name==u"System.Double")return Type::real;
         if(name==u"System.Decimal")return decimal_;
         if(name==u"System.DateTime")return date_;
+        if(name==u"System.TimeSpan")return interval_;
         if(name==u"System.String")return Type::string;
         throw Error("E_UNSUPPORTED",location_,"Unknown or unsupported CONVERT target type",
             "Неизвестный или неподдерживаемый тип результата CONVERT");
@@ -560,7 +573,7 @@ class Evaluation {
         format.positive_infinity=u"∞";
         format.negative_infinity=u"-∞";
         if(type==decimal_)return format_decimal(value,{},format,location_);
-        if(type==date_)return calendar_text(value,{},location_);
+        if(type==date_ || type==interval_)return calendar_text(value,{},location_);
         if(type==Type::real || type==Type::single || integer_type(type))
             return format_number(value,type,{},format,location_);
         return format_scalar(value,location_);
@@ -826,7 +839,8 @@ class Evaluation {
     }
     Value evaluate_conversion(Value value,Type target) {
         if(null(value) || target==Type::invalid)return value;
-        if(target==Type::string)return text(value);
+        if(target==Type::nil)operands();
+        if(target==Type::string)return kind(value)==interval_ ? calendar_xml_duration(value) : text(value);
         if(target==Type::integer || target==Type::int64)return signed_integer(value,target);
         if(small_integer(target))
             return checked_small_integer(target,std::get<std::int64_t>(signed_integer(value,Type::int64)),location_);
@@ -835,6 +849,7 @@ class Evaluation {
         if(target==Type::single)return single(value);
         if(target==decimal_)return as_decimal(value);
         if(target==date_)return date_value(value);
+        if(target==interval_)return duration_value(value);
         if(target==Type::boolean)return convert_boolean(value,true);
         if(target!=Type::character)throw runtime_error(RuntimeError::invalid_bytecode,location_);
         if(kind(value)==Type::character)return value;
@@ -894,7 +909,8 @@ class Evaluation {
     }
 public:
     Evaluation(Values& values,const ExecutionOptions& options,Type decimal,Type date,std::u16string_view source)
-        :values_(values),options_(options),location_(values.location),decimal_(decimal),date_(date),source_(source){}
+        :values_(values),options_(options),location_(values.location),decimal_(decimal),date_(date),
+        interval_(date==Type::invalid ? Type::invalid : type_info(values.program,date).element),source_(source){}
     Value compute() {
         advance();
         Value value=NilString{};

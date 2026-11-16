@@ -846,6 +846,93 @@ int compare_calendar_values(const Value& left,const Value& right) {
     const auto a=calendar_value(left).ticks,b=calendar_value(right).ticks;
     return (a>b)-(a<b);
 }
+std::int64_t parse_xml_duration(std::u16string_view text,SourceLocation location) {
+    const auto invalid=[&]{
+        return Error("E_FORMAT",location,"Invalid XML duration for TimeSpan","Некорректная длительность XML для TimeSpan");
+    };
+    const bool negative=text.starts_with(u'-');
+    if(negative)text.remove_prefix(1);
+    if(!text.starts_with(u'P'))throw invalid();
+    text.remove_prefix(1);
+    const auto digit=[](char16_t unit){return unit>=u'0' && unit<=u'9';};
+    std::array<std::uint64_t,6> parts{};
+    std::uint64_t fraction=0;
+    bool in_time=false;
+    int last=-1;
+    while(!text.empty()){
+        if(!in_time && text.front()==u'T'){
+            in_time=true;
+            text.remove_prefix(1);
+            continue;
+        }
+        std::uint64_t whole=0;
+        const bool has_digits=digit(text.front());
+        while(!text.empty() && digit(text.front())){
+            const auto value=static_cast<unsigned>(text.front()-u'0');
+            if(whole>(INT32_MAX-value)/10U)throw invalid();
+            whole=whole*10+value;
+            text.remove_prefix(1);
+        }
+        const bool has_fraction=text.starts_with(u'.');
+        if(has_fraction){
+            text.remove_prefix(1);
+            auto place=static_cast<std::uint64_t>(ticks_per_second/10);
+            while(!text.empty() && digit(text.front())){
+                fraction+=place*static_cast<unsigned>(text.front()-u'0');
+                place/=10;
+                text.remove_prefix(1);
+            }
+        }
+        if((!has_digits && !has_fraction) || text.empty())throw invalid();
+        const std::u16string_view units=in_time ? u"HMS" : u"YMD";
+        const auto position=units.find(text.front());
+        if(position==units.npos)throw invalid();
+        const auto part=static_cast<int>(position)+(in_time ? 3 : 0);
+        if(part<=last || (has_fraction && part!=5))throw invalid();
+        parts[static_cast<std::size_t>(part)]=whole;
+        last=part;
+        text.remove_prefix(1);
+    }
+    if(last<0 || (in_time && last<3))throw invalid();
+    const auto days=(parts[0]+parts[1]/12)*365+(parts[1]%12)*30+parts[2];
+    const auto seconds=((days*24+parts[3])*60+parts[4])*60+parts[5];
+    const auto limit=static_cast<std::uint64_t>(INT64_MAX)+(negative ? 1U : 0U);
+    if(seconds>(limit-fraction)/ticks_per_second)
+        throw Error("E_OVERFLOW",location,"XML duration is outside the range of TimeSpan",
+            "Длительность XML выходит за диапазон TimeSpan");
+    const auto ticks=seconds*ticks_per_second+fraction;
+    return negative ? std::bit_cast<std::int64_t>(std::uint64_t{0}-ticks) : static_cast<std::int64_t>(ticks);
+}
+
+std::u16string calendar_xml_duration(const Value& value) {
+    const auto ticks=calendar_value(value).ticks;
+    const auto bits=static_cast<std::uint64_t>(ticks);
+    const auto magnitude=ticks<0 ? std::uint64_t{0}-bits : bits;
+    std::u16string result=ticks<0 ? u"-P" : u"P";
+    const auto days=magnitude/ticks_per_day;
+    if(days){digits(result,days);result.push_back(u'D');}
+    const auto time=magnitude%ticks_per_day;
+    if(!time && days)return result;
+    result.push_back(u'T');
+    const auto hours=time/ticks_per_hour;
+    if(hours){digits(result,hours);result.push_back(u'H');}
+    const auto minutes=time/ticks_per_minute%60;
+    if(minutes){digits(result,minutes);result.push_back(u'M');}
+    const auto seconds=time/ticks_per_second%60;
+    auto fraction=time%ticks_per_second;
+    if(seconds || fraction || (!hours && !minutes)){
+        digits(result,seconds);
+        if(fraction){
+            std::size_t width=7;
+            while(fraction%10==0){fraction/=10;--width;}
+            result.push_back(u'.');
+            digits(result,fraction,width);
+        }
+        result.push_back(u'S');
+    }
+    return result;
+}
+
 double calendar_ole_date(const Value& value,SourceLocation location) {
     using namespace std::chrono;
     constexpr auto offset_days=(sys_days{year{1899}/December/30}-epoch).count();

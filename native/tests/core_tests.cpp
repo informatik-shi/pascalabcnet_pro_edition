@@ -776,6 +776,14 @@ void timing_library() {
     for(auto& instruction:marshal.code)if(instruction.op==abc::Op::utils_record_bytes)
         instruction.operand=static_cast<std::size_t>(abc::Type::integer);
     error([&]{abc::verify(marshal);},"E_BYTECODE");
+    for(const auto* text:{"P","PT","P1DT","P1W","PT1S2M","PT1,5S","P99999999999D","00:01:00"}){
+        const auto source="uses Utils;begin Writeln(EvalStr('CONVERT(''"+std::string(text)+"'',System.TimeSpan)'));end.";
+        error([&]{(void)run(source);},"E_FORMAT",text);
+    }
+    error([&]{(void)run("uses Utils;begin Writeln(EvalStr('CONVERT(''P10675199DT2H48M5.4775808S'',System.TimeSpan)'));end.");},"E_OVERFLOW");
+    error([&]{(void)run("uses Utils;begin Writeln(EvalStr('CONVERT(3.5,System.TimeSpan)'));end.");},"E_TYPE");
+    error([&]{(void)run("uses Utils;begin Writeln(Eval('CONVERT(1,System.DBNull)'));end.");},"E_TYPE");
+    error([&]{(void)run("uses Utils;begin Writeln(EvalBool('CONVERT(1,System.TimeSpan)=CONVERT(1,System.TimeSpan)'));end.");},"E_TYPE");
 }
 
 void sequence_text_and_flatten() {
