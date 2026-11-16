@@ -27,7 +27,7 @@ enum class Function {
     subrange_integer_cast, clip_short_string, get_short_string_char, set_short_string_char, resize_short_string, insert_short_string,
     read_short_string, read_short_string_from_file,
     socket_server, socket_client, socket_accept, socket_connect, socket_send, socket_receive, socket_close,
-    send_command, request_command, eval_int, eval_real, eval_boolean, eval_string
+    send_command, request_command, eval_int, eval_real, eval_boolean, eval_string, show_message
 };
 inline bool typed_utils_eval(Function function) {
     return function>=Function::eval_int && function<=Function::eval_string;

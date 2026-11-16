@@ -746,6 +746,22 @@ void timing_library() {
     for(auto& instruction:evaluation.code)if(instruction.op==abc::Op::utils_eval_object)
         instruction.operand=static_cast<std::size_t>(abc::Type::boolean);
     error([&]{abc::verify(evaluation);},"E_BYTECODE");
+    compile_error("begin ShowMessage('hello');end.","E_NAME");
+    compile_error("uses Utils;begin ShowMessage(True);end.","E_TYPE");
+    error([&]{(void)run("uses Utils;begin ShowMessage('hello');end.");},"E_UI");
+    std::vector<std::pair<std::u16string,std::u16string>> dialogs;
+    options={};
+    options.show_message=[&](std::u16string_view text,std::u16string_view caption,abc::SourceLocation){
+        dialogs.emplace_back(text,caption);
+    };
+    result("uses Utils;procedure ShowMessage(s:string):=Write(s);"
+        "begin ShowMessage('local');Utils.ShowMessage('Первое');"
+        "var f:procedure(s:string;t:string):=Utils.ShowMessage; f('😀','local title');"
+        "var def:procedure(s:string):=Utils.ShowMessage;def(nil);Writeln(' after');end.",
+        "local after\n","",options);
+    require(dialogs==std::vector<std::pair<std::u16string,std::u16string>>{
+        {u"Первое",u"Сообщение"},{u"😀",u"local title"},{u"",u"Сообщение"}},
+        "Both typed ShowMessage overloads support callable values and preserve title and message order");
 }
 
 void sequence_text_and_flatten() {

@@ -607,6 +607,7 @@ struct ExecutionOptions {
     // Separate bounded reserve for user Dispose during fault unwinding.
     std::uint64_t cleanup_instruction_limit = 10'000;
     std::size_t cleanup_allocation_limit = 4096;
+    std::function<void(std::u16string_view,std::u16string_view,SourceLocation)> show_message;
 };
 
 // Returns the native program exit code; Halt stops this execution, not the host.

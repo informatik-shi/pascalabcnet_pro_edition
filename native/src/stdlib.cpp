@@ -86,6 +86,8 @@ std::span<const Signature> signatures() {
         add("evalreal",{Type::string},Type::real,Function::eval_real,"utils");
         add("evalbool",{Type::string},Type::boolean,Function::eval_boolean,"utils");
         add("evalstr",{Type::string},Type::string,Function::eval_string,"utils");
+        add("showmessage",{Type::string},Type::unit,Function::show_message,"utils");
+        add("showmessage",{Type::string,Type::string},Type::unit,Function::show_message,"utils");
         for (const auto& [name,function]:{std::pair<std::string_view,Function>{"bin",Function::school_bin},{"oct",Function::school_oct},{"hex",Function::school_hex}})
             add(name,{Type::int64},Type::string,function,"school");
         add("dec",{Type::string,Type::integer},Type::int64,Function::school_dec,"school");
@@ -418,6 +420,15 @@ Value invoke(std::size_t id, std::span<const Value> arguments, SourceLocation lo
     const auto& signature = signatures()[id]; // Verified before execution.
     const auto function = signature.function;
     if(typed_utils_eval(function))return utils_eval(context.values,arguments[0],signature.result,context.options);
+    if(function==Function::show_message){
+        if(!context.options.show_message)
+            throw Error("E_UI",location,"ShowMessage requires a graphical host",
+                "Для ShowMessage нужна графическая среда");
+        const auto title=arguments.size()==2 ? std::u16string_view(string_text(arguments[1]))
+            : std::u16string_view(u"Сообщение");
+        context.options.show_message(string_text(arguments[0]),title,location);
+        return {};
+    }
     switch(function){
     case Function::socket_server:return context.sockets.create_server(std::get<std::int32_t>(arguments[0]),location);
     case Function::socket_client:return context.sockets.create_client(location);

@@ -2,6 +2,9 @@
 #include "environment.hpp"
 #include "file_encoding.hpp"
 #include "type_names.hpp"
+#ifdef ABC_QT_MESSAGE_HOST
+#include "ide/message_dialog.hpp"
+#endif
 
 #include <charconv>
 #include <filesystem>
@@ -31,6 +34,9 @@ int cli(const std::vector<std::string>& arguments,const std::vector<std::u16stri
     const auto& filename = arguments[2];
     try {
         abc::ExecutionOptions options;
+#ifdef ABC_QT_MESSAGE_HOST
+        options.show_message=abc::show_qt_message;
+#endif
         bool limit_present=false;
         std::optional<std::string> source_name;
         for(std::size_t i=3;i<arguments.size();++i) {

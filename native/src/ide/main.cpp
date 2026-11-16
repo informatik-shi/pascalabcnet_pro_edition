@@ -270,7 +270,7 @@ private:
         }
         source.close();
         output_->clear(); stderr_pending_.clear(); stdout_decoder_.resetState(); stderr_decoder_.resetState();
-        const auto runner = QCoreApplication::applicationDirPath() + "/abc"
+        const auto runner = QCoreApplication::applicationDirPath() + "/abc-qt"
 #ifdef Q_OS_WIN
             ".exe"
 #endif
