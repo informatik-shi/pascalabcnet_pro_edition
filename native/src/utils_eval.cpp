@@ -15,10 +15,10 @@
 namespace abc {
 namespace {
 enum class Symbol {
-    end, literal, number, open, close, comma, plus, minus, multiply, divide, modulus,
+    end, literal, number, name, open, close, comma, plus, minus, multiply, divide, modulus,
     equal, unequal, less, less_equal, greater, greater_equal, conjunction,
     disjunction, negate, is, null_value, true_value, false_value, is_null, is_not_null,
-    length, trim, substring, choose, replace_null, absolute, membership, like
+    length, trim, substring, choose, replace_null, absolute, membership, like, conversion
 };
 
 struct Token {
@@ -33,6 +33,7 @@ struct Node {
     bool literal=false;
     std::size_t third=0;
     std::vector<std::size_t> members{};
+    Type conversion_type=Type::invalid;
 };
 
 bool digit(char16_t ch) { return ch>=u'0' && ch<=u'9'; }
@@ -143,9 +144,10 @@ class Evaluation {
             return {Symbol::number,std::u16string(source_.substr(begin,cursor_-begin))};
         }
         if(letter(ch)){
-            std::u16string word(1,lower_ascii(ch));
-            while(cursor_<source_.size() && (letter(source_[cursor_]) || digit(source_[cursor_])))
-                word.push_back(lower_ascii(source_[cursor_++]));
+            while(cursor_<source_.size() && (letter(source_[cursor_]) || digit(source_[cursor_]) || source_[cursor_]==u'.'))++cursor_;
+            const auto spelling=source_.substr(begin,cursor_-begin);
+            std::u16string word(spelling);
+            for(auto& unit:word)unit=lower_ascii(unit);
             if(word==u"and")return {Symbol::conjunction,{}};
             if(word==u"or")return {Symbol::disjunction,{}};
             if(word==u"not")return {Symbol::negate,{}};
@@ -161,8 +163,8 @@ class Evaluation {
             if(word==u"abs")return {Symbol::absolute,{}};
             if(word==u"in")return {Symbol::membership,{}};
             if(word==u"like")return {Symbol::like,{}};
-            throw Error("E_UNSUPPORTED",location_,"This name or function is unavailable in Utils evaluation",
-                "Это имя или функция недоступны в вычислениях Utils");
+            if(word==u"convert")return {Symbol::conversion,{}};
+            return {Symbol::name,std::u16string(spelling)};
         }
         syntax();
     }
@@ -227,6 +229,30 @@ class Evaluation {
         if(advance()!=Symbol::close)syntax();
         return add(std::move(test));
     }
+    Type conversion_type(std::u16string_view name) {
+        if(name==u"System.Object")return Type::invalid; // Object preserves the operand's scalar value.
+        if(name==u"System.Boolean")return Type::boolean;
+        if(name==u"System.Char")return Type::character;
+        if(name==u"System.Int32")return Type::integer;
+        if(name==u"System.Int64")return Type::int64;
+        if(name==u"System.Double")return Type::real;
+        if(name==u"System.Decimal")return decimal_;
+        if(name==u"System.String")return Type::string;
+        throw Error("E_UNSUPPORTED",location_,"Unknown or unsupported CONVERT target type",
+            "Неизвестный или неподдерживаемый тип результата CONVERT");
+    }
+    std::size_t parse_conversion(unsigned depth) {
+        if(advance()!=Symbol::open)syntax();
+        const auto value=parse(1,depth+1);
+        if(advance()!=Symbol::comma)syntax();
+        if(token_.kind!=Symbol::literal && token_.kind!=Symbol::name)syntax();
+        const auto target=conversion_type(token_.text);
+        advance();
+        if(advance()!=Symbol::close)syntax();
+        Node conversion{Symbol::conversion,NilString{},value};
+        conversion.conversion_type=target;
+        return add(std::move(conversion));
+    }
     std::size_t parse(unsigned minimum,unsigned depth) {
         step(depth);
         auto initial=std::move(token_);
@@ -249,6 +275,10 @@ class Evaluation {
         case Symbol::choose:case Symbol::replace_null:case Symbol::absolute:
             left=parse_function(initial.kind,depth);
             break;
+        case Symbol::conversion:left=parse_conversion(depth);break;
+        case Symbol::name:
+            throw Error("E_UNSUPPORTED",location_,"This name or function is unavailable in Utils evaluation",
+                "Это имя или функция недоступны в вычислениях Utils");
         default:syntax();
         }
         while(precedence(token_.kind)>=minimum || (minimum<=3 && token_.kind==Symbol::negate)) {
@@ -305,7 +335,7 @@ class Evaluation {
     }
     Value signed_integer(const Value& value,Type target) {
         const auto type=kind(value);
-        if(type==Type::boolean || type==Type::integer || type==Type::int64)
+        if(type==Type::boolean || type==Type::integer || type==Type::int64 || type==Type::character)
             return checked_signed_integer(target,value,location_);
         if(type==decimal_)
             return decimal_call(target==Type::integer ? DecimalMethod::to_int32 : DecimalMethod::to_int64,
@@ -334,7 +364,7 @@ class Evaluation {
     }
     Value arithmetic(Symbol op,const Value& left,const Value& right) {
         const auto a=kind(left), b=kind(right);
-        if(op==Symbol::plus && (a==Type::string || b==Type::string)){
+        if(op==Symbol::plus && (a==Type::string || b==Type::string || (a==Type::character && b==Type::character))){
             auto result=text(left);
             const auto suffix=text(right);
             if(result.size()+suffix.size()>1'048'576)throw runtime_error(RuntimeError::string_limit,location_);
@@ -369,6 +399,13 @@ class Evaluation {
     }
     int compare(const Value& left,const Value& right) {
         const auto a=kind(left),b=kind(right);
+        if((a==Type::string && b==Type::character) || (a==Type::character && b==Type::string))
+            return compare(Value{text(left)},Value{text(right)});
+        if(a==Type::character || b==Type::character){
+            if(a!=b)operands();
+            const auto x=std::get<char16_t>(left),y=std::get<char16_t>(right);
+            return (x>y)-(x<y);
+        }
         if(a==Type::string && b==Type::string)
             return compare_culture_strings(comparison_text(std::get<std::u16string>(left)),
                 comparison_text(std::get<std::u16string>(right)),location_,options_,true);
@@ -451,6 +488,8 @@ class Evaluation {
                 if(compare(left,Value{real(candidate)})==0)return true;
             }else if(type==decimal_){
                 if(compare_decimal_values(left,as_decimal(candidate),location_)==0)return true;
+            }else if(type==Type::character){
+                if(std::get<char16_t>(left)==std::get<std::int32_t>(signed_integer(candidate,Type::integer)))return true;
             }else if(type==Type::boolean){
                 const auto* argument=std::get_if<std::u16string>(&candidate);
                 const auto converted=argument ? boolean_text(*argument) : std::optional<bool>{boolean(candidate)};
@@ -495,6 +534,39 @@ class Evaluation {
             return find_culture_text(value,comparison_text(literal),TextSearch::suffix,location_,options_);
         return find_culture_text(value,literal,leading ? TextSearch::anywhere : TextSearch::prefix,location_,options_);
     }
+    bool convert_boolean(const Value& value,bool accept_digit) {
+        if(const auto* source=std::get_if<std::u16string>(&value)){
+            if(accept_digit && (*source==u"0" || *source==u"1"))return *source==u"1";
+            if(const auto converted=boolean_text(*source))return *converted;
+            throw runtime_error(RuntimeError::number_text,location_,"boolean");
+        }
+        if(kind(value)==decimal_)
+            return compare_decimal_values(value,decimal_call(DecimalMethod::zero,std::array<Value,0>{}),location_)!=0;
+        return real(value)!=0;
+    }
+    Value evaluate_conversion(Value value,Type target) {
+        if(null(value) || target==Type::invalid)return value;
+        if(target==Type::string)return text(value);
+        if(target==Type::integer || target==Type::int64)return signed_integer(value,target);
+        if(target==Type::real)return real(value);
+        if(target==decimal_){
+            if(kind(value)==Type::character)operands();
+            return as_decimal(value);
+        }
+        if(target==Type::boolean)return convert_boolean(value,true);
+        if(target!=Type::character)throw runtime_error(RuntimeError::invalid_bytecode,location_);
+        if(kind(value)==Type::character)return value;
+        if(const auto* source=std::get_if<std::u16string>(&value)){
+            if(source->size()!=1)
+                throw Error("E_FORMAT",location_,"CONVERT to Char requires exactly one UTF-16 code unit",
+                    "Для CONVERT в Char требуется ровно одна кодовая единица UTF-16");
+            return source->front();
+        }
+        if(kind(value)!=Type::integer && kind(value)!=Type::int64)operands();
+        const auto number=integral_number(value,location_);
+        if(number<0 || number>UINT16_MAX)throw runtime_error(RuntimeError::integer_overflow,location_);
+        return static_cast<char16_t>(number);
+    }
     Value evaluate(std::size_t index,unsigned depth) {
         step(depth);
         const auto& node=nodes_[index];
@@ -502,6 +574,7 @@ class Evaluation {
         if(argument_count(node.kind))return function(node,depth+1);
         if(node.kind==Symbol::membership)return evaluate_membership(node,depth+1);
         auto left=evaluate(node.left,depth+1);
+        if(node.kind==Symbol::conversion)return evaluate_conversion(std::move(left),node.conversion_type);
         if(node.kind==Symbol::is_null)return null(left);
         if(node.kind==Symbol::is_not_null)return !null(left);
         if(node.kind==Symbol::negate)return null(left) ? left : Value{!boolean(left)};
@@ -550,16 +623,7 @@ public:
         if(null(value))throw Error("E_TYPE",location_,"A null evaluation result cannot be converted to the requested type",
             "Пустой результат выражения нельзя преобразовать к запрошенному типу");
         if(result==Type::real)return real(value);
-        const auto type=kind(value);
-        if(result==Type::boolean){
-            if(type==Type::string){
-                if(const auto converted=boolean_text(std::get<std::u16string>(value)))return *converted;
-                throw runtime_error(RuntimeError::number_text,location_,"boolean");
-            }
-            if(type==Type::boolean)return value;
-            if(type==decimal_)return compare_decimal_values(value,decimal_call(DecimalMethod::zero,std::array<Value,0>{}),location_)!=0;
-            return real(value)!=0;
-        }
+        if(result==Type::boolean)return convert_boolean(value,false);
         return signed_integer(value,Type::integer);
     }
 };

@@ -3200,8 +3200,14 @@ ZIP.
 левого операнда при сравнении с элементами списка. Тест охватывает `NULL`,
 регистр, лигатуры и округление чисел при сравнении. Windows и Ubuntu
 совпали с оригиналом на 201 дополнительном выражении. [Тест LIKE и IN](tests/fixtures/utils-expression-matches-compat.pas).
-Остальные функции выражений, даты, агрегаты и `Eval`, возвращающий
-`Object`, остаются в работе.
+
+`CONVERT` поддерживает `System.Boolean`, `System.Char`, `System.Int32`,
+`System.Int64`, `System.Double`, `System.Decimal`, `System.String` и
+`System.Object`. Полное имя типа можно написать с кавычками или без них.
+Регистр имени сверяется с исходным модулем. Windows и Ubuntu совпали с
+оригиналом на 180 дополнительных преобразованиях. [Тест CONVERT](tests/fixtures/utils-convert-compat.pas).
+Остальные типы преобразования, даты, агрегаты и `Eval`, возвращающий `Object`,
+остаются в работе.
 
 ## Символы Windows-1251
 

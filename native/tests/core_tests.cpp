@@ -706,6 +706,11 @@ void timing_library() {
     error([&]{(void)run("uses Utils;begin Writeln(EvalBool('''abc'' LIKE ''a%c'''));end.");},"E_FORMAT");
     error([&]{(void)run("uses Utils;begin Writeln(EvalBool('''abc'' LIKE NULL'));end.");},"E_TYPE");
     error([&]{(void)run("uses Utils;begin Writeln(EvalBool('1 IN ()'));end.");},"E_FORMAT");
+    error([&]{(void)run("uses Utils;begin Writeln(EvalBool('CONVERT('' 1 '',System.Boolean)'));end.");},"E_FORMAT");
+    error([&]{(void)run("uses Utils;begin Writeln(EvalStr('CONVERT(65.0,System.Char)'));end.");},"E_TYPE");
+    error([&]{(void)run("uses Utils;begin Writeln(EvalStr('CONVERT(''AB'',System.Char)'));end.");},"E_FORMAT");
+    error([&]{(void)run("uses Utils;begin Writeln(EvalStr('CONVERT(65536,System.Char)'));end.");},"E_OVERFLOW");
+    error([&]{(void)run("uses Utils;begin Writeln(EvalStr('CONVERT(1,System.int32)'));end.");},"E_UNSUPPORTED");
 }
 
 void sequence_text_and_flatten() {
