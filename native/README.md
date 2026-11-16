@@ -3129,6 +3129,24 @@ UTF-32LE/BE. Ограничение входного размера 1 МиБ, н
 обмен по TCP с результатом PascalABC.NET на Windows. Проверка остальных
 платформ и сетевых ошибок продолжается.
 
+## ClientServer
+
+`uses ClientServer;` открывает `SendCommand(string)` и
+`SendCommandAndReceiveAnswer(string): string`. Они читают изменяемые
+глобальные переменные `servername: string` и `port: Integer` при каждом
+вызове. Начальные значения `127.0.0.1` и `13000` доступны до выполнения
+инициализаторов программы. Полное имя `ClientServer.port` сохраняет доступ
+к настройке при одноимённой локальной переменной.
+
+Каждая команда открывает своё TCP-соединение. Формат состоит из длины
+в байтах, записанной группами по семь бит, и данных UTF-8. Пустая строка
+передаётся одним нулевым байтом. Тест сверяет префиксы и данные с исходным
+ClientServer, в том числе ответ, полученный несколькими частями.
+[Исходный BinaryWriter](https://github.com/microsoft/referencesource/blob/main/mscorlib/system/io/binarywriter.cs),
+[исходный BinaryReader](https://github.com/microsoft/referencesource/blob/main/mscorlib/system/io/binaryreader.cs).
+
+Обе перегрузки `RunServer` остаются в работе.
+
 ## Символы Windows-1251
 
 ChrWindows(byte):char и OrdWindows(char):byte перенесены вместе с устаревшими

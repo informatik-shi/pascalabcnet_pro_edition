@@ -17,6 +17,8 @@ public:
     void send(std::int32_t client,std::u16string_view text,SourceLocation,const ExecutionOptions&);
     std::u16string receive(std::int32_t client,SourceLocation,const ExecutionOptions&);
     void close(std::int32_t handle);
+    std::u16string command(const Value& host,std::int32_t port,const Value& text,bool reply,
+        SourceLocation,const ExecutionOptions&);
 
 private:
     struct State;

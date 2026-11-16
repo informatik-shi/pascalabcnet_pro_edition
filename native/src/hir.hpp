@@ -49,6 +49,7 @@ struct Module {
     std::optional<std::size_t> print_delimiter;
     std::optional<std::size_t> print_matrix_format;
     std::optional<std::size_t> default_encoding;
+    std::optional<ClientServerGlobals> client_server;
     std::vector<FixedArrayShape> fixed_arrays;
     std::vector<StaticClass> static_classes;
     std::vector<StaticMethod> static_methods;

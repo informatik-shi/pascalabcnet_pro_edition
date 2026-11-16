@@ -304,7 +304,10 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
     stdlib::Context services{files,random,console,[&](std::u16string_view text,SourceLocation location) {
         Instruction instruction; instruction.location=location;
         write(text,instruction);
-    },delimiter_value,options,school,values,timing,environment,sockets};
+    },delimiter_value,options,school,values,timing,environment,sockets,[&]()->std::pair<const Value&,std::int32_t>{
+        const auto& [host,port]=*program.client_server;
+        return {globals[host]->value,std::get<std::int32_t>(globals[port]->value)};
+    }};
     values.invoke_builtin=[&](std::size_t id,std::span<const Value> arguments){return stdlib::invoke(id,arguments,values.location,services);};
     const auto enter_routine=[&](std::size_t id,SourceLocation location,std::span<const std::shared_ptr<Cell>> captured={},Type base_constructor_start=Type::invalid) {
         if (id>=program.routines.size()) throw runtime_error(RuntimeError::invalid_bytecode,location);

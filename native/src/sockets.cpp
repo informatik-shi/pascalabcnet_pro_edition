@@ -1,5 +1,6 @@
 // Native implementation of the socket handles and byte transfers from bin/Lib/Sockets.pas.
 #include "sockets.hpp"
+#include "binary_codec.hpp"
 #include "diagnostics.hpp"
 #include "file_encoding.hpp"
 #include <array>
@@ -118,6 +119,76 @@ struct Entry {
     Role role;
     bool connected=false;
 };
+
+Socket connect_tcp(std::u16string_view host,std::int32_t port,int family,SourceLocation location,
+    const ExecutionOptions& options) {
+    const auto service=std::to_string(port_number(port,location));
+    const auto name=to_utf8(host);
+    if(name.empty() || name.find('\0')!=std::string::npos)
+        socket_error(location,"Invalid socket host name","Недопустимое имя узла сокета");
+    checkpoint(location,options);
+    addrinfo hints{};
+    hints.ai_family=family;
+    hints.ai_socktype=SOCK_STREAM;
+    hints.ai_protocol=IPPROTO_TCP;
+    addrinfo* addresses=nullptr;
+    if(::getaddrinfo(name.c_str(),service.c_str(),&hints,&addresses)!=0)
+        socket_error(location,"Cannot resolve the socket host","Не удалось разрешить имя узла сокета");
+    const std::unique_ptr<addrinfo,decltype(&::freeaddrinfo)> cleanup(addresses,&::freeaddrinfo);
+    for(auto* address=addresses;address;address=address->ai_next){
+        checkpoint(location,options);
+        const auto descriptor=::socket(address->ai_family,address->ai_socktype,address->ai_protocol);
+        if(descriptor==invalid)continue;
+        auto candidate=configured(descriptor,location);
+        if(::connect(descriptor,address->ai_addr,static_cast<AddressLength>(address->ai_addrlen))!=0){
+            const auto failure=last_error();
+            if(!pending(failure) && !interrupted(failure))continue;
+            wait_ready(descriptor,POLLOUT,location,options);
+            int error=0;
+            AddressLength size=sizeof error;
+            if(::getsockopt(descriptor,SOL_SOCKET,SO_ERROR,reinterpret_cast<char*>(&error),&size)!=0 || error!=0)continue;
+        }
+        return candidate;
+    }
+    socket_error(location,"Cannot connect the TCP client","Не удалось подключить TCP-клиент");
+}
+
+class SocketStream final:public BinaryDevice {
+    Descriptor handle_;
+    const ExecutionOptions& options_;
+public:
+    SocketStream(Descriptor handle,const ExecutionOptions& options):handle_(handle),options_(options){}
+    std::int64_t position(SourceLocation location) const override {
+        socket_error(location,"TCP streams do not have a file position","Поток TCP не имеет файловой позиции");
+    }
+    void seek(std::int64_t,SourceLocation location) override { (void)position(location); }
+    std::size_t read(std::span<char> bytes,SourceLocation location) override {
+        if(bytes.empty())return 0;
+        for(;;){
+            wait_ready(handle_,POLLIN,location,options_);
+            const auto received=::recv(handle_,bytes.data(),static_cast<int>(bytes.size()),0);
+            if(received>=0)return static_cast<std::size_t>(received);
+            const auto error=last_error();
+            if(!interrupted(error) && !pending(error))
+                socket_error(location,"Cannot receive the socket string","Не удалось получить строку через сокет");
+        }
+    }
+    void write(std::string_view bytes,SourceLocation location) override {
+#ifdef MSG_NOSIGNAL
+        constexpr int send_flags=MSG_NOSIGNAL;
+#else
+        constexpr int send_flags=0;
+#endif
+        while(!bytes.empty()){
+            wait_ready(handle_,POLLOUT,location,options_);
+            const auto sent=::send(handle_,bytes.data(),static_cast<int>(bytes.size()),send_flags);
+            if(sent>0){bytes.remove_prefix(static_cast<std::size_t>(sent));continue;}
+            const auto error=last_error();
+            if(sent==0 || (!interrupted(error) && !pending(error)))
+                socket_error(location,"Cannot send the socket string","Не удалось передать строку через сокет");
+        }
+    }
+};
 }
 
 struct SocketContext::State {
@@ -204,69 +275,36 @@ bool SocketContext::connect(std::int32_t client,std::u16string_view host,std::in
     auto& entry=opened(location).get(client,Role::outgoing,location);
     if(entry.connected)
         socket_error(location,"Client socket is already connected","Клиентский сокет уже подключён");
-    const auto service=std::to_string(port_number(port,location));
-    const auto name=to_utf8(host);
-    if(name.empty() || name.find('\0')!=std::string::npos)
-        socket_error(location,"Invalid socket host name","Недопустимое имя узла сокета");
-    checkpoint(location,options);
-    addrinfo hints{};
-    hints.ai_family=AF_INET;
-    hints.ai_socktype=SOCK_STREAM;
-    hints.ai_protocol=IPPROTO_TCP;
-    addrinfo* addresses=nullptr;
-    if(::getaddrinfo(name.c_str(),service.c_str(),&hints,&addresses)!=0)
-        socket_error(location,"Cannot resolve the socket host","Не удалось разрешить имя узла сокета");
-    const std::unique_ptr<addrinfo,decltype(&::freeaddrinfo)> cleanup(addresses,&::freeaddrinfo);
-    for(auto* address=addresses;address;address=address->ai_next){
-        checkpoint(location,options);
-        auto candidate=create_tcp(location);
-        const auto handle=candidate.get();
-        if(::connect(handle,address->ai_addr,static_cast<AddressLength>(address->ai_addrlen))!=0){
-            const auto failure=last_error();
-            if(!pending(failure) && !interrupted(failure))continue;
-            wait_ready(handle,POLLOUT,location,options);
-            int error=0;
-            AddressLength size=sizeof error;
-            if(::getsockopt(handle,SOL_SOCKET,SO_ERROR,reinterpret_cast<char*>(&error),&size)!=0 || error!=0)continue;
-        }
-        entry.socket=std::move(candidate);
-        entry.connected=true;
-        return true;
-    }
-    socket_error(location,"Cannot connect the TCP client","Не удалось подключить TCP-клиент");
+    entry.socket=connect_tcp(host,port,AF_INET,location,options);
+    entry.connected=true;
+    return true;
 }
 void SocketContext::send(std::int32_t client,std::u16string_view text,SourceLocation location,const ExecutionOptions& options){
     const auto& entry=opened(location).get(client,Role::outgoing,location);
     if(!entry.connected)socket_error(location,"TCP client is not connected","TCP-клиент не подключён");
     const auto bytes=encode_text_bytes(text,{TextEncodingKind::ascii,false,false},location);
-#ifdef MSG_NOSIGNAL
-    constexpr int send_flags=MSG_NOSIGNAL;
-#else
-    constexpr int send_flags=0;
-#endif
-    std::size_t offset=0;
-    while(offset<bytes.size()){
-        wait_ready(entry.socket.get(),POLLOUT,location,options);
-        const auto sent=::send(entry.socket.get(),bytes.data()+offset,static_cast<int>(bytes.size()-offset),send_flags);
-        if(sent>0){offset+=static_cast<std::size_t>(sent);continue;}
-        const auto error=last_error();
-        if(sent==0 || (!interrupted(error) && !pending(error)))
-            socket_error(location,"Cannot send the socket string","Не удалось передать строку через сокет");
-    }
+    SocketStream(entry.socket.get(),options).write(bytes,location);
 }
 std::u16string SocketContext::receive(std::int32_t client,SourceLocation location,const ExecutionOptions& options){
     const auto handle=opened(location).get(client,Role::incoming,location).socket.get();
     std::array<char,1024> bytes{};
-    for(;;){
-        wait_ready(handle,POLLIN,location,options);
-        const auto received=::recv(handle,bytes.data(),static_cast<int>(bytes.size()),0);
-        if(received>=0)
-            return decode_text_bytes(std::string_view(bytes.data(),static_cast<std::size_t>(received)),
-                {TextEncodingKind::ascii,false,false},false,location);
-        const auto error=last_error();
-        if(!interrupted(error) && !pending(error))
-            socket_error(location,"Cannot receive the socket string","Не удалось получить строку через сокет");
-    }
+    const auto received=SocketStream(handle,options).read(bytes,location);
+    return decode_text_bytes(std::string_view(bytes.data(),received),
+        {TextEncodingKind::ascii,false,false},false,location);
+}
+
+std::u16string SocketContext::command(const Value& host,std::int32_t port,const Value& text,bool reply,
+    SourceLocation location,const ExecutionOptions& options) {
+    if(std::holds_alternative<NilString>(host))throw runtime_error(RuntimeError::nil_reference,location);
+    (void)state(location);
+    auto socket=connect_tcp(std::get<std::u16string>(host),port,AF_UNSPEC,location,options);
+    SocketStream stream(socket.get(),options);
+    if(std::holds_alternative<NilString>(text))throw runtime_error(RuntimeError::nil_reference,location);
+    BinaryCodec writer(stream,{TextEncodingKind::utf8,false,true});
+    writer.write_string(std::get<std::u16string>(text),location,options);
+    if(!reply)return {};
+    BinaryCodec reader(stream,{TextEncodingKind::utf8,false,false},false,TextDecoding::framework);
+    return reader.read_string(location,options);
 }
 void SocketContext::close(std::int32_t handle){
     if(state_ && handle>=0 && static_cast<std::size_t>(handle)<state_->entries.size())

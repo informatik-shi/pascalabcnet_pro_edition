@@ -570,6 +570,7 @@ struct StaticField {std::string name;std::size_t local=0;MemberAccess access=Mem
 struct StaticClass {Type owner=Type::invalid;std::size_t state=0,initializer=0;std::vector<StaticField> fields;};
 struct StaticMethod {Type owner=Type::invalid;std::string name;std::size_t routine=0;MemberAccess access=MemberAccess::public_member;};
 struct StaticProperty {Type owner=Type::invalid;std::string name;Type type=Type::invalid;std::optional<std::size_t> getter,setter;std::vector<Type> indices;MemberAccess access=MemberAccess::public_member;bool default_indexer=false;};
+struct ClientServerGlobals {std::size_t server_name,port;};
 struct Program {
     std::vector<Value> constants;
     std::vector<Local> locals;
@@ -579,6 +580,7 @@ struct Program {
     std::optional<std::size_t> print_delimiter;
     std::optional<std::size_t> print_matrix_format;
     std::optional<std::size_t> default_encoding;
+    std::optional<ClientServerGlobals> client_server;
     // Logical source-file stem, preserved when the editor executes a snapshot.
     std::string module_name = "Program";
     std::vector<FixedArrayShape> fixed_arrays;

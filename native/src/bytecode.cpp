@@ -73,6 +73,7 @@ public:
         program_.static_properties=std::move(module.static_properties);
         program_.source_namespace=std::move(module.source_namespace);
         program_.print_delimiter=module.print_delimiter;program_.print_matrix_format=module.print_matrix_format;program_.default_encoding=module.default_encoding;
+        program_.client_server=module.client_server;
         for (auto& routine : module.routines) {
             for (auto local:routine.signature.captures) captured_.insert(local);
             program_.routines.push_back(std::move(routine.signature));
@@ -1611,6 +1612,8 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         case Op::call_builtin:
             if (instruction.operand >= stdlib::signatures().size()
                 || type != stdlib::signatures()[instruction.operand].result) invalid(instruction, "Invalid standard function");
+            if(stdlib::signatures()[instruction.operand].unit=="clientserver" && !program.client_server)
+                invalid(instruction,"Missing ClientServer globals");
             if(stdlib::signatures()[instruction.operand].function>=stdlib::Function::resize_short_string
                 && stdlib::string_mutation_reference(stdlib::signatures()[instruction.operand].function))
                 invalid(instruction,"Short string procedure requires a reference");
@@ -2210,6 +2213,13 @@ void verify(const Program& program) {
         if(slot>=program.locals.size() || !program.locals[slot].global || !valid_value_type(program,program.locals[slot].type)
             || !compound(program.locals[slot].type) || type_info(program,program.locals[slot].type).kind!=CompoundKind::encoding)
             throw Error("E_BYTECODE",{},"Invalid DefaultEncoding global");
+    }
+    if(program.client_server){
+        const auto global=[&](std::size_t slot,Type type){
+            return slot<program.locals.size() && program.locals[slot].global && program.locals[slot].type==type;
+        };
+        if(!global(program.client_server->server_name,Type::string) || !global(program.client_server->port,Type::integer))
+            throw Error("E_BYTECODE",{},"Invalid ClientServer globals","Недопустимые глобальные переменные ClientServer");
     }
     if (program.types.size() > 1024 || program.locals.size() > 4096 || program.routines.size() > 256)
         throw Error("E_BYTECODE",{},"Module metadata limit exceeded");

@@ -378,7 +378,7 @@ public:
             do {
                 auto module = name();while(accept("."))module.text+="."+name().text;
                 if (module.text != "pabcsystem" && module.text != "arrays" && module.text != "collections"
-                    && module.text != "filesoperations" && module.text != "events" && module.text != "pointrect" && module.text != "school" && module.text != "system" && module.text != "system.text" && module.text != "system.numerics" && module.text != "inifile" && module.text != "oberon00system" && module.text != "sockets")
+                    && module.text != "filesoperations" && module.text != "events" && module.text != "pointrect" && module.text != "school" && module.text != "system" && module.text != "system.text" && module.text != "system.numerics" && module.text != "inifile" && module.text != "oberon00system" && module.text != "sockets" && module.text != "clientserver")
                     throw Error("E_UNSUPPORTED", module.location, "Unit is not ported yet: '" + module.text + "'");
                 if (module.text == "collections") root.collections_imported = true;
                 root.imported_units.insert(module.text);
@@ -1483,6 +1483,11 @@ public:
         syntax_root_=&source;module_.routines.reserve(256);
         collections_imported_ = source.collections_imported;
         imported_units_=source.imported_units; imported_units_.insert("pabcsystem");
+        if(imported_units_.contains("clientserver")) {
+            module_.client_server=ClientServerGlobals{module_.locals.size(),module_.locals.size()+1};
+            module_.locals.push_back({"$clientserver.servername",Type::string,true});
+            module_.locals.push_back({"$clientserver.port",Type::integer,true});
+        }
         scopes_.emplace_back();
         for(const auto& node:source.statements)if(node.kind==SyntaxStmtKind::constant_declaration)enum_prior_constants_.push_back(&node);
         std::set<std::string> declared_types;
@@ -1607,6 +1612,16 @@ public:
         module_.body.statements.push_back(statement(source.statements.back()));
         for (auto& statement:module_.body.statements) constant_initializers_.push_back(std::move(statement));
         module_.body.statements=std::move(constant_initializers_);
+        if(module_.client_server){
+            const auto initialize=[&](std::size_t slot,Value value){
+                hir::Stmt initial;initial.kind=hir::StmtKind::assign;initial.local=slot;
+                initial.expression=std::make_unique<hir::Expr>();initial.expression->kind=hir::ExprKind::literal;
+                initial.expression->type=module_.locals[slot].type;initial.expression->value=std::move(value);
+                module_.body.statements.insert(module_.body.statements.begin(),std::move(initial));
+            };
+            initialize(module_.client_server->port,std::int32_t{13000});
+            initialize(module_.client_server->server_name,std::u16string{u"127.0.0.1"});
+        }
         if (module_.print_delimiter) {
             hir::Stmt initial; initial.kind=hir::StmtKind::assign; initial.local=*module_.print_delimiter;
             initial.expression=std::make_unique<hir::Expr>(); initial.expression->kind=hir::ExprKind::literal;
@@ -2194,6 +2209,13 @@ private:
             module_.locals.push_back({"$defaultencoding",type,true});
         }
         return *module_.default_encoding;
+    }
+    bool bind_client_server_global(hir::Expr& result,std::string_view name) const {
+        if(!module_.client_server || (name!="servername" && name!="port"))return false;
+        result.kind=hir::ExprKind::local;
+        result.local=name=="servername" ? module_.client_server->server_name : module_.client_server->port;
+        result.type=module_.locals[result.local].type;
+        return true;
     }
     Type tuple_type(const std::vector<Type>& elements,SourceLocation location) {
         if (elements.size()<2 || elements.size()>7) throw Error("E_TYPE",location,"Tuple requires two to seven statically typed elements");
@@ -5087,6 +5109,8 @@ private:
                 }
                 if (source.left->token.text=="pabcsystem" && (name=="writeformat" || name=="writelnformat"))
                     return bind_formatted_output(source);
+                if(source.kind==SyntaxExprKind::field && source.left->token.text=="clientserver"
+                    && bind_client_server_global(*result,source.token.text))break;
                 if (source.kind==SyntaxExprKind::field && source.left->token.text=="pabcsystem") {
                     if(source.token.text=="defaultencoding") {
                         result->local=default_encoding();result->kind=hir::ExprKind::local;result->type=module_.locals[result->local].type;break;
@@ -5726,6 +5750,8 @@ private:
                 return expression(call);
             } else if (auto builtin_value=builtin_function_value(source)) {
                 return builtin_value;
+            } else if(bind_client_server_global(*result,source.token.text)) {
+                return result;
             } else if(source.token.text=="emptyset") {
                 return empty_expression(empty_type(),EmptyMethod::singleton,{},result->location);
             } else if(source.token.text=="defaultencoding") {

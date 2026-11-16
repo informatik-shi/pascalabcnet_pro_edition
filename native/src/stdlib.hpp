@@ -26,7 +26,8 @@ enum class Function {
     windows_character, windows_ordinal, regex_is_match, regex_match_value, assertion, milliseconds, milliseconds_delta, sleep, extract_file_name, extract_file_ext, extract_file_path, extract_file_dir, extract_file_drive, expand_file_name, command_line_count, command_line_parameter, executable_name, pascal_version, disk_free, disk_size, terminate_program, reflected_type_name, single_cast, str_to_single,
     subrange_integer_cast, clip_short_string, get_short_string_char, set_short_string_char, resize_short_string, insert_short_string,
     read_short_string, read_short_string_from_file,
-    socket_server, socket_client, socket_accept, socket_connect, socket_send, socket_receive, socket_close
+    socket_server, socket_client, socket_accept, socket_connect, socket_send, socket_receive, socket_close,
+    send_command, request_command
 };
 inline std::optional<std::size_t> string_mutation_reference(Function function) {
     switch(function) {
@@ -55,6 +56,7 @@ struct Context {
     TimeContext& timing;
     ProgramEnvironment& environment;
     SocketContext& sockets;
+    std::function<std::pair<const Value&,std::int32_t>()> client_server_address;
 };
 // One catalog is shared by the type checker, bytecode verifier and VM.
 std::span<const Signature> signatures();

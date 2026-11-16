@@ -79,6 +79,8 @@ std::span<const Signature> signatures() {
         add("sendstring",{Type::integer,Type::string},Type::unit,Function::socket_send,"sockets");
         add("receivestring",{Type::integer,Type::string},Type::unit,Function::socket_receive,"sockets",1);
         add("closesocket",{Type::integer},Type::unit,Function::socket_close,"sockets");
+        add("sendcommand",{Type::string},Type::unit,Function::send_command,"clientserver");
+        add("sendcommandandreceiveanswer",{Type::string},Type::string,Function::request_command,"clientserver");
         for (const auto& [name,function]:{std::pair<std::string_view,Function>{"bin",Function::school_bin},{"oct",Function::school_oct},{"hex",Function::school_hex}})
             add(name,{Type::int64},Type::string,function,"school");
         add("dec",{Type::string,Type::integer},Type::int64,Function::school_dec,"school");
@@ -431,6 +433,13 @@ Value invoke(std::size_t id, std::span<const Value> arguments, SourceLocation lo
     case Function::socket_close:
         context.sockets.close(std::get<std::int32_t>(arguments[0]));
         return false;
+    case Function::send_command: case Function::request_command: {
+        const auto [host,port]=context.client_server_address();
+        const bool reply=function==Function::request_command;
+        auto result=context.sockets.command(host,port,arguments[0],reply,location,context.options);
+        if(reply)return result;
+        return false;
+    }
     default:break;
     }
     if (context.values.pabc_number_format) {
