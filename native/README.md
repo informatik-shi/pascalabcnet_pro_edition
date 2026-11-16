@@ -3233,6 +3233,13 @@ ZIP.
 возвращает тот же `DBNull.Value`, что и литерал `NULL`.
 [Тест преобразований TimeSpan](tests/fixtures/utils-timespan-convert-compat.pas).
 
+`System.Guid` доступен в объявлении типа и как результат `CONVERT` в `Eval`.
+`Guid.Parse` и `ToString` принимают форматы `D`, `N`, `B`, `P` и `X`.
+Конструктор поддерживает строку и массив из 16 байтов. `ToByteArray`
+и `RecordToByteArray` используют тот же порядок байтов, что PascalABC.NET.
+Также доступны `Guid.Empty`, `CompareTo` и типизированный `Equals`.
+[Тест Guid](tests/fixtures/utils-guid-compat.pas).
+
 Имена в квадратных скобках и обратных кавычках сохраняются при разборе
 `Eval`. Для `SUM`, `AVG`, `MIN`, `MAX`, `COUNT`, `STDEV` и `VAR` проверяется
 форма аргумента с именем столбца и необязательным `Child`. В таблице, с

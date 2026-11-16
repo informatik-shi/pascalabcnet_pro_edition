@@ -8,6 +8,7 @@
 #include "runtime_values.hpp"
 #include "utils_eval.hpp"
 #include "utils_marshal.hpp"
+#include "guid.hpp"
 #include "record_initialization.hpp"
 #include "files.hpp"
 #include "linked.hpp"
@@ -617,6 +618,14 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
         case Op::utils_record_bytes: {
             const auto object=pop();
             stack.push_back(utils_record_to_bytes(values,instruction.type,object,options));
+            break;
+        }
+        case Op::guid_call: {
+            const auto method=static_cast<GuidMethod>(instruction.operand);
+            const auto bytes=type_info(program,instruction.type).element;
+            std::vector<Value> arguments(guid_parameters(instruction.type,bytes,method).size());
+            for(std::size_t i=arguments.size();i>0;--i)arguments[i-1]=pop();
+            stack.push_back(guid_invoke(values,instruction.type,method,arguments));
             break;
         }
         case Op::utils_benchmark: {

@@ -2,6 +2,7 @@
 #include "calendar.hpp"
 #include "cp1251.hpp"
 #include "decimal.hpp"
+#include "guid.hpp"
 #include "integer_values.hpp"
 #include "runtime_values.hpp"
 #include <algorithm>
@@ -62,6 +63,7 @@ class RecordMarshaller {
             return layouts_.emplace(type,Layout{4,4,{}}).first->second;
         if(shape.kind!=CompoundKind::record)unsupported();
         if(decimal_type(shape))return layouts_.emplace(type,Layout{16,8,{}}).first->second;
+        if(guid_record_type(shape))return layouts_.emplace(type,Layout{16,4,{}}).first->second;
         if(shape.native_record==NativeRecord::date_time)return layouts_.emplace(type,Layout{8,8,{}}).first->second;
         if(shape.native_record!=NativeRecord::none && shape.native_record!=NativeRecord::time_span
             && !complex_number_type(shape))unsupported();
@@ -107,6 +109,11 @@ class RecordMarshaller {
         }
         if(shape.native_record==NativeRecord::date_time){
             write_bits(output,std::bit_cast<std::uint64_t>(calendar_ole_date(value,values_.location)));
+            return;
+        }
+        if(guid_record_type(shape)){
+            const auto bytes=guid_bytes(value);
+            std::copy(bytes.begin(),bytes.end(),output.begin());
             return;
         }
         const auto& record=*std::get<std::shared_ptr<Aggregate>>(value);

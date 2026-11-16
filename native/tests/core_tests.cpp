@@ -784,6 +784,14 @@ void timing_library() {
     error([&]{(void)run("uses Utils;begin Writeln(EvalStr('CONVERT(3.5,System.TimeSpan)'));end.");},"E_TYPE");
     error([&]{(void)run("uses Utils;begin Writeln(Eval('CONVERT(1,System.DBNull)'));end.");},"E_TYPE");
     error([&]{(void)run("uses Utils;begin Writeln(EvalBool('CONVERT(1,System.TimeSpan)=CONVERT(1,System.TimeSpan)'));end.");},"E_TYPE");
+    error([&]{(void)run("begin Writeln(Guid.Parse('xx'));end.");},"E_FORMAT");
+    error([&]{(void)run("begin Writeln(Guid.Empty.ToString('Q'));end.");},"E_FORMAT");
+    error([&]{(void)run("begin Writeln(new Guid(Arr(byte(1))));end.");},"E_RANGE");
+    error([&]{(void)run("uses Utils;begin Writeln(Eval('CONVERT(7,System.Guid)'));end.");},"E_TYPE");
+    error([&]{(void)run("uses Utils;begin Writeln(EvalBool('CONVERT(''00000000000000000000000000000000'',System.Guid) IN (''0'')'));end.");},"E_TYPE");
+    auto guid=abc::compile("begin Writeln(Guid.Parse('00000000000000000000000000000000'));end.");
+    for(auto& instruction:guid.code)if(instruction.op==abc::Op::guid_call)instruction.operand=32768;
+    error([&]{abc::verify(guid);},"E_BYTECODE");
 }
 
 void sequence_text_and_flatten() {

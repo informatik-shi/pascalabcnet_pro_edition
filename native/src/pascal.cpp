@@ -14,6 +14,7 @@
 #include "number_format.hpp"
 #include "complex_number.hpp"
 #include "calendar.hpp"
+#include "guid.hpp"
 #include "decimal.hpp"
 #include "fixed_array.hpp"
 #include "type_names.hpp"
@@ -686,7 +687,7 @@ private:
                 else if(result->kind=="collections"){expect(".");const auto generic=name();if(generic.text!="generic")throw Error("E_UNSUPPORTED",generic.location,"Unknown System.Collections namespace");expect(".");result->kind=name().text;if(result->kind!="dictionary" && result->kind!="sorteddictionary" && result->kind!="sortedlist" && result->kind!="keyvaluepair" && result->kind!="ienumerable" && result->kind!="ienumerator" && result->kind!="list" && result->kind!="hashset" && result->kind!="sortedset" && result->kind!="icomparer" && result->kind!="comparer" && result->kind!="iequalitycomparer" && result->kind!="equalitycomparer" && result->kind!="icollection" && result->kind!="ilist" && result->kind!="iset" && result->kind!="idictionary")throw Error("E_UNSUPPORTED",result->token.location,"Unknown generic collection type");}
                 else if (result->kind!="func" && result->kind!="action" && result->kind!="predicate" && result->kind!="type" && result->kind!="void" && result->kind!="single" && result->kind!="object" && result->kind!="icomparable" && result->kind!="iequatable"
                     && result->kind!="datetime" && result->kind!="timespan" && result->kind!="datetimekind" && result->kind!="dayofweek"
-                    && result->kind!="decimal" && result->kind!="midpointrounding" && result->kind!="dbnull")
+                    && result->kind!="decimal" && result->kind!="midpointrounding" && result->kind!="dbnull" && result->kind!="guid")
                     throw Error("E_UNSUPPORTED",result->token.location,"Unknown or unsupported type 'System."+result->kind+"'");
             }
             if (result->kind=="comparer" || result->kind=="equalitycomparer") accept("&");
@@ -2892,6 +2893,90 @@ private:
         module_.types.push_back(std::move(shape));
         return static_cast<Type>(63+module_.types.size());
     }
+    bool is_guid(Type type) const {
+        return compound(type) && guid_record_type(info(type,{}));
+    }
+    Type guid_type(SourceLocation location) {
+        for(std::size_t i=0;i<module_.types.size();++i)
+            if(guid_record_type(module_.types[i]))return static_cast<Type>(64+i);
+        const auto bytes=sequence_type(CompoundKind::array,Type::byte);
+        if(module_.types.size()>=1024)throw Error("E_LIMIT",location,"Type limit exceeded");
+        TypeInfo shape{"guid",CompoundKind::record,bytes,{{"_first",Type::longword,false},
+            {"_second",Type::word,false},{"_third",Type::word,false},{"_tail",Type::uint64,false}}};
+        shape.native_record=NativeRecord::guid;
+        module_.types.push_back(std::move(shape));
+        return static_cast<Type>(63+module_.types.size());
+    }
+    Type guid_owner(const SyntaxExpr& target) {
+        if(target.kind==SyntaxExprKind::name && !lookup(target.token)){
+            if(const auto alias=aliases_.find(target.token.text);alias!=aliases_.end())
+                return is_guid(alias->second) ? alias->second : Type::invalid;
+            if(target.token.text=="guid")return guid_type(target.token.location);
+        }
+        if(target.kind==SyntaxExprKind::field && target.token.text=="guid" && target.left
+            && target.left->kind==SyntaxExprKind::name && target.left->token.text=="system" && !lookup(target.left->token))
+            return guid_type(target.token.location);
+        return Type::invalid;
+    }
+    std::unique_ptr<hir::Expr> guid_expression(Type owner,GuidMethod method,
+        std::vector<std::unique_ptr<hir::Expr>> arguments,SourceLocation location) {
+        const auto bytes=info(owner,location).element;
+        const auto parameters=guid_parameters(owner,bytes,method);
+        if(arguments.size()!=parameters.size())
+            throw Error("E_TYPE",location,"Wrong number of Guid arguments","Неверное число аргументов Guid");
+        for(std::size_t i=0;i<parameters.size();++i)arguments[i]=convert(std::move(arguments[i]),parameters[i]);
+        auto result=std::make_unique<hir::Expr>();
+        result->kind=hir::ExprKind::guid_call;
+        result->type=guid_result(owner,bytes,method);
+        result->operation_type=owner;
+        result->local=static_cast<std::size_t>(method);
+        result->location=location;
+        result->arguments=std::move(arguments);
+        return result;
+    }
+    std::unique_ptr<hir::Expr> default_guid(Type type,SourceLocation location) {
+        auto result=std::make_unique<hir::Expr>();
+        result->kind=hir::ExprKind::default_value;
+        result->type=type;
+        result->location=location;
+        return result;
+    }
+    std::unique_ptr<hir::Expr> make_guid_object(Type owner,const SyntaxExpr& source,SourceLocation location) {
+        if(source.arguments.empty())return default_guid(owner,location);
+        if(source.arguments.size()!=1)
+            throw Error("E_TYPE",location,"Guid constructor expects a String or Byte array",
+                "Конструктору Guid нужна строка или массив Byte");
+        std::vector<std::unique_ptr<hir::Expr>> arguments;
+        arguments.push_back(expression(*source.arguments.front()));
+        const auto method=arguments.front()->type==info(owner,location).element ? GuidMethod::from_bytes : GuidMethod::parse;
+        return guid_expression(owner,method,std::move(arguments),location);
+    }
+    std::unique_ptr<hir::Expr> bind_guid_static(const SyntaxExpr& source) {
+        if(source.token.text!="parse" && source.token.text!="empty")return {};
+        const auto owner=guid_owner(*source.left);
+        if(owner==Type::invalid)return {};
+        if(source.token.text=="empty" && source.kind==SyntaxExprKind::field)return default_guid(owner,source.token.location);
+        if(source.token.text!="parse")return {};
+        std::vector<std::unique_ptr<hir::Expr>> arguments;
+        for(const auto& argument:source.arguments)arguments.push_back(expression(*argument));
+        return guid_expression(owner,GuidMethod::parse,std::move(arguments),source.token.location);
+    }
+    std::unique_ptr<hir::Expr> bind_guid_member(hir::Expr& receiver,const SyntaxExpr& source) {
+        const auto owner=receiver.left->type;
+        if(!is_guid(owner) || source.token.text=="gettype")return {};
+        using M=GuidMethod;
+        std::optional<M> method;
+        if(source.token.text=="tostring")method=source.arguments.empty() ? M::to_string : M::to_string_format;
+        if(source.token.text=="tobytearray")method=M::to_bytes;
+        if(source.token.text=="compareto")method=M::compare_to;
+        if(source.token.text=="equals")method=M::equals;
+        if(!method)
+            throw Error("E_NAME",source.token.location,"Unknown Guid member","Неизвестный член Guid");
+        std::vector<std::unique_ptr<hir::Expr>> arguments;
+        arguments.push_back(std::move(receiver.left));
+        for(const auto& argument:source.arguments)arguments.push_back(expression(*argument));
+        return guid_expression(owner,*method,std::move(arguments),source.token.location);
+    }
     Type calendar_owner(const SyntaxExpr& target) {
         if (target.kind==SyntaxExprKind::name && !lookup(target.token)) {
             if (const auto alias=aliases_.find(target.token.text); alias!=aliases_.end()) {
@@ -4063,6 +4148,8 @@ private:
             return decimal_record_type(syntax.token.location);
         if(syntax.kind=="dbnull" && (syntax.system_qualified || !aliases_.contains(syntax.kind)))
             return dbnull_type(syntax.token.location);
+        if(syntax.kind=="guid" && (syntax.system_qualified || !aliases_.contains(syntax.kind)))
+            return guid_type(syntax.token.location);
         if (syntax.kind=="midpointrounding" && (syntax.system_qualified || !aliases_.contains(syntax.kind)))
             return midpoint_rounding_type(syntax.token.location);
         if (syntax.kind=="numberformatinfo" &&
@@ -4722,6 +4809,7 @@ private:
                     "Нельзя создать экземпляр абстрактного класса '"+info(type,result->location).display_name+"'");
             if (!source.array_construction && is_decimal(type)) return make_decimal_object(type,source,result->location);
             if (!source.array_construction && is_calendar(type)) return make_calendar_object(type,source,result->location);
+            if (!source.array_construction && is_guid(type)) return make_guid_object(type,source,result->location);
             if (!source.array_construction && is_complex(type)) {
                 std::vector<std::unique_ptr<hir::Expr>> args;
                 for (const auto& arg:source.arguments) args.push_back(expression(*arg));
@@ -4974,6 +5062,7 @@ private:
         while((base->kind==SyntaxExprKind::field || base->kind==SyntaxExprKind::member_call) && base->left){
             if(!base->type_arguments.empty())break;
             if(base->token.text=="value" && dbnull_name(*base->left))break;
+            if(guid_owner(*base->left)!=Type::invalid)break;
             if (base->token.text=="create" && string_builder_constructor_owner(*base->left)!=Type::invalid) break;
             if (complex_type_name(*base->left)!=Type::invalid) break;
             if ((base->token.text=="create" || base->token.text=="invariantinfo" || base->token.text=="currentinfo"
@@ -5081,6 +5170,7 @@ private:
             if (auto number_format=bind_number_format_static(source)) return number_format;
             if (auto decimal=bind_decimal_static(source)) return decimal;
             if (auto calendar=bind_calendar_static(source)) return calendar;
+            if (auto guid=bind_guid_static(source)) return guid;
             if (auto complex=bind_complex_static(source)) return complex;
             if (source.token.text=="create")
                 if (const auto type=string_builder_constructor_owner(*source.left); type!=Type::invalid)
@@ -5271,6 +5361,7 @@ private:
             if (auto number_format=bind_number_format_member(*result,source)) return number_format;
             if (auto decimal=bind_decimal_member(*result,source)) return decimal;
             if (auto calendar=bind_calendar_member(*result,source)) return calendar;
+            if (auto guid=bind_guid_member(*result,source)) return guid;
             if (auto complex=bind_complex_member(*result,source)) return complex;
             if (auto builder=bind_string_builder_member(*result,source)) return builder;
             if(bind_encoding_member(*result,source))break;
@@ -5906,6 +5997,18 @@ private:
                 return convert_to_subrange(std::move(argument),base,true);
             }
             const auto native_alias=aliases_.find(source.token.text);
+            const bool guid_cast=native_alias!=aliases_.end() ? is_guid(native_alias->second) : source.token.text=="guid";
+            if(guid_cast && !routine_names_.contains(source.token.text)){
+                if(source.arguments.size()!=1)
+                    throw Error("E_TYPE",result->location,"Guid conversion requires one value","Для приведения к Guid нужно одно значение");
+                const auto type=native_alias==aliases_.end() ? guid_type(result->location) : native_alias->second;
+                auto input=expression(*source.arguments.front());
+                if(boxed_object(input->type,result->location)){
+                    const auto object=input->type;
+                    return object_conversion(std::move(input),type,object);
+                }
+                return convert(std::move(input),type);
+            }
             const bool decimal_cast=native_alias!=aliases_.end()?is_decimal(native_alias->second):source.token.text=="decimal";
             if (decimal_cast && !routine_names_.contains(source.token.text)) {
                 if (source.arguments.size()!=1)
@@ -8111,6 +8214,7 @@ private:
     void register_utils_eval_types(SourceLocation location) {
         (void)decimal_record_type(location);
         (void)calendar_type("datetime",location);
+        (void)guid_type(location);
     }
     std::unique_ptr<hir::Expr> utils_eval_value(SourceLocation location,Type expected) {
         const auto object=object_type(location);

@@ -4,6 +4,7 @@
 #include "comparable.hpp"
 #include "composite_format.hpp"
 #include "decimal.hpp"
+#include "guid.hpp"
 #include "integer_values.hpp"
 #include "number_format.hpp"
 #include "runtime_values.hpp"
@@ -113,6 +114,7 @@ class Evaluation {
     Type decimal_;
     Type date_;
     Type interval_;
+    Type guid_;
     std::u16string_view source_;
     std::size_t cursor_=0, work_=0;
     std::vector<Node> nodes_;
@@ -465,6 +467,7 @@ class Evaluation {
         if(name==u"System.Decimal")return decimal_;
         if(name==u"System.DateTime")return date_;
         if(name==u"System.TimeSpan")return interval_;
+        if(name==u"System.Guid")return guid_;
         if(name==u"System.String")return Type::string;
         throw Error("E_UNSUPPORTED",location_,"Unknown or unsupported CONVERT target type",
             "Неизвестный или неподдерживаемый тип результата CONVERT");
@@ -574,6 +577,7 @@ class Evaluation {
         format.negative_infinity=u"-∞";
         if(type==decimal_)return format_decimal(value,{},format,location_);
         if(type==date_ || type==interval_)return calendar_text(value,{},location_);
+        if(type==guid_)return guid_text(value,{},location_);
         if(type==Type::real || type==Type::single || integer_type(type))
             return format_number(value,type,{},format,location_);
         return format_scalar(value,location_);
@@ -659,6 +663,7 @@ class Evaluation {
     }
     Value arithmetic(Symbol op,const Value& left,const Value& right) {
         const auto a=kind(left), b=kind(right);
+        if(a==guid_ || b==guid_)operands();
         if(op==Symbol::plus && (a==Type::string || b==Type::string || (a==Type::character && b==Type::character))){
             auto result=text(left);
             const auto suffix=text(right);
@@ -698,6 +703,11 @@ class Evaluation {
     }
     int compare(const Value& left,const Value& right,bool equality=true) {
         const auto a=kind(left),b=kind(right);
+        if(a==guid_ || b==guid_){
+            if(a==guid_ && b==guid_)return compare_guid(left,right);
+            if(a!=Type::string && b!=Type::string)operands();
+            return compare_culture_strings(comparison_text(text(left)),comparison_text(text(right)),location_,options_,true);
+        }
         if(a==date_ || b==date_)return compare_calendar_values(date_value(left),date_value(right));
         if((a==Type::string && b==Type::character) || (a==Type::character && b==Type::string))
             return compare(Value{text(left)},Value{text(right)},equality);
@@ -778,6 +788,9 @@ class Evaluation {
                 if(compare(left,Value{text(candidate)})==0)return true;
             }else if(type==date_){
                 if(compare_calendar_values(left,date_value(candidate))==0)return true;
+            }else if(type==guid_){
+                if(kind(candidate)!=guid_)operands();
+                if(compare_guid(left,candidate)==0)return true;
             }else if(type==Type::real){
                 if(floating_order(real(left),real(candidate))==0)return true;
             }else if(type==Type::single){
@@ -850,6 +863,12 @@ class Evaluation {
         if(target==decimal_)return as_decimal(value);
         if(target==date_)return date_value(value);
         if(target==interval_)return duration_value(value);
+        if(target==guid_){
+            if(kind(value)==guid_)return value;
+            if(kind(value)!=Type::string)operands();
+            const std::array<Value,1> arguments{std::move(value)};
+            return guid_invoke(values_,guid_,GuidMethod::parse,arguments);
+        }
         if(target==Type::boolean)return convert_boolean(value,true);
         if(target!=Type::character)throw runtime_error(RuntimeError::invalid_bytecode,location_);
         if(kind(value)==Type::character)return value;
@@ -908,9 +927,9 @@ class Evaluation {
         }
     }
 public:
-    Evaluation(Values& values,const ExecutionOptions& options,Type decimal,Type date,std::u16string_view source)
+    Evaluation(Values& values,const ExecutionOptions& options,Type decimal,Type date,Type guid,std::u16string_view source)
         :values_(values),options_(options),location_(values.location),decimal_(decimal),date_(date),
-        interval_(date==Type::invalid ? Type::invalid : type_info(values.program,date).element),source_(source){}
+        interval_(date==Type::invalid ? Type::invalid : type_info(values.program,date).element),guid_(guid),source_(source){}
     Value compute() {
         advance();
         Value value=NilString{};
@@ -943,7 +962,8 @@ Type evaluator_native_type(const Program& program,NativeRecord type) {
 }
 Evaluation evaluate_text(Values& values,const Value& expression,const ExecutionOptions& options) {
     return {values,options,evaluator_native_type(values.program,NativeRecord::decimal_value),
-        evaluator_native_type(values.program,NativeRecord::date_time),string_text(expression)};
+        evaluator_native_type(values.program,NativeRecord::date_time),
+        evaluator_native_type(values.program,NativeRecord::guid),string_text(expression)};
 }
 }
 

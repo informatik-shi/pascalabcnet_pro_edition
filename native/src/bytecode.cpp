@@ -3,6 +3,7 @@
 #include "encoding.hpp"
 #include "native_resource.hpp"
 #include "calendar.hpp"
+#include "guid.hpp"
 #include "decimal.hpp"
 #include "binary_file.hpp"
 #include "scalar_serialization.hpp"
@@ -185,6 +186,9 @@ private:
         case hir::ExprKind::utils_record_bytes:
             expression(*node.arguments.front());
             emit(Op::utils_record_bytes,node.type,node.local,node.location);break;
+        case hir::ExprKind::guid_call:
+            for(const auto& argument:node.arguments)expression(*argument);
+            emit(Op::guid_call,node.operation_type,node.local,node.location);break;
         case hir::ExprKind::database_null:
             emit(Op::database_null,node.type,0,node.location);break;
         case hir::ExprKind::tuple_literal:
@@ -1023,7 +1027,8 @@ bool valid_utils_eval_types(const Program& program) {
     return std::any_of(program.types.begin(),program.types.end(),decimal_type)
         && std::any_of(program.types.begin(),program.types.end(),[](const auto& type){
             return type.kind==CompoundKind::record && type.native_record==NativeRecord::date_time;
-        });
+        })
+        && std::any_of(program.types.begin(),program.types.end(),guid_record_type);
 }
 bool text_scalar(const Program& program,Type type){return scalar(type) || enumeration(program,type);}
 bool has_parameterless_constructor(const Program& program,Type owner){
@@ -1339,6 +1344,11 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
                 invalid(instruction,"Invalid RecordToByteArray type metadata");
             break;
         }
+        case Op::guid_call:
+            if(!compound(type) || !guid_record_type(type_info(program,type))
+                || instruction.operand>static_cast<std::size_t>(GuidMethod::equals))
+                invalid(instruction,"Invalid Guid call metadata");
+            break;
         case Op::school_table_print: case Op::school_table_new:
             if (!compound(type) || type_info(program,type).kind!=CompoundKind::array || type_info(program,type).rank!=2
                 || type_info(program,type).element!=Type::boolean || instruction.operand) invalid(instruction,"Invalid School truth-table output");
@@ -1657,7 +1667,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             break;
         case Op::get_field: case Op::ref_field:
             if (!compound(type) || (type_info(program,type).kind!=CompoundKind::record && type_info(program,type).kind!=CompoundKind::object_class && !(instruction.op==Op::get_field && type_info(program,type).kind==CompoundKind::tuple))
-                || collection_enumerator_type(type_info(program,type)) || dictionary_enumerator_type(type_info(program,type)) || ordinal_range_type(type_info(program,type)) || real_interval_type(type_info(program,type)) || complex_number_type(type_info(program,type)) || calendar_record(type_info(program,type)) || decimal_type(type_info(program,type)) || (instruction.op==Op::ref_field && key_value_pair_type(type_info(program,type))) || instruction.operand>=type_info(program,type).fields.size()) invalid(instruction,"Invalid or writable tuple/record access");
+                || collection_enumerator_type(type_info(program,type)) || dictionary_enumerator_type(type_info(program,type)) || ordinal_range_type(type_info(program,type)) || real_interval_type(type_info(program,type)) || complex_number_type(type_info(program,type)) || calendar_record(type_info(program,type)) || decimal_type(type_info(program,type)) || guid_record_type(type_info(program,type)) || (instruction.op==Op::ref_field && key_value_pair_type(type_info(program,type))) || instruction.operand>=type_info(program,type).fields.size()) invalid(instruction,"Invalid or writable tuple/record access");
             break;
         case Op::list_add: case Op::list_remove: case Op::list_clear: case Op::list_contains:
             if (!compound(type) || type_info(program,type).kind != CompoundKind::list) invalid(instruction,"Invalid list instruction"); break;
@@ -1949,6 +1959,14 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         case Op::utils_benchmark: require(Type::integer); require(instruction.type); stack.push_back(Type::real); break;
         case Op::database_null: stack.push_back(instruction.type); break;
         case Op::utils_record_bytes: require(static_cast<Type>(instruction.operand)); stack.push_back(instruction.type); break;
+        case Op::guid_call: {
+            const auto bytes=type_info(program,instruction.type).element;
+            const auto operation=static_cast<GuidMethod>(instruction.operand);
+            const auto parameters=guid_parameters(instruction.type,bytes,operation);
+            for(auto parameter=parameters.rbegin();parameter!=parameters.rend();++parameter)require(*parameter);
+            stack.push_back(guid_result(instruction.type,bytes,operation));
+            break;
+        }
         case Op::utils_eval_object: require(Type::string); stack.push_back(instruction.type); break;
         case Op::school_table_new: require(Type::integer); stack.push_back(instruction.type); break;
         case Op::tuple_literal: case Op::school_pair:
@@ -2294,7 +2312,7 @@ void verify(const Program& program) {
             throw Error("E_BYTECODE",{},"Invalid DBNull type metadata","Недопустимое описание типа DBNull");
         if(type.abstract_class && type.kind!=CompoundKind::object_class)
             throw Error("E_BYTECODE",{},"Abstract class flag on a non-class type");
-        if(type.native_record!=NativeRecord::none && ((type.native_record!=NativeRecord::ordinal_range && type.native_record!=NativeRecord::real_interval && type.native_record!=NativeRecord::key_value_pair && type.native_record!=NativeRecord::dictionary_enumerator && type.native_record!=NativeRecord::collection_enumerator && !complex_number_type(type) && !calendar_record(type) && !decimal_type(type)) || type.kind!=CompoundKind::record))throw Error("E_BYTECODE",{},"Invalid native record metadata");
+        if(type.native_record!=NativeRecord::none && ((type.native_record!=NativeRecord::ordinal_range && type.native_record!=NativeRecord::real_interval && type.native_record!=NativeRecord::key_value_pair && type.native_record!=NativeRecord::dictionary_enumerator && type.native_record!=NativeRecord::collection_enumerator && !complex_number_type(type) && !calendar_record(type) && !decimal_type(type) && !guid_record_type(type)) || type.kind!=CompoundKind::record))throw Error("E_BYTECODE",{},"Invalid native record metadata");
         for (const auto& field:type.fields) if (!valid_member_access(field.access)
             || (type.kind!=CompoundKind::object_class && !(type.kind==CompoundKind::record&&type.native_record==NativeRecord::none) && field.access!=MemberAccess::public_member))
             throw Error("E_BYTECODE",{},"Invalid class member visibility metadata");
@@ -2458,6 +2476,10 @@ void verify(const Program& program) {
         } else if (type.kind == CompoundKind::record || type.kind==CompoundKind::tuple) {
             if (decimal_type(type) && !decimal_record_shape(type))
                 throw Error("E_BYTECODE",{},"Invalid Decimal record fields");
+            if(guid_record_type(type)){
+                if(!guid_record_shape(program.types,type))throw Error("E_BYTECODE",{},"Invalid Guid record fields");
+                prior(type.element);
+            }
             if (calendar_record(type)) {
                 if (!calendar_record_shape(program.types,type)) throw Error("E_BYTECODE",{},"Invalid calendar record fields");
                 if (type.native_record==NativeRecord::date_time) {prior(type.element);prior(type.key);}
