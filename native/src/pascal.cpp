@@ -378,7 +378,7 @@ public:
             do {
                 auto module = name();while(accept("."))module.text+="."+name().text;
                 if (module.text != "pabcsystem" && module.text != "arrays" && module.text != "collections"
-                    && module.text != "filesoperations" && module.text != "events" && module.text != "pointrect" && module.text != "school" && module.text != "system" && module.text != "system.text" && module.text != "system.numerics" && module.text != "inifile" && module.text != "oberon00system" && module.text != "sockets" && module.text != "clientserver")
+                    && module.text != "filesoperations" && module.text != "events" && module.text != "pointrect" && module.text != "school" && module.text != "system" && module.text != "system.text" && module.text != "system.numerics" && module.text != "inifile" && module.text != "oberon00system" && module.text != "sockets" && module.text != "clientserver" && module.text != "utils")
                     throw Error("E_UNSUPPORTED", module.location, "Unit is not ported yet: '" + module.text + "'");
                 if (module.text == "collections") root.collections_imported = true;
                 root.imported_units.insert(module.text);
@@ -2328,6 +2328,8 @@ private:
             if(auto value=oberon_print_value(source,expected,!unit.empty()))return value;
         if(source.token.text=="runserver" && hints.empty() && module_.client_server && (unit.empty() || unit=="clientserver"))
             return client_server_run_value(source.token.location,expected);
+        if(source.token.text=="benchmark" && hints.empty() && imported_units_.contains("utils") && (unit.empty() || unit=="utils"))
+            return utils_benchmark_value(source.token.location,expected);
         const auto context=callable_type(expected) ? std::optional<TypeInfo>{info(expected,source.token.location)} : std::nullopt;
         const auto catalog=stdlib::signatures();
         const auto visible=[&](const auto& signature){
@@ -5138,6 +5140,7 @@ private:
                 if (bind_generators(*result,source,source.left->token.text)) break;
                 if (bind_school_table(*result,source,source.left->token.text)) break;
                 if (bind_client_server_run(*result,source,source.left->token.text)) break;
+                if (bind_utils_benchmark(*result,source,source.left->token.text)) break;
                 if (bind_dictionary_query(*result,source,source.left->token.text)) break;
                 if (bind_sequence_zip(*result,source,source.left->token.text)) break;
                 if (bind_sequence_numeric_selector(*result,source,source.left->token.text)) break;
@@ -5902,6 +5905,7 @@ private:
             if (!routine_names_.contains(source.token.text) && bind_generators(*result,source)) break;
             if (!routine_names_.contains(source.token.text) && bind_school_table(*result,source)) break;
             if (!routine_names_.contains(source.token.text) && bind_client_server_run(*result,source)) break;
+            if (!routine_names_.contains(source.token.text) && bind_utils_benchmark(*result,source)) break;
             if (!routine_names_.contains(source.token.text) && bind_dictionary_query(*result,source)) break;
             if (!routine_names_.contains(source.token.text) && bind_sequence_zip(*result,source)) break;
             if (!routine_names_.contains(source.token.text) && bind_sequence_numeric_selector(*result,source)) break;
@@ -7954,6 +7958,41 @@ private:
         return (callback.element==Type::unit || callback.element==Type::string)
             && callback.parameters.size()==1 && callback.parameters[0]==CallableParameter{Type::string,false,false};
     }
+    std::unique_ptr<hir::Expr> native_operation_value(hir::ExprKind kind,Type expected,SourceLocation location,
+        std::string_view name,std::map<Type,std::size_t>& routines) {
+        const auto& signature=info(expected,location);
+        const auto callback=signature.parameters.front().type;
+        auto found=routines.find(callback);
+        if(found==routines.end()){
+            if(module_.routines.size()>=256)throw Error("E_LIMIT",location,"Routine limit exceeded");
+            hir::RoutineBody routine;
+            routine.signature.name=std::string(name);
+            routine.signature.result=signature.element;
+            routine.body.kind=signature.element==Type::unit ? hir::StmtKind::call : hir::StmtKind::return_stmt;
+            routine.body.location=location;
+            auto& invoke=routine.body.expression=std::make_unique<hir::Expr>();
+            invoke->kind=kind;invoke->type=signature.element;invoke->location=location;
+            const auto local=[&](std::string slot_name,Type type){
+                const auto slot=module_.locals.size();
+                module_.locals.push_back({std::move(slot_name),type,false});
+                routine.signature.locals.push_back(slot);lambda_locals_.insert(slot);
+                return slot;
+            };
+            for(const auto& parameter:signature.parameters){
+                const auto slot=local("$argument",parameter.type);
+                routine.signature.parameters.push_back({slot,parameter.type,false});
+                auto argument=std::make_unique<hir::Expr>();
+                argument->kind=hir::ExprKind::local;argument->type=parameter.type;
+                argument->local=slot;argument->location=location;
+                invoke->arguments.push_back(std::move(argument));
+            }
+            if(signature.element!=Type::unit)routine.signature.result_local=local("$result",signature.element);
+            const auto id=module_.routines.size();
+            module_.routines.push_back(std::move(routine));
+            found=routines.emplace(callback,id).first;
+        }
+        return routine_value(found->second,location,expected);
+    }
     std::unique_ptr<hir::Expr> client_server_run_value(SourceLocation location,Type expected) {
         if(!callable_type(expected))
             throw Error("E_TYPE",location,"RunServer requires a known overload","Для RunServer нужна известная перегрузка");
@@ -7962,30 +8001,7 @@ private:
             || signature.parameters[0].by_reference || signature.parameters[0].variadic
             || !client_server_callback(signature.parameters[0].type,location))
             throw Error("E_TYPE",location,"No RunServer overload matches the procedure type","Нет перегрузки RunServer с подходящим типом процедуры");
-        const auto callback=signature.parameters[0].type;
-        auto found=client_server_routines_.find(callback);
-        if(found==client_server_routines_.end()){
-            if(module_.routines.size()>=256)throw Error("E_LIMIT",location,"Routine limit exceeded");
-            const auto local=module_.locals.size();
-            module_.locals.push_back({"$command_callback",callback,false});
-            lambda_locals_.insert(local);
-            hir::RoutineBody routine;
-            routine.signature.name="$runserver";
-            routine.signature.result=Type::unit;
-            routine.signature.parameters.push_back({local,callback,false});
-            routine.signature.locals.push_back(local);
-            routine.body.kind=hir::StmtKind::call;
-            routine.body.location=location;
-            auto& invoke=routine.body.expression=std::make_unique<hir::Expr>();
-            invoke->kind=hir::ExprKind::client_server_run;invoke->type=Type::unit;invoke->location=location;
-            invoke->left=std::make_unique<hir::Expr>();
-            invoke->left->kind=hir::ExprKind::local;invoke->left->type=callback;
-            invoke->left->local=local;invoke->left->location=location;
-            const auto id=module_.routines.size();
-            module_.routines.push_back(std::move(routine));
-            found=client_server_routines_.emplace(callback,id).first;
-        }
-        return routine_value(found->second,location,expected);
+        return native_operation_value(hir::ExprKind::client_server_run,expected,location,"$runserver",client_server_routines_);
     }
     bool bind_client_server_run(hir::Expr& result,const SyntaxExpr& source,std::string_view unit={}) {
         if(source.token.text!="runserver" || (!unit.empty() && unit!="clientserver") || !module_.client_server)return false;
@@ -8014,7 +8030,42 @@ private:
         if(!client_server_callback(value->type,value->location))
             throw Error("E_TYPE",value->location,"RunServer requires a String procedure or String-to-String function",
                 "RunServer требует процедуру со строковым параметром или функцию из строки в строку");
-        result.kind=hir::ExprKind::client_server_run;result.type=Type::unit;result.left=std::move(value);
+        result.kind=hir::ExprKind::client_server_run;result.type=Type::unit;result.arguments.push_back(std::move(value));
+        return true;
+    }
+    bool benchmark_callback(Type type,SourceLocation location) const {
+        if(!callable_type(type))return false;
+        const auto& callback=info(type,location);
+        return callback.element==Type::unit && callback.parameters.empty();
+    }
+    std::unique_ptr<hir::Expr> utils_benchmark_value(SourceLocation location,Type expected) {
+        if(!callable_type(expected))
+            throw Error("E_TYPE",location,"Benchmark requires a known function type","Для Benchmark нужен известный тип функции");
+        const auto& signature=info(expected,location);
+        if(signature.element!=Type::real || signature.parameters.size()!=2
+            || signature.parameters[0].by_reference || signature.parameters[0].variadic
+            || !benchmark_callback(signature.parameters[0].type,location)
+            || signature.parameters[1]!=CallableParameter{Type::integer,false,false})
+            throw Error("E_TYPE",location,"Benchmark requires procedure and Integer parameters and returns Real",
+                "Benchmark принимает процедуру и Integer и возвращает Real");
+        return native_operation_value(hir::ExprKind::utils_benchmark,expected,location,"$benchmark",benchmark_routines_);
+    }
+    bool bind_utils_benchmark(hir::Expr& result,const SyntaxExpr& source,std::string_view unit={}) {
+        if(source.token.text!="benchmark" || (!unit.empty() && unit!="utils") || !imported_units_.contains("utils"))return false;
+        if(source.arguments.empty() || source.arguments.size()>2)
+            throw Error("E_TYPE",result.location,"Benchmark takes a procedure and an optional repeat count",
+                "Benchmark принимает процедуру и необязательное число повторов");
+        const auto callback=function_type(Type::unit,{},result.location);
+        result.arguments.push_back(convert(expression(*source.arguments.front(),callback),callback));
+        if(source.arguments.size()==2){
+            result.arguments.push_back(convert(expression(*source.arguments[1],Type::integer),Type::integer));
+        }else{
+            auto count=std::make_unique<hir::Expr>();
+            count->kind=hir::ExprKind::literal;count->type=Type::integer;
+            count->location=result.location;count->value=std::int32_t{100};
+            result.arguments.push_back(std::move(count));
+        }
+        result.kind=hir::ExprKind::utils_benchmark;result.type=Type::real;
         return true;
     }
     bool bind_generators(hir::Expr& result,const SyntaxExpr& source,std::string_view unit={},bool member=false) {
@@ -10213,6 +10264,7 @@ private:
     std::set<const SyntaxExpr*> inherited_constructor_calls_;
     std::map<std::size_t,std::size_t> builtin_routines_;
     std::map<Type,std::size_t> client_server_routines_;
+    std::map<Type,std::size_t> benchmark_routines_;
     std::array<std::optional<std::size_t>,4> oberon_print_routines_{};
     std::map<std::pair<std::string,Type>,std::size_t> array_library_routines_;
     struct ClassProperty { Type type;std::optional<std::size_t> getter,setter;std::vector<Type> indices{};bool default_indexer=false; };

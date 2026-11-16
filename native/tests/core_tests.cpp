@@ -681,6 +681,17 @@ void timing_library() {
     catch(const abc::Error& e){require(e.code=="E_RANGE" && std::string_view(e.what())=="Sleep duration must be -1 or nonnegative" && e.russian=="Длительность Sleep должна быть равна -1 или быть неотрицательной" && e.location.line==2,"Sleep reports exact bilingual duration errors at its source location");}
     for(const auto source:{"begin Sleep(1.5);end.","begin Sleep(True);end.","begin Milliseconds(1);end.","begin var a:=Sleep(0);end."})compile_error(source,"E_TYPE");
     options={};int polls=0;options.cancelled=[&]{return ++polls>=2;};error([&]{(void)run("begin Sleep(-1);end.","",options);},"E_CANCELLED");
+    now=0;int repeats=0;
+    const auto tick=[&]{++repeats;now+=2'400'000;};
+    require(time.benchmark(3,tick,{},{})==7.0/3.0 && repeats==3,"Benchmark truncates the total milliseconds before averaging");
+    require(std::isnan(time.benchmark(0,tick,{},{})) && repeats==3,"Zero repeats skips the callback and preserves floating division by zero");
+    require(std::signbit(time.benchmark(-2,tick,{},{})) && repeats==3,"Negative repeats skip the callback and preserve signed zero");
+    options.cancelled=[&]{return repeats>=259;};
+    error([&]{(void)time.benchmark(1000,tick,{},options);},"E_CANCELLED");
+    require(repeats==259,"Benchmark checks for cancellation during repeated callbacks");
+    compile_error("begin Benchmark(procedure -> begin end);end.","E_NAME");
+    compile_error("uses Utils;begin Benchmark(()->1,1);end.","E_TYPE");
+    error([&]{(void)run("uses Utils;begin Benchmark(nil,1);end.");},"E_NIL");
 }
 
 void sequence_text_and_flatten() {

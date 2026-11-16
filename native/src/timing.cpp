@@ -30,6 +30,17 @@ std::int32_t TimeContext::delta(SourceLocation location) {
     const auto now=clock_(),elapsed=now-last_;last_=now;
     return milliseconds_value(elapsed,location);
 }
+double TimeContext::benchmark(std::int32_t repeats,const std::function<void()>& body,
+    SourceLocation location,const ExecutionOptions& options) const {
+    const auto start=clock_();
+    for(std::int32_t n=0;n<repeats;++n){
+        if((n&255)==0 && options.cancelled && options.cancelled())
+            throw runtime_error(RuntimeError::cancelled,location);
+        body();
+    }
+    const auto elapsed=(clock_()-start)/1'000'000;
+    return static_cast<double>(elapsed)/static_cast<double>(repeats);
+}
 void TimeContext::sleep(std::int32_t duration,SourceLocation location,const ExecutionOptions& options) const {
     if (duration< -1) throw runtime_error(RuntimeError::sleep_duration,location);
     const auto check=[&] {if (options.cancelled && options.cancelled()) throw runtime_error(RuntimeError::cancelled,location);};

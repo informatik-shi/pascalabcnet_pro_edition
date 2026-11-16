@@ -604,6 +604,17 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
             const auto sequence=std::get<std::shared_ptr<Aggregate>>(pop());
             stack.emplace_back(school_minmax(values,sequence,static_cast<Type>(instruction.operand),options)); break;
         }
+        case Op::utils_benchmark: {
+            const auto repeats=std::get<std::int32_t>(pop());
+            const auto callback=std::get<std::shared_ptr<Aggregate>>(pop());
+            const auto location=instruction.location;
+            const auto elapsed=timing.benchmark(repeats,[&]{
+                values.location=location;
+                (void)values.invoke_value(callback,{});
+            },location,options);
+            stack.emplace_back(elapsed);
+            break;
+        }
         case Op::client_server_run: {
             const auto callback=std::get<std::shared_ptr<Aggregate>>(pop());
             const auto port=std::get<std::int32_t>(globals[program.client_server->port]->value);

@@ -12,6 +12,8 @@ public:
     std::int32_t milliseconds(SourceLocation location) const;
     std::int32_t delta(SourceLocation location);
     void sleep(std::int32_t duration,SourceLocation location,const ExecutionOptions& options) const;
+    double benchmark(std::int32_t repeats,const std::function<void()>& body,
+        SourceLocation location,const ExecutionOptions& options) const;
 private:
     Clock clock_;
     Pause pause_;
