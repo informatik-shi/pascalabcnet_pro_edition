@@ -198,6 +198,7 @@ Utils.EvalInt, EvalReal, EvalBool и EvalStr вычисляют скалярны
 LIKE и IN в выражениях Utils поддерживают шаблоны строк и типизированные сравнения со списком.
 CONVERT преобразует основные скалярные типы в выражениях Utils.
 CONVERT поддерживает узкие и беззнаковые числа и Single с проверкой разрядности.
+CONVERT распознаёт имена поддерживаемых типов с mscorlib, включая AssemblyQualifiedName.
 Utils.Eval возвращает Object, который сохраняет исходный тип значения. Для NULL возвращается DBNull.Value.
 Utils.Eval распознаёт литералы дат #...# и CONVERT в System.DateTime.
 CONVERT преобразует XML-длительности и число тиков в System.TimeSpan.

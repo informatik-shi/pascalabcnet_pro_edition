@@ -44,7 +44,6 @@ struct Node {
     bool literal=false;
     std::size_t third=0;
     std::vector<std::size_t> members{};
-    Type conversion_type=Type::invalid;
 };
 
 struct PendingOperator {
@@ -68,6 +67,50 @@ std::u16string_view trim(std::u16string_view text) {
     while(!text.empty() && stdlib::unicode_whitespace(text.front()))text.remove_prefix(1);
     while(!text.empty() && stdlib::unicode_whitespace(text.back()))text.remove_suffix(1);
     return text;
+}
+std::optional<std::u16string_view> framework_type_name(std::u16string_view text) {
+    std::size_t brackets=0;
+    for(std::size_t i=0;i<text.size();++i){
+        if(text[i]==u'[')++brackets;
+        if(text[i]==u']'){
+            if(!brackets)return {};
+            --brackets;
+        }
+        if(text[i]!=u',' || brackets)continue;
+        const auto suffix=text.substr(i+1);
+        const auto assembly=lowercase(trim(suffix.substr(0,suffix.find(u','))));
+        if(assembly!=u"mscorlib" && assembly!=u"mscorlib.dll")return {};
+        auto name=text.substr(0,i);
+        while(!name.empty() && stdlib::unicode_whitespace(name.front()))name.remove_prefix(1);
+        return name;
+    }
+    if(brackets)return {};
+    return text;
+}
+std::optional<std::u16string_view> conversion_base_name(std::u16string_view name) {
+    bool allow_reference=true;
+    while(!name.empty()){
+        if(name.back()==u'&'){
+            if(!allow_reference)return {};
+            name.remove_suffix(1);
+        }else if(name.back()==u'*')name.remove_suffix(1);
+        else if(name.back()==u']'){
+            const auto open=name.rfind(u'[');
+            if(open==name.npos)return {};
+            const auto shape=trim(name.substr(open+1,name.size()-open-2));
+            if(shape!=u"*"){
+                unsigned rank=1;
+                for(const auto unit:shape){
+                    if(unit==u',')++rank;
+                    else if(!stdlib::unicode_whitespace(unit))return {};
+                }
+                if(rank>32)return {};
+            }
+            name=name.substr(0,open);
+        }else break;
+        allow_reference=false;
+    }
+    return name;
 }
 std::u16string_view comparison_text(std::u16string_view text) {
     while(!text.empty() && (text.back()==u' ' || text.back()==u'\u3000'))text.remove_suffix(1);
@@ -475,9 +518,11 @@ class Evaluation {
         if(advance()!=Symbol::close)syntax();
         return add(std::move(test));
     }
-    Type conversion_type(std::u16string_view name) {
+    std::optional<Type> simple_conversion_type(std::u16string_view name) {
         if(name==u"System.Object")return Type::invalid; // Object preserves the operand's scalar value.
-        if(name==u"System.DBNull")return Type::nil; // Only NULL converts to DBNull.
+        constexpr std::u16string_view null_only[]{u"System.DBNull",u"System.IntPtr",u"System.UIntPtr",u"System.Type",
+            u"System.Version",u"System.Exception",u"System.Collections.ArrayList",u"System.ValueType",u"System.Void"};
+        if(std::find(std::begin(null_only),std::end(null_only),name)!=std::end(null_only))return Type::nil;
         if(name==u"System.Boolean")return Type::boolean;
         if(name==u"System.Char")return Type::character;
         if(name==u"System.SByte")return Type::shortint;
@@ -495,6 +540,15 @@ class Evaluation {
         if(name==u"System.TimeSpan")return interval_;
         if(name==u"System.Guid")return guid_;
         if(name==u"System.String")return Type::string;
+        return {};
+    }
+    Type conversion_type(std::u16string_view source) {
+        if(const auto name=framework_type_name(source)){
+            if(const auto base=conversion_base_name(*name)){
+                if(const auto type=simple_conversion_type(*base))
+                    return base->size()==name->size() ? *type : Type::nil;
+            }
+        }
         throw Error("E_UNSUPPORTED",location_,"Unknown or unsupported CONVERT target type",
             "Неизвестный или неподдерживаемый тип результата CONVERT");
     }
@@ -508,9 +562,7 @@ class Evaluation {
         advance();
         if(!quoted)name=dotted_name(std::move(name));
         if(advance()!=Symbol::close)syntax();
-        Node conversion{Symbol::conversion,NilString{},value};
-        conversion.conversion_type=conversion_type(name);
-        return add(std::move(conversion));
+        return add({Symbol::conversion,std::move(name),value});
     }
     std::size_t parse_atom(unsigned depth) {
         auto initial=std::move(token_);
@@ -969,7 +1021,8 @@ class Evaluation {
         if(node.kind==Symbol::invalid_is)
             throw Error("E_FORMAT",location_,"IS requires NULL or NOT NULL in a Utils expression",
                 "Оператор IS требует NULL или NOT NULL в выражении Utils");
-        if(node.kind==Symbol::conversion)return evaluate_conversion(std::move(left),node.conversion_type);
+        if(node.kind==Symbol::conversion)
+            return evaluate_conversion(std::move(left),conversion_type(string_text(node.value)));
         if(node.kind==Symbol::is_null)return null(left);
         if(node.kind==Symbol::is_not_null)return !null(left);
         if(node.kind==Symbol::negate)return null(left) ? left : Value{!expression_boolean(left)};

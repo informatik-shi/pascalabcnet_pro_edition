@@ -3211,6 +3211,13 @@ ZIP.
 [Тест CONVERT](tests/fixtures/utils-convert-compat.pas),
 [тест разрядности и Single](tests/fixtures/utils-numeric-convert-compat.pas).
 
+`CONVERT` принимает квалифицированные имена, например
+`'System.Int32, mscorlib'`, и значения `AssemblyQualifiedName` для
+поддерживаемых типов. Имя разрешается по встроенному списку. `NULL`
+сохраняется для распознанных имён массивов, указателей и ссылочных типов.
+При передаче конкретного значения в такой тип выводится двуязычная
+ошибка преобразования. [Тест квалифицированных имён](tests/fixtures/utils-qualified-types-compat.pas).
+
 `Eval(s: String): Object` сохраняет конкретный тип результата. Например,
 `Eval('42').GetType` возвращает `System.Int32`, а `Eval('0.1+0.2').GetType`
 возвращает `System.Decimal`. Для `NULL` возвращается общий `DBNull.Value`

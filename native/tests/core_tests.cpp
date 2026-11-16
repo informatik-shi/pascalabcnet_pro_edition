@@ -805,6 +805,14 @@ void timing_library() {
         const auto source="uses Utils;begin Writeln(EvalStr('"+std::string(text)+"'));end.";
         error([&]{(void)run(source);},code,text);
     }
+    for(const auto* name:{"System.Int32, System"," System.Int32 ","System.int32, mscorlib",
+        "System.Int32 , mscorlib","System.Int32[?]","System.NoSuch[]"}){
+        const auto source="uses Utils;begin Writeln(EvalStr('CONVERT(NULL,''"+std::string(name)+"'')'));end.";
+        error([&]{(void)run(source);},"E_UNSUPPORTED",name);
+    }
+    error([&]{(void)run("uses Utils;begin Writeln(EvalStr('CONVERT(''abc'',''System.Byte[]'')'));end.");},"E_TYPE");
+    error([&]{(void)run("uses Utils;begin Writeln(EvalStr('CONVERT(1.0/0,''System.NoSuch'')'));end.");},"E_DIV_ZERO");
+    error([&]{(void)run("uses Utils;begin Writeln(EvalStr('CONVERT(missing,''System.NoSuch'')'));end.");},"E_NAME");
 }
 
 void sequence_text_and_flatten() {
