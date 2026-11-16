@@ -857,6 +857,15 @@ void timing_library() {
     auto sql_money=abc::compile("uses System.Data.SqlTypes;begin Writeln(SqlMoney.Zero.ToInt64);end.");
     for(auto& instruction:sql_money.code)if(instruction.op==abc::Op::sql_money_call)instruction.operand=32768;
     error([&]{abc::verify(sql_money);},"E_BYTECODE");
+    error([&]{(void)run("uses System.Data.SqlTypes;begin Writeln(SqlDateTime.Parse('1752-12-31T23:59:59.999'));end.");},
+        "E_RANGE");
+    error([&]{(void)run("uses System.Data.SqlTypes;begin Writeln(new SqlDateTime(0,25920000));end.");},"E_OVERFLOW");
+    error([&]{(void)run("uses System.Data.SqlTypes;begin Writeln(SqlDateTime.Null.TimeTicks);end.");},"E_NIL","SQL Null");
+    error([&]{(void)run("uses Utils;begin Writeln(EvalStr('#2024-02-29#=CONVERT(#2024-02-29#,System.Data.SqlTypes.SqlDateTime)'));end.");},
+        "E_TYPE");
+    auto sql_date_time=abc::compile("uses System.Data.SqlTypes;begin Writeln(SqlDateTime.MaxValue.TimeTicks);end.");
+    for(auto& instruction:sql_date_time.code)if(instruction.op==abc::Op::sql_date_time_call)instruction.operand=32768;
+    error([&]{abc::verify(sql_date_time);},"E_BYTECODE");
 }
 
 void sequence_text_and_flatten() {

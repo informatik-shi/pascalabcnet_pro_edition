@@ -1,4 +1,5 @@
 #include "calendar.hpp"
+#include "stdlib.hpp"
 #include "diagnostics.hpp"
 #include "runtime_values.hpp"
 #include <algorithm>
@@ -344,7 +345,8 @@ std::optional<ParsedDate> parse_date_parts(std::u16string_view text,bool extende
     auto y=year_first?*first:*third;
     const auto m=year_first?*second:*first;
     const auto d=year_first?*third:*second;
-    if (!year_first && input.offset-last_index<=2) y+=y<=29?2000:1900;
+    // Use the original invariant calendar's 1950–2049 window on every host.
+    if (!year_first && input.offset-last_index<=2) y+=y<=49?2000:1900;
     if (y<1 || y>9999 || m<1 || m>12 || d<1 || d>31) return {};
     const auto fields=year{y}/month{static_cast<unsigned>(m)}/day{static_cast<unsigned>(d)};
     if (!fields.ok()) return {};
@@ -896,6 +898,64 @@ std::u16string calendar_text(const Value& value,std::u16string_view format,Sourc
     const auto& aggregate=std::get<std::shared_ptr<Aggregate>>(value);
     const auto data=calendar_value(value);
     return aggregate->items.size()==2?date_text(data,format,location):span_text(data.ticks,format,location);
+}
+std::u16string unzoned_date_text(std::int64_t ticks,SourceLocation location) {
+    return date_text({ticks,0},{},location);
+}
+std::u16string normalize_date_text(Values& values,Type date,std::u16string_view text) {
+    while(!text.empty() && stdlib::unicode_whitespace(text.front()))text.remove_prefix(1);
+    while(!text.empty() && stdlib::unicode_whitespace(text.back()))text.remove_suffix(1);
+    const auto numeric=[](std::u16string_view part){
+        return !part.empty() && std::ranges::all_of(part,[](char16_t ch){return ch>=u'0' && ch<=u'9';});
+    };
+    const auto today=[&](std::u16string_view format){
+        return calendar_text(calendar_invoke(values,date,static_cast<std::size_t>(CalendarMethod::today),{}),format,values.location);
+    };
+    const auto colon=text.find(u':');
+    if(colon!=text.npos && numeric(text.substr(0,colon)))return today(u"yyyy-MM-dd")+u" "+std::u16string(text);
+    const auto date_end=text.find_first_of(u" Tt");
+    const auto prefix=text.substr(0,date_end);
+    const auto slash=prefix.find(u'/');
+    if(slash!=prefix.npos && numeric(prefix.substr(0,slash)) && numeric(prefix.substr(slash+1))){
+        auto result=std::u16string(prefix)+u"/"+today(u"yyyy");
+        if(date_end!=text.npos)result.append(text.substr(date_end));
+        return result;
+    }
+    const auto letter=[](char16_t ch){return (ch>=u'a' && ch<=u'z') || (ch>=u'A' && ch<=u'Z') || ch==u'_';};
+    if(std::ranges::any_of(text,letter)){
+        const auto month_name=[](std::u16string_view token){
+            constexpr std::array<std::u16string_view,12> names{
+                u"january",u"february",u"march",u"april",u"may",u"june",
+                u"july",u"august",u"september",u"october",u"november",u"december"};
+            if(token.ends_with(u'.'))token.remove_suffix(1);
+            std::u16string name(token);
+            for(auto& ch:name)if(ch>=u'A' && ch<=u'Z')ch=static_cast<char16_t>(ch+32);
+            for(std::size_t i=0;i<names.size();++i)
+                if(names[i]==name || (name.size()==3 && names[i].starts_with(name)))return i+1;
+            return std::size_t{0};
+        };
+        std::array<std::u16string_view,3> words{};
+        auto remaining=text;
+        for(auto& word:words){
+            const auto end=remaining.find_first_of(u" ,");
+            word=remaining.substr(0,end);
+            remaining.remove_prefix(word.size());
+            while(!remaining.empty() && (remaining.front()==u' ' || remaining.front()==u','))remaining.remove_prefix(1);
+        }
+        auto month=month_name(words[0]);
+        auto day=words[1],year=words[2];
+        if(!month){
+            month=month_name(words[1]);
+            day=words[0];
+            if(day.size()==4)std::swap(day,year);
+        }
+        if(month && numeric(day) && numeric(year)){
+            auto result=from_utf8(std::to_string(month))+u"/"+std::u16string(day)+u"/"+std::u16string(year);
+            if(!remaining.empty()){result.push_back(u' ');result.append(remaining);}
+            return result;
+        }
+    }
+    return std::u16string(text);
 }
 int compare_calendar_values(const Value& left,const Value& right) {
     const auto a=calendar_value(left).ticks,b=calendar_value(right).ticks;

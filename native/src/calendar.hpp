@@ -41,6 +41,8 @@ std::vector<Type> calendar_parameters(std::span<const TypeInfo>,Type,std::size_t
 Type calendar_result(std::span<const TypeInfo>,Type,std::size_t);
 Value calendar_invoke(Values&,Type,std::size_t,std::span<const Value>);
 std::u16string calendar_text(const Value&,std::u16string_view,SourceLocation);
+std::u16string unzoned_date_text(std::int64_t ticks,SourceLocation);
+std::u16string normalize_date_text(Values&,Type,std::u16string_view);
 int compare_calendar_values(const Value&,const Value&);
 double calendar_ole_date(const Value&,SourceLocation);
 std::int64_t parse_xml_duration(std::u16string_view,SourceLocation);

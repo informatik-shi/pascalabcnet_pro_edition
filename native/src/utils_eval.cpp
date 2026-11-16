@@ -8,6 +8,7 @@
 #include "sql_scalar.hpp"
 #include "sql_decimal.hpp"
 #include "sql_money.hpp"
+#include "sql_date_time.hpp"
 #include "integer_values.hpp"
 #include "number_format.hpp"
 #include "runtime_values.hpp"
@@ -186,6 +187,7 @@ class Evaluation {
     Type offset_date_;
     Type sql_decimal_;
     Type sql_money_;
+    Type sql_date_time_;
     std::u16string_view source_;
     std::size_t cursor_=0, work_=0;
     std::vector<Node> nodes_;
@@ -357,61 +359,11 @@ class Evaluation {
         if(date_==Type::invalid)throw runtime_error(RuntimeError::invalid_bytecode,location_);
         return calendar_invoke(values_,date_,static_cast<std::size_t>(method),arguments);
     }
-    unsigned month_name(std::u16string_view token) const {
-        constexpr std::array<std::u16string_view,12> names{
-            u"january",u"february",u"march",u"april",u"may",u"june",
-            u"july",u"august",u"september",u"october",u"november",u"december"};
-        if(!token.empty() && token.back()==u'.')token.remove_suffix(1);
-        std::u16string name(token);
-        for(auto& ch:name)ch=lower_ascii(ch);
-        for(std::size_t i=0;i<names.size();++i)
-            if(names[i]==name || (name.size()==3 && names[i].starts_with(name)))return static_cast<unsigned>(i+1);
-        return 0;
-    }
-    std::u16string normalized_date(std::u16string_view value) {
-        const auto text=trim(value);
-        const auto numeric=[](std::u16string_view part){return !part.empty() && std::all_of(part.begin(),part.end(),digit);};
-        const auto colon=text.find(u':');
-        if(colon!=text.npos && numeric(text.substr(0,colon))){
-            return calendar_text(calendar_call(CalendarMethod::today),u"yyyy-MM-dd",location_)+u" "+std::u16string(text);
-        }
-        const auto date_end=text.find_first_of(u" Tt");
-        const auto prefix=text.substr(0,date_end);
-        const auto slash=prefix.find(u'/');
-        if(slash!=prefix.npos && numeric(prefix.substr(0,slash)) && numeric(prefix.substr(slash+1))){
-            auto result=std::u16string(prefix)+u"/"+calendar_text(calendar_call(CalendarMethod::today),u"yyyy",location_);
-            if(date_end!=text.npos)result.append(text.substr(date_end));
-            return result;
-        }
-        if(std::any_of(text.begin(),text.end(),letter)){
-            std::array<std::u16string_view,3> words{};
-            auto remaining=text;
-            for(auto& word:words){
-                const auto end=remaining.find_first_of(u" ,");
-                word=remaining.substr(0,end);
-                remaining.remove_prefix(word.size());
-                while(!remaining.empty() && (remaining.front()==u' ' || remaining.front()==u','))remaining.remove_prefix(1);
-            }
-            auto month=month_name(words[0]);
-            auto day=words[1],year=words[2];
-            if(!month){
-                month=month_name(words[1]);
-                day=words[0];
-                if(day.size()==4)std::swap(day,year);
-            }
-            if(month && numeric(day) && numeric(year)){
-                auto result=from_utf8(std::to_string(month))+u"/"+std::u16string(day)+u"/"+std::u16string(year);
-                if(!remaining.empty()){result.push_back(u' ');result.append(remaining);}
-                return result;
-            }
-        }
-        return std::u16string(text);
-    }
     Value date_value(const Value& value) {
         if(kind(value)==date_)return value;
         const auto* text=std::get_if<std::u16string>(&value);
         if(!text)operands();
-        const std::array<Value,1> input{normalized_date(*text)};
+        const std::array<Value,1> input{normalize_date_text(values_,date_,*text)};
         return calendar_call(CalendarMethod::parse,input);
     }
     Value duration_value(const Value& value) {
@@ -550,7 +502,8 @@ class Evaluation {
         return {};
     }
     bool sql_value(Type type) const {
-        return compound(type) && (type==sql_decimal_ || type==sql_money_ || sql_scalar_record(type_info(values_.program,type)));
+        return compound(type) && (type==sql_decimal_ || type==sql_money_ || type==sql_date_time_
+            || sql_scalar_record(type_info(values_.program,type)));
     }
     Type sql_base(Type type) const {
         return sql_value(type) ? type_info(values_.program,type).element : type;
@@ -569,6 +522,12 @@ class Evaluation {
     }
     Value convert_sql(Type owner,const Value& value) {
         const auto source=kind(value);
+        if(owner==sql_date_time_){
+            if(source==owner)return value;
+            if(source!=date_)operands();
+            const std::array<Value,1> arguments{value};
+            return sql_date_time_invoke(values_,owner,SqlDateTimeMethod::from_date,arguments);
+        }
         if(owner==sql_money_)return sql_money_convert(values_,owner,source,value);
         if(source==sql_money_){
             const std::array<Value,1> argument{value};
@@ -601,6 +560,7 @@ class Evaluation {
             const auto name=source.substr(prefix.size());
             if(name==u"SqlDecimal")return sql_decimal_;
             if(name==u"SqlMoney")return sql_money_;
+            if(name==u"SqlDateTime")return sql_date_time_;
             const auto types=sql_scalar_types();
             const auto sql=std::ranges::find(types,name,&SqlScalarType::framework_name);
             if(sql!=types.end())
@@ -766,6 +726,7 @@ class Evaluation {
         if(type==offset_date_)return date_offset_text(value,{},location_);
         if(type==sql_decimal_)return sql_decimal_text(value);
         if(type==sql_money_)return sql_money_text(value);
+        if(type==sql_date_time_)return sql_date_time_text(value,location_);
         if(sql_value(type))return sql_scalar_text(value,location_);
         if(type==Type::real || type==Type::single || integer_type(type))
             return format_number(value,type,{},format,location_);
@@ -923,7 +884,15 @@ class Evaluation {
         return checked_signed_integer(type,Value{result},location_);
     }
     Value sql_arithmetic(Symbol op,const Value& left,const Value& right) {
-        if(money_result(kind(left),kind(right))){
+        const auto a=kind(left),b=kind(right);
+        if(a==sql_date_time_ || b==sql_date_time_){
+            if((a==sql_date_time_ ? b : a)!=interval_ || (op!=Symbol::plus && op!=Symbol::minus))operands();
+            const std::array<Value,2> arguments=a==sql_date_time_ ? std::array<Value,2>{left,right}
+                : std::array<Value,2>{right,left};
+            const auto method=op==Symbol::plus ? SqlDateTimeMethod::add : SqlDateTimeMethod::subtract;
+            return sql_date_time_invoke(values_,sql_date_time_,method,arguments);
+        }
+        if(money_result(a,b)){
             if(op==Symbol::modulus)operands();
             using M=SqlMoneyMethod;
             const auto method=op==Symbol::plus ? M::add : op==Symbol::minus ? M::subtract :
@@ -931,7 +900,7 @@ class Evaluation {
             const std::array<Value,2> arguments{convert_sql(sql_money_,left),convert_sql(sql_money_,right)};
             return sql_money_invoke(values_,sql_money_,method,arguments);
         }
-        auto primitive=sql_result_base(kind(left),kind(right));
+        auto primitive=sql_result_base(a,b);
         if(!numeric_rank(primitive) || (op==Symbol::modulus && !integer_type(primitive)))operands();
         if(primitive==decimal_){
             using M=SqlDecimalMethod;
@@ -958,6 +927,10 @@ class Evaluation {
         return sql_construct(owner,arithmetic(op,x,y));
     }
     int sql_compare(Type owner,const Value& left,const Value& right,bool equality) {
+        if(owner==sql_date_time_){
+            const std::array<Value,2> arguments{convert_sql(owner,left),convert_sql(owner,right)};
+            return std::get<std::int32_t>(sql_date_time_invoke(values_,owner,SqlDateTimeMethod::compare,arguments));
+        }
         if(owner==sql_money_){
             const std::array<Value,2> arguments{convert_sql(owner,left),convert_sql(owner,right)};
             return std::get<std::int32_t>(sql_money_invoke(values_,owner,SqlMoneyMethod::compare,arguments));
@@ -971,6 +944,8 @@ class Evaluation {
     }
     int compare(const Value& left,const Value& right,bool equality=true) {
         const auto a=kind(left),b=kind(right);
+        if(a==sql_date_time_)return sql_compare(sql_date_time_,left,right,equality);
+        if(b==sql_date_time_)operands();
         if(money_result(a,b))return sql_compare(sql_money_,left,right,equality);
         if(sql_value(a) || sql_value(b))
             return sql_compare(sql_storage(sql_result_base(a,b)),left,right,equality);
@@ -1168,7 +1143,7 @@ class Evaluation {
             if(kind(value)==offset_date_)return value;
             const auto* input=std::get_if<std::u16string>(&value);
             if(!input)operands();
-            const std::array<Value,1> arguments{normalized_date(*input)};
+            const std::array<Value,1> arguments{normalize_date_text(values_,date_,*input)};
             return offset_invoke(values_,offset_date_,OffsetMethod::parse,arguments);
         }
         if(target==Type::boolean)return convert_boolean(value,true);
@@ -1266,10 +1241,10 @@ class Evaluation {
     }
 public:
     Evaluation(Values& values,const ExecutionOptions& options,Type decimal,Type date,Type guid,Type date_offset,Type sql_decimal,
-        Type sql_money,std::u16string_view source)
+        Type sql_money,Type sql_date_time,std::u16string_view source)
         :values_(values),options_(options),location_(values.location),decimal_(decimal),date_(date),
         interval_(date==Type::invalid ? Type::invalid : type_info(values.program,date).element),guid_(guid),
-        offset_date_(date_offset),sql_decimal_(sql_decimal),sql_money_(sql_money),source_(source){}
+        offset_date_(date_offset),sql_decimal_(sql_decimal),sql_money_(sql_money),sql_date_time_(sql_date_time),source_(source){}
     Value compute() {
         advance();
         Value value=NilString{};
@@ -1303,7 +1278,8 @@ Evaluation evaluate_text(Values& values,const Value& expression,const ExecutionO
         evaluator_native_type(values.program,NativeRecord::guid),
         evaluator_native_type(values.program,NativeRecord::date_time_offset),
         evaluator_native_type(values.program,NativeRecord::sql_decimal),
-        evaluator_native_type(values.program,NativeRecord::sql_money),string_text(expression)};
+        evaluator_native_type(values.program,NativeRecord::sql_money),
+        evaluator_native_type(values.program,NativeRecord::sql_date_time),string_text(expression)};
 }
 }
 
