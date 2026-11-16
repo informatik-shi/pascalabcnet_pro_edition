@@ -3263,8 +3263,17 @@ ZIP.
 правилам PascalABC.NET. Например, сумма `SqlByte` и `Byte` даёт
 `SqlInt16`, а деление целых SQL-значений даёт `SqlDouble`.
 Для `SqlSingle` и `SqlDouble` сохранены 7 и 15 значащих цифр
-соответственно. Операции с результатом `SqlDecimal` ещё в работе.
+соответственно.
 [Тест SQL-операторов](tests/fixtures/utils-sql-operations-compat.pas).
+
+`SqlDecimal` хранит до 38 десятичных цифр, точность и масштаб.
+Доступны `Parse`, `Data`, `Precision`, `Scale`, `IsPositive`,
+`ToDouble` и преобразование к `Decimal` через `Value` с проверкой
+границ. `Add`, `Subtract`, `Multiply`, `Divide` и выражения
+`Eval` сохраняют масштаб результата. В частности, `SqlInt32`
+в сочетании с `Decimal` даёт `SqlDecimal`. Дополнительные
+конструкторы и методы округления ещё в работе.
+[Тест SqlDecimal](tests/fixtures/utils-sql-decimal-compat.pas).
 
 `System.Guid` доступен в объявлении типа и как результат `CONVERT` в `Eval`.
 `Guid.Parse` и `ToString` принимают форматы `D`, `N`, `B`, `P` и `X`.

@@ -840,6 +840,14 @@ void timing_library() {
         "E_TYPE");
     error([&]{(void)run("uses Utils;begin Writeln(EvalStr('CONVERT(5,System.Data.SqlTypes.SqlInt32)%2e0'));end.");},
         "E_TYPE");
+    error([&]{(void)run("uses System.Data.SqlTypes;begin Writeln(SqlDecimal.MaxValue.Value.ToString);end.");},"E_OVERFLOW");
+    error([&]{(void)run("uses System.Data.SqlTypes;begin Writeln(SqlDecimal.Parse('1e2').Precision);end.");},"E_FORMAT");
+    error([&]{(void)run("uses System.Data.SqlTypes;begin Writeln(SqlDecimal.Null.Data.Length);end.");},"E_NIL","SQL Null");
+    error([&]{(void)run("uses System.Data.SqlTypes;begin Writeln(SqlDecimal.Divide(SqlDecimal.Parse('1'),"
+        "SqlDecimal.Parse('0')).ToString);end.");},"E_DIV_ZERO");
+    auto sql_decimal=abc::compile("uses System.Data.SqlTypes;begin Writeln(SqlDecimal.MaxValue.Precision);end.");
+    for(auto& instruction:sql_decimal.code)if(instruction.op==abc::Op::sql_decimal_call)instruction.operand=32768;
+    error([&]{abc::verify(sql_decimal);},"E_BYTECODE");
 }
 
 void sequence_text_and_flatten() {

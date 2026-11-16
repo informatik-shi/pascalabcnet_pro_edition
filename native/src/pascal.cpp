@@ -16,6 +16,7 @@
 #include "calendar.hpp"
 #include "guid.hpp"
 #include "sql_scalar.hpp"
+#include "sql_decimal.hpp"
 #include "decimal.hpp"
 #include "fixed_array.hpp"
 #include "type_names.hpp"
@@ -680,7 +681,7 @@ private:
                         throw Error("E_UNSUPPORTED",ns.location,"Unknown System.Data namespace","Неизвестное пространство имён System.Data");
                     expect(".");
                     result->kind=name().text;
-                    if(!sql_scalar_type(result->kind))
+                    if(!sql_scalar_type(result->kind) && result->kind!="sqldecimal")
                         throw Error("E_UNSUPPORTED",result->token.location,"Unknown or unsupported SQL value type",
                             "Неизвестный или неподдерживаемый тип значения SQL");
                 }
@@ -3010,8 +3011,11 @@ private:
     bool is_date_offset(Type type) const {
         return compound(type) && date_offset_record(info(type,{}));
     }
-    bool is_sql_scalar(Type type) const {
-        return compound(type) && sql_scalar_record(info(type,{}));
+    bool is_sql_decimal(Type type) const {
+        return compound(type) && sql_decimal_record(info(type,{}));
+    }
+    bool is_sql_value(Type type) const {
+        return is_sql_decimal(type) || (compound(type) && sql_scalar_record(info(type,{})));
     }
     Type declare_sql_scalar(const SqlScalarType& description,SourceLocation location) {
         for(std::size_t i=0;i<module_.types.size();++i)
@@ -3023,15 +3027,34 @@ private:
         module_.types.push_back(std::move(shape));
         return static_cast<Type>(63+module_.types.size());
     }
-    Type sql_scalar_owner(const SyntaxExpr& target) {
-        if(target.kind==SyntaxExprKind::name && !lookup(target.token)){
+    Type sql_decimal_type(SourceLocation location) {
+        for(std::size_t i=0;i<module_.types.size();++i)
+            if(sql_decimal_record(module_.types[i]))return static_cast<Type>(64+i);
+        const auto decimal=decimal_record_type(location);
+        const auto data=sequence_type(CompoundKind::array,Type::integer);
+        if(module_.types.size()>=1024)throw Error("E_LIMIT",location,"Type limit exceeded");
+        TypeInfo shape{"sqldecimal",CompoundKind::record,decimal,{{"_defined",Type::boolean,false},
+            {"_coefficient",Type::big_integer,false},{"_precision",Type::byte,false},{"_scale",Type::byte,false},
+            {"_positive",Type::boolean,false}}};
+        shape.key=data;
+        shape.native_record=NativeRecord::sql_decimal;
+        module_.types.push_back(std::move(shape));
+        return static_cast<Type>(63+module_.types.size());
+    }
+    Type declare_sql_type(std::string_view name,SourceLocation location) {
+        if(name=="sqldecimal")return sql_decimal_type(location);
+        if(const auto* type=sql_scalar_type(name))return declare_sql_scalar(*type,location);
+        return Type::invalid;
+    }
+    Type sql_type_owner(const SyntaxExpr& target) {
+        if((target.kind==SyntaxExprKind::name || target.kind==SyntaxExprKind::call) && !lookup(target.token)){
             if(const auto alias=aliases_.find(target.token.text);alias!=aliases_.end())
-                return is_sql_scalar(alias->second) ? alias->second : Type::invalid;
+                return is_sql_value(alias->second) ? alias->second : Type::invalid;
             if(imported_units_.contains("system.data.sqltypes"))
-                if(const auto* type=sql_scalar_type(target.token.text))return declare_sql_scalar(*type,target.token.location);
+                return declare_sql_type(target.token.text,target.token.location);
         }
-        const auto* type=sql_scalar_type(target.token.text);
-        if(!type || (target.kind!=SyntaxExprKind::field && target.kind!=SyntaxExprKind::member_call) || !target.left)
+        if((!sql_scalar_type(target.token.text) && target.token.text!="sqldecimal")
+            || (target.kind!=SyntaxExprKind::field && target.kind!=SyntaxExprKind::member_call) || !target.left)
             return Type::invalid;
         const auto* ns=target.left.get();
         for(const auto name:{"sqltypes","data"}){
@@ -3039,7 +3062,7 @@ private:
             ns=ns->left.get();
         }
         if(ns->kind!=SyntaxExprKind::name || ns->token.text!="system" || lookup(ns->token))return Type::invalid;
-        return declare_sql_scalar(*type,target.token.location);
+        return declare_sql_type(target.token.text,target.token.location);
     }
     std::unique_ptr<hir::Expr> sql_expression(Type owner,SqlScalarMethod method,
         std::vector<std::unique_ptr<hir::Expr>> arguments,SourceLocation location) {
@@ -3058,10 +3081,34 @@ private:
         result->arguments=std::move(arguments);
         return result;
     }
-    std::unique_ptr<hir::Expr> make_sql_scalar(Type owner,const SyntaxExpr& source,SourceLocation location) {
+    std::unique_ptr<hir::Expr> sql_decimal_expression(Type owner,SqlDecimalMethod method,
+        std::vector<std::unique_ptr<hir::Expr>> arguments,SourceLocation location) {
+        const auto parameters=sql_decimal_parameters(owner,info(owner,location),method);
+        if(arguments.size()!=parameters.size())
+            throw Error("E_TYPE",location,"Invalid SqlDecimal argument count","Недопустимое число аргументов SqlDecimal");
+        for(std::size_t i=0;i<parameters.size();++i)arguments[i]=convert(std::move(arguments[i]),parameters[i]);
+        auto result=std::make_unique<hir::Expr>();
+        result->kind=hir::ExprKind::sql_decimal_call;
+        result->type=sql_decimal_result(owner,info(owner,location),method);
+        result->operation_type=owner;
+        result->local=static_cast<std::size_t>(method);
+        result->location=location;
+        result->arguments=std::move(arguments);
+        return result;
+    }
+    std::unique_ptr<hir::Expr> construct_sql_decimal(Type owner,
+        std::vector<std::unique_ptr<hir::Expr>> arguments,SourceLocation location) {
+        using M=SqlDecimalMethod;
+        if(arguments.empty())
+            throw Error("E_TYPE",location,"SqlDecimal construction requires a value","Конструктору SqlDecimal нужно значение");
+        const auto method=integer_type(arguments.front()->type) ? M::from_integer : M::from_decimal;
+        return sql_decimal_expression(owner,method,std::move(arguments),location);
+    }
+    std::unique_ptr<hir::Expr> make_sql_value(Type owner,const SyntaxExpr& source,SourceLocation location) {
         using M=SqlScalarMethod;
         std::vector<std::unique_ptr<hir::Expr>> arguments;
         for(const auto& argument:source.arguments)arguments.push_back(expression(*argument));
+        if(is_sql_decimal(owner))return construct_sql_decimal(owner,std::move(arguments),location);
         const auto method=arguments.empty() ? M::null_value : M::create;
         return sql_expression(owner,method,std::move(arguments),location);
     }
@@ -3078,13 +3125,35 @@ private:
         if(input->type==owner)return input;
         std::vector<std::unique_ptr<hir::Expr>> arguments;
         arguments.push_back(std::move(input));
+        if(is_sql_decimal(owner))return construct_sql_decimal(owner,std::move(arguments),location);
         return sql_expression(owner,SqlScalarMethod::create,std::move(arguments),location);
+    }
+    std::unique_ptr<hir::Expr> bind_sql_decimal_static(Type owner,const SyntaxExpr& source) {
+        using M=SqlDecimalMethod;
+        const auto location=source.token.location;
+        const auto& name=source.token.text;
+        constexpr std::pair<std::string_view,M> functions[]{
+            {"parse",M::parse},{"add",M::add},{"subtract",M::subtract},{"multiply",M::multiply},{"divide",M::divide}};
+        const auto operation=std::find_if(std::begin(functions),std::end(functions),
+            [&](const auto& candidate){return candidate.first==name;});
+        if(operation!=std::end(functions)){
+            std::vector<std::unique_ptr<hir::Expr>> arguments;
+            for(const auto& argument:source.arguments)arguments.push_back(expression(*argument));
+            return sql_decimal_expression(owner,operation->second,std::move(arguments),location);
+        }
+        if(source.kind==SyntaxExprKind::field){
+            if(name=="minvalue")return sql_decimal_expression(owner,M::minimum,{},location);
+            if(name=="maxvalue")return sql_decimal_expression(owner,M::maximum,{},location);
+            if(name=="null")return sql_decimal_expression(owner,M::null_value,{},location);
+        }
+        throw Error("E_NAME",location,"Unknown static SqlDecimal member","Неизвестный статический член SqlDecimal");
     }
     std::unique_ptr<hir::Expr> bind_sql_static(const SyntaxExpr& source) {
         if(source.kind==SyntaxExprKind::member_call)
-            if(const auto owner=sql_scalar_owner(source);owner!=Type::invalid)return bind_sql_cast(owner,source);
-        const auto owner=sql_scalar_owner(*source.left);
+            if(const auto owner=sql_type_owner(source);owner!=Type::invalid)return bind_sql_cast(owner,source);
+        const auto owner=sql_type_owner(*source.left);
         if(owner==Type::invalid)return {};
+        if(is_sql_decimal(owner))return bind_sql_decimal_static(owner,source);
         using M=SqlScalarMethod;
         constexpr std::pair<std::string_view,M> members[]{
             {"null",M::null_value},{"false",M::false_value},{"true",M::true_value},
@@ -3095,9 +3164,25 @@ private:
             throw Error("E_NAME",source.token.location,"Unknown static SQL value member","Неизвестный статический член значения SQL");
         return sql_expression(owner,member->second,{},source.token.location);
     }
+    std::unique_ptr<hir::Expr> bind_sql_decimal_member(hir::Expr& receiver,const SyntaxExpr& source) {
+        using M=SqlDecimalMethod;
+        constexpr std::pair<std::string_view,M> members[]{
+            {"value",M::value},{"isnull",M::is_null},{"tostring",M::to_string},{"precision",M::precision},
+            {"scale",M::scale},{"ispositive",M::is_positive},{"data",M::data},{"todouble",M::to_double},{"compareto",M::compare}};
+        const auto member=std::find_if(std::begin(members),std::end(members),
+            [&](const auto& candidate){return candidate.first==source.token.text;});
+        if(member==std::end(members))
+            throw Error("E_NAME",source.token.location,"Unknown SqlDecimal member","Неизвестный член SqlDecimal");
+        const auto owner=receiver.left->type;
+        std::vector<std::unique_ptr<hir::Expr>> arguments;
+        arguments.push_back(std::move(receiver.left));
+        for(const auto& argument:source.arguments)arguments.push_back(expression(*argument));
+        return sql_decimal_expression(owner,member->second,std::move(arguments),source.token.location);
+    }
     std::unique_ptr<hir::Expr> bind_sql_member(hir::Expr& receiver,const SyntaxExpr& source) {
         const auto owner=receiver.left->type;
-        if(!is_sql_scalar(owner) || source.token.text=="gettype")return {};
+        if(!is_sql_value(owner) || source.token.text=="gettype")return {};
+        if(is_sql_decimal(owner))return bind_sql_decimal_member(receiver,source);
         using M=SqlScalarMethod;
         constexpr std::pair<std::string_view,M> members[]{
             {"value",M::value},{"isnull",M::is_null},{"tostring",M::to_string},{"isfalse",M::is_false},{"istrue",M::is_true}};
@@ -4384,7 +4469,7 @@ private:
         if(syntax.kind=="datetimeoffset" && (syntax.system_qualified || !aliases_.contains(syntax.kind)))
             return date_offset_type(syntax.token.location);
         if(syntax.system_qualified || (imported_units_.contains("system.data.sqltypes") && !aliases_.contains(syntax.kind)))
-            if(const auto* type=sql_scalar_type(syntax.kind))return declare_sql_scalar(*type,syntax.token.location);
+            if(const auto type=declare_sql_type(syntax.kind,syntax.token.location);type!=Type::invalid)return type;
         if (syntax.kind=="midpointrounding" && (syntax.system_qualified || !aliases_.contains(syntax.kind)))
             return midpoint_rounding_type(syntax.token.location);
         if (syntax.kind=="numberformatinfo" &&
@@ -5046,7 +5131,7 @@ private:
             if (!source.array_construction && is_calendar(type)) return make_calendar_object(type,source,result->location);
             if (!source.array_construction && is_guid(type)) return make_guid_object(type,source,result->location);
             if (!source.array_construction && is_date_offset(type)) return make_date_offset_object(type,source,result->location);
-            if (!source.array_construction && is_sql_scalar(type)) return make_sql_scalar(type,source,result->location);
+            if (!source.array_construction && is_sql_value(type)) return make_sql_value(type,source,result->location);
             if (!source.array_construction && is_complex(type)) {
                 std::vector<std::unique_ptr<hir::Expr>> args;
                 for (const auto& arg:source.arguments) args.push_back(expression(*arg));
@@ -5301,7 +5386,7 @@ private:
             if(base->token.text=="value" && dbnull_name(*base->left))break;
             if(guid_owner(*base->left)!=Type::invalid)break;
             if(date_offset_owner(*base->left)!=Type::invalid)break;
-            if(sql_scalar_owner(*base->left)!=Type::invalid)break;
+            if(sql_type_owner(*base->left)!=Type::invalid)break;
             if (base->token.text=="create" && string_builder_constructor_owner(*base->left)!=Type::invalid) break;
             if (complex_type_name(*base->left)!=Type::invalid) break;
             if ((base->token.text=="create" || base->token.text=="invariantinfo" || base->token.text=="currentinfo"
@@ -6242,11 +6327,9 @@ private:
             const auto native_alias=aliases_.find(source.token.text);
             const bool guid_cast=native_alias!=aliases_.end() ? is_guid(native_alias->second) : source.token.text=="guid";
             const bool offset_cast=native_alias!=aliases_.end() ? is_date_offset(native_alias->second) : source.token.text=="datetimeoffset";
-            const auto* sql_description=imported_units_.contains("system.data.sqltypes") ? sql_scalar_type(source.token.text) : nullptr;
-            const bool sql_cast=native_alias!=aliases_.end() ? is_sql_scalar(native_alias->second) : sql_description!=nullptr;
-            if(sql_cast && !routine_names_.contains(source.token.text)){
-                const auto type=native_alias==aliases_.end() ? declare_sql_scalar(*sql_description,result->location) : native_alias->second;
-                return bind_sql_cast(type,source);
+            if(!routine_names_.contains(source.token.text)){
+                const auto sql=sql_type_owner(source);
+                if(sql!=Type::invalid)return bind_sql_cast(sql,source);
             }
             if((guid_cast || offset_cast) && !routine_names_.contains(source.token.text)){
                 const auto name=std::string_view(guid_cast ? "Guid" : "DateTimeOffset");
@@ -8471,6 +8554,7 @@ private:
         (void)guid_type(location);
         (void)date_offset_type(location);
         for(const auto& type:sql_scalar_types())(void)declare_sql_scalar(type,location);
+        (void)sql_decimal_type(location);
     }
     std::unique_ptr<hir::Expr> utils_eval_value(SourceLocation location,Type expected) {
         const auto object=object_type(location);

@@ -4,6 +4,7 @@
 #include "diagnostics.hpp"
 #include "enumeration.hpp"
 #include "sql_scalar.hpp"
+#include "sql_decimal.hpp"
 #include <new>
 
 namespace abc {
@@ -128,6 +129,12 @@ Definition definition(const Program& program,ReflectedType type,Work& work){
         if (info.native_record==NativeRecord::date_time_offset) {result.name=u"DateTimeOffset";result.name_space=u"System";break;}
         if(sql_scalar_record(info)){
             result.name=sql_scalar_type(info.name)->framework_name;
+            result.name_space=u"System.Data.SqlTypes";
+            result.assembly=u"System.Data";
+            break;
+        }
+        if(sql_decimal_record(info)){
+            result.name=u"SqlDecimal";
             result.name_space=u"System.Data.SqlTypes";
             result.assembly=u"System.Data";
             break;
