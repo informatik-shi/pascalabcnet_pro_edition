@@ -872,6 +872,12 @@ void timing_library() {
     auto sql_guid=abc::compile("uses System.Data.SqlTypes;begin Writeln(SqlGuid.Null.GetHashCode);end.");
     for(auto& instruction:sql_guid.code)if(instruction.op==abc::Op::sql_guid_call)instruction.operand=32768;
     error([&]{abc::verify(sql_guid);},"E_BYTECODE");
+    error([&]{(void)run("uses System.Data.SqlTypes;begin Writeln(SqlBinary.Null.Length);end.");},"E_NIL","SQL Null");
+    error([&]{(void)run("uses System.Data.SqlTypes;begin var b:=new SqlBinary(new byte[0]);Writeln(b[0]);end.");},"E_BOUNDS");
+    error([&]{(void)run("uses Utils;begin Writeln(EvalStr('CONVERT(''01'',System.Data.SqlTypes.SqlBinary)'));end.");},"E_TYPE");
+    auto sql_binary=abc::compile("uses System.Data.SqlTypes;begin Writeln(SqlBinary.Null.GetHashCode);end.");
+    for(auto& instruction:sql_binary.code)if(instruction.op==abc::Op::sql_binary_call)instruction.operand=32768;
+    error([&]{abc::verify(sql_binary);},"E_BYTECODE");
 }
 
 void sequence_text_and_flatten() {

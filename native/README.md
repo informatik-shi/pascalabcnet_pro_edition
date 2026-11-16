@@ -3302,6 +3302,16 @@ ZIP.
 конструктор по частям и перегрузки операторов ещё в работе.
 [Тест SqlGuid](tests/fixtures/utils-sql-guid-compat.pas).
 
+`SqlBinary` хранит копию массива байтов и позволяет читать байты
+по индексу. `Value` возвращает новую копию. `Add` и `Concat`
+сохраняют все байты, а при сравнении и вычислении хеша конечные нули
+считаются заполнением. Для массива длины 0 выводится `SqlBinary(0)`,
+для `nil` выводится `Null`. `ToSqlGuid` преобразует 16 байтов в
+`SqlGuid`. `CONVERT` в `Eval` распознаёт эти имена SQL-типов
+и возвращает `DBNull.Value` при входном `NULL`. Полные API
+`SqlBytes`, `SqlChars` и `SqlXml` ещё в работе.
+[Тест SqlBinary](tests/fixtures/utils-sql-binary-compat.pas).
+
 `System.Guid` доступен в объявлении типа и как результат `CONVERT` в `Eval`.
 `Guid.Parse` и `ToString` принимают форматы `D`, `N`, `B`, `P` и `X`.
 Конструктор поддерживает строку и массив из 16 байтов. `ToByteArray`

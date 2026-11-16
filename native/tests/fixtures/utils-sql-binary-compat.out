@@ -1,0 +1,13 @@
+SqlBinary(2) 2 1 255
+0 True 239 239
+SqlBinary(6) 1 1 0
+4 True
+True False 0
+True Null False
+same bytes
+SqlBinary(0)
+System.Data.SqlTypes.SqlBinary 00112233-4455-6677-8899-aabbccddeeff
+True
+System.DBNull
+System.DBNull
+System.DBNull

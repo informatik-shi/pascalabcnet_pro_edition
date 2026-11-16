@@ -7,6 +7,7 @@
 #include "calendar.hpp"
 #include "guid.hpp"
 #include "sql_guid.hpp"
+#include "sql_binary.hpp"
 #include "decimal.hpp"
 #include <array>
 #include <cmath>
@@ -22,7 +23,8 @@ bool default_comparable(const std::vector<TypeInfo>& types,Type element){
  if(scalar(element) || enumeration(types,element))return true;
  if(compound(element) && static_cast<unsigned>(element)-64U<types.size()){
   const auto& shape=types[static_cast<unsigned>(element)-64U];
-  if(decimal_type(shape) || calendar_record(shape) || guid_record_type(shape) || date_offset_record(shape) || sql_guid_record(shape))return true;
+  if(decimal_type(shape) || calendar_record(shape) || guid_record_type(shape) || date_offset_record(shape)
+      || sql_guid_record(shape) || sql_binary_record(shape))return true;
  }
  const auto target=comparable_contract(types,element);return target!=Type::invalid && interface_compatible(types,element,target);
 }
@@ -37,6 +39,7 @@ int comparison_value(Values& values,Type type,const Value& a,const Value& b,bool
   if(guid_record_type(shape))return compare_guid(a,b);
   if(date_offset_record(shape))return compare_date_offsets(a,b);
   if(sql_guid_record(shape))return compare_sql_guids(a,b);
+  if(sql_binary_record(shape))return compare_sql_binaries(a,b);
   const auto target=comparable_contract(values.program.types,type);
   if(target!=Type::invalid && interface_compatible(values.program.types,type,target)){if(an)throw runtime_error(RuntimeError::nil_reference,values.location);const std::array<Value,1> arguments{b};return std::get<std::int32_t>(interface_invoke(values,target,0,a,arguments,options));}
   if(null_safe && shape.kind!=CompoundKind::record && std::get<Object>(a)==std::get<Object>(b))return 0;

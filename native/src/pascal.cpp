@@ -20,6 +20,7 @@
 #include "sql_money.hpp"
 #include "sql_date_time.hpp"
 #include "sql_guid.hpp"
+#include "sql_binary.hpp"
 #include "decimal.hpp"
 #include "fixed_array.hpp"
 #include "type_names.hpp"
@@ -685,7 +686,7 @@ private:
                     expect(".");
                     result->kind=name().text;
                     if(!sql_scalar_type(result->kind) && result->kind!="sqldecimal" && result->kind!="sqlmoney"
-                        && result->kind!="sqldatetime" && result->kind!="sqlguid")
+                        && result->kind!="sqldatetime" && result->kind!="sqlguid" && result->kind!="sqlbinary")
                         throw Error("E_UNSUPPORTED",result->token.location,"Unknown or unsupported SQL value type",
                             "Неизвестный или неподдерживаемый тип значения SQL");
                 }
@@ -3027,8 +3028,11 @@ private:
     bool is_sql_guid(Type type) const {
         return compound(type) && sql_guid_record(info(type,{}));
     }
+    bool is_sql_binary(Type type) const {
+        return compound(type) && sql_binary_record(info(type,{}));
+    }
     bool is_sql_value(Type type) const {
-        return is_sql_decimal(type) || is_sql_money(type) || is_sql_date_time(type) || is_sql_guid(type)
+        return is_sql_decimal(type) || is_sql_money(type) || is_sql_date_time(type) || is_sql_guid(type) || is_sql_binary(type)
             || (compound(type) && sql_scalar_record(info(type,{})));
     }
     Type declare_sql_scalar(const SqlScalarType& description,SourceLocation location) {
@@ -3090,11 +3094,24 @@ private:
         module_.types.push_back(std::move(shape));
         return static_cast<Type>(63+module_.types.size());
     }
+    Type sql_binary_type(SourceLocation location) {
+        for(std::size_t i=0;i<module_.types.size();++i)
+            if(sql_binary_record(module_.types[i]))return static_cast<Type>(64+i);
+        const auto guid=sql_guid_type(location);
+        const auto bytes=info(guid,location).key;
+        if(module_.types.size()>=1024)throw Error("E_LIMIT",location,"Type limit exceeded");
+        TypeInfo shape{"sqlbinary",CompoundKind::record,bytes,{{"_bytes",bytes,false}}};
+        shape.key=guid;
+        shape.native_record=NativeRecord::sql_binary;
+        module_.types.push_back(std::move(shape));
+        return static_cast<Type>(63+module_.types.size());
+    }
     Type declare_sql_type(std::string_view name,SourceLocation location) {
         if(name=="sqldecimal")return sql_decimal_type(location);
         if(name=="sqlmoney")return sql_money_type(location);
         if(name=="sqldatetime")return sql_date_time_type(location);
         if(name=="sqlguid")return sql_guid_type(location);
+        if(name=="sqlbinary")return sql_binary_type(location);
         if(const auto* type=sql_scalar_type(name))return declare_sql_scalar(*type,location);
         return Type::invalid;
     }
@@ -3106,7 +3123,7 @@ private:
                 return declare_sql_type(target.token.text,target.token.location);
         }
         if((!sql_scalar_type(target.token.text) && target.token.text!="sqldecimal" && target.token.text!="sqlmoney"
-            && target.token.text!="sqldatetime" && target.token.text!="sqlguid")
+            && target.token.text!="sqldatetime" && target.token.text!="sqlguid" && target.token.text!="sqlbinary")
             || (target.kind!=SyntaxExprKind::field && target.kind!=SyntaxExprKind::member_call) || !target.left)
             return Type::invalid;
         const auto* ns=target.left.get();
@@ -3226,6 +3243,21 @@ private:
         const auto method=argument==shape.key ? M::from_bytes : argument==Type::string ? M::from_text : M::from_guid;
         return sql_guid_expression(owner,method,std::move(arguments),location);
     }
+    std::unique_ptr<hir::Expr> sql_binary_expression(Type owner,SqlBinaryMethod method,
+        std::vector<std::unique_ptr<hir::Expr>> arguments,SourceLocation location) {
+        const auto parameters=sql_binary_parameters(owner,info(owner,location),method);
+        if(arguments.size()!=parameters.size())
+            throw Error("E_TYPE",location,"Invalid SqlBinary argument count","Недопустимое число аргументов SqlBinary");
+        for(std::size_t i=0;i<parameters.size();++i)arguments[i]=convert(std::move(arguments[i]),parameters[i]);
+        auto result=std::make_unique<hir::Expr>();
+        result->kind=hir::ExprKind::sql_binary_call;
+        result->type=sql_binary_result(owner,info(owner,location),method);
+        result->operation_type=owner;
+        result->local=static_cast<std::size_t>(method);
+        result->location=location;
+        result->arguments=std::move(arguments);
+        return result;
+    }
     std::unique_ptr<hir::Expr> make_sql_value(Type owner,const SyntaxExpr& source,SourceLocation location) {
         using M=SqlScalarMethod;
         std::vector<std::unique_ptr<hir::Expr>> arguments;
@@ -3234,6 +3266,7 @@ private:
         if(is_sql_money(owner))return construct_sql_money(owner,std::move(arguments),location);
         if(is_sql_date_time(owner))return construct_sql_date_time(owner,std::move(arguments),location);
         if(is_sql_guid(owner))return construct_sql_guid(owner,std::move(arguments),location);
+        if(is_sql_binary(owner))return sql_binary_expression(owner,SqlBinaryMethod::from_bytes,std::move(arguments),location);
         const auto method=arguments.empty() ? M::null_value : M::create;
         return sql_expression(owner,method,std::move(arguments),location);
     }
@@ -3254,6 +3287,7 @@ private:
         if(is_sql_money(owner))return construct_sql_money(owner,std::move(arguments),location);
         if(is_sql_date_time(owner))return construct_sql_date_time(owner,std::move(arguments),location);
         if(is_sql_guid(owner))return construct_sql_guid(owner,std::move(arguments),location);
+        if(is_sql_binary(owner))return sql_binary_expression(owner,SqlBinaryMethod::from_bytes,std::move(arguments),location);
         return sql_expression(owner,SqlScalarMethod::create,std::move(arguments),location);
     }
     std::unique_ptr<hir::Expr> bind_sql_decimal_static(Type owner,const SyntaxExpr& source) {
@@ -3327,6 +3361,18 @@ private:
             return sql_guid_expression(owner,SqlGuidMethod::null_value,{},location);
         throw Error("E_NAME",location,"Unknown static SqlGuid member","Неизвестный статический член SqlGuid");
     }
+    std::unique_ptr<hir::Expr> bind_sql_binary_static(Type owner,const SyntaxExpr& source) {
+        const auto location=source.token.location;
+        const auto& name=source.token.text;
+        if(name=="add" || name=="concat"){
+            std::vector<std::unique_ptr<hir::Expr>> arguments;
+            for(const auto& argument:source.arguments)arguments.push_back(expression(*argument));
+            return sql_binary_expression(owner,SqlBinaryMethod::concat,std::move(arguments),location);
+        }
+        if(name=="null" && source.kind==SyntaxExprKind::field)
+            return sql_binary_expression(owner,SqlBinaryMethod::null_value,{},location);
+        throw Error("E_NAME",location,"Unknown static SqlBinary member","Неизвестный статический член SqlBinary");
+    }
     std::unique_ptr<hir::Expr> bind_sql_static(const SyntaxExpr& source) {
         if(source.kind==SyntaxExprKind::member_call)
             if(const auto owner=sql_type_owner(source);owner!=Type::invalid)return bind_sql_cast(owner,source);
@@ -3336,6 +3382,7 @@ private:
         if(is_sql_money(owner))return bind_sql_money_static(owner,source);
         if(is_sql_date_time(owner))return bind_sql_date_time_static(owner,source);
         if(is_sql_guid(owner))return bind_sql_guid_static(owner,source);
+        if(is_sql_binary(owner))return bind_sql_binary_static(owner,source);
         using M=SqlScalarMethod;
         constexpr std::pair<std::string_view,M> members[]{
             {"null",M::null_value},{"false",M::false_value},{"true",M::true_value},
@@ -3406,6 +3453,21 @@ private:
         for(const auto& argument:source.arguments)arguments.push_back(expression(*argument));
         return sql_guid_expression(owner,member->second,std::move(arguments),source.token.location);
     }
+    std::unique_ptr<hir::Expr> bind_sql_binary_member(hir::Expr& receiver,const SyntaxExpr& source) {
+        using M=SqlBinaryMethod;
+        constexpr std::pair<std::string_view,M> members[]{
+            {"value",M::value},{"isnull",M::is_null},{"length",M::length},{"tostring",M::to_string},
+            {"compareto",M::compare},{"equals",M::equal},{"gethashcode",M::hash},{"tosqlguid",M::to_guid}};
+        const auto member=std::find_if(std::begin(members),std::end(members),
+            [&](const auto& candidate){return candidate.first==source.token.text;});
+        if(member==std::end(members))
+            throw Error("E_NAME",source.token.location,"Unknown SqlBinary member","Неизвестный член SqlBinary");
+        const auto owner=receiver.left->type;
+        std::vector<std::unique_ptr<hir::Expr>> arguments;
+        arguments.push_back(std::move(receiver.left));
+        for(const auto& argument:source.arguments)arguments.push_back(expression(*argument));
+        return sql_binary_expression(owner,member->second,std::move(arguments),source.token.location);
+    }
     std::unique_ptr<hir::Expr> bind_sql_member(hir::Expr& receiver,const SyntaxExpr& source) {
         const auto owner=receiver.left->type;
         if(!is_sql_value(owner) || source.token.text=="gettype")return {};
@@ -3413,6 +3475,7 @@ private:
         if(is_sql_money(owner))return bind_sql_money_member(receiver,source);
         if(is_sql_date_time(owner))return bind_sql_date_time_member(receiver,source);
         if(is_sql_guid(owner))return bind_sql_guid_member(receiver,source);
+        if(is_sql_binary(owner))return bind_sql_binary_member(receiver,source);
         using M=SqlScalarMethod;
         constexpr std::pair<std::string_view,M> members[]{
             {"value",M::value},{"isnull",M::is_null},{"tostring",M::to_string},{"isfalse",M::is_false},{"istrue",M::is_true}};
@@ -6873,6 +6936,14 @@ private:
             }
             if(bind_property_indices(result->left,source))return std::move(result->left);
             const auto receiver_type = result->left->type;
+            if(is_sql_binary(receiver_type)){
+                if(!source.arguments.empty())
+                    throw Error("E_TYPE",result->location,"SqlBinary needs one index","Для SqlBinary нужен один индекс");
+                std::vector<std::unique_ptr<hir::Expr>> args;
+                args.push_back(std::move(result->left));
+                args.push_back(expression(*source.right,Type::integer));
+                return sql_binary_expression(receiver_type,SqlBinaryMethod::item,std::move(args),result->location);
+            }
             if (is_string_builder(receiver_type)) {
                 if (!source.arguments.empty())
                     throw Error("E_TYPE",result->location,"StringBuilder needs one index","Для StringBuilder нужен один индекс");
@@ -8788,6 +8859,7 @@ private:
         (void)sql_money_type(location);
         (void)sql_date_time_type(location);
         (void)sql_guid_type(location);
+        (void)sql_binary_type(location);
     }
     std::unique_ptr<hir::Expr> utils_eval_value(SourceLocation location,Type expected) {
         const auto object=object_type(location);

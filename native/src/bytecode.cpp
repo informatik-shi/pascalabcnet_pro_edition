@@ -9,6 +9,7 @@
 #include "sql_money.hpp"
 #include "sql_date_time.hpp"
 #include "sql_guid.hpp"
+#include "sql_binary.hpp"
 #include "decimal.hpp"
 #include "binary_file.hpp"
 #include "scalar_serialization.hpp"
@@ -218,6 +219,9 @@ private:
         case hir::ExprKind::sql_guid_call:
             for(const auto& argument:node.arguments)expression(*argument);
             emit(Op::sql_guid_call,node.operation_type,node.local,node.location);break;
+        case hir::ExprKind::sql_binary_call:
+            for(const auto& argument:node.arguments)expression(*argument);
+            emit(Op::sql_binary_call,node.operation_type,node.local,node.location);break;
         case hir::ExprKind::database_null:
             emit(Op::database_null,node.type,0,node.location);break;
         case hir::ExprKind::tuple_literal:
@@ -1063,6 +1067,7 @@ bool valid_utils_eval_types(const Program& program) {
         && std::ranges::any_of(program.types,[&](const auto& type){return sql_money_shape(program.types,type);})
         && std::ranges::any_of(program.types,[&](const auto& type){return sql_date_time_shape(program.types,type);})
         && std::ranges::any_of(program.types,[&](const auto& type){return sql_guid_shape(program.types,type);})
+        && std::ranges::any_of(program.types,[&](const auto& type){return sql_binary_shape(program.types,type);})
         && std::ranges::all_of(sql_scalar_types(),[&](const auto& sql){
             return std::ranges::any_of(program.types,[&](const auto& shape){
                 return shape.name==sql.name && sql_scalar_shape(shape);
@@ -1419,6 +1424,11 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
                 || instruction.operand>static_cast<std::size_t>(SqlGuidMethod::hash))
                 invalid(instruction,"Invalid SqlGuid operation");
             break;
+        case Op::sql_binary_call:
+            if(!compound(type) || !sql_binary_shape(program.types,type_info(program,type))
+                || instruction.operand>static_cast<std::size_t>(SqlBinaryMethod::to_guid))
+                invalid(instruction,"Invalid SqlBinary operation");
+            break;
         case Op::school_table_print: case Op::school_table_new:
             if (!compound(type) || type_info(program,type).kind!=CompoundKind::array || type_info(program,type).rank!=2
                 || type_info(program,type).element!=Type::boolean || instruction.operand) invalid(instruction,"Invalid School truth-table output");
@@ -1737,7 +1747,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             break;
         case Op::get_field: case Op::ref_field:
             if (!compound(type) || (type_info(program,type).kind!=CompoundKind::record && type_info(program,type).kind!=CompoundKind::object_class && !(instruction.op==Op::get_field && type_info(program,type).kind==CompoundKind::tuple))
-                || collection_enumerator_type(type_info(program,type)) || dictionary_enumerator_type(type_info(program,type)) || ordinal_range_type(type_info(program,type)) || real_interval_type(type_info(program,type)) || complex_number_type(type_info(program,type)) || calendar_record(type_info(program,type)) || decimal_type(type_info(program,type)) || guid_record_type(type_info(program,type)) || date_offset_record(type_info(program,type)) || sql_scalar_record(type_info(program,type)) || sql_decimal_record(type_info(program,type)) || sql_money_record(type_info(program,type)) || sql_date_time_record(type_info(program,type)) || sql_guid_record(type_info(program,type)) || (instruction.op==Op::ref_field && key_value_pair_type(type_info(program,type))) || instruction.operand>=type_info(program,type).fields.size()) invalid(instruction,"Invalid or writable tuple/record access");
+                || collection_enumerator_type(type_info(program,type)) || dictionary_enumerator_type(type_info(program,type)) || ordinal_range_type(type_info(program,type)) || real_interval_type(type_info(program,type)) || complex_number_type(type_info(program,type)) || calendar_record(type_info(program,type)) || decimal_type(type_info(program,type)) || guid_record_type(type_info(program,type)) || date_offset_record(type_info(program,type)) || sql_scalar_record(type_info(program,type)) || sql_decimal_record(type_info(program,type)) || sql_money_record(type_info(program,type)) || sql_date_time_record(type_info(program,type)) || sql_guid_record(type_info(program,type)) || sql_binary_record(type_info(program,type)) || (instruction.op==Op::ref_field && key_value_pair_type(type_info(program,type))) || instruction.operand>=type_info(program,type).fields.size()) invalid(instruction,"Invalid or writable tuple/record access");
             break;
         case Op::list_add: case Op::list_remove: case Op::list_clear: case Op::list_contains:
             if (!compound(type) || type_info(program,type).kind != CompoundKind::list) invalid(instruction,"Invalid list instruction"); break;
@@ -2082,6 +2092,14 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             const auto parameters=sql_guid_parameters(instruction.type,shape,method);
             for(auto parameter=parameters.rbegin();parameter!=parameters.rend();++parameter)require(*parameter);
             stack.push_back(sql_guid_result(instruction.type,shape,method));
+            break;
+        }
+        case Op::sql_binary_call: {
+            const auto method=static_cast<SqlBinaryMethod>(instruction.operand);
+            const auto& shape=type_info(program,instruction.type);
+            const auto parameters=sql_binary_parameters(instruction.type,shape,method);
+            for(auto parameter=parameters.rbegin();parameter!=parameters.rend();++parameter)require(*parameter);
+            stack.push_back(sql_binary_result(instruction.type,shape,method));
             break;
         }
         case Op::utils_eval_object: require(Type::string); stack.push_back(instruction.type); break;
@@ -2429,7 +2447,7 @@ void verify(const Program& program) {
             throw Error("E_BYTECODE",{},"Invalid DBNull type metadata","Недопустимое описание типа DBNull");
         if(type.abstract_class && type.kind!=CompoundKind::object_class)
             throw Error("E_BYTECODE",{},"Abstract class flag on a non-class type");
-        if(type.native_record!=NativeRecord::none && ((type.native_record!=NativeRecord::ordinal_range && type.native_record!=NativeRecord::real_interval && type.native_record!=NativeRecord::key_value_pair && type.native_record!=NativeRecord::dictionary_enumerator && type.native_record!=NativeRecord::collection_enumerator && !complex_number_type(type) && !calendar_record(type) && !decimal_type(type) && !guid_record_type(type) && !date_offset_record(type) && !sql_scalar_record(type) && !sql_decimal_record(type) && !sql_money_record(type) && !sql_date_time_record(type) && !sql_guid_record(type)) || type.kind!=CompoundKind::record))throw Error("E_BYTECODE",{},"Invalid native record metadata");
+        if(type.native_record!=NativeRecord::none && ((type.native_record!=NativeRecord::ordinal_range && type.native_record!=NativeRecord::real_interval && type.native_record!=NativeRecord::key_value_pair && type.native_record!=NativeRecord::dictionary_enumerator && type.native_record!=NativeRecord::collection_enumerator && !complex_number_type(type) && !calendar_record(type) && !decimal_type(type) && !guid_record_type(type) && !date_offset_record(type) && !sql_scalar_record(type) && !sql_decimal_record(type) && !sql_money_record(type) && !sql_date_time_record(type) && !sql_guid_record(type) && !sql_binary_record(type)) || type.kind!=CompoundKind::record))throw Error("E_BYTECODE",{},"Invalid native record metadata");
         for (const auto& field:type.fields) if (!valid_member_access(field.access)
             || (type.kind!=CompoundKind::object_class && !(type.kind==CompoundKind::record&&type.native_record==NativeRecord::none) && field.access!=MemberAccess::public_member))
             throw Error("E_BYTECODE",{},"Invalid class member visibility metadata");
@@ -2619,6 +2637,11 @@ void verify(const Program& program) {
             }
             if(sql_guid_record(type)){
                 if(!sql_guid_shape(program.types,type))throw Error("E_BYTECODE",{},"Invalid SqlGuid record fields");
+                prior(type.element);
+                prior(type.key);
+            }
+            if(sql_binary_record(type)){
+                if(!sql_binary_shape(program.types,type))throw Error("E_BYTECODE",{},"Invalid SqlBinary record fields");
                 prior(type.element);
                 prior(type.key);
             }

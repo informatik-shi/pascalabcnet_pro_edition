@@ -14,6 +14,7 @@
 #include "sql_money.hpp"
 #include "sql_date_time.hpp"
 #include "sql_guid.hpp"
+#include "sql_binary.hpp"
 #include "composite_format.hpp"
 #include "decimal.hpp"
 #include "number_format.hpp"
@@ -132,6 +133,7 @@ class ObjectWriter {
         else if(sql_money_record(info))append(sql_money_text(data));
         else if(sql_date_time_record(info))append(sql_date_time_text(data,location));
         else if(sql_guid_record(info))append(sql_guid_text(data,location));
+        else if(sql_binary_record(info))append(sql_binary_text(data));
         else if(decimal_type(info)) {
             const auto rendered=decimal_text(data);
             append(settings?localize_number(rendered,*settings,location):rendered);
@@ -261,6 +263,7 @@ class FrameworkWriter {
             if(sql_money_record(shape)){append(sql_money_text(value));return;}
             if(sql_date_time_record(shape)){append(sql_date_time_text(value,location));return;}
             if(sql_guid_record(shape)){append(sql_guid_text(value,location));return;}
+            if(sql_binary_record(shape)){append(sql_binary_text(value));return;}
             if(decimal_type(shape)){append(format_decimal(value,{},format,location));return;}
             if(complex_number_type(shape)){append(complex_dotnet_text(value,{},format,location));return;}
             if(ordinal_range_type(shape)){append(ordinal_range_text(object));return;}
