@@ -3256,8 +3256,15 @@ ZIP.
 `IsNull`. `Utils.Eval` сохраняет конкретный SQL-тип при `CONVERT`,
 а литерал `NULL` в выражении остаётся `DBNull.Value`. Уменьшение
 разрядности и чтение `Value` у SQL `Null` дают двуязычные ошибки.
-Операторы выражений и остальные типы SQL ещё в работе.
 [Тест преобразований SQL](tests/fixtures/utils-sql-types-compat.pas).
+
+В выражениях `Eval` эти SQL-типы участвуют в арифметике, сравнении,
+`IN`, `LIKE`, `AND`, `OR` и `NOT`. Тип результата следует
+правилам PascalABC.NET. Например, сумма `SqlByte` и `Byte` даёт
+`SqlInt16`, а деление целых SQL-значений даёт `SqlDouble`.
+Для `SqlSingle` и `SqlDouble` сохранены 7 и 15 значащих цифр
+соответственно. Операции с результатом `SqlDecimal` ещё в работе.
+[Тест SQL-операторов](tests/fixtures/utils-sql-operations-compat.pas).
 
 `System.Guid` доступен в объявлении типа и как результат `CONVERT` в `Eval`.
 `Guid.Parse` и `ToString` принимают форматы `D`, `N`, `B`, `P` и `X`.

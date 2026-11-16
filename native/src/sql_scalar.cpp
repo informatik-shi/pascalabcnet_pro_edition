@@ -1,4 +1,5 @@
 #include "sql_scalar.hpp"
+#include "composite_format.hpp"
 #include "formatting.hpp"
 #include "runtime_values.hpp"
 #include <algorithm>
@@ -109,7 +110,11 @@ Type sql_scalar_result(Type owner,Type underlying,SqlScalarMethod method) {
 }
 std::u16string sql_scalar_text(const Value& value,SourceLocation location) {
     const auto& data=record(value);
-    return defined(data) ? format_field(data.items[1]->value,0,{},location) : u"Null";
+    if(!defined(data))return u"Null";
+    const auto& payload=data.items[1]->value;
+    if(std::holds_alternative<float>(payload) || std::holds_alternative<double>(payload))
+        return format_legacy_float(payload,location);
+    return format_field(payload,0,{},location);
 }
 Value sql_scalar_invoke(Values& values,Type owner,SqlScalarMethod method,std::span<const Value> arguments) {
     using M=SqlScalarMethod;

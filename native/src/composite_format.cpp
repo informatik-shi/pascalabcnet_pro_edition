@@ -77,7 +77,7 @@ DecimalDigits exact_decimal_digits(std::u16string_view text) {
     result.point-=static_cast<int>(leading_zeros);
     return result;
 }
-DecimalDigits decimal_digits(const Value& value,SourceLocation location) {
+DecimalDigits decimal_digits(const Value& value,SourceLocation location,int fractional_digits=-1) {
     DecimalDigits result;
     if (!floating(value)) {
         const auto text=format_field(value,0,std::nullopt,location);
@@ -88,8 +88,8 @@ DecimalDigits decimal_digits(const Value& value,SourceLocation location) {
     }
     const auto number=floating_value(value);
     result.negative=number<0;
-    char buffer[40];
-    const auto precision=std::holds_alternative<float>(value)?6:14;
+    char buffer[780];
+    const auto precision=fractional_digits>=0 ? fractional_digits : std::holds_alternative<float>(value) ? 6 : 14;
     const auto converted=std::to_chars(buffer,buffer+sizeof buffer,std::abs(number),std::chars_format::scientific,precision);
     if (converted.ec!=std::errc{}) throw runtime_error(RuntimeError::number_format,location);
     const std::string_view text(buffer,static_cast<std::size_t>(converted.ptr-buffer));
@@ -198,6 +198,19 @@ std::u16string scientific_number(DecimalDigits number,int precision,char16_t exp
     result.append(digits.begin(),digits.end());
     return result;
 }
+std::u16string general_digits(const DecimalDigits& number,int precision,char16_t exponent,
+    const NumberFormatSettings& format,SourceLocation location) {
+    auto rounded=number;
+    rounded.digits=rounded_digits(number.digits,precision);
+    if (rounded.digits.size()>static_cast<std::size_t>(precision)) {
+        rounded.digits.pop_back();
+        ++rounded.point;
+    }
+    if (rounded.point>precision || rounded.point<-3)
+        return localize_number(scientific_number(number,precision-1,exponent,true),format,location);
+    while (rounded.digits.size()>1 && rounded.digits.back()=='0') rounded.digits.pop_back();
+    return fixed_number(rounded,std::max(0,static_cast<int>(rounded.digits.size())-rounded.point),false,format,location);
+}
 std::u16string hexadecimal(const Value& value,std::size_t precision,bool upper,SourceLocation location) {
     const auto bits=std::visit([&](const auto& number)->std::uint64_t {
         using T=std::decay_t<decltype(number)>;
@@ -284,16 +297,18 @@ std::u16string format_decimal(const Value& value,std::u16string_view specifier,
         return fixed_number(number,precision<0?format.digits:precision,letter==u'N',format,location);
     if (letter!=u'G') throw unsupported_number(location);
 
-    auto rounded=number;
-    rounded.digits=rounded_digits(number.digits,precision);
-    if (rounded.digits.size()>static_cast<std::size_t>(precision)) {
-        rounded.digits.pop_back();
-        ++rounded.point;
-    }
-    if (rounded.point>precision || rounded.point<-3)
-        return localize_number(scientific_number(number,precision-1,symbol==u'g'?u'e':u'E',true),format,location);
-    while (rounded.digits.size()>1 && rounded.digits.back()=='0') rounded.digits.pop_back();
-    return fixed_number(rounded,std::max(0,static_cast<int>(rounded.digits.size())-rounded.point),false,format,location);
+    return general_digits(number,precision,symbol==u'g'?u'e':u'E',format,location);
+}
+
+std::u16string format_legacy_float(const Value& value,SourceLocation location) {
+    if(!floating(value))throw runtime_error(RuntimeError::invalid_bytecode,location);
+    const auto number=floating_value(value);
+    if(number==0)return u"0";
+    if(!std::isfinite(number))return general_float(value,0,'E',location);
+    const auto precision=std::holds_alternative<float>(value) ? 7 : 15;
+    // A binary64 value has at most 767 significant decimal digits. Keep its
+    // exact value until rounding the requested digits, including decimal ties.
+    return general_digits(decimal_digits(value,location,768),precision,u'E',{},location);
 }
 std::u16string format_scalar(const Value& value,SourceLocation location) {
     if (floating(value)) return general_float(value,0,'E',location);

@@ -6,6 +6,7 @@ namespace abc {
 struct NumberFormatSettings;
 std::u16string format_scalar(const Value&,SourceLocation);
 std::u16string format_number(const Value&,Type,std::u16string_view,const NumberFormatSettings&,SourceLocation);
+std::u16string format_legacy_float(const Value&,SourceLocation);
 std::u16string format_decimal(const Value&,std::u16string_view,const NumberFormatSettings&,SourceLocation);
 std::u16string localize_number(std::u16string_view,const NumberFormatSettings&,SourceLocation);
 void composite_format(const Program&,const Value& format,const Value& arguments,const NumberFormatSettings&,

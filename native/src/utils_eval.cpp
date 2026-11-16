@@ -548,6 +548,25 @@ class Evaluation {
     bool sql_value(Type type) const {
         return compound(type) && sql_scalar_record(type_info(values_.program,type));
     }
+    Type sql_base(Type type) const {
+        return sql_value(type) ? type_info(values_.program,type).element : type;
+    }
+    Type sql_storage(Type primitive) const {
+        for(std::size_t i=0;i<values_.program.types.size();++i){
+            const auto& shape=values_.program.types[i];
+            if(sql_scalar_record(shape) && shape.element==primitive)return static_cast<Type>(64+i);
+        }
+        throw runtime_error(RuntimeError::invalid_bytecode,location_);
+    }
+    Value sql_construct(Type owner,Value value) {
+        const std::array<Value,1> arguments{std::move(value)};
+        return sql_scalar_invoke(values_,owner,SqlScalarMethod::create,arguments);
+    }
+    Value sql_payload(Type owner,const Value& value) {
+        const std::array<Value,1> arguments{sql_scalar_convert(values_,owner,kind(value),value)};
+        return sql_scalar_invoke(values_,owner,SqlScalarMethod::value,arguments);
+    }
+    bool sql_flag(Type type) const {return sql_value(type) && sql_base(type)==Type::boolean;}
     Type conversion_type(std::u16string_view source) {
         constexpr std::u16string_view prefix=u"System.Data.SqlTypes.";
         if(source.starts_with(prefix)){
@@ -795,6 +814,27 @@ class Evaluation {
         default:operands();
         }
     }
+    Type sql_result_base(Type left,Type right) {
+        const auto a=sql_base(left),b=sql_base(right);
+        const auto number_a=numeric_rank(a),number_b=numeric_rank(b);
+        if(!number_a || !number_b){
+            if(a==Type::boolean && b==Type::boolean)return Type::boolean;
+            if((a==Type::string || a==Type::character) && (b==Type::string || b==Type::character))
+                return Type::string;
+            operands();
+        }
+        const auto selected=number_a>=number_b ? a : b;
+        if(selected==decimal_ || selected==Type::uint64)return decimal_;
+        if(a==Type::byte && b==Type::byte && sql_value(left)!=sql_value(right))return Type::smallint;
+        switch(selected){
+        case Type::shortint:return Type::byte;
+        case Type::word:return Type::integer;
+        case Type::longword:return Type::int64;
+        case Type::int64:case Type::integer:case Type::smallint:case Type::byte:
+        case Type::single:case Type::real:return selected;
+        default:operands();
+        }
+    }
     BigInteger wide_integer(const Value& value) {
         if(wide_unsigned(kind(value)))return BigInteger::from_unsigned(unsigned_number(value,location_));
         return BigInteger::from_signed(integral_number(value,location_));
@@ -802,6 +842,12 @@ class Evaluation {
     Value arithmetic(Symbol op,const Value& left,const Value& right) {
         const auto a=kind(left), b=kind(right);
         if(a==guid_ || b==guid_ || a==offset_date_ || b==offset_date_)operands();
+        const bool sql=sql_value(a) || sql_value(b);
+        const bool sql_string=(sql_value(a) && sql_base(a)==Type::string) || (sql_value(b) && sql_base(b)==Type::string);
+        if(sql_string && op==Symbol::plus){
+            const auto owner=sql_storage(Type::string);
+            return sql_construct(owner,arithmetic(op,sql_payload(owner,left),sql_payload(owner,right)));
+        }
         if(op==Symbol::plus && (a==Type::string || b==Type::string || (a==Type::character && b==Type::character))){
             auto result=text(left);
             const auto suffix=text(right);
@@ -809,6 +855,7 @@ class Evaluation {
             result+=suffix;
             return result;
         }
+        if(sql)return sql_arithmetic(op,left,right);
         if(!numeric_rank(a) || !numeric_rank(b) || (op==Symbol::modulus && (!integer_type(a) || !integer_type(b))))operands();
         const auto type=op==Symbol::divide && integer_type(a) && integer_type(b) ? Type::real : numeric_type(a,b);
         if(type==Type::real || type==Type::single){
@@ -839,8 +886,46 @@ class Evaluation {
         if(small_integer(type))return checked_small_integer(type,result,location_);
         return checked_signed_integer(type,Value{result},location_);
     }
+    Value sql_arithmetic(Symbol op,const Value& left,const Value& right) {
+        auto primitive=sql_result_base(kind(left),kind(right));
+        if(!numeric_rank(primitive) || (op==Symbol::modulus && !integer_type(primitive)))operands();
+        if(primitive==decimal_)
+            throw Error("E_UNSUPPORTED",location_,"This operation requires SqlDecimal",
+                "Для этой операции требуется SqlDecimal");
+        if(op==Symbol::divide && integer_type(primitive))primitive=Type::real;
+        const auto owner=sql_storage(primitive);
+        if(op==Symbol::modulus){
+            const auto int64=sql_storage(Type::int64);
+            const auto x=std::get<std::int64_t>(sql_payload(int64,left));
+            const auto y=std::get<std::int64_t>(sql_payload(int64,right));
+            if(y==0)throw runtime_error(RuntimeError::division_zero,location_);
+            if(x==INT64_MIN && y==-1)throw runtime_error(RuntimeError::integer_overflow,location_);
+            const Value remainder{x%y};
+            const auto narrowed=small_integer(primitive) ? checked_small_integer(primitive,x%y,location_)
+                : checked_signed_integer(primitive,remainder,location_);
+            return sql_construct(owner,narrowed);
+        }
+        const auto x=sql_payload(owner,left),y=sql_payload(owner,right);
+        if(op==Symbol::divide && real(y)==0)throw runtime_error(RuntimeError::division_zero,location_);
+        return sql_construct(owner,arithmetic(op,x,y));
+    }
+    int sql_compare(Type owner,const Value& left,const Value& right,bool equality) {
+        const auto base=sql_base(owner);
+        if(base==Type::string)
+            return compare(Value{text(left)},Value{text(right)},equality);
+        return compare(sql_payload(owner,left),sql_payload(owner,right),equality);
+    }
     int compare(const Value& left,const Value& right,bool equality=true) {
         const auto a=kind(left),b=kind(right);
+        if(sql_value(a) || sql_value(b)){
+            const auto primitive=sql_result_base(a,b);
+            if(primitive==decimal_){
+                const auto x=as_decimal(sql_value(a) ? sql_payload(a,left) : left);
+                const auto y=as_decimal(sql_value(b) ? sql_payload(b,right) : right);
+                return compare_decimal_values(x,y,location_);
+            }
+            return sql_compare(sql_storage(primitive),left,right,equality);
+        }
         if(a==offset_date_ || b==offset_date_){
             if(a!=b)operands();
             return compare_date_offsets(left,right);
@@ -879,6 +964,11 @@ class Evaluation {
     bool boolean(const Value& value) {
         if(const auto* logical=std::get_if<bool>(&value))return *logical;
         operands();
+    }
+    bool logic_flag(const Value& value) {
+        const auto type=kind(value);
+        if(sql_flag(type))return std::get<bool>(sql_payload(type,value));
+        return boolean(value);
     }
     bool expression_boolean(const Value& value) {
         if(const auto* text=std::get_if<std::u16string>(&value)){
@@ -941,6 +1031,8 @@ class Evaluation {
             }else if(type==offset_date_){
                 if(kind(candidate)!=offset_date_)operands();
                 if(compare_date_offsets(left,candidate)==0)return true;
+            }else if(sql_value(type)){
+                if(sql_compare(type,left,candidate,true)==0)return true;
             }else if(type==Type::real){
                 if(floating_order(real(left),real(candidate))==0)return true;
             }else if(type==Type::single){
@@ -957,6 +1049,8 @@ class Evaluation {
     }
     Value evaluate_like(const Value& left,const Value& right) {
         if(null(left))return left;
+        const auto type=kind(left);
+        if(sql_value(type) && sql_base(type)==Type::string)return evaluate_like(sql_payload(type,left),right);
         const auto* source=std::get_if<std::u16string>(&left);
         const auto* pattern=std::get_if<std::u16string>(&right);
         if(!source || !pattern)operands();
@@ -1061,9 +1155,28 @@ class Evaluation {
             return evaluate_conversion(std::move(left),conversion_type(string_text(node.value)));
         if(node.kind==Symbol::is_null)return null(left);
         if(node.kind==Symbol::is_not_null)return !null(left);
-        if(node.kind==Symbol::negate)return null(left) ? left : Value{!expression_boolean(left)};
+        if(node.kind==Symbol::negate){
+            if(null(left))return left;
+            const auto type=kind(left);
+            if(sql_flag(type))return sql_construct(type,!logic_flag(left));
+            return !expression_boolean(left);
+        }
         if(node.right==0){
             if(null(left))return left;
+            const auto type=kind(left);
+            if(sql_value(type)){
+                const auto primitive=sql_base(type);
+                if(!numeric_rank(primitive))operands();
+                if(node.kind!=Symbol::minus)return left;
+                if(primitive==Type::byte)return NilString{};
+                const auto payload=sql_payload(type,left);
+                if(primitive==Type::real)return sql_construct(type,-std::get<double>(payload));
+                if(primitive==Type::single)return sql_construct(type,-std::get<float>(payload));
+                const auto integer=integral_number(payload,location_);
+                if(integer==INT64_MIN)throw runtime_error(RuntimeError::integer_overflow,location_);
+                return sql_construct(type,small_integer(primitive) ? checked_small_integer(primitive,-integer,location_)
+                    : checked_signed_integer(primitive,Value{-integer},location_));
+            }
             if(!numeric_rank(kind(left)))operands();
             if(node.kind!=Symbol::minus)return left;
             if(kind(left)==Type::real)return -std::get<double>(left);
@@ -1075,13 +1188,14 @@ class Evaluation {
         auto right=evaluate(node.right,depth+1);
         if(node.kind==Symbol::like)return evaluate_like(left,right);
         if(node.kind==Symbol::conjunction){
-            if(null(left) || !boolean(left))return left;
-            return null(right) ? right : Value{boolean(right)};
+            if(null(left))return left;
+            if(!logic_flag(left))return false;
+            return null(right) ? right : Value{logic_flag(right)};
         }
         if(node.kind==Symbol::disjunction){
             if(null(left))return right;
             if(boolean(left) || null(right))return left;
-            return boolean(right);
+            return logic_flag(right);
         }
         if(null(left) || null(right))return NilString{};
         switch(node.kind){

@@ -204,6 +204,7 @@ Utils.Eval распознаёт литералы дат #...# и CONVERT в Syst
 CONVERT преобразует XML-длительности и число тиков в System.TimeSpan.
 System.DateTimeOffset хранит время со смещением относительно UTC и доступен из CONVERT.
 CONVERT возвращает типизированные значения SqlBoolean, SqlByte, SqlInt16, SqlInt32, SqlInt64, SqlSingle, SqlDouble и SqlString.
+Utils.Eval поддерживает арифметику, сравнение и логические операции с этими типами.
 System.Guid поддерживает разбор строк, 16-байтовую форму и преобразование из Utils.Eval.
 Guid.NewGuid создаёт идентификатор версии 4. Доступны ParseExact, TryParse и использование в коллекциях.
 Utils.Eval разбирает экранированные имена и выдаёт двуязычные ошибки при обращении к столбцам пустой таблицы.

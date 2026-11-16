@@ -832,6 +832,14 @@ void timing_library() {
     auto sql_scalar=abc::compile("uses System.Data.SqlTypes;begin Writeln(SqlInt32.MinValue.Value);end.");
     for(auto& instruction:sql_scalar.code)if(instruction.op==abc::Op::sql_scalar_call)instruction.operand=32768;
     error([&]{abc::verify(sql_scalar);},"E_BYTECODE");
+    error([&]{(void)run("uses Utils;begin Writeln(EvalStr('CONVERT(2147483647,System.Data.SqlTypes.SqlInt32)+1'));end.");},
+        "E_OVERFLOW");
+    error([&]{(void)run("uses Utils;begin Writeln(EvalStr('CONVERT(5,System.Data.SqlTypes.SqlInt32)/0'));end.");},
+        "E_DIV_ZERO");
+    error([&]{(void)run("uses Utils;begin Writeln(EvalStr('CONVERT(True,System.Data.SqlTypes.SqlBoolean) OR False'));end.");},
+        "E_TYPE");
+    error([&]{(void)run("uses Utils;begin Writeln(EvalStr('CONVERT(5,System.Data.SqlTypes.SqlInt32)%2e0'));end.");},
+        "E_TYPE");
 }
 
 void sequence_text_and_flatten() {
