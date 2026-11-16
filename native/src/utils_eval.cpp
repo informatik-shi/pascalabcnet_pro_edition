@@ -693,7 +693,7 @@ class Evaluation {
 public:
     Evaluation(Values& values,const ExecutionOptions& options,Type decimal,std::u16string_view source)
         :values_(values),options_(options),location_(values.location),decimal_(decimal),source_(source){}
-    Value run(Type result) {
+    Value compute() {
         advance();
         Value value=NilString{};
         if(token_.kind!=Symbol::end){
@@ -701,6 +701,10 @@ public:
             if(token_.kind!=Symbol::end)syntax();
             value=evaluate(root,0);
         }
+        return value;
+    }
+    Value run(Type result) {
+        auto value=compute();
         if(result==Type::string)return text(value);
         if(null(value))throw Error("E_TYPE",location_,"A null evaluation result cannot be converted to the requested type",
             "Пустой результат выражения нельзя преобразовать к запрошенному типу");
@@ -709,12 +713,21 @@ public:
         return signed_integer(value,Type::integer);
     }
 };
+
+Type evaluator_decimal(const Program& program) {
+    for(std::size_t i=0;i<program.types.size();++i)
+        if(decimal_type(program.types[i]))return static_cast<Type>(64+i);
+    return Type::invalid;
+}
 }
 
 Value utils_eval(Values& values,const Value& expression,Type result,const ExecutionOptions& options) {
-    Type decimal=Type::invalid;
-    for(std::size_t i=0;i<values.program.types.size();++i)
-        if(decimal_type(values.program.types[i])){decimal=static_cast<Type>(64+i);break;}
-    return Evaluation(values,options,decimal,string_text(expression)).run(result);
+    return Evaluation(values,options,evaluator_decimal(values.program),string_text(expression)).run(result);
+}
+Value utils_eval_object(Values& values,const Value& expression,Type object,Type missing,const ExecutionOptions& options) {
+    auto value=Evaluation(values,options,evaluator_decimal(values.program),string_text(expression)).compute();
+    if(null(value))value=values.database_null(missing);
+    const auto type=value_type(value);
+    return values.box_value(object,type,std::move(value));
 }
 }

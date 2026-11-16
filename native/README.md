@@ -3210,7 +3210,14 @@ ZIP.
 и 200 дополнительных числовых преобразований и операций.
 [Тест CONVERT](tests/fixtures/utils-convert-compat.pas),
 [тест разрядности и Single](tests/fixtures/utils-numeric-convert-compat.pas).
-Даты, агрегаты и `Eval`, возвращающий `Object`, остаются в работе.
+
+`Eval(s: String): Object` сохраняет конкретный тип результата. Например,
+`Eval('42').GetType` возвращает `System.Int32`, а `Eval('0.1+0.2').GetType`
+возвращает `System.Decimal`. Для `NULL` возвращается общий `DBNull.Value`
+с типом `System.DBNull` и пустым результатом `ToString`. Функцию можно
+присвоить переменной с сигнатурой `function(String): Object`.
+[Тест Eval с Object](tests/fixtures/utils-object-eval-compat.pas).
+Даты и агрегаты остаются в работе.
 
 ## Символы Windows-1251
 

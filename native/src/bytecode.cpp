@@ -179,6 +179,11 @@ private:
             for(const auto& argument:node.arguments)expression(*argument);
             emit(node.kind==hir::ExprKind::client_server_run ? Op::client_server_run : Op::utils_benchmark,
                 node.arguments.front()->type,0,node.location);break;
+        case hir::ExprKind::utils_eval_object:
+            expression(*node.arguments.front());
+            emit(Op::utils_eval_object,node.type,node.local,node.location);break;
+        case hir::ExprKind::database_null:
+            emit(Op::database_null,node.type,0,node.location);break;
         case hir::ExprKind::tuple_literal:
         case hir::ExprKind::tuple_construct:
         case hir::ExprKind::school_pair:
@@ -1302,6 +1307,20 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
                 || type_info(program,type).element!=Type::unit || !type_info(program,type).parameters.empty())
                 invalid(instruction,"Invalid Benchmark callback signature");
             break;
+        case Op::database_null:
+            if(instruction.operand || !compound(type) || !database_null_type(type_info(program,type)))
+                invalid(instruction,"Invalid DBNull value");
+            break;
+        case Op::utils_eval_object: {
+            const auto missing=static_cast<Type>(instruction.operand);
+            if(!compound(type) || type_info(program,type).kind!=CompoundKind::boxed_object
+                || static_cast<std::size_t>(missing)!=instruction.operand
+                || !valid_value_type(program,missing) || !compound(missing)
+                || !database_null_type(type_info(program,missing))
+                || std::none_of(program.types.begin(),program.types.end(),decimal_type))
+                invalid(instruction,"Invalid Utils.Eval type metadata");
+            break;
+        }
         case Op::school_table_print: case Op::school_table_new:
             if (!compound(type) || type_info(program,type).kind!=CompoundKind::array || type_info(program,type).rank!=2
                 || type_info(program,type).element!=Type::boolean || instruction.operand) invalid(instruction,"Invalid School truth-table output");
@@ -1913,6 +1932,8 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         case Op::school_table_print: require(Type::string); require(Type::integer); require(instruction.type); break;
         case Op::client_server_run: require(instruction.type); break;
         case Op::utils_benchmark: require(Type::integer); require(instruction.type); stack.push_back(Type::real); break;
+        case Op::database_null: stack.push_back(instruction.type); break;
+        case Op::utils_eval_object: require(Type::string); stack.push_back(instruction.type); break;
         case Op::school_table_new: require(Type::integer); stack.push_back(instruction.type); break;
         case Op::tuple_literal: case Op::school_pair:
             for (auto field=type_info(program,instruction.type).fields.rbegin();field!=type_info(program,instruction.type).fields.rend();++field) require(field->type);
@@ -2251,6 +2272,10 @@ void verify(const Program& program) {
     if(fixed_owners.size()!=static_cast<std::size_t>(std::count_if(program.types.begin(),program.types.end(),[](const auto& t){return t.kind==CompoundKind::fixed_array;})))throw Error("E_BYTECODE",{},"Missing fixed array shape");
     for (std::size_t i = 0; i < program.types.size(); ++i) {
         const auto& type = program.types[i]; unsigned level = 1;
+        if(type.name=="$system.dbnull" && (!database_null_type(type) || !type.abstract_class
+            || type.key!=Type::invalid || !type.fields.empty()
+            || std::count_if(program.types.begin(),program.types.end(),database_null_type)!=1))
+            throw Error("E_BYTECODE",{},"Invalid DBNull type metadata","Недопустимое описание типа DBNull");
         if(type.abstract_class && type.kind!=CompoundKind::object_class)
             throw Error("E_BYTECODE",{},"Abstract class flag on a non-class type");
         if(type.native_record!=NativeRecord::none && ((type.native_record!=NativeRecord::ordinal_range && type.native_record!=NativeRecord::real_interval && type.native_record!=NativeRecord::key_value_pair && type.native_record!=NativeRecord::dictionary_enumerator && type.native_record!=NativeRecord::collection_enumerator && !complex_number_type(type) && !calendar_record(type) && !decimal_type(type)) || type.kind!=CompoundKind::record))throw Error("E_BYTECODE",{},"Invalid native record metadata");
@@ -2401,6 +2426,8 @@ void verify(const Program& program) {
             if(type.key!=Type::invalid){
                 if(!valid_class_ancestry(program.types,static_cast<Type>(64+i)))
                     throw Error("E_BYTECODE",{},"Invalid base class metadata");
+                if(database_null_type(type_info(program,type.key)))
+                    throw Error("E_BYTECODE",{},"DBNull cannot be a base class","DBNull не может быть базовым классом");
                 const auto& inherited=type_info(program,type.key).fields;
                 if(inherited.size()>type.fields.size() || !std::equal(inherited.begin(),inherited.end(),type.fields.begin(),
                     [](const auto& a,const auto& b){return a.name==b.name && a.type==b.type && a.global==b.global && a.access==b.access;}))

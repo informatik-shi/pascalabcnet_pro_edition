@@ -99,6 +99,7 @@ class ObjectWriter {
         }
         const auto object=std::get<std::shared_ptr<Aggregate>>(data);
         if (!object || object->nil) { append(u"nil"); return; }
+        if(database_null_type(info))return;
         if (info.kind==CompoundKind::boxed_object) {
             if (object->items.empty()) append(u"()");
             else value(object->items.front()->value,object->items.front()->type);
@@ -181,6 +182,7 @@ std::u16string object_text(Values& values, const Value& value, Type type, Source
 Value class_object_to_string(Values& values,const Value& value,const ExecutionOptions& options){
     const auto& object=std::get<std::shared_ptr<Aggregate>>(value);
     if(!object || object->nil)throw runtime_error(RuntimeError::nil_reference,values.location);
+    if(database_null_type(type_info(values.program,object->type)))return std::u16string{};
     if(auto rendered=class_to_string_override(values,value,object->type))return std::move(*rendered);
     return reflected_type_property(values.program,{object->type},TypeOperation::full_name,values.location,options);
 }

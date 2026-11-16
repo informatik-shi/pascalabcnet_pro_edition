@@ -6,6 +6,7 @@
 #include "stdlib.hpp"
 #include "sockets.hpp"
 #include "runtime_values.hpp"
+#include "utils_eval.hpp"
 #include "record_initialization.hpp"
 #include "files.hpp"
 #include "linked.hpp"
@@ -603,6 +604,14 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
         case Op::school_minmax: {
             const auto sequence=std::get<std::shared_ptr<Aggregate>>(pop());
             stack.emplace_back(school_minmax(values,sequence,static_cast<Type>(instruction.operand),options)); break;
+        }
+        case Op::database_null:
+            stack.push_back(values.database_null(instruction.type));
+            break;
+        case Op::utils_eval_object: {
+            const auto expression=pop();
+            stack.push_back(utils_eval_object(values,expression,instruction.type,static_cast<Type>(instruction.operand),options));
+            break;
         }
         case Op::utils_benchmark: {
             const auto repeats=std::get<std::int32_t>(pop());

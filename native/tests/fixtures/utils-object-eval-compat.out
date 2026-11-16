@@ -1,0 +1,16 @@
+System.Int32 [42]
+System.Int64 [2147483648]
+System.Decimal [0.3]
+System.Double [10]
+System.Single [7]
+System.Byte [255]
+System.UInt64 [18446744073709551615]
+System.Char [A]
+System.String [Привет🌍]
+System.Boolean [True]
+System.DBNull []
+True True False
+DBNull System
+0 True
+System.DBNull, mscorlib, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089
+123

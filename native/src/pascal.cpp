@@ -686,7 +686,7 @@ private:
                 else if(result->kind=="collections"){expect(".");const auto generic=name();if(generic.text!="generic")throw Error("E_UNSUPPORTED",generic.location,"Unknown System.Collections namespace");expect(".");result->kind=name().text;if(result->kind!="dictionary" && result->kind!="sorteddictionary" && result->kind!="sortedlist" && result->kind!="keyvaluepair" && result->kind!="ienumerable" && result->kind!="ienumerator" && result->kind!="list" && result->kind!="hashset" && result->kind!="sortedset" && result->kind!="icomparer" && result->kind!="comparer" && result->kind!="iequalitycomparer" && result->kind!="equalitycomparer" && result->kind!="icollection" && result->kind!="ilist" && result->kind!="iset" && result->kind!="idictionary")throw Error("E_UNSUPPORTED",result->token.location,"Unknown generic collection type");}
                 else if (result->kind!="func" && result->kind!="action" && result->kind!="predicate" && result->kind!="type" && result->kind!="void" && result->kind!="single" && result->kind!="object" && result->kind!="icomparable" && result->kind!="iequatable"
                     && result->kind!="datetime" && result->kind!="timespan" && result->kind!="datetimekind" && result->kind!="dayofweek"
-                    && result->kind!="decimal" && result->kind!="midpointrounding")
+                    && result->kind!="decimal" && result->kind!="midpointrounding" && result->kind!="dbnull")
                     throw Error("E_UNSUPPORTED",result->token.location,"Unknown or unsupported type 'System."+result->kind+"'");
             }
             if (result->kind=="comparer" || result->kind=="equalitycomparer") accept("&");
@@ -1704,6 +1704,8 @@ private:
                 if(!compound(candidate))continue;
                 const auto kind=info(candidate,declaration->token.location).kind;
                 if(kind!=CompoundKind::ini_file && kind!=CompoundKind::object_class)continue;
+                if(database_null_type(info(candidate,declaration->token.location)))
+                    throw Error("E_TYPE",declaration->token.location,"DBNull cannot be inherited","От DBNull нельзя наследоваться");
                 auto& parent=module_.types[static_cast<unsigned>(owner)-64].key;
                 if(parent!=Type::invalid)
                     throw Error("E_TYPE",declaration->token.location,"A class can have only one base class","У класса может быть только один базовый класс");
@@ -2330,6 +2332,8 @@ private:
             return client_server_run_value(source.token.location,expected);
         if(source.token.text=="benchmark" && hints.empty() && imported_units_.contains("utils") && (unit.empty() || unit=="utils"))
             return utils_benchmark_value(source.token.location,expected);
+        if(source.token.text=="eval" && hints.empty() && imported_units_.contains("utils") && (unit.empty() || unit=="utils"))
+            return utils_eval_value(source.token.location,expected);
         const auto context=callable_type(expected) ? std::optional<TypeInfo>{info(expected,source.token.location)} : std::nullopt;
         const auto catalog=stdlib::signatures();
         const auto visible=[&](const auto& signature){
@@ -4055,6 +4059,8 @@ private:
         if (syntax.kind=="decimal" &&
             (syntax.system_qualified || syntax.unit=="pabcsystem" || !aliases_.contains(syntax.kind)))
             return decimal_record_type(syntax.token.location);
+        if(syntax.kind=="dbnull" && (syntax.system_qualified || !aliases_.contains(syntax.kind)))
+            return dbnull_type(syntax.token.location);
         if (syntax.kind=="midpointrounding" && (syntax.system_qualified || !aliases_.contains(syntax.kind)))
             return midpoint_rounding_type(syntax.token.location);
         if (syntax.kind=="numberformatinfo" &&
@@ -4142,6 +4148,22 @@ private:
         if (module_.types.size()>=1024) throw Error("E_LIMIT",location,"Type limit exceeded");
         module_.types.push_back({"object",CompoundKind::boxed_object,Type::invalid,{}});
         return static_cast<Type>(63+module_.types.size());
+    }
+    Type dbnull_type(SourceLocation location) {
+        for(std::size_t i=0;i<module_.types.size();++i)
+            if(database_null_type(module_.types[i]))return static_cast<Type>(64+i);
+        if(module_.types.size()>=1024)throw Error("E_LIMIT",location,"Type limit exceeded");
+        TypeInfo type{"$system.dbnull",CompoundKind::object_class,Type::invalid,{}};
+        type.display_name="DBNull";
+        type.abstract_class=true;
+        module_.types.push_back(std::move(type));
+        return static_cast<Type>(63+module_.types.size());
+    }
+    bool dbnull_name(const SyntaxExpr& source) const {
+        if(source.token.text!="dbnull")return false;
+        if(source.kind==SyntaxExprKind::name)return !lookup(source.token) && !aliases_.contains("dbnull");
+        return source.kind==SyntaxExprKind::field && source.left && source.left->kind==SyntaxExprKind::name
+            && source.left->token.text=="system" && !lookup(source.left->token);
     }
     bool boxed_object(Type type,SourceLocation location) const {
         return compound(type) && info(type,location).kind==CompoundKind::boxed_object;
@@ -4949,6 +4971,7 @@ private:
         std::vector<const SyntaxExpr*> chain;const auto* base=&source;
         while((base->kind==SyntaxExprKind::field || base->kind==SyntaxExprKind::member_call) && base->left){
             if(!base->type_arguments.empty())break;
+            if(base->token.text=="value" && dbnull_name(*base->left))break;
             if (base->token.text=="create" && string_builder_constructor_owner(*base->left)!=Type::invalid) break;
             if (complex_type_name(*base->left)!=Type::invalid) break;
             if ((base->token.text=="create" || base->token.text=="invariantinfo" || base->token.text=="currentinfo"
@@ -5041,6 +5064,13 @@ private:
         if(source.left->kind==SyntaxExprKind::name && source.left->token.text=="$inherited")
             return bind_inherited_expression(source,expected,std::move(result));
         (void)expected;
+        if(!result->left && source.token.text=="value" && dbnull_name(*source.left)) {
+            if(source.kind!=SyntaxExprKind::field)
+                throw Error("E_TYPE",result->location,"DBNull.Value is not callable","DBNull.Value нельзя вызвать");
+            result->kind=hir::ExprKind::database_null;
+            result->type=dbnull_type(result->location);
+            return result;
+        }
         if (!result->left) if (auto limit=integer_limit_member(source)) return limit;
         if(!result->left&&source.left&&source.left->kind==SyntaxExprKind::name&&!lookup(source.left->token)){const auto owner=aliases_.find(source.left->token.text);if(owner!=aliases_.end()){if(auto property=static_property_member(owner->second,source))return property;if(auto method=static_method_expression(owner->second,source,expected))return method;if(auto field=static_field_expression(owner->second,source.token)){if(source.kind==SyntaxExprKind::member_call){auto call=std::make_unique<hir::Expr>();call->location=source.token.location;call->left=std::move(field);bind_value_call(*call,source.arguments);return call;}return field;}}}
         do {
@@ -5142,6 +5172,7 @@ private:
                 if (bind_school_table(*result,source,source.left->token.text)) break;
                 if (bind_client_server_run(*result,source,source.left->token.text)) break;
                 if (bind_utils_benchmark(*result,source,source.left->token.text)) break;
+                if (bind_utils_object_eval(*result,source,source.left->token.text)) break;
                 if (bind_dictionary_query(*result,source,source.left->token.text)) break;
                 if (bind_sequence_zip(*result,source,source.left->token.text)) break;
                 if (bind_sequence_numeric_selector(*result,source,source.left->token.text)) break;
@@ -5205,7 +5236,8 @@ private:
                     result->kind=hir::ExprKind::type_operation;result->operation_type=receiver;result->local=static_cast<unsigned>(operation);result->type=Type::string;break;
                 }
             }
-            if(source.token.text=="tostring" && boxed_object(receiver,result->location)){
+            if(source.token.text=="tostring" && (boxed_object(receiver,result->location)
+                || (compound(receiver) && database_null_type(info(receiver,result->location))))){
                 if(!source.arguments.empty())throw Error("E_TYPE",result->location,
                     "Object.ToString takes no arguments","Метод Object.ToString не принимает аргументы");
                 result->kind=hir::ExprKind::object_text;
@@ -5907,6 +5939,7 @@ private:
             if (!routine_names_.contains(source.token.text) && bind_school_table(*result,source)) break;
             if (!routine_names_.contains(source.token.text) && bind_client_server_run(*result,source)) break;
             if (!routine_names_.contains(source.token.text) && bind_utils_benchmark(*result,source)) break;
+            if (!routine_names_.contains(source.token.text) && bind_utils_object_eval(*result,source)) break;
             if (!routine_names_.contains(source.token.text) && bind_dictionary_query(*result,source)) break;
             if (!routine_names_.contains(source.token.text) && bind_sequence_zip(*result,source)) break;
             if (!routine_names_.contains(source.token.text) && bind_sequence_numeric_selector(*result,source)) break;
@@ -7960,7 +7993,7 @@ private:
             && callback.parameters.size()==1 && callback.parameters[0]==CallableParameter{Type::string,false,false};
     }
     std::unique_ptr<hir::Expr> native_operation_value(hir::ExprKind kind,Type expected,SourceLocation location,
-        std::string_view name,std::map<Type,std::size_t>& routines) {
+        std::string_view name,std::map<Type,std::size_t>& routines,std::size_t operand=0) {
         const auto& signature=info(expected,location);
         const auto callback=signature.parameters.front().type;
         auto found=routines.find(callback);
@@ -7973,6 +8006,7 @@ private:
             routine.body.location=location;
             auto& invoke=routine.body.expression=std::make_unique<hir::Expr>();
             invoke->kind=kind;invoke->type=signature.element;invoke->location=location;
+            invoke->local=operand;
             const auto local=[&](std::string slot_name,Type type){
                 const auto slot=module_.locals.size();
                 module_.locals.push_back({std::move(slot_name),type,false});
@@ -8067,6 +8101,30 @@ private:
             result.arguments.push_back(std::move(count));
         }
         result.kind=hir::ExprKind::utils_benchmark;result.type=Type::real;
+        return true;
+    }
+    std::unique_ptr<hir::Expr> utils_eval_value(SourceLocation location,Type expected) {
+        const auto object=object_type(location);
+        if(expected==Type::invalid)expected=function_type(object,{{Type::string,false,false}},location);
+        if(!callable_type(expected))
+            throw Error("E_TYPE",location,"Eval requires a function type","Для Eval нужен тип функции");
+        const auto& signature=info(expected,location);
+        if(signature.element!=object || signature.parameters.size()!=1
+            || signature.parameters[0]!=CallableParameter{Type::string,false,false})
+            throw Error("E_TYPE",location,"Eval accepts String and returns Object","Eval принимает String и возвращает Object");
+        (void)decimal_record_type(location);
+        return native_operation_value(hir::ExprKind::utils_eval_object,expected,location,"$eval",eval_routines_,
+            static_cast<std::size_t>(dbnull_type(location)));
+    }
+    bool bind_utils_object_eval(hir::Expr& result,const SyntaxExpr& source,std::string_view unit={}) {
+        if(source.token.text!="eval" || (!unit.empty() && unit!="utils") || !imported_units_.contains("utils"))return false;
+        if(source.arguments.size()!=1)
+            throw Error("E_TYPE",result.location,"Eval takes one String expression","Eval принимает одно выражение типа String");
+        (void)decimal_record_type(result.location);
+        result.kind=hir::ExprKind::utils_eval_object;
+        result.type=object_type(result.location);
+        result.local=static_cast<std::size_t>(dbnull_type(result.location));
+        result.arguments.push_back(convert(expression(*source.arguments.front(),Type::string),Type::string));
         return true;
     }
     bool bind_generators(hir::Expr& result,const SyntaxExpr& source,std::string_view unit={},bool member=false) {
@@ -10267,6 +10325,7 @@ private:
     std::map<std::size_t,std::size_t> builtin_routines_;
     std::map<Type,std::size_t> client_server_routines_;
     std::map<Type,std::size_t> benchmark_routines_;
+    std::map<Type,std::size_t> eval_routines_;
     std::array<std::optional<std::size_t>,4> oberon_print_routines_{};
     std::map<std::pair<std::string,Type>,std::size_t> array_library_routines_;
     struct ClassProperty { Type type;std::optional<std::size_t> getter,setter;std::vector<Type> indices{};bool default_indexer=false; };

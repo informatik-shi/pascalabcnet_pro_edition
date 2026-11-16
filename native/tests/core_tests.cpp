@@ -716,6 +716,14 @@ void timing_library() {
     error([&]{(void)run("uses Utils;begin Writeln(EvalStr('CONVERT(''18446744073709551615'',System.UInt64)+1'));end.");},"E_TYPE");
     error([&]{(void)run("uses Utils;begin Writeln(EvalStr('CONVERT(18446744073709551616e0,System.UInt64)'));end.");},"E_OVERFLOW");
     error([&]{(void)run("uses Utils;begin Writeln(EvalBool('TRUE>FALSE'));end.");},"E_TYPE");
+    compile_error("begin Writeln(Eval('1'));end.","E_NAME");
+    compile_error("uses Utils;begin var value:=Eval(1);end.","E_TYPE");
+    compile_error("uses System;begin var value:=new DBNull;end.","E_TYPE");
+    compile_error("uses System;type Derived=class(DBNull) end;begin end.","E_TYPE");
+    auto evaluation=abc::compile("uses Utils;begin Writeln(Eval('1').GetType.Name);end.");
+    for(auto& instruction:evaluation.code)if(instruction.op==abc::Op::utils_eval_object)
+        instruction.operand=static_cast<std::size_t>(abc::Type::boolean);
+    error([&]{abc::verify(evaluation);},"E_BYTECODE");
 }
 
 void sequence_text_and_flatten() {

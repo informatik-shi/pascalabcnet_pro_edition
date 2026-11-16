@@ -53,6 +53,7 @@ struct Values {
     std::function<void(const std::shared_ptr<Aggregate>&)> observe_object{};
     std::function<Value(std::size_t,std::span<const Value>)> invoke_builtin{};
     std::shared_ptr<Aggregate> invariant_number_format{},current_number_format{},pabc_number_format{};
+    std::shared_ptr<Aggregate> database_null_instance{};
     std::size_t callable_target(const std::shared_ptr<Aggregate>& callable) const {
         if (!callable || callable->nil) throw runtime_error(RuntimeError::nil_reference,location);
         if (!callable->routine || *callable->routine>=program.routines.size()
@@ -123,6 +124,11 @@ struct Values {
             return aggregate;
         }
         }
+    }
+    Value database_null(Type type) {
+        if(!database_null_type(type_info(program,type)))throw runtime_error(RuntimeError::invalid_bytecode,location);
+        if(!database_null_instance)database_null_instance=std::get<std::shared_ptr<Aggregate>>(zero(type,true));
+        return database_null_instance;
     }
     Value box_value(Type object_type,Type payload,Value value) {
         if (std::holds_alternative<NilString>(value)) return zero(object_type);
