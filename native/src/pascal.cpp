@@ -17,6 +17,7 @@
 #include "guid.hpp"
 #include "sql_scalar.hpp"
 #include "sql_decimal.hpp"
+#include "sql_money.hpp"
 #include "decimal.hpp"
 #include "fixed_array.hpp"
 #include "type_names.hpp"
@@ -681,7 +682,7 @@ private:
                         throw Error("E_UNSUPPORTED",ns.location,"Unknown System.Data namespace","Неизвестное пространство имён System.Data");
                     expect(".");
                     result->kind=name().text;
-                    if(!sql_scalar_type(result->kind) && result->kind!="sqldecimal")
+                    if(!sql_scalar_type(result->kind) && result->kind!="sqldecimal" && result->kind!="sqlmoney")
                         throw Error("E_UNSUPPORTED",result->token.location,"Unknown or unsupported SQL value type",
                             "Неизвестный или неподдерживаемый тип значения SQL");
                 }
@@ -3014,8 +3015,11 @@ private:
     bool is_sql_decimal(Type type) const {
         return compound(type) && sql_decimal_record(info(type,{}));
     }
+    bool is_sql_money(Type type) const {
+        return compound(type) && sql_money_record(info(type,{}));
+    }
     bool is_sql_value(Type type) const {
-        return is_sql_decimal(type) || (compound(type) && sql_scalar_record(info(type,{})));
+        return is_sql_decimal(type) || is_sql_money(type) || (compound(type) && sql_scalar_record(info(type,{})));
     }
     Type declare_sql_scalar(const SqlScalarType& description,SourceLocation location) {
         for(std::size_t i=0;i<module_.types.size();++i)
@@ -3041,8 +3045,19 @@ private:
         module_.types.push_back(std::move(shape));
         return static_cast<Type>(63+module_.types.size());
     }
+    Type sql_money_type(SourceLocation location) {
+        for(std::size_t i=0;i<module_.types.size();++i)
+            if(sql_money_record(module_.types[i]))return static_cast<Type>(64+i);
+        const auto decimal=decimal_record_type(location);
+        if(module_.types.size()>=1024)throw Error("E_LIMIT",location,"Type limit exceeded");
+        TypeInfo shape{"sqlmoney",CompoundKind::record,decimal,{{"_defined",Type::boolean,false},{"_scaled",Type::int64,false}}};
+        shape.native_record=NativeRecord::sql_money;
+        module_.types.push_back(std::move(shape));
+        return static_cast<Type>(63+module_.types.size());
+    }
     Type declare_sql_type(std::string_view name,SourceLocation location) {
         if(name=="sqldecimal")return sql_decimal_type(location);
+        if(name=="sqlmoney")return sql_money_type(location);
         if(const auto* type=sql_scalar_type(name))return declare_sql_scalar(*type,location);
         return Type::invalid;
     }
@@ -3053,7 +3068,7 @@ private:
             if(imported_units_.contains("system.data.sqltypes"))
                 return declare_sql_type(target.token.text,target.token.location);
         }
-        if((!sql_scalar_type(target.token.text) && target.token.text!="sqldecimal")
+        if((!sql_scalar_type(target.token.text) && target.token.text!="sqldecimal" && target.token.text!="sqlmoney")
             || (target.kind!=SyntaxExprKind::field && target.kind!=SyntaxExprKind::member_call) || !target.left)
             return Type::invalid;
         const auto* ns=target.left.get();
@@ -3104,11 +3119,35 @@ private:
         const auto method=integer_type(arguments.front()->type) ? M::from_integer : M::from_decimal;
         return sql_decimal_expression(owner,method,std::move(arguments),location);
     }
+    std::unique_ptr<hir::Expr> sql_money_expression(Type owner,SqlMoneyMethod method,
+        std::vector<std::unique_ptr<hir::Expr>> arguments,SourceLocation location) {
+        const auto parameters=sql_money_parameters(owner,info(owner,location),method);
+        if(arguments.size()!=parameters.size())
+            throw Error("E_TYPE",location,"Invalid SqlMoney argument count","Недопустимое число аргументов SqlMoney");
+        for(std::size_t i=0;i<parameters.size();++i)arguments[i]=convert(std::move(arguments[i]),parameters[i]);
+        auto result=std::make_unique<hir::Expr>();
+        result->kind=hir::ExprKind::sql_money_call;
+        result->type=sql_money_result(owner,info(owner,location),method);
+        result->operation_type=owner;
+        result->local=static_cast<std::size_t>(method);
+        result->location=location;
+        result->arguments=std::move(arguments);
+        return result;
+    }
+    std::unique_ptr<hir::Expr> construct_sql_money(Type owner,
+        std::vector<std::unique_ptr<hir::Expr>> arguments,SourceLocation location) {
+        using M=SqlMoneyMethod;
+        if(arguments.empty())
+            throw Error("E_TYPE",location,"SqlMoney construction requires a value","Конструктору SqlMoney нужно значение");
+        const auto method=integer_type(arguments.front()->type) ? M::from_integer : M::from_decimal;
+        return sql_money_expression(owner,method,std::move(arguments),location);
+    }
     std::unique_ptr<hir::Expr> make_sql_value(Type owner,const SyntaxExpr& source,SourceLocation location) {
         using M=SqlScalarMethod;
         std::vector<std::unique_ptr<hir::Expr>> arguments;
         for(const auto& argument:source.arguments)arguments.push_back(expression(*argument));
         if(is_sql_decimal(owner))return construct_sql_decimal(owner,std::move(arguments),location);
+        if(is_sql_money(owner))return construct_sql_money(owner,std::move(arguments),location);
         const auto method=arguments.empty() ? M::null_value : M::create;
         return sql_expression(owner,method,std::move(arguments),location);
     }
@@ -3126,6 +3165,7 @@ private:
         std::vector<std::unique_ptr<hir::Expr>> arguments;
         arguments.push_back(std::move(input));
         if(is_sql_decimal(owner))return construct_sql_decimal(owner,std::move(arguments),location);
+        if(is_sql_money(owner))return construct_sql_money(owner,std::move(arguments),location);
         return sql_expression(owner,SqlScalarMethod::create,std::move(arguments),location);
     }
     std::unique_ptr<hir::Expr> bind_sql_decimal_static(Type owner,const SyntaxExpr& source) {
@@ -3148,12 +3188,34 @@ private:
         }
         throw Error("E_NAME",location,"Unknown static SqlDecimal member","Неизвестный статический член SqlDecimal");
     }
+    std::unique_ptr<hir::Expr> bind_sql_money_static(Type owner,const SyntaxExpr& source) {
+        using M=SqlMoneyMethod;
+        const auto location=source.token.location;
+        const auto& name=source.token.text;
+        constexpr std::pair<std::string_view,M> functions[]{
+            {"parse",M::parse},{"add",M::add},{"subtract",M::subtract},{"multiply",M::multiply},{"divide",M::divide}};
+        const auto operation=std::find_if(std::begin(functions),std::end(functions),
+            [&](const auto& candidate){return candidate.first==name;});
+        if(operation!=std::end(functions)){
+            std::vector<std::unique_ptr<hir::Expr>> arguments;
+            for(const auto& argument:source.arguments)arguments.push_back(expression(*argument));
+            return sql_money_expression(owner,operation->second,std::move(arguments),location);
+        }
+        if(source.kind==SyntaxExprKind::field){
+            if(name=="minvalue")return sql_money_expression(owner,M::minimum,{},location);
+            if(name=="maxvalue")return sql_money_expression(owner,M::maximum,{},location);
+            if(name=="null")return sql_money_expression(owner,M::null_value,{},location);
+            if(name=="zero")return sql_money_expression(owner,M::zero,{},location);
+        }
+        throw Error("E_NAME",location,"Unknown static SqlMoney member","Неизвестный статический член SqlMoney");
+    }
     std::unique_ptr<hir::Expr> bind_sql_static(const SyntaxExpr& source) {
         if(source.kind==SyntaxExprKind::member_call)
             if(const auto owner=sql_type_owner(source);owner!=Type::invalid)return bind_sql_cast(owner,source);
         const auto owner=sql_type_owner(*source.left);
         if(owner==Type::invalid)return {};
         if(is_sql_decimal(owner))return bind_sql_decimal_static(owner,source);
+        if(is_sql_money(owner))return bind_sql_money_static(owner,source);
         using M=SqlScalarMethod;
         constexpr std::pair<std::string_view,M> members[]{
             {"null",M::null_value},{"false",M::false_value},{"true",M::true_value},
@@ -3179,10 +3241,26 @@ private:
         for(const auto& argument:source.arguments)arguments.push_back(expression(*argument));
         return sql_decimal_expression(owner,member->second,std::move(arguments),source.token.location);
     }
+    std::unique_ptr<hir::Expr> bind_sql_money_member(hir::Expr& receiver,const SyntaxExpr& source) {
+        using M=SqlMoneyMethod;
+        constexpr std::pair<std::string_view,M> members[]{
+            {"value",M::decimal_value},{"todecimal",M::decimal_value},{"isnull",M::is_null},{"tostring",M::to_string},
+            {"todouble",M::to_double},{"toint32",M::to_int32},{"toint64",M::to_int64},{"compareto",M::compare}};
+        const auto member=std::find_if(std::begin(members),std::end(members),
+            [&](const auto& candidate){return candidate.first==source.token.text;});
+        if(member==std::end(members))
+            throw Error("E_NAME",source.token.location,"Unknown SqlMoney member","Неизвестный член SqlMoney");
+        const auto owner=receiver.left->type;
+        std::vector<std::unique_ptr<hir::Expr>> arguments;
+        arguments.push_back(std::move(receiver.left));
+        for(const auto& argument:source.arguments)arguments.push_back(expression(*argument));
+        return sql_money_expression(owner,member->second,std::move(arguments),source.token.location);
+    }
     std::unique_ptr<hir::Expr> bind_sql_member(hir::Expr& receiver,const SyntaxExpr& source) {
         const auto owner=receiver.left->type;
         if(!is_sql_value(owner) || source.token.text=="gettype")return {};
         if(is_sql_decimal(owner))return bind_sql_decimal_member(receiver,source);
+        if(is_sql_money(owner))return bind_sql_money_member(receiver,source);
         using M=SqlScalarMethod;
         constexpr std::pair<std::string_view,M> members[]{
             {"value",M::value},{"isnull",M::is_null},{"tostring",M::to_string},{"isfalse",M::is_false},{"istrue",M::is_true}};
@@ -8555,6 +8633,7 @@ private:
         (void)date_offset_type(location);
         for(const auto& type:sql_scalar_types())(void)declare_sql_scalar(type,location);
         (void)sql_decimal_type(location);
+        (void)sql_money_type(location);
     }
     std::unique_ptr<hir::Expr> utils_eval_value(SourceLocation location,Type expected) {
         const auto object=object_type(location);

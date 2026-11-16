@@ -7,6 +7,7 @@
 #include "guid.hpp"
 #include "sql_scalar.hpp"
 #include "sql_decimal.hpp"
+#include "sql_money.hpp"
 #include "integer_values.hpp"
 #include "number_format.hpp"
 #include "runtime_values.hpp"
@@ -184,6 +185,7 @@ class Evaluation {
     Type guid_;
     Type offset_date_;
     Type sql_decimal_;
+    Type sql_money_;
     std::u16string_view source_;
     std::size_t cursor_=0, work_=0;
     std::vector<Node> nodes_;
@@ -548,7 +550,7 @@ class Evaluation {
         return {};
     }
     bool sql_value(Type type) const {
-        return compound(type) && (type==sql_decimal_ || sql_scalar_record(type_info(values_.program,type)));
+        return compound(type) && (type==sql_decimal_ || type==sql_money_ || sql_scalar_record(type_info(values_.program,type)));
     }
     Type sql_base(Type type) const {
         return sql_value(type) ? type_info(values_.program,type).element : type;
@@ -567,6 +569,19 @@ class Evaluation {
     }
     Value convert_sql(Type owner,const Value& value) {
         const auto source=kind(value);
+        if(owner==sql_money_)return sql_money_convert(values_,owner,source,value);
+        if(source==sql_money_){
+            const std::array<Value,1> argument{value};
+            if(owner==sql_decimal_){
+                const auto amount=sql_money_invoke(values_,source,SqlMoneyMethod::decimal_value,argument);
+                return sql_decimal_convert(values_,owner,decimal_,amount);
+            }
+            const auto primitive=sql_base(owner);
+            if(primitive==Type::single || primitive==Type::real){
+                const auto real=std::get<double>(sql_money_invoke(values_,source,SqlMoneyMethod::to_double,argument));
+                return sql_construct(owner,primitive==Type::single ? Value{static_cast<float>(real)} : Value{real});
+            }
+        }
         if(owner==sql_decimal_)return sql_decimal_convert(values_,owner,source,value);
         if(source==sql_decimal_ && (sql_base(owner)==Type::single || sql_base(owner)==Type::real)){
             const std::array<Value,1> argument{value};
@@ -585,6 +600,7 @@ class Evaluation {
         if(source.starts_with(prefix)){
             const auto name=source.substr(prefix.size());
             if(name==u"SqlDecimal")return sql_decimal_;
+            if(name==u"SqlMoney")return sql_money_;
             const auto types=sql_scalar_types();
             const auto sql=std::ranges::find(types,name,&SqlScalarType::framework_name);
             if(sql!=types.end())
@@ -749,6 +765,7 @@ class Evaluation {
         if(type==guid_)return guid_text(value,{},location_);
         if(type==offset_date_)return date_offset_text(value,{},location_);
         if(type==sql_decimal_)return sql_decimal_text(value);
+        if(type==sql_money_)return sql_money_text(value);
         if(sql_value(type))return sql_scalar_text(value,location_);
         if(type==Type::real || type==Type::single || integer_type(type))
             return format_number(value,type,{},format,location_);
@@ -850,6 +867,10 @@ class Evaluation {
         default:operands();
         }
     }
+    bool money_result(Type left,Type right) const {
+        if(left==sql_money_)return right==sql_money_ || integer_type(sql_base(right));
+        return right==sql_money_ && integer_type(sql_base(left));
+    }
     BigInteger wide_integer(const Value& value) {
         if(wide_unsigned(kind(value)))return BigInteger::from_unsigned(unsigned_number(value,location_));
         return BigInteger::from_signed(integral_number(value,location_));
@@ -902,6 +923,14 @@ class Evaluation {
         return checked_signed_integer(type,Value{result},location_);
     }
     Value sql_arithmetic(Symbol op,const Value& left,const Value& right) {
+        if(money_result(kind(left),kind(right))){
+            if(op==Symbol::modulus)operands();
+            using M=SqlMoneyMethod;
+            const auto method=op==Symbol::plus ? M::add : op==Symbol::minus ? M::subtract :
+                op==Symbol::multiply ? M::multiply : M::divide;
+            const std::array<Value,2> arguments{convert_sql(sql_money_,left),convert_sql(sql_money_,right)};
+            return sql_money_invoke(values_,sql_money_,method,arguments);
+        }
         auto primitive=sql_result_base(kind(left),kind(right));
         if(!numeric_rank(primitive) || (op==Symbol::modulus && !integer_type(primitive)))operands();
         if(primitive==decimal_){
@@ -929,6 +958,10 @@ class Evaluation {
         return sql_construct(owner,arithmetic(op,x,y));
     }
     int sql_compare(Type owner,const Value& left,const Value& right,bool equality) {
+        if(owner==sql_money_){
+            const std::array<Value,2> arguments{convert_sql(owner,left),convert_sql(owner,right)};
+            return std::get<std::int32_t>(sql_money_invoke(values_,owner,SqlMoneyMethod::compare,arguments));
+        }
         if(owner==sql_decimal_)
             return compare_sql_decimals(convert_sql(owner,left),convert_sql(owner,right),location_);
         const auto base=sql_base(owner);
@@ -938,6 +971,7 @@ class Evaluation {
     }
     int compare(const Value& left,const Value& right,bool equality=true) {
         const auto a=kind(left),b=kind(right);
+        if(money_result(a,b))return sql_compare(sql_money_,left,right,equality);
         if(sql_value(a) || sql_value(b))
             return sql_compare(sql_storage(sql_result_base(a,b)),left,right,equality);
         if(a==offset_date_ || b==offset_date_){
@@ -1186,6 +1220,10 @@ class Evaluation {
                     const std::array<Value,1> arguments{std::move(left)};
                     return sql_decimal_invoke(values_,sql_decimal_,SqlDecimalMethod::negate,arguments);
                 }
+                if(type==sql_money_){
+                    const std::array<Value,1> arguments{std::move(left)};
+                    return sql_money_invoke(values_,sql_money_,SqlMoneyMethod::negate,arguments);
+                }
                 if(primitive==Type::byte)return NilString{};
                 const auto payload=sql_payload(type,left);
                 if(primitive==Type::real)return sql_construct(type,-std::get<double>(payload));
@@ -1228,10 +1266,10 @@ class Evaluation {
     }
 public:
     Evaluation(Values& values,const ExecutionOptions& options,Type decimal,Type date,Type guid,Type date_offset,Type sql_decimal,
-        std::u16string_view source)
+        Type sql_money,std::u16string_view source)
         :values_(values),options_(options),location_(values.location),decimal_(decimal),date_(date),
         interval_(date==Type::invalid ? Type::invalid : type_info(values.program,date).element),guid_(guid),
-        offset_date_(date_offset),sql_decimal_(sql_decimal),source_(source){}
+        offset_date_(date_offset),sql_decimal_(sql_decimal),sql_money_(sql_money),source_(source){}
     Value compute() {
         advance();
         Value value=NilString{};
@@ -1264,7 +1302,8 @@ Evaluation evaluate_text(Values& values,const Value& expression,const ExecutionO
         evaluator_native_type(values.program,NativeRecord::date_time),
         evaluator_native_type(values.program,NativeRecord::guid),
         evaluator_native_type(values.program,NativeRecord::date_time_offset),
-        evaluator_native_type(values.program,NativeRecord::sql_decimal),string_text(expression)};
+        evaluator_native_type(values.program,NativeRecord::sql_decimal),
+        evaluator_native_type(values.program,NativeRecord::sql_money),string_text(expression)};
 }
 }
 

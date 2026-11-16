@@ -848,6 +848,15 @@ void timing_library() {
     auto sql_decimal=abc::compile("uses System.Data.SqlTypes;begin Writeln(SqlDecimal.MaxValue.Precision);end.");
     for(auto& instruction:sql_decimal.code)if(instruction.op==abc::Op::sql_decimal_call)instruction.operand=32768;
     error([&]{abc::verify(sql_decimal);},"E_BYTECODE");
+    error([&]{(void)run("uses System.Data.SqlTypes;begin Writeln(SqlMoney.Parse('922337203685477.58075').ToString);end.");},
+        "E_OVERFLOW");
+    error([&]{(void)run("uses System.Data.SqlTypes;begin Writeln(SqlMoney.MaxValue.ToInt32);end.");},"E_OVERFLOW");
+    error([&]{(void)run("uses System.Data.SqlTypes;begin Writeln(SqlMoney.Parse('NaN').ToString);end.");},"E_FORMAT");
+    error([&]{(void)run("uses System.Data.SqlTypes;begin Writeln(SqlMoney.Divide(SqlMoney.Zero,SqlMoney.Zero));end.");},
+        "E_DIV_ZERO");
+    auto sql_money=abc::compile("uses System.Data.SqlTypes;begin Writeln(SqlMoney.Zero.ToInt64);end.");
+    for(auto& instruction:sql_money.code)if(instruction.op==abc::Op::sql_money_call)instruction.operand=32768;
+    error([&]{abc::verify(sql_money);},"E_BYTECODE");
 }
 
 void sequence_text_and_flatten() {

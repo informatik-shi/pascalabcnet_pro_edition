@@ -11,6 +11,7 @@
 #include "guid.hpp"
 #include "sql_scalar.hpp"
 #include "sql_decimal.hpp"
+#include "sql_money.hpp"
 #include "calendar.hpp"
 #include "record_initialization.hpp"
 #include "files.hpp"
@@ -652,6 +653,14 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
             std::vector<Value> arguments(sql_decimal_parameters(instruction.type,shape,method).size());
             for(std::size_t i=arguments.size();i>0;--i)arguments[i-1]=pop();
             stack.push_back(sql_decimal_invoke(values,instruction.type,method,arguments));
+            break;
+        }
+        case Op::sql_money_call: {
+            const auto method=static_cast<SqlMoneyMethod>(instruction.operand);
+            const auto& shape=type_info(program,instruction.type);
+            std::vector<Value> arguments(sql_money_parameters(instruction.type,shape,method).size());
+            for(std::size_t i=arguments.size();i>0;--i)arguments[i-1]=pop();
+            stack.push_back(sql_money_invoke(values,instruction.type,method,arguments));
             break;
         }
         case Op::utils_benchmark: {
