@@ -25,6 +25,7 @@
 #include "sorting.hpp"
 #include "ini_file.hpp"
 #include "compound.hpp"
+#include "tuple_assignments.hpp"
 #include "hash_set.hpp"
 #include "sorted_set.hpp"
 #include "dictionary.hpp"
@@ -302,7 +303,7 @@ std::unique_ptr<SyntaxExpr> make_conditional(Token token,std::unique_ptr<SyntaxE
 }
 
 enum class SyntaxStmtKind { block, declaration, constant_declaration, assignment, print, read, conditional, loop, increment, string_mutation, call, return_stmt,
-    for_loop, repeat_loop, break_stmt, continue_stmt, foreach_loop, local_routines, case_selection, tuple_declaration };
+    for_loop, repeat_loop, break_stmt, continue_stmt, foreach_loop, local_routines, case_selection, tuple_declaration, tuple_literal_assignment };
 struct SyntaxRoutine;
 struct SyntaxStmt {
     SyntaxStmtKind kind = SyntaxStmtKind::block;
@@ -940,9 +941,12 @@ private:
         result.token=std::move(token);
         expect(":=");
         auto value=expression();
-        if(value->kind==SyntaxExprKind::tuple)
-            throw Error("E_UNSUPPORTED",value->token.location,"Assignment from a tuple literal is still being ported",
-                "Присваивание из литерала кортежа ещё переносится");
+        if(value->kind==SyntaxExprKind::tuple){
+            result.kind=SyntaxStmtKind::tuple_literal_assignment;
+            result.arguments=std::move(targets->arguments);
+            result.expression=std::move(value);
+            return result;
+        }
         const Token temporary{TokenKind::name,"$unpack_"+std::to_string(result.token.location.offset),value->token.location};
         SyntaxStmt initialize;
         initialize.kind=SyntaxStmtKind::declaration;
@@ -9494,11 +9498,107 @@ private:
         }
         return assignments;
     }
+    static void tuple_operand_identity(std::string& key,const SyntaxExpr& value) {
+        key+=std::to_string(static_cast<unsigned>(value.kind));
+        key+=':';
+        key+=std::to_string(value.token.text.size());
+        key+=':';
+        key+=value.token.text;
+        key+='(';
+        if(value.left)tuple_operand_identity(key,*value.left);
+        key+=',';
+        if(value.right)tuple_operand_identity(key,*value.right);
+        for(const auto& argument:value.arguments){
+            key+=',';
+            tuple_operand_identity(key,*argument);
+        }
+        if(value.constructed || value.lambda || !value.type_arguments.empty()){
+            key+=':';
+            key+=std::to_string(value.token.location.offset);
+        }
+        key+=')';
+    }
+    TupleOperand tuple_operand(const SyntaxExpr& value) const {
+        auto kind=TupleOperandKind::expression;
+        switch(value.kind){
+        case SyntaxExprKind::literal: case SyntaxExprKind::literal_group: kind=TupleOperandKind::constant;break;
+        case SyntaxExprKind::index:kind=TupleOperandKind::index;break;
+        case SyntaxExprKind::field:kind=TupleOperandKind::member;break;
+        case SyntaxExprKind::unary:
+            if(value.token.text=="@" || value.token.text=="^")kind=TupleOperandKind::pointer;
+            break;
+        case SyntaxExprKind::name: {
+            const auto slot=lookup(value.token);
+            if(slot && reference_parameters_.contains(*slot))kind=TupleOperandKind::by_reference;
+            else if(!slot || (module_.locals[*slot].global && !lexical_globals_.contains(*slot))
+                || (!lambdas_.empty() && *slot<lambdas_.back().first))kind=TupleOperandKind::outer;
+            else kind=TupleOperandKind::local;
+            break;
+        }
+        default:break;
+        }
+        std::string key;
+        tuple_operand_identity(key,value);
+        return {kind,std::move(key),value.token.text};
+    }
+    hir::Stmt bind_tuple_literal_assignment(const SyntaxStmt& source) {
+        hir::Stmt result;
+        result.location=source.token.location;
+        const auto& values=source.expression->arguments;
+        if(source.arguments.size()>values.size())
+            throw Error("E_TYPE",result.location,"Too many targets for this tuple literal",
+                "Слишком много целей для присваивания из литерала кортежа");
+        std::vector<TupleOperand> targets,operands;
+        for(const auto& target:source.arguments)targets.push_back(tuple_operand(*target));
+        for(const auto& value:values)operands.push_back(tuple_operand(*value));
+        std::vector<std::size_t> temporaries;
+        const auto read=[&](TupleOperandRef reference,Type expected=Type::invalid) {
+            if(reference.source==TupleOperandSource::target)return expression(*source.arguments[reference.index],expected);
+            if(reference.source==TupleOperandSource::value)return expression(*values[reference.index],expected);
+            auto item=std::make_unique<hir::Expr>();
+            item->kind=hir::ExprKind::local;
+            item->location=result.location;
+            item->local=temporaries.at(reference.index);
+            item->type=module_.locals.at(item->local).type;
+            return item;
+        };
+        for(const auto step:order_tuple_assignments(targets,operands)){
+            if(step.target.source==TupleOperandSource::temporary){
+                auto value=read(step.value);
+                const auto type=value->type;
+                if(type==Type::unit || type==Type::nil)
+                    throw Error("E_TYPE",value->location,"Tuple assignment requires a value with a known type",
+                        "Для присваивания из кортежа требуется значение известного типа");
+                if(module_.locals.size()>=4096)throw Error("E_LIMIT",value->location,"Local limit exceeded");
+                if(temporaries.size()<=step.target.index)temporaries.resize(step.target.index+1);
+                const auto slot=module_.locals.size();
+                temporaries[step.target.index]=slot;
+                module_.locals.push_back({"$tuple_"+std::to_string(slot),type,!in_routine_});
+                if(compound(type) && info(type,value->location).kind==CompoundKind::new_set){
+                    const auto location=value->location;
+                    value=new_set_copy(std::move(value),location);
+                }
+                hir::Stmt save;
+                save.kind=hir::StmtKind::assign;
+                save.location=value->location;
+                save.local=slot;
+                save.expression=std::move(value);
+                result.statements.push_back(std::move(save));
+                continue;
+            }
+            auto destination=read(step.target);
+            const auto location=destination->location;
+            result.statements.push_back(bind_assignment(std::move(destination),
+                [&](Type context){return read(step.value,context);},location));
+        }
+        return result;
+    }
     hir::Stmt statement(const SyntaxStmt& source) {
         if (source.kind==SyntaxStmtKind::case_selection) return bind_case_statement(source);
         hir::Stmt result;
         result.location = source.token.location;
         switch (source.kind) {
+        case SyntaxStmtKind::tuple_literal_assignment: return bind_tuple_literal_assignment(source);
         case SyntaxStmtKind::local_routines: {
             for(const auto& routine:source.routines){
                 if(!routine->owner.empty()||routine->constructor||routine->declaration_only)throw Error("E_UNSUPPORTED",routine->name.location,"This local routine declaration is not ported yet","Это объявление локальной подпрограммы ещё не перенесено");
