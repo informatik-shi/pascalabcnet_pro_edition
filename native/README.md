@@ -3203,11 +3203,14 @@ ZIP.
 
 `CONVERT` поддерживает `System.Boolean`, `System.Char`, `System.Int32`,
 `System.Int64`, `System.Double`, `System.Decimal`, `System.String` и
-`System.Object`. Полное имя типа можно написать с кавычками или без них.
-Регистр имени сверяется с исходным модулем. Windows и Ubuntu совпали с
-оригиналом на 180 дополнительных преобразованиях. [Тест CONVERT](tests/fixtures/utils-convert-compat.pas).
-Остальные типы преобразования, даты, агрегаты и `Eval`, возвращающий `Object`,
-остаются в работе.
+`System.Object`. Также доступны `SByte`, `Byte`, `Int16`, `UInt16`,
+`UInt32`, `UInt64` и `Single` из `System`. Полное имя типа можно написать
+с кавычками или без них. Операции учитывают разрядность, знаковость и
+переполнение исходных типов. На Windows и Ubuntu совпали 180 скалярных
+и 200 дополнительных числовых преобразований и операций.
+[Тест CONVERT](tests/fixtures/utils-convert-compat.pas),
+[тест разрядности и Single](tests/fixtures/utils-numeric-convert-compat.pas).
+Даты, агрегаты и `Eval`, возвращающий `Object`, остаются в работе.
 
 ## Символы Windows-1251
 

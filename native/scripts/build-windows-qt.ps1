@@ -197,6 +197,7 @@ Utils.EvalInt, EvalReal, EvalBool и EvalStr вычисляют скалярны
 Выражения Utils поддерживают LEN, TRIM, SUBSTRING, IIF, ISNULL и ABS.
 LIKE и IN в выражениях Utils поддерживают шаблоны строк и типизированные сравнения со списком.
 CONVERT преобразует основные скалярные типы в выражениях Utils.
+CONVERT поддерживает узкие и беззнаковые числа и Single с проверкой разрядности.
 Текстовые файлы с BOM читаются как UTF-8, UTF-16LE/BE или UTF-32LE/BE.
 Символы CP1251 и ANSI-алиасы: examples/windows-characters.pas.
 Encoding, CP1251/ASCII/Unicode и выбор кодировки ReadAllText/WriteAllText: examples/text-encodings.pas.

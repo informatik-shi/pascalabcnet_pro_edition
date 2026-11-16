@@ -711,6 +711,11 @@ void timing_library() {
     error([&]{(void)run("uses Utils;begin Writeln(EvalStr('CONVERT(''AB'',System.Char)'));end.");},"E_FORMAT");
     error([&]{(void)run("uses Utils;begin Writeln(EvalStr('CONVERT(65536,System.Char)'));end.");},"E_OVERFLOW");
     error([&]{(void)run("uses Utils;begin Writeln(EvalStr('CONVERT(1,System.int32)'));end.");},"E_UNSUPPORTED");
+    error([&]{(void)run("uses Utils;begin Writeln(EvalStr('CONVERT(-129,System.SByte)'));end.");},"E_OVERFLOW");
+    error([&]{(void)run("uses Utils;begin Writeln(EvalStr('CONVERT(200,System.Byte)+CONVERT(56,System.Byte)'));end.");},"E_OVERFLOW");
+    error([&]{(void)run("uses Utils;begin Writeln(EvalStr('CONVERT(''18446744073709551615'',System.UInt64)+1'));end.");},"E_TYPE");
+    error([&]{(void)run("uses Utils;begin Writeln(EvalStr('CONVERT(18446744073709551616e0,System.UInt64)'));end.");},"E_OVERFLOW");
+    error([&]{(void)run("uses Utils;begin Writeln(EvalBool('TRUE>FALSE'));end.");},"E_TYPE");
 }
 
 void sequence_text_and_flatten() {

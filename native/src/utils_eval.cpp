@@ -11,6 +11,7 @@
 #include <array>
 #include <charconv>
 #include <cmath>
+#include <limits>
 
 namespace abc {
 namespace {
@@ -49,6 +50,19 @@ std::u16string_view comparison_text(std::u16string_view text) {
     return text;
 }
 bool null(const Value& value) { return std::holds_alternative<NilString>(value); }
+bool unsigned_integer_type(Type type) {
+    return type==Type::byte || type==Type::word || wide_unsigned(type);
+}
+double rounded_integral(double input) {
+    const auto floor=std::floor(input);
+    const auto fraction=input-floor;
+    return fraction>0.5 || (fraction==0.5 && std::fmod(floor,2)!=0) ? floor+1 : floor;
+}
+int floating_order(double left,double right) {
+    if(std::isnan(left))return std::isnan(right) ? 0 : -1;
+    if(std::isnan(right))return 1;
+    return (left>right)-(left<right);
+}
 std::optional<bool> boolean_text(std::u16string_view text) {
     auto lower=std::u16string(trim(text));
     for(auto& ch:lower)ch=lower_ascii(ch);
@@ -233,8 +247,15 @@ class Evaluation {
         if(name==u"System.Object")return Type::invalid; // Object preserves the operand's scalar value.
         if(name==u"System.Boolean")return Type::boolean;
         if(name==u"System.Char")return Type::character;
+        if(name==u"System.SByte")return Type::shortint;
+        if(name==u"System.Byte")return Type::byte;
+        if(name==u"System.Int16")return Type::smallint;
+        if(name==u"System.UInt16")return Type::word;
         if(name==u"System.Int32")return Type::integer;
+        if(name==u"System.UInt32")return Type::longword;
         if(name==u"System.Int64")return Type::int64;
+        if(name==u"System.UInt64")return Type::uint64;
+        if(name==u"System.Single")return Type::single;
         if(name==u"System.Double")return Type::real;
         if(name==u"System.Decimal")return decimal_;
         if(name==u"System.String")return Type::string;
@@ -310,10 +331,29 @@ class Evaluation {
     double real(const Value& value) {
         const auto type=kind(value);
         if(type==Type::real)return std::get<double>(value);
-        if(type==Type::boolean || type==Type::integer || type==Type::int64)return static_cast<double>(integral_number(value,location_));
+        if(type==Type::single)return std::get<float>(value);
+        if(wide_unsigned(type))return static_cast<double>(unsigned_number(value,location_));
+        if(type==Type::boolean || integer_type(type))return static_cast<double>(integral_number(value,location_));
         if(type==decimal_)return std::get<double>(decimal_call(DecimalMethod::to_real,value));
         if(type==Type::string)return real_text(value);
         operands();
+    }
+    float single(const Value& value) {
+        const auto type=kind(value);
+        if(type==Type::single)return std::get<float>(value);
+        if(type==decimal_)return std::get<float>(decimal_call(DecimalMethod::to_single,value));
+        if(wide_unsigned(type))return static_cast<float>(unsigned_number(value,location_));
+        if(type==Type::boolean || integer_type(type))return static_cast<float>(integral_number(value,location_));
+        const auto number=real(value);
+        if(std::isnan(number))return std::numeric_limits<float>::quiet_NaN();
+        if(std::abs(number)>=0x1.ffffffp127){
+            if(type==Type::string && std::isfinite(number))throw runtime_error(RuntimeError::real_overflow,location_);
+            return std::signbit(number) ? -std::numeric_limits<float>::infinity() : std::numeric_limits<float>::infinity();
+        }
+        const auto maximum=std::numeric_limits<float>::max();
+        if(number>maximum)return maximum;
+        if(number< -maximum)return -maximum;
+        return static_cast<float>(number);
     }
     std::u16string text(const Value& value) {
         if(null(value))return {};
@@ -323,19 +363,24 @@ class Evaluation {
         format.positive_infinity=u"∞";
         format.negative_infinity=u"-∞";
         if(type==decimal_)return format_decimal(value,{},format,location_);
-        if(type==Type::real || type==Type::integer || type==Type::int64)
+        if(type==Type::real || type==Type::single || integer_type(type))
             return format_number(value,type,{},format,location_);
         return format_scalar(value,location_);
     }
     Value as_decimal(const Value& value) {
-        if(kind(value)==decimal_)return value;
-        if(kind(value)==Type::string)return decimal_call(DecimalMethod::parse,value);
-        if(kind(value)==Type::real)return decimal_call(DecimalMethod::from_real,value);
+        const auto type=kind(value);
+        if(type==decimal_)return value;
+        if(type==Type::string)return decimal_call(DecimalMethod::parse,value);
+        if(type==Type::real)return decimal_call(DecimalMethod::from_real,value);
+        if(type==Type::single)return decimal_call(DecimalMethod::from_single,value);
+        if(wide_unsigned(type))
+            return decimal_call(DecimalMethod::from_unsigned,Value{unsigned_number(value,location_)});
+        if(type==Type::character)operands();
         return decimal_call(DecimalMethod::from_signed,Value{integral_number(value,location_)});
     }
     Value signed_integer(const Value& value,Type target) {
         const auto type=kind(value);
-        if(type==Type::boolean || type==Type::integer || type==Type::int64 || type==Type::character)
+        if(type==Type::boolean || integer_type(type) || type==Type::character)
             return checked_signed_integer(target,value,location_);
         if(type==decimal_)
             return decimal_call(target==Type::integer ? DecimalMethod::to_int32 : DecimalMethod::to_int64,
@@ -345,22 +390,61 @@ class Evaluation {
             if(!answer)throw runtime_error(RuntimeError::number_text,location_,type_name(target));
             return *answer;
         }
-        if(type!=Type::real)operands();
-        const auto input=std::get<double>(value);
-        const auto floor=std::floor(input);
-        const auto fraction=input-floor;
-        const auto rounded=fraction>0.5 || (fraction==0.5 && std::fmod(floor,2)!=0) ? floor+1 : floor;
+        if(type!=Type::real && type!=Type::single)operands();
+        const auto rounded=rounded_integral(real(value));
         constexpr double int64_limit=0x1p63;
         if(!std::isfinite(rounded) || rounded< -int64_limit || rounded>=int64_limit)
             throw runtime_error(RuntimeError::integer_overflow,location_);
         return checked_signed_integer(target,Value{static_cast<std::int64_t>(rounded)},location_);
     }
+    Value unsigned_integer(const Value& value,Type target) {
+        const auto type=kind(value);
+        if(type==Type::string){
+            const auto answer=stdlib::try_parse_number(target,value,location_);
+            if(!answer)throw runtime_error(RuntimeError::number_text,location_,type_name(target));
+            return *answer;
+        }
+        if(type==decimal_)
+            return checked_unsigned_integer(target,decimal_call(DecimalMethod::to_uint64,
+                decimal_call(DecimalMethod::round,value)),location_);
+        if(type==Type::single || type==Type::real){
+            const auto rounded=rounded_integral(real(value));
+            if(!std::isfinite(rounded) || rounded<0 || rounded>=0x1p64)
+                throw runtime_error(RuntimeError::integer_overflow,location_);
+            return checked_unsigned_integer(target,Value{static_cast<std::uint64_t>(rounded)},location_);
+        }
+        return checked_unsigned_integer(target,value,location_);
+    }
     unsigned numeric_rank(Type type) const {
-        if(type==Type::integer)return 1;
-        if(type==Type::int64)return 2;
-        if(type==decimal_)return 3;
-        if(type==Type::real)return 4;
-        return 0;
+        if(type==decimal_)return 9;
+        switch(type){
+        case Type::shortint:return 1;
+        case Type::byte:return 2;
+        case Type::smallint:return 3;
+        case Type::word:return 4;
+        case Type::integer:return 5;
+        case Type::longword:return 6;
+        case Type::int64:return 7;
+        case Type::uint64:return 8;
+        case Type::single:return 10;
+        case Type::real:return 11;
+        default:return 0;
+        }
+    }
+    Type numeric_type(Type a,Type b) {
+        const auto higher=numeric_rank(a)>=numeric_rank(b) ? a : b;
+        if(!integer_type(a) || !integer_type(b)
+            || unsigned_integer_type(a)==unsigned_integer_type(b) || !unsigned_integer_type(higher))return higher;
+        switch(higher){
+        case Type::byte:return Type::smallint;
+        case Type::word:return Type::integer;
+        case Type::longword:return Type::int64;
+        default:operands();
+        }
+    }
+    BigInteger wide_integer(const Value& value) {
+        if(wide_unsigned(kind(value)))return BigInteger::from_unsigned(unsigned_number(value,location_));
+        return BigInteger::from_signed(integral_number(value,location_));
     }
     Value arithmetic(Symbol op,const Value& left,const Value& right) {
         const auto a=kind(left), b=kind(right);
@@ -371,64 +455,59 @@ class Evaluation {
             result+=suffix;
             return result;
         }
-        const auto rank=std::max(numeric_rank(a),numeric_rank(b));
-        if(!numeric_rank(a) || !numeric_rank(b) || (op==Symbol::modulus && rank>2))operands();
-        if(rank==4 || (op==Symbol::divide && rank<3)){
-            const auto x=real(left),y=real(right);
+        if(!numeric_rank(a) || !numeric_rank(b) || (op==Symbol::modulus && (!integer_type(a) || !integer_type(b))))operands();
+        const auto type=op==Symbol::divide && integer_type(a) && integer_type(b) ? Type::real : numeric_type(a,b);
+        if(type==Type::real || type==Type::single){
+            const auto calculate=[op](auto x,auto y)->Value{
             switch(op) {
             case Symbol::plus:return x+y;
             case Symbol::minus:return x-y;
             case Symbol::multiply:return x*y;
             default:return x/y;
             }
+            };
+            return type==Type::single ? calculate(single(left),single(right)) : calculate(real(left),real(right));
         }
-        if(rank==3){
+        if(type==decimal_){
             using M=DecimalMethod;
             const auto method=op==Symbol::plus ? M::add : op==Symbol::minus ? M::subtract
                 : op==Symbol::multiply ? M::multiply : M::divide;
             return decimal_call(method,std::array<Value,2>{as_decimal(left),as_decimal(right)});
         }
-        const auto x=integral_number(left,location_),y=integral_number(right,location_);
         Op operation=Op::modulo;
         if(op==Symbol::plus)operation=Op::add;
         if(op==Symbol::minus)operation=Op::subtract;
         if(op==Symbol::multiply)operation=Op::multiply;
-        const auto exact=big_binary(operation,BigInteger::from_signed(x),BigInteger::from_signed(y),location_,options_);
+        const auto exact=big_binary(operation,wide_integer(left),wide_integer(right),location_,options_);
+        if(wide_unsigned(type))
+            return checked_unsigned_integer(type,Value{checked_big(location_,[&]{return exact.to_unsigned();})},location_);
         const auto result=checked_big(location_,[&]{return exact.to_signed();});
-        return checked_signed_integer(rank==1 ? Type::integer : Type::int64,Value{result},location_);
+        if(small_integer(type))return checked_small_integer(type,result,location_);
+        return checked_signed_integer(type,Value{result},location_);
     }
-    int compare(const Value& left,const Value& right) {
+    int compare(const Value& left,const Value& right,bool equality=true) {
         const auto a=kind(left),b=kind(right);
         if((a==Type::string && b==Type::character) || (a==Type::character && b==Type::string))
-            return compare(Value{text(left)},Value{text(right)});
-        if(a==Type::character || b==Type::character){
-            if(a!=b)operands();
+            return compare(Value{text(left)},Value{text(right)},equality);
+        if(a==Type::character && b==Type::character){
             const auto x=std::get<char16_t>(left),y=std::get<char16_t>(right);
             return (x>y)-(x<y);
         }
         if(a==Type::string && b==Type::string)
             return compare_culture_strings(comparison_text(std::get<std::u16string>(left)),
                 comparison_text(std::get<std::u16string>(right)),location_,options_,true);
-        const auto rank=std::max(numeric_rank(a),numeric_rank(b));
-        if(rank==4){
-            const auto x=real(left),y=real(right);
-            if(std::isnan(x))return std::isnan(y) ? 0 : -1;
-            if(std::isnan(y))return 1;
-            return (x>y)-(x<y);
+        if((a==Type::boolean || a==Type::string) && (b==Type::boolean || b==Type::string)){
+            if(!equality)operands();
+            return static_cast<int>(expression_boolean(left))-static_cast<int>(expression_boolean(right));
         }
-        if(rank==3)return compare_decimal_values(as_decimal(left),as_decimal(right),location_);
-        if(rank!=0 || (a==Type::boolean && b==Type::boolean)){
-            const auto integer=[&](const Value& operand) {
-                if(kind(operand)==Type::string){
-                    const auto parsed=stdlib::try_parse_number(rank==1 ? Type::integer : Type::int64,operand,location_);
-                    if(!parsed)operands();
-                    return integral_number(*parsed,location_);
-                }
-                const auto type=kind(operand);
-                if(type!=Type::integer && type!=Type::int64 && type!=Type::boolean)operands();
-                return integral_number(operand,location_);
-            };
-            const auto x=integer(left),y=integer(right);
+        const auto type=numeric_type(a,b);
+        if(type==Type::real)return floating_order(real(left),real(right));
+        if(type==Type::single)return floating_order(single(left),single(right));
+        if(type==decimal_ || type==Type::int64 || wide_unsigned(type))
+            return compare_decimal_values(as_decimal(left),as_decimal(right),location_);
+        if(integer_type(type)){
+            const auto x=std::get<std::int32_t>(signed_integer(left,Type::integer));
+            const auto y=std::get<std::int32_t>(signed_integer(right,Type::integer));
             return (x>y)-(x<y);
         }
         operands();
@@ -436,6 +515,13 @@ class Evaluation {
     bool boolean(const Value& value) {
         if(const auto* logical=std::get_if<bool>(&value))return *logical;
         operands();
+    }
+    bool expression_boolean(const Value& value) {
+        if(const auto* text=std::get_if<std::u16string>(&value)){
+            if(const auto converted=boolean_text(*text))return *converted;
+            operands();
+        }
+        return boolean(value);
     }
     Value function(const Node& node,unsigned depth) {
         const auto count=argument_count(node.kind);
@@ -446,11 +532,7 @@ class Evaluation {
         if(node.kind==Symbol::replace_null)return null(first) ? second : first;
         if(node.kind==Symbol::choose){
             if(null(first))return third;
-            if(const auto* text=std::get_if<std::u16string>(&first)){
-                if(const auto condition=boolean_text(*text))return *condition ? second : third;
-                operands();
-            }
-            return boolean(first) ? second : third;
+            return expression_boolean(first) ? second : third;
         }
         if(null(first))return first;
         const auto* text=std::get_if<std::u16string>(&first);
@@ -459,7 +541,7 @@ class Evaluation {
         if(node.kind==Symbol::trim)return std::u16string(trim(*text));
         if(null(second) || null(third))return NilString{};
         const auto index=[&](const Value& argument){
-            if(kind(argument)!=Type::integer && kind(argument)!=Type::int64)operands();
+            if(!integer_type(kind(argument)))operands();
             return std::get<std::int32_t>(checked_signed_integer(Type::integer,argument,location_));
         };
         const auto start=index(second),length=index(third);
@@ -482,19 +564,16 @@ class Evaluation {
             if(null(candidate))continue;
             if(type==Type::string){
                 if(compare(left,Value{text(candidate)})==0)return true;
-            }else if(type==Type::integer || type==Type::int64){
-                if(compare(left,signed_integer(candidate,type))==0)return true;
             }else if(type==Type::real){
-                if(compare(left,Value{real(candidate)})==0)return true;
-            }else if(type==decimal_){
-                if(compare_decimal_values(left,as_decimal(candidate),location_)==0)return true;
-            }else if(type==Type::character){
-                if(std::get<char16_t>(left)==std::get<std::int32_t>(signed_integer(candidate,Type::integer)))return true;
+                if(floating_order(real(left),real(candidate))==0)return true;
+            }else if(type==Type::single){
+                if(floating_order(single(left),single(candidate))==0)return true;
+            }else if(type==decimal_ || type==Type::int64 || wide_unsigned(type)){
+                if(compare_decimal_values(as_decimal(left),as_decimal(candidate),location_)==0)return true;
+            }else if(integer_type(type) || type==Type::character){
+                if(integral_number(left,location_)==std::get<std::int32_t>(signed_integer(candidate,Type::integer)))return true;
             }else if(type==Type::boolean){
-                const auto* argument=std::get_if<std::u16string>(&candidate);
-                const auto converted=argument ? boolean_text(*argument) : std::optional<bool>{boolean(candidate)};
-                if(!converted)operands();
-                if(std::get<bool>(left)==*converted)return true;
+                if(std::get<bool>(left)==expression_boolean(candidate))return true;
             }else operands();
         }
         return false;
@@ -548,11 +627,12 @@ class Evaluation {
         if(null(value) || target==Type::invalid)return value;
         if(target==Type::string)return text(value);
         if(target==Type::integer || target==Type::int64)return signed_integer(value,target);
+        if(small_integer(target))
+            return checked_small_integer(target,std::get<std::int64_t>(signed_integer(value,Type::int64)),location_);
+        if(wide_unsigned(target))return unsigned_integer(value,target);
         if(target==Type::real)return real(value);
-        if(target==decimal_){
-            if(kind(value)==Type::character)operands();
-            return as_decimal(value);
-        }
+        if(target==Type::single)return single(value);
+        if(target==decimal_)return as_decimal(value);
         if(target==Type::boolean)return convert_boolean(value,true);
         if(target!=Type::character)throw runtime_error(RuntimeError::invalid_bytecode,location_);
         if(kind(value)==Type::character)return value;
@@ -562,9 +642,9 @@ class Evaluation {
                     "Для CONVERT в Char требуется ровно одна кодовая единица UTF-16");
             return source->front();
         }
-        if(kind(value)!=Type::integer && kind(value)!=Type::int64)operands();
-        const auto number=integral_number(value,location_);
-        if(number<0 || number>UINT16_MAX)throw runtime_error(RuntimeError::integer_overflow,location_);
+        if(!integer_type(kind(value)))operands();
+        const auto number=unsigned_number(value,location_,"Char");
+        if(number>UINT16_MAX)throw runtime_error(RuntimeError::integer_overflow,location_);
         return static_cast<char16_t>(number);
     }
     Value evaluate(std::size_t index,unsigned depth) {
@@ -583,7 +663,9 @@ class Evaluation {
             if(!numeric_rank(kind(left)))operands();
             if(node.kind!=Symbol::minus)return left;
             if(kind(left)==Type::real)return -std::get<double>(left);
+            if(kind(left)==Type::single)return -std::get<float>(left);
             if(kind(left)==decimal_)return decimal_call(DecimalMethod::negate,left);
+            if(kind(left)==Type::shortint || wide_unsigned(kind(left)))return NilString{};
             return arithmetic(Symbol::minus,Value{std::int32_t{0}},left);
         }
         auto right=evaluate(node.right,depth+1);
@@ -601,10 +683,10 @@ class Evaluation {
         switch(node.kind){
         case Symbol::equal:return compare(left,right)==0;
         case Symbol::unequal:return compare(left,right)!=0;
-        case Symbol::less:return compare(left,right)<0;
-        case Symbol::less_equal:return compare(left,right)<=0;
-        case Symbol::greater:return compare(left,right)>0;
-        case Symbol::greater_equal:return compare(left,right)>=0;
+        case Symbol::less:return compare(left,right,false)<0;
+        case Symbol::less_equal:return compare(left,right,false)<=0;
+        case Symbol::greater:return compare(left,right,false)>0;
+        case Symbol::greater_equal:return compare(left,right,false)>=0;
         default:return arithmetic(node.kind,left,right);
         }
     }
