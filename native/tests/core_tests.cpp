@@ -813,6 +813,16 @@ void timing_library() {
     error([&]{(void)run("uses Utils;begin Writeln(EvalStr('CONVERT(''abc'',''System.Byte[]'')'));end.");},"E_TYPE");
     error([&]{(void)run("uses Utils;begin Writeln(EvalStr('CONVERT(1.0/0,''System.NoSuch'')'));end.");},"E_DIV_ZERO");
     error([&]{(void)run("uses Utils;begin Writeln(EvalStr('CONVERT(missing,''System.NoSuch'')'));end.");},"E_NAME");
+    for(const auto* text:{"2024-02-29T00:00:00+14:01","0001-01-01T00:00:00+00:01",
+        "9999-12-31T23:59:59-01:00","2023-02-29T00:00:00Z"}){
+        const auto source="begin Writeln(DateTimeOffset.Parse('"+std::string(text)+"'));end.";
+        error([&]{(void)run(source);},"E_FORMAT",text);
+    }
+    error([&]{(void)run("uses Utils;begin Writeln(EvalStr('CONVERT(0,System.DateTimeOffset)'));end.");},"E_TYPE");
+    error([&]{(void)run("begin Writeln(DateTimeOffset.MinValue.ToOffset(TimeSpan.FromSeconds(1)));end.");},"E_RANGE");
+    auto date_offset=abc::compile("begin Writeln(DateTimeOffset.Parse('2024-02-29T12:00Z'));end.");
+    for(auto& instruction:date_offset.code)if(instruction.op==abc::Op::date_offset_call)instruction.operand=32768;
+    error([&]{abc::verify(date_offset);},"E_BYTECODE");
 }
 
 void sequence_text_and_flatten() {

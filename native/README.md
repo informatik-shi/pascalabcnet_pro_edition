@@ -3240,6 +3240,16 @@ ZIP.
 возвращает тот же `DBNull.Value`, что и литерал `NULL`.
 [Тест преобразований TimeSpan](tests/fixtures/utils-timespan-convert-compat.pas).
 
+`System.DateTimeOffset` хранит местное время с точностью до 100 нс и
+смещение относительно UTC. `CONVERT` в `Eval` сохраняет оба значения.
+Для сравнения, сортировки и ключей словаря используется время UTC.
+`EqualsExact` также проверяет смещение. Доступны `Parse`, `ToOffset`,
+`DateTime`, `UtcDateTime`, `Offset`, `Ticks`, `UtcTicks` и `ToString`.
+Проверены числовые даты с явным смещением, округление долей секунды
+и форматы `O`, `G`, `u` и `zzz`. Полный набор перегрузок разбора и
+преобразований между часовыми поясами ещё в работе.
+[Тест DateTimeOffset](tests/fixtures/utils-date-offset-compat.pas).
+
 `System.Guid` доступен в объявлении типа и как результат `CONVERT` в `Eval`.
 `Guid.Parse` и `ToString` принимают форматы `D`, `N`, `B`, `P` и `X`.
 Конструктор поддерживает строку и массив из 16 байтов. `ToByteArray`

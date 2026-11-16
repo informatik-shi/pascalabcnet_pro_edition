@@ -9,6 +9,7 @@
 #include "utils_eval.hpp"
 #include "utils_marshal.hpp"
 #include "guid.hpp"
+#include "calendar.hpp"
 #include "record_initialization.hpp"
 #include "files.hpp"
 #include "linked.hpp"
@@ -626,6 +627,13 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
             std::vector<Value> arguments(guid_parameters(instruction.type,bytes,method).size());
             for(std::size_t i=arguments.size();i>0;--i)arguments[i-1]=pop();
             stack.push_back(guid_invoke(values,instruction.type,method,arguments));
+            break;
+        }
+        case Op::date_offset_call: {
+            const auto method=static_cast<OffsetMethod>(instruction.operand);
+            std::vector<Value> arguments(offset_parameters(program.types,instruction.type,method).size());
+            for(std::size_t i=arguments.size();i>0;--i)arguments[i-1]=pop();
+            stack.push_back(offset_invoke(values,instruction.type,method,arguments));
             break;
         }
         case Op::utils_benchmark: {

@@ -23,6 +23,7 @@ bool value_equal(ValueHashWork& work,const Value& a,const Value& b){
             if(decimal_type(shape))return compare_decimal_values(Value{left},Value{y},work.values.location)==0;
             if(calendar_record(shape))return compare_calendar_values(Value{left},Value{y})==0;
             if(guid_record_type(shape))return compare_guid(Value{left},Value{y})==0;
+            if(date_offset_record(shape))return compare_date_offsets(Value{left},Value{y})==0;
             // RealRange overrides object equality using its IEEE comparison operator.
             if(real_interval_type(shape))return std::get<double>(left->items[0]->value)==std::get<double>(y->items[0]->value)&&std::get<double>(left->items[1]->value)==std::get<double>(y->items[1]->value);
             for(std::size_t i=0;i<left->items.size();++i)if(!value_equal(work,left->items[i]->value,y->items[i]->value))return false;return true;}
@@ -52,6 +53,7 @@ std::size_t value_hash(ValueHashWork& work,const Value& value){
             if(decimal_type(shape))return static_cast<std::uint32_t>(decimal_hash_code(value));
             if(calendar_record(shape))return static_cast<std::uint32_t>(calendar_hash_code(value));
             if(guid_record_type(shape))return static_cast<std::uint32_t>(guid_hash_code(value));
+            if(date_offset_record(shape))return static_cast<std::uint32_t>(date_offset_hash(value));
             if(complex_number_type(shape))return static_cast<std::uint32_t>(complex_hash_code(value));
             if(kind==CompoundKind::record || kind==CompoundKind::tuple){std::size_t result=0;for(const auto& field:v->items)result=mix(result,value_hash(work,field->value));return result;}
             if(kind==CompoundKind::callable)return callable_hash(*v);

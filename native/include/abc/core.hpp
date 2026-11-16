@@ -315,7 +315,7 @@ enum class Op {
     endpoint_call, buffer_call, association_call, linked_call, file_print, file_newline, file_read, file_skip_line, file_output,
     iteration_version, iteration_check, set_character, random_array, fill_random_array, sequence_mutate, swap_values, write_array,
     bit_not, bit_and, bit_or, bit_xor, shift_left, shift_right, read_console, read_array, console_output, array_query, write_matrix, object_text, print_output, try_read, convert_string, try_parse, val, string_read, string_array, school_list, replace_last, replace_many, school_fold, tuple_literal, school_pair, school_minmax, school_table_print, school_table_new, school_ip, sequence_begin, sequence_count, sequence_array, sequence_wrap, swap_substrings, sequence_list, sequence_query, sequence_snapshot, sequence_repeat, sequence_range, sequence_resume, sequence_partition, sequence_aggregate, sequence_partial, sequence_slice, sequence_concat, sequence_equal, sequence_default, sequence_select, sequence_where, sequence_predicate, sequence_flatmap, sequence_zip, sequence_takewhile, sequence_skipwhile, routine_value, call_value, sequence_select_value, sequence_where_value, sequence_flatmap_value, sequence_takewhile_value, sequence_skipwhile_value, sequence_predicate_value, sequence_zip_value, fresh_local, generator, sequence_cartesian, sequence_cartesian_value, cartesian_power, combinations, permutations, partial_permutations, next_permutation, array_view, matrix_operation, array_operation, collection_operation, matrix_build, list_operation, list_bulk, list_capacity, list_copy, construct_user, encoding_call, sequence_dispose, text_lines, for_step_check, enum_call, comparable_call, ini_call, compound_call, store_index, store_field, hash_set_call, new_set_call, empty_call, print_call, sequence_join, ordinal_range_call, real_interval_call, random_sequence, directory_sequence, type_operation, dictionary_call, enumerator_call, interface_cast, interface_call, comparer_create, sort_call, sequence_set, pointer_call, object_cast, sorted_set_call,
-    call_base_constructor, initialize_base_fields, call_virtual, client_server_run, utils_benchmark, utils_eval_object, database_null, utils_record_bytes, guid_call
+    call_base_constructor, initialize_base_fields, call_virtual, client_server_run, utils_benchmark, utils_eval_object, database_null, utils_record_bytes, guid_call, date_offset_call
 };
 
 enum class PointerMethod { allocate, release, load, reference };
@@ -417,7 +417,7 @@ inline bool ordered_dictionary_kind(CompoundKind kind) {
 inline bool dictionary_kind(CompoundKind kind) {
     return kind==CompoundKind::dictionary || ordered_dictionary_kind(kind);
 }
-enum class NativeRecord { none, ordinal_range, real_interval, key_value_pair, dictionary_enumerator, collection_enumerator, complex, date_time, time_span, decimal_value, guid };
+enum class NativeRecord { none, ordinal_range, real_interval, key_value_pair, dictionary_enumerator, collection_enumerator, complex, date_time, time_span, decimal_value, guid, date_time_offset };
 inline bool node_kind(CompoundKind kind) { return kind == CompoundKind::linked_node || kind == CompoundKind::single_node; }
 inline bool indexed_sequence(CompoundKind kind) { return kind == CompoundKind::array || kind == CompoundKind::list; }
 inline bool enumerable_collection(CompoundKind kind) { return indexed_sequence(kind) || kind==CompoundKind::sorted_set || kind==CompoundKind::hash_set || kind==CompoundKind::new_set || dictionary_kind(kind) || kind==CompoundKind::dictionary_keys || kind==CompoundKind::dictionary_values; }

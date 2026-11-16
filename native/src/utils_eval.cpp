@@ -180,6 +180,7 @@ class Evaluation {
     Type date_;
     Type interval_;
     Type guid_;
+    Type offset_date_;
     std::u16string_view source_;
     std::size_t cursor_=0, work_=0;
     std::vector<Node> nodes_;
@@ -539,6 +540,7 @@ class Evaluation {
         if(name==u"System.DateTime")return date_;
         if(name==u"System.TimeSpan")return interval_;
         if(name==u"System.Guid")return guid_;
+        if(name==u"System.DateTimeOffset")return offset_date_;
         if(name==u"System.String")return Type::string;
         return {};
     }
@@ -697,6 +699,7 @@ class Evaluation {
         if(type==decimal_)return format_decimal(value,{},format,location_);
         if(type==date_ || type==interval_)return calendar_text(value,{},location_);
         if(type==guid_)return guid_text(value,{},location_);
+        if(type==offset_date_)return date_offset_text(value,{},location_);
         if(type==Type::real || type==Type::single || integer_type(type))
             return format_number(value,type,{},format,location_);
         return format_scalar(value,location_);
@@ -782,7 +785,7 @@ class Evaluation {
     }
     Value arithmetic(Symbol op,const Value& left,const Value& right) {
         const auto a=kind(left), b=kind(right);
-        if(a==guid_ || b==guid_)operands();
+        if(a==guid_ || b==guid_ || a==offset_date_ || b==offset_date_)operands();
         if(op==Symbol::plus && (a==Type::string || b==Type::string || (a==Type::character && b==Type::character))){
             auto result=text(left);
             const auto suffix=text(right);
@@ -822,6 +825,10 @@ class Evaluation {
     }
     int compare(const Value& left,const Value& right,bool equality=true) {
         const auto a=kind(left),b=kind(right);
+        if(a==offset_date_ || b==offset_date_){
+            if(a!=b)operands();
+            return compare_date_offsets(left,right);
+        }
         if(a==guid_ || b==guid_){
             if(a==guid_ && b==guid_)return compare_guid(left,right);
             if(a!=Type::string && b!=Type::string)operands();
@@ -915,6 +922,9 @@ class Evaluation {
             }else if(type==guid_){
                 if(kind(candidate)!=guid_)operands();
                 if(compare_guid(left,candidate)==0)return true;
+            }else if(type==offset_date_){
+                if(kind(candidate)!=offset_date_)operands();
+                if(compare_date_offsets(left,candidate)==0)return true;
             }else if(type==Type::real){
                 if(floating_order(real(left),real(candidate))==0)return true;
             }else if(type==Type::single){
@@ -993,6 +1003,13 @@ class Evaluation {
             const std::array<Value,1> arguments{std::move(value)};
             return guid_invoke(values_,guid_,GuidMethod::parse,arguments);
         }
+        if(target==offset_date_){
+            if(kind(value)==offset_date_)return value;
+            const auto* input=std::get_if<std::u16string>(&value);
+            if(!input)operands();
+            const std::array<Value,1> arguments{normalized_date(*input)};
+            return offset_invoke(values_,offset_date_,OffsetMethod::parse,arguments);
+        }
         if(target==Type::boolean)return convert_boolean(value,true);
         if(target!=Type::character)throw runtime_error(RuntimeError::invalid_bytecode,location_);
         if(kind(value)==Type::character)return value;
@@ -1059,9 +1076,11 @@ class Evaluation {
         }
     }
 public:
-    Evaluation(Values& values,const ExecutionOptions& options,Type decimal,Type date,Type guid,std::u16string_view source)
+    Evaluation(Values& values,const ExecutionOptions& options,Type decimal,Type date,Type guid,Type date_offset,
+        std::u16string_view source)
         :values_(values),options_(options),location_(values.location),decimal_(decimal),date_(date),
-        interval_(date==Type::invalid ? Type::invalid : type_info(values.program,date).element),guid_(guid),source_(source){}
+        interval_(date==Type::invalid ? Type::invalid : type_info(values.program,date).element),guid_(guid),
+        offset_date_(date_offset),source_(source){}
     Value compute() {
         advance();
         Value value=NilString{};
@@ -1092,7 +1111,8 @@ Type evaluator_native_type(const Program& program,NativeRecord type) {
 Evaluation evaluate_text(Values& values,const Value& expression,const ExecutionOptions& options) {
     return {values,options,evaluator_native_type(values.program,NativeRecord::decimal_value),
         evaluator_native_type(values.program,NativeRecord::date_time),
-        evaluator_native_type(values.program,NativeRecord::guid),string_text(expression)};
+        evaluator_native_type(values.program,NativeRecord::guid),
+        evaluator_native_type(values.program,NativeRecord::date_time_offset),string_text(expression)};
 }
 }
 

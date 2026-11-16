@@ -22,6 +22,19 @@ enum class CalendarMethod : std::uint8_t {
 inline bool calendar_record(const TypeInfo& type) {
     return type.native_record==NativeRecord::date_time || type.native_record==NativeRecord::time_span;
 }
+inline bool date_offset_record(const TypeInfo& type) {return type.native_record==NativeRecord::date_time_offset;}
+enum class OffsetMethod : std::uint8_t {
+    parse, from_ticks_offset, from_date_offset, minimum, maximum, date_time, utc_date_time, offset, ticks, utc_ticks,
+    to_string, to_string_format, compare_to, equal, unequal, less, less_equal, greater, greater_equal,
+    equals_exact, to_offset, hash_code
+};
+bool date_offset_shape(std::span<const TypeInfo>,const TypeInfo&);
+std::vector<Type> offset_parameters(std::span<const TypeInfo>,Type,OffsetMethod);
+Type offset_result(std::span<const TypeInfo>,Type,OffsetMethod);
+Value offset_invoke(Values&,Type,OffsetMethod,std::span<const Value>);
+std::u16string date_offset_text(const Value&,std::u16string_view,SourceLocation);
+int compare_date_offsets(const Value&,const Value&);
+std::int32_t date_offset_hash(const Value&);
 bool calendar_record_shape(std::span<const TypeInfo>,const TypeInfo&);
 bool calendar_signature(std::span<const TypeInfo>,Type,std::size_t);
 std::vector<Type> calendar_parameters(std::span<const TypeInfo>,Type,std::size_t);

@@ -274,7 +274,59 @@ struct TextCursor {
         return number;
     }
 };
-std::optional<CalendarValue> parse_date(std::u16string_view text,SourceLocation location) {
+struct ParsedDate {
+    std::int64_t wall_ticks;
+    std::optional<int> offset_minutes;
+};
+std::optional<int> rounded_fraction(TextCursor& input) {
+    const auto first=input.offset;
+    double fraction=0;
+    double place=0.1;
+    while(!input.done() && input.text[input.offset]>=u'0' && input.text[input.offset]<=u'9'){
+        const auto digit=input.text[input.offset++]-u'0';
+        // The original parser rounds each product before adding the next digit.
+        const volatile double contribution=digit*place;
+        fraction+=contribution;
+        place*=0.1;
+    }
+    if(input.offset==first)return {};
+    const auto scaled=fraction*ticks_per_second;
+    const auto whole_ticks=static_cast<int>(scaled);
+    const auto remainder=scaled-whole_ticks;
+    return whole_ticks+(remainder>0.5 || (remainder==0.5 && whole_ticks%2));
+}
+bool parse_zone(TextCursor& input,std::optional<int>& offset,bool extended) {
+    if(input.take(u'Z') || input.take(u'z')){offset=0;return true;}
+    const bool positive=input.take(u'+');
+    if(!positive && !input.take(u'-'))return true;
+    int hours=0,minutes=0;
+    if(extended){
+        const auto begin=input.offset;
+        const auto number=input.number(4);
+        if(!number)return false;
+        const auto width=input.offset-begin;
+        hours=*number;
+        if(width>2){hours=*number/100;minutes=*number%100;}
+        else if(input.take(u':')){
+            const auto part=input.number(2);
+            if(!part)return false;
+            minutes=*part;
+        }
+    }else{
+        const auto h=input.two_digits();
+        if(!h)return false;
+        hours=*h;
+        if(input.take(u':') || (!input.done() && input.text[input.offset]>=u'0' && input.text[input.offset]<=u'9')){
+            const auto part=input.two_digits();
+            if(!part)return false;
+            minutes=*part;
+        }
+    }
+    if(hours>14 || minutes>=60 || (hours==14 && minutes!=0))return false;
+    offset=(positive ? 1 : -1)*(hours*60+minutes);
+    return true;
+}
+std::optional<ParsedDate> parse_date_parts(std::u16string_view text,bool extended=false) {
     TextCursor input{text};
     input.spaces();
     const auto first_index=input.offset;
@@ -299,7 +351,14 @@ std::optional<CalendarValue> parse_date(std::u16string_view text,SourceLocation 
     const auto base=(sys_days{fields}-epoch).count()*ticks_per_day;
     const auto date_end=input.offset;
     input.spaces();
-    if (input.done()) return CalendarValue{base,unspecified_kind};
+    if (input.done()) return ParsedDate{base,{}};
+    if(extended && std::u16string_view(u"+-Zz").find(input.text[input.offset])!=std::u16string_view::npos){
+        std::optional<int> offset;
+        if(!parse_zone(input,offset,true))return {};
+        input.spaces();
+        if(!input.done())return {};
+        return ParsedDate{base,offset};
+    }
     if (input.offset==date_end && !input.take(u'T') && !input.take(u't')) return {};
     auto hour=input.number(2);
     if (!hour || !input.take(u':')) return {};
@@ -312,7 +371,7 @@ std::optional<CalendarValue> parse_date(std::u16string_view text,SourceLocation 
         if (!seconds_part || *seconds_part>=60) return {};
         second_value=*seconds_part;
         if (input.take(u'.')) {
-            const auto fractional=input.fraction();
+            const auto fractional=extended ? rounded_fraction(input) : input.fraction();
             if (!fractional) return {};
             fraction=*fractional;
         }
@@ -327,27 +386,18 @@ std::optional<CalendarValue> parse_date(std::u16string_view text,SourceLocation 
         input.spaces();
     }
     std::optional<int> utc_offset;
-    if (input.take(u'Z') || input.take(u'z')) utc_offset=0;
-    else {
-        const bool positive=input.take(u'+');
-        if (positive || input.take(u'-')) {
-            const auto hours=input.two_digits();
-            if (!hours) return {};
-            int minutes=0;
-            if (input.take(u':') || (!input.done() && input.text[input.offset]>=u'0' && input.text[input.offset]<=u'9')) {
-                const auto part=input.two_digits();
-                if (!part) return {};
-                minutes=*part;
-            }
-            if (*hours>14 || minutes>=60 || (*hours==14 && minutes!=0)) return {};
-            utc_offset=(positive?1:-1)*(*hours*60+minutes);
-        }
-    }
+    if(!parse_zone(input,utc_offset,extended))return {};
     input.spaces();
     if (!input.done() || *hour>=24) return {};
     const auto wall=base+*hour*ticks_per_hour+*minute*ticks_per_minute+second_value*ticks_per_second+fraction;
-    if (!utc_offset) return CalendarValue{wall,unspecified_kind};
-    const auto utc=wall-*utc_offset*ticks_per_minute;
+    if(wall>date_max_ticks)return {};
+    return ParsedDate{wall,utc_offset};
+}
+std::optional<CalendarValue> parse_date(std::u16string_view text,SourceLocation location) {
+    const auto parts=parse_date_parts(text);
+    if(!parts)return {};
+    if(!parts->offset_minutes)return CalendarValue{parts->wall_ticks,unspecified_kind};
+    const auto utc=parts->wall_ticks-*parts->offset_minutes*ticks_per_minute;
     if (utc<0 || utc>date_max_ticks) return {};
     return utc_to_local(utc,location);
 }
@@ -448,7 +498,8 @@ void append_offset(std::u16string& text,std::int64_t minutes,std::size_t width) 
 Error date_format_error(SourceLocation location) {
     return Error("E_FORMAT",location,"Invalid DateTime format","Некорректный формат DateTime");
 }
-std::u16string custom_date_text(CalendarValue value,std::u16string_view format,SourceLocation location) {
+std::u16string custom_date_text(CalendarValue value,std::u16string_view format,SourceLocation location,
+    std::optional<int> explicit_offset={}) {
     const auto fields=date_fields(value.ticks);
     const auto clock=clock_fields(value.ticks);
     const auto day_number=static_cast<unsigned>(fields.day());
@@ -492,6 +543,10 @@ std::u16string custom_date_text(CalendarValue value,std::u16string_view format,S
             break;
         }
         case u'K':
+            if(explicit_offset){
+                for(std::size_t i=0;i<width;++i)append_offset(text,*explicit_offset,3);
+                break;
+            }
             if (value.kind==utc_kind) text.append(width,u'Z');
             if (value.kind>=local_kind) {
                 const auto offset=local_offset_minutes(value,location);
@@ -502,7 +557,7 @@ std::u16string custom_date_text(CalendarValue value,std::u16string_view format,S
             text+=u"A.D.";
             break;
         case u'z':
-            append_offset(text,local_offset_minutes(value,location),width);
+            append_offset(text,explicit_offset ? *explicit_offset : local_offset_minutes(value,location),width);
             break;
         default:
             text.append(width,token);
@@ -845,6 +900,158 @@ std::u16string calendar_text(const Value& value,std::u16string_view format,Sourc
 int compare_calendar_values(const Value& left,const Value& right) {
     const auto a=calendar_value(left).ticks,b=calendar_value(right).ticks;
     return (a>b)-(a<b);
+}
+namespace {
+struct DateOffsetValue {
+    std::int64_t wall;
+    std::int32_t minutes;
+    std::int64_t utc() const {return wall-minutes*ticks_per_minute;}
+};
+DateOffsetValue date_offset_value(const Value& value) {
+    const auto& fields=std::get<std::shared_ptr<Aggregate>>(value)->items;
+    return {std::get<std::int64_t>(fields[0]->value),std::get<std::int32_t>(fields[1]->value)};
+}
+Value make_date_offset(Values& values,Type type,DateOffsetValue data) {
+    auto result=std::get<std::shared_ptr<Aggregate>>(values.zero(type));
+    result->items[0]->value=data.wall;
+    result->items[1]->value=data.minutes;
+    return result;
+}
+Error invalid_offset_text(SourceLocation location) {
+    return Error("E_FORMAT",location,"Invalid DateTimeOffset text","Некорректная строка DateTimeOffset");
+}
+DateOffsetValue parse_date_offset(std::u16string_view text,SourceLocation location) {
+    const auto date=parse_date_parts(text,true);
+    if(!date)throw invalid_offset_text(location);
+    const auto minutes=date->offset_minutes ? *date->offset_minutes
+        : local_offset_minutes({date->wall_ticks,unspecified_kind},location);
+    if(minutes < -840 || minutes > 840)throw invalid_offset_text(location);
+    const DateOffsetValue result{date->wall_ticks,static_cast<std::int32_t>(minutes)};
+    if(result.utc()<0 || result.utc()>date_max_ticks)throw invalid_offset_text(location);
+    return result;
+}
+std::int32_t checked_offset_minutes(const Value& value,SourceLocation location) {
+    const auto duration=calendar_value(value).ticks;
+    if(duration%ticks_per_minute || duration/ticks_per_minute < -840 || duration/ticks_per_minute > 840)
+        throw Error("E_RANGE",location,"DateTimeOffset requires whole minutes within fourteen hours of UTC",
+            "Смещение DateTimeOffset должно быть целым числом минут в пределах 14 часов от UTC");
+    return static_cast<std::int32_t>(duration/ticks_per_minute);
+}
+DateOffsetValue checked_offset(DateOffsetValue data,SourceLocation location) {
+    if(data.wall<0 || data.wall>date_max_ticks || data.utc()<0 || data.utc()>date_max_ticks)
+        throw Error("E_RANGE",location,"DateTimeOffset falls outside years 1 through 9999",
+            "Дата DateTimeOffset выходит за пределы лет от 1 до 9999");
+    return data;
+}
+} // namespace
+
+bool date_offset_shape(std::span<const TypeInfo> types,const TypeInfo& shape) {
+    const auto* date=find_type(types,shape.element);
+    return date_offset_record(shape) && shape.kind==CompoundKind::record && shape.name=="datetimeoffset"
+        && shape.key==Type::invalid && date && date->kind==CompoundKind::record
+        && date->native_record==NativeRecord::date_time && shape.fields.size()==2
+        && shape.fields[0].name=="_ticks" && shape.fields[0].type==Type::int64 && !shape.fields[0].global
+        && shape.fields[1].name=="_offset" && shape.fields[1].type==Type::integer && !shape.fields[1].global;
+}
+std::vector<Type> offset_parameters(std::span<const TypeInfo> types,Type owner,OffsetMethod method) {
+    using M=OffsetMethod;
+    const auto interval=find_type(types,find_type(types,owner)->element)->element;
+    switch(method){
+    case M::parse:return {Type::string};
+    case M::from_ticks_offset:return {Type::int64,interval};
+    case M::from_date_offset:return {find_type(types,owner)->element,interval};
+    case M::minimum:case M::maximum:return {};
+    case M::to_string_format:return {owner,Type::string};
+    case M::to_offset:return {owner,interval};
+    case M::compare_to:case M::equal:case M::unequal:case M::less:case M::less_equal:
+    case M::greater:case M::greater_equal:case M::equals_exact:return {owner,owner};
+    default:return {owner};
+    }
+}
+Type offset_result(std::span<const TypeInfo> types,Type owner,OffsetMethod method) {
+    using M=OffsetMethod;
+    const auto date=find_type(types,owner)->element;
+    switch(method){
+    case M::date_time:case M::utc_date_time:return date;
+    case M::offset:return find_type(types,date)->element;
+    case M::ticks:case M::utc_ticks:return Type::int64;
+    case M::compare_to:case M::hash_code:return Type::integer;
+    case M::equal:case M::unequal:case M::less:case M::less_equal:
+    case M::greater:case M::greater_equal:case M::equals_exact:return Type::boolean;
+    case M::to_string:case M::to_string_format:return Type::string;
+    default:return owner;
+    }
+}
+std::u16string date_offset_text(const Value& value,std::u16string_view format,SourceLocation location) {
+    const auto timestamp=date_offset_value(value);
+    const CalendarValue wall{timestamp.wall,unspecified_kind};
+    if(format.size()>1)return custom_date_text(wall,format,location,timestamp.minutes);
+    if(format==u"U")throw date_format_error(location);
+    if(format==u"u" || format==u"r" || format==u"R")
+        return date_text({timestamp.utc(),utc_kind},format,location);
+    auto result=date_text(wall,format,location);
+    if(format.empty())result.push_back(u' ');
+    if(format.empty() || format==u"o" || format==u"O")append_offset(result,timestamp.minutes,3);
+    return result;
+}
+int compare_date_offsets(const Value& left,const Value& right) {
+    const auto a=date_offset_value(left).utc(),b=date_offset_value(right).utc();
+    return (a>b)-(a<b);
+}
+std::int32_t date_offset_hash(const Value& value) {
+    const auto ticks=static_cast<std::uint64_t>(date_offset_value(value).utc());
+    return std::bit_cast<std::int32_t>(static_cast<std::uint32_t>(ticks)^static_cast<std::uint32_t>(ticks>>32));
+}
+Value offset_invoke(Values& values,Type owner,OffsetMethod method,std::span<const Value> arguments) {
+    using M=OffsetMethod;
+    const auto location=values.location;
+    if(method==M::parse){
+        if(std::holds_alternative<NilString>(arguments[0]))throw runtime_error(RuntimeError::nil_reference,location);
+        return make_date_offset(values,owner,parse_date_offset(string_text(arguments[0]),location));
+    }
+    if(method==M::from_ticks_offset){
+        const auto ticks=std::get<std::int64_t>(arguments[0]);
+        return make_date_offset(values,owner,checked_offset({ticks,checked_offset_minutes(arguments[1],location)},location));
+    }
+    if(method==M::from_date_offset){
+        const auto date=calendar_value(arguments[0]);
+        const auto minutes=checked_offset_minutes(arguments[1],location);
+        if((date.kind==utc_kind && minutes!=0)
+            || (date.kind>=local_kind && local_offset_minutes(date,location)!=minutes))
+            throw Error("E_ARGUMENT",location,"DateTimeOffset offset must agree with the DateTime kind",
+                "Смещение DateTimeOffset должно соответствовать виду DateTime");
+        return make_date_offset(values,owner,checked_offset({date.ticks,minutes},location));
+    }
+    if(method==M::minimum || method==M::maximum)
+        return make_date_offset(values,owner,{method==M::minimum ? 0 : date_max_ticks,0});
+    const auto data=date_offset_value(arguments[0]);
+    const auto date=type_info(values.program,owner).element;
+    switch(method){
+    case M::date_time:return make_calendar(values,date,data.wall,unspecified_kind);
+    case M::utc_date_time:return make_calendar(values,date,data.utc(),utc_kind);
+    case M::offset:return make_calendar(values,type_info(values.program,date).element,data.minutes*ticks_per_minute);
+    case M::ticks:return data.wall;
+    case M::utc_ticks:return data.utc();
+    case M::to_string:return date_offset_text(arguments[0],{},location);
+    case M::to_string_format:return date_offset_text(arguments[0],string_text(arguments[1]),location);
+    case M::hash_code:return date_offset_hash(arguments[0]);
+    case M::to_offset:{
+        const auto minutes=checked_offset_minutes(arguments[1],location);
+        return make_date_offset(values,owner,checked_offset({data.utc()+minutes*ticks_per_minute,minutes},location));
+    }
+    case M::compare_to:return static_cast<std::int32_t>(compare_date_offsets(arguments[0],arguments[1]));
+    case M::equal:return data.utc()==date_offset_value(arguments[1]).utc();
+    case M::unequal:return data.utc()!=date_offset_value(arguments[1]).utc();
+    case M::less:return data.utc()<date_offset_value(arguments[1]).utc();
+    case M::less_equal:return data.utc()<=date_offset_value(arguments[1]).utc();
+    case M::greater:return data.utc()>date_offset_value(arguments[1]).utc();
+    case M::greater_equal:return data.utc()>=date_offset_value(arguments[1]).utc();
+    case M::equals_exact:{
+        const auto other=date_offset_value(arguments[1]);
+        return data.wall==other.wall && data.minutes==other.minutes;
+    }
+    default:throw runtime_error(RuntimeError::invalid_bytecode,location);
+    }
 }
 std::int64_t parse_xml_duration(std::u16string_view text,SourceLocation location) {
     const auto invalid=[&]{

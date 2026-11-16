@@ -121,6 +121,7 @@ class ObjectWriter {
         else if(complex_number_type(info))append(complex_pascal_text(data,settings,location));
         else if(calendar_record(info))append(calendar_text(data,{},location));
         else if(guid_record_type(info))append(guid_text(data,{},location));
+        else if(date_offset_record(info))append(date_offset_text(data,{},location));
         else if(decimal_type(info)) {
             const auto rendered=decimal_text(data);
             append(settings?localize_number(rendered,*settings,location):rendered);
@@ -244,6 +245,7 @@ class FrameworkWriter {
             }
             if(calendar_record(shape)){append(calendar_text(value,{},location));return;}
             if(guid_record_type(shape)){append(guid_text(value,{},location));return;}
+            if(date_offset_record(shape)){append(date_offset_text(value,{},location));return;}
             if(decimal_type(shape)){append(format_decimal(value,{},format,location));return;}
             if(complex_number_type(shape)){append(complex_dotnet_text(value,{},format,location));return;}
             if(ordinal_range_type(shape)){append(ordinal_range_text(object));return;}

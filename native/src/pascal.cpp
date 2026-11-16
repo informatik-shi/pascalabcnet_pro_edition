@@ -687,7 +687,8 @@ private:
                 else if(result->kind=="collections"){expect(".");const auto generic=name();if(generic.text!="generic")throw Error("E_UNSUPPORTED",generic.location,"Unknown System.Collections namespace");expect(".");result->kind=name().text;if(result->kind!="dictionary" && result->kind!="sorteddictionary" && result->kind!="sortedlist" && result->kind!="keyvaluepair" && result->kind!="ienumerable" && result->kind!="ienumerator" && result->kind!="list" && result->kind!="hashset" && result->kind!="sortedset" && result->kind!="icomparer" && result->kind!="comparer" && result->kind!="iequalitycomparer" && result->kind!="equalitycomparer" && result->kind!="icollection" && result->kind!="ilist" && result->kind!="iset" && result->kind!="idictionary")throw Error("E_UNSUPPORTED",result->token.location,"Unknown generic collection type");}
                 else if (result->kind!="func" && result->kind!="action" && result->kind!="predicate" && result->kind!="type" && result->kind!="void" && result->kind!="single" && result->kind!="object" && result->kind!="icomparable" && result->kind!="iequatable"
                     && result->kind!="datetime" && result->kind!="timespan" && result->kind!="datetimekind" && result->kind!="dayofweek"
-                    && result->kind!="decimal" && result->kind!="midpointrounding" && result->kind!="dbnull" && result->kind!="guid")
+                    && result->kind!="decimal" && result->kind!="midpointrounding" && result->kind!="dbnull" && result->kind!="guid"
+                    && result->kind!="datetimeoffset")
                     throw Error("E_UNSUPPORTED",result->token.location,"Unknown or unsupported type 'System."+result->kind+"'");
             }
             if (result->kind=="comparer" || result->kind=="equalitycomparer") accept("&");
@@ -2993,6 +2994,107 @@ private:
         for(const auto& argument:source.arguments)arguments.push_back(expression(*argument));
         return guid_expression(owner,*method,std::move(arguments),source.token.location);
     }
+    bool is_date_offset(Type type) const {
+        return compound(type) && date_offset_record(info(type,{}));
+    }
+    Type date_offset_type(SourceLocation location) {
+        for(std::size_t i=0;i<module_.types.size();++i)
+            if(date_offset_record(module_.types[i]))return static_cast<Type>(64+i);
+        const auto date=calendar_type("datetime",location);
+        if(module_.types.size()>=1024)throw Error("E_LIMIT",location,"Type limit exceeded");
+        TypeInfo shape{"datetimeoffset",CompoundKind::record,date,{{"_ticks",Type::int64,false},{"_offset",Type::integer,false}}};
+        shape.native_record=NativeRecord::date_time_offset;
+        module_.types.push_back(std::move(shape));
+        return static_cast<Type>(63+module_.types.size());
+    }
+    Type date_offset_owner(const SyntaxExpr& target) {
+        if(target.kind==SyntaxExprKind::name && !lookup(target.token)){
+            if(const auto alias=aliases_.find(target.token.text);alias!=aliases_.end())
+                return is_date_offset(alias->second) ? alias->second : Type::invalid;
+            if(target.token.text=="datetimeoffset")return date_offset_type(target.token.location);
+        }
+        if(target.kind==SyntaxExprKind::field && target.token.text=="datetimeoffset" && target.left
+            && target.left->kind==SyntaxExprKind::name && target.left->token.text=="system" && !lookup(target.left->token))
+            return date_offset_type(target.token.location);
+        return Type::invalid;
+    }
+    std::unique_ptr<hir::Expr> offset_expression(Type owner,OffsetMethod method,
+        std::vector<std::unique_ptr<hir::Expr>> arguments,SourceLocation location) {
+        const auto parameters=offset_parameters(module_.types,owner,method);
+        if(arguments.size()!=parameters.size())
+            throw Error("E_TYPE",location,"Wrong number of DateTimeOffset arguments","Неверное число аргументов DateTimeOffset");
+        for(std::size_t i=0;i<parameters.size();++i)arguments[i]=convert(std::move(arguments[i]),parameters[i]);
+        auto result=std::make_unique<hir::Expr>();
+        result->kind=hir::ExprKind::date_offset_call;
+        result->type=offset_result(module_.types,owner,method);
+        result->operation_type=owner;
+        result->local=static_cast<std::size_t>(method);
+        result->location=location;
+        result->arguments=std::move(arguments);
+        return result;
+    }
+    std::unique_ptr<hir::Expr> make_date_offset_object(Type owner,const SyntaxExpr& source,SourceLocation location) {
+        if(source.arguments.empty())return offset_expression(owner,OffsetMethod::minimum,{},location);
+        if(source.arguments.size()!=2)
+            throw Error("E_TYPE",location,"DateTimeOffset constructor expects a DateTime or ticks and a TimeSpan offset",
+                "Конструктору DateTimeOffset нужны DateTime или тики и смещение TimeSpan");
+        std::vector<std::unique_ptr<hir::Expr>> arguments;
+        for(const auto& argument:source.arguments)arguments.push_back(expression(*argument));
+        const auto method=arguments.front()->type==info(owner,location).element
+            ? OffsetMethod::from_date_offset : OffsetMethod::from_ticks_offset;
+        return offset_expression(owner,method,std::move(arguments),location);
+    }
+    std::unique_ptr<hir::Expr> bind_offset_static(const SyntaxExpr& source) {
+        using M=OffsetMethod;
+        const auto& name=source.token.text;
+        if(name!="parse" && name!="minvalue" && name!="maxvalue")return {};
+        const auto owner=date_offset_owner(*source.left);
+        if(owner==Type::invalid)return {};
+        if(name!="parse"){
+            if(source.kind!=SyntaxExprKind::field)
+                throw Error("E_TYPE",source.token.location,"DateTimeOffset bound is not callable",
+                    "Границу DateTimeOffset нельзя вызвать как функцию");
+            return offset_expression(owner,name=="minvalue" ? M::minimum : M::maximum,{},source.token.location);
+        }
+        std::vector<std::unique_ptr<hir::Expr>> arguments;
+        for(const auto& argument:source.arguments)arguments.push_back(expression(*argument));
+        return offset_expression(owner,M::parse,std::move(arguments),source.token.location);
+    }
+    std::unique_ptr<hir::Expr> bind_offset_member(hir::Expr& receiver,const SyntaxExpr& source) {
+        const auto owner=receiver.left->type;
+        if(!is_date_offset(owner) || source.token.text=="gettype")return {};
+        using M=OffsetMethod;
+        const auto& name=source.token.text;
+        constexpr std::pair<std::string_view,M> methods[]{
+            {"datetime",M::date_time},{"utcdatetime",M::utc_date_time},{"offset",M::offset},
+            {"ticks",M::ticks},{"utcticks",M::utc_ticks},{"compareto",M::compare_to},{"equals",M::equal},
+            {"equalsexact",M::equals_exact},{"tooffset",M::to_offset},{"gethashcode",M::hash_code}};
+        std::optional<M> method;
+        if(name=="tostring")method=source.arguments.empty() ? M::to_string : M::to_string_format;
+        for(const auto& [spelling,operation]:methods)if(name==spelling)method=operation;
+        if(!method)
+            throw Error("E_NAME",source.token.location,"Unknown DateTimeOffset member","Неизвестный член DateTimeOffset");
+        std::vector<std::unique_ptr<hir::Expr>> arguments;
+        arguments.push_back(std::move(receiver.left));
+        for(const auto& argument:source.arguments)arguments.push_back(expression(*argument));
+        return offset_expression(owner,*method,std::move(arguments),source.token.location);
+    }
+    std::unique_ptr<hir::Expr> bind_offset_binary(hir::Expr& expression) {
+        using M=OffsetMethod;
+        const auto owner=expression.left->type;
+        constexpr std::pair<std::string_view,M> operators[]{
+            {"=",M::equal},{"<>",M::unequal},{"<",M::less},{"<=",M::less_equal},{">",M::greater},{">=",M::greater_equal}};
+        const auto op=std::find_if(std::begin(operators),std::end(operators),[&](const auto& entry){
+            return entry.first==expression.operation;
+        });
+        if(!is_date_offset(owner) || expression.right->type!=owner || op==std::end(operators))
+            throw Error("E_TYPE",expression.location,"Operator requires two DateTimeOffset values",
+                "Оператору нужны два значения DateTimeOffset");
+        std::vector<std::unique_ptr<hir::Expr>> arguments;
+        arguments.push_back(std::move(expression.left));
+        arguments.push_back(std::move(expression.right));
+        return offset_expression(owner,op->second,std::move(arguments),expression.location);
+    }
     Type calendar_owner(const SyntaxExpr& target) {
         if (target.kind==SyntaxExprKind::name && !lookup(target.token)) {
             if (const auto alias=aliases_.find(target.token.text); alias!=aliases_.end()) {
@@ -4166,6 +4268,8 @@ private:
             return dbnull_type(syntax.token.location);
         if(syntax.kind=="guid" && (syntax.system_qualified || !aliases_.contains(syntax.kind)))
             return guid_type(syntax.token.location);
+        if(syntax.kind=="datetimeoffset" && (syntax.system_qualified || !aliases_.contains(syntax.kind)))
+            return date_offset_type(syntax.token.location);
         if (syntax.kind=="midpointrounding" && (syntax.system_qualified || !aliases_.contains(syntax.kind)))
             return midpoint_rounding_type(syntax.token.location);
         if (syntax.kind=="numberformatinfo" &&
@@ -4826,6 +4930,7 @@ private:
             if (!source.array_construction && is_decimal(type)) return make_decimal_object(type,source,result->location);
             if (!source.array_construction && is_calendar(type)) return make_calendar_object(type,source,result->location);
             if (!source.array_construction && is_guid(type)) return make_guid_object(type,source,result->location);
+            if (!source.array_construction && is_date_offset(type)) return make_date_offset_object(type,source,result->location);
             if (!source.array_construction && is_complex(type)) {
                 std::vector<std::unique_ptr<hir::Expr>> args;
                 for (const auto& arg:source.arguments) args.push_back(expression(*arg));
@@ -5079,6 +5184,7 @@ private:
             if(!base->type_arguments.empty())break;
             if(base->token.text=="value" && dbnull_name(*base->left))break;
             if(guid_owner(*base->left)!=Type::invalid)break;
+            if(date_offset_owner(*base->left)!=Type::invalid)break;
             if (base->token.text=="create" && string_builder_constructor_owner(*base->left)!=Type::invalid) break;
             if (complex_type_name(*base->left)!=Type::invalid) break;
             if ((base->token.text=="create" || base->token.text=="invariantinfo" || base->token.text=="currentinfo"
@@ -5187,6 +5293,7 @@ private:
             if (auto decimal=bind_decimal_static(source)) return decimal;
             if (auto calendar=bind_calendar_static(source)) return calendar;
             if (auto guid=bind_guid_static(source)) return guid;
+            if (auto offset=bind_offset_static(source)) return offset;
             if (auto complex=bind_complex_static(source)) return complex;
             if (source.token.text=="create")
                 if (const auto type=string_builder_constructor_owner(*source.left); type!=Type::invalid)
@@ -5378,6 +5485,7 @@ private:
             if (auto decimal=bind_decimal_member(*result,source)) return decimal;
             if (auto calendar=bind_calendar_member(*result,source)) return calendar;
             if (auto guid=bind_guid_member(*result,source)) return guid;
+            if (auto offset=bind_offset_member(*result,source)) return offset;
             if (auto complex=bind_complex_member(*result,source)) return complex;
             if (auto builder=bind_string_builder_member(*result,source)) return builder;
             if(bind_encoding_member(*result,source))break;
@@ -6014,10 +6122,14 @@ private:
             }
             const auto native_alias=aliases_.find(source.token.text);
             const bool guid_cast=native_alias!=aliases_.end() ? is_guid(native_alias->second) : source.token.text=="guid";
-            if(guid_cast && !routine_names_.contains(source.token.text)){
+            const bool offset_cast=native_alias!=aliases_.end() ? is_date_offset(native_alias->second) : source.token.text=="datetimeoffset";
+            if((guid_cast || offset_cast) && !routine_names_.contains(source.token.text)){
+                const auto name=std::string_view(guid_cast ? "Guid" : "DateTimeOffset");
                 if(source.arguments.size()!=1)
-                    throw Error("E_TYPE",result->location,"Guid conversion requires one value","Для приведения к Guid нужно одно значение");
-                const auto type=native_alias==aliases_.end() ? guid_type(result->location) : native_alias->second;
+                    throw Error("E_TYPE",result->location,std::string(name)+" conversion requires one value",
+                        "Для приведения к "+std::string(name)+" нужно одно значение");
+                const auto type=native_alias==aliases_.end() ? (guid_cast ? guid_type(result->location)
+                    : date_offset_type(result->location)) : native_alias->second;
                 auto input=expression(*source.arguments.front());
                 if(boxed_object(input->type,result->location)){
                     const auto object=input->type;
@@ -6455,6 +6567,7 @@ private:
             auto right = result->right->type;
             const auto& op = result->operation;
             if (is_decimal(left)||is_decimal(right)) return bind_decimal_binary(*result,is_decimal(left)?left:right);
+            if (is_date_offset(left)||is_date_offset(right)) return bind_offset_binary(*result);
             if (is_calendar(left)||is_calendar(right)) return bind_calendar_binary(*result);
             if (is_complex(left)||is_complex(right)) return bind_complex_binary(*result,is_complex(left)?left:right);
             if (op=="**") {
@@ -8231,6 +8344,7 @@ private:
         (void)decimal_record_type(location);
         (void)calendar_type("datetime",location);
         (void)guid_type(location);
+        (void)date_offset_type(location);
     }
     std::unique_ptr<hir::Expr> utils_eval_value(SourceLocation location,Type expected) {
         const auto object=object_type(location);

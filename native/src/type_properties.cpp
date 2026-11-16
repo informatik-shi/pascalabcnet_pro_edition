@@ -124,6 +124,7 @@ Definition definition(const Program& program,ReflectedType type,Work& work){
         }
         if (info.native_record==NativeRecord::decimal_value) {result.name=u"Decimal";result.name_space=u"System";break;}
         if (info.native_record==NativeRecord::guid) {result.name=u"Guid";result.name_space=u"System";break;}
+        if (info.native_record==NativeRecord::date_time_offset) {result.name=u"DateTimeOffset";result.name_space=u"System";break;}
         if(database_null_type(info)){result.name=u"DBNull";break;}
         if (info.kind==CompoundKind::enumeration && info.name=="system.midpointrounding") {
             result.name=u"MidpointRounding";result.name_space=u"System";break;
