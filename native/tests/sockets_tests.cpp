@@ -138,6 +138,55 @@ void client_server_roundtrip(const std::filesystem::path& path) {
     invalid.client_server.reset();
     expect_error([&]{abc::verify(invalid);},"E_BYTECODE");
 }
+
+void client_server_listener(const std::filesystem::path& path,std::u16string mode) {
+    using namespace std::chrono_literals;
+    const auto program=abc::compile(fixture(path/"client-server-listener.pas"));
+    abc::SocketContext peer;
+    const auto spare=peer.create_server(0,{});
+    const auto port=peer.listener_port(spare,{});
+    peer.close(spare);
+    const auto deadline=std::chrono::steady_clock::now()+5s;
+    abc::ExecutionOptions options;
+    options.arguments={abc::from_utf8(std::to_string(port)),mode};
+    options.cancelled=[&] {return std::chrono::steady_clock::now()>=deadline;};
+    std::ostringstream output;
+    auto listener=std::async(std::launch::async,[&]{
+        std::istringstream input;
+        require(abc::execute(program,input,output,options)==0,"ClientServer listener did not halt successfully");
+    });
+    const abc::Value host=std::u16string{u"127.0.0.1"};
+    const bool replying=mode==u"reply";
+    const auto send=[&](std::u16string text,bool reply){
+        return peer.command(host,port,abc::Value{std::move(text)},reply,{},options);
+    };
+    const auto first=[&]{
+        for(;;){
+            try {return send(u"Тест🌍",replying);}
+            catch(const abc::Error& error){
+                if(error.code!="E_SOCKET" || options.cancelled())throw;
+                std::this_thread::sleep_for(10ms);
+            }
+        }
+    }();
+    const auto second=send(u"more",replying);
+    (void)send(u"stop",false);
+    listener.get();
+    if(replying){
+        using namespace std::string_view_literals;
+        require(first==u"Тест🌍\0Ответ🌍"sv && second==u"more\0Ответ🌍"sv,
+            "RunServer returned different reply bytes than PascalABC.NET");
+        require(output.str().empty(),"RunServer reply handler should not print");
+    }else{
+        auto expected=fixture(path/"client-server-listener-print.out");
+        std::erase(expected,'\r');
+        require(output.str()==expected,"RunServer procedure output differs from PascalABC.NET");
+    }
+
+    auto invalid=program;
+    invalid.client_server.reset();
+    expect_error([&]{abc::verify(invalid);},"E_BYTECODE");
+}
 }
 int main() {
     try {
@@ -173,8 +222,13 @@ int main() {
         options.cancelled=[&] {return ++checks>1;};
         expect_error([&] {probe.accept(blocked,{},options);},"E_CANCELLED");
         client_server_roundtrip(path);
+        client_server_listener(path,u"reply");
+        client_server_listener(path,u"print");
         expect_error([] {abc::compile("begin SendCommand('x');end.");},"E_NAME");
         expect_error([] {abc::compile("uses ClientServer;begin port:='x';end.");},"E_TYPE");
+        expect_error([] {abc::compile("uses ClientServer;begin RunServer((x:integer)->x);end.");},"E_TYPE");
+        (void)abc::compile("uses ClientServer;begin RunServer(s -> '!');RunServer(s -> s[1]);end.");
+        (void)abc::compile("uses ClientServer;function F(s:string):string:=s;function F(i:integer):string:=IntToStr(i);begin RunServer(F);end.");
         std::cout<<"Original socket and ClientServer fixtures and typed diagnostics passed\n";
         return 0;
     } catch(const std::exception& error) {

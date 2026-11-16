@@ -2326,6 +2326,8 @@ private:
         } else return {};
         if(hints.empty() && (unit.empty() || unit=="oberon00system") && imported_units_.contains("oberon00system"))
             if(auto value=oberon_print_value(source,expected,!unit.empty()))return value;
+        if(source.token.text=="runserver" && hints.empty() && module_.client_server && (unit.empty() || unit=="clientserver"))
+            return client_server_run_value(source.token.location,expected);
         const auto context=callable_type(expected) ? std::optional<TypeInfo>{info(expected,source.token.location)} : std::nullopt;
         const auto catalog=stdlib::signatures();
         const auto visible=[&](const auto& signature){
@@ -4474,7 +4476,13 @@ private:
         signature.result_local=module_.locals.size(); scopes_[lambdas_.back().scope]["result"]=signature.result_local;
         module_.locals.push_back({"result",type,false});
     }
-    std::unique_ptr<hir::Expr> bind_lambda(const SyntaxExpr& source,Type expected=Type::invalid,std::vector<Type> hints={}) {
+    void infer_lambda_result(std::unique_ptr<hir::Expr>& value) {
+        const auto inferred=lambdas_.back().inferred_result;
+        if(inferred!=Type::invalid && inferred!=value->type && can_widen(value->type,inferred))
+            value=convert(std::move(value),inferred);
+        lambda_result(value->type,value->location);
+    }
+    std::unique_ptr<hir::Expr> bind_lambda(const SyntaxExpr& source,Type expected=Type::invalid,std::vector<Type> hints={},Type inferred_result=Type::invalid) {
         if(nested_routine_slots_.contains(source.lambda.get())||std::any_of(lambdas_.begin(),lambdas_.end(),[&](const auto& context){return named_nested_routines_.contains(context.routine);}))compilation_stack_.check(source.token.location);
         const auto& syntax=*source.lambda;
         const auto context=callable_type(expected) ? std::optional<TypeInfo>{info(expected,source.token.location)} : std::nullopt;
@@ -4488,7 +4496,7 @@ private:
         auto& routine=module_.routines[id]; routine.signature.name="$lambda_"+std::to_string(id);
         const auto saved_routine=in_routine_; const auto saved_result=current_result_; const auto saved_name=current_name_; const auto saved_loop=loop_depth_;
         in_routine_=true; current_result_=Type::invalid; current_name_=routine.signature.name; loop_depth_=0;
-        scopes_.emplace_back(); const auto first=module_.locals.size(); lambdas_.push_back({id,first,scopes_.size()-1});
+        scopes_.emplace_back(); const auto first=module_.locals.size(); lambdas_.push_back({id,first,scopes_.size()-1,inferred_result});
         for (std::size_t n=0;n<syntax.parameters.size();++n) {
             const auto& parameter=syntax.parameters[n]; const auto name=parameter.name;
             if ((name.text=="result"&&(!named_nested_routines_.contains(id)||!syntax.procedure_lambda)) || scopes_.back().contains(name.text)) throw Error("E_DUPLICATE",name.location,"Duplicate or reserved lambda parameter");
@@ -4511,7 +4519,7 @@ private:
         }
         if (syntax.expression_body) {
             auto value=expression(*syntax.body.expression,current_result_);
-            if (current_result_==Type::invalid) lambda_result(value->type,value->location);
+            if (current_result_==Type::invalid) infer_lambda_result(value);
             routine.body.location=value->location;
             if (current_result_==Type::unit) {
                 if (value->type!=Type::unit) throw Error("E_TYPE",value->location,"Procedure lambda expression must return no value");
@@ -5129,6 +5137,7 @@ private:
                 if (bind_dictionary_extension(*result,source,source.left->token.text)) break;
                 if (bind_generators(*result,source,source.left->token.text)) break;
                 if (bind_school_table(*result,source,source.left->token.text)) break;
+                if (bind_client_server_run(*result,source,source.left->token.text)) break;
                 if (bind_dictionary_query(*result,source,source.left->token.text)) break;
                 if (bind_sequence_zip(*result,source,source.left->token.text)) break;
                 if (bind_sequence_numeric_selector(*result,source,source.left->token.text)) break;
@@ -5892,6 +5901,7 @@ private:
             if (!routine_names_.contains(source.token.text) && bind_dictionary_extension(*result,source)) break;
             if (!routine_names_.contains(source.token.text) && bind_generators(*result,source)) break;
             if (!routine_names_.contains(source.token.text) && bind_school_table(*result,source)) break;
+            if (!routine_names_.contains(source.token.text) && bind_client_server_run(*result,source)) break;
             if (!routine_names_.contains(source.token.text) && bind_dictionary_query(*result,source)) break;
             if (!routine_names_.contains(source.token.text) && bind_sequence_zip(*result,source)) break;
             if (!routine_names_.contains(source.token.text) && bind_sequence_numeric_selector(*result,source)) break;
@@ -7938,6 +7948,75 @@ private:
             throw Error("E_TYPE",source.token.location,"Library callback requires a function value with known types");
         return library_callback_value(expression(source));
     }
+    bool client_server_callback(Type type,SourceLocation location) const {
+        if(!callable_type(type))return false;
+        const auto& callback=info(type,location);
+        return (callback.element==Type::unit || callback.element==Type::string)
+            && callback.parameters.size()==1 && callback.parameters[0]==CallableParameter{Type::string,false,false};
+    }
+    std::unique_ptr<hir::Expr> client_server_run_value(SourceLocation location,Type expected) {
+        if(!callable_type(expected))
+            throw Error("E_TYPE",location,"RunServer requires a known overload","Для RunServer нужна известная перегрузка");
+        const auto& signature=info(expected,location);
+        if(signature.element!=Type::unit || signature.parameters.size()!=1
+            || signature.parameters[0].by_reference || signature.parameters[0].variadic
+            || !client_server_callback(signature.parameters[0].type,location))
+            throw Error("E_TYPE",location,"No RunServer overload matches the procedure type","Нет перегрузки RunServer с подходящим типом процедуры");
+        const auto callback=signature.parameters[0].type;
+        auto found=client_server_routines_.find(callback);
+        if(found==client_server_routines_.end()){
+            if(module_.routines.size()>=256)throw Error("E_LIMIT",location,"Routine limit exceeded");
+            const auto local=module_.locals.size();
+            module_.locals.push_back({"$command_callback",callback,false});
+            lambda_locals_.insert(local);
+            hir::RoutineBody routine;
+            routine.signature.name="$runserver";
+            routine.signature.result=Type::unit;
+            routine.signature.parameters.push_back({local,callback,false});
+            routine.signature.locals.push_back(local);
+            routine.body.kind=hir::StmtKind::call;
+            routine.body.location=location;
+            auto& invoke=routine.body.expression=std::make_unique<hir::Expr>();
+            invoke->kind=hir::ExprKind::client_server_run;invoke->type=Type::unit;invoke->location=location;
+            invoke->left=std::make_unique<hir::Expr>();
+            invoke->left->kind=hir::ExprKind::local;invoke->left->type=callback;
+            invoke->left->local=local;invoke->left->location=location;
+            const auto id=module_.routines.size();
+            module_.routines.push_back(std::move(routine));
+            found=client_server_routines_.emplace(callback,id).first;
+        }
+        return routine_value(found->second,location,expected);
+    }
+    bool bind_client_server_run(hir::Expr& result,const SyntaxExpr& source,std::string_view unit={}) {
+        if(source.token.text!="runserver" || (!unit.empty() && unit!="clientserver") || !module_.client_server)return false;
+        if(source.arguments.size()!=1)
+            throw Error("E_TYPE",result.location,"RunServer takes one command handler","RunServer принимает один обработчик команд");
+        const auto& argument=*source.arguments.front();
+        std::unique_ptr<hir::Expr> value;
+        if(argument.kind==SyntaxExprKind::lambda) {
+            value=bind_lambda(argument,Type::invalid,{Type::string},Type::string);
+        } else if(argument.kind==SyntaxExprKind::name && !lookup(argument.token) && global_overloads_.contains(argument.token.text)) {
+            std::optional<std::size_t> match;
+            for(auto id:global_overloads_.at(argument.token.text)){
+                const auto& signature=module_.routines[id].signature;
+                if((signature.result!=Type::string && signature.result!=Type::unit) || signature.parameters.size()!=1)continue;
+                const auto& input=signature.parameters[0];
+                if(input.type!=Type::string || input.by_reference || input.variadic)continue;
+                if(match)throw Error("E_TYPE",argument.token.location,"Ambiguous RunServer callback","Неоднозначный обработчик RunServer");
+                match=id;
+            }
+            if(match)value=routine_value(*match,argument.token.location);
+        } else {
+            auto callback=library_callback(argument,{Type::string});
+            value=callback.value ? std::move(callback.value) : routine_value(*callback.named,argument.token.location);
+        }
+        if(!value)throw Error("E_TYPE",argument.token.location,"No declared routine matches RunServer","Ни одна объявленная подпрограмма не подходит для RunServer");
+        if(!client_server_callback(value->type,value->location))
+            throw Error("E_TYPE",value->location,"RunServer requires a String procedure or String-to-String function",
+                "RunServer требует процедуру со строковым параметром или функцию из строки в строку");
+        result.kind=hir::ExprKind::client_server_run;result.type=Type::unit;result.left=std::move(value);
+        return true;
+    }
     bool bind_generators(hir::Expr& result,const SyntaxExpr& source,std::string_view unit={},bool member=false) {
         const auto name=source.token.text;
         if ((name!="seqgen" && name!="arrgen" && name!="matrgen" && name!="iterate" && name!="seqwhile")
@@ -9828,12 +9907,12 @@ private:
             }
             if(!source.assignment_operator.text.empty() && source.assignment_operator.text!=":=") {
                 std::unique_ptr<hir::Expr> initial;
-                if(!lambdas_.empty() && current_result_==Type::invalid && source.target->kind==SyntaxExprKind::name && source.target->token.text=="result"){initial=expression(*source.expression);lambda_result(initial->type,initial->location);}
+                if(!lambdas_.empty() && current_result_==Type::invalid && source.target->kind==SyntaxExprKind::name && source.target->token.text=="result"){initial=expression(*source.expression);infer_lambda_result(initial);}
                 return compound_assignment(source,expression(*source.target),std::move(initial));
             }
             result.kind = hir::StmtKind::assign;
             if (!lambdas_.empty() && current_result_==Type::invalid && source.target->kind==SyntaxExprKind::name && source.target->token.text=="result") {
-                auto initial=expression(*source.expression); lambda_result(initial->type,initial->location);
+                auto initial=expression(*source.expression); infer_lambda_result(initial);
                 result.target=expression(*source.target); result.expression=std::move(initial); break;
             }
             result.target = expression(*source.target);
@@ -10014,7 +10093,7 @@ private:
             result.kind = hir::StmtKind::return_stmt;
             if (source.expression) {
                 if (!lambdas_.empty() && current_result_==Type::invalid) {
-                    auto initial=expression(*source.expression); lambda_result(initial->type,initial->location); result.expression=std::move(initial); break;
+                    auto initial=expression(*source.expression); infer_lambda_result(initial); result.expression=std::move(initial); break;
                 }
                 if (!in_routine_ || current_result_ == Type::unit) throw Error("E_TYPE",result.location,"Procedure Exit takes no value");
                 const auto slot=lookup(Token{TokenKind::name,"result",result.location});
@@ -10133,6 +10212,7 @@ private:
     std::set<Type> implicit_class_constructors_;
     std::set<const SyntaxExpr*> inherited_constructor_calls_;
     std::map<std::size_t,std::size_t> builtin_routines_;
+    std::map<Type,std::size_t> client_server_routines_;
     std::array<std::optional<std::size_t>,4> oberon_print_routines_{};
     std::map<std::pair<std::string,Type>,std::size_t> array_library_routines_;
     struct ClassProperty { Type type;std::optional<std::size_t> getter,setter;std::vector<Type> indices{};bool default_indexer=false; };
@@ -10165,7 +10245,7 @@ private:
     std::set<std::pair<const SyntaxType*,std::string>> static_field_inference_;
     bool current_static_initializer_=false;
     std::vector<hir::Stmt> constant_initializers_;
-    struct LambdaContext { std::size_t routine,first,scope; };
+    struct LambdaContext { std::size_t routine,first,scope; Type inferred_result; };
     std::vector<LambdaContext> lambdas_;
     std::set<std::size_t> lambda_locals_,lexical_globals_,reference_parameters_;
     const SyntaxStmt* syntax_root_=nullptr;

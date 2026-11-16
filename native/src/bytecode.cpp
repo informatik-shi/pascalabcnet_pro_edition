@@ -175,6 +175,9 @@ private:
         case hir::ExprKind::school_minmax:
         case hir::ExprKind::school_table_print:
         case hir::ExprKind::school_table: expression_part_2(node);break;
+        case hir::ExprKind::client_server_run:
+            expression(*node.left);
+            emit(Op::client_server_run,node.left->type,0,node.location);break;
         case hir::ExprKind::tuple_literal:
         case hir::ExprKind::tuple_construct:
         case hir::ExprKind::school_pair:
@@ -1284,6 +1287,15 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
                 || tuple.fields[0].type!=element || tuple.fields[1].type!=element) invalid(instruction,"Invalid School MinMax result");
             break;
         }
+        case Op::client_server_run: {
+            if(!program.client_server || instruction.operand || !compound(type))
+                invalid(instruction,"Invalid ClientServer listener");
+            const auto& callback=type_info(program,type);
+            if(callback.kind!=CompoundKind::callable || (callback.element!=Type::string && callback.element!=Type::unit)
+                || callback.parameters.size()!=1 || callback.parameters[0]!=CallableParameter{Type::string,false,false})
+                invalid(instruction,"Invalid ClientServer callback signature");
+            break;
+        }
         case Op::school_table_print: case Op::school_table_new:
             if (!compound(type) || type_info(program,type).kind!=CompoundKind::array || type_info(program,type).rank!=2
                 || type_info(program,type).element!=Type::boolean || instruction.operand) invalid(instruction,"Invalid School truth-table output");
@@ -1890,6 +1902,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         }
         case Op::school_minmax: require(instruction.type); stack.push_back(static_cast<Type>(instruction.operand)); break;
         case Op::school_table_print: require(Type::string); require(Type::integer); require(instruction.type); break;
+        case Op::client_server_run: require(instruction.type); break;
         case Op::school_table_new: require(Type::integer); stack.push_back(instruction.type); break;
         case Op::tuple_literal: case Op::school_pair:
             for (auto field=type_info(program,instruction.type).fields.rbegin();field!=type_info(program,instruction.type).fields.rend();++field) require(field->type);

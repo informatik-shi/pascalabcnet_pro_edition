@@ -19,6 +19,8 @@ public:
     void close(std::int32_t handle);
     std::u16string command(const Value& host,std::int32_t port,const Value& text,bool reply,
         SourceLocation,const ExecutionOptions&);
+    void serve(std::int32_t port,bool reply,const std::function<Value(std::u16string)>& callback,
+        SourceLocation,const ExecutionOptions&);
 
 private:
     struct State;

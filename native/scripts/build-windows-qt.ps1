@@ -191,6 +191,7 @@ var (a,b) := value и foreach var (a,b) поддерживают типизир�
 Присваивания из литералов кортежей сохраняют исходный порядок вычислений и зависимых записей.
 Модуль Sockets поддерживает TCP-сокеты с целочисленными идентификаторами. Сервер слушает локальный адрес.
 Модуль ClientServer передаёт команды строками UTF-8. Адрес и порт меняются через ClientServer.servername и ClientServer.port.
+ClientServer.RunServer принимает типизированную процедуру или функцию и обрабатывает по одному TCP-соединению.
 Текстовые файлы с BOM читаются как UTF-8, UTF-16LE/BE или UTF-32LE/BE.
 Символы CP1251 и ANSI-алиасы: examples/windows-characters.pas.
 Encoding, CP1251/ASCII/Unicode и выбор кодировки ReadAllText/WriteAllText: examples/text-encodings.pas.

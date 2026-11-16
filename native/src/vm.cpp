@@ -604,6 +604,18 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
             const auto sequence=std::get<std::shared_ptr<Aggregate>>(pop());
             stack.emplace_back(school_minmax(values,sequence,static_cast<Type>(instruction.operand),options)); break;
         }
+        case Op::client_server_run: {
+            const auto callback=std::get<std::shared_ptr<Aggregate>>(pop());
+            const auto port=std::get<std::int32_t>(globals[program.client_server->port]->value);
+            const auto location=instruction.location;
+            sockets.serve(port,type_info(program,instruction.type).element==Type::string,
+                [&](std::u16string text){
+                    values.location=location;
+                    const std::array<Value,1> arguments{std::move(text)};
+                    return values.invoke_value(callback,arguments);
+                },location,options);
+            break;
+        }
         case Op::school_table_new: {
             const auto count=std::get<std::int32_t>(pop());
             if (count<0 || count>30) trap(instruction,RuntimeError::school_table_variables);

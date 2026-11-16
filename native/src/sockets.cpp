@@ -113,6 +113,28 @@ Socket configured(Descriptor handle,SourceLocation location) {
 Socket create_tcp(SourceLocation location){
     return configured(::socket(AF_INET,SOCK_STREAM,IPPROTO_TCP),location);
 }
+Socket listen_tcp(std::int32_t port,bool loopback,SourceLocation location){
+    const auto checked=port_number(port,location);
+    auto socket=create_tcp(location);
+    sockaddr_in address{};
+    address.sin_family=AF_INET;
+    address.sin_port=htons(checked);
+    address.sin_addr.s_addr=htonl(loopback ? INADDR_LOOPBACK : INADDR_ANY);
+    if(::bind(socket.get(),reinterpret_cast<const sockaddr*>(&address),sizeof address)!=0
+        || ::listen(socket.get(),SOMAXCONN)!=0)
+        socket_error(location,"Cannot start the TCP listener","Не удалось запустить прослушивание TCP");
+    return socket;
+}
+Socket accept_tcp(Descriptor handle,SourceLocation location,const ExecutionOptions& options){
+    for(;;){
+        wait_ready(handle,POLLIN,location,options);
+        const auto accepted=::accept(handle,nullptr,nullptr);
+        if(accepted!=invalid)return configured(accepted,location);
+        const auto error=last_error();
+        if(!interrupted(error) && !pending(error))
+            socket_error(location,"Cannot accept the TCP connection","Не удалось принять TCP-соединение");
+    }
+}
 enum class Role { listener, outgoing, incoming };
 struct Entry {
     Socket socket;
@@ -189,6 +211,16 @@ public:
         }
     }
 };
+
+std::u16string read_command(SocketStream& stream,SourceLocation location,const ExecutionOptions& options) {
+    BinaryCodec reader(stream,{TextEncodingKind::utf8,false,false},false,TextDecoding::framework);
+    return reader.read_string(location,options);
+}
+void write_command(SocketStream& stream,const Value& text,SourceLocation location,const ExecutionOptions& options) {
+    if(std::holds_alternative<NilString>(text))throw runtime_error(RuntimeError::nil_reference,location);
+    BinaryCodec writer(stream,{TextEncodingKind::utf8,false,true});
+    writer.write_string(std::get<std::u16string>(text),location,options);
+}
 }
 
 struct SocketContext::State {
@@ -234,17 +266,8 @@ SocketContext::State& SocketContext::opened(SourceLocation location){
     return *state_;
 }
 std::int32_t SocketContext::create_server(std::int32_t port,SourceLocation location){
-    const auto checked=port_number(port,location);
     auto& context=state(location);
-    auto socket=create_tcp(location);
-    sockaddr_in address{};
-    address.sin_family=AF_INET;
-    address.sin_port=htons(checked);
-    address.sin_addr.s_addr=htonl(INADDR_LOOPBACK);
-    if(::bind(socket.get(),reinterpret_cast<const sockaddr*>(&address),sizeof address)!=0
-        || ::listen(socket.get(),SOMAXCONN)!=0)
-        socket_error(location,"Cannot start the loopback listener","Не удалось запустить прослушивание на локальном адресе");
-    return context.add(std::move(socket),Role::listener,location);
+    return context.add(listen_tcp(port,true,location),Role::listener,location);
 }
 std::int32_t SocketContext::create_client(SourceLocation location){
     auto& context=state(location);
@@ -261,14 +284,7 @@ std::int32_t SocketContext::listener_port(std::int32_t listener,SourceLocation l
 std::int32_t SocketContext::accept(std::int32_t listener,SourceLocation location,const ExecutionOptions& options){
     auto& context=opened(location);
     const auto handle=context.get(listener,Role::listener,location).socket.get();
-    for(;;){
-        wait_ready(handle,POLLIN,location,options);
-        const auto accepted=::accept(handle,nullptr,nullptr);
-        if(accepted!=invalid)return context.add(configured(accepted,location),Role::incoming,location);
-        const auto error=last_error();
-        if(!interrupted(error) && !pending(error))
-            socket_error(location,"Cannot accept the TCP connection","Не удалось принять TCP-соединение");
-    }
+    return context.add(accept_tcp(handle,location,options),Role::incoming,location);
 }
 bool SocketContext::connect(std::int32_t client,std::u16string_view host,std::int32_t port,
     SourceLocation location,const ExecutionOptions& options) {
@@ -299,12 +315,22 @@ std::u16string SocketContext::command(const Value& host,std::int32_t port,const 
     (void)state(location);
     auto socket=connect_tcp(std::get<std::u16string>(host),port,AF_UNSPEC,location,options);
     SocketStream stream(socket.get(),options);
-    if(std::holds_alternative<NilString>(text))throw runtime_error(RuntimeError::nil_reference,location);
-    BinaryCodec writer(stream,{TextEncodingKind::utf8,false,true});
-    writer.write_string(std::get<std::u16string>(text),location,options);
-    if(!reply)return {};
-    BinaryCodec reader(stream,{TextEncodingKind::utf8,false,false},false,TextDecoding::framework);
-    return reader.read_string(location,options);
+    write_command(stream,text,location,options);
+    return reply ? read_command(stream,location,options) : std::u16string{};
+}
+
+void SocketContext::serve(std::int32_t port,bool reply,const std::function<Value(std::u16string)>& callback,
+    SourceLocation location,const ExecutionOptions& options) {
+    (void)state(location);
+    auto listener=listen_tcp(port,false,location);
+    for(;;){
+        auto client=accept_tcp(listener.get(),location,options);
+        SocketStream stream(client.get(),options);
+        auto text=read_command(stream,location,options);
+        if(!reply)client.close();
+        auto result=callback(std::move(text));
+        if(reply)write_command(stream,result,location,options);
+    }
 }
 void SocketContext::close(std::int32_t handle){
     if(state_ && handle>=0 && static_cast<std::size_t>(handle)<state_->entries.size())
