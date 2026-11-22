@@ -7,6 +7,7 @@
 #include "guid.hpp"
 #include "sql_guid.hpp"
 #include "sql_binary.hpp"
+#include "countries.hpp"
 #include "complex_number.hpp"
 #include "decimal.hpp"
 #include <cmath>
@@ -21,6 +22,15 @@ bool value_equal(ValueHashWork& work,const Value& a,const Value& b){
     if(const auto* x=std::get_if<std::u16string>(&a)){const auto* y=std::get_if<std::u16string>(&b);if(!y || x->size()!=y->size())return false;for(std::size_t i=0;i<x->size();++i){work.step();if((*x)[i]!=(*y)[i])return false;}return true;}
     if(const auto* x=std::get_if<std::shared_ptr<Aggregate>>(&a)){
         const auto& left=record_box_value(*x);const auto& y=record_box_value(std::get<std::shared_ptr<Aggregate>>(b));const auto& shape=type_info(work.values.program,left->type);const auto kind=shape.kind;
+        if(kind==CompoundKind::boxed_object && !left->nil && !y->nil && !left->items.empty() && !y->items.empty()){
+            const auto& first=*left->items.front();const auto& second=*y->items.front();
+            if(compound(first.type) && type_info(work.values.program,first.type).name==country_attribute_name)
+                return first.type==second.type && value_equal(work,first.value,second.value);
+        }
+        if(shape.name==country_attribute_name){
+            if(left->nil || y->nil)return left->nil==y->nil;
+            return left->type==y->type && left->items[0]->value==y->items[0]->value;
+        }
         if(kind==CompoundKind::record || kind==CompoundKind::tuple){if(left->nil || y->nil)return left->nil==y->nil;if(left->type!=y->type)return false;
             if(decimal_type(shape))return compare_decimal_values(Value{left},Value{y},work.values.location)==0;
             if(calendar_record(shape))return compare_calendar_values(Value{left},Value{y})==0;
@@ -49,6 +59,9 @@ std::size_t value_hash(ValueHashWork& work,const Value& value){
             if(!v || v->nil)return 0;const auto& shape=type_info(work.values.program,v->type);const auto kind=shape.kind;
             if(kind==CompoundKind::boxed_object && !v->items.empty()){
                 const auto& item=*v->items.front();
+                if(item.type==Type::type_descriptor)return value_hash(work,item.value);
+                if(compound(item.type) && type_info(work.values.program,item.type).name==country_attribute_name)
+                    return value_hash(work,item.value);
                 if(const auto* object=std::get_if<std::shared_ptr<Aggregate>>(&item.value))
                     return std::hash<const void*>{}(object->get());
             }
@@ -60,6 +73,7 @@ std::size_t value_hash(ValueHashWork& work,const Value& value){
             if(date_offset_record(shape))return static_cast<std::uint32_t>(date_offset_hash(value));
             if(sql_guid_record(shape))return static_cast<std::uint32_t>(sql_guid_hash(value));
             if(sql_binary_record(shape))return static_cast<std::uint32_t>(sql_binary_hash(value));
+            if(shape.name==country_attribute_name)return static_cast<std::uint32_t>(std::get<std::int32_t>(v->items[0]->value));
             if(complex_number_type(shape))return static_cast<std::uint32_t>(complex_hash_code(value));
             if(kind==CompoundKind::record || kind==CompoundKind::tuple){std::size_t result=0;for(const auto& field:v->items)result=mix(result,value_hash(work,field->value));return result;}
             if(kind==CompoundKind::callable)return callable_hash(*v);

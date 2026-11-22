@@ -55,7 +55,7 @@ std::optional<Value> class_to_string_override(Values& values,const Value& value,
     return {};
 }
 bool supports(const std::vector<TypeInfo>& types, Type type, unsigned depth) {
-    if (scalar(type) || type==Type::nil) return true;
+    if (scalar(type) || type==Type::nil || type==Type::type_descriptor) return true;
     if (!compound(type) || depth>32) return false;
     const auto index=static_cast<std::size_t>(type)-static_cast<std::size_t>(Type::first_compound);
     if (index>=types.size()) return false;
@@ -109,6 +109,11 @@ class ObjectWriter {
     }
     void value(const Value& data, Type type) {
         if (options.cancelled && options.cancelled()) throw runtime_error(RuntimeError::cancelled,location);
+        if(type==Type::type_descriptor){
+            const auto descriptor=std::get<ReflectedType>(data);
+            append(descriptor.target==Type::invalid ? u"nil" : reflected_type_text(program,descriptor,location,options));
+            return;
+        }
         if (!compound(type)) { append(type==Type::nil ? u"nil" : format_field(data,0,std::nullopt,location)); return; }
         if(enumeration(program,type)){append(enum_text(program,std::get<EnumValue>(data),location));return;}
         const auto& info=program.types[static_cast<std::size_t>(type)-static_cast<std::size_t>(Type::first_compound)];

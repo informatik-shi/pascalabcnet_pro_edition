@@ -113,6 +113,11 @@ ReflectedType reflected_value_type(const Program& program,const Value& value,Typ
         const auto& info=type_info(program,current->type);
         if (info.kind==CompoundKind::boxed_object) {
             if (current->items.empty()) return {current->type};
+            if(current->items.front()->type==Type::type_descriptor){
+                const auto descriptor=std::get<ReflectedType>(current->items.front()->value);
+                if(!reflected_type_valid(program,descriptor))throw runtime_error(RuntimeError::invalid_bytecode,location);
+                return descriptor.target==Type::invalid ? ReflectedType{} : ReflectedType{Type::type_descriptor,runtime_type_implementation};
+            }
             return {current->items.front()->type};
         }
         if(info.kind==CompoundKind::enumerator){

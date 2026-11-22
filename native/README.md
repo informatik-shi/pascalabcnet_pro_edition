@@ -3368,9 +3368,18 @@ OLE Automation. Присваивание записи переменной `Obje
 для этих четырёх свойств. Доступны их имена, типы, признаки чтения и записи,
 `GetValue`, `GetCustomAttributes` и `IsDefined`. Атрибуты `Att`
 сохраняют исходные номера 1, 2, 4 и 3. Общая рефлексия пользовательских
-свойств и остальные унаследованные методы `Attribute` остаются в работе.
+свойств и атрибуты в пользовательских объявлениях остаются в работе.
 [Тест Countries](tests/fixtures/countries-compat.pas).
 [Тест отражения Countries](tests/fixtures/countries-reflection-compat.pas).
+
+`Att.Equals` и `Match` сравнивают `Num`, а `GetHashCode` возвращает его
+значение. Оператор `=` сохраняет сравнение ссылок. Эти правила используются
+в `HashSet` и `Dictionary`, включая элементы типа `Object`.
+`IsDefaultAttribute` возвращает `False`. `TypeId` возвращает `Object`,
+содержащий тип атрибута, и сохраняет `System.RuntimeType` при вызове `GetType`.
+Повторные значения `TypeId` одного типа равны и имеют одинаковый хеш
+при использовании в коллекциях `Object`.
+[Тест методов Att и коллекций](tests/fixtures/countries-attribute-compat.pas).
 
 ## Символы Windows-1251
 

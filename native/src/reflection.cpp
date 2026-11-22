@@ -91,6 +91,10 @@ std::optional<ReflectionSignature> reflection_signature(const std::vector<TypeIn
     case M::attributes_typed:return ReflectionSignature{{owner,Type::type_descriptor,Type::boolean},objects};
     case M::is_defined:return ReflectionSignature{{owner,Type::type_descriptor,Type::boolean},Type::boolean};
     case M::base_type:return ReflectionSignature{{Type::type_descriptor},Type::type_descriptor};
+    case M::attribute_equals:return ReflectionSignature{{named_type(types,system_attribute_name),object},Type::boolean};
+    case M::attribute_hash:return ReflectionSignature{{named_type(types,system_attribute_name)},Type::integer};
+    case M::attribute_default:return ReflectionSignature{{named_type(types,system_attribute_name)},Type::boolean};
+    case M::attribute_type_id:return ReflectionSignature{{named_type(types,system_attribute_name)},object};
     }
     return {};
 }
@@ -99,6 +103,20 @@ Value reflection_invoke(Values& values,Type owner,ReflectionMethod method,std::s
     using M=ReflectionMethod;
     const auto& types=values.program.types;
     const auto signature=*reflection_signature(types,owner,method);
+    if(method>=M::attribute_equals){
+        const auto& receiver=std::get<std::shared_ptr<Aggregate>>(arguments[0]);
+        if(!receiver || receiver->nil)throw runtime_error(RuntimeError::nil_reference,values.location);
+        if(method==M::attribute_type_id)return values.box_value(signature.result,Type::type_descriptor,ReflectedType{receiver->type});
+        if(method==M::attribute_default)return false;
+        if(type_info(values.program,receiver->type).name!=country_attribute_name)
+            throw Error("E_UNSUPPORTED",values.location,"Equality of this attribute type is not implemented",
+                "Равенство атрибутов этого типа ещё не перенесено");
+        if(method==M::attribute_hash)return receiver->items[0]->value;
+        const auto& other=std::get<std::shared_ptr<Aggregate>>(arguments[1]);
+        if(!other || other->nil || other->items.empty() || other->items[0]->type!=receiver->type)return false;
+        const auto& attribute=std::get<std::shared_ptr<Aggregate>>(other->items[0]->value);
+        return attribute && !attribute->nil && receiver->items[0]->value==attribute->items[0]->value;
+    }
     if(method==M::base_type){
         const auto target=descriptor(values,arguments[0]);
         if(target.implementation || !compound(target.target))unsupported(values.location);

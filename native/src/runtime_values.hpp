@@ -182,6 +182,8 @@ struct Values {
             if (kind==CompoundKind::boxed_object && !(*a)->items.empty() && !b->items.empty()) {
                 const auto& first=*(*a)->items.front();
                 const auto& second=*b->items.front();
+                if(first.type==Type::type_descriptor && second.type==Type::type_descriptor)
+                    return std::get<ReflectedType>(first.value)==std::get<ReflectedType>(second.value);
                 if (first.type==second.type && compound(first.type))
                     return std::get<std::shared_ptr<Aggregate>>(first.value)==std::get<std::shared_ptr<Aggregate>>(second.value);
             }

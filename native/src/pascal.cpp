@@ -5392,8 +5392,34 @@ private:
         name->left=std::move(receiver);
         return name;
     }
+    bool bind_native_attribute_member(hir::Expr& result,const SyntaxExpr& source) {
+        using M=ReflectionMethod;
+        static const std::map<std::string,M> methods{{"equals",M::attribute_equals},{"match",M::attribute_equals},
+            {"gethashcode",M::attribute_hash},{"isdefaultattribute",M::attribute_default},{"typeid",M::attribute_type_id}};
+        const auto found=methods.find(source.token.text);
+        if(found==methods.end())return false;
+        if(found->second==M::attribute_type_id && source.kind!=SyntaxExprKind::field)
+            throw Error("E_TYPE",result.location,"Attribute.TypeId cannot be called","Свойство Attribute.TypeId нельзя вызвать как подпрограмму");
+        const auto owner=reflection_type(result.location);
+        const auto signature=*reflection_signature(module_.types,owner,found->second);
+        if(source.arguments.size()+1!=signature.parameters.size())
+            throw Error("E_TYPE",result.location,"Wrong attribute method argument count",
+                "Неверное число аргументов метода атрибута");
+        result.arguments.push_back(convert(std::move(result.left),signature.parameters[0]));
+        for(std::size_t i=0;i<source.arguments.size();++i)
+            result.arguments.push_back(convert(expression(*source.arguments[i],signature.parameters[i+1]),signature.parameters[i+1]));
+        result.kind=hir::ExprKind::reflection_call;
+        result.type=signature.result;
+        result.operation_type=owner;
+        result.local=static_cast<std::size_t>(found->second);
+        return true;
+    }
     std::unique_ptr<hir::Expr> class_member(std::unique_ptr<hir::Expr> result,const SyntaxExpr& source,Type expected,bool dynamic_dispatch=true) {
         const auto receiver=result->left->type;
+        if((countries_object(receiver,result->location,country_attribute_name)
+            || countries_object(receiver,result->location,system_attribute_name)) && bind_native_attribute_member(*result,source)){
+            return result;
+        }
         if(countries_object(receiver,result->location,country_class_name)){
             if(const auto property=country_property(source.token.text)){
                 if(source.kind==SyntaxExprKind::member_call || source.kind==SyntaxExprKind::call)

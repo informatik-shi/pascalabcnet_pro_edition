@@ -35,9 +35,18 @@ int main() {
     expect_error([]{execute("uses Countries;begin typeof(Country).GetProperty('Название').IsDefined(nil,False);end.");},"E_NIL");
     expect_error([]{execute("uses Countries;begin var c:=new Country('A','B',1,'C');var a:=new object[1];typeof(Country).GetProperty('Название').GetValue(c,a);end.");},"E_ARGUMENT");
     for(const auto source:{
+        "uses Countries;begin var a:Att;Writeln(a.GetHashCode);end.",
+        "uses Countries;begin var a:Att;Writeln(a.Equals(nil));end.",
+        "uses Countries;begin var a:Att;Writeln(a.Match(nil));end.",
+        "uses Countries;begin var a:Att;Writeln(a.TypeId);end.",
+        "uses System;begin var a:Attribute;Writeln(a.IsDefaultAttribute);end."})
+        expect_error([&]{execute(source);},"E_NIL");
+    for(const auto source:{
         "uses System.Reflection;begin var p:=new PropertyInfo;end.",
         "uses Countries;begin typeof(Country).GetProperty(1);end.",
         "uses Countries;begin typeof(Country).GetProperties(1);end.",
+        "uses Countries;begin var a:=new Att(1);Writeln(a.TypeId());end.",
+        "uses Countries;begin var a:=new Att(1);Writeln(a.GetHashCode(1));end.",
         "uses Countries;begin var p:=typeof(Country).GetProperty('Название');p.Name:='changed';end.",
         "uses Countries;begin Writeln(typeof(Country).GetProperty('Название').Name());end."})
         expect_error([&]{(void)abc::compile(source);},"E_TYPE");

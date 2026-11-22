@@ -1386,7 +1386,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
                 invalid(instruction,"Invalid Countries call metadata");
             break;
         case Op::reflection_call:
-            if(instruction.operand>static_cast<std::size_t>(ReflectionMethod::base_type)
+            if(instruction.operand>static_cast<std::size_t>(ReflectionMethod::attribute_type_id)
                 || !reflection_signature(program.types,type,static_cast<ReflectionMethod>(instruction.operand)))
                 invalid(instruction,"Invalid property reflection call metadata");
             break;
