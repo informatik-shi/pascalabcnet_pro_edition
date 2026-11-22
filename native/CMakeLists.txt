@@ -598,6 +598,9 @@ if(BUILD_TESTING)
     add_test(NAME virtual_dispatch_compatibility COMMAND ${CMAKE_COMMAND}
         -DABC_RUNNER=$<TARGET_FILE:abc> -DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures
         -DABC_FIXTURE_NAME=virtual-dispatch-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")
+    add_test(NAME short_virtual_methods_compatibility COMMAND ${CMAKE_COMMAND}
+        "-DABC_RUNNER=$<TARGET_FILE:abc>" "-DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
+        -DABC_FIXTURE_NAME=short-virtual-methods-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")
     add_test(NAME abstract_dispatch_compatibility COMMAND ${CMAKE_COMMAND}
         -DABC_RUNNER=$<TARGET_FILE:abc> -DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures
         -DABC_FIXTURE_NAME=abstract-dispatch-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")

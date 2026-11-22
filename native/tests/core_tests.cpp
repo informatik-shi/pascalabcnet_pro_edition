@@ -341,6 +341,11 @@ void native_short_routine_bodies_language() {
     compile_error("type C=class constructor:=exit(1);end;begin end.","E_TYPE");
     compile_error("type C=class constructor:=Self:=new C;end;begin end.","E_TYPE");
     compile_error("procedure Bad:=1+2;begin end.","E_TYPE");
+    compile_error("type C=class function F:integer;abstract:=1;end;begin end.","E_TYPE");
+    compile_error("type C=class procedure P;abstract:=Writeln(1);end;begin end.","E_TYPE");
+    compile_error("type C=class function F:integer;virtual:='wrong';end;begin end.","E_TYPE");
+    compile_error("function F:integer;virtual:=1;begin end.","E_TYPE");
+    compile_error("type C=class function F:integer;virtual;:=1;end;begin end.","E_SYNTAX");
     runtime_error("function Bad(n:integer):integer:=1 div n;begin Writeln(Bad(0));end.","E_DIV_ZERO");
     runtime_error("type C=class function Get:integer:=7;end;begin var c:C;Writeln(c.Get);end.","E_NIL");
 }

@@ -842,13 +842,17 @@ private:
         if (function) {
             if (result->owner.empty() || is(":")) { expect(":");result->result=type_syntax(); }
         }
-        if (accept(":=")) {
+        const auto short_body=[&]{
+            if(!accept(":="))return false;
+            if(result->abstract_method)
+                throw Error("E_TYPE",result->name.location,"Abstract method cannot have a body","У абстрактного метода не может быть тела");
             if (function) {
                 SyntaxStmt body;body.kind=SyntaxStmtKind::return_stmt;body.token=result->name;body.expression=expression();
                 result->body.statements.push_back(std::move(body));
             } else result->body.statements.push_back(statement());
-            expect(";");return result;
-        }
+            expect(";");return true;
+        };
+        if(short_body())return result;
         expect(";");
         while(is("overload") || is("virtual") || is("override") || is("abstract")){
             const auto modifier=consume();
@@ -861,6 +865,7 @@ private:
                     throw Error("E_TYPE",modifier.location,"Invalid virtual method modifier","Недопустимый модификатор виртуального метода");
                 result->dispatch=modifier.text=="virtual" ? MethodDispatch::virtual_method : MethodDispatch::override_method;
             }
+            if(short_body())return result;
             expect(";");
         }
         if(result->abstract_method){
