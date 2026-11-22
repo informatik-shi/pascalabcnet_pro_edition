@@ -182,6 +182,12 @@ if(BUILD_TESTING)
         target_compile_options(abc_reflection_tests PRIVATE /utf-8)
     endif()
     add_test(NAME property_reflection COMMAND abc_reflection_tests)
+    add_executable(abc_method_value_tests tests/method_value_tests.cpp)
+    target_link_libraries(abc_method_value_tests PRIVATE abc_core)
+    if(MSVC)
+        target_compile_options(abc_method_value_tests PRIVATE /utf-8)
+    endif()
+    add_test(NAME bound_method_values COMMAND abc_method_value_tests)
     add_executable(abc_single_tests tests/single_tests.cpp)
     target_link_libraries(abc_single_tests PRIVATE abc_core)
     if(MSVC)
@@ -601,6 +607,18 @@ if(BUILD_TESTING)
     add_test(NAME short_virtual_methods_compatibility COMMAND ${CMAKE_COMMAND}
         "-DABC_RUNNER=$<TARGET_FILE:abc>" "-DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
         -DABC_FIXTURE_NAME=short-virtual-methods-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")
+    add_test(NAME bound_method_values_compatibility COMMAND ${CMAKE_COMMAND}
+        "-DABC_RUNNER=$<TARGET_FILE:abc>" "-DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
+        -DABC_FIXTURE_NAME=bound-method-values-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")
+    add_test(NAME bound_method_identity_compatibility COMMAND ${CMAKE_COMMAND}
+        "-DABC_RUNNER=$<TARGET_FILE:abc>" "-DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
+        -DABC_FIXTURE_NAME=bound-method-identity-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")
+    add_test(NAME bound_method_repeat_compatibility COMMAND ${CMAKE_COMMAND}
+        "-DABC_RUNNER=$<TARGET_FILE:abc>" "-DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
+        -DABC_FIXTURE_NAME=bound-method-repeat-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")
+    add_test(NAME bound_method_overloads_compatibility COMMAND ${CMAKE_COMMAND}
+        "-DABC_RUNNER=$<TARGET_FILE:abc>" "-DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
+        -DABC_FIXTURE_NAME=bound-method-overloads-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")
     add_test(NAME abstract_dispatch_compatibility COMMAND ${CMAKE_COMMAND}
         -DABC_RUNNER=$<TARGET_FILE:abc> -DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures
         -DABC_FIXTURE_NAME=abstract-dispatch-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")

@@ -727,6 +727,11 @@ private:
             for (const auto& argument : node.arguments) expression(*argument);
             emit(Op::array_literal,node.type,node.arguments.size(),node.location); break;
         case hir::ExprKind::routine_value:
+            if(node.left){
+                expression(*node.left);
+                emit(Op::require_method_target,node.left->type,node.operation=="virtual" ? 1U : 0U,node.location);
+                emit(Op::fresh_local,node.left->type,node.temporaries.at(0),node.location);
+            }
             emit(Op::routine_value,node.type,node.local,node.location); break;
         case hir::ExprKind::value_call: {
             expression(*node.left);
@@ -1717,6 +1722,11 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             for (auto capture:program.routines[instruction.operand].captures)
                 if (!program.locals[capture].global && !allowed_local(capture)) invalid(instruction,"Unavailable closure capture");
             break;
+        case Op::require_method_target:
+            if(instruction.operand>1 || !compound(type) || !valid_value_type(program,type)
+                || type_info(program,type).kind!=CompoundKind::object_class || !valid_class_ancestry(program.types,type))
+                invalid(instruction,"Invalid bound method receiver metadata");
+            break;
         case Op::call_value:
             if (!compound(type) || type_info(program,type).kind!=CompoundKind::callable || instruction.operand) invalid(instruction,"Invalid callable invocation metadata");
             break;
@@ -2346,6 +2356,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             stack.push_back(instruction.op == Op::get_field ? type_info(program,instruction.type).fields[instruction.operand].type : reference_type(type_info(program,instruction.type).fields[instruction.operand].type)); break;
         case Op::length: require(instruction.type); stack.push_back(compound(instruction.type) && type_info(program,instruction.type).kind==CompoundKind::sequence ? Type::int64 : Type::integer); break;
         case Op::routine_value: stack.push_back(instruction.type); break;
+        case Op::require_method_target: require(instruction.type);stack.push_back(instruction.type);break;
         case Op::call_value: {
             const auto& signature=type_info(program,instruction.type);
             for (auto parameter=signature.parameters.rbegin();parameter!=signature.parameters.rend();++parameter)

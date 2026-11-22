@@ -5478,6 +5478,51 @@ private:
         result.local=static_cast<std::size_t>(found->second);
         return true;
     }
+    std::unique_ptr<hir::Expr> bound_method_value(std::unique_ptr<hir::Expr> receiver,std::size_t target,
+        Type expected,SourceLocation location,bool dynamic_dispatch) {
+        const auto signature=module_.routines[target].signature;
+        if(info(receiver->type,location).kind!=CompoundKind::object_class)
+            throw Error("E_UNSUPPORTED",location,"Bound record methods are not implemented",
+                "Значения привязанных методов записей ещё не перенесены");
+        if(!dynamic_dispatch && signature.abstract_method)
+            throw Error("E_TYPE",location,"Cannot bind an abstract base method","Нельзя привязать абстрактный метод базового класса");
+        if(module_.routines.size()>=256 || module_.locals.size()>=4096)
+            throw Error("E_LIMIT",location,"Bound method resource limit exceeded","Превышен лимит ресурсов привязанного метода");
+        const auto captured=module_.locals.size();
+        module_.locals.push_back({"$bound_receiver",receiver->type,!in_routine_});
+        hir::RoutineBody body;
+        body.signature.name="$bound_method_"+std::to_string(module_.routines.size());
+        body.signature.result=signature.result;
+        body.signature.captures.push_back(captured);
+        const auto local=[&](std::string name,Type type){
+            if(module_.locals.size()>=4096)throw Error("E_LIMIT",location,"Local limit exceeded","Превышен лимит локальных переменных");
+            const auto slot=module_.locals.size();
+            module_.locals.push_back({std::move(name),type,false});
+            body.signature.locals.push_back(slot);lambda_locals_.insert(slot);return slot;
+        };
+        auto call=std::make_unique<hir::Expr>();
+        call->kind=hir::ExprKind::user_call;call->type=signature.result;call->local=target;call->location=location;
+        // An inherited method reference remains virtual in the source compiler.
+        auto self=std::make_unique<hir::Expr>();
+        self->kind=hir::ExprKind::local;self->type=receiver->type;self->local=captured;self->location=location;
+        call->arguments.push_back(convert(std::move(self),signature.parameters[0].type));
+        for(std::size_t n=1;n<signature.parameters.size();++n){
+            auto parameter=signature.parameters[n];
+            parameter.local=local("$argument",parameter.type);
+            body.signature.parameters.push_back(parameter);
+            auto argument=std::make_unique<hir::Expr>();
+            argument->kind=hir::ExprKind::local;argument->type=parameter.type;argument->local=parameter.local;argument->location=location;
+            call->arguments.push_back(std::move(argument));
+        }
+        if(signature.result!=Type::unit)body.signature.result_local=local("$result",signature.result);
+        body.body.kind=signature.result==Type::unit ? hir::StmtKind::call : hir::StmtKind::return_stmt;
+        body.body.location=location;body.body.expression=std::move(call);
+        const auto id=module_.routines.size();module_.routines.push_back(std::move(body));
+        auto value=routine_value(id,location,expected);
+        value->left=std::move(receiver);value->temporaries.push_back(captured);
+        if(signature.virtual_root)value->operation="virtual";
+        return value;
+    }
     std::unique_ptr<hir::Expr> class_member(std::unique_ptr<hir::Expr> result,const SyntaxExpr& source,Type expected,bool dynamic_dispatch=true) {
         const auto receiver=result->left->type;
         if((countries_object(receiver,result->location,country_attribute_name)
@@ -5533,18 +5578,31 @@ private:
         }
         auto id=methods->second.at(source.token.text);std::vector<std::unique_ptr<hir::Expr>> bound_arguments;
         const auto& overloads=class_method_overloads_.at(receiver).at(source.token.text);
+        const bool bare=source.kind==SyntaxExprKind::field || source.kind==SyntaxExprKind::name;
+        if(bare && callable_type(expected)){
+            const auto& wanted=info(expected,result->location);
+            std::optional<std::size_t> selected;
+            for(auto candidate:overloads){
+                const auto& signature=module_.routines[candidate].signature;
+                bool matches=wanted.element==signature.result && wanted.parameters.size()+1==signature.parameters.size();
+                for(std::size_t n=0;matches && n<wanted.parameters.size();++n)
+                    matches=wanted.parameters[n].type==signature.parameters[n+1].type
+                        && wanted.parameters[n].by_reference==signature.parameters[n+1].by_reference;
+                if(!matches)continue;
+                if(selected)throw Error("E_TYPE",result->location,"Ambiguous bound method overload","Неоднозначная перегрузка привязанного метода");
+                selected=candidate;
+            }
+            if(selected)return bound_method_value(std::move(result->left),*selected,expected,result->location,dynamic_dispatch);
+            if(std::ranges::none_of(overloads,[&](auto candidate){
+                const auto& signature=module_.routines[candidate].signature;
+                return signature.parameters.size()==1 && signature.result==expected;
+            }))throw Error("E_TYPE",result->location,"No instance method matches the callable type",
+                "Ни один метод экземпляра не соответствует типу подпрограммы");
+        }
         if(overloads.size()>1){std::vector<MethodOverload> candidates;for(auto candidate:overloads){const auto& signature=module_.routines[candidate].signature;std::vector<CallableParameter> parameters;for(std::size_t n=1;n<signature.parameters.size();++n)parameters.push_back({signature.parameters[n].type,signature.parameters[n].by_reference,signature.parameters[n].variadic});auto required=parameters.size()-(parameters.size()&&parameters.back().variadic?1U:0U);while(required&&candidate<parameter_defaults_.size()&&required<parameter_defaults_[candidate].size()&&parameter_defaults_[candidate][required])--required;candidates.push_back({candidate,std::move(parameters),required});}id=choose_method_overload(std::move(candidates),source,bound_arguments);}
         const auto signature=module_.routines[id].signature;
         if(!dynamic_dispatch && signature.abstract_method)
             throw Error("E_TYPE",result->location,"Cannot call an abstract base member","Нельзя вызвать абстрактный метод базового класса");
-        const bool bare=source.kind==SyntaxExprKind::field || source.kind==SyntaxExprKind::name;
-        if (bare && callable_type(expected)) {
-            const auto& wanted=info(expected,result->location);
-            bool matches=wanted.element==signature.result && wanted.parameters.size()+1==signature.parameters.size();
-            for (std::size_t i=0;matches && i<wanted.parameters.size();++i)
-                matches=wanted.parameters[i].type==signature.parameters[i+1].type && wanted.parameters[i].by_reference==signature.parameters[i+1].by_reference;
-            if (matches) throw Error("E_UNSUPPORTED",result->location,"Bound method values are not ported yet");
-        }
         if (bare) for (std::size_t i=1;i<signature.parameters.size();++i)
             if (!signature.parameters[i].variadic && (id>=parameter_defaults_.size() || !parameter_defaults_[id][i]))
                 throw Error("E_UNSUPPORTED",result->location,"Bound method values are not ported yet");

@@ -1710,6 +1710,15 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
             if (program.locals[instruction.operand].global) globals[instruction.operand]=cell;
             break;
         }
+        case Op::require_method_target: {
+            const auto& receiver=std::get<std::shared_ptr<Aggregate>>(stack.back());
+            if(!receiver || receiver->nil){
+                if(instruction.operand)throw runtime_error(RuntimeError::nil_reference,instruction.location);
+                throw Error("E_ARGUMENT",instruction.location,"An instance method delegate requires an object target",
+                    "Для делегата метода экземпляра требуется объект");
+            }
+            break;
+        }
         case Op::routine_value: {
             const auto& captured=program.routines[instruction.operand].captures;
             if (captured.size()>=values.remaining) trap(instruction,RuntimeError::allocation_limit);
