@@ -575,7 +575,19 @@ struct FixedArrayShape { Type type=Type::invalid,index=Type::integer;std::int32_
 struct StaticField {std::string name;std::size_t local=0;MemberAccess access=MemberAccess::public_member;};
 struct StaticClass {Type owner=Type::invalid;std::size_t state=0,initializer=0;std::vector<StaticField> fields;};
 struct StaticMethod {Type owner=Type::invalid;std::string name;std::size_t routine=0;MemberAccess access=MemberAccess::public_member;};
-struct StaticProperty {Type owner=Type::invalid;std::string name;Type type=Type::invalid;std::optional<std::size_t> getter,setter;std::vector<Type> indices;MemberAccess access=MemberAccess::public_member;bool default_indexer=false;};
+struct AttributeMetadata {Type type=Type::invalid;std::vector<Value> arguments{};};
+struct PropertyMetadata {
+    Type owner=Type::invalid;
+    std::string name;
+    Type type=Type::invalid;
+    std::optional<std::size_t> getter,setter;
+    std::vector<Type> indices;
+    MemberAccess access=MemberAccess::public_member;
+    bool default_indexer=false;
+    std::string display_name{};
+    std::vector<AttributeMetadata> attributes{};
+};
+using StaticProperty=PropertyMetadata;
 struct ClientServerGlobals {std::size_t server_name,port;};
 struct Program {
     std::vector<Value> constants;
@@ -594,6 +606,7 @@ struct Program {
     std::vector<StaticMethod> static_methods;
     std::vector<StaticProperty> static_properties;
     std::string source_namespace;
+    std::vector<PropertyMetadata> instance_properties;
 };
 bool static_field_storage(const Program&,std::size_t);
 

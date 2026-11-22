@@ -16,6 +16,7 @@
 #include "sql_guid.hpp"
 #include "sql_binary.hpp"
 #include "countries.hpp"
+#include "reflection.hpp"
 #include "composite_format.hpp"
 #include "decimal.hpp"
 #include "number_format.hpp"
@@ -31,7 +32,7 @@
 
 namespace abc {
 namespace {
-std::optional<Value> class_to_string_override(Values& values,const Value& value,Type type) {
+std::optional<Value> class_to_string_override(Values& values,const Value& value,Type type,const ExecutionOptions& options) {
     for(;type!=Type::invalid;type=class_parent(values.program.types,type)){
         for(std::size_t id=0;id<values.program.routines.size();++id){
             const auto& method=values.program.routines[id];
@@ -50,6 +51,10 @@ std::optional<Value> class_to_string_override(Values& values,const Value& value,
                 text+=field;
             }
             return text+u')';
+        }
+        if(type_info(values.program,type).name==property_info_class_name){
+            const std::array<Value,1> arguments{value};
+            return reflection_invoke(values,type,ReflectionMethod::to_string,arguments,options);
         }
     }
     return {};
@@ -135,7 +140,7 @@ class ObjectWriter {
         path.push_back(object.get());
         if(info.kind==CompoundKind::object_class || info.kind==CompoundKind::ini_file){
             const auto& actual=type_info(program,object->type);
-            if(const auto rendered=class_to_string_override(values,Value{object},object->type))
+            if(const auto rendered=class_to_string_override(values,Value{object},object->type,options))
                 append(string_text(*rendered));
             else if(actual.name==country_attribute_name)append(u"(Countries.Att)");
             else class_contents(object,actual);
@@ -216,7 +221,7 @@ Value class_object_to_string(Values& values,const Value& value,const ExecutionOp
     const auto& object=std::get<std::shared_ptr<Aggregate>>(value);
     if(!object || object->nil)throw runtime_error(RuntimeError::nil_reference,values.location);
     if(database_null_type(type_info(values.program,object->type)))return std::u16string{};
-    if(auto rendered=class_to_string_override(values,value,object->type))return std::move(*rendered);
+    if(auto rendered=class_to_string_override(values,value,object->type,options))return std::move(*rendered);
     return reflected_type_property(values.program,{object->type},TypeOperation::full_name,values.location,options);
 }
 Value object_method_to_string(Values& values,const Value& value,const ExecutionOptions& options){

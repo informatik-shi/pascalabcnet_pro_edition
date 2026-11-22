@@ -80,6 +80,7 @@ public:
         program_.static_classes=std::move(module.static_classes);
         program_.static_methods=std::move(module.static_methods);
         program_.static_properties=std::move(module.static_properties);
+        program_.instance_properties=std::move(module.instance_properties);
         program_.source_namespace=std::move(module.source_namespace);
         program_.print_delimiter=module.print_delimiter;program_.print_matrix_format=module.print_matrix_format;program_.default_encoding=module.default_encoding;
         program_.client_server=module.client_server;
@@ -2449,6 +2450,7 @@ void verify(const Program& program) {
         if(property.getter)check(*property.getter,false);if(property.setter)check(*property.setter,true);
     }
     for(std::size_t n=0;n<program.routines.size();++n)if(program.routines[n].name.find(".$static.$property_expression_")!=std::string::npos&&!static_property_accessors.contains(n))throw Error("E_BYTECODE",{},"Missing static property metadata");
+    verify_property_metadata(program);
     if(!module_name_valid(program.module_name))throw Error("E_BYTECODE",{},"Invalid source module name","Недопустимое имя исходного модуля");
     if(!program.source_namespace.empty() && !module_name_valid(program.source_namespace))
         throw Error("E_BYTECODE",{},"Invalid source namespace","Недопустимое пространство имён исходного модуля");

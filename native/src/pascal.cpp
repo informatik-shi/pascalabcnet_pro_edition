@@ -278,7 +278,8 @@ struct SyntaxType {
     std::shared_ptr<SyntaxRoutine> static_constructor{};
     std::vector<SyntaxStaticField> static_fields{};
 };
-struct SyntaxProperty { Token name;std::shared_ptr<SyntaxType> type;std::optional<Token> getter,setter;MemberAccess access=MemberAccess::public_member;std::vector<std::pair<Token,std::shared_ptr<SyntaxType>>> indices{};bool default_indexer=false;std::shared_ptr<SyntaxType> explicit_interface{};std::shared_ptr<SyntaxExpr> getter_expression{};std::shared_ptr<SyntaxStmt> setter_statement{};bool static_member=false; };
+struct SyntaxAttribute {std::shared_ptr<SyntaxType> type;std::vector<std::shared_ptr<SyntaxExpr>> arguments;};
+struct SyntaxProperty { Token name;std::shared_ptr<SyntaxType> type;std::optional<Token> getter,setter;MemberAccess access=MemberAccess::public_member;std::vector<std::pair<Token,std::shared_ptr<SyntaxType>>> indices{};bool default_indexer=false;std::shared_ptr<SyntaxType> explicit_interface{};std::shared_ptr<SyntaxExpr> getter_expression{};std::shared_ptr<SyntaxStmt> setter_statement{};bool static_member=false;std::vector<SyntaxAttribute> attributes; };
 struct SyntaxRoutine;
 struct SyntaxExpr {
     SyntaxExprKind kind;
@@ -596,7 +597,21 @@ private:
                         : is("protected") ? MemberAccess::protected_member : MemberAccess::internal_member;
                     consume();continue;
                 }
+                std::vector<SyntaxAttribute> attributes;
+                while(accept("[")){
+                    do{
+                        SyntaxAttribute attribute;attribute.type=type_syntax();
+                        if(accept("(")){
+                            if(!is(")"))do{attribute.arguments.push_back(expression());}while(accept(","));
+                            expect(")");
+                        }
+                        attributes.push_back(std::move(attribute));
+                    }while(accept(","));
+                    expect("]");
+                }
                 const bool static_member=accept("static") || accept("class");
+                if(!attributes.empty() && !is("property"))throw Error("E_UNSUPPORTED",current_.location,
+                    "Attributes on this member kind are not implemented","Атрибуты этого вида членов ещё не перенесены");
                 if ((is("function") || is("procedure") || is("constructor"))) {
                     auto method=routine(true);method->access=access;method->static_member=static_member;
                     if(static_member && method->constructor){
@@ -610,6 +625,7 @@ private:
                 }
                 if (accept("property")) {
                     auto property=std::make_shared<SyntaxProperty>();property->access=access;property->static_member=static_member;
+                    property->attributes=std::move(attributes);
                     if(!explicit_member_header(property->explicit_interface,property->name))property->name=name();
                     property_indices(*property);
                     expect(":");property->type=type_syntax();
@@ -2131,6 +2147,27 @@ private:
             if(!binding.property->static_member){constant_parameters_.erase(current_self_);reference_parameters_.erase(current_self_);}scopes_.pop_back();in_routine_=false;current_result_=Type::unit;current_owner_=Type::invalid;current_static_initializer_=false;current_name_.clear();
         }
     }
+    std::vector<AttributeMetadata> bind_property_attributes(const SyntaxProperty& property) {
+        std::vector<AttributeMetadata> result;
+        for(const auto& attribute:property.attributes){
+            const auto location=attribute.type->token.location;
+            const auto type=resolve_type(*attribute.type);
+            if(!countries_object(type,location,country_attribute_name))
+                throw Error("E_UNSUPPORTED",location,"This attribute constructor is not implemented",
+                    "Этот конструктор атрибута ещё не перенесён");
+            if(!result.empty())throw Error("E_TYPE",location,"Att cannot be applied more than once to a property",
+                "Атрибут Att нельзя применить к свойству несколько раз");
+            if(attribute.arguments.size()!=1)throw Error("E_TYPE",location,"Att requires one Integer argument",
+                "Атрибуту Att требуется один аргумент типа integer");
+            bind_prior_constants(location);
+            auto argument=convert(constant_expression(*attribute.arguments[0]),Type::integer);
+            const auto value=hir::constant_value(*argument,module_.types,module_.fixed_arrays);
+            if(!value)throw Error("E_TYPE",location,"Attribute arguments must be compile-time constants",
+                "Аргументы атрибута должны быть известны при компиляции");
+            result.push_back({type,{*value}});
+        }
+        return result;
+    }
     ABC_PASCAL_NOINLINE void register_properties(const SyntaxStmt& source) {
         for (const auto& [name,syntax]:source.type_declarations) if ((syntax->kind=="class" || syntax->kind=="record") && !syntax->named) {
             const auto owner=aliases_.at(name.text);
@@ -2152,7 +2189,14 @@ private:
                 if (property->setter) bound.setter=property->static_member?static_property_accessor(owner,bound.type,property,*property->setter,true,bound.indices):property_accessor(owner,bound.type,*property->setter,true,bound.indices);
                 else if(property->setter_statement)bound.setter=property_expression_accessor(owner,bound.type,property,{},property->setter_statement);
                 properties[property->name.text]=bound;
-                if(property->static_member)module_.static_properties.push_back({owner,property->name.text,bound.type,bound.getter,bound.setter,bound.indices,property->access,bound.default_indexer});
+                PropertyMetadata metadata{owner,property->name.text,bound.type,bound.getter,bound.setter,bound.indices,property->access,bound.default_indexer};
+                metadata.display_name=property->name.spelling.empty() ? property->name.text : property->name.spelling;
+                metadata.attributes=bind_property_attributes(*property);
+                if(property->static_member)module_.static_properties.push_back(std::move(metadata));
+                else if(qualifier==Type::invalid)module_.instance_properties.push_back(std::move(metadata));
+                else if(!metadata.attributes.empty())throw Error("E_UNSUPPORTED",property->name.location,
+                    "Attributes on explicit interface properties are not implemented",
+                    "Атрибуты явных свойств интерфейса ещё не перенесены");
             }
         }
     }

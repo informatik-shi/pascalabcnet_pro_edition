@@ -14,6 +14,7 @@ enum class ReflectionMethod {
 struct ReflectionSignature { std::vector<Type> parameters;Type result; };
 TypeInfo property_info_class();
 bool property_info_shape(const TypeInfo& shape);
+void verify_property_metadata(const Program& program);
 std::optional<ReflectionSignature> reflection_signature(const std::vector<TypeInfo>& types,Type owner,ReflectionMethod method);
-Value reflection_invoke(Values& values,Type owner,ReflectionMethod method,std::span<const Value> arguments);
+Value reflection_invoke(Values& values,Type owner,ReflectionMethod method,std::span<const Value> arguments,const ExecutionOptions& options);
 }

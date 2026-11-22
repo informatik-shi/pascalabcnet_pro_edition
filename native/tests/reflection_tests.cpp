@@ -62,6 +62,26 @@ int main() {
         instruction.op=abc::Op::ref_field;instruction.operand=0;break;
     }
     expect_error([&]{abc::verify(writable_metadata);},"E_BYTECODE");
+    for(const auto source:{
+        "uses Countries;type C=class public x:integer;[Att('bad')]property Number:integer read x;end;begin end.",
+        "uses Countries;type C=class public x:integer;[Att(1),Att(2)]property Number:integer read x;end;begin end.",
+        "uses Countries;type C=class public x:integer;[Att()]property Number:integer read x;end;begin end.",
+        "uses Countries;type C=class public x:integer;[Att(Random(10))]property Number:integer read x;end;begin end."})
+        expect_error([&]{(void)abc::compile(source);},"E_TYPE");
+    expect_error([]{execute("type C=class public x:integer;property Number:integer write x;end;begin typeof(C).GetProperty('Number').GetValue(nil);end.");},"E_ARGUMENT");
+    auto annotated=abc::compile("uses Countries;type C=class public x:integer;[Att(1)]property Number:integer read x;end;begin end.");
+    require(annotated.instance_properties.size()==1,"Instance property metadata was not preserved");
+    if(!annotated.instance_properties.empty()){
+        auto invalid_getter=annotated;
+        invalid_getter.instance_properties[0].getter=invalid_getter.routines.size();
+        expect_error([&]{abc::verify(invalid_getter);},"E_BYTECODE");
+        auto invalid_result=annotated;
+        invalid_result.instance_properties[0].type=abc::Type::real;
+        expect_error([&]{abc::verify(invalid_result);},"E_BYTECODE");
+        auto invalid_attribute=annotated;
+        invalid_attribute.instance_properties[0].attributes[0].arguments[0]=std::u16string{u"bad"};
+        expect_error([&]{abc::verify(invalid_attribute);},"E_BYTECODE");
+    }
     if(!failures)std::cout<<"Property reflection diagnostics and bytecode validation passed\n";
     return failures ? 1 : 0;
 }

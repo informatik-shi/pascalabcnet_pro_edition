@@ -133,6 +133,8 @@ struct Values {
     }
     Value box_value(Type object_type,Type payload,Value value) {
         if (std::holds_alternative<NilString>(value)) return zero(object_type);
+        if(const auto* descriptor=std::get_if<ReflectedType>(&value);descriptor && descriptor->target==Type::invalid)
+            return zero(object_type);
         if (const auto* aggregate=std::get_if<std::shared_ptr<Aggregate>>(&value)) {
             if (!*aggregate || (*aggregate)->nil) return zero(object_type);
             const auto kind=type_info(program,payload).kind;

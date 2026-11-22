@@ -213,6 +213,7 @@ SqlBinary поддерживает индексацию байтов, незав
 Countries читает штатный массив стран из bin\Files\Databases\Страны.csv.
 Свойства Country доступны через GetProperty/GetProperties с типами и атрибутами Att.
 Att поддерживает Equals, Match, GetHashCode, IsDefaultAttribute, TypeId и использование в коллекциях.
+Атрибуты Att на свойствах пользовательских классов доступны через GetProperties и GetCustomAttributes.
 System.Guid поддерживает разбор строк, 16-байтовую форму и преобразование из Utils.Eval.
 Guid.NewGuid создаёт идентификатор версии 4. Доступны ParseExact, TryParse и использование в коллекциях.
 Utils.Eval разбирает экранированные имена и выдаёт двуязычные ошибки при обращении к столбцам пустой таблицы.
