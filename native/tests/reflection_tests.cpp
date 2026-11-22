@@ -24,6 +24,23 @@ void execute(std::string_view source) {
 }
 
 int main() {
+    const std::string index_prefix="type C=class public function Get(n:integer):integer:=n;property Item[index:integer]:integer read Get;end;begin var instance:=new C;";
+    for(const auto call:{
+        "typeof(C).GetProperty('Item').GetValue(instance);end.",
+        "typeof(C).GetProperty('Item').GetValue(instance,nil);end.",
+        "typeof(C).GetProperty('Item').GetValue(instance,new object[0]);end.",
+        "typeof(C).GetProperty('Item').GetValue(instance,new object[2]);end.",
+        "var indices:=new object[1];indices[0]:='bad';typeof(C).GetProperty('Item').GetValue(instance,indices);end."})
+        expect_error([&]{execute(index_prefix+call);},"E_ARGUMENT");
+    for(const auto target:{"nil","7"})
+        expect_error([&]{execute(index_prefix+"typeof(C).GetProperty('Item').GetValue("+target+",new object[1]);end.");},"E_TARGET");
+    auto indexed=abc::compile(index_prefix+"end.");
+    require(indexed.instance_properties.size()==1,"Indexed property metadata was not preserved");
+    if(!indexed.instance_properties.empty()){
+        auto invalid_index=indexed;
+        invalid_index.instance_properties[0].indices[0]=abc::Type::real;
+        expect_error([&]{abc::verify(invalid_index);},"E_BYTECODE");
+    }
     expect_error([]{execute("type C=class public static property Number:integer read 1;end;begin typeof(C).GetProperty('Number').GetValue(nil,new object[1]);end.");},"E_ARGUMENT");
     expect_error([]{execute("type C=class public static x:integer;static property Number:integer write x;end;begin typeof(C).GetProperty('Number').GetValue(nil);end.");},"E_ARGUMENT");
     auto ordered=abc::compile("type C=class public property First:integer read 1;static property Second:integer read 2;end;begin end.");

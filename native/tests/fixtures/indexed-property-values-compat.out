@@ -1,0 +1,20 @@
+Int32 Number [Int32]
+System.String Text [System.String]
+Int32 StaticNumber [Int32]
+System.String Pair [Int32, System.String]
+40
+50
+Byte
+0
+True
+key:hello
+10
+2:two
+8
+8
+1
+0
+-1
+3
+Int32
+nil

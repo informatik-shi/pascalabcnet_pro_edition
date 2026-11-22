@@ -8,6 +8,7 @@
 #include <tuple>
 #include <limits>
 #include <algorithm>
+#include <type_traits>
 
 namespace abc {
 namespace {
@@ -43,7 +44,6 @@ std::vector<ReflectedProperty> properties(Values& values,Type type) {
         const auto& name=metadata.display_name.empty() ? metadata.name : metadata.display_name;
         if(!signatures.emplace(name,metadata.type,metadata.indices).second)return;
         if(!include || metadata.access!=MemberAccess::public_member)return;
-        if(!metadata.indices.empty())unsupported(values.location);
         result.push_back({metadata,static_member});
     };
     std::size_t depth=0;
@@ -108,10 +108,79 @@ std::u16string property_signature_type(Values& values,Type type,const ExecutionO
     }
     return reflected_type_text(values.program,{type},values.location,options);
 }
-void require_no_indices(Values& values,const Value& value) {
-    const auto& indices=std::get<std::shared_ptr<Aggregate>>(value);
-    if(indices && !indices->nil && !indices->items.empty())
-        throw Error("E_ARGUMENT",values.location,"Property has no index parameters","У свойства нет параметров индекса");
+bool primitive_index_type(Type type) {
+    switch(type){
+    case Type::boolean:case Type::character:case Type::shortint:case Type::byte:
+    case Type::smallint:case Type::word:case Type::integer:case Type::longword:
+    case Type::int64:case Type::uint64:case Type::single:case Type::real:return true;
+    default:return false;
+    }
+}
+bool primitive_index_widen(Type from,Type to) {
+    if(!primitive_index_type(from) || !primitive_index_type(to))return false;
+    if(from==Type::character)return from==to || to==Type::word || to==Type::integer || to==Type::longword
+        || to==Type::int64 || to==Type::uint64 || to==Type::single || to==Type::real;
+    if(to==Type::character)return from==Type::byte || from==Type::word;
+    return can_widen(from,to);
+}
+Value primitive_index_value(Type type,const Value& value,SourceLocation location) {
+    return std::visit([&](const auto& number)->Value{
+        using Number=std::decay_t<decltype(number)>;
+        if constexpr(std::is_arithmetic_v<Number>){
+            switch(type){
+            case Type::character:return static_cast<char16_t>(number);
+            case Type::shortint:return static_cast<std::int8_t>(number);
+            case Type::byte:return static_cast<std::uint8_t>(number);
+            case Type::smallint:return static_cast<std::int16_t>(number);
+            case Type::word:return static_cast<std::uint16_t>(number);
+            case Type::integer:return static_cast<std::int32_t>(number);
+            case Type::longword:return static_cast<std::uint32_t>(number);
+            case Type::int64:return static_cast<std::int64_t>(number);
+            case Type::uint64:return static_cast<std::uint64_t>(number);
+            case Type::single:return static_cast<float>(number);
+            case Type::real:return static_cast<double>(number);
+            default:break;
+            }
+        }
+        throw runtime_error(RuntimeError::invalid_bytecode,location);
+    },value);
+}
+Value index_argument(Values& values,Type type,const Value& value) {
+    const auto& types=values.program.types;
+    if(compound(type) && type_info(values.program,type).kind==CompoundKind::boxed_object)return value;
+    const auto& boxed=std::get<std::shared_ptr<Aggregate>>(value);
+    if(!boxed || boxed->nil)return values.zero(type,false,true);
+    if(boxed->items.empty())throw runtime_error(RuntimeError::invalid_bytecode,values.location);
+    const auto& item=*boxed->items[0];
+    if(item.type==type)return values.copy(item.value);
+    if(valid_class_ancestry(types,type) && class_reference_compatible(types,item.type,type))return item.value;
+    if(compound(type) && interface_kind(type_info(values.program,type))
+        && interface_cast_valid(values.program,item.type,type,true)){
+        try{return interface_cast(values,item.type,type,true,item.value);}
+        catch(const Error& error){if(error.code!="E_CAST")throw;}
+    }
+    if(primitive_index_widen(item.type,type))return primitive_index_value(type,item.value,values.location);
+    if((compound(type) && type_info(values.program,type).kind==CompoundKind::enumeration)
+        || (compound(item.type) && type_info(values.program,item.type).kind==CompoundKind::enumeration))
+        throw Error("E_UNSUPPORTED",values.location,"Numeric conversions of enum indices are not implemented",
+            "Числовые преобразования индексов перечисляемого типа ещё не перенесены");
+    if(compound(type) && compound(item.type) && type_info(values.program,type).kind==CompoundKind::array
+        && type_info(values.program,item.type).kind==CompoundKind::array)
+        throw Error("E_UNSUPPORTED",values.location,"Array covariance for property indices is not implemented",
+            "Ковариантность массивов в индексах свойств ещё не перенесена");
+    throw Error("E_ARGUMENT",values.location,"Index argument has an incompatible type",
+        "Аргумент индекса имеет несовместимый тип");
+}
+std::vector<Value> index_arguments(Values& values,const PropertyMetadata& member,const Value* indices_value) {
+    const auto indices=indices_value ? std::get<std::shared_ptr<Aggregate>>(*indices_value) : nullptr;
+    const auto count=indices && !indices->nil ? indices->items.size() : 0;
+    if(count!=member.indices.size())
+        throw Error("E_ARGUMENT",values.location,"Incorrect number of property index arguments",
+            "Неверное число аргументов индекса свойства");
+    std::vector<Value> result;result.reserve(count+1);
+    for(std::size_t index=0;index<count;++index)
+        result.push_back(index_argument(values,member.indices[index],indices->items[index]->value));
+    return result;
 }
 Value read_property(Values& values,const ReflectedProperty& member,Type result,
     std::span<const Value> receiver={},Type actual=Type::invalid) {
@@ -303,14 +372,23 @@ Value reflection_invoke(Values& values,Type owner,ReflectionMethod method,std::s
     case M::can_read:return native_country || member.getter.has_value();
     case M::can_write:return member.setter.has_value();
     case M::to_string:{
-        return property_signature_type(values,member.type,options)+u" "+from_utf8(member.display_name.empty() ? member.name : member.display_name);
+        auto result=property_signature_type(values,member.type,options)+u" "+from_utf8(member.display_name.empty() ? member.name : member.display_name);
+        if(!member.indices.empty()){
+            result+=u" [";
+            for(std::size_t index=0;index<member.indices.size();++index){
+                if(index)result+=u", ";
+                result+=property_signature_type(values,member.indices[index],options);
+            }
+            result+=u"]";
+        }
+        return result;
     }
     case M::get_value:case M::get_value_indexed:{
         if(!native_country && !member.getter)
             throw Error("E_ARGUMENT",values.location,"Property has no getter","У свойства нет метода чтения");
         if(member.static_member){
-            if(method==M::get_value_indexed)require_no_indices(values,arguments[2]);
-            return read_property(values,member,signature.result);
+            const auto indices=index_arguments(values,member,method==M::get_value_indexed ? &arguments[2] : nullptr);
+            return read_property(values,member,signature.result,indices);
         }
         const auto& boxed=std::get<std::shared_ptr<Aggregate>>(arguments[1]);
         if(!boxed || boxed->nil || boxed->items.empty())
@@ -319,7 +397,7 @@ Value reflection_invoke(Values& values,Type owner,ReflectionMethod method,std::s
         if(input.type!=member.owner && !class_reference_compatible(types,input.type,member.owner))
             throw Error("E_TARGET",values.location,"Object does not match the property declaring type",
                 "Тип объекта не соответствует типу, объявляющему свойство");
-        if(method==M::get_value_indexed)require_no_indices(values,arguments[2]);
+        auto indices=index_arguments(values,member,method==M::get_value_indexed ? &arguments[2] : nullptr);
         if(native_country){
             const auto& instance=std::get<std::shared_ptr<Aggregate>>(input.value);
             const auto name=from_utf8(member.name);
@@ -327,9 +405,9 @@ Value reflection_invoke(Values& values,Type owner,ReflectionMethod method,std::s
             if(field==property_names.end())throw runtime_error(RuntimeError::invalid_bytecode,values.location);
             return values.box_value(signature.result,member.type,instance->items[static_cast<std::size_t>(field-property_names.begin())]->value);
         }
-        const std::array<Value,1> receiver{input.value};
+        indices.insert(indices.begin(),input.value);
         const auto actual=std::get<std::shared_ptr<Aggregate>>(input.value)->type;
-        return read_property(values,member,signature.result,receiver,actual);
+        return read_property(values,member,signature.result,indices,actual);
     }
     case M::attributes:case M::attributes_typed:case M::is_defined:{
         Type filter=Type::invalid;

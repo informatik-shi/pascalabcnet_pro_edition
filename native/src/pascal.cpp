@@ -5098,7 +5098,7 @@ private:
             return string_builder_expression(type,StringBuilderMethod::create_text,std::move(args),location);
         }
         if (boxed_object(type,expression->location)
-            && (scalar(expression->type) || nrbf_array_type(module_.types,expression->type)
+            && (scalar(expression->type) || expression->type==Type::type_descriptor || nrbf_array_type(module_.types,expression->type)
                 || valid_class_ancestry(module_.types,expression->type)
                 || object_structure_type(module_.types,expression->type))) {
             if (short_string(expression->type)) expression=convert(std::move(expression),Type::string);

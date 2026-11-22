@@ -1487,7 +1487,7 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
                 const auto& object=std::get<std::shared_ptr<Aggregate>>(value);
                 const bool class_reference=valid_class_ancestry(program.types,payload);
                 if (object->nil) {
-                    if (!class_reference && payload!=Type::string
+                    if (!class_reference && payload!=Type::string && payload!=Type::type_descriptor
                         && (!compound(payload) || type_info(program,payload).kind!=CompoundKind::array))
                         trap(instruction,RuntimeError::nil_reference);
                     stack.push_back(values.zero(payload,false,true));

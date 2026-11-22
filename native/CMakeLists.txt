@@ -182,6 +182,13 @@ if(BUILD_TESTING)
         target_compile_options(abc_reflection_tests PRIVATE /utf-8)
     endif()
     add_test(NAME property_reflection COMMAND abc_reflection_tests)
+    add_executable(abc_property_index_tests tests/property_index_tests.cpp)
+    target_link_libraries(abc_property_index_tests PRIVATE abc_core)
+    if(MSVC)
+        target_compile_options(abc_property_index_tests PRIVATE /utf-8)
+    endif()
+    add_test(NAME property_index_conversions COMMAND abc_property_index_tests)
+    set_tests_properties(property_index_conversions PROPERTIES WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures")
     add_executable(abc_method_value_tests tests/method_value_tests.cpp)
     target_link_libraries(abc_method_value_tests PRIVATE abc_core)
     if(MSVC)
@@ -939,6 +946,9 @@ if(BUILD_TESTING)
     add_test(NAME static_property_reflection_compatibility COMMAND ${CMAKE_COMMAND}
         "-DABC_RUNNER=$<TARGET_FILE:abc>" "-DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
         -DABC_FIXTURE_NAME=static-property-reflection-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")
+    add_test(NAME indexed_property_values_compatibility COMMAND ${CMAKE_COMMAND}
+        "-DABC_RUNNER=$<TARGET_FILE:abc>" "-DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
+        -DABC_FIXTURE_NAME=indexed-property-values-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")
     add_test(NAME small_integer_compatibility COMMAND ${CMAKE_COMMAND}
         "-DABC_RUNNER=$<TARGET_FILE:abc>" "-DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
         -DABC_FIXTURE_NAME=small-integers-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")
