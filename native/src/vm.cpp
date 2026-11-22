@@ -632,7 +632,8 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
             const auto signature=*reflection_signature(program.types,instruction.type,method);
             std::vector<Value> arguments(signature.parameters.size());
             for(auto argument=arguments.rbegin();argument!=arguments.rend();++argument)*argument=pop();
-            stack.push_back(reflection_invoke(values,instruction.type,method,arguments,options));
+            auto result=reflection_invoke(values,instruction.type,method,arguments,options);
+            if(signature.result!=Type::unit)stack.push_back(std::move(result));
             break;
         }
         case Op::utils_eval_object: {

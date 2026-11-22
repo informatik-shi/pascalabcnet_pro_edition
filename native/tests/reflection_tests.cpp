@@ -24,6 +24,20 @@ void execute(std::string_view source) {
 }
 
 int main() {
+    expect_error([]{execute("type C=class public property Value:integer read 1;end;begin var instance:=new C;typeof(C).GetProperty('Value').SetValue(instance,2);end.");},"E_ARGUMENT");
+    for(const auto target:{"nil","7"})
+        expect_error([&]{execute(std::string("type C=class public x:integer;property Value:integer read x write x;end;begin typeof(C).GetProperty('Value').SetValue(")+target+",1);end.");},"E_TARGET");
+    expect_error([]{execute("type C=class public x:integer;property Value:integer read x write x;end;begin var instance:=new C;typeof(C).GetProperty('Value').SetValue(instance,'bad');end.");},"E_ARGUMENT");
+    expect_error([]{execute("type C=class public procedure Put(n:integer;value:integer):=exit;property Item[index:integer]:integer write Put;end;begin var instance:=new C;typeof(C).GetProperty('Item').SetValue(instance,1);end.");},"E_ARGUMENT");
+    for(const auto source:{
+        "type C=class public x:integer;property Value:integer read x write x;end;begin typeof(C).GetProperty('Value').SetValue(nil);end.",
+        "type C=class public x:integer;property Value:integer read x write x;end;begin typeof(C).GetProperty('Value').SetValue(nil,1,2);end."})
+        expect_error([&]{(void)abc::compile(source);},"E_TYPE");
+    auto writable=abc::compile("type C=class public x:integer;property Value:integer read x write x;end;begin end.");
+    if(!writable.instance_properties.empty()){
+        writable.instance_properties[0].setter=writable.routines.size();
+        expect_error([&]{abc::verify(writable);},"E_BYTECODE");
+    }
     const std::string index_prefix="type C=class public function Get(n:integer):integer:=n;property Item[index:integer]:integer read Get;end;begin var instance:=new C;";
     for(const auto call:{
         "typeof(C).GetProperty('Item').GetValue(instance);end.",

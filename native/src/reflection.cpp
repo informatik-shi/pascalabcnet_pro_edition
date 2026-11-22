@@ -145,7 +145,7 @@ Value primitive_index_value(Type type,const Value& value,SourceLocation location
         throw runtime_error(RuntimeError::invalid_bytecode,location);
     },value);
 }
-Value index_argument(Values& values,Type type,const Value& value) {
+Value property_argument(Values& values,Type type,const Value& value) {
     const auto& types=values.program.types;
     if(compound(type) && type_info(values.program,type).kind==CompoundKind::boxed_object)return value;
     const auto& boxed=std::get<std::shared_ptr<Aggregate>>(value);
@@ -162,14 +162,14 @@ Value index_argument(Values& values,Type type,const Value& value) {
     if(primitive_index_widen(item.type,type))return primitive_index_value(type,item.value,values.location);
     if((compound(type) && type_info(values.program,type).kind==CompoundKind::enumeration)
         || (compound(item.type) && type_info(values.program,item.type).kind==CompoundKind::enumeration))
-        throw Error("E_UNSUPPORTED",values.location,"Numeric conversions of enum indices are not implemented",
-            "Числовые преобразования индексов перечисляемого типа ещё не перенесены");
+        throw Error("E_UNSUPPORTED",values.location,"Numeric conversions of enum property arguments are not implemented",
+            "Числовые преобразования аргументов свойства перечисляемого типа ещё не перенесены");
     if(compound(type) && compound(item.type) && type_info(values.program,type).kind==CompoundKind::array
         && type_info(values.program,item.type).kind==CompoundKind::array)
-        throw Error("E_UNSUPPORTED",values.location,"Array covariance for property indices is not implemented",
-            "Ковариантность массивов в индексах свойств ещё не перенесена");
-    throw Error("E_ARGUMENT",values.location,"Index argument has an incompatible type",
-        "Аргумент индекса имеет несовместимый тип");
+        throw Error("E_UNSUPPORTED",values.location,"Array covariance for property arguments is not implemented",
+            "Ковариантность массивов в аргументах свойств ещё не перенесена");
+    throw Error("E_ARGUMENT",values.location,"Property argument has an incompatible type",
+        "Аргумент свойства имеет несовместимый тип");
 }
 std::vector<Value> index_arguments(Values& values,const PropertyMetadata& member,const Value* indices_value) {
     const auto indices=indices_value ? std::get<std::shared_ptr<Aggregate>>(*indices_value) : nullptr;
@@ -179,8 +179,24 @@ std::vector<Value> index_arguments(Values& values,const PropertyMetadata& member
             "Неверное число аргументов индекса свойства");
     std::vector<Value> result;result.reserve(count+1);
     for(std::size_t index=0;index<count;++index)
-        result.push_back(index_argument(values,member.indices[index],indices->items[index]->value));
+        result.push_back(property_argument(values,member.indices[index],indices->items[index]->value));
     return result;
+}
+const Cell& property_target(Values& values,const PropertyMetadata& member,const Value& value) {
+    const auto& boxed=std::get<std::shared_ptr<Aggregate>>(value);
+    if(!boxed || boxed->nil || boxed->items.empty())
+        throw Error("E_TARGET",values.location,"A property requires an object instance","Для свойства требуется экземпляр объекта");
+    const auto& input=*boxed->items.front();
+    if(input.type!=member.owner && !class_reference_compatible(values.program.types,input.type,member.owner))
+        throw Error("E_TARGET",values.location,"Object does not match the property declaring type",
+            "Тип объекта не соответствует типу, объявляющему свойство");
+    return input;
+}
+void initialize_property_owner(Values& values,const ReflectedProperty& member) {
+    if(member.static_member)for(const auto& owner:values.program.static_classes)if(owner.owner==member.owner){
+        (void)values.invoke(owner.initializer,{});
+        break;
+    }
 }
 Value read_property(Values& values,const ReflectedProperty& member,Type result,
     std::span<const Value> receiver={},Type actual=Type::invalid) {
@@ -190,12 +206,7 @@ Value read_property(Values& values,const ReflectedProperty& member,Type result,
         && !object_structure_type(types,member.type) && !valid_class_ancestry(types,member.type)
         && !(compound(member.type) && type_info(values.program,member.type).kind==CompoundKind::boxed_object))
         unsupported(values.location);
-    if(member.static_member){
-        for(const auto& owner:values.program.static_classes)if(owner.owner==member.owner){
-            (void)values.invoke(owner.initializer,{});
-            break;
-        }
-    }
+    initialize_property_owner(values,member);
     const auto target=member.static_member ? *member.getter
         : virtual_method_target(values.program,*member.getter,actual,values.location);
     auto value=values.invoke(target,receiver);
@@ -293,6 +304,8 @@ std::optional<ReflectionSignature> reflection_signature(const std::vector<TypeIn
     case M::can_read:case M::can_write:return ReflectionSignature{{owner},Type::boolean};
     case M::get_value:return ReflectionSignature{{owner,object},object};
     case M::get_value_indexed:return ReflectionSignature{{owner,object,objects},object};
+    case M::set_value:return ReflectionSignature{{owner,object,object},Type::unit};
+    case M::set_value_indexed:return ReflectionSignature{{owner,object,object,objects},Type::unit};
     case M::attributes:return ReflectionSignature{{owner,Type::boolean},objects};
     case M::attributes_typed:return ReflectionSignature{{owner,Type::type_descriptor,Type::boolean},objects};
     case M::is_defined:return ReflectionSignature{{owner,Type::type_descriptor,Type::boolean},Type::boolean};
@@ -390,13 +403,7 @@ Value reflection_invoke(Values& values,Type owner,ReflectionMethod method,std::s
             const auto indices=index_arguments(values,member,method==M::get_value_indexed ? &arguments[2] : nullptr);
             return read_property(values,member,signature.result,indices);
         }
-        const auto& boxed=std::get<std::shared_ptr<Aggregate>>(arguments[1]);
-        if(!boxed || boxed->nil || boxed->items.empty())
-            throw Error("E_TARGET",values.location,"A property requires an object instance","Для свойства требуется экземпляр объекта");
-        const auto& input=*boxed->items.front();
-        if(input.type!=member.owner && !class_reference_compatible(types,input.type,member.owner))
-            throw Error("E_TARGET",values.location,"Object does not match the property declaring type",
-                "Тип объекта не соответствует типу, объявляющему свойство");
+        const auto& input=property_target(values,member,arguments[1]);
         auto indices=index_arguments(values,member,method==M::get_value_indexed ? &arguments[2] : nullptr);
         if(native_country){
             const auto& instance=std::get<std::shared_ptr<Aggregate>>(input.value);
@@ -408,6 +415,22 @@ Value reflection_invoke(Values& values,Type owner,ReflectionMethod method,std::s
         indices.insert(indices.begin(),input.value);
         const auto actual=std::get<std::shared_ptr<Aggregate>>(input.value)->type;
         return read_property(values,member,signature.result,indices,actual);
+    }
+    case M::set_value:case M::set_value_indexed:{
+        if(!member.setter)throw Error("E_ARGUMENT",values.location,"Property has no setter","У свойства нет метода записи");
+        const Cell* input=member.static_member ? nullptr : &property_target(values,member,arguments[1]);
+        auto parameters=index_arguments(values,member,method==M::set_value_indexed ? &arguments[3] : nullptr);
+        parameters.push_back(property_argument(values,member.type,arguments[2]));
+        auto target=*member.setter;
+        if(input){
+            parameters.insert(parameters.begin(),input->value);
+            const auto actual=std::get<std::shared_ptr<Aggregate>>(input->value)->type;
+            target=virtual_method_target(values.program,target,actual,values.location);
+        }
+        if(!values.invoke)throw runtime_error(RuntimeError::invalid_bytecode,values.location);
+        initialize_property_owner(values,member);
+        (void)values.invoke(target,parameters);
+        return std::int32_t{0};
     }
     case M::attributes:case M::attributes_typed:case M::is_defined:{
         Type filter=Type::invalid;

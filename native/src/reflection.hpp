@@ -9,7 +9,8 @@ inline constexpr std::string_view property_info_class_name="$system.reflection.p
 enum class ReflectionMethod {
     get_property, get_properties, name, property_type, declaring_type, reflected_type,
     can_read, can_write, get_value, get_value_indexed, attributes, attributes_typed,
-    is_defined, to_string, base_type, attribute_equals, attribute_hash, attribute_default, attribute_type_id
+    is_defined, to_string, base_type, set_value, set_value_indexed,
+    attribute_equals, attribute_hash, attribute_default, attribute_type_id
 };
 struct ReflectionSignature { std::vector<Type> parameters;Type result; };
 TypeInfo property_info_class();

@@ -2551,6 +2551,7 @@ private:
                 method=found->second;property=true;
             }
             if(source.token.text=="getvalue")method=source.arguments.size()==2 ? M::get_value_indexed : M::get_value;
+            if(source.token.text=="setvalue")method=source.arguments.size()==3 ? M::set_value_indexed : M::set_value;
             if(source.token.text=="getcustomattributes")method=source.arguments.size()==2 ? M::attributes_typed : M::attributes;
             if(source.token.text=="isdefined")method=M::is_defined;
             if(source.token.text=="tostring")method=M::to_string;

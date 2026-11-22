@@ -2080,7 +2080,7 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
         case Op::reflection_call: {
             const auto signature=*reflection_signature(program.types,instruction.type,static_cast<ReflectionMethod>(instruction.operand));
             for(auto parameter=signature.parameters.rbegin();parameter!=signature.parameters.rend();++parameter)require(*parameter);
-            stack.push_back(signature.result);
+            if(signature.result!=Type::unit)stack.push_back(signature.result);
             break;
         }
         case Op::utils_record_bytes: require(static_cast<Type>(instruction.operand)); stack.push_back(instruction.type); break;
