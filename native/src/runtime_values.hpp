@@ -54,6 +54,7 @@ struct Values {
     std::function<Value(std::size_t,std::span<const Value>)> invoke_builtin{};
     std::shared_ptr<Aggregate> invariant_number_format{},current_number_format{},pabc_number_format{};
     std::shared_ptr<Aggregate> database_null_instance{};
+    std::map<std::pair<ReflectedType,std::int32_t>,std::weak_ptr<Aggregate>> reflected_properties{};
     std::size_t callable_target(const std::shared_ptr<Aggregate>& callable) const {
         if (!callable || callable->nil) throw runtime_error(RuntimeError::nil_reference,location);
         if (!callable->routine || *callable->routine>=program.routines.size()

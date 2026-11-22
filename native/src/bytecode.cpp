@@ -11,6 +11,7 @@
 #include "sql_guid.hpp"
 #include "sql_binary.hpp"
 #include "countries.hpp"
+#include "reflection.hpp"
 #include "decimal.hpp"
 #include "binary_file.hpp"
 #include "scalar_serialization.hpp"
@@ -226,6 +227,9 @@ private:
         case hir::ExprKind::countries_call:
             for(const auto& argument:node.arguments)expression(*argument);
             emit(Op::countries_call,node.operation_type,node.local,node.location);break;
+        case hir::ExprKind::reflection_call:
+            for(const auto& argument:node.arguments)expression(*argument);
+            emit(Op::reflection_call,node.operation_type,node.local,node.location);break;
         case hir::ExprKind::database_null:
             emit(Op::database_null,node.type,0,node.location);break;
         case hir::ExprKind::tuple_literal:
@@ -1125,6 +1129,9 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
     // Validate operands even in unreachable code before propagating stack types.
     for (const auto& instruction : code) {
         const auto type = instruction.type;
+        if((instruction.op==Op::get_field || instruction.op==Op::ref_field || instruction.op==Op::store_field)
+            && compound(type) && type_info(program,type).name==property_info_class_name)
+            invalid(instruction,"PropertyInfo fields are private runtime metadata");
         switch (instruction.op) {
         case Op::combinations: case Op::permutations: case Op::partial_permutations: case Op::cartesian_power: {
             const auto result=instruction.operand>>16,array=instruction.operand&65535U;
@@ -1377,6 +1384,11 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             if(instruction.operand>static_cast<std::size_t>(CountriesMethod::continent)
                 || !countries_method_valid(program.types,type,static_cast<CountriesMethod>(instruction.operand)))
                 invalid(instruction,"Invalid Countries call metadata");
+            break;
+        case Op::reflection_call:
+            if(instruction.operand>static_cast<std::size_t>(ReflectionMethod::base_type)
+                || !reflection_signature(program.types,type,static_cast<ReflectionMethod>(instruction.operand)))
+                invalid(instruction,"Invalid property reflection call metadata");
             break;
         case Op::utils_eval_object: {
             const auto missing=static_cast<Type>(instruction.operand);
@@ -2054,6 +2066,12 @@ static void verify_body(const Program& program, const std::vector<Instruction>& 
             stack.push_back(countries_result(instruction.type,method));
             break;
         }
+        case Op::reflection_call: {
+            const auto signature=*reflection_signature(program.types,instruction.type,static_cast<ReflectionMethod>(instruction.operand));
+            for(auto parameter=signature.parameters.rbegin();parameter!=signature.parameters.rend();++parameter)require(*parameter);
+            stack.push_back(signature.result);
+            break;
+        }
         case Op::utils_record_bytes: require(static_cast<Type>(instruction.operand)); stack.push_back(instruction.type); break;
         case Op::guid_call: {
             const auto bytes=type_info(program,instruction.type).element;
@@ -2457,6 +2475,9 @@ void verify(const Program& program) {
     if(fixed_owners.size()!=static_cast<std::size_t>(std::count_if(program.types.begin(),program.types.end(),[](const auto& t){return t.kind==CompoundKind::fixed_array;})))throw Error("E_BYTECODE",{},"Missing fixed array shape");
     for (std::size_t i = 0; i < program.types.size(); ++i) {
         const auto& type = program.types[i]; unsigned level = 1;
+        if(type.name==property_info_class_name && (!property_info_shape(type)
+            || std::ranges::count(program.types,type.name,&TypeInfo::name)!=1))
+            throw Error("E_BYTECODE",{},"Invalid PropertyInfo metadata","Недопустимое описание PropertyInfo");
         if(type.name=="$system.dbnull" && (!database_null_type(type) || !type.abstract_class
             || type.key!=Type::invalid || !type.fields.empty()
             || std::count_if(program.types.begin(),program.types.end(),database_null_type)!=1))

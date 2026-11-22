@@ -16,6 +16,7 @@
 #include "sql_guid.hpp"
 #include "sql_binary.hpp"
 #include "countries.hpp"
+#include "reflection.hpp"
 #include "calendar.hpp"
 #include "record_initialization.hpp"
 #include "files.hpp"
@@ -624,6 +625,14 @@ static std::int32_t execute_impl(const Program& program, std::istream& input, st
             std::vector<Value> arguments(countries_parameters(instruction.type,shape,method).size());
             for(auto i=arguments.rbegin();i!=arguments.rend();++i)*i=pop();
             stack.push_back(countries_invoke(values,files,options,instruction.type,method,arguments));
+            break;
+        }
+        case Op::reflection_call: {
+            const auto method=static_cast<ReflectionMethod>(instruction.operand);
+            const auto signature=*reflection_signature(program.types,instruction.type,method);
+            std::vector<Value> arguments(signature.parameters.size());
+            for(auto argument=arguments.rbegin();argument!=arguments.rend();++argument)*argument=pop();
+            stack.push_back(reflection_invoke(values,instruction.type,method,arguments));
             break;
         }
         case Op::utils_eval_object: {

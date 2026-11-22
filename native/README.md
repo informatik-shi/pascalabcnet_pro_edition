@@ -3364,8 +3364,13 @@ OLE Automation. Присваивание записи переменной `Obje
 Функция читает штатный `Страны.csv` из папки `Files/Databases` рядом с
 интерпретатором. При отсутствии копии в поставке она ищет файл в `Databases`
 текущего каталога. Проверка сверяет все 196 записей с PascalABC.NET.
-Отражение атрибутов свойств остаётся в работе.
+`GetProperty` и `GetProperties` возвращают типизированные `PropertyInfo`
+для этих четырёх свойств. Доступны их имена, типы, признаки чтения и записи,
+`GetValue`, `GetCustomAttributes` и `IsDefined`. Атрибуты `Att`
+сохраняют исходные номера 1, 2, 4 и 3. Общая рефлексия пользовательских
+свойств и остальные унаследованные методы `Attribute` остаются в работе.
 [Тест Countries](tests/fixtures/countries-compat.pas).
+[Тест отражения Countries](tests/fixtures/countries-reflection-compat.pas).
 
 ## Символы Windows-1251
 

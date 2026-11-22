@@ -26,6 +26,7 @@ add_library(abc_core
     src/sql_guid.cpp
     src/sql_binary.cpp
     src/countries.cpp
+    src/reflection.cpp
     src/random.cpp
     src/random_sequence.cpp
     src/console_input.cpp
@@ -175,6 +176,12 @@ if(BUILD_TESTING)
     add_executable(abc_big_integer_tests tests/big_integer_tests.cpp)
     target_link_libraries(abc_big_integer_tests PRIVATE abc_core)
     add_test(NAME core COMMAND abc_tests)
+    add_executable(abc_reflection_tests tests/reflection_tests.cpp)
+    target_link_libraries(abc_reflection_tests PRIVATE abc_core)
+    if(MSVC)
+        target_compile_options(abc_reflection_tests PRIVATE /utf-8)
+    endif()
+    add_test(NAME property_reflection COMMAND abc_reflection_tests)
     add_executable(abc_single_tests tests/single_tests.cpp)
     target_link_libraries(abc_single_tests PRIVATE abc_core)
     if(MSVC)
@@ -889,6 +896,9 @@ if(BUILD_TESTING)
         "-DABC_RUNNER=$<TARGET_FILE:abc>" "-DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
         "-DABC_FIXTURE_DATA=${CMAKE_CURRENT_SOURCE_DIR}/../ReleaseGenerators/Files/Databases/Страны.csv"
         -DABC_FIXTURE_NAME=countries-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")
+    add_test(NAME countries_reflection_compatibility COMMAND ${CMAKE_COMMAND}
+        "-DABC_RUNNER=$<TARGET_FILE:abc>" "-DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
+        -DABC_FIXTURE_NAME=countries-reflection-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")
     add_test(NAME small_integer_compatibility COMMAND ${CMAKE_COMMAND}
         "-DABC_RUNNER=$<TARGET_FILE:abc>" "-DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
         -DABC_FIXTURE_NAME=small-integers-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")

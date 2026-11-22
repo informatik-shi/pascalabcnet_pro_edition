@@ -1,0 +1,33 @@
+4
+Название|Countries.Country|Countries.Country|System.String|True|False
+Alpha
+Alpha
+System.String Название
+True|True|False
+1|1|1|1|False
+0
+Столица|Countries.Country|Countries.Country|System.String|True|False
+Beta
+Beta
+System.String Столица
+True|True|False
+1|1|2|2|False
+0
+Население|Countries.Country|Countries.Country|System.Int32|True|False
+84
+84
+Int32 Население
+True|True|False
+1|1|4|4|False
+0
+Континент|Countries.Country|Countries.Country|System.String|True|False
+Gamma
+Gamma
+System.String Континент
+True|True|False
+1|1|3|3|False
+0
+True|True
+True
+System.Attribute
+System.Object

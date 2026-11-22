@@ -10,6 +10,7 @@
 #include "sql_guid.hpp"
 #include "sql_binary.hpp"
 #include "countries.hpp"
+#include "reflection.hpp"
 #include <new>
 
 namespace abc {
@@ -150,6 +151,7 @@ Definition definition(const Program& program,ReflectedType type,Work& work){
         }
         if(database_null_type(info)){result.name=u"DBNull";break;}
         if(info.name==system_attribute_name){result.name=u"Attribute";break;}
+        if(info.name==property_info_class_name){result.name=u"PropertyInfo";result.name_space=u"System.Reflection";break;}
         if (info.kind==CompoundKind::enumeration && info.name=="system.midpointrounding") {
             result.name=u"MidpointRounding";result.name_space=u"System";break;
         }

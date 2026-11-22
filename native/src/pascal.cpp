@@ -22,6 +22,7 @@
 #include "sql_guid.hpp"
 #include "sql_binary.hpp"
 #include "countries.hpp"
+#include "reflection.hpp"
 #include "decimal.hpp"
 #include "fixed_array.hpp"
 #include "type_names.hpp"
@@ -385,7 +386,7 @@ public:
         if (accept("uses")) {
             do {
                 auto module = name();while(accept("."))module.text+="."+name().text;
-                if (module.text != "pabcsystem" && module.text != "arrays" && module.text != "collections"
+                if (module.text != "pabcsystem" && module.text != "arrays" && module.text != "collections" && module.text != "system.reflection"
                     && module.text != "filesoperations" && module.text != "events" && module.text != "pointrect" && module.text != "school" && module.text != "system" && module.text != "system.text" && module.text != "system.numerics" && module.text != "system.data.sqltypes" && module.text != "inifile" && module.text != "oberon00system" && module.text != "sockets" && module.text != "clientserver" && module.text != "utils" && module.text != "countries")
                     throw Error("E_UNSUPPORTED", module.location, "Unit is not ported yet: '" + module.text + "'");
                 if (module.text == "collections") root.collections_imported = true;
@@ -706,6 +707,12 @@ private:
                     result->kind=name().text;
                     if(result->kind!="complex")
                         throw Error("E_UNSUPPORTED",result->token.location,"Unknown or unsupported System.Numerics type");
+                }
+                else if(result->kind=="reflection") {
+                    expect(".");
+                    result->kind=name().text;
+                    if(result->kind!="propertyinfo")throw Error("E_UNSUPPORTED",result->token.location,
+                        "This System.Reflection type is not implemented","Этот тип System.Reflection ещё не перенесён");
                 }
                 else if(result->kind=="collections"){expect(".");const auto generic=name();if(generic.text!="generic")throw Error("E_UNSUPPORTED",generic.location,"Unknown System.Collections namespace");expect(".");result->kind=name().text;if(result->kind!="dictionary" && result->kind!="sorteddictionary" && result->kind!="sortedlist" && result->kind!="keyvaluepair" && result->kind!="ienumerable" && result->kind!="ienumerator" && result->kind!="list" && result->kind!="hashset" && result->kind!="sortedset" && result->kind!="icomparer" && result->kind!="comparer" && result->kind!="iequalitycomparer" && result->kind!="equalitycomparer" && result->kind!="icollection" && result->kind!="ilist" && result->kind!="iset" && result->kind!="idictionary")throw Error("E_UNSUPPORTED",result->token.location,"Unknown generic collection type");}
                 else if (result->kind!="func" && result->kind!="action" && result->kind!="predicate" && result->kind!="type" && result->kind!="void" && result->kind!="single" && result->kind!="object" && result->kind!="icomparable" && result->kind!="iequatable"
@@ -1114,7 +1121,7 @@ private:
                     result.expression = std::move(target_expression);
                 }
             }
-        } else if (current_.kind==TokenKind::text || current_.kind==TokenKind::character_code || current_.kind==TokenKind::number || is("(") || is("new") || is("default") || is("true") || is("false") || is("nil") || is("[")) {
+        } else if (current_.kind==TokenKind::text || current_.kind==TokenKind::character_code || current_.kind==TokenKind::number || is("(") || is("new") || is("default") || is("typeof") || is("true") || is("false") || is("nil") || is("[")) {
             auto target=expression();
             if(target->kind==SyntaxExprKind::tuple && is(":="))
                 return unpacking_assignment(std::move(result.token),std::move(target));
@@ -2447,6 +2454,57 @@ private:
         for(std::size_t i=0;i<parameters.size();++i)
             result.arguments.push_back(convert(expression(*source.arguments[i],parameters[i]),parameters[i]));
         countries_expression(result,owner,CountriesMethod::construct);
+    }
+    Type reflection_type(SourceLocation location) {
+        for(std::size_t i=0;i<module_.types.size();++i)
+            if(module_.types[i].name==property_info_class_name)return static_cast<Type>(64+i);
+        (void)countries_type(country_attribute_name,location);
+        const auto objects=object_type(location);
+        (void)sequence_type(CompoundKind::array,objects);
+        if(module_.types.size()>=1024)throw Error("E_LIMIT",location,"Type limit exceeded");
+        module_.types.push_back(property_info_class());
+        const auto property=static_cast<Type>(63+module_.types.size());
+        (void)sequence_type(CompoundKind::array,property);
+        return property;
+    }
+    bool bind_reflection_member(hir::Expr& result,const SyntaxExpr& source) {
+        using M=ReflectionMethod;
+        const auto receiver=result.left->type;
+        const bool descriptor=receiver==Type::type_descriptor;
+        if(!descriptor && (!compound(receiver) || info(receiver,result.location).name!=property_info_class_name))return false;
+        std::optional<M> method;
+        bool property=false;
+        if(descriptor){
+            if(source.token.text=="getproperty")method=M::get_property;
+            if(source.token.text=="getproperties")method=M::get_properties;
+            if(source.token.text=="basetype"){method=M::base_type;property=true;}
+        }else{
+            static const std::map<std::string,M> properties{{"name",M::name},{"propertytype",M::property_type},
+                {"declaringtype",M::declaring_type},{"reflectedtype",M::reflected_type},
+                {"canread",M::can_read},{"canwrite",M::can_write}};
+            if(const auto found=properties.find(source.token.text);found!=properties.end()){
+                method=found->second;property=true;
+            }
+            if(source.token.text=="getvalue")method=source.arguments.size()==2 ? M::get_value_indexed : M::get_value;
+            if(source.token.text=="getcustomattributes")method=source.arguments.size()==2 ? M::attributes_typed : M::attributes;
+            if(source.token.text=="isdefined")method=M::is_defined;
+            if(source.token.text=="tostring")method=M::to_string;
+        }
+        if(!method)return false;
+        if(property && source.kind!=SyntaxExprKind::field)throw Error("E_TYPE",result.location,
+            "Reflection property cannot be called","Свойство отражения нельзя вызвать как подпрограмму");
+        const auto owner=reflection_type(result.location);
+        const auto signature=*reflection_signature(module_.types,owner,*method);
+        if(source.arguments.size()+1!=signature.parameters.size())throw Error("E_TYPE",result.location,
+            "Wrong reflection method argument count","Неверное число аргументов метода отражения");
+        result.arguments.push_back(std::move(result.left));
+        for(std::size_t i=0;i<source.arguments.size();++i)
+            result.arguments.push_back(convert(expression(*source.arguments[i],signature.parameters[i+1]),signature.parameters[i+1]));
+        result.kind=hir::ExprKind::reflection_call;
+        result.type=signature.result;
+        result.operation_type=owner;
+        result.local=static_cast<std::size_t>(*method);
+        return true;
     }
     Type inifile_type(SourceLocation location) {
         if(!imported_units_.contains("inifile"))throw Error("E_UNSUPPORTED",location,"TIniFile requires uses IniFile");
@@ -4639,6 +4697,8 @@ private:
         }
         if(syntax.kind=="attribute" && (syntax.system_qualified || imported_units_.contains("system")))
             return countries_type(system_attribute_name,syntax.token.location);
+        if(syntax.kind=="propertyinfo" && (syntax.system_qualified || imported_units_.contains("system.reflection")))
+            return reflection_type(syntax.token.location);
         if (syntax.kind=="shortstring" && syntax.named && syntax.unit.empty() && !syntax.system_qualified)
             return short_string_type(max_short_string_capacity);
         if (syntax.kind=="$short_string") {
@@ -5842,6 +5902,19 @@ private:
             return result;
         }
         if (!result->left) if (auto limit=integer_limit_member(source)) return limit;
+        if(!result->left && source.left->kind==SyntaxExprKind::name && source.left->token.text=="countries"
+            && !lookup(source.left->token) && imported_units_.contains("countries")
+            && (source.token.text=="country" || source.token.text=="att")){
+            if(source.arguments.size()!=1)throw Error("E_TYPE",result->location,"Class conversion requires one value",
+                "Для приведения к классу требуется одно значение");
+            const auto target=countries_type(source.token.text=="country" ? country_class_name : country_attribute_name,result->location);
+            auto input=expression(*source.arguments.front());
+            if(boxed_object(input->type,result->location)){
+                const auto object=input->type;
+                return object_conversion(std::move(input),target,object);
+            }
+            return convert(std::move(input),target,true);
+        }
         if(!result->left&&source.left&&source.left->kind==SyntaxExprKind::name&&!lookup(source.left->token)){const auto owner=aliases_.find(source.left->token.text);if(owner!=aliases_.end()){if(auto property=static_property_member(owner->second,source))return property;if(auto method=static_method_expression(owner->second,source,expected))return method;if(auto field=static_field_expression(owner->second,source.token)){if(source.kind==SyntaxExprKind::member_call){auto call=std::make_unique<hir::Expr>();call->location=source.token.location;call->left=std::move(field);bind_value_call(*call,source.arguments);return call;}return field;}}}
         do {
  {
@@ -6003,6 +6076,7 @@ private:
             if(fixed(result->left->type)&&source.token.text!="gettype"&&source.token.text!="tostring"&&source.token.text!="equals"&&source.token.text!="gethashcode")result->left=fixed_view(std::move(result->left));
             if (short_string(result->left->type)) result->left=convert(std::move(result->left),Type::string);
             adapt_enumerable_member(*result,source.token.text);const auto receiver=result->left->type;
+            if(bind_reflection_member(*result,source))break;
             if(receiver==Type::type_descriptor){
                 const auto operation=source.token.text=="name" ? TypeOperation::name : source.token.text=="fullname" ? TypeOperation::full_name
                     : source.token.text=="namespace" ? TypeOperation::name_space : source.token.text=="assemblyqualifiedname" ? TypeOperation::assembly_qualified_name : TypeOperation::value_name;
@@ -6625,6 +6699,8 @@ private:
             cast=ordinal_range_record(source.token.text=="intrange" ? Type::integer : Type::character);
         else if(source.token.text=="action0")cast=function_type(Type::unit,{},result.location);
         else if(source.token.text=="tinifile" && imported_units_.contains("inifile"))cast=inifile_type(result.location);
+        else if(imported_units_.contains("countries") && (source.token.text=="country" || source.token.text=="att"))
+            cast=countries_type(source.token.text=="country" ? country_class_name : country_attribute_name,result.location);
         if(cast==Type::invalid)return false;
         if(source.arguments.size()!=1)throw Error("E_TYPE",result.location,callable_type(cast) ? "Callable constructor requires one matching routine value" : "Interface conversion requires one value");
         auto input=expression(*source.arguments[0],cast);
