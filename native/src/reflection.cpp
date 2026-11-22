@@ -5,6 +5,7 @@
 #include "scalar_serialization.hpp"
 #include "type_names.hpp"
 #include <set>
+#include <tuple>
 
 namespace abc {
 namespace {
@@ -33,30 +34,41 @@ ReflectedType descriptor(Values& values,const Value& value) {
     return result;
 }
 std::vector<PropertyMetadata> properties(Values& values,Type type) {
-    const auto& shape=type_info(values.program,type);
-    if(shape.kind==CompoundKind::boxed_object)return {};
-    if(shape.kind!=CompoundKind::object_class || shape.key!=Type::invalid)unsupported(values.location);
     std::vector<PropertyMetadata> result;
-    if(shape.name==country_class_name){
-        const auto attribute=named_type(values.program.types,country_attribute_name);
-        for(std::size_t index=0;index<property_names.size();++index){
-            PropertyMetadata metadata;
-            metadata.owner=type;
-            metadata.type=property_types[index];
-            metadata.name=to_utf8(property_names[index]);
-            metadata.display_name=metadata.name;
-            metadata.attributes.push_back({attribute,{attribute_numbers[index]}});
-            result.push_back(std::move(metadata));
-        }
-        return result;
-    }
-    if(shape.name.starts_with('$'))unsupported(values.location);
-    for(const auto& metadata:values.program.static_properties)
-        if(metadata.owner==type && metadata.access==MemberAccess::public_member)unsupported(values.location);
-    for(const auto& metadata:values.program.instance_properties){
-        if(metadata.owner!=type || metadata.access!=MemberAccess::public_member)continue;
+    std::set<std::tuple<std::string,Type,std::vector<Type>>> signatures;
+    const auto append=[&](const PropertyMetadata& metadata){
+        const auto& name=metadata.display_name.empty() ? metadata.name : metadata.display_name;
+        if(!signatures.emplace(name,metadata.type,metadata.indices).second)return;
+        if(metadata.access!=MemberAccess::public_member)return;
         if(!metadata.indices.empty())unsupported(values.location);
         result.push_back(metadata);
+    };
+    std::size_t depth=0;
+    for(auto current=type;current!=Type::invalid;current=class_parent(values.program.types,current)){
+        if(++depth>values.program.types.size())throw runtime_error(RuntimeError::invalid_bytecode,values.location);
+        const auto& shape=type_info(values.program,current);
+        if(shape.kind==CompoundKind::boxed_object)break;
+        if(shape.kind!=CompoundKind::object_class)unsupported(values.location);
+        if(shape.name==country_class_name){
+            const auto attribute=named_type(values.program.types,country_attribute_name);
+            for(std::size_t index=0;index<property_names.size();++index){
+                PropertyMetadata metadata;
+                metadata.owner=current;
+                metadata.type=property_types[index];
+                metadata.name=to_utf8(property_names[index]);
+                metadata.display_name=metadata.name;
+                metadata.attributes.push_back({attribute,{attribute_numbers[index]}});
+                append(metadata);
+            }
+            continue;
+        }
+        if(shape.name.starts_with('$'))unsupported(values.location);
+        for(const auto& metadata:values.program.static_properties)
+            if(metadata.owner==current && metadata.access==MemberAccess::public_member)unsupported(values.location);
+        for(const auto& metadata:values.program.instance_properties){
+            if(metadata.owner!=current)continue;
+            append(metadata);
+        }
     }
     return result;
 }
@@ -221,11 +233,16 @@ Value reflection_invoke(Values& values,Type owner,ReflectionMethod method,std::s
         if(method==M::get_property){
             if(std::holds_alternative<NilString>(arguments[1]))
                 throw Error("E_ARGUMENT",values.location,"Property name cannot be null","Имя свойства не может быть nil");
+            std::optional<std::size_t> found;
             for(std::size_t index=0;index<members.size();++index){
                 const auto& member=members[index];
-                if(from_utf8(member.display_name.empty() ? member.name : member.display_name)==string_text(arguments[1]))
-                    return property(values,owner,target,static_cast<std::int32_t>(index));
+                if(from_utf8(member.display_name.empty() ? member.name : member.display_name)==string_text(arguments[1])){
+                    if(found)throw Error("E_AMBIGUOUS",values.location,"More than one property matches the requested name",
+                        "Указанному имени соответствует несколько свойств");
+                    found=index;
+                }
             }
+            if(found)return property(values,owner,target,static_cast<std::int32_t>(*found));
             return values.zero(owner);
         }
         auto result=values.array(signature.result,0);
@@ -269,7 +286,10 @@ Value reflection_invoke(Values& values,Type owner,ReflectionMethod method,std::s
         }
         if(native_country){
             const auto& instance=std::get<std::shared_ptr<Aggregate>>(input.value);
-            return values.box_value(signature.result,member.type,instance->items[index]->value);
+            const auto name=from_utf8(member.name);
+            const auto field=std::ranges::find(property_names,name);
+            if(field==property_names.end())throw runtime_error(RuntimeError::invalid_bytecode,values.location);
+            return values.box_value(signature.result,member.type,instance->items[static_cast<std::size_t>(field-property_names.begin())]->value);
         }
         if(!values.invoke)throw runtime_error(RuntimeError::invalid_bytecode,values.location);
         if(!scalar(member.type) && member.type!=Type::type_descriptor && !nrbf_array_type(types,member.type)

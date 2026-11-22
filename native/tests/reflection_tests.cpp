@@ -24,6 +24,8 @@ void execute(std::string_view source) {
 }
 
 int main() {
+    expect_error([]{execute("type A=class public property Number:integer read 1;end;B=class(A)public property Number:string read 'two';end;begin typeof(B).GetProperty('Number');end.");},"E_AMBIGUOUS");
+    expect_error([]{execute("type A=class public property Number:integer read 1;end;B=class(A)end;begin typeof(B).GetProperty('Number').GetValue(4);end.");},"E_TARGET");
     // Obtaining a typed loader must not read its data file before invocation.
     execute("uses Countries;begin var loader:()->array of Country:=ЗаполнитьМассивСтран;end.");
     execute("uses Countries,System;begin var loader:System.Func<array of Country>:=Countries.ЗаполнитьМассивСтран;end.");
