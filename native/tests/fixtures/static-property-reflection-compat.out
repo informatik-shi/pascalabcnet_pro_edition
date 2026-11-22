@@ -1,0 +1,23 @@
+metadata
+BaseValue|ParentData|ParentData|True|True
+Item|ParentData|ParentData|True|False
+child
+First|ChildData|ChildData|True|False
+LocalValue|ChildData|ChildData|True|True
+Middle|ChildData|ChildData|True|False
+Last|ChildData|ChildData|True|False
+Item|ChildData|ChildData|True|False
+True
+grandchild
+First|ChildData|GrandChildData
+Middle|ChildData|GrandChildData
+True
+before value
+child init
+parent init
+30|30|30
+30|30
+2
+50
+52
+10

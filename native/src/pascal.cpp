@@ -2197,6 +2197,7 @@ private:
                 PropertyMetadata metadata{owner,property->name.text,bound.type,bound.getter,bound.setter,bound.indices,property->access,bound.default_indexer};
                 metadata.display_name=property->name.spelling.empty() ? property->name.text : property->name.spelling;
                 metadata.attributes=bind_property_attributes(*property);
+                metadata.declaration_order=property->name.location.offset;
                 if(property->static_member)module_.static_properties.push_back(std::move(metadata));
                 else if(qualifier==Type::invalid)module_.instance_properties.push_back(std::move(metadata));
                 else if(!metadata.attributes.empty())throw Error("E_UNSUPPORTED",property->name.location,

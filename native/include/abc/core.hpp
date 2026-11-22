@@ -586,6 +586,7 @@ struct PropertyMetadata {
     bool default_indexer=false;
     std::string display_name{};
     std::vector<AttributeMetadata> attributes{};
+    std::optional<std::size_t> declaration_order{};
 };
 using StaticProperty=PropertyMetadata;
 struct ClientServerGlobals {std::size_t server_name,port;};

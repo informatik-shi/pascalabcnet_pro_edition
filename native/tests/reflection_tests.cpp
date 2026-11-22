@@ -24,6 +24,15 @@ void execute(std::string_view source) {
 }
 
 int main() {
+    expect_error([]{execute("type C=class public static property Number:integer read 1;end;begin typeof(C).GetProperty('Number').GetValue(nil,new object[1]);end.");},"E_ARGUMENT");
+    expect_error([]{execute("type C=class public static x:integer;static property Number:integer write x;end;begin typeof(C).GetProperty('Number').GetValue(nil);end.");},"E_ARGUMENT");
+    auto ordered=abc::compile("type C=class public property First:integer read 1;static property Second:integer read 2;end;begin end.");
+    require(ordered.instance_properties.size()==1 && ordered.static_properties.size()==1,"Mixed property metadata was not preserved");
+    if(!ordered.instance_properties.empty() && !ordered.static_properties.empty()){
+        auto duplicate_order=ordered;
+        duplicate_order.static_properties[0].declaration_order=duplicate_order.instance_properties[0].declaration_order;
+        expect_error([&]{abc::verify(duplicate_order);},"E_BYTECODE");
+    }
     expect_error([]{execute("type A=class public property Number:integer read 1;end;B=class(A)public property Number:string read 'two';end;begin typeof(B).GetProperty('Number');end.");},"E_AMBIGUOUS");
     expect_error([]{execute("type A=class public property Number:integer read 1;end;B=class(A)end;begin typeof(B).GetProperty('Number').GetValue(4);end.");},"E_TARGET");
     // Obtaining a typed loader must not read its data file before invocation.

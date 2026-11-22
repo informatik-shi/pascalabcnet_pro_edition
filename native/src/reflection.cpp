@@ -6,6 +6,8 @@
 #include "type_names.hpp"
 #include <set>
 #include <tuple>
+#include <limits>
+#include <algorithm>
 
 namespace abc {
 namespace {
@@ -33,15 +35,16 @@ ReflectedType descriptor(Values& values,const Value& value) {
     if(result.target==Type::invalid)throw runtime_error(RuntimeError::nil_reference,values.location);
     return result;
 }
-std::vector<PropertyMetadata> properties(Values& values,Type type) {
-    std::vector<PropertyMetadata> result;
+struct ReflectedProperty:PropertyMetadata {bool static_member=false;};
+std::vector<ReflectedProperty> properties(Values& values,Type type) {
+    std::vector<ReflectedProperty> result;
     std::set<std::tuple<std::string,Type,std::vector<Type>>> signatures;
-    const auto append=[&](const PropertyMetadata& metadata){
+    const auto append=[&](const PropertyMetadata& metadata,bool static_member=false,bool include=true){
         const auto& name=metadata.display_name.empty() ? metadata.name : metadata.display_name;
         if(!signatures.emplace(name,metadata.type,metadata.indices).second)return;
-        if(metadata.access!=MemberAccess::public_member)return;
+        if(!include || metadata.access!=MemberAccess::public_member)return;
         if(!metadata.indices.empty())unsupported(values.location);
-        result.push_back(metadata);
+        result.push_back({metadata,static_member});
     };
     std::size_t depth=0;
     for(auto current=type;current!=Type::invalid;current=class_parent(values.program.types,current)){
@@ -63,12 +66,17 @@ std::vector<PropertyMetadata> properties(Values& values,Type type) {
             continue;
         }
         if(shape.name.starts_with('$'))unsupported(values.location);
+        std::vector<std::pair<const PropertyMetadata*,bool>> declared;
+        for(const auto& metadata:values.program.instance_properties)
+            if(metadata.owner==current)declared.push_back({&metadata,false});
         for(const auto& metadata:values.program.static_properties)
-            if(metadata.owner==current && metadata.access==MemberAccess::public_member)unsupported(values.location);
-        for(const auto& metadata:values.program.instance_properties){
-            if(metadata.owner!=current)continue;
-            append(metadata);
-        }
+            if(metadata.owner==current)declared.push_back({&metadata,true});
+        std::stable_sort(declared.begin(),declared.end(),[](const auto& left,const auto& right){
+            return left.first->declaration_order.value_or(std::numeric_limits<std::size_t>::max())
+                <right.first->declaration_order.value_or(std::numeric_limits<std::size_t>::max());
+        });
+        for(const auto& [metadata,static_member]:declared)
+            append(*metadata,static_member,!static_member || current==type);
     }
     return result;
 }
@@ -100,6 +108,31 @@ std::u16string property_signature_type(Values& values,Type type,const ExecutionO
     }
     return reflected_type_text(values.program,{type},values.location,options);
 }
+void require_no_indices(Values& values,const Value& value) {
+    const auto& indices=std::get<std::shared_ptr<Aggregate>>(value);
+    if(indices && !indices->nil && !indices->items.empty())
+        throw Error("E_ARGUMENT",values.location,"Property has no index parameters","У свойства нет параметров индекса");
+}
+Value read_property(Values& values,const ReflectedProperty& member,Type result,
+    std::span<const Value> receiver={},Type actual=Type::invalid) {
+    const auto& types=values.program.types;
+    if(!values.invoke)throw runtime_error(RuntimeError::invalid_bytecode,values.location);
+    if(!scalar(member.type) && member.type!=Type::type_descriptor && !nrbf_array_type(types,member.type)
+        && !object_structure_type(types,member.type) && !valid_class_ancestry(types,member.type)
+        && !(compound(member.type) && type_info(values.program,member.type).kind==CompoundKind::boxed_object))
+        unsupported(values.location);
+    if(member.static_member){
+        for(const auto& owner:values.program.static_classes)if(owner.owner==member.owner){
+            (void)values.invoke(owner.initializer,{});
+            break;
+        }
+    }
+    const auto target=member.static_member ? *member.getter
+        : virtual_method_target(values.program,*member.getter,actual,values.location);
+    auto value=values.invoke(target,receiver);
+    if(compound(member.type) && type_info(values.program,member.type).kind==CompoundKind::boxed_object)return value;
+    return values.box_value(result,member.type,std::move(value));
+}
 }
 
 TypeInfo property_info_class() {
@@ -121,7 +154,10 @@ bool property_info_shape(const TypeInfo& shape) {
 }
 
 void verify_property_metadata(const Program& program) {
+    std::set<std::pair<Type,std::size_t>> declaration_order;
     const auto check_attributes=[&](const PropertyMetadata& property){
+        if(property.declaration_order && !declaration_order.emplace(property.owner,*property.declaration_order).second)
+            throw Error("E_BYTECODE",{},"Duplicate property declaration order","Повторяющийся порядок объявления свойств");
         std::set<Type> seen;
         for(const auto& attribute:property.attributes){
             if(!compound(attribute.type) || !valid_value_type(program,attribute.type)
@@ -272,6 +308,10 @@ Value reflection_invoke(Values& values,Type owner,ReflectionMethod method,std::s
     case M::get_value:case M::get_value_indexed:{
         if(!native_country && !member.getter)
             throw Error("E_ARGUMENT",values.location,"Property has no getter","У свойства нет метода чтения");
+        if(member.static_member){
+            if(method==M::get_value_indexed)require_no_indices(values,arguments[2]);
+            return read_property(values,member,signature.result);
+        }
         const auto& boxed=std::get<std::shared_ptr<Aggregate>>(arguments[1]);
         if(!boxed || boxed->nil || boxed->items.empty())
             throw Error("E_TARGET",values.location,"A property requires an object instance","Для свойства требуется экземпляр объекта");
@@ -279,11 +319,7 @@ Value reflection_invoke(Values& values,Type owner,ReflectionMethod method,std::s
         if(input.type!=member.owner && !class_reference_compatible(types,input.type,member.owner))
             throw Error("E_TARGET",values.location,"Object does not match the property declaring type",
                 "Тип объекта не соответствует типу, объявляющему свойство");
-        if(method==M::get_value_indexed){
-            const auto& indices=std::get<std::shared_ptr<Aggregate>>(arguments[2]);
-            if(indices && !indices->nil && !indices->items.empty())
-                throw Error("E_ARGUMENT",values.location,"Property has no index parameters","У свойства нет параметров индекса");
-        }
+        if(method==M::get_value_indexed)require_no_indices(values,arguments[2]);
         if(native_country){
             const auto& instance=std::get<std::shared_ptr<Aggregate>>(input.value);
             const auto name=from_utf8(member.name);
@@ -291,16 +327,9 @@ Value reflection_invoke(Values& values,Type owner,ReflectionMethod method,std::s
             if(field==property_names.end())throw runtime_error(RuntimeError::invalid_bytecode,values.location);
             return values.box_value(signature.result,member.type,instance->items[static_cast<std::size_t>(field-property_names.begin())]->value);
         }
-        if(!values.invoke)throw runtime_error(RuntimeError::invalid_bytecode,values.location);
-        if(!scalar(member.type) && member.type!=Type::type_descriptor && !nrbf_array_type(types,member.type)
-            && !object_structure_type(types,member.type) && !valid_class_ancestry(types,member.type)
-            && !(compound(member.type) && type_info(values.program,member.type).kind==CompoundKind::boxed_object))
-            unsupported(values.location);
         const std::array<Value,1> receiver{input.value};
         const auto actual=std::get<std::shared_ptr<Aggregate>>(input.value)->type;
-        auto value=values.invoke(virtual_method_target(values.program,*member.getter,actual,values.location),receiver);
-        if(compound(member.type) && type_info(values.program,member.type).kind==CompoundKind::boxed_object)return value;
-        return values.box_value(signature.result,member.type,std::move(value));
+        return read_property(values,member,signature.result,receiver,actual);
     }
     case M::attributes:case M::attributes_typed:case M::is_defined:{
         Type filter=Type::invalid;
