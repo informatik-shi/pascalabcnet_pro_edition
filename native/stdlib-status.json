@@ -687,7 +687,7 @@
       "name": "Countries",
       "source": "bin/Lib/Countries.pas",
       "status": "partial",
-      "notes": "Native Country and Att construction, four typed read-only properties, mutable Att.Num, source formatting and all 196 country rows. The original data file is installed in the portable package. PropertyInfo exposes the four properties, their values and freshly constructed Att attributes with source IDs 1, 2, 4 and 3. Att equality, matching, hashing, default-attribute status, TypeId and collection semantics preserve the source behavior. Inherited, indexed and static property reflection and other attribute targets remain open."
+      "notes": "Native Country and Att construction, four typed read-only properties, mutable Att.Num, source formatting and all 196 country rows. The original data file is installed in the portable package. The loader supports typed zero-argument function values and System.Func with source delegate identity, shadowing and deferred file access. PropertyInfo exposes the four properties, their values and freshly constructed Att attributes with source IDs 1, 2, 4 and 3. Att equality, matching, hashing, default-attribute status, TypeId and collection semantics preserve the source behavior. Inherited, indexed and static property reflection and other attribute targets remain open."
     },
     {
       "name": "CRT",

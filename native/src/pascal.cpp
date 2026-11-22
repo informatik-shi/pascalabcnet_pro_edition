@@ -2413,6 +2413,9 @@ private:
             return utils_eval_value(source.token.location,expected);
         if(source.token.text=="recordtobytearray" && hints.empty() && imported_units_.contains("utils") && (unit.empty() || unit=="utils"))
             return utils_record_bytes_value(source.token.location,expected);
+        if(source.token.text=="заполнитьмассивстран" && hints.empty() && callable_type(expected)
+            && imported_units_.contains("countries") && (unit.empty() || unit=="countries"))
+            return countries_load_value(source.token.location,expected);
         const auto context=callable_type(expected) ? std::optional<TypeInfo>{info(expected,source.token.location)} : std::nullopt;
         const auto catalog=stdlib::signatures();
         const auto visible=[&](const auto& signature){
@@ -2481,6 +2484,18 @@ private:
         result.operation_type=owner;
         result.type=countries_result(owner,method);
         result.local=static_cast<std::size_t>(method);
+    }
+    std::unique_ptr<hir::Expr> countries_load_value(SourceLocation location,Type expected) {
+        const auto country=countries_type(country_class_name,location);
+        const auto array=sequence_type(CompoundKind::array,country);
+        const auto& signature=info(expected,location);
+        if(signature.element!=array || !signature.parameters.empty())
+            throw Error("E_TYPE",location,"Country loader requires a function with no parameters returning Country[]",
+                "Для загрузчика стран нужна функция без параметров с результатом Country[]");
+        // PascalABC.NET creates a separate wrapper for each imported function reference.
+        std::map<Type,std::size_t> wrapper;
+        return native_operation_value(hir::ExprKind::countries_call,expected,location,"$countries_load",
+            wrapper,static_cast<std::size_t>(CountriesMethod::load),array);
     }
     bool bind_countries_load(hir::Expr& result,const SyntaxExpr& source,std::string_view unit={}) {
         if(source.token.text!="заполнитьмассивстран" || (!unit.empty() && unit!="countries")
@@ -8951,9 +8966,9 @@ private:
             && callback.parameters.size()==1 && callback.parameters[0]==CallableParameter{Type::string,false,false};
     }
     std::unique_ptr<hir::Expr> native_operation_value(hir::ExprKind kind,Type expected,SourceLocation location,
-        std::string_view name,std::map<Type,std::size_t>& routines,std::size_t operand=0) {
+        std::string_view name,std::map<Type,std::size_t>& routines,std::size_t operand=0,Type owner=Type::invalid) {
         const auto& signature=info(expected,location);
-        const auto callback=signature.parameters.front().type;
+        const auto callback=signature.parameters.empty() ? Type::unit : signature.parameters.front().type;
         auto found=routines.find(callback);
         if(found==routines.end()){
             if(module_.routines.size()>=256)throw Error("E_LIMIT",location,"Routine limit exceeded");
@@ -8965,6 +8980,7 @@ private:
             auto& invoke=routine.body.expression=std::make_unique<hir::Expr>();
             invoke->kind=kind;invoke->type=signature.element;invoke->location=location;
             invoke->local=operand;
+            invoke->operation_type=owner;
             const auto local=[&](std::string slot_name,Type type){
                 const auto slot=module_.locals.size();
                 module_.locals.push_back({std::move(slot_name),type,false});

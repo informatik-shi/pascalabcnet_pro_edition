@@ -24,6 +24,14 @@ void execute(std::string_view source) {
 }
 
 int main() {
+    // Obtaining a typed loader must not read its data file before invocation.
+    execute("uses Countries;begin var loader:()->array of Country:=ЗаполнитьМассивСтран;end.");
+    execute("uses Countries,System;begin var loader:System.Func<array of Country>:=Countries.ЗаполнитьМассивСтран;end.");
+    for(const auto source:{
+        "uses Countries;begin var loader:()->integer:=ЗаполнитьМассивСтран;end.",
+        "uses Countries;begin var loader:(integer)->array of Country:=Countries.ЗаполнитьМассивСтран;end.",
+        "uses Countries;begin var loader:()->array of integer:=Countries.ЗаполнитьМассивСтран;end."})
+        expect_error([&]{(void)abc::compile(source);},"E_TYPE");
     for(const auto source:{
         "uses System.Reflection;begin var p:PropertyInfo;Writeln(p.Name);end.",
         "uses Countries;begin Writeln(typeof(Country).GetProperty('missing').Name);end."})

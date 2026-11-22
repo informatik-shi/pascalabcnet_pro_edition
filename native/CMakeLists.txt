@@ -899,6 +899,10 @@ if(BUILD_TESTING)
     add_test(NAME countries_reflection_compatibility COMMAND ${CMAKE_COMMAND}
         "-DABC_RUNNER=$<TARGET_FILE:abc>" "-DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
         -DABC_FIXTURE_NAME=countries-reflection-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")
+    add_test(NAME countries_loader_values_compatibility COMMAND ${CMAKE_COMMAND}
+        "-DABC_RUNNER=$<TARGET_FILE:abc>" "-DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
+        "-DABC_FIXTURE_DATA=${CMAKE_CURRENT_SOURCE_DIR}/../ReleaseGenerators/Files/Databases/Страны.csv"
+        -DABC_FIXTURE_NAME=countries-loader-values-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")
     add_test(NAME countries_attribute_compatibility COMMAND ${CMAKE_COMMAND}
         "-DABC_RUNNER=$<TARGET_FILE:abc>" "-DABC_FIXTURE_DIR=${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures"
         -DABC_FIXTURE_NAME=countries-attribute-compat -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/stdlib.cmake")
