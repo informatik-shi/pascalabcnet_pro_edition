@@ -1,5 +1,7 @@
 # Установщик abc.pro для текущего пользователя
 
+[Скачать установщик abc.pro 4.0.0.3884 для Windows x64](https://github.com/informatik-shi/pascalabcnet_pro_edition/releases/download/portable-2026-10-21.1/abc.pro-Setup-4.0.0.3884-win-x64.exe).
+
 `abc.pro` — отдельное приложение на базе этой ветки PascalABC.NET. Установщик
 содержит IDE, классический компилятор, компилятор .NET 10, SPython, встроенный
 Python для Matplotlib и браузерные тетрадки. Для установки права администратора

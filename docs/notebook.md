@@ -6,7 +6,7 @@
 графика появляется **сразу под ячейкой в браузере** в виде PNG, без необходимости
 смотреть на отдельное графическое окно.
 
-[Скачать готовый portable-архив для Windows x64](https://github.com/informatik-shi/pascalabcnet_pro_edition/releases/download/portable-2026-10-08.2/PascalABCNET-Portable-win-x64.zip).
+[Скачать готовый portable-архив для Windows x64](https://github.com/informatik-shi/pascalabcnet_pro_edition/releases/download/portable-2026-10-21.1/PascalABCNET-Portable-win-x64.zip).
 
 ## Использование готовой сборки
 

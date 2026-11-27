@@ -263,9 +263,12 @@ mono pabcnetc.exe
 PascalABC.NET или SPython и показывает графику прямо под ячейками.
 Запуск, список графических модулей, воспроизводимая сборка и проверка
 описаны в [руководстве по тетрадкам](docs/notebook.md).
-Готовый архив доступен на [странице релиза](https://github.com/informatik-shi/pascalabcnet_pro_edition/releases/tag/portable-2026-10-08.2).
+Готовый архив доступен на [странице релиза 4.0.0.3884](https://github.com/informatik-shi/pascalabcnet_pro_edition/releases/tag/portable-2026-10-21.1).
 
 ## Установка abc.pro без прав администратора
+
+[Скачать установщик abc.pro 4.0.0.3884 для Windows x64](https://github.com/informatik-shi/pascalabcnet_pro_edition/releases/download/portable-2026-10-21.1/abc.pro-Setup-4.0.0.3884-win-x64.exe).
+После установки запустите **abc.pro** из меню «Пуск».
 
 Для сборки установщика `abc.pro` сначала создайте актуальный portable-пакет,
 затем запустите `scripts\build-abc-pro-installer.ps1`. Готовый файл появится в
